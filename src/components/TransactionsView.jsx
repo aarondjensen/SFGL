@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, makePlayer } from '../utils/index.js';
+import { getSegmentByDate, makePlayer, getTeamAbbreviation } from '../utils/index.js';
 
 export const TransactionsView = ({ transactions, teams, setTransactions, updateTeams, isCommissioner }) => {
   const [filterTeam, setFilterTeam] = useState('all');
@@ -51,14 +51,17 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
       {/* Fee summary */}
       <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-purple-700/30 overflow-hidden p-3">
         <h2 className="text-lg font-bold mb-3">Transaction Fees</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {teamFees.map(team => (
-            <div key={team.teamId} className="bg-gray-700/30 rounded-lg p-3">
-              <div className="font-semibold text-sm mb-1">{team.teamName}</div>
-              <div className="text-xs text-yellow-400">Season: ${team.seasonTotal}</div>
-              <div className="text-xs text-gray-400">{getSegmentByDate()}: ${team.swingTotal}</div>
-            </div>
-          ))}
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {teamFees.map(team => {
+            const abbr = getTeamAbbreviation(team.teamName);
+            return (
+              <div key={team.teamId} className="flex-shrink-0 bg-gray-700/30 rounded-lg px-3 py-2 text-center min-w-[64px]">
+                <div className="font-bold text-sm text-green-400">{abbr}</div>
+                <div className="text-xs text-yellow-400 mt-0.5">${team.seasonTotal}</div>
+                <div className="text-[10px] text-gray-500">${team.swingTotal} swing</div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
