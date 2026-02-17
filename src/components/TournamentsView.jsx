@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Trophy, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { SWINGS } from '../constants';
+import { SWINGS } from '../constants/index.js';
 
 const ALTERNATE_KEYWORDS = ['Puerto Rico', 'Zurich', 'Corales', 'Myrtle Beach', 'ISCO', 'Barracuda'];
 

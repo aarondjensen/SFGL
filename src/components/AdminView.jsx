@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { slashGolfFetch, processTournamentData, makePlayer } from '../utils';
-import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA } from '../constants';
+import { slashGolfFetch, processTournamentData, makePlayer } from '../utils/index.js';
+import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA } from '../constants/index.js';
 import { storage } from '../api';
 
 export const AdminView = ({

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Calendar, Clock, ChevronDown, ChevronRight } from 'lucide-react';
-import { getSortedRoster, shortName, isTournamentLocked } from '../utils';
+import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
 
 const PlayerSlotGrid = ({ players, showEarnings }) => {
   const slots = [0, 1, 2, 3, 4].map(i => players[i] || null);

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Trophy } from 'lucide-react';
-import { getSegmentByDate } from '../utils';
+import { getSegmentByDate } from '../utils/index.js';
 
 export const StandingsView = ({ teams }) => {
   const sortedTeams = useMemo(() =>
