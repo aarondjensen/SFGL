@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Edit2, Save } from 'lucide-react';
-import { useDialog } from './DialogContext.jsx';
-import { slashGolfFetch, processTournamentData, makePlayer } from '../utils/index.js';
-import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA } from '../constants/index.js';
-import { storage } from '../api.js';
+import { useDialog } from './DialogContext';
+import { slashGolfFetch, processTournamentData, makePlayer } from '../utils';
+import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA } from '../constants';
+import { storage } from '../api';
 
 export const AdminView = ({
   isCommissioner, setIsCommissioner, setActiveTab,
@@ -65,59 +65,115 @@ export const AdminView = ({
   const handleSyncSchedule = async () => {
     const ok = await dialog.showConfirm(
       'Sync Schedule',
-      'This will attach API tournament IDs to your existing schedule so results can be fetched.\n\nYour existing tournament names, dates, and results will NOT be changed.',
-      { confirmText: 'Sync IDs Only' },
+      'Fetch the official PGA schedule?\n\nThis will cleanly build your tournament list, connect any imported past results, and truncate the season at the TOUR Championship.',
+      { confirmText: 'Sync Schedule' },
     );
     if (!ok) return;
 
     try {
       dialog.showToast('Fetching PGA Schedule...', 'info');
-      
-      let pgaData = null;
-      for (const yr of ['2026', '2025']) {
-        try {
-          const data = await slashGolfFetch('schedule', { orgId: '1', year: yr });
-          if (data?.schedule?.length > 0) { pgaData = data; break; }
-        } catch (e) { /* try next year */ }
-      }
+      let pgaData = await slashGolfFetch('schedule', { orgId: '1', year: '2026' });
+      if (!pgaData?.schedule?.length) pgaData = await slashGolfFetch('schedule', { orgId: '1', year: '2025' });
 
-      if (!pgaData?.schedule?.length) {
-        dialog.showToast('Could not fetch schedule from API.', 'error');
-        return;
-      }
+      let enrichedCount = 0;
 
-      const normalizeForMatch = (str) =>
-        (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const parseISO = (iso) => {
+        if (!iso) return null;
+        const str   = String(iso);
+        const parts = str.split('T')[0].split('-');
+        if (parts.length === 3) return new Date(parts[0], parseInt(parts[1]) - 1, parseInt(parts[2]));
+        const d = new Date(str);
+        return isNaN(d) ? null : d;
+      };
 
-      // For each existing tournament, try to find its matching API entry
-      // and ONLY copy the slashGolfId across. Everything else stays as-is.
-      let matchCount = 0;
-      const updatedTournaments = tournaments.map(existingT => {
-        const existingNorm = normalizeForMatch(existingT.name);
+      const normalizeForMatch = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-        const apiMatch = pgaData.schedule.find(apiEvent => {
-          const apiNorm = normalizeForMatch(apiEvent.name || '');
-          return apiNorm === existingNorm ||
-                 apiNorm.includes(existingNorm) ||
-                 existingNorm.includes(apiNorm);
-        });
+      let formattedSchedule = (pgaData?.schedule || []).map(event => {
+        const name       = event.name || 'Unknown Tournament';
+        const slashGolfId = event.tournId || event.id || '';
 
-        if (apiMatch) {
-          const newId = apiMatch.tournId || apiMatch.id || '';
-          if (newId && newId !== existingT.slashGolfId) {
-            matchCount++;
-            return { ...existingT, slashGolfId: newId };
+        let startDate, endDate, dateStr = 'TBD', location = 'TBD', courseName = 'TBD';
+
+        const extractDate = (dObj) => {
+          if (!dObj) return null;
+          if (typeof dObj === 'string') return dObj;
+          if (typeof dObj === 'object') return dObj.date || dObj.start || null;
+          return null;
+        };
+
+        const sDate = parseISO(extractDate(event.startDate || event.date?.start || event.start));
+        const eDate = parseISO(extractDate(event.endDate   || event.date?.end   || event.end));
+
+        if (sDate && eDate) {
+          startDate = sDate.toISOString();
+          const eEnd = new Date(eDate); eEnd.setHours(23, 59, 59);
+          endDate   = eEnd.toISOString();
+          const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const sm = MONTHS[sDate.getMonth()], em = MONTHS[eDate.getMonth()];
+          dateStr = sm === em ? `${sm} ${sDate.getDate()}-${eDate.getDate()}` : `${sm} ${sDate.getDate()}-${em} ${eDate.getDate()}`;
+        } else if (event.date?.display) {
+          dateStr = event.date.display;
+        }
+
+        const courses = event.courses || [];
+        if (courses[0]) {
+          courseName = courses[0].courseName || courses[0].name || 'TBD';
+          const loc  = courses[0].location || courses[0].address;
+          if (typeof loc === 'string') location = loc;
+          else if (loc) {
+            const city = loc.city || loc.town || '';
+            const state = loc.state || loc.region || loc.country || '';
+            if (city || state) location = [city, state].filter(Boolean).join(', ');
           }
         }
-        return existingT;
+
+        // Enrich from fallback if API omits location/course
+        const fb = FALLBACK_SCHEDULE_DATA.find(f => name.includes(f.key));
+        if (fb) {
+          if (!location || location === 'TBD') { location = fb.loc; enrichedCount++; }
+          if (!courseName || courseName === 'TBD') courseName = fb.course;
+          if (!dateStr || dateStr === 'TBD' || !startDate) {
+            dateStr   = fb.d;
+            startDate = new Date(fb.s).toISOString();
+            const fbEnd = new Date(fb.e); fbEnd.setHours(23, 59, 59);
+            endDate   = fbEnd.toISOString();
+          }
+        }
+
+        // Fuzzy-match existing tournament to preserve results + flags
+        const apiNorm = normalizeForMatch(name);
+        const fbNorm  = fb ? normalizeForMatch(fb.key) : '';
+        const existingT = tournaments.find(t => {
+          const tNorm = normalizeForMatch(t.name);
+          return tNorm === apiNorm || apiNorm.includes(tNorm) || tNorm.includes(apiNorm)
+            || (fbNorm && (tNorm.includes(fbNorm) || apiNorm.includes(fbNorm)));
+        });
+
+        return {
+          name, slashGolfId, dates: dateStr, location, startDate, endDate, course: courseName,
+          isSignature: existingT?.isSignature ?? (event.purse > 15_000_000),
+          isMajor:     existingT?.isMajor     ?? ['Masters Tournament','PGA Championship','U.S. Open','The Open Championship'].includes(name),
+          isAlternate: existingT?.isAlternate ?? ((event.purse && event.purse < 5_000_000) || ['Zurich','Barracuda','ISCO','Corales','Puerto Rico','Myrtle Beach'].some(n => name.includes(n))),
+          swing:    existingT?.swing    ?? undefined,
+          playing:  existingT?.playing  ?? false,
+          completed: existingT?.completed ?? false,
+          results:  existingT?.results  ?? null,
+        };
       });
 
-      setTournaments(updatedTournaments);
-      dialog.showToast(
-        `Done! Matched ${matchCount} tournament${matchCount !== 1 ? 's' : ''} with API IDs. Your schedule data is unchanged.`,
-        'success'
-      );
+      // Truncate at Tour Championship
+      const tcIndex = formattedSchedule.findIndex(t => t.name.toLowerCase().includes('tour championship'));
+      if (tcIndex !== -1) formattedSchedule = formattedSchedule.slice(0, tcIndex + 1);
 
+      // Ensure exactly one active tournament
+      if (formattedSchedule.filter(t => t.playing).length !== 1) {
+        formattedSchedule.forEach(t => { t.playing = false; });
+        const nextIdx = formattedSchedule.findIndex(t => !t.completed && !t.isAlternate);
+        if (nextIdx !== -1) formattedSchedule[nextIdx].playing = true;
+      }
+
+      setTournaments(formattedSchedule);
+      dialog.showToast(`Schedule synced! ${enrichedCount > 0 ? `(${enrichedCount} events enriched from local data)` : '(100% API data)'}`, 'success');
     } catch (error) {
       console.error('Schedule Sync Error:', error);
       dialog.showToast(`API Error: ${error.message}`, 'error');
@@ -147,19 +203,39 @@ export const AdminView = ({
 
     try {
       dialog.showToast(`Fetching leaderboard for ${t.name}...`, 'info');
-      const data       = await slashGolfFetch('leaderboard', { tournId: t.slashGolfId, year: '2026' });
-      const apiPlayers = data.leaderboardRows || data.leaderboard || data.results || [];
+      
+      // Fetch leaderboard (scores and positions)
+      let data = await slashGolfFetch('leaderboard', { tournId: t.slashGolfId, year: '2026' });
+      let apiPlayers = data.leaderboardRows || data.leaderboard || data.results || [];
 
       if (apiPlayers.length === 0) {
         dialog.showToast('No results found in API yet.', 'error'); return;
       }
 
-      // Build list of all rostered player names for fuzzy matching
-const rosteredNames = teams.flatMap(team => team.roster.map(p => p.name));
+      // Fetch earnings separately
+      try {
+        const earningsData = await slashGolfFetch('earnings', { tournId: t.slashGolfId, year: '2026' });
+        const earningsPlayers = earningsData.leaderboard || earningsData.earnings || earningsData.results || [];
+        
+        if (earningsPlayers.length > 0) {
+          // Merge earnings into leaderboard data by matching playerId
+          apiPlayers = apiPlayers.map(lp => {
+            const ep = earningsPlayers.find(e => e.playerId === lp.playerId);
+            return { ...lp, earnings: ep?.earnings || 0 };
+          });
+          console.log('Merged earnings from /earnings endpoint');
+        }
+      } catch (e) {
+        console.log('Earnings endpoint not available:', e.message);
+      }
 
-const { newTeams, newStats, resultsData } = processTournamentData(
-  t, apiPlayers, teams, globalPlayerStats, rosteredNames,
-);
+      // Build list of all rostered player names for fuzzy matching
+      const rosteredNames = teams.flatMap(team => team.roster.map(p => p.name));
+
+      const { newTeams, newStats, resultsData } = processTournamentData(
+        t, apiPlayers, teams, globalPlayerStats, rosteredNames,
+      );
+
       const newTournaments = tournaments.map((nt, idx) => {
         if (idx === tournIndex) return { ...nt, completed: true, playing: false, results: resultsData };
         return nt;
