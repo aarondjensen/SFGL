@@ -303,7 +303,8 @@ export const processTournamentData = (tournament, apiPlayers, currentTeams, curr
     const pObj = ap?.player || ap;
     let rawName = pObj?.fullName || pObj?.displayName || pObj?.name || '';
     if (!rawName) rawName = `${pObj?.firstName || ''} ${pObj?.lastName || ''}`.trim();
-    const name   = resolvePlayerName(rawName, allPlayerNames) || rawName;
+const name   = resolvePlayerName(rawName, allPlayerNames) || rawName;
+console.log('API player:', rawName, '→ matched:', name, '| in roster?', allPlayerNames.includes(name));
     const rounds  = ap.rounds || [];
 const scores  = rounds.map(r => {
   if (r?.strokes?.$numberInt !== undefined) return parseInt(r.strokes.$numberInt);

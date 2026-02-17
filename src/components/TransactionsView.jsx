@@ -51,7 +51,7 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
       {/* Fee summary */}
       <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-purple-700/30 overflow-hidden p-3">
         <h2 className="text-lg font-bold mb-3">Transaction Fees</h2>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex justify-between gap-2 overflow-x-auto pb-1">
           {teamFees.map(team => {
             const abbr = getTeamAbbreviation(team.teamName);
             return (
