@@ -4,6 +4,7 @@ import { useDialog } from './DialogContext';
 import { slashGolfFetch, processTournamentData, makePlayer } from '../utils';
 import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA } from '../constants';
 import { storage } from '../api';
+import { ScheduleImportModal } from './ScheduleImportModal';
 
 export const AdminView = ({
   isCommissioner, setIsCommissioner, setActiveTab,
@@ -17,6 +18,7 @@ export const AdminView = ({
   STORAGE_KEYS,
 }) => {
   const [selectedTourneyForResults, setSelectedTourneyForResults] = useState('');
+  const [showScheduleImporter, setShowScheduleImporter] = useState(false);
   const dialog = useDialog();
   const activeTournament = tournaments.find(t => t.playing);
 
@@ -62,122 +64,10 @@ export const AdminView = ({
   };
 
   // ── Schedule Sync ─────────────────────────────────────────────────────────
-  const handleSyncSchedule = async () => {
-    const ok = await dialog.showConfirm(
-      'Sync Schedule',
-      'Fetch the official PGA schedule?\n\nThis will cleanly build your tournament list, connect any imported past results, and truncate the season at the TOUR Championship.',
-      { confirmText: 'Sync Schedule' },
-    );
-    if (!ok) return;
-
-    try {
-      dialog.showToast('Fetching PGA Schedule...', 'info');
-      let pgaData = await slashGolfFetch('schedule', { orgId: '1', year: '2026' });
-      if (!pgaData?.schedule?.length) pgaData = await slashGolfFetch('schedule', { orgId: '1', year: '2025' });
-
-      let enrichedCount = 0;
-
-      const parseISO = (iso) => {
-        if (!iso) return null;
-        const str   = String(iso);
-        const parts = str.split('T')[0].split('-');
-        if (parts.length === 3) return new Date(parts[0], parseInt(parts[1]) - 1, parseInt(parts[2]));
-        const d = new Date(str);
-        return isNaN(d) ? null : d;
-      };
-
-      const normalizeForMatch = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-      let formattedSchedule = (pgaData?.schedule || []).map(event => {
-        const name       = event.name || 'Unknown Tournament';
-        const slashGolfId = event.tournId || event.id || '';
-
-        let startDate, endDate, dateStr = 'TBD', location = 'TBD', courseName = 'TBD';
-
-        const extractDate = (dObj) => {
-          if (!dObj) return null;
-          if (typeof dObj === 'string') return dObj;
-          if (typeof dObj === 'object') return dObj.date || dObj.start || null;
-          return null;
-        };
-
-        const sDate = parseISO(extractDate(event.startDate || event.date?.start || event.start));
-        const eDate = parseISO(extractDate(event.endDate   || event.date?.end   || event.end));
-
-        if (sDate && eDate) {
-          startDate = sDate.toISOString();
-          const eEnd = new Date(eDate); eEnd.setHours(23, 59, 59);
-          endDate   = eEnd.toISOString();
-          const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          const sm = MONTHS[sDate.getMonth()], em = MONTHS[eDate.getMonth()];
-          dateStr = sm === em ? `${sm} ${sDate.getDate()}-${eDate.getDate()}` : `${sm} ${sDate.getDate()}-${em} ${eDate.getDate()}`;
-        } else if (event.date?.display) {
-          dateStr = event.date.display;
-        }
-
-        const courses = event.courses || [];
-        if (courses[0]) {
-          courseName = courses[0].courseName || courses[0].name || 'TBD';
-          const loc  = courses[0].location || courses[0].address;
-          if (typeof loc === 'string') location = loc;
-          else if (loc) {
-            const city = loc.city || loc.town || '';
-            const state = loc.state || loc.region || loc.country || '';
-            if (city || state) location = [city, state].filter(Boolean).join(', ');
-          }
-        }
-
-        // Enrich from fallback if API omits location/course
-        const fb = FALLBACK_SCHEDULE_DATA.find(f => name.includes(f.key));
-        if (fb) {
-          if (!location || location === 'TBD') { location = fb.loc; enrichedCount++; }
-          if (!courseName || courseName === 'TBD') courseName = fb.course;
-          if (!dateStr || dateStr === 'TBD' || !startDate) {
-            dateStr   = fb.d;
-            startDate = new Date(fb.s).toISOString();
-            const fbEnd = new Date(fb.e); fbEnd.setHours(23, 59, 59);
-            endDate   = fbEnd.toISOString();
-          }
-        }
-
-        // Fuzzy-match existing tournament to preserve results + flags
-        const apiNorm = normalizeForMatch(name);
-        const fbNorm  = fb ? normalizeForMatch(fb.key) : '';
-        const existingT = tournaments.find(t => {
-          const tNorm = normalizeForMatch(t.name);
-          return tNorm === apiNorm || apiNorm.includes(tNorm) || tNorm.includes(apiNorm)
-            || (fbNorm && (tNorm.includes(fbNorm) || apiNorm.includes(fbNorm)));
-        });
-
-        return {
-          name, slashGolfId, dates: dateStr, location, startDate, endDate, course: courseName,
-          isSignature: existingT?.isSignature ?? (event.purse > 15_000_000),
-          isMajor:     existingT?.isMajor     ?? ['Masters Tournament','PGA Championship','U.S. Open','The Open Championship'].includes(name),
-          isAlternate: existingT?.isAlternate ?? ((event.purse && event.purse < 5_000_000) || ['Zurich','Barracuda','ISCO','Corales','Puerto Rico','Myrtle Beach'].some(n => name.includes(n))),
-          swing:    existingT?.swing    ?? undefined,
-          playing:  existingT?.playing  ?? false,
-          completed: existingT?.completed ?? false,
-          results:  existingT?.results  ?? null,
-        };
-      });
-
-      // Truncate at Tour Championship
-      const tcIndex = formattedSchedule.findIndex(t => t.name.toLowerCase().includes('tour championship'));
-      if (tcIndex !== -1) formattedSchedule = formattedSchedule.slice(0, tcIndex + 1);
-
-      // Ensure exactly one active tournament
-      if (formattedSchedule.filter(t => t.playing).length !== 1) {
-        formattedSchedule.forEach(t => { t.playing = false; });
-        const nextIdx = formattedSchedule.findIndex(t => !t.completed && !t.isAlternate);
-        if (nextIdx !== -1) formattedSchedule[nextIdx].playing = true;
-      }
-
-      setTournaments(formattedSchedule);
-      dialog.showToast(`Schedule synced! ${enrichedCount > 0 ? `(${enrichedCount} events enriched from local data)` : '(100% API data)'}`, 'success');
-    } catch (error) {
-      console.error('Schedule Sync Error:', error);
-      dialog.showToast(`API Error: ${error.message}`, 'error');
-    }
+  const handleImportSchedule = (importedTournaments) => {
+    setTournaments(importedTournaments);
+    setShowScheduleImporter(false);
+    dialog.showToast(`Imported ${importedTournaments.length} tournaments!`, 'success');
   };
 
   // ── Results Fetch ─────────────────────────────────────────────────────────
@@ -190,7 +80,7 @@ export const AdminView = ({
     const t = tournaments[tournIndex];
 
     if (!t.slashGolfId) {
-      dialog.showToast('No API ID found. Click "Sync Schedule" first.', 'error'); return;
+      dialog.showToast('No API ID found. Import 2026 Schedule first.', 'error'); return;
     }
     if (t.completed) {
       const ok = await dialog.showConfirm(
@@ -236,23 +126,10 @@ export const AdminView = ({
         t, apiPlayers, teams, globalPlayerStats, rosteredNames,
       );
 
-      // Create a deep copy to avoid reference issues
-const newTournaments = tournaments.map((nt, idx) => {
-  if (idx === tournIndex) {
-    // Only this tournament gets the new results
-    return { ...nt, completed: true, playing: false, results: resultsData };
-  }
-  // All other tournaments: return them unchanged
-  return nt;
-});
-
-// Verify only one tournament was updated
-const updatedCount = newTournaments.filter(t => t.results === resultsData).length;
-if (updatedCount > 1) {
-  console.error('BUG: Multiple tournaments got the same results object!');
-  dialog.showToast('Error: Results corrupted, not saving', 'error');
-  return;
-}
+      const newTournaments = tournaments.map((nt, idx) => {
+        if (idx === tournIndex) return { ...nt, completed: true, playing: false, results: resultsData };
+        return nt;
+      });
 
       // Advance active tournament
       const nextIdx = newTournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
@@ -393,8 +270,8 @@ if (updatedCount > 1) {
       <div className="bg-teal-900/10 border border-teal-700/50 p-4 rounded-xl">
         <h3 className="font-bold text-teal-400 flex items-center gap-2 mb-4">🌎 World Rankings &amp; Schedule Sync</h3>
         <div className="flex gap-2">
-          <button onClick={handleSyncSchedule} className="flex-1 bg-purple-600 hover:bg-purple-700 py-2 rounded text-sm font-bold transition-colors">
-            Sync Schedule
+          <button onClick={() => setShowScheduleImporter(true)} className="flex-1 bg-purple-600 hover:bg-purple-700 py-2 rounded text-sm font-bold transition-colors">
+            Import 2026 Schedule
           </button>
           <button onClick={handleSyncPlayers} className="flex-1 bg-teal-600 hover:bg-teal-700 py-2 rounded-lg text-sm font-bold transition-colors">
             Sync OWGR Top 250
@@ -439,6 +316,14 @@ if (updatedCount > 1) {
           </label>
         </div>
       </div>
+
+      {/* Schedule Import Modal */}
+      {showScheduleImporter && (
+        <ScheduleImportModal
+          onImport={handleImportSchedule}
+          onCancel={() => setShowScheduleImporter(false)}
+        />
+      )}
     </div>
   );
 };
