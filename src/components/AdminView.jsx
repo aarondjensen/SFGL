@@ -236,10 +236,23 @@ export const AdminView = ({
         t, apiPlayers, teams, globalPlayerStats, rosteredNames,
       );
 
-      const newTournaments = tournaments.map((nt, idx) => {
-        if (idx === tournIndex) return { ...nt, completed: true, playing: false, results: resultsData };
-        return nt;
-      });
+      // Create a deep copy to avoid reference issues
+const newTournaments = tournaments.map((nt, idx) => {
+  if (idx === tournIndex) {
+    // Only this tournament gets the new results
+    return { ...nt, completed: true, playing: false, results: resultsData };
+  }
+  // All other tournaments: return them unchanged
+  return nt;
+});
+
+// Verify only one tournament was updated
+const updatedCount = newTournaments.filter(t => t.results === resultsData).length;
+if (updatedCount > 1) {
+  console.error('BUG: Multiple tournaments got the same results object!');
+  dialog.showToast('Error: Results corrupted, not saving', 'error');
+  return;
+}
 
       // Advance active tournament
       const nextIdx = newTournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
