@@ -360,7 +360,7 @@ if (typeof earnings === 'object' && earnings?.$numberInt) earnings = parseInt(ea
   });
 
   // ── Team earnings ─────────────────────────────────────────────────────────
-  const resultsData = { teams: {} };
+   const teamResults = {};
   const newTeams    = currentTeams.map(team => {
     let teamTotal    = 0;
     const resultPlayers = [];
@@ -379,9 +379,12 @@ if (typeof earnings === 'object' && earnings?.$numberInt) earnings = parseInt(ea
       };
     });
 
-    resultsData.teams[team.id] = { totalEarnings: teamTotal, players: resultPlayers };
+    teamResults[team.id] = { totalEarnings: teamTotal, players: resultPlayers };
     return { ...team, earnings: (team.earnings || 0) + teamTotal, segmentEarnings: (team.segmentEarnings || 0) + teamTotal, roster: newRoster, lineup: [] };
   });
+
+  // Create a fresh resultsData object with no shared references
+  const resultsData = { teams: { ...teamResults } };
 
   return { newTeams, newStats, resultsData };
 };
