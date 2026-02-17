@@ -60,22 +60,9 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
     }
   };
 
-  const assignSwing = (startObj) => {
-    const date = parseDate(startObj);
-    if (!date) return 'West Coast Swing';
-    
-    const month = date.getMonth(); // 0 = Jan
-    if (month <= 2) return 'West Coast Swing';
-    if (month === 3) return 'Florida Swing';
-    if (month === 4 || month === 5) return 'Spring Swing';
-    if (month >= 6 && month <= 8) return 'Summer Swing';
-    return 'Fall Finish';
-  };
-
   const getSwingColor = (swing) => {
     const colors = {
       'West Coast Swing': 'bg-blue-600/20 text-blue-300',
-      'Florida Swing': 'bg-orange-600/20 text-orange-300',
       'Spring Swing': 'bg-green-600/20 text-green-300',
       'Summer Swing': 'bg-yellow-600/20 text-yellow-300',
       'Fall Finish': 'bg-red-600/20 text-red-300',
@@ -103,15 +90,30 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
       }
       
       console.log(`Processing ${data.schedule.length} tournaments...`);
+      console.log('First tournament raw data:', data.schedule[0]);
       
       let tournaments = (data?.schedule || []).map(event => {
         const startDate = parseDate(event.startDate || event.date?.start || event.start);
         const endDate = parseDate(event.endDate || event.date?.end || event.end);
         
+        // Extract location
+        let location = 'TBD';
         const courses = event.courses || [];
-        const location = event.location?.city 
-          ? `${event.location.city}, ${event.location.state || event.location.country || ''}`
-          : courses[0]?.city || 'TBD';
+        
+        if (event.location) {
+          const city = event.location.city || event.location.town || '';
+          const state = event.location.state || event.location.region || '';
+          const country = event.location.country || '';
+          location = [city, state || country].filter(Boolean).join(', ');
+        } else if (courses[0]?.location) {
+          const loc = courses[0].location;
+          const city = loc.city || loc.town || '';
+          const state = loc.state || loc.region || '';
+          const country = loc.country || '';
+          location = [city, state || country].filter(Boolean).join(', ');
+        } else if (courses[0]?.city) {
+          location = courses[0].city;
+        }
         
         const courseName = courses[0]?.courseName || courses[0]?.name || 'TBD';
         
@@ -131,9 +133,9 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
           dates: formatDates(event.startDate, event.endDate),
           isSignature,
           isMajor,
-          swing: assignSwing(event.startDate),
+          swing: '', // Will be assigned after truncation
           isAlternate: false,
-          excluded: false, // New field for excluding tournaments
+          excluded: false,
           completed: false,
           playing: false,
         };
@@ -147,6 +149,17 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
         console.log(`Truncating at TOUR Championship (position ${tourChampIndex + 1})`);
         tournaments = tournaments.slice(0, tourChampIndex + 1);
       }
+      
+      // Auto-assign swings evenly across the season
+      const swingNames = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
+      const tournamentsPerSwing = Math.ceil(tournaments.length / swingNames.length);
+      
+      tournaments.forEach((t, idx) => {
+        const swingIndex = Math.min(Math.floor(idx / tournamentsPerSwing), swingNames.length - 1);
+        t.swing = swingNames[swingIndex];
+      });
+      
+      console.log(`Assigned ${tournamentsPerSwing} tournaments per swing`);
       
       // Set first non-excluded tournament as active
       const firstActive = tournaments.findIndex(t => !t.excluded);
@@ -258,7 +271,6 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
                         className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500"
                       >
                         <option>West Coast Swing</option>
-                        <option>Florida Swing</option>
                         <option>Spring Swing</option>
                         <option>Summer Swing</option>
                         <option>Fall Finish</option>
