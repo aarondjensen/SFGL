@@ -1,4 +1,4 @@
-import { CHAR_MAP, PLAYER_NAME_ALIASES, PGA_TOUR_IDS, TEAM_ABBREVIATIONS, BONUSES_REGULAR, BONUSES_MAJOR, SWINGS } from '../constants';
+import { CHAR_MAP, PLAYER_NAME_ALIASES, PGA_TOUR_IDS, TEAM_ABBREVIATIONS, BONUSES_REGULAR, BONUSES_MAJOR, SWINGS } from '../constants/index.js';
 
 // ============================================================================
 // AUTH

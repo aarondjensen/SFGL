@@ -3,7 +3,7 @@ import { Search } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { AddDropPlayerModal } from './AddDropPlayerModal';
 import { MulliganModal } from './MulliganModal';
-import { useRoster, useWindowStatus } from '../hooks';
+import { useRoster, useWindowStatus } from '../hooks/index.js';
 import {
   getSortedRoster, shortName, getPlayerHeadshot, getPlayerHeadshotFallback,
   getTeamAbbreviation, getLineupStatus, getFreeAgentWindowStatus, getWaiverWindowStatus,

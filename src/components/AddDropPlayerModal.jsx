@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, makePlayer } from '../utils';
-import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants';
+import { getSegmentByDate, makePlayer } from '../utils/index.js';
+import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
 
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, allPlayers, teams,

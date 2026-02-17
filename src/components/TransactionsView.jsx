@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, makePlayer } from '../utils';
+import { getSegmentByDate, makePlayer } from '../utils/index.js';
 
 export const TransactionsView = ({ transactions, teams, setTransactions, updateTeams, isCommissioner }) => {
   const [filterTeam, setFilterTeam] = useState('all');
