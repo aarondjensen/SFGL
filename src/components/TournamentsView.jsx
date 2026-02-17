@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Trophy, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { SWINGS } from '../constants/index.js';
+import { SWINGS } from '../constants';
 
 const ALTERNATE_KEYWORDS = ['Puerto Rico', 'Zurich', 'Corales', 'Myrtle Beach', 'ISCO', 'Barracuda'];
 
@@ -26,12 +26,26 @@ const getSwingColor = (swing, dateStr) => {
   return 'text-orange-400';
 };
 
-export const TournamentsView = ({ tournaments, isCommissioner, setTournaments }) => {
+export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, firstTeeTime }) => {
   const [editMode,         setEditMode]         = useState(false);
   const [localTournaments, setLocalTournaments] = useState([]);
   const dialog = useDialog();
 
   useEffect(() => { setLocalTournaments(tournaments); }, [tournaments]);
+
+  const formatTeeTime = (date) => {
+    if (!date) return '';
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const day = days[date.getDay()];
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    const displayMinutes = minutes.toString().padStart(2, '0');
+    return `${day} ${displayHours}:${displayMinutes} ${ampm} ET`;
+  };
+
+  const activeTournament = localTournaments.find(t => t.playing);
 
   const saveChanges = () => {
     setTournaments(localTournaments);
@@ -147,7 +161,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments })
                 <span className={alt ? 'text-gray-500' : 'text-gray-200'}>
                   {t.name}
                   {t.completed && <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 bg-gray-700 text-gray-300 rounded">Final</span>}
-                  {t.playing === true && <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 bg-green-900/50 border border-green-500/50 text-green-400 rounded">Active</span>}
+                  {t.playing   && <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 bg-green-900/50 border border-green-500/50 text-green-400 rounded">Active</span>}
                 </span>
               </td>
               <td className={`px-3 py-3 font-medium whitespace-nowrap ${alt ? 'text-gray-500' : getSwingColor(t.swing, t.dates)}`}>
@@ -167,7 +181,15 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments })
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">2026 Season Schedule</h2>
+        <div>
+          <h2 className="text-xl font-bold">2026 Season Schedule</h2>
+          {activeTournament && (
+            <p className="text-sm text-gray-400 mt-1">
+              Current tournament: <span className="text-green-400 font-medium">{activeTournament.name}</span>
+              {firstTeeTime && <span className="text-gray-500"> • {formatTeeTime(firstTeeTime)}</span>}
+            </p>
+          )}
+        </div>
         {isCommissioner && (
           <button
             onClick={() => editMode ? saveChanges() : setEditMode(true)}

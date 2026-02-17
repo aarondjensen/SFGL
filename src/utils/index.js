@@ -1,4 +1,4 @@
-import { CHAR_MAP, PLAYER_NAME_ALIASES, PGA_TOUR_IDS, TEAM_ABBREVIATIONS, BONUSES_REGULAR, BONUSES_MAJOR, SWINGS } from '../constants/index.js';
+import { CHAR_MAP, PLAYER_NAME_ALIASES, PGA_TOUR_IDS, TEAM_ABBREVIATIONS, BONUSES_REGULAR, BONUSES_MAJOR, SWINGS } from '../constants';
 
 // ============================================================================
 // AUTH
@@ -303,18 +303,10 @@ export const processTournamentData = (tournament, apiPlayers, currentTeams, curr
     const pObj = ap?.player || ap;
     let rawName = pObj?.fullName || pObj?.displayName || pObj?.name || '';
     if (!rawName) rawName = `${pObj?.firstName || ''} ${pObj?.lastName || ''}`.trim();
-const name   = resolvePlayerName(rawName, allPlayerNames) || rawName;
-
+    const name   = resolvePlayerName(rawName, allPlayerNames) || rawName;
     const rounds  = ap.rounds || [];
-const scores  = rounds.map(r => {
-  if (r?.strokes?.$numberInt !== undefined) return parseInt(r.strokes.$numberInt);
-  if (r?.strokes !== undefined && r?.strokes !== null) return parseInt(r.strokes);
-  if (r?.score !== undefined && r?.score !== null) return parseInt(r.score);
-  return null;
-});
-
-let earnings  = ap.earnings || ap.winnings || ap.payout || 0;
-if (typeof earnings === 'object' && earnings?.$numberInt) earnings = parseInt(earnings.$numberInt);
+    const scores  = rounds.map(r => (r?.score !== undefined && r?.score !== null) ? parseInt(r.score) : null);
+    let earnings  = ap.earnings || ap.winnings || ap.payout || 0;
     if (typeof earnings === 'string') earnings = parseInt(earnings.replace(/[^0-9]/g, '')) || 0;
     const started = scores[0] !== null; // has at least R1 score
     return { name, scores, earnings, started };
@@ -360,7 +352,7 @@ if (typeof earnings === 'object' && earnings?.$numberInt) earnings = parseInt(ea
   });
 
   // ── Team earnings ─────────────────────────────────────────────────────────
-   const teamResults = {};
+  const resultsData = { teams: {} };
   const newTeams    = currentTeams.map(team => {
     let teamTotal    = 0;
     const resultPlayers = [];
@@ -379,12 +371,9 @@ if (typeof earnings === 'object' && earnings?.$numberInt) earnings = parseInt(ea
       };
     });
 
-    teamResults[team.id] = { totalEarnings: teamTotal, players: resultPlayers };
+    resultsData.teams[team.id] = { totalEarnings: teamTotal, players: resultPlayers };
     return { ...team, earnings: (team.earnings || 0) + teamTotal, segmentEarnings: (team.segmentEarnings || 0) + teamTotal, roster: newRoster, lineup: [] };
   });
-
-  // Create a fresh resultsData object with no shared references
-  const resultsData = { teams: { ...teamResults } };
 
   return { newTeams, newStats, resultsData };
 };
@@ -407,4 +396,49 @@ export const slashGolfFetch = async (endpoint, params = {}) => {
   });
   if (!res.ok) throw new Error(`Slash Golf API error: ${res.status} ${res.statusText}`);
   return res.json();
+};
+
+// ── Fetch First Tee Time ──────────────────────────────────────────────────
+export const fetchFirstTeeTime = async (tournament) => {
+  if (!tournament?.slashGolfId) return null;
+  
+  try {
+    const data = await slashGolfFetch('leaderboard', { 
+      tournId: tournament.slashGolfId, 
+      year: '2026' 
+    });
+    
+    const players = data.leaderboardRows || data.leaderboard || [];
+    if (!players.length) return null;
+    
+    // Find earliest tee time from all players
+    let earliestTime = null;
+    
+    for (const player of players) {
+      const timeStr = player.teeTime || player.teeTimeTimestamp;
+      if (!timeStr) continue;
+      
+      let teeDate;
+      
+      // Handle timestamp format { $date: { $numberLong: "..." } }
+      if (typeof timeStr === 'object' && timeStr.$date) {
+        const timestamp = timeStr.$date.$numberLong || timeStr.$date;
+        teeDate = new Date(parseInt(timestamp));
+      } else if (typeof timeStr === 'string') {
+        // Try parsing as date string
+        teeDate = new Date(timeStr);
+      }
+      
+      if (teeDate && !isNaN(teeDate.getTime())) {
+        if (!earliestTime || teeDate < earliestTime) {
+          earliestTime = teeDate;
+        }
+      }
+    }
+    
+    return earliestTime;
+  } catch (error) {
+    console.error('Failed to fetch tee time:', error);
+    return null;
+  }
 };

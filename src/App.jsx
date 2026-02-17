@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { BarChart3, Trophy, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
 import { DialogProvider } from './components/DialogContext';
@@ -11,7 +11,7 @@ import { TournamentsView }  from './components/TournamentsView';
 import { AdminView }        from './components/AdminView';
 
 import { useLeague }       from './hooks';
-import { hashPassword, getSegmentByDate } from './utils';
+import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
 
 import sfglLogo from './assets/logo.png';
@@ -35,6 +35,7 @@ const FantasyGolfLeague = () => {
   const [showLoginModal,        setShowLoginModal]        = useState(false);
   const [showAdminLoginPopover, setShowAdminLoginPopover] = useState(false);
   const [adminPassword,         setAdminPassword]         = useState('');
+  const [firstTeeTime,          setFirstTeeTime]          = useState(null);
 
   const league = useLeague(STORAGE_KEYS);
 
@@ -50,6 +51,15 @@ const FantasyGolfLeague = () => {
   const resolvedTeams      = teams.length      > 0 ? teams      : INITIAL_TEAMS;
   const resolvedHeadshots  = Object.keys(headshots).length > 0 ? headshots : PGA_TOUR_IDS;
   const currentTournament  = tournaments.find(t => t.playing);
+
+  // Fetch first tee time when current tournament changes
+  useEffect(() => {
+    if (currentTournament?.slashGolfId) {
+      fetchFirstTeeTime(currentTournament).then(setFirstTeeTime);
+    } else {
+      setFirstTeeTime(null);
+    }
+  }, [currentTournament?.slashGolfId]);
 
   // ── Admin login ────────────────────────────────────────────────────────────
   const handleAdminLogin = async () => {
@@ -176,6 +186,7 @@ const FantasyGolfLeague = () => {
               isCommissioner={isCommissioner}
               globalPlayerStats={globalPlayerStats}
               headshots={resolvedHeadshots}
+              firstTeeTime={firstTeeTime}
             />
           )}
           {activeTab === 'transactions' && (
@@ -192,6 +203,7 @@ const FantasyGolfLeague = () => {
               tournaments={tournaments}
               isCommissioner={isCommissioner}
               setTournaments={updateTournaments}
+              firstTeeTime={firstTeeTime}
             />
           )}
           {activeTab === 'admin' && isCommissioner && (

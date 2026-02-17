@@ -3,7 +3,7 @@ import { Search } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { AddDropPlayerModal } from './AddDropPlayerModal';
 import { MulliganModal } from './MulliganModal';
-import { useRoster, useWindowStatus } from '../hooks/index.js';
+import { useRoster, useWindowStatus } from '../hooks';
 import {
   getSortedRoster, shortName, getPlayerHeadshot, getPlayerHeadshotFallback,
   getTeamAbbreviation, getLineupStatus, getFreeAgentWindowStatus, getWaiverWindowStatus,
@@ -93,6 +93,7 @@ export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
   settings, loggedInUser, isCommissioner, globalPlayerStats, headshots,
+  firstTeeTime,
 }) => {
   const [lineupMode,        setLineupMode]        = useState(false);
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
@@ -251,7 +252,7 @@ export const RostersView = ({
         <button
           onClick={btnAction}
           disabled={isDisabled}
-          className={`w-full h-14 flex flex-col items-center justify-center px-1 rounded-lg font-medium transition-colors text-[11px] sm:text-xs text-center leading-none sm:leading-tight ${
+          className={`w-full h-14 flex items-center justify-center px-1 rounded-lg font-medium transition-colors text-[11px] sm:text-xs text-center ${
             !isDisabled
               ? activeMulliganTx
                 ? 'bg-gray-800 text-blue-400 border border-blue-500/40 hover:bg-blue-600/10'
@@ -259,12 +260,23 @@ export const RostersView = ({
               : 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed'
           }`}
         >
-          <span>{btnLabel}</span>
-          <span className="mt-0.5">{btnIcon}</span>
+          {btnLabel}
         </button>
-        <span className={`text-[9px] leading-tight text-center ${statusColor}`}>{statusText}</span>
       </div>
     );
+  };
+
+  // Format tee time for display
+  const formatTeeTime = (date) => {
+    if (!date) return '';
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const day = days[date.getDay()];
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    const displayMinutes = minutes.toString().padStart(2, '0');
+    return `${day} ${displayHours}:${displayMinutes} ${ampm} ET`;
   };
 
   return (
@@ -338,8 +350,8 @@ export const RostersView = ({
         <div className="p-2 bg-gradient-to-r from-green-600/20 to-transparent border-b border-green-700/30">
           {activeTournament && (
             <div className="mb-2 px-1 truncate">
-              <span className="text-blue-300 font-semibold text-sm">{activeTournament.name}</span>
-              <span className="text-gray-400 text-xs ml-2">· {activeTournament.dates}</span>
+              <span className="text-blue-300 font-semibold text-sm">Current tournament: {activeTournament.name}</span>
+              {firstTeeTime && <span className="text-gray-400 text-xs ml-2">• {formatTeeTime(firstTeeTime)}</span>}
             </div>
           )}
 
@@ -349,7 +361,7 @@ export const RostersView = ({
               <button
                 onClick={() => { if (lineupMode && team.lineup.length === 0) return; setLineupMode(!lineupMode); }}
                 disabled={!canEditLineup || (lineupMode && team.lineup.length === 0)}
-                className={`w-full h-14 flex flex-col items-center justify-center px-1 rounded-lg font-medium transition-all text-[11px] sm:text-xs text-center leading-none sm:leading-tight ${
+                className={`w-full h-14 flex items-center justify-center px-1 rounded-lg font-medium transition-all text-[11px] sm:text-xs text-center ${
                   !canEditLineup
                     ? 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed'
                     : lineupMode
@@ -361,12 +373,8 @@ export const RostersView = ({
                         : 'bg-gray-800 text-blue-400 border border-blue-600/40 hover:bg-blue-600/10'
                 }`}
               >
-                <span>{lineupMode ? '✓ Save' : 'Lineup'}</span>
-                {!lineupMode && <span className="mt-0.5">{isCommissioner && isTournamentLocked(activeTournament) ? '🔓' : isTournamentLocked(activeTournament) ? '🔒' : '✏️'}</span>}
+                {lineupMode ? '✓ Save' : '✏️'}
               </button>
-              <span className={`text-[9px] leading-tight text-center ${lineupStatus.open ? 'text-blue-400' : 'text-gray-500'}`}>
-                {lineupStatus.label}
-              </span>
             </div>
 
             {/* Free agent button */}
@@ -374,17 +382,14 @@ export const RostersView = ({
               <button
                 onClick={() => { setIsWaiverMode(false); setShowAddDropModal(true); }}
                 disabled={!isOwnTeam || !windowStatus.faOpen}
-                className={`w-full h-14 flex flex-col items-center justify-center px-1 rounded-lg font-medium transition-colors text-[11px] sm:text-xs text-center leading-none sm:leading-tight ${
+                className={`w-full h-14 flex items-center justify-center px-1 rounded-lg font-medium transition-colors text-[11px] sm:text-xs text-center ${
                   isOwnTeam && windowStatus.faOpen
                     ? 'bg-gray-800 text-green-400 border border-green-600/40 hover:bg-green-600/10'
                     : 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed'
                 }`}
               >
-                <span>Free Agent</span><span className="mt-0.5">🏌️</span>
+                {faStatus.open ? `Opens ${faStatus.label}` : 'Free Agent'}
               </button>
-              <span className={`text-[9px] leading-tight text-center ${faStatus.open ? 'text-green-400' : 'text-gray-500'}`}>
-                {faStatus.open ? `🟢 ${faStatus.label}` : `🔴 ${faStatus.label}`}
-              </span>
             </div>
 
             {/* Waiver button */}
@@ -392,17 +397,14 @@ export const RostersView = ({
               <button
                 onClick={() => { setIsWaiverMode(true); setShowAddDropModal(true); }}
                 disabled={!isOwnTeam || !windowStatus.waiverOpen}
-                className={`w-full h-14 flex flex-col items-center justify-center px-1 rounded-lg font-medium transition-colors text-[11px] sm:text-xs text-center leading-none sm:leading-tight ${
+                className={`w-full h-14 flex items-center justify-center px-1 rounded-lg font-medium transition-colors text-[11px] sm:text-xs text-center ${
                   isOwnTeam && windowStatus.waiverOpen
                     ? 'bg-gray-800 text-yellow-400 border border-yellow-600/40 hover:bg-yellow-600/10'
                     : 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed'
                 }`}
               >
-                <span>Waiver</span><span className="mt-0.5">⏰</span>
+                {waiverStatus.open ? 'until Tue 7:59pm ET' : 'Waiver'}
               </button>
-              <span className={`text-[9px] leading-tight text-center ${waiverStatus.open ? 'text-yellow-400' : 'text-gray-500'}`}>
-                {waiverStatus.open ? '🟢 until Tue 7:59pm' : '🔴 until Sun 9pm'}
-              </span>
             </div>
 
             {/* Mulligan button */}
