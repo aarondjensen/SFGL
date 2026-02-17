@@ -92,36 +92,46 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
       console.log(`Processing ${data.schedule.length} tournaments...`);
       console.log('First tournament raw data:', data.schedule[0]);
       
-      let tournaments = (data?.schedule || []).map(event => {
-        const startDate = parseDate(event.startDate || event.date?.start || event.start);
-        const endDate = parseDate(event.endDate || event.date?.end || event.end);
+      let tournaments = (data?.schedule || []).map((event, idx) => {
+        // API structure: event.date.start and event.date.end
+        const startDate = parseDate(event.date?.start || event.startDate);
+        const endDate = parseDate(event.date?.end || event.endDate);
         
-        // Extract location
-        let location = 'TBD';
-        const courses = event.courses || [];
-        
-        if (event.location) {
-          const city = event.location.city || event.location.town || '';
-          const state = event.location.state || event.location.region || '';
-          const country = event.location.country || '';
-          location = [city, state || country].filter(Boolean).join(', ');
-        } else if (courses[0]?.location) {
-          const loc = courses[0].location;
-          const city = loc.city || loc.town || '';
-          const state = loc.state || loc.region || '';
-          const country = loc.country || '';
-          location = [city, state || country].filter(Boolean).join(', ');
-        } else if (courses[0]?.city) {
-          location = courses[0].city;
+        if (idx === 0) {
+          console.log('First event:', event.name);
+          console.log('Date object:', event.date);
+          console.log('Parsed dates:', { startDate, endDate });
         }
         
-        const courseName = courses[0]?.courseName || courses[0]?.name || 'TBD';
+        // Extract location from courses[0].location
+        let location = 'TBD';
+        let courseName = 'TBD';
+        const courses = event.courses || [];
+        
+        if (courses[0]) {
+          const course = courses[0];
+          courseName = course.courseName || course.name || 'TBD';
+          
+          if (course.location) {
+            const loc = course.location;
+            const city = loc.city || '';
+            const state = loc.state || '';
+            const country = loc.country || '';
+            // Format: "City, State" or "City, Country" if no state
+            location = [city, state || country].filter(Boolean).join(', ');
+          }
+        }
+        
+        if (idx === 0) {
+          console.log('Location:', location);
+          console.log('Course:', courseName);
+        }
         
         // Auto-detect majors and signatures
         const isMajor = ['Masters', 'PGA Championship', 'U.S. Open', 'The Open Championship'].some(m => 
           event.name?.includes(m)
         );
-        const isSignature = event.purse > 15000000 && !isMajor;
+        const isSignature = (event.purse || 0) > 15000000 && !isMajor;
         
         return {
           name: event.name || 'Unknown Tournament',
@@ -130,7 +140,7 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
           endDate: endDate ? (() => { const d = new Date(endDate); d.setHours(23,59,59); return d.toISOString(); })() : null,
           location,
           courseName,
-          dates: formatDates(event.startDate, event.endDate),
+          dates: formatDates(event.date?.start || event.startDate, event.date?.end || event.endDate),
           isSignature,
           isMajor,
           swing: '', // Will be assigned after truncation
