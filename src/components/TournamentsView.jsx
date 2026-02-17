@@ -147,7 +147,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments })
                 <span className={alt ? 'text-gray-500' : 'text-gray-200'}>
                   {t.name}
                   {t.completed && <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 bg-gray-700 text-gray-300 rounded">Final</span>}
-                  {t.playing   && <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 bg-green-900/50 border border-green-500/50 text-green-400 rounded">Active</span>}
+                  {t.playing === true && <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 bg-green-900/50 border border-green-500/50 text-green-400 rounded">Active</span>}
                 </span>
               </td>
               <td className={`px-3 py-3 font-medium whitespace-nowrap ${alt ? 'text-gray-500' : getSwingColor(t.swing, t.dates)}`}>
