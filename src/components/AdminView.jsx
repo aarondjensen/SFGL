@@ -154,10 +154,12 @@ export const AdminView = ({
         dialog.showToast('No results found in API yet.', 'error'); return;
       }
 
-      const { newTeams, newStats, resultsData } = processTournamentData(
-        t, apiPlayers, teams, globalPlayerStats, allPlayers.map(p => p.name),
-      );
+      // Build list of all rostered player names for fuzzy matching
+const rosteredNames = teams.flatMap(team => team.roster.map(p => p.name));
 
+const { newTeams, newStats, resultsData } = processTournamentData(
+  t, apiPlayers, teams, globalPlayerStats, rosteredNames,
+);
       const newTournaments = tournaments.map((nt, idx) => {
         if (idx === tournIndex) return { ...nt, completed: true, playing: false, results: resultsData };
         return nt;
