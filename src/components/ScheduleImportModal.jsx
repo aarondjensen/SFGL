@@ -12,18 +12,42 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
 
   const parseDate = (dateObj) => {
     if (!dateObj) return null;
-    if (typeof dateObj === 'string') return new Date(dateObj);
-    if (typeof dateObj === 'object') {
-      const dateStr = dateObj.date || dateObj.start || dateObj.$date;
-      return dateStr ? new Date(dateStr) : null;
+    
+    // Handle string dates
+    if (typeof dateObj === 'string') {
+      const d = new Date(dateObj);
+      return isNaN(d.getTime()) ? null : d;
     }
+    
+    // Handle MongoDB extended JSON format: { $date: { $numberLong: "timestamp" } }
+    if (typeof dateObj === 'object') {
+      if (dateObj.$date) {
+        if (dateObj.$date.$numberLong) {
+          return new Date(parseInt(dateObj.$date.$numberLong));
+        }
+        if (typeof dateObj.$date === 'string' || typeof dateObj.$date === 'number') {
+          return new Date(dateObj.$date);
+        }
+      }
+      
+      // Handle nested date properties
+      const dateStr = dateObj.date || dateObj.start || dateObj.end;
+      if (dateStr) {
+        const d = new Date(dateStr);
+        return isNaN(d.getTime()) ? null : d;
+      }
+    }
+    
     return null;
   };
 
   const formatDates = (startObj, endObj) => {
     const start = parseDate(startObj);
     const end = parseDate(endObj);
-    if (!start || !end) return 'TBD';
+    
+    if (!start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return 'TBD';
+    }
     
     const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const sm = MONTHS[start.getMonth()];
@@ -80,7 +104,7 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
       
       console.log(`Processing ${data.schedule.length} tournaments...`);
       
-      const tournaments = (data?.schedule || []).map(event => {
+      let tournaments = (data?.schedule || []).map(event => {
         const startDate = parseDate(event.startDate || event.date?.start || event.start);
         const endDate = parseDate(event.endDate || event.date?.end || event.end);
         
@@ -114,6 +138,15 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
           playing: false,
         };
       });
+      
+      // Truncate at TOUR Championship (end of fantasy season)
+      const tourChampIndex = tournaments.findIndex(t => 
+        t.name.toLowerCase().includes('tour championship')
+      );
+      if (tourChampIndex !== -1) {
+        console.log(`Truncating at TOUR Championship (position ${tourChampIndex + 1})`);
+        tournaments = tournaments.slice(0, tourChampIndex + 1);
+      }
       
       // Set first non-excluded tournament as active
       const firstActive = tournaments.findIndex(t => !t.excluded);
