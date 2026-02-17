@@ -305,8 +305,14 @@ export const processTournamentData = (tournament, apiPlayers, currentTeams, curr
     if (!rawName) rawName = `${pObj?.firstName || ''} ${pObj?.lastName || ''}`.trim();
     const name   = resolvePlayerName(rawName, allPlayerNames) || rawName;
     const rounds  = ap.rounds || [];
-    const scores  = rounds.map(r => (r?.score !== undefined && r?.score !== null) ? parseInt(r.score) : null);
-    let earnings  = ap.earnings || ap.winnings || ap.payout || 0;
+const scores  = rounds.map(r => {
+  if (r?.strokes?.$numberInt !== undefined) return parseInt(r.strokes.$numberInt);
+  if (r?.strokes !== undefined && r?.strokes !== null) return parseInt(r.strokes);
+  if (r?.score !== undefined && r?.score !== null) return parseInt(r.score);
+  return null;
+});
+let earnings  = ap.earnings || ap.winnings || ap.payout || 0;
+if (typeof earnings === 'object' && earnings?.$numberInt) earnings = parseInt(earnings.$numberInt);
     if (typeof earnings === 'string') earnings = parseInt(earnings.replace(/[^0-9]/g, '')) || 0;
     const started = scores[0] !== null; // has at least R1 score
     return { name, scores, earnings, started };
