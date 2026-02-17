@@ -304,7 +304,7 @@ export const processTournamentData = (tournament, apiPlayers, currentTeams, curr
     let rawName = pObj?.fullName || pObj?.displayName || pObj?.name || '';
     if (!rawName) rawName = `${pObj?.firstName || ''} ${pObj?.lastName || ''}`.trim();
 const name   = resolvePlayerName(rawName, allPlayerNames) || rawName;
-console.log('API player:', rawName, '→ matched:', name, '| in roster?', allPlayerNames.includes(name));
+
     const rounds  = ap.rounds || [];
 const scores  = rounds.map(r => {
   if (r?.strokes?.$numberInt !== undefined) return parseInt(r.strokes.$numberInt);
@@ -312,7 +312,7 @@ const scores  = rounds.map(r => {
   if (r?.score !== undefined && r?.score !== null) return parseInt(r.score);
   return null;
 });
-console.log('Parsed scores for', rawName, ':', scores);
+
 let earnings  = ap.earnings || ap.winnings || ap.payout || 0;
 if (typeof earnings === 'object' && earnings?.$numberInt) earnings = parseInt(earnings.$numberInt);
     if (typeof earnings === 'string') earnings = parseInt(earnings.replace(/[^0-9]/g, '')) || 0;
