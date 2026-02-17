@@ -62,10 +62,23 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
   const loadSchedule = async () => {
     setLoading(true);
     try {
+      console.log('Fetching schedule from SlashGolf API...');
       let data = await slashGolfFetch('schedule', { orgId: '1', year: '2026' });
+      console.log('2026 schedule response:', data);
+      
       if (!data?.schedule?.length) {
+        console.log('No 2026 data, trying 2025...');
         data = await slashGolfFetch('schedule', { orgId: '1', year: '2025' });
+        console.log('2025 schedule response:', data);
       }
+      
+      if (!data?.schedule?.length) {
+        console.error('No schedule data found in API response');
+        setLoading(false);
+        return;
+      }
+      
+      console.log(`Processing ${data.schedule.length} tournaments...`);
       
       const tournaments = (data?.schedule || []).map(event => {
         const startDate = parseDate(event.startDate || event.date?.start || event.start);
@@ -96,16 +109,19 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
           isMajor,
           swing: assignSwing(event.startDate),
           isAlternate: false,
+          excluded: false, // New field for excluding tournaments
           completed: false,
           playing: false,
         };
       });
       
-      // Set first tournament as active
-      if (tournaments.length > 0) {
-        tournaments[0].playing = true;
+      // Set first non-excluded tournament as active
+      const firstActive = tournaments.findIndex(t => !t.excluded);
+      if (firstActive !== -1) {
+        tournaments[firstActive].playing = true;
       }
       
+      console.log('Processed tournaments:', tournaments);
       setEditedSchedule(tournaments);
     } catch (e) {
       console.error('Failed to load schedule:', e);
@@ -124,6 +140,12 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
     const updated = [...editedSchedule];
     updated[idx].isMajor = !updated[idx].isMajor;
     if (updated[idx].isMajor) updated[idx].isSignature = false; // Can't be both
+    setEditedSchedule(updated);
+  };
+
+  const toggleExclude = (idx) => {
+    const updated = [...editedSchedule];
+    updated[idx].excluded = !updated[idx].excluded;
     setEditedSchedule(updated);
   };
 
@@ -158,11 +180,12 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
                   <th className="text-left p-2 font-semibold">Dates</th>
                   <th className="text-left p-2 font-semibold">Location & Course</th>
                   <th className="text-left p-2 font-semibold">Swing</th>
+                  <th className="text-left p-2 font-semibold">Include</th>
                 </tr>
               </thead>
               <tbody>
                 {editedSchedule.map((t, idx) => (
-                  <tr key={idx} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                  <tr key={idx} className={`border-b border-gray-700/50 hover:bg-gray-700/30 ${t.excluded ? 'opacity-40' : ''}`}>
                     <td className="p-2">
                       <div className="flex gap-1">
                         <button
@@ -208,6 +231,14 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
                         <option>Fall Finish</option>
                       </select>
                     </td>
+                    <td className="p-2">
+                      <input
+                        type="checkbox"
+                        checked={!t.excluded}
+                        onChange={() => toggleExclude(idx)}
+                        className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-green-600 focus:ring-green-500 focus:ring-2 cursor-pointer"
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -217,7 +248,7 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
         
         <div className="p-4 border-t border-gray-700 flex justify-between items-center">
           <div className="text-sm text-gray-400">
-            {editedSchedule.length} tournaments • {editedSchedule.filter(t => t.isMajor).length} majors • {editedSchedule.filter(t => t.isSignature).length} signature events
+            {editedSchedule.filter(t => !t.excluded).length} tournaments • {editedSchedule.filter(t => t.isMajor && !t.excluded).length} majors • {editedSchedule.filter(t => t.isSignature && !t.excluded).length} signature events
           </div>
           <div className="flex gap-2">
             <button
@@ -227,8 +258,8 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
               Cancel
             </button>
             <button
-              onClick={() => onImport(editedSchedule)}
-              disabled={editedSchedule.length === 0}
+              onClick={() => onImport(editedSchedule.filter(t => !t.excluded))}
+              disabled={editedSchedule.filter(t => !t.excluded).length === 0}
               className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Import Schedule
