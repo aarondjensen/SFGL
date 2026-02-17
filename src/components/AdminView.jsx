@@ -148,7 +148,7 @@ export const AdminView = ({
     try {
       dialog.showToast(`Fetching leaderboard for ${t.name}...`, 'info');
       const data       = await slashGolfFetch('leaderboard', { tournId: t.slashGolfId, year: '2026' });
-      const apiPlayers = data.leaderboard || data.results || [];
+      const apiPlayers = data.leaderboardRows || data.leaderboard || data.results || [];
 
       if (apiPlayers.length === 0) {
         dialog.showToast('No results found in API yet.', 'error'); return;
