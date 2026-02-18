@@ -87,3 +87,81 @@ export const playerRankingsApi = {
     return data?.value || null;
   },
 };
+
+/**
+ * LIV Roster API
+ * Stores LIV Golf roster in Supabase for cross-device sync
+ */
+export const livRosterApi = {
+  /**
+   * Get all LIV players
+   */
+  async getAll() {
+    const { data, error } = await supabase
+      .from('liv_roster')
+      .select('player_name')
+      .order('player_name', { ascending: true });
+    
+    if (error) {
+      console.error('Error fetching LIV roster:', error);
+      throw error;
+    }
+    
+    return (data || []).map(row => row.player_name);
+  },
+
+  /**
+   * Replace entire LIV roster
+   */
+  async setAll(players) {
+    try {
+      // Delete all existing players
+      const { error: deleteError } = await supabase
+        .from('liv_roster')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      if (deleteError) throw deleteError;
+      
+      // Insert new roster
+      const rows = players.map(name => ({ player_name: name }));
+      
+      const { data, error: insertError } = await supabase
+        .from('liv_roster')
+        .insert(rows)
+        .select();
+      
+      if (insertError) throw insertError;
+      
+      return data;
+    } catch (error) {
+      console.error('Error updating LIV roster:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Add a single player
+   */
+  async addPlayer(playerName) {
+    const { data, error } = await supabase
+      .from('liv_roster')
+      .insert({ player_name: playerName })
+      .select();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Remove a single player
+   */
+  async removePlayer(playerName) {
+    const { error } = await supabase
+      .from('liv_roster')
+      .delete()
+      .eq('player_name', playerName);
+    
+    if (error) throw error;
+  },
+};
