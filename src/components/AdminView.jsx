@@ -41,7 +41,7 @@ export const AdminView = ({
     loadTimestamp();
   }, [STORAGE_KEYS.OWGR_LAST_SYNCED]);
 
-  useEffect(() {
+  useEffect(() => {
     if (!selectedTourneyForResults && activeTournament) {
       setSelectedTourneyForResults(activeTournament.name);
     }
