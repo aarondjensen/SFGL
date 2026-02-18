@@ -193,7 +193,7 @@ export const AdminView = ({
         : Object.keys(PGA_TOUR_IDS);
       
       // Get LIV roster to filter
-      const { livRosterApi } = await import('./api/supabase');
+      const { livRosterApi } = await import('../api/supabase');
       const livPlayersArray = await livRosterApi.getAll().catch(() => []);
       const livPlayers = new Set(livPlayersArray);
       
