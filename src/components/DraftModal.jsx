@@ -97,10 +97,20 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   };
 
   const getPlayerHeadshot = (playerName) => {
-    const headshotId = headshots[playerName];
+    // First try the headshots object (legacy)
+    let headshotId = headshots[playerName];
+    
+    // If not found, check if player has pgaTourId in allPlayers
+    if (!headshotId) {
+      const player = allPlayers.find(p => p.name === playerName);
+      headshotId = player?.pgaTourId;
+    }
+    
     if (headshotId) {
       return `https://pga-tour-res.cloudflare.com/resources/photoplayer/${headshotId}.jpg`;
     }
+    
+    // Fallback to UI Avatars
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1f2937&color=9ca3af&size=128`;
   };
 
