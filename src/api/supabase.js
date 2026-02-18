@@ -1,21 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 
-
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
- * Player Rankings API
- * Stores OWGR rankings in Supabase for cross-device sync
+ * ============================================================================
+ * PLAYERS API - Consolidated player data (rankings, headshots, stats)
+ * ============================================================================
  */
-
-/**
- * Unified Players API
- * Replace playerRankingsApi, headshotsApi, and playerStatsApi
- */
-
 export const playersApi = {
   /**
    * Get all players
@@ -63,6 +57,16 @@ export const playersApi = {
       .select();
     
     if (error) throw error;
+    
+    // Update metadata timestamp
+    const timestamp = Date.now();
+    await supabase
+      .from('app_metadata')
+      .upsert({ 
+        key: 'players_last_updated', 
+        value: timestamp.toString() 
+      });
+    
     return data;
   },
 
@@ -70,15 +74,16 @@ export const playersApi = {
    * Update single player
    */
   async update(name, updates) {
+    const updateData = {};
+    if (updates.worldRank !== undefined) updateData.world_rank = updates.worldRank;
+    if (updates.pgaTourId !== undefined) updateData.pga_tour_id = updates.pgaTourId;
+    if (updates.headshotUrl !== undefined) updateData.headshot_url = updates.headshotUrl;
+    if (updates.stats !== undefined) updateData.career_stats = updates.stats;
+    if (updates.isLiv !== undefined) updateData.is_liv = updates.isLiv;
+
     const { data, error } = await supabase
       .from('players')
-      .update({
-        world_rank: updates.worldRank,
-        pga_tour_id: updates.pgaTourId,
-        headshot_url: updates.headshotUrl,
-        career_stats: updates.stats,
-        is_liv: updates.isLiv,
-      })
+      .update(updateData)
       .eq('name', name)
       .select();
     
@@ -87,7 +92,7 @@ export const playersApi = {
   },
 
   /**
-   * Get players for frontend (mapped to old format for compatibility)
+   * Get players formatted for app (backward compatible with old format)
    */
   async getAllForApp() {
     const players = await this.getAll();
@@ -153,32 +158,52 @@ export const playersApi = {
       .upsert({ key: 'players_last_updated', value: timestamp });
   },
 };
+
 /**
- * Legacy Player Rankings API - Backward compatibility wrapper
- * Delegates to the new consolidated playersApi
+ * ============================================================================
+ * LEGACY APIs - Backward compatibility wrappers
+ * These delegate to the new consolidated playersApi
+ * ============================================================================
  */
 export const playerRankingsApi = {
   async getAll() {
     return await playersApi.getAllForApp();
   },
-  
   async updateAll(players) {
     return await playersApi.upsertMany(players);
   },
-  
   async getLastUpdated() {
     return await playersApi.getLastUpdated();
   },
 };
 
+export const headshotsApi = {
+  async getAll() {
+    return await playersApi.getHeadshotsMap();
+  },
+  async setAll(headshotsObject) {
+    console.warn('headshotsApi.setAll is deprecated - headshots are now part of players table');
+  },
+};
+
+export const playerStatsApi = {
+  async getAll() {
+    return await playersApi.getStatsMap();
+  },
+  async set(playerName, stats) {
+    return await playersApi.update(playerName, { stats });
+  },
+  async setAll(statsObject) {
+    console.warn('playerStatsApi.setAll is deprecated - stats are now part of players table');
+  },
+};
+
 /**
- * LIV Roster API
- * Stores LIV Golf roster in Supabase for cross-device sync
+ * ============================================================================
+ * LIV ROSTER API
+ * ============================================================================
  */
 export const livRosterApi = {
-  /**
-   * Get all LIV players
-   */
   async getAll() {
     const { data, error } = await supabase
       .from('liv_roster')
@@ -193,12 +218,8 @@ export const livRosterApi = {
     return (data || []).map(row => row.player_name);
   },
 
-  /**
-   * Replace entire LIV roster
-   */
   async setAll(players) {
     try {
-      // Delete all existing players
       const { error: deleteError } = await supabase
         .from('liv_roster')
         .delete()
@@ -206,7 +227,6 @@ export const livRosterApi = {
       
       if (deleteError) throw deleteError;
       
-      // Insert new roster
       const rows = players.map(name => ({ player_name: name }));
       
       const { data, error: insertError } = await supabase
@@ -223,9 +243,6 @@ export const livRosterApi = {
     }
   },
 
-  /**
-   * Add a single player
-   */
   async addPlayer(playerName) {
     const { data, error } = await supabase
       .from('liv_roster')
@@ -236,9 +253,6 @@ export const livRosterApi = {
     return data;
   },
 
-  /**
-   * Remove a single player
-   */
   async removePlayer(playerName) {
     const { error } = await supabase
       .from('liv_roster')
@@ -250,7 +264,9 @@ export const livRosterApi = {
 };
 
 /**
- * Teams API
+ * ============================================================================
+ * TEAMS API
+ * ============================================================================
  */
 export const teamsApi = {
   async getAll() {
@@ -263,7 +279,6 @@ export const teamsApi = {
   },
 
   async setAll(teams) {
-    // Delete and recreate
     await supabase.from('teams').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     const { data, error } = await supabase.from('teams').insert(teams).select();
     if (error) throw error;
@@ -282,7 +297,9 @@ export const teamsApi = {
 };
 
 /**
- * Tournaments API
+ * ============================================================================
+ * TOURNAMENTS API
+ * ============================================================================
  */
 export const tournamentsApi = {
   async getAll() {
@@ -313,7 +330,9 @@ export const tournamentsApi = {
 };
 
 /**
- * Transactions API
+ * ============================================================================
+ * TRANSACTIONS API
+ * ============================================================================
  */
 export const transactionsApi = {
   async getAll() {
@@ -343,7 +362,9 @@ export const transactionsApi = {
 };
 
 /**
- * Settings API
+ * ============================================================================
+ * SETTINGS API
+ * ============================================================================
  */
 export const settingsApi = {
   async get(key) {
@@ -378,46 +399,3 @@ export const settingsApi = {
     return settings;
   },
 };
-
-/**
- * Global Player Stats API
- */
-export const playerStatsApi = {
-  async getAll() {
-    // Delegates to new consolidated playersApi
-    return await playersApi.getStatsMap();
-  },
-  
-  async set(playerName, stats) {
-    // Delegates to new consolidated playersApi
-    return await playersApi.update(playerName, { stats });
-  },
-  
-  async setAll(statsObject) {
-    // This is deprecated - stats are now part of players table
-    console.warn('playerStatsApi.setAll is deprecated - use playersApi.upsertMany instead');
-    // Could implement migration logic here if needed, but not necessary
-  },
-};
-
-/**
- * Headshots API
- */
-export const headshotsApi = {
-  async getAll() {
-    // Delegates to new consolidated playersApi
-    return await playersApi.getHeadshotsMap();
-  },
-  
-  async setAll(headshotsObject) {
-    // This is deprecated - headshots are now part of players table
-    console.warn('headshotsApi.setAll is deprecated - use playersApi.upsertMany instead');
-    // Could implement migration logic here if needed, but not necessary
-  },
-};
-// Verify exports
-console.log('Supabase API exports loaded:', {
-  playersApi: !!playersApi,
-  playerRankingsApi: !!playerRankingsApi,
-  livRosterApi: !!livRosterApi,
-});
