@@ -198,3 +198,48 @@ export const CHAR_MAP = {
   'í':'i','ì':'i','î':'i','ï':'i',
   'ñ':'n','ç':'c','ß':'ss',
 };
+
+// ============================================================================
+// LIV GOLF ROSTER (2026 Season)
+// Updated manually from https://www.livgolf.com/teams
+// ============================================================================
+export const LIV_GOLF_ROSTER = [
+  // 4Aces GC
+  'Dustin Johnson', 'Patrick Reed', 'Pat Perez', 'Peter Uihlein',
+  
+  // Cleeks GC
+  'Martin Kaymer', 'Richard Bland', 'Kalle Samooja', 'Kieran Vincent',
+  
+  // Crushers GC
+  'Bryson DeChambeau', 'Charles Howell III', 'Anirban Lahiri', 'Beau Hossler',
+  
+  // Fireballs GC
+  'Sergio Garcia', 'Abraham Ancer', 'Eugenio Chacarra', 'David Puig',
+  
+  // HyFlyers GC
+  'Phil Mickelson', 'Andy Ogletree', 'Cameron Tringale', 'John Catlin',
+  
+  // Iron Heads GC
+  'Kevin Na', 'Danny Lee', 'Jinichiro Kozuma', 'Scott Vincent',
+  
+  // Legion XIII
+  'Jon Rahm', 'Tyrrell Hatton', 'Caleb Surratt', 'Kieran Shipley',
+  
+  // Majesticks GC
+  'Ian Poulter', 'Henrik Stenson', 'Sam Horsfield', 'Laurie Canter',
+  
+  // RangeGoats GC
+  'Bubba Watson', 'Thomas Pieters', 'Matthew Wolff', 'Peter McNealy',
+  
+  // Ripper GC
+  'Cameron Smith', 'Matt Jones', 'Lucas Herbert', 'Jed Morgan',
+  
+  // Smash GC
+  'Brooks Koepka', 'Talor Gooch', 'Jason Kokrak', 'Graeme McDowell',
+  
+  // Stinger GC
+  'Louis Oosthuizen', 'Charl Schwartzel', 'Branden Grace', 'Dean Burmester',
+  
+  // Torque GC
+  'Joaquin Niemann', 'Sebastian Munoz', 'Carlos Ortiz', 'Matti Schmid',
+];
