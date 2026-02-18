@@ -30,6 +30,9 @@ export const AdminView = ({
   const [rosterMgmtTeam, setRosterMgmtTeam] = useState('');
   const [playerSearch, setPlayerSearch] = useState('');
   const [owgrLastSynced, setOwgrLastSynced] = useState(null);
+  const [showPlayerIdInput, setShowPlayerIdInput] = useState(false);
+  const [playerIdSearch, setPlayerIdSearch] = useState('');
+  const [playerIdValue, setPlayerIdValue] = useState('');
   const dialog = useDialog();
   const activeTournament = tournaments.find(t => t.playing);
 
@@ -405,6 +408,51 @@ export const AdminView = ({
     }
   };
 
+  // ── Add PGA Tour ID ───────────────────────────────────────────────────────
+  const handleAddPlayerId = async () => {
+    if (!playerIdSearch || !playerIdValue) {
+      dialog.showToast('Please enter both player name and PGA Tour ID', 'error');
+      return;
+    }
+
+    try {
+      // Find player in current rankings
+      const player = allPlayers.find(p => 
+        p.name.toLowerCase().includes(playerIdSearch.toLowerCase())
+      );
+
+      if (!player) {
+        dialog.showToast('Player not found in rankings', 'error');
+        return;
+      }
+
+      // Update in Supabase
+      const { supabase } = await import('../api/supabase');
+      const { error } = await supabase
+        .from('player_rankings')
+        .update({ pga_tour_id: playerIdValue })
+        .eq('name', player.name);
+
+      if (error) throw error;
+
+      // Update local state
+      const updatedPlayers = allPlayers.map(p =>
+        p.name === player.name ? { ...p, pgaTourId: playerIdValue } : p
+      );
+      updateRankings(updatedPlayers);
+
+      dialog.showToast(`✓ Added PGA Tour ID ${playerIdValue} for ${player.name}`, 'success');
+      
+      // Reset form
+      setPlayerIdSearch('');
+      setPlayerIdValue('');
+      setShowPlayerIdInput(false);
+    } catch (error) {
+      console.error('Add Player ID error:', error);
+      dialog.showToast(`Failed to add ID: ${error.message}`, 'error');
+    }
+  };
+
   // ── Mulligan reset ────────────────────────────────────────────────────────
   const resetMulligan = (teamId, type) => {
     const team = teams.find(t => t.id === teamId);
@@ -551,15 +599,15 @@ export const AdminView = ({
         </div>
       </div>
 
-      {/* Schedule + Player sync */}
+      {/* Player Management */}
       <div className="bg-teal-900/10 border border-teal-700/50 p-4 rounded-xl">
-        <h3 className="font-bold text-teal-400 flex items-center gap-2 mb-4">🌎 World Rankings &amp; Schedule Sync</h3>
+        <h3 className="font-bold text-teal-400 flex items-center gap-2 mb-4">👤 Player Management</h3>
         <div className="grid grid-cols-2 gap-2 mb-2">
-          <button onClick={() => setShowScheduleImporter(true)} className="bg-purple-600 hover:bg-purple-700 py-2 rounded text-sm font-bold transition-colors">
-            Import 2026 Schedule
-          </button>
           <button onClick={handleSyncPlayers} className="bg-teal-600 hover:bg-teal-700 py-2 rounded-lg text-sm font-bold transition-colors">
             Sync OWGR Top 250
+          </button>
+          <button onClick={() => setShowPlayerIdInput(true)} className="bg-blue-600 hover:bg-blue-700 py-2 rounded-lg text-sm font-bold transition-colors">
+            Add PGA Tour ID
           </button>
         </div>
         <div className="mt-2 space-y-1">
@@ -726,6 +774,17 @@ export const AdminView = ({
         </div>
       </div>
 
+      {/* Schedule Import */}
+      <div className="bg-purple-900/20 border border-purple-700/50 p-4 rounded-xl">
+        <h3 className="font-bold text-purple-400 flex items-center gap-2 mb-3">📅 Tournament Schedule</h3>
+        <button
+          onClick={() => setShowScheduleImporter(true)}
+          className="w-full py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-bold transition-colors"
+        >
+          Import 2026 Schedule
+        </button>
+      </div>
+
       {/* Draft */}
       <div className="bg-orange-900/20 border border-orange-700/50 p-4 rounded-xl">
         <h3 className="font-bold text-orange-400 flex items-center gap-2 mb-3">🎯 Start New Draft</h3>
@@ -756,6 +815,94 @@ export const AdminView = ({
           onImport={handleImportSchedule}
           onCancel={() => setShowScheduleImporter(false)}
         />
+      )}
+
+      {/* Player ID Input Modal */}
+      {showPlayerIdInput && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full border border-blue-600">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold">Add PGA Tour ID</h3>
+              <button
+                onClick={() => {
+                  setShowPlayerIdInput(false);
+                  setPlayerIdSearch('');
+                  setPlayerIdValue('');
+                }}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-gray-400 block mb-1">Search Player</label>
+                <input
+                  type="text"
+                  placeholder="Player name..."
+                  value={playerIdSearch}
+                  onChange={e => setPlayerIdSearch(e.target.value)}
+                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm"
+                  autoFocus
+                />
+                {playerIdSearch && (
+                  <div className="mt-2 max-h-32 overflow-y-auto bg-gray-900 rounded border border-gray-700">
+                    {allPlayers
+                      .filter(p => p.name.toLowerCase().includes(playerIdSearch.toLowerCase()))
+                      .slice(0, 5)
+                      .map(player => (
+                        <button
+                          key={player.name}
+                          onClick={() => setPlayerIdSearch(player.name)}
+                          className="w-full text-left px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0"
+                        >
+                          <div className="font-medium text-sm">{player.name}</div>
+                          <div className="text-xs text-gray-400">
+                            Rank: #{player.worldRank}
+                            {player.pgaTourId && ` • ID: ${player.pgaTourId}`}
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-400 block mb-1">PGA Tour ID</label>
+                <input
+                  type="text"
+                  placeholder="e.g., 46046"
+                  value={playerIdValue}
+                  onChange={e => setPlayerIdValue(e.target.value)}
+                  className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Find player IDs on pgatour.com or from API responses
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setShowPlayerIdInput(false);
+                    setPlayerIdSearch('');
+                    setPlayerIdValue('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg font-bold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddPlayerId}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold transition-colors"
+                >
+                  Add ID
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Draft Modal */}
