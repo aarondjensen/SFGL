@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Search } from 'lucide-react';
 
-export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
+export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots = {} }) => {
   const [phase, setPhase] = useState('order'); // 'order', 'keepers', or 'draft'
   const [draftOrder, setDraftOrder] = useState(teams.map((t, i) => ({ ...t, order: i })));
   const [keeperTeamIndex, setKeeperTeamIndex] = useState(0);
@@ -13,6 +13,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
   const [limitedSearch, setLimitedSearch] = useState('');
   const [unlimitedSearch, setUnlimitedSearch] = useState('');
   const [draggedIndex, setDraggedIndex] = useState(null);
+  const [confirmDraft, setConfirmDraft] = useState(null); // { playerName, type }
 
   // Initialize keepers object
   useEffect(() => {
@@ -95,6 +96,14 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
     setPhase('keepers');
   };
 
+  const getPlayerHeadshot = (playerName) => {
+    const headshotId = headshots[playerName];
+    if (headshotId) {
+      return `https://pga-tour-res.cloudflare.com/resources/photoplayer/${headshotId}.jpg`;
+    }
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1f2937&color=9ca3af&size=128`;
+  };
+
   const handleKeeperSelect = (playerName, type, stars = 1) => {
     const updatedKeepers = { ...keepers };
     if (type === 'limited') {
@@ -161,6 +170,11 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
   };
 
   const handleDraftPlayer = (playerName) => {
+    setConfirmDraft({ playerName, type: currentRound <= 2 ? 'limited' : 'unlimited' });
+  };
+
+  const confirmDraftPlayer = () => {
+    const playerName = confirmDraft.playerName;
     const isLimitedRound = currentRound <= 2;
     
     // Add player to current team using draftOrder
@@ -168,7 +182,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
       if (team.id === currentTeam.id) {
         const newPlayer = {
           name: playerName,
-          stars: isLimitedRound ? 1 : 0, // Limited players get 1 star (Year 1)
+          stars: isLimitedRound ? 1 : 0,
           starts: 0,
           limited: isLimitedRound,
           unlimited: !isLimitedRound,
@@ -206,6 +220,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
     }
 
     setSearchQuery('');
+    setConfirmDraft(null);
   };
 
   const maxRounds = 12; // 2 limited + 10 unlimited
@@ -395,13 +410,19 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
                                 handleKeeperSelect(player.name, 'limited', 2);
                                 setLimitedSearch('');
                               }}
-                              className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 text-left transition-colors"
+                              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 text-left transition-colors"
                             >
-                              <div>
-                                <div className="font-medium text-sm">{player.name}</div>
+                              <img
+                                src={getPlayerHeadshot(player.name)}
+                                onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=1f2937&color=9ca3af&size=64`; }}
+                                alt=""
+                                className="w-10 h-10 rounded-full object-cover border border-yellow-600 flex-shrink-0"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-sm truncate">{player.name}</div>
                                 <div className="text-xs text-gray-400">Rank: {player.worldRank}</div>
                               </div>
-                              <div className="text-yellow-400 font-bold text-xs">Select</div>
+                              <div className="text-yellow-400 font-bold text-xs flex-shrink-0">Select</div>
                             </button>
                           ))
                         ) : (
@@ -456,13 +477,19 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
                                 handleKeeperSelect(player.name, 'unlimited');
                                 setUnlimitedSearch('');
                               }}
-                              className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 text-left transition-colors"
+                              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 text-left transition-colors"
                             >
-                              <div>
-                                <div className="font-medium text-sm">{player.name}</div>
+                              <img
+                                src={getPlayerHeadshot(player.name)}
+                                onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=1f2937&color=9ca3af&size=64`; }}
+                                alt=""
+                                className="w-10 h-10 rounded-full object-cover border border-blue-600 flex-shrink-0"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-sm truncate">{player.name}</div>
                                 <div className="text-xs text-gray-400">Rank: {player.worldRank}</div>
                               </div>
-                              <div className="text-blue-400 font-bold text-xs">Select</div>
+                              <div className="text-blue-400 font-bold text-xs flex-shrink-0">Select</div>
                             </button>
                           ))
                         ) : (
@@ -555,17 +582,25 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
                   <button
                     key={player.name}
                     onClick={() => handleDraftPlayer(player.name)}
-                    className={`flex items-center justify-between rounded-lg px-4 py-3 text-left transition-colors ${
+                    className={`flex items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
                       isLimitedRound
                         ? 'bg-yellow-900/20 hover:bg-yellow-900/30 border border-yellow-700/50'
                         : 'bg-blue-900/20 hover:bg-blue-900/30 border border-blue-700/50'
                     }`}
                   >
-                    <div>
-                      <div className="font-medium">{player.name}</div>
+                    <img
+                      src={getPlayerHeadshot(player.name)}
+                      onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=1f2937&color=9ca3af&size=64`; }}
+                      alt=""
+                      className={`w-12 h-12 rounded-full object-cover border-2 flex-shrink-0 ${
+                        isLimitedRound ? 'border-yellow-600' : 'border-blue-600'
+                      }`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{player.name}</div>
                       <div className="text-xs text-gray-400">Rank: {player.worldRank}</div>
                     </div>
-                    <div className={`font-bold text-sm ${isLimitedRound ? 'text-yellow-400' : 'text-blue-400'}`}>
+                    <div className={`font-bold text-sm flex-shrink-0 ${isLimitedRound ? 'text-yellow-400' : 'text-blue-400'}`}>
                       Draft {isLimitedRound ? '(L)' : '(U)'}
                     </div>
                   </button>
@@ -595,6 +630,48 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
           </>
         )}
       </div>
+
+      {/* Confirmation Modal */}
+      {confirmDraft && (
+        <div className="absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-10">
+          <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full border-2 border-green-600 shadow-2xl">
+            <h3 className="text-xl font-bold mb-4 text-center">Confirm Draft Pick</h3>
+            <div className="flex flex-col items-center gap-4 mb-6">
+              <img
+                src={getPlayerHeadshot(confirmDraft.playerName)}
+                onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(confirmDraft.playerName)}&background=1f2937&color=9ca3af&size=128`; }}
+                alt=""
+                className={`w-24 h-24 rounded-full object-cover border-4 ${
+                  confirmDraft.type === 'limited' ? 'border-yellow-500' : 'border-blue-500'
+                }`}
+              />
+              <div className="text-center">
+                <div className="text-lg font-bold">{confirmDraft.playerName}</div>
+                <div className={`text-sm font-medium ${confirmDraft.type === 'limited' ? 'text-yellow-400' : 'text-blue-400'}`}>
+                  {confirmDraft.type === 'limited' ? 'Limited Player' : 'Unlimited Player'}
+                </div>
+              </div>
+            </div>
+            <div className="text-sm text-gray-400 text-center mb-6">
+              Draft <span className="text-white font-bold">{confirmDraft.playerName}</span> for <span className="text-green-400 font-bold">{currentTeam.name}</span>?
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDraft(null)}
+                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg font-bold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDraftPlayer}
+                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold transition-colors"
+              >
+                Confirm Draft
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

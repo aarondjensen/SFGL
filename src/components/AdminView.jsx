@@ -560,6 +560,7 @@ export const AdminView = ({
           allPlayers={allPlayers}
           updateTeams={updateTeams}
           onClose={() => setShowDraftModal(false)}
+          headshots={headshots}
         />
       )}
     </div>
