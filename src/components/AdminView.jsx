@@ -474,6 +474,45 @@ export const AdminView = ({
     }
   };
 
+  const handleFetchLivRoster = async () => {
+    try {
+      dialog.showToast('Fetching current LIV Golf roster...', 'info');
+      
+      const livPlayers = new Set();
+      
+      // Try to fetch from LIV schedule API
+      for (const yr of ['2026', '2025']) {
+        try {
+          const livData = await slashGolfFetch('schedule', { orgId: '2', year: yr });
+          if (livData?.schedule?.length > 0) {
+            const firstLivId = livData.schedule[0].tournId;
+            const livTourney = await slashGolfFetch('tournament', { orgId: '2', tournId: firstLivId, year: yr });
+            livTourney.players?.forEach(p => {
+              const pObj = p?.player || p || {};
+              const name = `${pObj.firstName || ''} ${pObj.lastName || ''}`.trim();
+              if (name) livPlayers.add(name);
+            });
+            
+            if (livPlayers.size > 0) {
+              console.log(`Fetched ${livPlayers.size} LIV players from ${yr} season`);
+              const sortedPlayers = [...livPlayers].sort();
+              setLivRoster(sortedPlayers);
+              dialog.showToast(`✓ Fetched ${livPlayers.size} LIV players`, 'success');
+              return;
+            }
+          }
+        } catch (e) {
+          console.log(`Failed to fetch LIV roster for ${yr}:`, e);
+        }
+      }
+      
+      dialog.showToast('Could not fetch LIV roster. Add players manually.', 'warning');
+    } catch (error) {
+      console.error('Error fetching LIV roster:', error);
+      dialog.showToast('Failed to fetch LIV roster', 'error');
+    }
+  };
+
   const handleAddLivPlayer = () => {
     const playerName = livPlayerInput.trim();
     if (!playerName) return;
@@ -980,6 +1019,14 @@ export const AdminView = ({
             <p className="text-sm text-gray-400 mb-4">
               Players in this list will be filtered out during OWGR sync.
             </p>
+
+            {/* Fetch from API */}
+            <button
+              onClick={handleFetchLivRoster}
+              className="w-full mb-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-bold transition-colors"
+            >
+              🔄 Fetch Current LIV Roster from API
+            </button>
 
             {/* Add Player */}
             <div className="mb-4">
