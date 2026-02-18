@@ -178,6 +178,83 @@ export const AdminView = ({
     }
   };
 
+  // ── CSV Upload Handler ────────────────────────────────────────────────────
+  const handleCsvUpload = async (file) => {
+    if (!file) return;
+    
+    try {
+      dialog.showToast('Processing CSV...', 'info');
+      const text = await file.text();
+      const lines = text.split('\n').slice(1); // Skip header
+      
+      // Build list of known names
+      const knownNames = allPlayers.length > 0 
+        ? allPlayers.map(p => p.name)
+        : Object.keys(PGA_TOUR_IDS);
+      
+      // Get LIV roster to filter
+      const { livRosterApi } = await import('./api/supabase');
+      const livPlayersArray = await livRosterApi.getAll().catch(() => []);
+      const livPlayers = new Set(livPlayersArray);
+      
+      const csvPlayers = [];
+      const resolvedNames = new Set();
+      
+      let lineNum = 0;
+      for (const line of lines) {
+        lineNum++;
+        if (!line.trim()) continue;
+        
+        const match = line.match(/(?:^|,)("(?:[^"]+|"")*"|[^,]*)/g);
+        if (!match || match.length < 7) continue;
+        
+        const fields = match.map(f => f.replace(/^,?"?|"?$/g, '').replace(/""/g, '"'));
+        const rank = parseInt(fields[1]) || 999;
+        const csvName = fields[5]?.trim();
+        
+        if (!csvName) continue;
+        
+        const resolvedName = window.resolvePlayerName(csvName, knownNames);
+        const finalName = resolvedName || csvName;
+        
+        if (resolvedNames.has(finalName) || livPlayers.has(finalName) || csvPlayers.length >= 250) {
+          continue;
+        }
+        
+        const pgaTourId = PGA_TOUR_IDS[finalName] || null;
+        
+        csvPlayers.push({ 
+          name: finalName, 
+          worldRank: rank,
+          pgaTourId: pgaTourId
+        });
+        resolvedNames.add(finalName);
+        
+        if (resolvedName && resolvedName !== csvName) {
+          console.log(`Resolved: "${csvName}" → "${resolvedName}"`);
+        }
+      }
+      
+      if (csvPlayers.length > 0) {
+        const withIds = csvPlayers.filter(p => p.pgaTourId).length;
+        console.log(`Final CSV result: ${csvPlayers.length} players parsed`);
+        console.log(`  → ${withIds} players have PGA Tour IDs (${Math.round(withIds/csvPlayers.length*100)}%)`);
+        
+        const now = Date.now();
+        await storage.set(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
+        setOwgrLastSynced(now);
+        updateRankings(csvPlayers);
+        dialog.showToast(`✓ Loaded ${csvPlayers.length} players from CSV (${withIds} with PGA Tour IDs)!`, 'success');
+      } else {
+        dialog.showToast('No valid players found in CSV', 'error');
+      }
+    } catch (err) {
+      console.error('CSV parse error:', err);
+      console.error('Error details:', err.message, err.stack);
+      dialog.showToast(`Failed to parse CSV: ${err.message}`, 'error');
+    }
+  };
+
   // ── Player Sync ───────────────────────────────────────────────────────────
   const handleSyncPlayers = async () => {
     // Check if synced recently (within 7 days)
@@ -186,12 +263,29 @@ export const AdminView = ({
     
     if (owgrLastSynced && (now - owgrLastSynced < sevenDays)) {
       const daysSince = Math.floor((now - owgrLastSynced) / (24 * 60 * 60 * 1000));
-      const warning = await dialog.showConfirm(
-        '⚠️ Recent Sync Detected',
-        `OWGR was synced ${daysSince} day${daysSince === 1 ? '' : 's'} ago.\n\nSyncing frequently uses API calls. OWGR rankings don't change much week-to-week.\n\nRecommendation: Sync every 2-3 weeks to conserve API quota.\n\nContinue anyway?`,
-        { type: 'warning', confirmText: 'Sync Anyway' }
+      
+      // Show 3-option dialog using window.confirm cascade
+      const message = `⚠️ RECENT SYNC DETECTED\n\nOWGR was synced ${daysSince} day${daysSince === 1 ? '' : 's'} ago.\n\nSyncing frequently uses API calls. OWGR rankings don't change much week-to-week.\n\nRecommendation: Sync every 2-3 weeks to conserve API quota.\n\nOPTIONS:\n1. Upload CSV from owgr.com (0 API calls)\n2. Sync with API anyway (~3 API calls)\n3. Cancel\n\nClick OK to see options.`;
+      
+      if (!window.confirm(message)) return;
+      
+      // Ask which option
+      const choice = window.prompt(
+        'Choose option:\n\n1 = Upload CSV (recommended, 0 API calls)\n2 = Sync with API (~3 calls)\n\nDownload CSV from:\nhttps://www.owgr.com/current-world-ranking\n\nEnter 1 or 2:'
       );
-      if (!warning) return;
+      
+      if (choice === '1') {
+        // Trigger CSV upload
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.csv';
+        input.onchange = async (e) => await handleCsvUpload(e.target.files[0]);
+        input.click();
+        return;
+      } else if (choice !== '2') {
+        return; // Cancel
+      }
+      // If choice === '2', continue to API sync below
     }
 
     const ok = await dialog.showConfirm(
@@ -303,97 +397,7 @@ export const AdminView = ({
           const input = document.createElement('input');
           input.type = 'file';
           input.accept = '.csv';
-          input.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            try {
-              dialog.showToast('Processing CSV...', 'info');
-              const text = await file.text();
-              const lines = text.split('\n').slice(1); // Skip header
-              
-              // Build list of known names from current player pool
-              // If allPlayers is empty, use PGA_TOUR_IDS as fallback
-              const knownNames = allPlayers.length > 0 
-                ? allPlayers.map(p => p.name)
-                : Object.keys(PGA_TOUR_IDS);
-              
-              console.log(`Known names for resolution: ${knownNames.length} players`);
-              
-              const csvPlayers = [];
-              const resolvedNames = new Set(); // Track already added names
-              
-              let lineNum = 0;
-              for (const line of lines) {
-                lineNum++;
-                if (!line.trim()) continue;
-                
-                // Parse CSV line (handles quoted fields)
-                const match = line.match(/(?:^|,)("(?:[^"]+|"")*"|[^,]*)/g);
-                if (!match || match.length < 7) continue;
-                
-                const fields = match.map(f => f.replace(/^,?"?|"?$/g, '').replace(/""/g, '"'));
-                const rank = parseInt(fields[1]) || 999;
-                const csvName = fields[5]?.trim();
-                
-                if (!csvName) continue;
-                
-                // Log first 10 players for debugging
-                if (lineNum <= 10) {
-                  console.log(`Line ${lineNum}: Rank=${rank}, Name="${csvName}"`);
-                }
-                
-                // Try to resolve name using the same logic as API sync
-                const resolvedName = window.resolvePlayerName(csvName, knownNames);
-                const finalName = resolvedName || csvName;
-                
-                // Skip if already added, is a LIV player, or we hit 250 limit
-                if (resolvedNames.has(finalName) || livPlayers.has(finalName) || csvPlayers.length >= 250) {
-                  if (lineNum <= 10) {
-                    console.log(`  → Skipped (duplicate=${resolvedNames.has(finalName)}, LIV=${livPlayers.has(finalName)}, limit=${csvPlayers.length >= 250})`);
-                  }
-                  continue;
-                }
-                
-                // Look up PGA Tour ID from constants
-                const pgaTourId = PGA_TOUR_IDS[finalName] || null;
-                
-                csvPlayers.push({ 
-                  name: finalName, 
-                  worldRank: rank,
-                  pgaTourId: pgaTourId
-                });
-                resolvedNames.add(finalName);
-                
-                // Log name resolution for debugging
-                if (resolvedName && resolvedName !== csvName) {
-                  console.log(`Resolved: "${csvName}" → "${resolvedName}"`);
-                }
-                if (lineNum <= 10 && pgaTourId) {
-                  console.log(`  → PGA Tour ID: ${pgaTourId}`);
-                }
-              }
-              
-              if (csvPlayers.length > 0) {
-                const withIds = csvPlayers.filter(p => p.pgaTourId).length;
-                console.log(`Final CSV result: ${csvPlayers.length} players parsed`);
-                console.log(`  → ${withIds} players have PGA Tour IDs (${Math.round(withIds/csvPlayers.length*100)}%)`);
-                console.log('First 5 players:', csvPlayers.slice(0, 5).map(p => `${p.name} (#${p.worldRank}${p.pgaTourId ? `, ID:${p.pgaTourId}` : ''})`).join(', '));
-                console.log('Justin Rose?', csvPlayers.find(p => p.name.includes('Rose')));
-                
-                await storage.set(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
-                setOwgrLastSynced(now);
-                updateRankings(csvPlayers);
-                dialog.showToast(`✓ Loaded ${csvPlayers.length} players from CSV (${withIds} with PGA Tour IDs)!`, 'success');
-              } else {
-                dialog.showToast('No valid players found in CSV', 'error');
-              }
-            } catch (err) {
-              console.error('CSV parse error:', err);
-              console.error('Error details:', err.message, err.stack);
-              dialog.showToast(`Failed to parse CSV: ${err.message}`, 'error');
-            }
-          };
+          input.onchange = async (e) => await handleCsvUpload(e.target.files[0]);
           input.click();
           return; // Exit after triggering upload
         } else {
