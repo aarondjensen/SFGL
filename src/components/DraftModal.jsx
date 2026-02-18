@@ -349,15 +349,27 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
             <div className="space-y-4">
               {/* Limited Keeper */}
               <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <div className="w-7 h-7 bg-yellow-600 rounded text-sm font-bold flex items-center justify-center">L</div>
-                    <span className="font-bold">Limited Player</span>
+                    <span className="font-bold whitespace-nowrap">Yellow Keeper</span>
                   </div>
+                  {!currentKeeper.limited && (
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search for Limited player..."
+                        value={limitedSearch}
+                        onChange={e => setLimitedSearch(e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-sm"
+                      />
+                    </div>
+                  )}
                   {currentKeeper.limited && (
                     <button
                       onClick={() => handleKeeperSelect(null, 'limited')}
-                      className="text-xs text-red-400 hover:text-red-300 font-medium"
+                      className="text-xs text-red-400 hover:text-red-300 font-medium ml-auto"
                     >
                       Clear
                     </button>
@@ -390,16 +402,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                   </div>
                 ) : (
                   <div>
-                    <div className="relative mb-2">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="Search for Limited player..."
-                        value={limitedSearch}
-                        onChange={e => setLimitedSearch(e.target.value)}
-                        className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-sm"
-                      />
-                    </div>
                     {limitedSearch.trim() && !currentKeeper.limited && (
                       <div className="h-32 overflow-y-auto bg-gray-900 rounded border border-gray-700">
                         {limitedSearchResults.length > 0 ? (
@@ -436,15 +438,27 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
 
               {/* Unlimited Keeper */}
               <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <div className="w-7 h-7 bg-blue-600 rounded text-sm font-bold flex items-center justify-center">U</div>
-                    <span className="font-bold">Unlimited Player</span>
+                    <span className="font-bold whitespace-nowrap">Blue Keeper</span>
                   </div>
+                  {!currentKeeper.unlimited && (
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search for Unlimited player..."
+                        value={unlimitedSearch}
+                        onChange={e => setUnlimitedSearch(e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-sm"
+                      />
+                    </div>
+                  )}
                   {currentKeeper.unlimited && (
                     <button
                       onClick={() => handleKeeperSelect(null, 'unlimited')}
-                      className="text-xs text-red-400 hover:text-red-300 font-medium"
+                      className="text-xs text-red-400 hover:text-red-300 font-medium ml-auto"
                     >
                       Clear
                     </button>
@@ -457,16 +471,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                   </div>
                 ) : (
                   <div>
-                    <div className="relative mb-2">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="Search for Unlimited player..."
-                        value={unlimitedSearch}
-                        onChange={e => setUnlimitedSearch(e.target.value)}
-                        className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-sm"
-                      />
-                    </div>
                     {unlimitedSearch.trim() && !currentKeeper.unlimited && (
                       <div className="h-32 overflow-y-auto bg-gray-900 rounded border border-gray-700">
                         {unlimitedSearchResults.length > 0 ? (
