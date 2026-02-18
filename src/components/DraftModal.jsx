@@ -12,6 +12,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [limitedSearch, setLimitedSearch] = useState('');
   const [unlimitedSearch, setUnlimitedSearch] = useState('');
+  const [draggedIndex, setDraggedIndex] = useState(null);
 
   // Initialize keepers object
   useEffect(() => {
@@ -67,6 +68,27 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
     const newOrder = [...draftOrder];
     [newOrder[fromIndex], newOrder[toIndex]] = [newOrder[toIndex], newOrder[fromIndex]];
     setDraftOrder(newOrder);
+  };
+
+  const handleDragStart = (index) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    
+    const newOrder = [...draftOrder];
+    const draggedItem = newOrder[draggedIndex];
+    newOrder.splice(draggedIndex, 1);
+    newOrder.splice(index, 0, draggedItem);
+    
+    setDraftOrder(newOrder);
+    setDraggedIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
   };
 
   const handleStartKeepers = () => {
@@ -209,17 +231,31 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
               {draftOrder.map((team, idx) => (
                 <div
                   key={team.id}
-                  className="flex items-center justify-between bg-gray-700/50 rounded-lg px-4 py-3"
+                  draggable
+                  onDragStart={() => handleDragStart(idx)}
+                  onDragOver={(e) => handleDragOver(e, idx)}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center justify-between bg-gray-700/50 rounded-lg px-4 py-3 cursor-move transition-all ${
+                    draggedIndex === idx 
+                      ? 'opacity-50 scale-95' 
+                      : 'hover:bg-gray-700 hover:shadow-lg'
+                  }`}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center font-bold">
                       {idx + 1}
                     </div>
-                    <span className="font-medium">{team.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400">⋮⋮</span>
+                      <span className="font-medium">{team.name}</span>
+                    </div>
                   </div>
                   <div className="flex gap-1">
                     <button
-                      onClick={() => moveDraftOrder(idx, -1)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveDraftOrder(idx, -1);
+                      }}
                       disabled={idx === 0}
                       className={`w-8 h-8 rounded flex items-center justify-center ${
                         idx === 0
@@ -230,7 +266,10 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
                       ▲
                     </button>
                     <button
-                      onClick={() => moveDraftOrder(idx, 1)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveDraftOrder(idx, 1);
+                      }}
                       disabled={idx === draftOrder.length - 1}
                       className={`w-8 h-8 rounded flex items-center justify-center ${
                         idx === draftOrder.length - 1
