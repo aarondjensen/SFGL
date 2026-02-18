@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings, Edit2, Save, X } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { slashGolfFetch, processTournamentData, makePlayer, resolvePlayerName } from '../utils';
-import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA } from '../constants';
+import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA, LIV_GOLF_ROSTER } from '../constants';
 import { storage } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
 import { DraftModal } from './DraftModal';
@@ -205,29 +205,35 @@ export const AdminView = ({
       dialog.showToast('Fetching LIV Golf Roster...', 'info');
       const livPlayers = new Set();
       
-      // Check if we have cached LIV data (within 30 days)
-      const livCacheKey = 'fantasy-golf-liv-cache';
-      const livCacheTimestampKey = 'fantasy-golf-liv-cache-timestamp';
-      let usedCache = false;
-      
+      // Load LIV roster from Supabase first, fallback to localStorage
+      const { livRosterApi } = await import('../api/supabase');
       try {
-        const cacheTimestamp = await storage.get(livCacheTimestampKey);
-        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-        
-        if (cacheTimestamp && (now - parseInt(cacheTimestamp) < thirtyDays)) {
-          const cached = await storage.get(livCacheKey);
-          if (cached) {
-            const cachedPlayers = JSON.parse(cached);
-            cachedPlayers.forEach(name => livPlayers.add(name));
-            console.log(`Using cached LIV roster (${livPlayers.size} players)`);
-            usedCache = true;
-          }
+        const supabaseLivPlayers = await livRosterApi.getAll();
+        if (supabaseLivPlayers.length > 0) {
+          supabaseLivPlayers.forEach(name => livPlayers.add(name));
+          console.log(`Using LIV roster from Supabase (${livPlayers.size} players)`);
+          
+          // Update localStorage cache as backup
+          await storage.set('fantasy-golf-liv-cache', JSON.stringify(supabaseLivPlayers));
+          await storage.set('fantasy-golf-liv-cache-timestamp', now.toString());
         }
-      } catch (e) {
-        console.log('No LIV cache available');
+      } catch (supabaseError) {
+        console.warn('Supabase LIV roster fetch failed, trying localStorage:', supabaseError);
+        
+        // Fallback to localStorage cache
+        const livCacheKey = 'fantasy-golf-liv-cache';
+        const cached = await storage.get(livCacheKey);
+        if (cached) {
+          const cachedPlayers = JSON.parse(cached);
+          cachedPlayers.forEach(name => livPlayers.add(name));
+          console.log(`Using cached LIV roster from localStorage (${livPlayers.size} players)`);
+        }
       }
       
-      if (!usedCache) {
+      // If no LIV roster found anywhere, try API fallback
+      if (livPlayers.size === 0) {
+        console.log('No LIV roster found in Supabase or cache, attempting API fetch...');
+        
         for (const yr of ['2026', '2025']) {
           try {
             const livData = await slashGolfFetch('schedule', { orgId: '2', year: yr });
@@ -240,11 +246,10 @@ export const AdminView = ({
                 if (name) livPlayers.add(name);
               });
               
-              // Cache LIV roster
-              await storage.set(livCacheKey, JSON.stringify([...livPlayers]));
-              await storage.set(livCacheTimestampKey, now.toString());
-              console.log(`Cached LIV roster (${livPlayers.size} players):`, [...livPlayers].sort());
-              break;
+              if (livPlayers.size > 0) {
+                console.log(`Fetched LIV roster from API (${livPlayers.size} players)`);
+                break;
+              }
             }
           } catch { /* try next year */ }
         }
@@ -459,13 +464,38 @@ export const AdminView = ({
   // ── LIV Roster Management ─────────────────────────────────────────────────
   const handleOpenLivManager = async () => {
     try {
-      const cached = await storage.get('fantasy-golf-liv-cache');
-      if (cached) {
-        const players = JSON.parse(cached);
-        setLivRoster(players.sort());
-      } else {
-        setLivRoster([]);
+      dialog.showToast('Loading LIV roster...', 'info');
+      
+      // Load from Supabase first, fallback to localStorage
+      const { livRosterApi } = await import('../api/supabase');
+      try {
+        const players = await livRosterApi.getAll();
+        if (players.length > 0) {
+          console.log(`Loaded ${players.length} LIV players from Supabase`);
+          setLivRoster(players);
+        } else {
+          // Try localStorage as fallback
+          const cached = await storage.get('fantasy-golf-liv-cache');
+          if (cached) {
+            const localPlayers = JSON.parse(cached);
+            setLivRoster(localPlayers.sort());
+            console.log(`Loaded ${localPlayers.length} LIV players from localStorage`);
+          } else {
+            setLivRoster([]);
+          }
+        }
+      } catch (supabaseError) {
+        console.warn('Supabase LIV roster fetch failed:', supabaseError);
+        // Fallback to localStorage
+        const cached = await storage.get('fantasy-golf-liv-cache');
+        if (cached) {
+          const localPlayers = JSON.parse(cached);
+          setLivRoster(localPlayers.sort());
+        } else {
+          setLivRoster([]);
+        }
       }
+      
       setShowLivManager(true);
     } catch (error) {
       console.error('Failed to load LIV roster:', error);
@@ -476,40 +506,17 @@ export const AdminView = ({
 
   const handleFetchLivRoster = async () => {
     try {
-      dialog.showToast('Fetching current LIV Golf roster...', 'info');
+      dialog.showToast('Loading LIV Golf roster...', 'info');
       
-      const livPlayers = new Set();
+      // Use curated LIV roster from constants (manually updated from livgolf.com/teams)
+      const sortedPlayers = [...LIV_GOLF_ROSTER].sort();
+      setLivRoster(sortedPlayers);
       
-      // Try to fetch from LIV schedule API
-      for (const yr of ['2026', '2025']) {
-        try {
-          const livData = await slashGolfFetch('schedule', { orgId: '2', year: yr });
-          if (livData?.schedule?.length > 0) {
-            const firstLivId = livData.schedule[0].tournId;
-            const livTourney = await slashGolfFetch('tournament', { orgId: '2', tournId: firstLivId, year: yr });
-            livTourney.players?.forEach(p => {
-              const pObj = p?.player || p || {};
-              const name = `${pObj.firstName || ''} ${pObj.lastName || ''}`.trim();
-              if (name) livPlayers.add(name);
-            });
-            
-            if (livPlayers.size > 0) {
-              console.log(`Fetched ${livPlayers.size} LIV players from ${yr} season`);
-              const sortedPlayers = [...livPlayers].sort();
-              setLivRoster(sortedPlayers);
-              dialog.showToast(`✓ Fetched ${livPlayers.size} LIV players`, 'success');
-              return;
-            }
-          }
-        } catch (e) {
-          console.log(`Failed to fetch LIV roster for ${yr}:`, e);
-        }
-      }
-      
-      dialog.showToast('Could not fetch LIV roster. Add players manually.', 'warning');
+      console.log(`Loaded ${sortedPlayers.length} LIV players from curated list`);
+      dialog.showToast(`✓ Loaded ${sortedPlayers.length} LIV players (2026 season)`, 'success');
     } catch (error) {
-      console.error('Error fetching LIV roster:', error);
-      dialog.showToast('Failed to fetch LIV roster', 'error');
+      console.error('Error loading LIV roster:', error);
+      dialog.showToast('Failed to load LIV roster', 'error');
     }
   };
 
@@ -534,9 +541,16 @@ export const AdminView = ({
 
   const handleSaveLivRoster = async () => {
     try {
+      // Save to Supabase (primary)
+      const { livRosterApi } = await import('../api/supabase');
+      await livRosterApi.setAll(livRoster);
+      console.log(`Saved ${livRoster.length} LIV players to Supabase`);
+      
+      // Also save to localStorage as backup
       await storage.set('fantasy-golf-liv-cache', JSON.stringify(livRoster));
       await storage.set('fantasy-golf-liv-cache-timestamp', Date.now().toString());
-      dialog.showToast(`✓ Saved ${livRoster.length} LIV players`, 'success');
+      
+      dialog.showToast(`✓ Saved ${livRoster.length} LIV players (synced to all devices)`, 'success');
       setShowLivManager(false);
     } catch (error) {
       console.error('Failed to save LIV roster:', error);
@@ -1025,7 +1039,7 @@ export const AdminView = ({
               onClick={handleFetchLivRoster}
               className="w-full mb-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-bold transition-colors"
             >
-              🔄 Fetch Current LIV Roster from API
+              📋 Load 2026 LIV Roster (52 players)
             </button>
 
             {/* Add Player */}
