@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { storage } from '../api.js';
-import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils/index.js';
+import { storage } from '../api';
+import { playerRankingsApi } from '../api/supabase';
+import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
 
 // ============================================================================
 // usePersistentState
@@ -51,14 +52,13 @@ export const useLeague = (STORAGE_KEYS) => {
   useEffect(() => {
     const load = async () => {
       try {
-        const [teamsData, tournamentsData, transactionsData, settingsData, statsData, rankingsData, headshotsData] =
+        const [teamsData, tournamentsData, transactionsData, settingsData, statsData, headshotsData] =
           await Promise.all([
             storage.get(STORAGE_KEYS.TEAMS,              null),
             storage.get(STORAGE_KEYS.TOURNAMENTS,        null),
             storage.get(STORAGE_KEYS.TRANSACTIONS,       null),
             storage.get(STORAGE_KEYS.SETTINGS,           null),
             storage.get(STORAGE_KEYS.GLOBAL_PLAYER_STATS,null),
-            storage.get(STORAGE_KEYS.PLAYER_RANKINGS,    null),
             storage.get(STORAGE_KEYS.HEADSHOTS,          null),
           ]);
 
@@ -68,9 +68,37 @@ export const useLeague = (STORAGE_KEYS) => {
         if (settingsData)     setSettings(settingsData);
         if (statsData)        setGlobalPlayerStats(statsData);
         if (headshotsData)    setHeadshots(headshotsData);
-        if (rankingsData?.players?.length > 0) {
-          setAllPlayers(rankingsData.players);
-          setRankingsLastUpdated(rankingsData.lastUpdated);
+        
+        // Load rankings from Supabase first, fallback to localStorage
+        try {
+          const supabaseRankings = await playerRankingsApi.getAll();
+          if (supabaseRankings.length > 0) {
+            const players = supabaseRankings.map(r => ({
+              name: r.name,
+              worldRank: r.world_rank,
+              pgaTourId: r.pga_tour_id,
+            }));
+            setAllPlayers(players);
+            
+            const lastUpdated = await playerRankingsApi.getLastUpdated();
+            setRankingsLastUpdated(lastUpdated);
+            console.log(`Loaded ${players.length} players from Supabase`);
+          } else {
+            // Fallback to localStorage
+            const localRankings = await storage.get(STORAGE_KEYS.PLAYER_RANKINGS, null);
+            if (localRankings?.players?.length > 0) {
+              setAllPlayers(localRankings.players);
+              setRankingsLastUpdated(localRankings.lastUpdated);
+              console.log(`Loaded ${localRankings.players.length} players from localStorage`);
+            }
+          }
+        } catch (supabaseError) {
+          console.warn('Supabase rankings fetch failed, using localStorage:', supabaseError);
+          const localRankings = await storage.get(STORAGE_KEYS.PLAYER_RANKINGS, null);
+          if (localRankings?.players?.length > 0) {
+            setAllPlayers(localRankings.players);
+            setRankingsLastUpdated(localRankings.lastUpdated);
+          }
         }
       } catch (e) {
         console.error('[useLeague] Load error:', e);
@@ -141,9 +169,28 @@ export const useLeague = (STORAGE_KEYS) => {
 
   const updateRankings = useCallback(async (players) => {
     setAllPlayers(players);
-    const payload = { players, lastUpdated: new Date().toISOString() };
-    try { await storage.set(STORAGE_KEYS.PLAYER_RANKINGS, payload); }
-    catch (e) { console.error('[useLeague] rankings write failed:', e); }
+    const timestamp = new Date().toISOString();
+    setRankingsLastUpdated(timestamp);
+    
+    try {
+      // Save to Supabase (primary storage)
+      await playerRankingsApi.updateAll(players);
+      console.log(`Saved ${players.length} players to Supabase`);
+      
+      // Also save to localStorage as backup
+      const payload = { players, lastUpdated: timestamp };
+      await storage.set(STORAGE_KEYS.PLAYER_RANKINGS, payload);
+    } catch (e) {
+      console.error('[useLeague] rankings write failed:', e);
+      // If Supabase fails, at least save to localStorage
+      try {
+        const payload = { players, lastUpdated: timestamp };
+        await storage.set(STORAGE_KEYS.PLAYER_RANKINGS, payload);
+        console.log('Saved to localStorage as fallback');
+      } catch (localErr) {
+        console.error('localStorage save also failed:', localErr);
+      }
+    }
   }, [STORAGE_KEYS.PLAYER_RANKINGS]);
 
   return {
