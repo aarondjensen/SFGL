@@ -10,83 +10,149 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * Stores OWGR rankings in Supabase for cross-device sync
  */
 
-export const playerRankingsApi = {
+/**
+ * Unified Players API
+ * Replace playerRankingsApi, headshotsApi, and playerStatsApi
+ */
+
+export const playersApi = {
   /**
-   * Fetch all player rankings from Supabase
+   * Get all players
    */
   async getAll() {
     const { data, error } = await supabase
-      .from('player_rankings')
+      .from('players')
       .select('*')
-      .order('world_rank', { ascending: true });
+      .order('world_rank', { ascending: true, nullsLast: true });
     
-    if (error) {
-      console.error('Error fetching player rankings:', error);
-      throw error;
-    }
-    
+    if (error) throw error;
     return data || [];
   },
 
   /**
-   * Update all player rankings (replaces entire list)
+   * Get single player by name
    */
-  async updateAll(players) {
-    try {
-      // Delete all existing rankings
-      const { error: deleteError } = await supabase
-        .from('player_rankings')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
-      
-      if (deleteError) throw deleteError;
-      
-      // Insert new rankings
-      const rows = players.map(p => ({
-        name: p.name,
-        world_rank: p.worldRank,
-        pga_tour_id: p.pgaTourId || null,
-      }));
-      
-      const { data, error: insertError } = await supabase
-        .from('player_rankings')
-        .insert(rows)
-        .select();
-      
-      if (insertError) throw insertError;
-      
-      // Update metadata
-      await supabase
-        .from('app_metadata')
-        .upsert({
-          key: 'player_rankings_last_updated',
-          value: new Date().toISOString(),
-        });
-      
-      return data;
-    } catch (error) {
-      console.error('Error updating player rankings:', error);
-      throw error;
-    }
+  async getByName(name) {
+    const { data, error } = await supabase
+      .from('players')
+      .select('*')
+      .eq('name', name)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
+  /**
+   * Upsert multiple players (used for OWGR sync)
+   */
+  async upsertMany(players) {
+    const rows = players.map(p => ({
+      name: p.name,
+      world_rank: p.worldRank || null,
+      pga_tour_id: p.pgaTourId || null,
+      headshot_url: p.headshotUrl || null,
+      career_stats: p.stats || {},
+      is_liv: p.isLiv || false,
+    }));
+
+    const { data, error } = await supabase
+      .from('players')
+      .upsert(rows, { onConflict: 'name' })
+      .select();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Update single player
+   */
+  async update(name, updates) {
+    const { data, error } = await supabase
+      .from('players')
+      .update({
+        world_rank: updates.worldRank,
+        pga_tour_id: updates.pgaTourId,
+        headshot_url: updates.headshotUrl,
+        career_stats: updates.stats,
+        is_liv: updates.isLiv,
+      })
+      .eq('name', name)
+      .select();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Get players for frontend (mapped to old format for compatibility)
+   */
+  async getAllForApp() {
+    const players = await this.getAll();
+    return players.map(p => ({
+      name: p.name,
+      worldRank: p.world_rank,
+      pgaTourId: p.pga_tour_id,
+      headshotUrl: p.headshot_url,
+      stats: p.career_stats,
+      isLiv: p.is_liv,
+    }));
+  },
+
+  /**
+   * Get headshots map (for backward compatibility)
+   */
+  async getHeadshotsMap() {
+    const players = await this.getAll();
+    const map = {};
+    players.forEach(p => {
+      if (p.headshot_url) {
+        map[p.name] = p.headshot_url;
+      } else if (p.pga_tour_id) {
+        // Generate CDN URL from ID
+        map[p.name] = `https://pga-tour-res.cloudflare.com/resources/photoplayer/${p.pga_tour_id}.jpg`;
+      }
+    });
+    return map;
+  },
+
+  /**
+   * Get stats map (for backward compatibility)
+   */
+  async getStatsMap() {
+    const players = await this.getAll();
+    const map = {};
+    players.forEach(p => {
+      if (p.career_stats && Object.keys(p.career_stats).length > 0) {
+        map[p.name] = p.career_stats;
+      }
+    });
+    return map;
   },
 
   /**
    * Get last updated timestamp
    */
   async getLastUpdated() {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('app_metadata')
       .select('value')
-      .eq('key', 'player_rankings_last_updated')
+      .eq('key', 'players_last_updated')
       .single();
-    
-    if (error && error.code !== 'PGRST116') { // Ignore "not found" error
-      console.error('Error fetching last updated:', error);
-    }
-    
     return data?.value || null;
   },
+
+  /**
+   * Set last updated timestamp
+   */
+  async setLastUpdated(timestamp) {
+    await supabase
+      .from('app_metadata')
+      .upsert({ key: 'players_last_updated', value: timestamp });
+  },
 };
+
 
 /**
  * LIV Roster API
@@ -301,41 +367,19 @@ export const settingsApi = {
  */
 export const playerStatsApi = {
   async getAll() {
-    const { data, error } = await supabase
-      .from('global_player_stats')
-      .select('*');
-    if (error) throw error;
-    
-    const stats = {};
-    data?.forEach(row => {
-      stats[row.player_name] = row.stats;
-    });
-    return stats;
+    // Delegates to new consolidated playersApi
+    return await playersApi.getStatsMap();
   },
-
+  
   async set(playerName, stats) {
-    const { data, error } = await supabase
-      .from('global_player_stats')
-      .upsert({ player_name: playerName, stats })
-      .select();
-    if (error) throw error;
-    return data;
+    // Delegates to new consolidated playersApi
+    return await playersApi.update(playerName, { stats });
   },
-
+  
   async setAll(statsObject) {
-    await supabase.from('global_player_stats').delete().neq('player_name', '');
-    
-    const rows = Object.entries(statsObject).map(([player_name, stats]) => ({
-      player_name,
-      stats,
-    }));
-    
-    const { data, error } = await supabase
-      .from('global_player_stats')
-      .insert(rows)
-      .select();
-    if (error) throw error;
-    return data;
+    // This is deprecated - stats are now part of players table
+    console.warn('playerStatsApi.setAll is deprecated - use playersApi.upsertMany instead');
+    // Could implement migration logic here if needed, but not necessary
   },
 };
 
@@ -344,31 +388,13 @@ export const playerStatsApi = {
  */
 export const headshotsApi = {
   async getAll() {
-    const { data, error } = await supabase
-      .from('player_headshots')
-      .select('*');
-    if (error) throw error;
-    
-    const headshots = {};
-    data?.forEach(row => {
-      headshots[row.player_name] = row.url;
-    });
-    return headshots;
+    // Delegates to new consolidated playersApi
+    return await playersApi.getHeadshotsMap();
   },
-
+  
   async setAll(headshotsObject) {
-    await supabase.from('player_headshots').delete().neq('player_name', '');
-    
-    const rows = Object.entries(headshotsObject).map(([player_name, url]) => ({
-      player_name,
-      url,
-    }));
-    
-    const { data, error } = await supabase
-      .from('player_headshots')
-      .insert(rows)
-      .select();
-    if (error) throw error;
-    return data;
+    // This is deprecated - headshots are now part of players table
+    console.warn('headshotsApi.setAll is deprecated - use playersApi.upsertMany instead');
+    // Could implement migration logic here if needed, but not necessary
   },
 };
