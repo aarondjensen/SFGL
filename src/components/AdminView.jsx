@@ -236,33 +236,26 @@ export const AdminView = ({
   const handleSeasonReset = async () => {
     const confirm1 = await dialog.showConfirm(
       '⚠️ DANGER: Reset Entire Season',
-      'This will DELETE all tournament results, transactions, lineups, and player stats. Teams and rosters will be preserved.\n\nThis action CANNOT be undone.',
+      'This will DELETE:\n• All tournament results and stats\n• All transactions\n• All rosters and lineups\n• All player data\n\nThis action CANNOT be undone.',
       { type: 'danger', confirmText: 'Continue' }
     );
     if (!confirm1) return;
 
     const confirm2 = await dialog.showConfirm(
       '⚠️ FINAL WARNING',
-      'Are you ABSOLUTELY SURE you want to reset the entire season? This will wipe all progress.',
+      'Are you ABSOLUTELY SURE? This will wipe EVERYTHING including all rosters.',
       { type: 'danger', confirmText: 'Yes, Reset Everything' }
     );
     if (!confirm2) return;
 
-    // Reset teams
+    // Reset teams - CLEAR ROSTERS
     const resetTeams = teams.map(team => ({
       ...team,
       earnings: 0,
       segmentEarnings: 0,
       lineup: [],
+      roster: [], // Clear roster completely
       mulligans: { signatureMajor: 1, regular: 1 },
-      roster: team.roster.map(p => ({
-        ...p,
-        starts: 0,
-        eventsPlayed: 0,
-        cutsMade: 0,
-        sfglEarnings: 0,
-        pgaTourEarnings: 0,
-      }))
     }));
 
     // Reset tournaments
@@ -279,7 +272,7 @@ export const AdminView = ({
     updateTeams(resetTeams);
     setTournaments(resetTournaments);
     
-    dialog.showToast('Season reset complete!', 'success');
+    dialog.showToast('Season reset complete! All rosters cleared.', 'success');
   };
 
   // ── Draft Modal ───────────────────────────────────────────────────────────
