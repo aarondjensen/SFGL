@@ -23,6 +23,7 @@ export const AdminView = ({
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [showRosterManager, setShowRosterManager] = useState(false);
   const [rosterMgmtTeam, setRosterMgmtTeam] = useState('');
+  const [playerSearch, setPlayerSearch] = useState('');
   const dialog = useDialog();
   const activeTournament = tournaments.find(t => t.playing);
 
@@ -420,7 +421,10 @@ export const AdminView = ({
             <label className="text-xs font-bold text-gray-400 block mb-1">Select Team</label>
             <select
               value={rosterMgmtTeam}
-              onChange={e => setRosterMgmtTeam(e.target.value)}
+              onChange={e => {
+                setRosterMgmtTeam(e.target.value);
+                setPlayerSearch('');
+              }}
               className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm"
             >
               <option value="">-- Choose Team --</option>
@@ -429,33 +433,86 @@ export const AdminView = ({
           </div>
           {rosterMgmtTeam && (() => {
             const team = teams.find(t => t.id === rosterMgmtTeam);
+            const searchResults = playerSearch.trim() 
+              ? allPlayers
+                  .filter(p => p.name.toLowerCase().includes(playerSearch.toLowerCase()))
+                  .filter(p => !team.roster.some(r => r.name === p.name))
+                  .slice(0, 20)
+              : [];
+
             return (
               <div className="mt-3">
                 <div className="mb-2 text-sm font-bold text-gray-300">
                   {team.name} Roster ({team.roster.length} players)
                 </div>
-                <div className="max-h-60 overflow-y-auto bg-gray-800/50 rounded-lg border border-gray-700">
+                <div className="max-h-60 overflow-y-auto bg-gray-800/50 rounded-lg border border-gray-700 mb-3">
                   {team.roster.map(player => (
                     <div key={player.name} className="flex items-center justify-between px-3 py-2 border-b border-gray-700/50 last:border-0">
-                      <span className="text-sm">{player.name}</span>
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <img
+                          src={`https://pga-tour-res.cloudflare.com/resources/photoplayer/${headshots[player.name] || 'default'}.jpg`}
+                          onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=1f2937&color=9ca3af&size=32`; }}
+                          alt=""
+                          className="w-7 h-7 rounded-full object-cover border border-gray-600 flex-shrink-0"
+                        />
+                        <span className="text-sm truncate">{player.name}</span>
+                      </div>
                       <button
                         onClick={() => handleDropPlayer(team.id, player.name)}
-                        className="px-2 py-1 bg-red-600/80 hover:bg-red-600 rounded text-xs font-bold"
+                        className="px-2 py-1 bg-red-600/80 hover:bg-red-600 rounded text-xs font-bold flex-shrink-0"
                       >
                         Drop
                       </button>
                     </div>
                   ))}
                 </div>
-                <button
-                  onClick={() => {
-                    const playerName = prompt('Enter player name to add:');
-                    if (playerName) handleAddPlayer(team.id, playerName.trim());
-                  }}
-                  className="w-full mt-2 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-bold transition-colors"
-                >
-                  + Add Player
-                </button>
+
+                {/* Add Player Section */}
+                <div className="bg-gray-900/50 rounded-lg border border-gray-700 p-3">
+                  <div className="mb-2">
+                    <label className="text-xs font-bold text-gray-400 block mb-1">Search Players</label>
+                    <input
+                      type="text"
+                      placeholder="Type player name..."
+                      value={playerSearch}
+                      onChange={e => setPlayerSearch(e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  {playerSearch.trim() && (
+                    <div className="max-h-48 overflow-y-auto bg-gray-800 rounded border border-gray-700">
+                      {searchResults.length > 0 ? (
+                        searchResults.map(player => (
+                          <button
+                            key={player.name}
+                            onClick={() => {
+                              handleAddPlayer(team.id, player.name);
+                              setPlayerSearch('');
+                            }}
+                            className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 text-left transition-colors"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <img
+                                src={`https://pga-tour-res.cloudflare.com/resources/photoplayer/${headshots[player.name] || 'default'}.jpg`}
+                                onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=1f2937&color=9ca3af&size=32`; }}
+                                alt=""
+                                className="w-7 h-7 rounded-full object-cover border border-gray-600 flex-shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium truncate">{player.name}</div>
+                                <div className="text-xs text-gray-500">Rank: {player.worldRank === 999 ? 'NR' : player.worldRank}</div>
+                              </div>
+                            </div>
+                            <span className="text-green-400 font-bold text-xs flex-shrink-0">Add</span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="text-center py-4 text-gray-500 text-xs">No players found</div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })()}
