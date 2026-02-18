@@ -24,10 +24,24 @@ export const AdminView = ({
   const [showRosterManager, setShowRosterManager] = useState(false);
   const [rosterMgmtTeam, setRosterMgmtTeam] = useState('');
   const [playerSearch, setPlayerSearch] = useState('');
+  const [owgrLastSynced, setOwgrLastSynced] = useState(null);
   const dialog = useDialog();
   const activeTournament = tournaments.find(t => t.playing);
 
+  // Load OWGR last synced timestamp
   useEffect(() => {
+    const loadTimestamp = async () => {
+      try {
+        const timestamp = await storage.getItem(STORAGE_KEYS.OWGR_LAST_SYNCED);
+        if (timestamp) setOwgrLastSynced(parseInt(timestamp));
+      } catch (e) {
+        console.error('Failed to load OWGR timestamp:', e);
+      }
+    };
+    loadTimestamp();
+  }, [STORAGE_KEYS.OWGR_LAST_SYNCED]);
+
+  useEffect(() {
     if (!selectedTourneyForResults && activeTournament) {
       setSelectedTourneyForResults(activeTournament.name);
     }
@@ -155,9 +169,23 @@ export const AdminView = ({
 
   // ── Player Sync ───────────────────────────────────────────────────────────
   const handleSyncPlayers = async () => {
+    // Check if synced recently (within 7 days)
+    const now = Date.now();
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    
+    if (owgrLastSynced && (now - owgrLastSynced < sevenDays)) {
+      const daysSince = Math.floor((now - owgrLastSynced) / (24 * 60 * 60 * 1000));
+      const warning = await dialog.showConfirm(
+        '⚠️ Recent Sync Detected',
+        `OWGR was synced ${daysSince} day${daysSince === 1 ? '' : 's'} ago.\n\nSyncing frequently uses API calls. OWGR rankings don't change much week-to-week.\n\nRecommendation: Sync every 2-3 weeks to conserve API quota.\n\nContinue anyway?`,
+        { type: 'warning', confirmText: 'Sync Anyway' }
+      );
+      if (!warning) return;
+    }
+
     const ok = await dialog.showConfirm(
       'Sync OWGR Players',
-      'Fetch the current Top 250 OWGR players?\n\nThis will also fetch the LIV Golf roster to filter them out.',
+      'Fetch the current Top 250 OWGR players?\n\nThis will also fetch the LIV Golf roster to filter them out.\n\nAPI Calls: ~3 calls',
       { confirmText: 'Fetch Players' },
     );
     if (!ok) return;
@@ -165,43 +193,77 @@ export const AdminView = ({
     try {
       dialog.showToast('Fetching LIV Golf Roster...', 'info');
       const livPlayers = new Set();
-      for (const yr of ['2026', '2025']) {
-        try {
-          const livData = await slashGolfFetch('schedule', { orgId: '2', year: yr });
-          if (livData?.schedule?.length > 0) {
-            const firstLivId = livData.schedule[0].tournId;
-            const livTourney = await slashGolfFetch('tournament', { orgId: '2', tournId: firstLivId, year: yr });
-            livTourney.players?.forEach(p => {
-              const pObj = p?.player || p || {};
-              const name = `${pObj.firstName || ''} ${pObj.lastName || ''}`.trim();
-              if (name) livPlayers.add(name);
-            });
-            break;
+      
+      // Check if we have cached LIV data (within 30 days)
+      const livCacheKey = 'fantasy-golf-liv-cache';
+      const livCacheTimestampKey = 'fantasy-golf-liv-cache-timestamp';
+      let usedCache = false;
+      
+      try {
+        const cacheTimestamp = await storage.getItem(livCacheTimestampKey);
+        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+        
+        if (cacheTimestamp && (now - parseInt(cacheTimestamp) < thirtyDays)) {
+          const cached = await storage.getItem(livCacheKey);
+          if (cached) {
+            const cachedPlayers = JSON.parse(cached);
+            cachedPlayers.forEach(name => livPlayers.add(name));
+            console.log(`Using cached LIV roster (${livPlayers.size} players)`);
+            usedCache = true;
           }
-        } catch { /* try next year */ }
+        }
+      } catch (e) {
+        console.log('No LIV cache available');
+      }
+      
+      if (!usedCache) {
+        for (const yr of ['2026', '2025']) {
+          try {
+            const livData = await slashGolfFetch('schedule', { orgId: '2', year: yr });
+            if (livData?.schedule?.length > 0) {
+              const firstLivId = livData.schedule[0].tournId;
+              const livTourney = await slashGolfFetch('tournament', { orgId: '2', tournId: firstLivId, year: yr });
+              livTourney.players?.forEach(p => {
+                const pObj = p?.player || p || {};
+                const name = `${pObj.firstName || ''} ${pObj.lastName || ''}`.trim();
+                if (name) livPlayers.add(name);
+              });
+              
+              // Cache LIV roster
+              await storage.setItem(livCacheKey, JSON.stringify([...livPlayers]));
+              await storage.setItem(livCacheTimestampKey, now.toString());
+              console.log(`Cached LIV roster (${livPlayers.size} players)`);
+              break;
+            }
+          } catch { /* try next year */ }
+        }
       }
 
       dialog.showToast('Fetching World Rankings...', 'info');
-      let details = [];
+      let rankings = [];
+      
+      // Try worldranking endpoint for recent years
       for (const yr of ['2026', '2025', '2024']) {
+        if (rankings.length) break;
+        
         try {
-          const owgrData = await slashGolfFetch('rankings', { statId: '186', year: yr });
-          details = owgrData?.rankings?.[0]?.details || owgrData?.details || owgrData?.rankings || [];
-          if (!details.length) {
-            const statsData = await slashGolfFetch('stats', { statId: '186', year: yr });
-            details = statsData?.stats?.[0]?.details || statsData?.details || [];
+          const owgrData = await slashGolfFetch('worldranking', { year: yr });
+          rankings = owgrData?.rankings || [];
+          if (rankings.length) {
+            console.log(`Found ${rankings.length} players from worldranking endpoint (${yr})`);
+            break;
           }
-          if (details.length) break;
-        } catch { /* try next year */ }
+        } catch (e) {
+          console.log(`World ranking endpoint failed for ${yr}:`, e);
+        }
       }
 
       const newPlayers = [];
-      if (details.length > 0) {
-        details.forEach(p => {
-          const pObj    = p?.player || p || {};
-          let name      = pObj?.fullName || pObj?.displayName || pObj?.name || '';
-          if (!name) name = `${pObj.firstName || ''} ${pObj.lastName || ''}`.trim();
-          const rankVal = parseInt(p?.rankValue || p?.rank || p?.curRank || pObj?.rank) || 999;
+      if (rankings.length > 0) {
+        rankings.forEach(p => {
+          const name = p.fullName || `${p.firstName || ''} ${p.lastName || ''}`.trim();
+          const rankVal = parseInt(p.rank) || 999;
+          
           if (name && !livPlayers.has(name) && newPlayers.length < 250) {
             newPlayers.push({ name, worldRank: rankVal });
           }
@@ -209,12 +271,16 @@ export const AdminView = ({
       }
 
       if (newPlayers.length === 0) {
+        console.log('No players from API, using fallback list');
         Object.keys(PGA_TOUR_IDS).forEach((name, i) => {
           if (newPlayers.length < 250) newPlayers.push({ name, worldRank: i + 1 });
         });
-        dialog.showToast(`API parsed 0 players. Fallback: ${newPlayers.length} players loaded.`, 'info');
+        dialog.showToast(`Using fallback player list (${newPlayers.length} players)`, 'info');
       } else {
-        dialog.showToast(`Success! Loaded ${newPlayers.length} players.`, 'success');
+        // Save sync timestamp
+        await storage.setItem(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
+        setOwgrLastSynced(now);
+        dialog.showToast(`Success! Loaded ${newPlayers.length} PGA Tour players (filtered LIV).`, 'success');
       }
       updateRankings(newPlayers);
     } catch (error) {
@@ -380,11 +446,18 @@ export const AdminView = ({
             Sync OWGR Top 250
           </button>
         </div>
-        {rankingsLastUpdated && (
-          <p className="text-[10px] text-gray-500 mt-2 text-center">
-            Rankings last updated: {new Date(rankingsLastUpdated).toLocaleDateString()}
-          </p>
-        )}
+        <div className="mt-2 space-y-1">
+          {rankingsLastUpdated && (
+            <p className="text-[10px] text-gray-500 text-center">
+              Rankings last updated: {new Date(rankingsLastUpdated).toLocaleDateString()}
+            </p>
+          )}
+          {owgrLastSynced && (
+            <p className="text-[10px] text-teal-400 text-center font-medium">
+              Last OWGR sync: {new Date(owgrLastSynced).toLocaleDateString()} at {new Date(owgrLastSynced).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Mulligan resets */}
