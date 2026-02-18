@@ -104,6 +104,16 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     if (!headshotId) {
       const player = allPlayers.find(p => p.name === playerName);
       headshotId = player?.pgaTourId;
+      
+      // Debug logging
+      if (playerName === 'Hideki Matsuyama') {
+        console.log('[getPlayerHeadshot] Hideki Matsuyama debug:');
+        console.log('  - headshots object:', headshots['Hideki Matsuyama']);
+        console.log('  - found player in allPlayers:', !!player);
+        console.log('  - player data:', player);
+        console.log('  - pgaTourId:', player?.pgaTourId);
+        console.log('  - final headshotId:', headshotId);
+      }
     }
     
     if (headshotId) {
