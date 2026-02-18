@@ -169,120 +169,146 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose }) => {
             </button>
           </div>
 
-          <div className="p-4 bg-gray-900/50 border-b border-gray-700">
-            <h3 className="font-bold text-sm mb-3">Select 2 Keepers:</h3>
-            <div className="grid gap-3">
+          <div className="flex-1 overflow-auto p-4">
+            <h3 className="font-bold text-sm mb-4">Select 2 Keepers:</h3>
+            
+            <div className="space-y-4">
               {/* Limited Keeper */}
-              <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
+              <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-yellow-600 rounded text-xs font-bold flex items-center justify-center">L</div>
-                    <span className="font-bold text-sm">Limited Player</span>
+                    <div className="w-7 h-7 bg-yellow-600 rounded text-sm font-bold flex items-center justify-center">L</div>
+                    <span className="font-bold">Limited Player</span>
                   </div>
                   {currentKeeper.limited && (
                     <button
                       onClick={() => handleKeeperSelect(null, 'limited')}
-                      className="text-xs text-red-400 hover:text-red-300"
+                      className="text-xs text-red-400 hover:text-red-300 font-medium"
                     >
                       Clear
                     </button>
                   )}
                 </div>
+                
                 {currentKeeper.limited ? (
-                  <div className="flex items-center justify-between bg-gray-700/50 rounded px-3 py-2">
-                    <span className="font-medium">{currentKeeper.limited.name}</span>
-                    <div className="flex gap-1">
-                      {[1, 2, 3].map(num => (
-                        <button
-                          key={num}
-                          onClick={() => handleKeeperSelect(currentKeeper.limited.name, 'limited', num)}
-                          className={`w-6 h-6 rounded text-xs font-bold ${
-                            currentKeeper.limited.stars === num ? 'bg-yellow-500' : 'bg-gray-600'
-                          }`}
-                        >
-                          ★
-                        </button>
-                      ))}
+                  <div className="space-y-2">
+                    <div className="bg-gray-700/50 rounded px-3 py-2">
+                      <span className="font-medium">{currentKeeper.limited.name}</span>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">Years of Service:</div>
+                      <div className="flex gap-2">
+                        {[1, 2, 3].map(num => (
+                          <button
+                            key={num}
+                            onClick={() => handleKeeperSelect(currentKeeper.limited.name, 'limited', num)}
+                            className={`w-10 h-10 rounded text-lg font-bold transition-colors ${
+                              num <= currentKeeper.limited.stars
+                                ? 'bg-yellow-500 hover:bg-yellow-400'
+                                : 'bg-gray-600 hover:bg-gray-500'
+                            }`}
+                          >
+                            ★
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-gray-500">Not selected</div>
+                  <div>
+                    <div className="relative mb-2">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search for Limited player..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-sm"
+                      />
+                    </div>
+                    {searchQuery.trim() && !currentKeeper.limited && (
+                      <div className="max-h-40 overflow-y-auto bg-gray-900 rounded border border-gray-700">
+                        {availablePlayers.length > 0 ? (
+                          availablePlayers.slice(0, 10).map(player => (
+                            <button
+                              key={player.name}
+                              onClick={() => handleKeeperSelect(player.name, 'limited', 2)}
+                              className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 text-left transition-colors"
+                            >
+                              <div>
+                                <div className="font-medium text-sm">{player.name}</div>
+                                <div className="text-xs text-gray-400">Rank: {player.worldRank}</div>
+                              </div>
+                              <div className="text-yellow-400 font-bold text-xs">Select</div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="text-center py-3 text-gray-500 text-xs">No players found</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
               {/* Unlimited Keeper */}
-              <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
+              <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-blue-600 rounded text-xs font-bold flex items-center justify-center">U</div>
-                    <span className="font-bold text-sm">Unlimited Player</span>
+                    <div className="w-7 h-7 bg-blue-600 rounded text-sm font-bold flex items-center justify-center">U</div>
+                    <span className="font-bold">Unlimited Player</span>
                   </div>
                   {currentKeeper.unlimited && (
                     <button
                       onClick={() => handleKeeperSelect(null, 'unlimited')}
-                      className="text-xs text-red-400 hover:text-red-300"
+                      className="text-xs text-red-400 hover:text-red-300 font-medium"
                     >
                       Clear
                     </button>
                   )}
                 </div>
+                
                 {currentKeeper.unlimited ? (
                   <div className="bg-gray-700/50 rounded px-3 py-2">
                     <span className="font-medium">{currentKeeper.unlimited.name}</span>
                   </div>
                 ) : (
-                  <div className="text-xs text-gray-500">Not selected</div>
+                  <div>
+                    <div className="relative mb-2">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search for Unlimited player..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-sm"
+                      />
+                    </div>
+                    {searchQuery.trim() && !currentKeeper.unlimited && (
+                      <div className="max-h-40 overflow-y-auto bg-gray-900 rounded border border-gray-700">
+                        {availablePlayers.length > 0 ? (
+                          availablePlayers.slice(0, 10).map(player => (
+                            <button
+                              key={player.name}
+                              onClick={() => handleKeeperSelect(player.name, 'unlimited')}
+                              className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 text-left transition-colors"
+                            >
+                              <div>
+                                <div className="font-medium text-sm">{player.name}</div>
+                                <div className="text-xs text-gray-400">Rank: {player.worldRank}</div>
+                              </div>
+                              <div className="text-blue-400 font-bold text-xs">Select</div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="text-center py-3 text-gray-500 text-xs">No players found</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
-          </div>
-
-          <div className="p-4 border-b border-gray-700">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search players..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-auto p-4">
-            {searchQuery.trim() ? (
-              <div className="grid gap-2">
-                {availablePlayers.map(player => (
-                  <div key={player.name} className="flex gap-2">
-                    <button
-                      onClick={() => handleKeeperSelect(player.name, 'limited', 2)}
-                      className="flex-1 flex items-center justify-between bg-yellow-900/20 hover:bg-yellow-900/30 border border-yellow-700/50 rounded-lg px-4 py-3 text-left transition-colors"
-                    >
-                      <div>
-                        <div className="font-medium">{player.name}</div>
-                        <div className="text-xs text-gray-400">Rank: {player.worldRank}</div>
-                      </div>
-                      <div className="text-yellow-400 text-xs font-bold">Limited</div>
-                    </button>
-                    <button
-                      onClick={() => handleKeeperSelect(player.name, 'unlimited')}
-                      className="flex-1 flex items-center justify-between bg-blue-900/20 hover:bg-blue-900/30 border border-blue-700/50 rounded-lg px-4 py-3 text-left transition-colors"
-                    >
-                      <div>
-                        <div className="font-medium">{player.name}</div>
-                        <div className="text-xs text-gray-400">Rank: {player.worldRank}</div>
-                      </div>
-                      <div className="text-blue-400 text-xs font-bold">Unlimited</div>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center text-gray-500 text-sm py-8">
-                Search for a player to add as a keeper
-              </div>
-            )}
           </div>
 
           <div className="p-4 border-t border-gray-700 flex justify-between">
