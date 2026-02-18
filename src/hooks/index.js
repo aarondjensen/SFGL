@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { storage } from '../api';
-import { playerRankingsApi } from '../api/supabase';
+import { storage, playerRankingsApi } from '../api';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
 
 // ============================================================================
