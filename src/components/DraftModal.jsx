@@ -104,11 +104,25 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     if (!headshotId) {
       const player = allPlayers.find(p => p.name === playerName);
       headshotId = player?.pgaTourId;
+      
+      // Debug for Hideki
+      if (playerName === 'Hideki Matsuyama') {
+        console.log('[DraftModal] Hideki debug:');
+        console.log('  - allPlayers.length:', allPlayers.length);
+        console.log('  - found player:', player);
+        console.log('  - player.pgaTourId:', player?.pgaTourId);
+        console.log('  - headshots object:', headshots);
+        console.log('  - headshotId:', headshotId);
+      }
     }
     
     if (headshotId) {
       // Use the same Cloudinary URL that works on Rosters page
-      return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${headshotId}`;
+      const url = `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${headshotId}`;
+      if (playerName === 'Hideki Matsuyama') {
+        console.log('  - generated URL:', url);
+      }
+      return url;
     }
     
     // Fallback to UI Avatars
