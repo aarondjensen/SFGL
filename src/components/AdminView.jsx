@@ -283,7 +283,7 @@ export const AdminView = ({
         
         const uploadChoice = await dialog.showConfirm(
           'API Data Unavailable',
-          '2026 OWGR data is not available via API yet.\n\nWould you like to upload an OWGR CSV file from owgr.com instead?\n\n(Or click Cancel to use fallback list)',
+          '2026 OWGR data is not available via API yet.\n\nDownload the latest rankings CSV from:\nhttps://www.owgr.com/current-world-ranking\n\nThen click "Upload CSV" to import it.\n\nOr click "Use Fallback" to use the fallback list.',
           { confirmText: 'Upload CSV', cancelText: 'Use Fallback' }
         );
         
