@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { slashGolfFetch } from '../utils';
+import { FALLBACK_SCHEDULE_DATA } from '../constants';
 
 export const ScheduleImportModal = ({ onImport, onCancel }) => {
   const [loading, setLoading] = useState(false);
@@ -97,13 +98,7 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
         const startDate = parseDate(event.date?.start || event.startDate);
         const endDate = parseDate(event.date?.end || event.endDate);
         
-        if (idx === 0) {
-          console.log('First event:', event.name);
-          console.log('Date object:', event.date);
-          console.log('Parsed dates:', { startDate, endDate });
-        }
-        
-        // Extract location from courses[0].location
+        // Extract location/course from API first, then fallback to our constants
         let location = 'TBD';
         let courseName = 'TBD';
         const courses = event.courses || [];
@@ -117,14 +112,28 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
             const city = loc.city || '';
             const state = loc.state || '';
             const country = loc.country || '';
-            // Format: "City, State" or "City, Country" if no state
             location = [city, state || country].filter(Boolean).join(', ');
           }
         }
         
+        // If API didn't provide location/course, use fallback data
+        if ((location === 'TBD' || courseName === 'TBD') && event.name) {
+          // Find matching fallback entry by partial name match
+          const fallback = FALLBACK_SCHEDULE_DATA.find(fb => 
+            event.name.toLowerCase().includes(fb.key.toLowerCase()) ||
+            fb.key.toLowerCase().includes(event.name.toLowerCase().split(' ')[0])
+          );
+          
+          if (fallback) {
+            if (location === 'TBD') location = fallback.loc;
+            if (courseName === 'TBD') courseName = fallback.course;
+          }
+        }
+        
         if (idx === 0) {
-          console.log('Location:', location);
-          console.log('Course:', courseName);
+          console.log('First event:', event.name);
+          console.log('Final location:', location);
+          console.log('Final course:', courseName);
         }
         
         // Auto-detect majors and signatures
@@ -231,17 +240,25 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-gray-800 z-10">
                 <tr className="border-b border-gray-700">
-                  <th className="text-left p-2 font-semibold">Badge</th>
+                  <th className="text-left p-2 font-semibold">Include</th>
+                  <th className="text-left p-2 font-semibold">Sig/Maj</th>
                   <th className="text-left p-2 font-semibold">Tournament</th>
                   <th className="text-left p-2 font-semibold">Dates</th>
                   <th className="text-left p-2 font-semibold">Location & Course</th>
                   <th className="text-left p-2 font-semibold">Swing</th>
-                  <th className="text-left p-2 font-semibold">Include</th>
                 </tr>
               </thead>
               <tbody>
                 {editedSchedule.map((t, idx) => (
                   <tr key={idx} className={`border-b border-gray-700/50 hover:bg-gray-700/30 ${t.excluded ? 'opacity-40' : ''}`}>
+                    <td className="p-2">
+                      <input
+                        type="checkbox"
+                        checked={!t.excluded}
+                        onChange={() => toggleExclude(idx)}
+                        className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-green-600 focus:ring-green-500 focus:ring-2 cursor-pointer"
+                      />
+                    </td>
                     <td className="p-2">
                       <div className="flex gap-1">
                         <button
@@ -285,14 +302,6 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
                         <option>Summer Swing</option>
                         <option>Fall Finish</option>
                       </select>
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="checkbox"
-                        checked={!t.excluded}
-                        onChange={() => toggleExclude(idx)}
-                        className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-green-600 focus:ring-green-500 focus:ring-2 cursor-pointer"
-                      />
                     </td>
                   </tr>
                 ))}
