@@ -302,12 +302,19 @@ export const AdminView = ({
               const lines = text.split('\n').slice(1); // Skip header
               
               // Build list of known names from current player pool
-              const knownNames = allPlayers.map(p => p.name);
+              // If allPlayers is empty, use PGA_TOUR_IDS as fallback
+              const knownNames = allPlayers.length > 0 
+                ? allPlayers.map(p => p.name)
+                : Object.keys(PGA_TOUR_IDS);
+              
+              console.log(`Known names for resolution: ${knownNames.length} players`);
               
               const csvPlayers = [];
               const resolvedNames = new Set(); // Track already added names
               
+              let lineNum = 0;
               for (const line of lines) {
+                lineNum++;
                 if (!line.trim()) continue;
                 
                 // Parse CSV line (handles quoted fields)
@@ -320,12 +327,20 @@ export const AdminView = ({
                 
                 if (!csvName) continue;
                 
+                // Log first 10 players for debugging
+                if (lineNum <= 10) {
+                  console.log(`Line ${lineNum}: Rank=${rank}, Name="${csvName}"`);
+                }
+                
                 // Try to resolve name using the same logic as API sync
                 const resolvedName = window.resolvePlayerName(csvName, knownNames);
                 const finalName = resolvedName || csvName;
                 
                 // Skip if already added, is a LIV player, or we hit 250 limit
                 if (resolvedNames.has(finalName) || livPlayers.has(finalName) || csvPlayers.length >= 250) {
+                  if (lineNum <= 10) {
+                    console.log(`  → Skipped (duplicate=${resolvedNames.has(finalName)}, LIV=${livPlayers.has(finalName)}, limit=${csvPlayers.length >= 250})`);
+                  }
                   continue;
                 }
                 
@@ -339,6 +354,10 @@ export const AdminView = ({
               }
               
               if (csvPlayers.length > 0) {
+                console.log(`Final CSV result: ${csvPlayers.length} players parsed`);
+                console.log('First 5 players:', csvPlayers.slice(0, 5).map(p => `${p.name} (#${p.worldRank})`).join(', '));
+                console.log('Justin Rose?', csvPlayers.find(p => p.name.includes('Rose')));
+                
                 await storage.setItem(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
                 setOwgrLastSynced(now);
                 updateRankings(csvPlayers);
@@ -348,7 +367,8 @@ export const AdminView = ({
               }
             } catch (err) {
               console.error('CSV parse error:', err);
-              dialog.showToast('Failed to parse CSV file', 'error');
+              console.error('Error details:', err.message, err.stack);
+              dialog.showToast(`Failed to parse CSV: ${err.message}`, 'error');
             }
           };
           input.click();
