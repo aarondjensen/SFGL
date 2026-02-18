@@ -33,6 +33,9 @@ export const AdminView = ({
   const [showPlayerIdInput, setShowPlayerIdInput] = useState(false);
   const [playerIdSearch, setPlayerIdSearch] = useState('');
   const [playerIdValue, setPlayerIdValue] = useState('');
+  const [showLivManager, setShowLivManager] = useState(false);
+  const [livRoster, setLivRoster] = useState([]);
+  const [livPlayerInput, setLivPlayerInput] = useState('');
   const dialog = useDialog();
   const activeTournament = tournaments.find(t => t.playing);
 
@@ -453,6 +456,55 @@ export const AdminView = ({
     }
   };
 
+  // ── LIV Roster Management ─────────────────────────────────────────────────
+  const handleOpenLivManager = async () => {
+    try {
+      const cached = await storage.get('fantasy-golf-liv-cache');
+      if (cached) {
+        const players = JSON.parse(cached);
+        setLivRoster(players.sort());
+      } else {
+        setLivRoster([]);
+      }
+      setShowLivManager(true);
+    } catch (error) {
+      console.error('Failed to load LIV roster:', error);
+      setLivRoster([]);
+      setShowLivManager(true);
+    }
+  };
+
+  const handleAddLivPlayer = () => {
+    const playerName = livPlayerInput.trim();
+    if (!playerName) return;
+    
+    if (livRoster.includes(playerName)) {
+      dialog.showToast('Player already in LIV roster', 'error');
+      return;
+    }
+
+    const updatedRoster = [...livRoster, playerName].sort();
+    setLivRoster(updatedRoster);
+    setLivPlayerInput('');
+  };
+
+  const handleRemoveLivPlayer = (playerName) => {
+    const updatedRoster = livRoster.filter(p => p !== playerName);
+    setLivRoster(updatedRoster);
+  };
+
+  const handleSaveLivRoster = async () => {
+    try {
+      await storage.set('fantasy-golf-liv-cache', JSON.stringify(livRoster));
+      await storage.set('fantasy-golf-liv-cache-timestamp', Date.now().toString());
+      dialog.showToast(`✓ Saved ${livRoster.length} LIV players`, 'success');
+      setShowLivManager(false);
+    } catch (error) {
+      console.error('Failed to save LIV roster:', error);
+      dialog.showToast('Failed to save LIV roster', 'error');
+    }
+  };
+
   // ── Mulligan reset ────────────────────────────────────────────────────────
   const resetMulligan = (teamId, type) => {
     const team = teams.find(t => t.id === teamId);
@@ -611,14 +663,10 @@ export const AdminView = ({
           </button>
         </div>
         <button 
-          onClick={async () => {
-            await storage.remove('fantasy-golf-liv-cache');
-            await storage.remove('fantasy-golf-liv-cache-timestamp');
-            dialog.showToast('LIV cache cleared. Next sync will refresh LIV roster.', 'success');
-          }}
+          onClick={handleOpenLivManager}
           className="w-full mt-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-bold transition-colors"
         >
-          Clear LIV Cache
+          Manage LIV Roster
         </button>
         <div className="mt-2 space-y-1">
           {rankingsLastUpdated && (
@@ -910,6 +958,91 @@ export const AdminView = ({
                   Add ID
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LIV Roster Management Modal */}
+      {showLivManager && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-800 rounded-xl p-6 max-w-lg w-full border border-orange-600">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold">Manage LIV Golf Roster</h3>
+              <button
+                onClick={() => setShowLivManager(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-400 mb-4">
+              Players in this list will be filtered out during OWGR sync.
+            </p>
+
+            {/* Add Player */}
+            <div className="mb-4">
+              <label className="text-xs font-bold text-gray-400 block mb-1">Add LIV Player</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Player name (e.g., Brooks Koepka)"
+                  value={livPlayerInput}
+                  onChange={e => setLivPlayerInput(e.target.value)}
+                  onKeyPress={e => e.key === 'Enter' && handleAddLivPlayer()}
+                  className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={handleAddLivPlayer}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold text-sm transition-colors"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {/* Player List */}
+            <div className="bg-gray-900 rounded-lg border border-gray-700 max-h-64 overflow-y-auto mb-4">
+              {livRoster.length > 0 ? (
+                <div className="divide-y divide-gray-700">
+                  {livRoster.map(player => (
+                    <div key={player} className="flex items-center justify-between px-3 py-2 hover:bg-gray-800">
+                      <span className="text-sm">{player}</span>
+                      <button
+                        onClick={() => handleRemoveLivPlayer(player)}
+                        className="text-red-400 hover:text-red-300 text-xs font-bold"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  No LIV players in roster. Add players above or sync to auto-fetch.
+                </div>
+              )}
+            </div>
+
+            <div className="text-xs text-gray-500 mb-4">
+              Total: {livRoster.length} player{livRoster.length !== 1 ? 's' : ''}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLivManager(false)}
+                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg font-bold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveLivRoster}
+                className="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-500 rounded-lg font-bold transition-colors"
+              >
+                Save Roster
+              </button>
             </div>
           </div>
         </div>
