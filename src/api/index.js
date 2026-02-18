@@ -4,13 +4,14 @@ export { storage } from './storage';
 
 // Export Supabase client and APIs
 export { 
-  supabase, 
-  playerRankingsApi, 
+  supabase,
+  playersApi,           // New consolidated API
+  playerRankingsApi,    // Legacy wrapper
   livRosterApi,
   teamsApi,
   tournamentsApi,
   transactionsApi,
   settingsApi,
-  playerStatsApi,
-  headshotsApi,
+  playerStatsApi,       // Legacy wrapper
+  headshotsApi,         // Legacy wrapper
 } from './supabase';
