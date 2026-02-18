@@ -107,11 +107,8 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     }
     
     if (headshotId) {
-      // PGA Tour headshots - try multiple possible URLs
-      // Format 1: New Cloudflare CDN
-      return `https://pga-tour-res.cloudflare.com/resources/photoplayer/${headshotId}.jpg`;
-      
-      // If this doesn't work, the fallback in onError will use UI Avatars
+      // Use the same Cloudinary URL that works on Rosters page
+      return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${headshotId}`;
     }
     
     // Fallback to UI Avatars
