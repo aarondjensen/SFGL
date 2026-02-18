@@ -10,6 +10,7 @@ export const STORAGE_KEYS = {
   LOGGED_IN_USER: 'sfgl-logged-in-user',
   PLAYER_RANKINGS: 'fantasy-golf-player-rankings',
   HEADSHOTS: 'fantasy-golf-headshots',
+  OWGR_LAST_SYNCED: 'fantasy-golf-owgr-last-synced',
 };
 
 // ============================================================================
@@ -39,6 +40,7 @@ export const COMMISSIONER_PASSWORD_HASH =
 // ============================================================================
 export const SWINGS = [
   'West Coast Swing',
+  'Florida Swing',
   'Spring Swing',
   'Summer Swing',
   'Fall Finish',
