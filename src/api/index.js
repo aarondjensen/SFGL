@@ -6,7 +6,7 @@ export { storage } from './storage';
 export { 
   supabase,
   playersApi,           // New consolidated API
-  playerRankingsApi,    // Legacy wrapper
+  playerRankingsApi,    // Legacy wrapper - FIXED
   livRosterApi,
   teamsApi,
   tournamentsApi,
