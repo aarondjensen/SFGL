@@ -344,24 +344,36 @@ export const AdminView = ({
                   continue;
                 }
                 
-                csvPlayers.push({ name: finalName, worldRank: rank });
+                // Look up PGA Tour ID from constants
+                const pgaTourId = PGA_TOUR_IDS[finalName] || null;
+                
+                csvPlayers.push({ 
+                  name: finalName, 
+                  worldRank: rank,
+                  pgaTourId: pgaTourId
+                });
                 resolvedNames.add(finalName);
                 
                 // Log name resolution for debugging
                 if (resolvedName && resolvedName !== csvName) {
                   console.log(`Resolved: "${csvName}" → "${resolvedName}"`);
                 }
+                if (lineNum <= 10 && pgaTourId) {
+                  console.log(`  → PGA Tour ID: ${pgaTourId}`);
+                }
               }
               
               if (csvPlayers.length > 0) {
+                const withIds = csvPlayers.filter(p => p.pgaTourId).length;
                 console.log(`Final CSV result: ${csvPlayers.length} players parsed`);
-                console.log('First 5 players:', csvPlayers.slice(0, 5).map(p => `${p.name} (#${p.worldRank})`).join(', '));
+                console.log(`  → ${withIds} players have PGA Tour IDs (${Math.round(withIds/csvPlayers.length*100)}%)`);
+                console.log('First 5 players:', csvPlayers.slice(0, 5).map(p => `${p.name} (#${p.worldRank}${p.pgaTourId ? `, ID:${p.pgaTourId}` : ''})`).join(', '));
                 console.log('Justin Rose?', csvPlayers.find(p => p.name.includes('Rose')));
                 
                 await storage.set(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
                 setOwgrLastSynced(now);
                 updateRankings(csvPlayers);
-                dialog.showToast(`✓ Loaded ${csvPlayers.length} players from CSV!`, 'success');
+                dialog.showToast(`✓ Loaded ${csvPlayers.length} players from CSV (${withIds} with PGA Tour IDs)!`, 'success');
               } else {
                 dialog.showToast('No valid players found in CSV', 'error');
               }
