@@ -554,11 +554,11 @@ export const AdminView = ({
       {/* Schedule + Player sync */}
       <div className="bg-teal-900/10 border border-teal-700/50 p-4 rounded-xl">
         <h3 className="font-bold text-teal-400 flex items-center gap-2 mb-4">🌎 World Rankings &amp; Schedule Sync</h3>
-        <div className="flex gap-2">
-          <button onClick={() => setShowScheduleImporter(true)} className="flex-1 bg-purple-600 hover:bg-purple-700 py-2 rounded text-sm font-bold transition-colors">
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <button onClick={() => setShowScheduleImporter(true)} className="bg-purple-600 hover:bg-purple-700 py-2 rounded text-sm font-bold transition-colors">
             Import 2026 Schedule
           </button>
-          <button onClick={handleSyncPlayers} className="flex-1 bg-teal-600 hover:bg-teal-700 py-2 rounded-lg text-sm font-bold transition-colors">
+          <button onClick={handleSyncPlayers} className="bg-teal-600 hover:bg-teal-700 py-2 rounded-lg text-sm font-bold transition-colors">
             Sync OWGR Top 250
           </button>
         </div>
@@ -576,26 +576,7 @@ export const AdminView = ({
         </div>
       </div>
 
-      {/* Mulligan resets */}
-      <div className="bg-gray-800/50 border border-gray-700 p-4 rounded-xl">
-        <h3 className="font-bold text-gray-300 mb-3">🚨 Reset Mulligans</h3>
-        <div className="space-y-2">
-          {teams.map(team => (
-            <div key={team.id} className="flex items-center justify-between bg-gray-700/30 rounded-lg px-3 py-2">
-              <span className="text-sm font-medium">{team.name}</span>
-              <div className="flex gap-2">
-                <div className="text-[10px] text-gray-500 self-center">
-                  Sig: {team.mulligans?.signatureMajor ?? 0} · Reg: {team.mulligans?.regular ?? 0}
-                </div>
-                <button onClick={() => resetMulligan(team.id, 'sig')} className="px-2 py-1 bg-purple-700 hover:bg-purple-600 rounded text-[10px] font-bold">Reset Sig</button>
-                <button onClick={() => resetMulligan(team.id, 'reg')} className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-[10px] font-bold">Reset Reg</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Roster Management */}
+      {/* Roster Management with Mulligans */}
       <div className="bg-purple-900/20 border border-purple-700/50 p-4 rounded-xl">
         <h3 className="font-bold text-purple-400 flex items-center gap-2 mb-4">👥 Roster Management</h3>
         <div className="space-y-3">
@@ -613,6 +594,36 @@ export const AdminView = ({
               {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
+          
+          {/* Mulligan Management for selected team */}
+          {rosterMgmtTeam && (() => {
+            const team = teams.find(t => t.id === rosterMgmtTeam);
+            return (
+              <div className="bg-gray-800/30 border border-gray-600 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-gray-400">Mulligan Management</span>
+                  <div className="text-[10px] text-gray-500">
+                    Sig: {team.mulligans?.signatureMajor ?? 0} · Reg: {team.mulligans?.regular ?? 0}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => resetMulligan(team.id, 'sig')} 
+                    className="flex-1 px-2 py-1.5 bg-purple-700 hover:bg-purple-600 rounded text-xs font-bold transition-colors"
+                  >
+                    Reset Signature
+                  </button>
+                  <button 
+                    onClick={() => resetMulligan(team.id, 'reg')} 
+                    className="flex-1 px-2 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-xs font-bold transition-colors"
+                  >
+                    Reset Regular
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+          
           {rosterMgmtTeam && (() => {
             const team = teams.find(t => t.id === rosterMgmtTeam);
             const searchResults = playerSearch.trim() 
@@ -701,28 +712,9 @@ export const AdminView = ({
         </div>
       </div>
 
-      {/* Draft & Season Reset */}
-      <div className="bg-red-900/20 border border-red-700/50 p-4 rounded-xl">
-        <h3 className="font-bold text-red-400 flex items-center gap-2 mb-4">⚠️ Dangerous Actions</h3>
-        <div className="space-y-2">
-          <button
-            onClick={handleDraft}
-            className="w-full py-2 bg-orange-600 hover:bg-orange-700 rounded-lg text-sm font-bold transition-colors"
-          >
-            🎯 Start Draft (clears all rosters)
-          </button>
-          <button
-            onClick={handleSeasonReset}
-            className="w-full py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-bold transition-colors"
-          >
-            🔥 Reset Entire Season
-          </button>
-        </div>
-      </div>
-
-      {/* Export / Import */}
+      {/* Backup & Restore */}
       <div className="bg-gray-800/50 border border-gray-700 p-4 rounded-xl">
-        <h3 className="font-bold text-gray-300 mb-3">💾 Backup &amp; Restore</h3>
+        <h3 className="font-bold text-gray-300 mb-3 flex items-center gap-2">💾 Backup &amp; Restore</h3>
         <div className="flex gap-2">
           <button onClick={handleExport} className="flex-1 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm font-bold transition-colors">
             Export JSON
@@ -732,6 +724,30 @@ export const AdminView = ({
             <input type="file" accept=".json" onChange={handleImport} className="hidden" />
           </label>
         </div>
+      </div>
+
+      {/* Draft */}
+      <div className="bg-orange-900/20 border border-orange-700/50 p-4 rounded-xl">
+        <h3 className="font-bold text-orange-400 flex items-center gap-2 mb-3">🎯 Start New Draft</h3>
+        <p className="text-xs text-gray-400 mb-3">This will clear all rosters and begin keeper selection.</p>
+        <button
+          onClick={handleDraft}
+          className="w-full py-2.5 bg-orange-600 hover:bg-orange-700 rounded-lg text-sm font-bold transition-colors"
+        >
+          Start Draft
+        </button>
+      </div>
+
+      {/* Season Reset - DANGER ZONE */}
+      <div className="bg-red-900/20 border border-red-700/50 p-4 rounded-xl">
+        <h3 className="font-bold text-red-400 flex items-center gap-2 mb-3">⚠️ DANGER ZONE</h3>
+        <p className="text-xs text-gray-400 mb-3">This will permanently delete all tournament results, transactions, lineups, rosters, and player stats. Team names and schedule will be preserved.</p>
+        <button
+          onClick={handleSeasonReset}
+          className="w-full py-2.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-bold transition-colors"
+        >
+          🔥 Reset Entire Season
+        </button>
       </div>
 
       {/* Schedule Import Modal */}
