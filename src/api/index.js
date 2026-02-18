@@ -3,4 +3,14 @@
 export { storage } from './storage';
 
 // Export Supabase client and APIs
-export { supabase, playerRankingsApi, livRosterApi } from './supabase';
+export { 
+  supabase, 
+  playerRankingsApi, 
+  livRosterApi,
+  teamsApi,
+  tournamentsApi,
+  transactionsApi,
+  settingsApi,
+  playerStatsApi,
+  headshotsApi,
+} from './supabase';
