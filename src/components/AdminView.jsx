@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { slashGolfFetch, processTournamentData, makePlayer } from '../utils';
+import { slashGolfFetch, processTournamentData, makePlayer, resolvePlayerName } from '../utils';
 import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA } from '../constants';
 import { storage } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
 import { DraftModal } from './DraftModal';
+
+// Expose resolvePlayerName globally for CSV upload handler
+if (typeof window !== 'undefined') {
+  window.resolvePlayerName = resolvePlayerName;
+}
 
 export const AdminView = ({
   isCommissioner, setIsCommissioner, setActiveTab,
@@ -242,20 +247,20 @@ export const AdminView = ({
       dialog.showToast('Fetching World Rankings...', 'info');
       let rankings = [];
       
-      // Try worldranking endpoint for recent years
-      for (const yr of ['2026', '2025', '2024']) {
-        if (rankings.length) break;
-        
-        try {
-          const owgrData = await slashGolfFetch('worldranking', { year: yr });
-          rankings = owgrData?.rankings || [];
-          if (rankings.length) {
-            console.log(`Found ${rankings.length} players from worldranking endpoint (${yr})`);
-            break;
-          }
-        } catch (e) {
-          console.log(`World ranking endpoint failed for ${yr}:`, e);
+      // Try worldranking endpoint for 2026
+      try {
+        console.log(`Attempting worldranking endpoint for 2026...`);
+        const owgrData = await slashGolfFetch('worldranking', { year: '2026' });
+        console.log(`Response for 2026:`, owgrData);
+        rankings = owgrData?.rankings || [];
+        if (rankings.length) {
+          console.log(`✓ Found ${rankings.length} players from worldranking endpoint (2026)`);
+          dialog.showToast(`Loaded OWGR data from 2026 season`, 'info');
+        } else {
+          console.log(`No rankings found in response for 2026`);
         }
+      } catch (e) {
+        console.log(`✗ World ranking endpoint failed for 2026:`, e.message);
       }
 
       const newPlayers = [];
@@ -271,16 +276,95 @@ export const AdminView = ({
       }
 
       if (newPlayers.length === 0) {
-        console.log('No players from API, using fallback list');
-        Object.keys(PGA_TOUR_IDS).forEach((name, i) => {
-          if (newPlayers.length < 250) newPlayers.push({ name, worldRank: i + 1 });
-        });
-        dialog.showToast(`Using fallback player list (${newPlayers.length} players)`, 'info');
+        console.log('No players from API, offering CSV upload');
+        
+        // Wait a moment for any toasts to clear
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        const uploadChoice = await dialog.showConfirm(
+          'API Data Unavailable',
+          '2026 OWGR data is not available via API yet.\n\nWould you like to upload an OWGR CSV file from owgr.com instead?\n\n(Or click Cancel to use fallback list)',
+          { confirmText: 'Upload CSV', cancelText: 'Use Fallback' }
+        );
+        
+        if (uploadChoice) {
+          // Trigger file input
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.csv';
+          input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            try {
+              dialog.showToast('Processing CSV...', 'info');
+              const text = await file.text();
+              const lines = text.split('\n').slice(1); // Skip header
+              
+              // Build list of known names from current player pool
+              const knownNames = allPlayers.map(p => p.name);
+              
+              const csvPlayers = [];
+              const resolvedNames = new Set(); // Track already added names
+              
+              for (const line of lines) {
+                if (!line.trim()) continue;
+                
+                // Parse CSV line (handles quoted fields)
+                const match = line.match(/(?:^|,)("(?:[^"]+|"")*"|[^,]*)/g);
+                if (!match || match.length < 7) continue;
+                
+                const fields = match.map(f => f.replace(/^,?"?|"?$/g, '').replace(/""/g, '"'));
+                const rank = parseInt(fields[1]) || 999;
+                const csvName = fields[5]?.trim();
+                
+                if (!csvName) continue;
+                
+                // Try to resolve name using the same logic as API sync
+                const resolvedName = window.resolvePlayerName(csvName, knownNames);
+                const finalName = resolvedName || csvName;
+                
+                // Skip if already added, is a LIV player, or we hit 250 limit
+                if (resolvedNames.has(finalName) || livPlayers.has(finalName) || csvPlayers.length >= 250) {
+                  continue;
+                }
+                
+                csvPlayers.push({ name: finalName, worldRank: rank });
+                resolvedNames.add(finalName);
+                
+                // Log name resolution for debugging
+                if (resolvedName && resolvedName !== csvName) {
+                  console.log(`Resolved: "${csvName}" → "${resolvedName}"`);
+                }
+              }
+              
+              if (csvPlayers.length > 0) {
+                await storage.setItem(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
+                setOwgrLastSynced(now);
+                updateRankings(csvPlayers);
+                dialog.showToast(`✓ Loaded ${csvPlayers.length} players from CSV!`, 'success');
+              } else {
+                dialog.showToast('No valid players found in CSV', 'error');
+              }
+            } catch (err) {
+              console.error('CSV parse error:', err);
+              dialog.showToast('Failed to parse CSV file', 'error');
+            }
+          };
+          input.click();
+          return; // Exit after triggering upload
+        } else {
+          // Use fallback
+          Object.keys(PGA_TOUR_IDS).forEach((name, i) => {
+            if (newPlayers.length < 250) newPlayers.push({ name, worldRank: i + 1 });
+          });
+          dialog.showToast(`Using fallback player list (${newPlayers.length} players). Upload CSV later for current rankings.`, 'warning');
+        }
       } else {
         // Save sync timestamp
         await storage.setItem(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
         setOwgrLastSynced(now);
-        dialog.showToast(`Success! Loaded ${newPlayers.length} PGA Tour players (filtered LIV).`, 'success');
+        dialog.showToast(`✓ Loaded ${newPlayers.length} PGA Tour players with live OWGR rankings!`, 'success');
       }
       updateRankings(newPlayers);
     } catch (error) {
