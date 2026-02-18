@@ -116,8 +116,8 @@ export const playersApi = {
       if (p.headshot_url) {
         map[p.name] = p.headshot_url;
       } else if (p.pga_tour_id) {
-        // Generate CDN URL from ID
-        map[p.name] = `https://pga-tour-res.cloudflare.com/resources/photoplayer/${p.pga_tour_id}.jpg`;
+        // Generate Cloudinary CDN URL from ID (same format as utils/getPlayerHeadshot)
+        map[p.name] = `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${p.pga_tour_id}`;
       }
     });
     return map;
