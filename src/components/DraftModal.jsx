@@ -401,10 +401,10 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                     </div>
                   </div>
                 ) : (
-                  <div>
-                    {limitedSearch.trim() && !currentKeeper.limited && (
-                      <div className="h-32 overflow-y-auto bg-gray-900 rounded border border-gray-700">
-                        {limitedSearchResults.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="h-32 overflow-y-auto bg-gray-900 rounded border border-gray-700">
+                      {limitedSearch.trim() ? (
+                        limitedSearchResults.length > 0 ? (
                           limitedSearchResults.map(player => (
                             <button
                               key={player.name}
@@ -429,9 +429,13 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                           ))
                         ) : (
                           <div className="text-center py-3 text-gray-500 text-xs">No players found</div>
-                        )}
-                      </div>
-                    )}
+                        )
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500 text-xs">
+                          Type to search for players...
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -440,7 +444,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
               <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="w-7 h-7 bg-blue-600 rounded text-sm font-bold flex items-center justify-center">U</div>
+                    <div className="w-7 h-7 bg-blue-600 rounded text-lg font-bold flex items-center justify-center">∞</div>
                     <span className="font-bold whitespace-nowrap">Blue Keeper</span>
                   </div>
                   {!currentKeeper.unlimited && (
@@ -470,10 +474,10 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                     <span className="font-medium">{currentKeeper.unlimited.name}</span>
                   </div>
                 ) : (
-                  <div>
-                    {unlimitedSearch.trim() && !currentKeeper.unlimited && (
-                      <div className="h-32 overflow-y-auto bg-gray-900 rounded border border-gray-700">
-                        {unlimitedSearchResults.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="h-32 overflow-y-auto bg-gray-900 rounded border border-gray-700">
+                      {unlimitedSearch.trim() ? (
+                        unlimitedSearchResults.length > 0 ? (
                           unlimitedSearchResults.map(player => (
                             <button
                               key={player.name}
@@ -498,9 +502,13 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                           ))
                         ) : (
                           <div className="text-center py-3 text-gray-500 text-xs">No players found</div>
-                        )}
-                      </div>
-                    )}
+                        )
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500 text-xs">
+                          Type to search for players...
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

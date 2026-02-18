@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Edit2, Save } from 'lucide-react';
+import { Settings, Edit2, Save, X } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { slashGolfFetch, processTournamentData, makePlayer, resolvePlayerName } from '../utils';
 import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA } from '../constants';
@@ -240,7 +240,7 @@ export const AdminView = ({
               // Cache LIV roster
               await storage.set(livCacheKey, JSON.stringify([...livPlayers]));
               await storage.set(livCacheTimestampKey, now.toString());
-              console.log(`Cached LIV roster (${livPlayers.size} players)`);
+              console.log(`Cached LIV roster (${livPlayers.size} players):`, [...livPlayers].sort());
               break;
             }
           } catch { /* try next year */ }
@@ -610,6 +610,16 @@ export const AdminView = ({
             Add PGA Tour ID
           </button>
         </div>
+        <button 
+          onClick={async () => {
+            await storage.remove('fantasy-golf-liv-cache');
+            await storage.remove('fantasy-golf-liv-cache-timestamp');
+            dialog.showToast('LIV cache cleared. Next sync will refresh LIV roster.', 'success');
+          }}
+          className="w-full mt-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-bold transition-colors"
+        >
+          Clear LIV Cache
+        </button>
         <div className="mt-2 space-y-1">
           {rankingsLastUpdated && (
             <p className="text-[10px] text-gray-500 text-center">
