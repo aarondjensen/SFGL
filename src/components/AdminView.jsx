@@ -255,6 +255,15 @@ export const AdminView = ({
     }
   };
 
+  // ── Sync via CSV ──────────────────────────────────────────────────────────
+  const handleSyncCsv = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = async (e) => await handleCsvUpload(e.target.files[0]);
+    input.click();
+  };
+
   // ── Player Sync ───────────────────────────────────────────────────────────
   const handleSyncPlayers = async () => {
     // Check if synced recently (within 7 days)
@@ -263,33 +272,16 @@ export const AdminView = ({
     
     if (owgrLastSynced && (now - owgrLastSynced < sevenDays)) {
       const daysSince = Math.floor((now - owgrLastSynced) / (24 * 60 * 60 * 1000));
-      
-      // Show 3-option dialog using window.confirm cascade
-      const message = `⚠️ RECENT SYNC DETECTED\n\nOWGR was synced ${daysSince} day${daysSince === 1 ? '' : 's'} ago.\n\nSyncing frequently uses API calls. OWGR rankings don't change much week-to-week.\n\nRecommendation: Sync every 2-3 weeks to conserve API quota.\n\nOPTIONS:\n1. Upload CSV from owgr.com (0 API calls)\n2. Sync with API anyway (~3 API calls)\n3. Cancel\n\nClick OK to see options.`;
-      
-      if (!window.confirm(message)) return;
-      
-      // Ask which option
-      const choice = window.prompt(
-        'Choose option:\n\n1 = Upload CSV (recommended, 0 API calls)\n2 = Sync with API (~3 calls)\n\nDownload CSV from:\nhttps://www.owgr.com/current-world-ranking\n\nEnter 1 or 2:'
+      const warning = await dialog.showConfirm(
+        '⚠️ Recent Sync Detected',
+        `OWGR was synced ${daysSince} day${daysSince === 1 ? '' : 's'} ago.\n\nSyncing frequently uses API calls (~3 calls). OWGR rankings don't change much week-to-week.\n\nRecommendation: Sync every 2-3 weeks, or use CSV upload (0 API calls).\n\nContinue with API sync anyway?`,
+        { type: 'warning', confirmText: 'Sync Anyway' }
       );
-      
-      if (choice === '1') {
-        // Trigger CSV upload
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.csv';
-        input.onchange = async (e) => await handleCsvUpload(e.target.files[0]);
-        input.click();
-        return;
-      } else if (choice !== '2') {
-        return; // Cancel
-      }
-      // If choice === '2', continue to API sync below
+      if (!warning) return;
     }
 
     const ok = await dialog.showConfirm(
-      'Sync OWGR Players',
+      'Sync OWGR Players via API',
       'Fetch the current Top 250 OWGR players?\n\nThis will also fetch the LIV Golf roster to filter them out.\n\nAPI Calls: ~3 calls',
       { confirmText: 'Fetch Players' },
     );
@@ -712,19 +704,35 @@ export const AdminView = ({
       <div className="bg-teal-900/10 border border-teal-700/50 p-4 rounded-xl">
         <h3 className="font-bold text-teal-400 flex items-center gap-2 mb-4">👤 Player Management</h3>
         <div className="grid grid-cols-2 gap-2 mb-2">
-          <button onClick={handleSyncPlayers} className="bg-teal-600 hover:bg-teal-700 py-2 rounded-lg text-sm font-bold transition-colors">
-            Sync OWGR Top 250
+          <button 
+            onClick={handleSyncPlayers} 
+            className="bg-teal-600 hover:bg-teal-700 py-2 rounded-lg text-xs font-bold transition-colors"
+            title="Uses ~3 API calls"
+          >
+            Sync via API
           </button>
-          <button onClick={() => setShowPlayerIdInput(true)} className="bg-blue-600 hover:bg-blue-700 py-2 rounded-lg text-sm font-bold transition-colors">
-            Add PGA Tour ID
+          <button 
+            onClick={handleSyncCsv} 
+            className="bg-green-600 hover:bg-green-700 py-2 rounded-lg text-xs font-bold transition-colors"
+            title="0 API calls - upload from owgr.com"
+          >
+            Sync via CSV
           </button>
         </div>
-        <button 
-          onClick={handleOpenLivManager}
-          className="w-full mt-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-bold transition-colors"
-        >
-          Manage LIV Roster
-        </button>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <button 
+            onClick={() => setShowPlayerIdInput(true)} 
+            className="bg-blue-600 hover:bg-blue-700 py-2 rounded-lg text-xs font-bold transition-colors"
+          >
+            Add PGA Tour ID
+          </button>
+          <button 
+            onClick={handleOpenLivManager}
+            className="bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold transition-colors"
+          >
+            Manage LIV Roster
+          </button>
+        </div>
         <div className="mt-2 space-y-1">
           {rankingsLastUpdated && (
             <p className="text-[10px] text-gray-500 text-center">
