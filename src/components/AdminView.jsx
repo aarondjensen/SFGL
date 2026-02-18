@@ -37,7 +37,7 @@ export const AdminView = ({
   useEffect(() => {
     const loadTimestamp = async () => {
       try {
-        const timestamp = await storage.getItem(STORAGE_KEYS.OWGR_LAST_SYNCED);
+        const timestamp = await storage.get(STORAGE_KEYS.OWGR_LAST_SYNCED);
         if (timestamp) setOwgrLastSynced(parseInt(timestamp));
       } catch (e) {
         console.error('Failed to load OWGR timestamp:', e);
@@ -205,11 +205,11 @@ export const AdminView = ({
       let usedCache = false;
       
       try {
-        const cacheTimestamp = await storage.getItem(livCacheTimestampKey);
+        const cacheTimestamp = await storage.get(livCacheTimestampKey);
         const thirtyDays = 30 * 24 * 60 * 60 * 1000;
         
         if (cacheTimestamp && (now - parseInt(cacheTimestamp) < thirtyDays)) {
-          const cached = await storage.getItem(livCacheKey);
+          const cached = await storage.get(livCacheKey);
           if (cached) {
             const cachedPlayers = JSON.parse(cached);
             cachedPlayers.forEach(name => livPlayers.add(name));
@@ -235,8 +235,8 @@ export const AdminView = ({
               });
               
               // Cache LIV roster
-              await storage.setItem(livCacheKey, JSON.stringify([...livPlayers]));
-              await storage.setItem(livCacheTimestampKey, now.toString());
+              await storage.set(livCacheKey, JSON.stringify([...livPlayers]));
+              await storage.set(livCacheTimestampKey, now.toString());
               console.log(`Cached LIV roster (${livPlayers.size} players)`);
               break;
             }
@@ -358,7 +358,7 @@ export const AdminView = ({
                 console.log('First 5 players:', csvPlayers.slice(0, 5).map(p => `${p.name} (#${p.worldRank})`).join(', '));
                 console.log('Justin Rose?', csvPlayers.find(p => p.name.includes('Rose')));
                 
-                await storage.setItem(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
+                await storage.set(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
                 setOwgrLastSynced(now);
                 updateRankings(csvPlayers);
                 dialog.showToast(`✓ Loaded ${csvPlayers.length} players from CSV!`, 'success');
@@ -382,7 +382,7 @@ export const AdminView = ({
         }
       } else {
         // Save sync timestamp
-        await storage.setItem(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
+        await storage.set(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString());
         setOwgrLastSynced(now);
         dialog.showToast(`✓ Loaded ${newPlayers.length} PGA Tour players with live OWGR rankings!`, 'success');
       }
