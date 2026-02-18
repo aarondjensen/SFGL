@@ -134,15 +134,11 @@ export const useLeague = (STORAGE_KEYS) => {
           }
 
           if (supabaseRankings.length > 0) {
-            const players = supabaseRankings.map(r => ({
-              name: r.name,
-              worldRank: r.world_rank,
-              pgaTourId: r.pga_tour_id,
-            }));
-            setAllPlayers(players);
+            // playerRankingsApi.getAll() already returns the correct format
+            setAllPlayers(supabaseRankings);
             const lastUpdated = await playerRankingsApi.getLastUpdated();
             setRankingsLastUpdated(lastUpdated);
-            console.log(`✓ Loaded ${players.length} players from Supabase`);
+            console.log(`✓ Loaded ${supabaseRankings.length} players from Supabase`);
           } else {
             const localRankings = await storage.get(STORAGE_KEYS.PLAYER_RANKINGS, null);
             if (localRankings?.players) {

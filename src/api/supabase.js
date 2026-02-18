@@ -152,7 +152,23 @@ export const playersApi = {
       .upsert({ key: 'players_last_updated', value: timestamp });
   },
 };
-
+/**
+ * Legacy Player Rankings API - Backward compatibility wrapper
+ * Delegates to the new consolidated playersApi
+ */
+export const playerRankingsApi = {
+  async getAll() {
+    return await playersApi.getAllForApp();
+  },
+  
+  async updateAll(players) {
+    return await playersApi.upsertMany(players);
+  },
+  
+  async getLastUpdated() {
+    return await playersApi.getLastUpdated();
+  },
+};
 
 /**
  * LIV Roster API
