@@ -54,18 +54,15 @@ const FantasyGolfLeague = () => {
   const currentTournament = tournaments.find(t => t.playing);
 
   // ── Restore session on page load ──────────────────────────────────────────
-  // If the manager logged in within the last 60 days, they'll be auto-logged in
   useEffect(() => {
     managerAuthApi.getCurrentSession().then(session => {
       if (!session) return;
       if (session.is_commissioner) {
         setIsCommissioner(true);
       } else if (session.managers) {
-        setLoggedInUser(session.managers.name); // e.g. "Jensen"
+        setLoggedInUser(session.managers.name);
       }
-    }).catch(() => {
-      // Session check failed silently — user just won't be auto-logged in
-    });
+    }).catch(() => {});
   }, []);
 
   // ── Admin login ────────────────────────────────────────────────────────────
@@ -82,105 +79,235 @@ const FantasyGolfLeague = () => {
     }
   };
 
-  // ── Manager login (called by LoginPage on success) ─────────────────────────
+  // ── Manager login ──────────────────────────────────────────────────────────
   const handleManagerLogin = (result) => {
-    // result = { manager, sessionToken } from managerAuthApi.login()
-    setLoggedInUser(result.manager.name); // e.g. "Jensen"
+    setLoggedInUser(result.manager.name);
     setShowLoginModal(false);
   };
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
-    await managerAuthApi.logout(); // deletes session from Supabase + clears localStorage
+    await managerAuthApi.logout();
     setLoggedInUser(null);
     setIsCommissioner(false);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex flex-col items-center justify-center gap-3">
-        <div className="text-white text-xl animate-pulse">Loading Season...</div>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3"
+        style={{ background: '#0a1628' }}>
+        <img src={sfglLogo} alt="SFGL"
+          style={{ width: 100, filter: 'brightness(0) invert(1)', opacity: 0.6 }} />
+        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', fontFamily: 'serif' }}>
+          Loading Season…
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 text-white pb-20">
-      {/* Header */}
-      <header className="bg-black/40 backdrop-blur-sm border-b border-green-700/30 sticky top-0 z-50">
+    <div className="min-h-screen pb-20 text-white" style={{ background: '#0a1628' }}>
+
+      {/* ── Header ── */}
+      <header style={{
+        background: 'rgba(8, 18, 40, 0.95)',
+        borderBottom: '1px solid rgba(180,160,100,0.15)',
+        backdropFilter: 'blur(12px)',
+        position: 'sticky', top: 0, zIndex: 50,
+      }}>
         <div className="max-w-3xl mx-auto px-3 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-11 h-11 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center bg-white">
-                <img src={sfglLogo} alt="SFGL" className="w-full h-full object-cover scale-[2.5]" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xl font-bold text-green-400 leading-none">2026</span>
-              </div>
+
+            {/* Logo */}
+            <div className="flex items-center gap-3">
+              <img src={sfglLogo} alt="SFGL" style={{
+                height: 28,
+                width: 'auto',
+                filter: 'brightness(0) invert(1)',
+                opacity: 0.9,
+              }} />
+              <div style={{
+                width: 1,
+                height: 20,
+                background: 'rgba(180,160,100,0.25)',
+              }} />
+              <span style={{
+                fontFamily: 'Georgia, serif',
+                fontSize: 13,
+                color: 'rgba(255,255,255,0.4)',
+                letterSpacing: 1,
+              }}>2026</span>
             </div>
-            {loggedInUser
-              ? <button onClick={handleLogout} className="text-xs bg-red-600/20 px-3 py-1 rounded border border-red-600/50">Logout</button>
-              : <button onClick={() => setShowLoginModal(true)} className="text-xs bg-green-600/20 px-3 py-1 rounded border border-green-600/50">Login</button>
-            }
+
+            {/* Right side: user + login/logout */}
+            <div className="flex items-center gap-3">
+              {loggedInUser && (
+                <span style={{
+                  fontSize: 11,
+                  color: 'rgba(180,160,100,0.7)',
+                  letterSpacing: 1,
+                  textTransform: 'uppercase',
+                  fontFamily: 'serif',
+                }}>
+                  {loggedInUser}
+                </span>
+              )}
+              {loggedInUser
+                ? (
+                  <button onClick={handleLogout} style={{
+                    fontSize: 10,
+                    letterSpacing: 1.5,
+                    textTransform: 'uppercase',
+                    padding: '5px 12px',
+                    background: 'rgba(180,60,60,0.12)',
+                    border: '1px solid rgba(180,60,60,0.3)',
+                    borderRadius: 1,
+                    color: 'rgba(220,120,120,0.8)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}>
+                    Sign Out
+                  </button>
+                ) : (
+                  <button onClick={() => setShowLoginModal(true)} style={{
+                    fontSize: 10,
+                    letterSpacing: 1.5,
+                    textTransform: 'uppercase',
+                    padding: '5px 12px',
+                    background: 'rgba(26,51,102,0.5)',
+                    border: '1px solid rgba(180,160,100,0.25)',
+                    borderRadius: 1,
+                    color: 'rgba(180,160,100,0.8)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}>
+                    Sign In
+                  </button>
+                )
+              }
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Segment / active tournament banner */}
+      {/* ── Segment / active tournament banner ── */}
       <div className="max-w-3xl mx-auto px-3 mt-4 mb-2 flex items-center gap-4">
-        <div className="font-bold text-white text-sm sm:text-base">{getSegmentByDate()}</div>
+        <div style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 }}>
+          {getSegmentByDate()}
+        </div>
         {currentTournament && (
-          <div className="font-bold text-yellow-400 text-sm sm:text-base flex items-center gap-1.5">
-            <span className="text-green-400">⛳</span> {currentTournament.name}
+          <div style={{ fontSize: 13, color: 'rgba(180,160,100,0.85)', fontFamily: 'Georgia, serif' }}
+            className="flex items-center gap-1.5">
+            <span>⛳</span> {currentTournament.name}
           </div>
         )}
-        {isSyncing && <span className="text-[10px] text-gray-500 animate-pulse ml-auto">Saving…</span>}
+        {isSyncing && (
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="ml-auto animate-pulse">
+            Saving…
+          </span>
+        )}
       </div>
 
-      {/* Navigation */}
+      {/* ── Navigation ── */}
       <nav className="max-w-3xl mx-auto px-3 mt-2 relative">
         <div className="flex gap-1 pb-2 overflow-x-auto">
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                if (tab.id === 'admin' && !isCommissioner) {
-                  setShowAdminLoginPopover(prev => !prev);
-                  return;
-                }
-                setShowAdminLoginPopover(false);
-                setActiveTab(tab.id);
-              }}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs font-medium transition-colors ${
-                activeTab === tab.id ? 'bg-green-600 text-white' : 'bg-gray-800/50 text-gray-400 hover:text-gray-200'
-              } ${tab.id === 'admin' && showAdminLoginPopover ? 'bg-gray-700 text-white' : ''}`}
-            >
-              <tab.Icon className="w-4 h-4" />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
+          {TABS.map(tab => {
+            const isActive = activeTab === tab.id;
+            const isAdminPopover = tab.id === 'admin' && showAdminLoginPopover;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  if (tab.id === 'admin' && !isCommissioner) {
+                    setShowAdminLoginPopover(prev => !prev);
+                    return;
+                  }
+                  setShowAdminLoginPopover(false);
+                  setActiveTab(tab.id);
+                }}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  padding: '10px 8px',
+                  borderRadius: 2,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  letterSpacing: 0.5,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  border: isActive
+                    ? '1px solid rgba(180,160,100,0.3)'
+                    : '1px solid transparent',
+                  background: isActive
+                    ? 'rgba(26,51,102,0.7)'
+                    : isAdminPopover
+                      ? 'rgba(255,255,255,0.06)'
+                      : 'rgba(255,255,255,0.04)',
+                  color: isActive
+                    ? 'rgba(180,160,100,0.9)'
+                    : 'rgba(255,255,255,0.4)',
+                  boxShadow: isActive ? 'inset 0 1px 0 rgba(180,160,100,0.1)' : 'none',
+                }}
+              >
+                <tab.Icon style={{ width: 14, height: 14 }} />
+                <span className="hidden sm:inline">{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Admin login popover */}
+        {/* Admin password popover */}
         {showAdminLoginPopover && !isCommissioner && (
-          <div className="absolute right-3 top-full mt-1 bg-gray-800 p-2.5 rounded-xl shadow-2xl border border-green-600/50 z-50 flex gap-2 animate-[scaleIn_0.15s_ease-out]">
+          <div style={{
+            position: 'absolute', right: 12, top: '100%', marginTop: 4,
+            background: '#0f1f3d',
+            border: '1px solid rgba(180,160,100,0.25)',
+            borderRadius: 2,
+            padding: 10,
+            boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
+            zIndex: 50,
+            display: 'flex',
+            gap: 8,
+          }}>
             <input
               type="password"
               autoFocus
-              placeholder="Password..."
+              placeholder="Commissioner password…"
               value={adminPassword}
               onChange={e => setAdminPassword(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleAdminLogin(); }}
-              className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-1.5 text-sm w-32 text-white focus:outline-none focus:border-green-500"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 1,
+                padding: '7px 12px',
+                fontSize: 13,
+                width: 160,
+                color: 'white',
+                outline: 'none',
+              }}
             />
-            <button onClick={handleAdminLogin} className="bg-green-600 hover:bg-green-500 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors">
-              Go
+            <button onClick={handleAdminLogin} style={{
+              background: '#1a3366',
+              border: '1px solid rgba(180,160,100,0.25)',
+              borderRadius: 1,
+              padding: '7px 14px',
+              fontSize: 12,
+              fontWeight: 600,
+              color: 'rgba(180,160,100,0.9)',
+              cursor: 'pointer',
+              letterSpacing: 1,
+            }}>
+              Enter
             </button>
           </div>
         )}
       </nav>
 
-      {/* Main content */}
+      {/* ── Main content ── */}
       <main className="max-w-3xl mx-auto px-3 mt-4">
         <ErrorBoundary>
           {activeTab === 'standings' && (
@@ -250,14 +377,27 @@ const FantasyGolfLeague = () => {
         </ErrorBoundary>
       </main>
 
-      {/* Manager Login Modal — replaced old team-picker with full LoginPage */}
+      {/* ── Manager Login Modal ── */}
       {showLoginModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(5, 10, 25, 0.88)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 50, padding: 16,
+        }}>
           <LoginPage onLogin={handleManagerLogin} />
           <button
             onClick={() => setShowLoginModal(false)}
-            className="fixed top-4 right-4 text-white/50 hover:text-white text-3xl z-50 leading-none"
-            aria-label="Close login"
+            aria-label="Close"
+            style={{
+              position: 'fixed', top: 16, right: 16,
+              background: 'none', border: 'none',
+              color: 'rgba(255,255,255,0.3)',
+              fontSize: 24, cursor: 'pointer',
+              lineHeight: 1, zIndex: 51,
+              transition: 'color 0.2s',
+            }}
           >
             ✕
           </button>
