@@ -8,6 +8,7 @@ import { ScheduleImportModal } from './ScheduleImportModal';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi } from '../api/supabase';
 
+
 // Expose resolvePlayerName globally for CSV upload handler
 if (typeof window !== 'undefined') {
   window.resolvePlayerName = resolvePlayerName;
