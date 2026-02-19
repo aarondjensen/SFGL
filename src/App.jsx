@@ -25,7 +25,7 @@ const TABS = [
   { id: 'rosters',      label: 'Rosters',      Icon: Users      },
   { id: 'transactions', label: 'Transactions', Icon: DollarSign },
   { id: 'tournaments',  label: 'Tournaments',  Icon: Calendar   },
-  { id: 'admin',        label: 'Admin',        Icon: Settings   },
+  { id: 'admin',        label: 'Commish',      Icon: Settings   },
 ];
 
 // ── App shell ───────────────────────────────────────────────────────────────
