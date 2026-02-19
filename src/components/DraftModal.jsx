@@ -632,7 +632,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-      <div className="bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-gray-800 rounded-xl max-w-4xl w-full h-[85vh] max-h-[700px] overflow-hidden flex flex-col">
         <div className="p-4 border-b border-gray-700 flex justify-between items-center">
           <div>
             <h2 className="text-xl font-bold">Fantasy Golf Draft</h2>
@@ -681,7 +681,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 overflow-auto p-4 min-h-[400px]">
               <div className="grid gap-2">
                 {availablePlayers.map(player => (
                   <button
