@@ -446,3 +446,160 @@ export const draftStateApi = {
     if (error) throw error;
   },
 };
+
+/**
+ * ============================================================================
+ * MANAGER AUTH API
+ * ============================================================================
+ */
+export const managerAuthApi = {
+  async login(email, password) {
+    const { data: team, error: teamError } = await supabase
+      .from('teams')
+      .select('*')
+      .eq('manager_email', email)
+      .single();
+    
+    if (teamError || !team) throw new Error('Invalid email or password');
+    if (team.manager_password_hash !== password) throw new Error('Invalid email or password');
+
+    const sessionToken = crypto.randomUUID();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const { data: session, error: sessionError } = await supabase
+      .from('manager_sessions')
+      .insert({
+        team_id: team.id,
+        session_token: sessionToken,
+        is_commissioner: false,
+        expires_at: expiresAt.toISOString(),
+      })
+      .select()
+      .single();
+
+    if (sessionError) throw sessionError;
+
+    localStorage.setItem('manager_session', sessionToken);
+    localStorage.setItem('manager_team_id', team.id);
+
+    return { team, sessionToken };
+  },
+
+  async loginCommissioner(password) {
+    const { data } = await supabase
+      .from('league_settings')
+      .select('value')
+      .eq('key', 'commissioner_password')
+      .single();
+
+    if (!data || data.value !== password) throw new Error('Invalid commissioner password');
+
+    const sessionToken = crypto.randomUUID();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await supabase
+      .from('manager_sessions')
+      .insert({
+        team_id: null,
+        session_token: sessionToken,
+        is_commissioner: true,
+        expires_at: expiresAt.toISOString(),
+      });
+
+    localStorage.setItem('manager_session', sessionToken);
+    localStorage.setItem('is_commissioner', 'true');
+
+    return { isCommissioner: true, sessionToken };
+  },
+
+  async getCurrentSession() {
+    const sessionToken = localStorage.getItem('manager_session');
+    if (!sessionToken) return null;
+
+    const { data, error } = await supabase
+      .from('manager_sessions')
+      .select('*, teams(*)')
+      .eq('session_token', sessionToken)
+      .gt('expires_at', new Date().toISOString())
+      .single();
+
+    if (error || !data) {
+      localStorage.removeItem('manager_session');
+      localStorage.removeItem('manager_team_id');
+      localStorage.removeItem('is_commissioner');
+      return null;
+    }
+
+    return data;
+  },
+
+  async logout() {
+    const sessionToken = localStorage.getItem('manager_session');
+    if (sessionToken) {
+      await supabase.from('manager_sessions').delete().eq('session_token', sessionToken);
+    }
+    localStorage.removeItem('manager_session');
+    localStorage.removeItem('manager_team_id');
+    localStorage.removeItem('is_commissioner');
+  },
+
+  async assignManagerToTeam(teamId, email, password) {
+    const { data, error } = await supabase
+      .from('teams')
+      .update({ manager_email: email, manager_password_hash: password })
+      .eq('id', teamId)
+      .select();
+    if (error) throw error;
+    return data;
+  },
+};
+
+/**
+ * ============================================================================
+ * DRAFT PICKS API
+ * ============================================================================
+ */
+export const draftPicksApi = {
+  async getAllForDraft(draftId = 'default') {
+    const { data, error } = await supabase
+      .from('draft_picks')
+      .select('*')
+      .eq('draft_id', draftId)
+      .order('pick_number', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async addPick(pick) {
+    const { data, error } = await supabase
+      .from('draft_picks')
+      .insert({
+        draft_id: pick.draftId || 'default',
+        pick_number: pick.pickNumber,
+        round_number: pick.roundNumber,
+        team_id: pick.teamId,
+        team_name: pick.teamName,
+        player_name: pick.playerName,
+        player_type: pick.playerType,
+        picked_by_manager: pick.pickedByManager !== false,
+      })
+      .select();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteLastPick(draftId = 'default') {
+    const { data: picks } = await supabase
+      .from('draft_picks')
+      .select('*')
+      .eq('draft_id', draftId)
+      .order('pick_number', { ascending: false })
+      .limit(1);
+    if (!picks || picks.length === 0) return null;
+    const lastPick = picks[0];
+    await supabase.from('draft_picks').delete().eq('id', lastPick.id);
+    return lastPick;
+  },
+};

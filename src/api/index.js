@@ -15,4 +15,6 @@ export {
   playerStatsApi,       // Legacy wrapper
   headshotsApi,         // Legacy wrapper
   draftStateApi,        // Draft persistence
+  managerAuthApi,       // Manager authentication
+  draftPicksApi,        // Draft pick history
 } from './supabase';
