@@ -60,8 +60,8 @@ const FantasyGolfLeague = () => {
       if (!session) return;
       if (session.is_commissioner) {
         setIsCommissioner(true);
-      } else if (session.teams) {
-        setLoggedInUser(session.teams.owner);
+      } else if (session.managers) {
+        setLoggedInUser(session.managers.name); // e.g. "Jensen"
       }
     }).catch(() => {
       // Session check failed silently — user just won't be auto-logged in
@@ -84,8 +84,8 @@ const FantasyGolfLeague = () => {
 
   // ── Manager login (called by LoginPage on success) ─────────────────────────
   const handleManagerLogin = (result) => {
-    // result = { team, sessionToken } from managerAuthApi.login()
-    setLoggedInUser(result.team.owner);
+    // result = { manager, sessionToken } from managerAuthApi.login()
+    setLoggedInUser(result.manager.name); // e.g. "Jensen"
     setShowLoginModal(false);
   };
 

@@ -411,21 +411,19 @@ export const AdminView = ({
   const handleSeedManagers = async () => {
     const confirmed = await dialog.showConfirm(
       'Set Manager Passwords',
-      `This will set login credentials for all ${teams.length} managers:\n\n` +
-      teams.map(t => `• ${t.owner} → password: "${t.owner.toLowerCase()}"`).join('\n') +
-      '\n\nManagers can log in immediately after. Safe to run again if needed.',
+      `This will set passwords for all managers in the managers table.\n\nEach manager's password will be their last name in lowercase:\n• Crawforth → crawforth\n• Fano → fano\n• Hershey → hershey\n• Jensen → jensen\n• Lutz → lutz\n\nSafe to run again if needed.`,
       { confirmText: 'Set Passwords' }
     );
     if (!confirmed) return;
 
     setSeedingManagers(true);
     try {
-      const results = await managerAuthApi.seedAllManagers(teams);
+      const results = await managerAuthApi.seedAllManagers(); // no args — fetches from Supabase
       const failed = results.filter(r => !r.success);
       if (failed.length > 0) {
-        dialog.showToast(`⚠ ${failed.length} failed: ${failed.map(r => r.owner).join(', ')}`, 'error');
+        dialog.showToast(`⚠ ${failed.length} failed: ${failed.map(r => r.name).join(', ')}`, 'error');
       } else {
-        dialog.showToast(`✓ All ${results.length} manager passwords set! They can now log in.`, 'success');
+        dialog.showToast(`✓ Passwords set for ${results.length} managers! They can now log in.`, 'success');
       }
     } catch (error) {
       dialog.showToast(`Failed: ${error.message}`, 'error');
@@ -528,16 +526,22 @@ export const AdminView = ({
           Run this once to set passwords for all managers. Each manager's password will be their name in lowercase.
         </p>
 
-        {/* Credentials table */}
+        {/* Credentials table — pulled from managers table */}
         <div className="bg-gray-900/60 rounded-lg border border-gray-700 mb-3 overflow-hidden">
           <div className="grid grid-cols-3 px-3 py-1.5 border-b border-gray-700 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-            <span>Team</span><span>Name (login)</span><span>Password</span>
+            <span>Team</span><span>Login name</span><span>Password</span>
           </div>
-          {teams.map(t => (
-            <div key={t.id} className="grid grid-cols-3 px-3 py-2 border-b border-gray-700/50 last:border-0 text-xs">
-              <span className="text-gray-300 truncate">{t.name}</span>
-              <span className="text-white font-medium">{t.owner}</span>
-              <span className="text-green-400 font-mono">{t.owner.toLowerCase()}</span>
+          {[
+            { team: 'Detroit Rock City', name: 'Crawforth' },
+            { team: 'Hip Happens',       name: 'Fano'      },
+            { team: 'Dirty Bird(ies)',   name: 'Hershey'   },
+            { team: 'World #1',          name: 'Jensen'    },
+            { team: 'POPS, LLC',         name: 'Lutz'      },
+          ].map(m => (
+            <div key={m.name} className="grid grid-cols-3 px-3 py-2 border-b border-gray-700/50 last:border-0 text-xs">
+              <span className="text-gray-300 truncate">{m.team}</span>
+              <span className="text-white font-medium">{m.name}</span>
+              <span className="text-green-400 font-mono">{m.name.toLowerCase()}</span>
             </div>
           ))}
         </div>
