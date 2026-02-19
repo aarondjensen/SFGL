@@ -14,7 +14,7 @@ import LoginPage            from './components/LoginPage';
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi }  from './supabase';
+import { managerAuthApi }  from './api/supabase';
 
 import sfglLogo from './assets/logo.png';
 
