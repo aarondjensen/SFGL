@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Trophy, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { SWINGS } from '../constants';
+import { theme, colors, fonts } from '../theme.js';
 
 const ALTERNATE_KEYWORDS = ['Puerto Rico', 'Zurich', 'Corales', 'Myrtle Beach', 'ISCO', 'Barracuda'];
 
@@ -10,20 +11,21 @@ const isAlternate = (t) => {
   return ALTERNATE_KEYWORDS.some(kw => t.name.includes(kw));
 };
 
-const getSwingColor = (swing, dateStr) => {
+// Swing → accent color
+const swingColor = (swing, dateStr) => {
   if (swing) {
-    if (swing === 'West Coast Swing') return 'text-red-400';
-    if (swing === 'Florida Swing')    return 'text-yellow-400';
-    if (swing === 'Spring Swing')     return 'text-green-400';
-    if (swing === 'Summer Swing')     return 'text-blue-400';
-    return 'text-orange-400';
+    if (swing === 'West Coast Swing') return 'rgba(220,80,80,0.8)';
+    if (swing === 'Florida Swing')    return 'rgba(220,180,60,0.8)';
+    if (swing === 'Spring Swing')     return 'rgba(80,180,120,0.8)';
+    if (swing === 'Summer Swing')     return 'rgba(80,140,220,0.8)';
+    return 'rgba(220,140,60,0.8)';
   }
-  if (!dateStr) return 'text-gray-400';
+  if (!dateStr) return colors.textSecondary;
   const month = dateStr.split(' ')[0];
-  if (['Jan', 'Feb'].includes(month))              return 'text-red-400';
-  if (['Mar', 'Apr', 'May'].includes(month))       return 'text-green-400';
-  if (['Jun', 'Jul', 'Aug'].includes(month))       return 'text-blue-400';
-  return 'text-orange-400';
+  if (['Jan', 'Feb'].includes(month))        return 'rgba(220,80,80,0.8)';
+  if (['Mar', 'Apr', 'May'].includes(month)) return 'rgba(80,180,120,0.8)';
+  if (['Jun', 'Jul', 'Aug'].includes(month)) return 'rgba(80,140,220,0.8)';
+  return 'rgba(220,140,60,0.8)';
 };
 
 export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, firstTeeTime }) => {
@@ -36,13 +38,9 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
   const formatTeeTime = (date) => {
     if (!date) return '';
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const day = days[date.getDay()];
-    const hours = date.getHours();
-    const minutes = date.getMinutes();
+    const hours = date.getHours(); const minutes = date.getMinutes();
     const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    const displayMinutes = minutes.toString().padStart(2, '0');
-    return `${day} ${displayHours}:${displayMinutes} ${ampm} ET`;
+    return `${days[date.getDay()]} ${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${ampm} ET`;
   };
 
   const activeTournament = localTournaments.find(t => t.playing);
@@ -61,36 +59,34 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
   const upcoming  = localTournaments.filter(t => !t.completed);
 
   const renderTable = (list) => (
-    <table className="w-full text-sm text-left">
-      <thead className="bg-gray-800/50 text-xs font-bold text-gray-400 border-b border-gray-700">
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
         <tr>
           {editMode ? (
-            <>
-              <th className="px-2 py-2">Active</th>
-              <th className="px-2 py-2">Type</th>
-              <th className="px-2 py-2">Tournament</th>
-              <th className="px-2 py-2">Swing</th>
-            </>
+            ['Active', 'Type', 'Tournament', 'Swing'].map(h => (
+              <th key={h} style={theme.tableHeaderCell}>{h}</th>
+            ))
           ) : (
-            <>
-              <th className="px-3 py-3 w-10 text-center" />
-              <th className="px-3 py-3">Tournament</th>
-              <th className="px-3 py-3">Dates</th>
-              <th className="px-3 py-3 hidden sm:table-cell">Location &amp; Course</th>
-            </>
+            [{ label: '', width: 40 }, { label: 'Tournament' }, { label: 'Dates' }, { label: 'Location & Course' }].map(({ label, width }) => (
+              <th key={label} style={{ ...theme.tableHeaderCell, textAlign: 'left', width: width || 'auto' }}>{label}</th>
+            ))
           )}
         </tr>
       </thead>
-      <tbody className="divide-y divide-gray-700/50">
+      <tbody>
         {list.map(t => {
           const realIndex = localTournaments.findIndex(lt => lt.name === t.name);
           const alt = isAlternate(t);
 
           if (editMode) {
             return (
-              <tr key={t.name} className="hover:bg-gray-700/30">
+              <tr key={t.name}
+                style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
+                onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+              >
                 {/* Active checkbox */}
-                <td className="px-2 py-2 text-center">
+                <td style={{ padding: '8px 16px', textAlign: 'center' }}>
                   <input
                     type="checkbox"
                     checked={t.playing}
@@ -99,26 +95,30 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                       if (e.target.checked) updated[realIndex].playing = true;
                       setLocalTournaments(updated);
                     }}
-                    className="accent-green-500 w-4 h-4"
+                    style={{ accentColor: colors.textGold, width: 14, height: 14, cursor: 'pointer' }}
                   />
                 </td>
-                {/* Type badges */}
-                <td className="px-2 py-2">
-                  <div className="flex gap-1">
-                    {['S', 'M', 'Alt'].map(badge => {
-                      const key = badge === 'S' ? 'isSignature' : badge === 'M' ? 'isMajor' : 'isAlternate';
+
+                {/* Type toggle badges */}
+                <td style={{ padding: '8px 12px' }}>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {[
+                      { badge: 'S', key: 'isSignature', activeColor: 'rgba(130,80,200,0.8)', activeBorder: 'rgba(130,80,200,0.5)' },
+                      { badge: 'M', key: 'isMajor',     activeColor: colors.textGold,         activeBorder: colors.border },
+                      { badge: 'Alt', key: 'isAlternate', activeColor: colors.danger,           activeBorder: colors.dangerBorder },
+                    ].map(({ badge, key, activeColor, activeBorder }) => {
                       const active = t[key];
                       return (
-                        <button
-                          key={badge}
-                          onClick={() => updateLocal(realIndex, { [key]: !active })}
-                          className={`w-6 h-6 rounded font-bold text-[10px] ${
-                            active
-                              ? badge === 'S' ? 'bg-purple-600 text-white'
-                              : badge === 'M' ? 'bg-yellow-500 text-white'
-                              : 'bg-red-900/50 text-red-400 border border-red-500'
-                              : 'bg-gray-700 text-gray-500'
-                          }`}
+                        <button key={badge} onClick={() => updateLocal(realIndex, { [key]: !active })}
+                          style={{
+                            width: badge === 'Alt' ? 28 : 22, height: 22,
+                            borderRadius: 2, fontFamily: fonts.sans,
+                            fontSize: 9, fontWeight: 700, cursor: 'pointer',
+                            transition: 'all 0.15s',
+                            background: active ? `rgba(${activeColor}, 0.15)` : 'rgba(255,255,255,0.04)',
+                            border: `1px solid ${active ? activeBorder : colors.borderSubtle}`,
+                            color: active ? activeColor : colors.textMuted,
+                          }}
                         >
                           {badge}
                         </button>
@@ -126,21 +126,30 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     })}
                   </div>
                 </td>
-                {/* Name */}
-                <td className="px-2 py-2">
+
+                {/* Name input */}
+                <td style={{ padding: '8px 12px' }}>
                   <input
                     value={t.name}
                     onChange={e => updateLocal(realIndex, { name: e.target.value })}
-                    className="bg-transparent border-b border-gray-600 w-full text-xs focus:outline-none focus:border-green-500"
+                    style={{
+                      background: 'transparent',
+                      border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
+                      width: '100%', fontFamily: fonts.sans, fontSize: 12,
+                      color: colors.textPrimary, outline: 'none', padding: '2px 0',
+                    }}
+                    onFocus={e => { e.target.style.borderBottomColor = colors.borderFocus; }}
+                    onBlur={e => { e.target.style.borderBottomColor = colors.borderInput; }}
                   />
-                  <div className="text-[10px] text-gray-500">{t.dates}</div>
+                  <div style={{ ...theme.smallText, marginTop: 2 }}>{t.dates}</div>
                 </td>
-                {/* Swing */}
-                <td className="px-2 py-2">
+
+                {/* Swing selector */}
+                <td style={{ padding: '8px 12px' }}>
                   <select
                     value={t.swing || ''}
                     onChange={e => updateLocal(realIndex, { swing: e.target.value })}
-                    className="bg-gray-800 text-xs border border-gray-600 rounded p-1 w-full"
+                    style={{ ...theme.select, fontSize: 11, padding: '5px 8px' }}
                   >
                     <option value="">Auto</option>
                     {SWINGS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -150,26 +159,71 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
             );
           }
 
-          // Read-only row
+          // ── Read-only row ──
           return (
-            <tr key={t.name} className={`hover:bg-gray-700/30 transition-colors ${alt ? 'opacity-50' : ''}`}>
-              <td className="px-3 py-3">
-                {t.isMajor     && <span className="w-5 h-5 bg-yellow-500  text-white text-[10px] font-bold flex items-center justify-center rounded">M</span>}
-                {t.isSignature && !t.isMajor && <span className="w-5 h-5 bg-purple-600 text-white text-[10px] font-bold flex items-center justify-center rounded">S</span>}
+            <tr key={t.name}
+              style={{
+                borderBottom: `1px solid ${colors.borderSubtle}`,
+                opacity: alt ? 0.45 : 1,
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              {/* Badge column */}
+              <td style={{ padding: '10px 16px', width: 40 }}>
+                {t.isMajor && (
+                  <div style={{
+                    ...theme.badge, ...theme.badgeGold,
+                    width: 20, height: 20, borderRadius: 2,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: 0, fontSize: 9,
+                  }}>M</div>
+                )}
+                {t.isSignature && !t.isMajor && (
+                  <div style={{
+                    ...theme.badge, ...theme.badgeNavy,
+                    width: 20, height: 20, borderRadius: 2,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: 0, fontSize: 9,
+                  }}>S</div>
+                )}
               </td>
-              <td className="px-3 py-3 font-bold">
-                <span className={alt ? 'text-gray-500' : 'text-gray-200'}>
-                  {t.name}
-                  {t.completed && <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 bg-gray-700 text-gray-300 rounded">Final</span>}
-                  {t.playing   && <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 bg-green-900/50 border border-green-500/50 text-green-400 rounded">Active</span>}
+
+              {/* Tournament name */}
+              <td style={{ padding: '10px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontFamily: fonts.serif, fontSize: 13, color: alt ? colors.textMuted : colors.textPrimary }}>
+                    {t.name}
+                  </span>
+                  {t.completed && (
+                    <span style={{ ...theme.badge, background: 'rgba(255,255,255,0.05)', border: `1px solid ${colors.borderSubtle}`, color: colors.textSecondary }}>
+                      Final
+                    </span>
+                  )}
+                  {t.playing && (
+                    <span style={{ ...theme.badge, background: 'rgba(80,180,120,0.1)', border: '1px solid rgba(80,180,120,0.3)', color: colors.success }}>
+                      Active
+                    </span>
+                  )}
+                </div>
+              </td>
+
+              {/* Dates (colored by swing) */}
+              <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                <span style={{ fontFamily: fonts.sans, fontSize: 12, color: alt ? colors.textMuted : swingColor(t.swing, t.dates) }}>
+                  {t.dates}
                 </span>
               </td>
-              <td className={`px-3 py-3 font-medium whitespace-nowrap ${alt ? 'text-gray-500' : getSwingColor(t.swing, t.dates)}`}>
-                {t.dates}
-              </td>
-              <td className={`px-3 py-3 hidden sm:table-cell ${alt ? 'text-gray-600' : 'text-gray-400'}`}>
-                <div className="font-semibold">{t.location}</div>
-                {t.course && t.course !== 'TBD' && <div className="text-[10px] opacity-70">{t.course}</div>}
+
+              {/* Location + course */}
+              <td style={{ padding: '10px 16px' }}>
+                <div style={{ fontFamily: fonts.sans, fontSize: 12, color: alt ? colors.textMuted : colors.textSecondary }}>
+                  {t.location}
+                </div>
+                {t.course && t.course !== 'TBD' && (
+                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 1 }}>{t.course}</div>
+                )}
               </td>
             </tr>
           );
@@ -179,46 +233,53 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* ── Page header ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div>
-          <h2 className="text-xl font-bold">2026 Season Schedule</h2>
+          <h2 style={theme.h1}>2026 Season Schedule</h2>
           {activeTournament && (
-            <p className="text-sm text-gray-400 mt-1">
-              Current tournament: <span className="text-green-400 font-medium">{activeTournament.name}</span>
-              {firstTeeTime && <span className="text-gray-500"> • {formatTeeTime(firstTeeTime)}</span>}
+            <p style={{ ...theme.bodyText, marginTop: 4 }}>
+              Current: <span style={{ color: colors.success, fontFamily: fonts.serif }}>{activeTournament.name}</span>
+              {firstTeeTime && <span style={{ color: colors.textMuted }}> · {formatTeeTime(firstTeeTime)}</span>}
             </p>
           )}
         </div>
         {isCommissioner && (
           <button
             onClick={() => editMode ? saveChanges() : setEditMode(true)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-              editMode
-                ? 'bg-green-600 hover:bg-green-500 text-white'
-                : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-            }`}
+            style={{
+              ...(editMode ? theme.btnPrimary : theme.btnSecondary),
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '8px 14px', flexShrink: 0,
+            }}
           >
-            {editMode ? <><Save className="w-3 h-3" /> Save Changes</> : <><Edit2 className="w-3 h-3" /> Edit Schedule</>}
+            {editMode
+              ? <><Save style={{ width: 12, height: 12 }} /> Save Changes</>
+              : <><Edit2 style={{ width: 12, height: 12 }} /> Edit Schedule</>
+            }
           </button>
         )}
       </div>
 
-      <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700/50 overflow-hidden shadow-lg">
-        <div className="p-4 bg-gray-700/30 border-b border-gray-700/50 flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-gray-400" />
-          <h2 className="text-xl font-bold">Upcoming Events</h2>
+      {/* ── Upcoming ── */}
+      <div style={theme.card}>
+        <div style={theme.cardHeader}>
+          <Calendar style={{ width: 15, height: 15, color: colors.textGold }} />
+          <h2 style={theme.h2}>Upcoming Events</h2>
         </div>
-        <div className="overflow-x-auto">{renderTable(upcoming)}</div>
+        <div style={{ overflowX: 'auto' }}>{renderTable(upcoming)}</div>
       </div>
 
+      {/* ── Completed ── */}
       {completed.length > 0 && (
-        <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700/50 overflow-hidden shadow-lg">
-          <div className="p-4 bg-gray-700/30 border-b border-gray-700/50 flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-yellow-400" />
-            <h2 className="text-xl font-bold">Completed Tournaments</h2>
+        <div style={theme.card}>
+          <div style={theme.cardHeader}>
+            <Trophy style={{ width: 15, height: 15, color: colors.textGold }} />
+            <h2 style={theme.h2}>Completed Tournaments</h2>
           </div>
-          <div className="overflow-x-auto">{renderTable(completed)}</div>
+          <div style={{ overflowX: 'auto' }}>{renderTable(completed)}</div>
         </div>
       )}
     </div>
