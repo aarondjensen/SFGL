@@ -234,7 +234,7 @@ const FantasyGolfLeague = () => {
                   padding: '10px 8px',
                   borderRadius: 2,
                   fontSize: 11,
-                  fontWeight: 500,
+                  fontWeight: 400,
                   letterSpacing: 0.5,
                   cursor: 'pointer',
                   transition: 'all 0.2s',
@@ -252,8 +252,12 @@ const FantasyGolfLeague = () => {
                   boxShadow: isActive ? 'inset 0 1px 0 rgba(180,160,100,0.1)' : 'none',
                 }}
               >
-                <tab.Icon style={{ width: 14, height: 14 }} />
-                <span className="hidden sm:inline">{tab.label}</span>
+                <tab.Icon style={{ width: 13, height: 13 }} />
+                <span className="hidden sm:inline" style={{
+                  fontFamily: 'Georgia, serif',
+                  fontSize: 11,
+                  letterSpacing: '0.8px',
+                }}>{tab.label}</span>
               </button>
             );
           })}
