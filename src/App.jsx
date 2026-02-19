@@ -53,13 +53,14 @@ const FantasyGolfLeague = () => {
   const currentTournament  = tournaments.find(t => t.playing);
 
   // Fetch first tee time when current tournament changes
-  useEffect(() => {
-    if (currentTournament?.slashGolfId) {
-      fetchFirstTeeTime(currentTournament).then(setFirstTeeTime);
-    } else {
-      setFirstTeeTime(null);
-    }
-  }, [currentTournament?.slashGolfId]);
+  // DISABLED TO SAVE API CALLS - uncomment when needed
+  // useEffect(() => {
+  //   if (currentTournament?.slashGolfId) {
+  //     fetchFirstTeeTime(currentTournament).then(setFirstTeeTime);
+  //   } else {
+  //     setFirstTeeTime(null);
+  //   }
+  // }, [currentTournament?.slashGolfId]);
 
   // ── Admin login ────────────────────────────────────────────────────────────
   const handleAdminLogin = async () => {
