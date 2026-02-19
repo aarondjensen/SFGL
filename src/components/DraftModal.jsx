@@ -1,782 +1,677 @@
 import { useState, useEffect } from 'react';
-import { X, Search } from 'lucide-react';
+import { X, Search, RotateCcw } from 'lucide-react';
 import { draftStateApi } from '../api';
+import { theme, colors, fonts } from '../theme.js';
 
+// ── Shared modal shell ────────────────────────────────────────────────────────
+const Shell = ({ children, wide }) => (
+  <div style={{
+    position: 'fixed', inset: 0,
+    background: 'rgba(5,10,25,0.88)', backdropFilter: 'blur(6px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: 16, zIndex: 50,
+  }}>
+    <div style={{
+      background: '#0d1e38',
+      border: `1px solid ${colors.border}`,
+      borderRadius: 4,
+      maxWidth: wide ? 780 : 560,
+      width: '100%',
+      maxHeight: '88vh',
+      display: 'flex', flexDirection: 'column',
+      overflow: 'hidden',
+      boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+    }}>
+      {children}
+    </div>
+  </div>
+);
+
+const ModalHeader = ({ title, sub, badge, onClose }) => (
+  <div style={{
+    padding: '18px 22px',
+    borderBottom: `1px solid ${colors.borderSubtle}`,
+    background: 'linear-gradient(90deg, rgba(26,51,102,0.5) 0%, transparent 100%)',
+    flexShrink: 0,
+  }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div>
+        <h2 style={theme.h1}>{title}</h2>
+        {sub && <p style={{ ...theme.bodyText, marginTop: 4 }}>{sub}</p>}
+        {badge && (
+          <p style={{ fontFamily: fonts.sans, fontSize: 11, color: 'rgba(100,160,255,0.7)', marginTop: 4 }}>
+            💾 Draft auto-saves — close and resume anytime
+          </p>
+        )}
+      </div>
+      <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, marginLeft: 12, flexShrink: 0 }}>
+        <X style={{ width: 18, height: 18 }} />
+      </button>
+    </div>
+  </div>
+);
+
+const ModalFooter = ({ children }) => (
+  <div style={{
+    padding: '14px 22px',
+    borderTop: `1px solid ${colors.borderSubtle}`,
+    background: 'rgba(5,10,20,0.4)',
+    flexShrink: 0,
+  }}>
+    {children}
+  </div>
+);
+
+const Btn = ({ onClick, children, variant = 'primary', disabled, style }) => {
+  const base = variant === 'danger'    ? theme.btnDanger
+             : variant === 'secondary' ? theme.btnSecondary
+             : theme.btnPrimary;
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      ...base, padding: '10px 20px', opacity: disabled ? 0.4 : 1, ...style,
+    }}
+      onMouseEnter={e => { if (!disabled) e.currentTarget.style.opacity = '0.8'; }}
+      onMouseLeave={e => { e.currentTarget.style.opacity = disabled ? '0.4' : '1'; }}
+    >
+      {children}
+    </button>
+  );
+};
+
+// ── Player row (used in keeper search + draft list) ───────────────────────────
+const PlayerRow = ({ player, onSelect, accentColor, label, getHeadshot }) => (
+  <button
+    onClick={() => onSelect(player)}
+    style={{
+      width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+      padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer',
+      borderBottom: `1px solid ${colors.borderSubtle}`, textAlign: 'left',
+      transition: 'background 0.15s',
+    }}
+    onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
+    onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}
+  >
+    <img
+      src={getHeadshot(player.name)}
+      onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0d1e38&color=6b7280&size=64`; }}
+      alt=""
+      style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${accentColor}`, flexShrink: 0 }}
+    />
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name}</div>
+      <div style={theme.smallText}>Rank: {player.worldRank === 999 ? 'NR' : `#${player.worldRank}`}</div>
+    </div>
+    <span style={{ ...theme.label, color: accentColor, flexShrink: 0 }}>{label}</span>
+  </button>
+);
+
+// ── Search input ──────────────────────────────────────────────────────────────
+const SearchInput = ({ value, onChange, placeholder, autoFocus }) => (
+  <div style={{ position: 'relative' }}>
+    <Search style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, color: colors.textSecondary }} />
+    <input
+      type="text" value={value} onChange={onChange}
+      placeholder={placeholder} autoFocus={autoFocus}
+      style={{ ...theme.input, paddingLeft: 36 }}
+      onFocus={e => { e.target.style.borderColor = colors.borderFocus; e.target.style.background = colors.inputBgFocus; }}
+      onBlur={e => { e.target.style.borderColor = colors.borderInput; e.target.style.background = colors.inputBg; }}
+    />
+  </div>
+);
+
+// ── Main DraftModal ───────────────────────────────────────────────────────────
 export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots = {} }) => {
-  const [phase, setPhase] = useState('order'); // 'order', 'keepers', or 'draft'
-  const [draftOrder, setDraftOrder] = useState(teams.map((t, i) => ({ ...t, order: i })));
+  const [phase, setPhase]                     = useState('resume_prompt'); // 'resume_prompt','order','keepers','draft'
+  const [hasSavedState, setHasSavedState]     = useState(false);
+  const [draftOrder, setDraftOrder]           = useState(teams.map((t, i) => ({ ...t, order: i })));
   const [keeperTeamIndex, setKeeperTeamIndex] = useState(0);
-  const [keepers, setKeepers] = useState({}); // { teamId: { limited: {name, stars}, unlimited: {name} } }
+  const [keepers, setKeepers]                 = useState({});
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0);
-  const [currentRound, setCurrentRound] = useState(1);
-  const [draftedPlayers, setDraftedPlayers] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [limitedSearch, setLimitedSearch] = useState('');
+  const [currentRound, setCurrentRound]       = useState(1);
+  const [draftedPlayers, setDraftedPlayers]   = useState([]);
+  const [pickHistory, setPickHistory]         = useState([]); // [{teamId, playerName, round, teamIndex, isLimited}]
+  const [searchQuery, setSearchQuery]         = useState('');
+  const [limitedSearch, setLimitedSearch]     = useState('');
   const [unlimitedSearch, setUnlimitedSearch] = useState('');
-  const [draggedIndex, setDraggedIndex] = useState(null);
-  const [confirmDraft, setConfirmDraft] = useState(null); // { playerName, type }
+  const [draggedIndex, setDraggedIndex]       = useState(null);
+  const [confirmDraft, setConfirmDraft]       = useState(null);
 
-  // Load saved draft state from Supabase on mount
+  // ── On mount: check for saved state ──
   useEffect(() => {
-    const loadDraftState = async () => {
+    const checkSaved = async () => {
       try {
         const savedState = await draftStateApi.get();
-        if (savedState && savedState.draft_order?.length === teams.length) {
-          setPhase(savedState.phase || 'order');
-          setDraftOrder(savedState.draft_order || draftOrder);
-          setKeeperTeamIndex(savedState.keeper_team_index || 0);
-          setKeepers(savedState.keepers || {});
-          setCurrentTeamIndex(savedState.current_team_index || 0);
-          setCurrentRound(savedState.current_round || 1);
-          setDraftedPlayers(savedState.drafted_players || []);
+        if (savedState && savedState.draft_order?.length === teams.length && savedState.phase !== 'order') {
+          setHasSavedState(true);
+          setPhase('resume_prompt');
+        } else {
+          setPhase('order');
+          initKeepers();
         }
-      } catch (e) {
-        console.error('Failed to restore draft state:', e);
+      } catch {
+        setPhase('order');
+        initKeepers();
       }
     };
-    loadDraftState();
-  }, []); // Only run once on mount
+    checkSaved();
+  }, []);
 
-  // Save draft state to Supabase whenever it changes
-  useEffect(() => {
-    if (phase !== 'order' || Object.keys(keepers).length > 0) {
-      const saveDraftState = async () => {
-        try {
-          await draftStateApi.save({
-            phase,
-            draftOrder,
-            keeperTeamIndex,
-            keepers,
-            currentTeamIndex,
-            currentRound,
-            draftedPlayers,
-          });
-        } catch (e) {
-          console.error('Failed to save draft state:', e);
-        }
-      };
-      saveDraftState();
-    }
-  }, [phase, draftOrder, keeperTeamIndex, keepers, currentTeamIndex, currentRound, draftedPlayers]);
+  const initKeepers = () => {
+    const init = {};
+    teams.forEach(t => { init[t.id] = { limited: null, unlimited: null }; });
+    setKeepers(init);
+  };
 
-  // Initialize keepers object
-  useEffect(() => {
-    // Only initialize if keepers is empty (no saved state)
-    if (Object.keys(keepers).length === 0) {
-      const initialKeepers = {};
-      teams.forEach(team => {
-        initialKeepers[team.id] = { limited: null, unlimited: null };
-      });
-      setKeepers(initialKeepers);
-    }
-  }, [teams]);
-
-  // Clear saved draft state from Supabase
-  const clearDraftState = async () => {
+  // ── Resume saved draft ──
+  const handleResume = async () => {
     try {
-      await draftStateApi.clear();
+      const savedState = await draftStateApi.get();
+      if (savedState) {
+        setPhase(savedState.phase || 'order');
+        setDraftOrder(savedState.draft_order || draftOrder);
+        setKeeperTeamIndex(savedState.keeper_team_index || 0);
+        setKeepers(savedState.keepers || {});
+        setCurrentTeamIndex(savedState.current_team_index || 0);
+        setCurrentRound(savedState.current_round || 1);
+        setDraftedPlayers(savedState.drafted_players || []);
+        setPickHistory(savedState.pick_history || []);
+      }
     } catch (e) {
-      console.error('Failed to clear draft state:', e);
+      console.error('Failed to restore draft state:', e);
     }
   };
 
-  // Close and optionally clear draft
+  // ── Start fresh ──
+  const handleStartNew = async () => {
+    await clearDraftState();
+    initKeepers();
+    setDraftOrder(teams.map((t, i) => ({ ...t, order: i })));
+    setKeeperTeamIndex(0); setCurrentTeamIndex(0); setCurrentRound(1);
+    setDraftedPlayers([]); setPickHistory([]);
+    setPhase('order');
+  };
+
+  // ── Auto-save on state change ──
+  useEffect(() => {
+    if (phase === 'order' || phase === 'resume_prompt') return;
+    const save = async () => {
+      try {
+        await draftStateApi.save({
+          phase, draftOrder, keeperTeamIndex, keepers,
+          currentTeamIndex, currentRound, draftedPlayers, pick_history: pickHistory,
+        });
+      } catch (e) { console.error('Failed to save draft state:', e); }
+    };
+    save();
+  }, [phase, draftOrder, keeperTeamIndex, keepers, currentTeamIndex, currentRound, draftedPlayers, pickHistory]);
+
+  const clearDraftState = async () => {
+    try { await draftStateApi.clear(); } catch { /* ignore */ }
+  };
+
   const handleClose = () => {
     if (phase === 'draft' && draftedPlayers.length > 0) {
-      const save = window.confirm('Save draft progress? Click OK to save and resume later, or Cancel to discard and start over next time.');
-      if (!save) {
-        clearDraftState();
-      }
+      const save = window.confirm('Save draft progress? OK to save and resume later, Cancel to discard.');
+      if (!save) clearDraftState();
     }
     onClose();
   };
 
-  // Start fresh draft (clear saved state)
-  const startFreshDraft = () => {
-    if (window.confirm('Start a brand new draft? This will discard any saved progress.')) {
-      clearDraftState();
-      window.location.reload();
-    }
+  // ── Headshots ──
+  const getPlayerHeadshot = (playerName) => {
+    let id = headshots[playerName];
+    if (!id) { const p = allPlayers.find(p => p.name === playerName); id = p?.pgaTourId; }
+    if (id) return `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${id}.png&w=96&h=96`;
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=0d1e38&color=6b7280&size=128`;
   };
 
-  const currentTeam = phase === 'order' 
-    ? null 
+  const currentTeam = phase === 'order' || phase === 'resume_prompt'
+    ? null
     : draftOrder[phase === 'keepers' ? keeperTeamIndex : currentTeamIndex];
   const currentKeeper = keepers[currentTeam?.id] || { limited: null, unlimited: null };
-  
+
+  const allKeeperNames = () => Object.values(keepers).flatMap(k => [k.limited?.name, k.unlimited?.name].filter(Boolean));
+
   const availablePlayers = allPlayers
-    .filter(p => {
-      // Filter out already selected keepers
-      const allKeeperNames = Object.values(keepers).flatMap(k => 
-        [k.limited?.name, k.unlimited?.name].filter(Boolean)
-      );
-      return !allKeeperNames.includes(p.name);
-    })
+    .filter(p => !allKeeperNames().includes(p.name))
     .filter(p => !draftedPlayers.includes(p.name))
     .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
     .slice(0, 50);
 
-  // Separate search results for keeper selection
-  const limitedSearchResults = allPlayers
-    .filter(p => {
-      const allKeeperNames = Object.values(keepers).flatMap(k => 
-        [k.limited?.name, k.unlimited?.name].filter(Boolean)
-      );
-      return !allKeeperNames.includes(p.name);
-    })
-    .filter(p => p.name.toLowerCase().includes(limitedSearch.toLowerCase()))
-    .slice(0, 10);
+  const limitedSearchResults  = allPlayers.filter(p => !allKeeperNames().includes(p.name) && p.name.toLowerCase().includes(limitedSearch.toLowerCase())).slice(0, 10);
+  const unlimitedSearchResults = allPlayers.filter(p => !allKeeperNames().includes(p.name) && p.name.toLowerCase().includes(unlimitedSearch.toLowerCase())).slice(0, 10);
 
-  const unlimitedSearchResults = allPlayers
-    .filter(p => {
-      const allKeeperNames = Object.values(keepers).flatMap(k => 
-        [k.limited?.name, k.unlimited?.name].filter(Boolean)
-      );
-      return !allKeeperNames.includes(p.name);
-    })
-    .filter(p => p.name.toLowerCase().includes(unlimitedSearch.toLowerCase()))
-    .slice(0, 10);
-
-  const moveDraftOrder = (fromIndex, direction) => {
-    const toIndex = fromIndex + direction;
+  // ── Draft order drag ──
+  const moveDraftOrder = (fromIndex, dir) => {
+    const toIndex = fromIndex + dir;
     if (toIndex < 0 || toIndex >= draftOrder.length) return;
-    
     const newOrder = [...draftOrder];
     [newOrder[fromIndex], newOrder[toIndex]] = [newOrder[toIndex], newOrder[fromIndex]];
     setDraftOrder(newOrder);
   };
-
-  const handleDragStart = (index) => {
-    setDraggedIndex(index);
-  };
-
-  const handleDragOver = (e, index) => {
+  const handleDragStart = (i) => setDraggedIndex(i);
+  const handleDragOver = (e, i) => {
     e.preventDefault();
-    if (draggedIndex === null || draggedIndex === index) return;
-    
+    if (draggedIndex === null || draggedIndex === i) return;
     const newOrder = [...draftOrder];
-    const draggedItem = newOrder[draggedIndex];
+    const item = newOrder[draggedIndex];
     newOrder.splice(draggedIndex, 1);
-    newOrder.splice(index, 0, draggedItem);
-    
+    newOrder.splice(i, 0, item);
     setDraftOrder(newOrder);
-    setDraggedIndex(index);
+    setDraggedIndex(i);
   };
+  const handleDragEnd = () => setDraggedIndex(null);
 
-  const handleDragEnd = () => {
-    setDraggedIndex(null);
-  };
-
-  const handleStartKeepers = () => {
-    setPhase('keepers');
-  };
-
-  const getPlayerHeadshot = (playerName) => {
-    // First try the headshots object (legacy)
-    let headshotId = headshots[playerName];
-    
-    // If not found, check if player has pgaTourId in allPlayers
-    if (!headshotId) {
-      const player = allPlayers.find(p => p.name === playerName);
-      headshotId = player?.pgaTourId;
-    }
-    
-    if (headshotId) {
-      // Try ESPN headshot URL
-      return `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${headshotId}.png&w=96&h=96`;
-    }
-    
-    // Fallback to UI Avatars
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1f2937&color=9ca3af&size=128`;
-  };
-
+  // ── Keepers ──
   const handleKeeperSelect = (playerName, type, stars = 1) => {
-    const updatedKeepers = { ...keepers };
-    if (type === 'limited') {
-      updatedKeepers[currentTeam.id].limited = { name: playerName, stars };
-    } else {
-      updatedKeepers[currentTeam.id].unlimited = { name: playerName };
-    }
-    setKeepers(updatedKeepers);
-    setSearchQuery('');
+    const updated = { ...keepers };
+    if (!updated[currentTeam.id]) updated[currentTeam.id] = { limited: null, unlimited: null };
+    if (type === 'limited')  updated[currentTeam.id].limited  = playerName ? { name: playerName, stars } : null;
+    else                     updated[currentTeam.id].unlimited = playerName ? { name: playerName } : null;
+    setKeepers(updated);
+    setLimitedSearch(''); setUnlimitedSearch('');
   };
 
   const handleNextTeamKeepers = () => {
     if (keeperTeamIndex < draftOrder.length - 1) {
       setKeeperTeamIndex(keeperTeamIndex + 1);
     } else {
-      // All keepers selected, move to draft phase
-      // Add keepers to rosters using draftOrder
+      // Commit keepers to rosters
       const updatedTeams = teams.map(team => {
-        const teamKeepers = keepers[team.id];
-        const newRoster = [];
-        
-        if (teamKeepers.limited) {
-          newRoster.push({
-            name: teamKeepers.limited.name,
-            stars: teamKeepers.limited.stars,
-            starts: 0,
-            limited: true,
-            unlimited: false,
-            eventsPlayed: 0,
-            cutsMade: 0,
-            sfglEarnings: 0,
-            pgaTourEarnings: 0,
-            headshot: '',
-          });
-        }
-        
-        if (teamKeepers.unlimited) {
-          newRoster.push({
-            name: teamKeepers.unlimited.name,
-            starts: 0,
-            limited: false,
-            unlimited: true,
-            eventsPlayed: 0,
-            cutsMade: 0,
-            sfglEarnings: 0,
-            pgaTourEarnings: 0,
-            headshot: '',
-          });
-        }
-        
+        const tk = keepers[team.id]; const newRoster = [];
+        if (tk?.limited)   newRoster.push({ name: tk.limited.name,   stars: tk.limited.stars, starts: 0, limited: true,  unlimited: false, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0, headshot: '' });
+        if (tk?.unlimited) newRoster.push({ name: tk.unlimited.name, stars: 0,                starts: 0, limited: false, unlimited: true,  eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0, headshot: '' });
         return { ...team, roster: newRoster };
       });
-      
-      // Track keeper names as "drafted"
-      const keeperNames = Object.values(keepers).flatMap(k => 
-        [k.limited?.name, k.unlimited?.name].filter(Boolean)
-      );
-      
+      const keeperNames = allKeeperNames();
       updateTeams(updatedTeams);
       setDraftedPlayers(keeperNames);
-      setPhase('draft');
-      setCurrentRound(1); // Start with round 1 (Limited player)
+      setPhase('draft'); setCurrentRound(1);
     }
   };
 
+  // ── Draft pick ──
   const handleDraftPlayer = (playerName) => {
     setConfirmDraft({ playerName, type: currentRound <= 2 ? 'limited' : 'unlimited' });
   };
 
   const confirmDraftPlayer = () => {
-    const playerName = confirmDraft.playerName;
+    const { playerName } = confirmDraft;
     const isLimitedRound = currentRound <= 2;
-    
-    // Add player to current team using draftOrder
+
     const updatedTeams = teams.map(team => {
-      if (team.id === currentTeam.id) {
-        const newPlayer = {
-          name: playerName,
-          stars: isLimitedRound ? 1 : 0,
-          starts: 0,
-          limited: isLimitedRound,
-          unlimited: !isLimitedRound,
-          eventsPlayed: 0,
-          cutsMade: 0,
-          sfglEarnings: 0,
-          pgaTourEarnings: 0,
-          headshot: '',
-        };
-        return { ...team, roster: [...team.roster, newPlayer] };
-      }
-      return team;
+      if (team.id !== currentTeam.id) return team;
+      return { ...team, roster: [...team.roster, { name: playerName, stars: isLimitedRound ? 1 : 0, starts: 0, limited: isLimitedRound, unlimited: !isLimitedRound, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0, headshot: '' }] };
     });
 
-    setDraftedPlayers([...draftedPlayers, playerName]);
+    // Record pick for undo
+    const pick = { teamId: currentTeam.id, playerName, round: currentRound, teamIndex: currentTeamIndex, isLimited: isLimitedRound };
+    setPickHistory(prev => [...prev, pick]);
+    setDraftedPlayers(prev => [...prev, playerName]);
     updateTeams(updatedTeams);
 
-    // Snake draft logic
-    const isSnakeDraft = currentRound % 2 === 0;
-    
-    if (isSnakeDraft) {
-      if (currentTeamIndex === 0) {
-        setCurrentRound(currentRound + 1);
-        setCurrentTeamIndex(0);
-      } else {
-        setCurrentTeamIndex(currentTeamIndex - 1);
-      }
+    // Advance snake draft
+    const isSnake = currentRound % 2 === 0;
+    if (isSnake) {
+      if (currentTeamIndex === 0)       { setCurrentRound(r => r + 1); setCurrentTeamIndex(0); }
+      else                               setCurrentTeamIndex(i => i - 1);
     } else {
-      if (currentTeamIndex === draftOrder.length - 1) {
-        setCurrentRound(currentRound + 1);
-        setCurrentTeamIndex(draftOrder.length - 1);
-      } else {
-        setCurrentTeamIndex(currentTeamIndex + 1);
-      }
+      if (currentTeamIndex === draftOrder.length - 1) { setCurrentRound(r => r + 1); setCurrentTeamIndex(draftOrder.length - 1); }
+      else                                              setCurrentTeamIndex(i => i + 1);
     }
-
-    setSearchQuery('');
-    setConfirmDraft(null);
+    setSearchQuery(''); setConfirmDraft(null);
   };
 
-  const maxRounds = 12; // 2 limited + 10 unlimited
-  const isDraftComplete = currentRound > maxRounds;
+  // ── Undo last pick ──
+  const handleUndo = () => {
+    if (pickHistory.length === 0) return;
+    const last = pickHistory[pickHistory.length - 1];
 
-  // Draft Order Phase
+    // Remove player from that team's roster
+    const updatedTeams = teams.map(team => {
+      if (team.id !== last.teamId) return team;
+      return { ...team, roster: team.roster.filter(p => p.name !== last.playerName) };
+    });
+    updateTeams(updatedTeams);
+    setDraftedPlayers(prev => prev.filter(n => n !== last.playerName));
+    setPickHistory(prev => prev.slice(0, -1));
+    setCurrentRound(last.round);
+    setCurrentTeamIndex(last.teamIndex);
+  };
+
+  const maxRounds    = 12;
+  const isDraftComplete = currentRound > maxRounds;
+  const isLimitedRound  = currentRound <= 2;
+  const isSnakeDraft    = currentRound % 2 === 0;
+  const canUndo         = pickHistory.length > 0;
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // PHASE: Resume prompt
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  if (phase === 'resume_prompt') {
+    return (
+      <Shell>
+        <ModalHeader title="Fantasy Golf Draft" onClose={onClose} />
+        <div style={{ padding: '32px 28px', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>💾</div>
+            <h3 style={theme.h2}>Saved Draft Found</h3>
+            <p style={{ ...theme.bodyText, marginTop: 8 }}>A draft was saved from a previous session. Would you like to resume it or start fresh?</p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 320 }}>
+            <Btn onClick={handleResume}>▶ Resume Previous Draft</Btn>
+            <Btn onClick={handleStartNew} variant="danger">🗑 Start New Draft</Btn>
+            <Btn onClick={onClose} variant="secondary">Cancel</Btn>
+          </div>
+        </div>
+      </Shell>
+    );
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // PHASE: Draft order
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   if (phase === 'order') {
     return (
-      <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-        <div className="bg-gray-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-          <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-            <div>
-              <h2 className="text-xl font-bold">Set Draft Order</h2>
-              <p className="text-sm text-gray-400 mt-1">Snake draft • Drag teams to reorder</p>
+      <Shell>
+        <ModalHeader title="Set Draft Order" sub="Snake draft · Drag teams to reorder" onClose={onClose} />
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {draftOrder.map((team, idx) => (
+            <div key={team.id}
+              draggable
+              onDragStart={() => handleDragStart(idx)}
+              onDragOver={(e) => handleDragOver(e, idx)}
+              onDragEnd={handleDragEnd}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: draggedIndex === idx ? 'rgba(180,160,100,0.08)' : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${draggedIndex === idx ? colors.border : colors.borderSubtle}`,
+                borderRadius: 2, cursor: 'grab',
+                opacity: draggedIndex === idx ? 0.6 : 1,
+                transition: 'all 0.15s',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: 'rgba(180,160,100,0.15)', border: `1px solid ${colors.border}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: fonts.serif, fontSize: 14, color: colors.textGold,
+                }}>
+                  {idx + 1}
+                </div>
+                <span style={{ color: colors.textSecondary, fontSize: 16, letterSpacing: 2 }}>⋮⋮</span>
+                <span style={{ fontFamily: fonts.serif, fontSize: 14, color: colors.textPrimary }}>{team.name}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[[-1, '▲'], [1, '▼']].map(([dir, label]) => {
+                  const disabled = dir === -1 ? idx === 0 : idx === draftOrder.length - 1;
+                  return (
+                    <button key={dir} onClick={e => { e.stopPropagation(); moveDraftOrder(idx, dir); }} disabled={disabled}
+                      style={{ background: 'none', border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', color: disabled ? colors.textMuted : colors.textGold, width: 28, height: 28, borderRadius: 2, fontSize: 12 }}>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-white">
-              <X className="w-6 h-6" />
-            </button>
+          ))}
+        </div>
+        <ModalFooter>
+          <div style={{ ...theme.smallText, marginBottom: 12 }}>
+            <strong style={{ color: colors.textGoldDim }}>Snake Draft:</strong> Order reverses each round. Round 1: 1→{draftOrder.length}, Round 2: {draftOrder.length}→1, etc.
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Btn onClick={onClose} variant="secondary">Cancel</Btn>
+            <Btn onClick={() => setPhase('keepers')}>Continue to Keepers →</Btn>
+          </div>
+        </ModalFooter>
+      </Shell>
+    );
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // PHASE: Keeper selection
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  if (phase === 'keepers') {
+    const canProceed = currentKeeper.limited && currentKeeper.unlimited;
+
+    const KeeperBox = ({ type, label, accentColor, searchVal, setSearch, searchResults, selectLabel }) => {
+      const selected = type === 'limited' ? currentKeeper.limited : currentKeeper.unlimited;
+      return (
+        <div style={{ background: `${accentColor}0d`, border: `1px solid ${accentColor}40`, borderRadius: 3, padding: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 2,
+              background: `${accentColor}25`, border: `1px solid ${accentColor}50`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: fonts.serif, fontSize: 13, color: accentColor, fontWeight: 700,
+            }}>
+              {type === 'limited' ? 'L' : '∞'}
+            </div>
+            <span style={{ fontFamily: fonts.serif, fontSize: 14, color: accentColor }}>{label}</span>
+            {selected && (
+              <button onClick={() => handleKeeperSelect(null, type)}
+                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: colors.danger, fontFamily: fonts.sans, fontSize: 11, fontWeight: 600 }}>
+                Clear
+              </button>
+            )}
           </div>
 
-          <div className="flex-1 overflow-auto p-4">
-            <div className="space-y-2">
-              {draftOrder.map((team, idx) => (
-                <div
-                  key={team.id}
-                  draggable
-                  onDragStart={() => handleDragStart(idx)}
-                  onDragOver={(e) => handleDragOver(e, idx)}
-                  onDragEnd={handleDragEnd}
-                  className={`flex items-center justify-between bg-gray-700/50 rounded-lg px-4 py-3 cursor-move transition-all ${
-                    draggedIndex === idx 
-                      ? 'opacity-50 scale-95' 
-                      : 'hover:bg-gray-700 hover:shadow-lg'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center font-bold">
-                      {idx + 1}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-400">⋮⋮</span>
-                      <span className="font-medium">{team.name}</span>
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveDraftOrder(idx, -1);
-                      }}
-                      disabled={idx === 0}
-                      className={`w-8 h-8 rounded flex items-center justify-center ${
-                        idx === 0
-                          ? 'text-gray-600 cursor-not-allowed'
-                          : 'text-green-400 hover:bg-gray-600'
-                      }`}
-                    >
-                      ▲
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveDraftOrder(idx, 1);
-                      }}
-                      disabled={idx === draftOrder.length - 1}
-                      className={`w-8 h-8 rounded flex items-center justify-center ${
-                        idx === draftOrder.length - 1
-                          ? 'text-gray-600 cursor-not-allowed'
-                          : 'text-green-400 hover:bg-gray-600'
-                      }`}
-                    >
-                      ▼
-                    </button>
+          {selected ? (
+            <div>
+              <div style={{
+                background: 'rgba(255,255,255,0.05)', border: `1px solid ${colors.borderSubtle}`,
+                borderRadius: 2, padding: '10px 14px',
+                fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary,
+              }}>
+                {selected.name}
+              </div>
+              {type === 'limited' && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ ...theme.label, marginBottom: 6 }}>Years of Service</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[1, 2, 3].map(num => (
+                      <button key={num}
+                        onClick={() => handleKeeperSelect(selected.name, 'limited', num)}
+                        style={{
+                          width: 36, height: 36, borderRadius: 2, fontSize: 18, cursor: 'pointer',
+                          background: num <= selected.stars ? `${accentColor}30` : 'rgba(255,255,255,0.04)',
+                          border: `1px solid ${num <= selected.stars ? accentColor : colors.borderSubtle}`,
+                          color: num <= selected.stars ? accentColor : colors.textMuted,
+                          transition: 'all 0.15s',
+                        }}
+                      >★</button>
+                    ))}
                   </div>
                 </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <SearchInput value={searchVal} onChange={e => setSearch(e.target.value)} placeholder={`Search ${label} player…`} />
+              <div style={{ marginTop: 8, height: 128, overflowY: 'auto', border: `1px solid ${colors.borderSubtle}`, borderRadius: 2, background: 'rgba(0,0,0,0.2)' }}>
+                {searchVal.trim() ? (
+                  searchResults.length > 0
+                    ? searchResults.map(player => (
+                        <PlayerRow key={player.name} player={player}
+                          onSelect={p => { handleKeeperSelect(p.name, type, type === 'limited' ? 2 : 0); }}
+                          accentColor={accentColor} label={selectLabel} getHeadshot={getPlayerHeadshot} />
+                      ))
+                    : <div style={theme.emptyState}>No players found</div>
+                ) : (
+                  <div style={{ ...theme.emptyState, paddingTop: 28 }}>Type to search…</div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <Shell>
+        <ModalHeader
+          title="Keeper Selection"
+          sub={`Team ${keeperTeamIndex + 1} of ${draftOrder.length} · ${currentTeam.name}`}
+          badge
+          onClose={onClose}
+        />
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
+          <KeeperBox
+            type="limited" label="Limited Keeper"
+            accentColor={colors.textGold}
+            searchVal={limitedSearch} setSearch={setLimitedSearch}
+            searchResults={limitedSearchResults} selectLabel="Select (L)"
+          />
+          <KeeperBox
+            type="unlimited" label="Unlimited Keeper"
+            accentColor="rgba(100,160,255,0.85)"
+            searchVal={unlimitedSearch} setSearch={setUnlimitedSearch}
+            searchResults={unlimitedSearchResults} selectLabel="Select (U)"
+          />
+        </div>
+        <ModalFooter>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Btn onClick={onClose} variant="secondary">Cancel</Btn>
+            <Btn onClick={handleNextTeamKeepers} disabled={!canProceed}>
+              {keeperTeamIndex < draftOrder.length - 1 ? 'Next Team →' : 'Start Draft →'}
+            </Btn>
+          </div>
+        </ModalFooter>
+      </Shell>
+    );
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // PHASE: Draft
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const draftAccent = isLimitedRound ? colors.textGold : 'rgba(100,160,255,0.85)';
+
+  return (
+    <Shell wide>
+      <ModalHeader
+        title="Fantasy Golf Draft"
+        sub={isDraftComplete ? undefined : `Round ${currentRound} of ${maxRounds} · ${isLimitedRound ? '🟡 Limited' : '🔵 Unlimited'} · ${currentTeam?.name} is picking`}
+        badge={!isDraftComplete}
+        onClose={handleClose}
+      />
+
+      {isDraftComplete ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, textAlign: 'center' }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>🏆</div>
+          <h3 style={{ ...theme.h1, marginBottom: 8 }}>Draft Complete!</h3>
+          <p style={{ ...theme.bodyText, marginBottom: 32 }}>All teams have drafted their rosters.</p>
+          <Btn onClick={() => { clearDraftState(); onClose(); }}>Close Draft</Btn>
+        </div>
+      ) : (
+        <>
+          {/* Search */}
+          <div style={{ padding: '12px 22px', borderBottom: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}>
+            <SearchInput value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search players…" autoFocus />
+          </div>
+
+          {/* Player list */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px', minHeight: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {availablePlayers.map(player => (
+                <button key={player.name} onClick={() => handleDraftPlayer(player.name)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    padding: '10px 14px', borderRadius: 2, cursor: 'pointer',
+                    background: isLimitedRound ? 'rgba(180,160,100,0.05)' : 'rgba(100,140,220,0.05)',
+                    border: `1px solid ${isLimitedRound ? 'rgba(180,160,100,0.2)' : 'rgba(100,140,220,0.2)'}`,
+                    textAlign: 'left', transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = isLimitedRound ? 'rgba(180,160,100,0.12)' : 'rgba(100,140,220,0.12)'; e.currentTarget.style.borderColor = draftAccent; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = isLimitedRound ? 'rgba(180,160,100,0.05)' : 'rgba(100,140,220,0.05)'; e.currentTarget.style.borderColor = isLimitedRound ? 'rgba(180,160,100,0.2)' : 'rgba(100,140,220,0.2)'; }}
+                >
+                  <img
+                    src={getPlayerHeadshot(player.name)}
+                    onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0d1e38&color=6b7280&size=64`; }}
+                    alt=""
+                    style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${draftAccent}`, flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: fonts.serif, fontSize: 14, color: colors.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name}</div>
+                    <div style={theme.smallText}>Rank: {player.worldRank === 999 ? 'NR' : `#${player.worldRank}`}</div>
+                  </div>
+                  <span style={{ ...theme.label, color: draftAccent, flexShrink: 0 }}>
+                    Draft {isLimitedRound ? '(L)' : '(U)'}
+                  </span>
+                </button>
               ))}
             </div>
           </div>
 
-          <div className="p-4 border-t border-gray-700 bg-gray-900/50">
-            <div className="text-xs text-gray-400 mb-3">
-              <strong>Snake Draft Format:</strong> Order reverses each round. Example: Round 1: 1→5, Round 2: 5→1, Round 3: 1→5
+          {/* Footer: draft order + undo */}
+          <ModalFooter>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={theme.label}>
+                Round {currentRound} — {isLimitedRound ? 'Limited' : 'Unlimited'}
+              </span>
+              {canUndo && (
+                <button onClick={handleUndo}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${colors.borderSubtle}`, borderRadius: 2, padding: '4px 10px', cursor: 'pointer', color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 11, transition: 'all 0.15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = colors.danger; e.currentTarget.style.color = colors.danger; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = colors.borderSubtle; e.currentTarget.style.color = colors.textSecondary; }}
+                >
+                  <RotateCcw style={{ width: 11, height: 11 }} />
+                  Undo Last Pick ({pickHistory[pickHistory.length - 1]?.playerName})
+                </button>
+              )}
             </div>
-            <div className="flex justify-between">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium"
-              >
-                Cancel Draft
-              </button>
-              <button
-                onClick={handleStartKeepers}
-                className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded font-bold"
-              >
-                Continue to Keepers
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Keeper Selection Phase
-  if (phase === 'keepers') {
-    const canProceed = currentKeeper.limited && currentKeeper.unlimited;
-    
-    return (
-      <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-        <div className="bg-gray-800 rounded-xl max-w-3xl w-full h-[600px] flex flex-col">
-          <div className="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
-            <div>
-              <h2 className="text-xl font-bold">Keeper Selection</h2>
-              <p className="text-sm text-gray-400 mt-1">
-                Team {keeperTeamIndex + 1} of {draftOrder.length} • <span className="text-green-400 font-medium">{currentTeam.name}</span>
-              </p>
-              <p className="text-xs text-blue-400 mt-1">💾 Draft auto-saves - you can close and resume anytime</p>
-            </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-white">
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-auto p-4 min-h-0">
-            <h3 className="font-bold text-sm mb-4">Select 2 Keepers:</h3>
-            
-            <div className="space-y-4">
-              {/* Limited Keeper */}
-              <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="w-7 h-7 bg-yellow-600 rounded text-sm font-bold flex items-center justify-center">L</div>
-                    <span className="font-bold whitespace-nowrap">Yellow Keeper</span>
-                  </div>
-                  {!currentKeeper.limited && (
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="Search for Limited player..."
-                        value={limitedSearch}
-                        onChange={e => setLimitedSearch(e.target.value)}
-                        className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-sm"
-                      />
-                    </div>
-                  )}
-                  {currentKeeper.limited && (
-                    <button
-                      onClick={() => handleKeeperSelect(null, 'limited')}
-                      className="text-xs text-red-400 hover:text-red-300 font-medium ml-auto"
-                    >
-                      Clear
-                    </button>
-                  )}
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+              {(isSnakeDraft ? [...draftOrder].reverse() : draftOrder).map(team => (
+                <div key={team.id} style={{
+                  flexShrink: 0, padding: '5px 12px', borderRadius: 2,
+                  fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                  background: team.id === currentTeam?.id ? draftAccent : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${team.id === currentTeam?.id ? draftAccent : colors.borderSubtle}`,
+                  color: team.id === currentTeam?.id ? '#0a1628' : colors.textSecondary,
+                  transition: 'all 0.2s',
+                }}>
+                  {team.name}
                 </div>
-                
-                {currentKeeper.limited ? (
-                  <div className="space-y-2">
-                    <div className="bg-gray-700/50 rounded px-3 py-2">
-                      <span className="font-medium">{currentKeeper.limited.name}</span>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-400 mb-1">Years of Service:</div>
-                      <div className="flex gap-2">
-                        {[1, 2, 3].map(num => (
-                          <button
-                            key={num}
-                            onClick={() => handleKeeperSelect(currentKeeper.limited.name, 'limited', num)}
-                            className={`w-10 h-10 rounded text-lg font-bold transition-colors ${
-                              num <= currentKeeper.limited.stars
-                                ? 'bg-yellow-500 hover:bg-yellow-400'
-                                : 'bg-gray-600 hover:bg-gray-500'
-                            }`}
-                          >
-                            ★
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="h-32 overflow-y-auto bg-gray-900 rounded border border-gray-700">
-                      {limitedSearch.trim() ? (
-                        limitedSearchResults.length > 0 ? (
-                          limitedSearchResults.map(player => (
-                            <button
-                              key={player.name}
-                              onClick={() => {
-                                handleKeeperSelect(player.name, 'limited', 2);
-                                setLimitedSearch('');
-                              }}
-                              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 text-left transition-colors"
-                            >
-                              <img
-                                src={getPlayerHeadshot(player.name)}
-                                onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=1f2937&color=9ca3af&size=64`; }}
-                                alt=""
-                                className="w-10 h-10 rounded-full object-cover border border-yellow-600 flex-shrink-0"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="font-medium text-sm truncate">{player.name}</div>
-                                <div className="text-xs text-gray-400">Rank: {player.worldRank}</div>
-                              </div>
-                              <div className="text-yellow-400 font-bold text-xs flex-shrink-0">Select</div>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="text-center py-3 text-gray-500 text-xs">No players found</div>
-                        )
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-gray-500 text-xs">
-                          Type to search for players...
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Unlimited Keeper */}
-              <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="w-7 h-7 bg-blue-600 rounded text-lg font-bold flex items-center justify-center">∞</div>
-                    <span className="font-bold whitespace-nowrap">Blue Keeper</span>
-                  </div>
-                  {!currentKeeper.unlimited && (
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="Search for Unlimited player..."
-                        value={unlimitedSearch}
-                        onChange={e => setUnlimitedSearch(e.target.value)}
-                        className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-sm"
-                      />
-                    </div>
-                  )}
-                  {currentKeeper.unlimited && (
-                    <button
-                      onClick={() => handleKeeperSelect(null, 'unlimited')}
-                      className="text-xs text-red-400 hover:text-red-300 font-medium ml-auto"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                
-                {currentKeeper.unlimited ? (
-                  <div className="bg-gray-700/50 rounded px-3 py-2">
-                    <span className="font-medium">{currentKeeper.unlimited.name}</span>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="h-32 overflow-y-auto bg-gray-900 rounded border border-gray-700">
-                      {unlimitedSearch.trim() ? (
-                        unlimitedSearchResults.length > 0 ? (
-                          unlimitedSearchResults.map(player => (
-                            <button
-                              key={player.name}
-                              onClick={() => {
-                                handleKeeperSelect(player.name, 'unlimited');
-                                setUnlimitedSearch('');
-                              }}
-                              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 text-left transition-colors"
-                            >
-                              <img
-                                src={getPlayerHeadshot(player.name)}
-                                onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=1f2937&color=9ca3af&size=64`; }}
-                                alt=""
-                                className="w-10 h-10 rounded-full object-cover border border-blue-600 flex-shrink-0"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="font-medium text-sm truncate">{player.name}</div>
-                                <div className="text-xs text-gray-400">Rank: {player.worldRank}</div>
-                              </div>
-                              <div className="text-blue-400 font-bold text-xs flex-shrink-0">Select</div>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="text-center py-3 text-gray-500 text-xs">No players found</div>
-                        )
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-gray-500 text-xs">
-                          Type to search for players...
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+              ))}
             </div>
-          </div>
+          </ModalFooter>
+        </>
+      )}
 
-          <div className="p-4 border-t border-gray-700 flex justify-between flex-shrink-0">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium"
-            >
-              Cancel Draft
-            </button>
-            <button
-              onClick={handleNextTeamKeepers}
-              disabled={!canProceed}
-              className={`px-4 py-2 rounded font-bold ${
-                canProceed
-                  ? 'bg-green-600 hover:bg-green-500'
-                  : 'bg-gray-600 cursor-not-allowed opacity-50'
-              }`}
-            >
-              {keeperTeamIndex < draftOrder.length - 1 ? 'Next Team' : 'Start Draft'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Draft Phase
-  const isSnakeDraft = currentRound % 2 === 0;
-  const isLimitedRound = currentRound <= 2;
-
-  return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-      <div className="bg-gray-800 rounded-xl max-w-4xl w-full h-[85vh] max-h-[700px] overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold">Fantasy Golf Draft</h2>
-            {!isDraftComplete && (
-              <>
-                <p className="text-sm text-gray-400 mt-1">
-                  Round {currentRound} of {maxRounds} • {isLimitedRound ? '🟡 Limited' : '🔵 Unlimited'} • <span className="text-green-400 font-medium">{currentTeam.name}</span> is picking
-                </p>
-                <p className="text-xs text-blue-400 mt-1">💾 Draft auto-saves - you can close and resume anytime</p>
-              </>
-            )}
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        {isDraftComplete ? (
-          <div className="flex-1 p-8 text-center">
-            <div className="text-6xl mb-4">🎉</div>
-            <h3 className="text-2xl font-bold mb-2">Draft Complete!</h3>
-            <p className="text-gray-400 mb-6">All teams have drafted their rosters.</p>
-            <button
-              onClick={() => {
-                clearDraftState();
-                onClose();
-              }}
-              className="px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold"
-            >
-              Close Draft
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="p-4 border-b border-gray-700">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search players..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-10 pr-4 py-2 text-sm"
-                  autoFocus
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-auto p-4 min-h-[400px]">
-              <div className="grid gap-2">
-                {availablePlayers.map(player => (
-                  <button
-                    key={player.name}
-                    onClick={() => handleDraftPlayer(player.name)}
-                    className={`flex items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
-                      isLimitedRound
-                        ? 'bg-yellow-900/20 hover:bg-yellow-900/30 border border-yellow-700/50'
-                        : 'bg-blue-900/20 hover:bg-blue-900/30 border border-blue-700/50'
-                    }`}
-                  >
-                    <img
-                      src={getPlayerHeadshot(player.name)}
-                      onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=1f2937&color=9ca3af&size=64`; }}
-                      alt=""
-                      className={`w-12 h-12 rounded-full object-cover border-2 flex-shrink-0 ${
-                        isLimitedRound ? 'border-yellow-600' : 'border-blue-600'
-                      }`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{player.name}</div>
-                      <div className="text-xs text-gray-400">Rank: {player.worldRank}</div>
-                    </div>
-                    <div className={`font-bold text-sm flex-shrink-0 ${isLimitedRound ? 'text-yellow-400' : 'text-blue-400'}`}>
-                      Draft {isLimitedRound ? '(L)' : '(U)'}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-gray-700 bg-gray-900/50">
-              <div className="text-xs text-gray-400 mb-2">
-                Draft Order (Round {currentRound} - {isLimitedRound ? 'Limited' : 'Unlimited'}):
-              </div>
-              <div className="flex gap-2 overflow-x-auto">
-                {(isSnakeDraft ? [...draftOrder].reverse() : draftOrder).map((team) => (
-                  <div
-                    key={team.id}
-                    className={`flex-shrink-0 px-3 py-1.5 rounded text-xs font-medium ${
-                      team.id === currentTeam.id
-                        ? 'bg-green-600 text-white'
-                        : 'bg-gray-700 text-gray-400'
-                    }`}
-                  >
-                    {team.name}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Confirmation Modal */}
+      {/* ── Confirm pick overlay ── */}
       {confirmDraft && (
-        <div className="absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-10">
-          <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full border-2 border-green-600 shadow-2xl">
-            <h3 className="text-xl font-bold mb-4 text-center">Confirm Draft Pick</h3>
-            <div className="flex flex-col items-center gap-4 mb-6">
-              <img
-                src={getPlayerHeadshot(confirmDraft.playerName)}
-                onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(confirmDraft.playerName)}&background=1f2937&color=9ca3af&size=128`; }}
-                alt=""
-                className={`w-24 h-24 rounded-full object-cover border-4 ${
-                  confirmDraft.type === 'limited' ? 'border-yellow-500' : 'border-blue-500'
-                }`}
-              />
-              <div className="text-center">
-                <div className="text-lg font-bold">{confirmDraft.playerName}</div>
-                <div className={`text-sm font-medium ${confirmDraft.type === 'limited' ? 'text-yellow-400' : 'text-blue-400'}`}>
-                  {confirmDraft.type === 'limited' ? 'Limited Player' : 'Unlimited Player'}
-                </div>
-              </div>
+        <div style={{
+          position: 'absolute', inset: 0, background: 'rgba(5,10,25,0.8)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 10,
+        }}>
+          <div style={{
+            background: '#0d1e38', border: `1px solid ${draftAccent}`,
+            borderRadius: 4, padding: 28, maxWidth: 380, width: '100%', textAlign: 'center',
+            boxShadow: '0 16px 60px rgba(0,0,0,0.5)',
+          }}>
+            <h3 style={{ ...theme.h2, marginBottom: 20 }}>Confirm Draft Pick</h3>
+            <img
+              src={getPlayerHeadshot(confirmDraft.playerName)}
+              onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(confirmDraft.playerName)}&background=0d1e38&color=6b7280&size=128`; }}
+              alt=""
+              style={{ width: 88, height: 88, borderRadius: '50%', objectFit: 'cover', border: `3px solid ${draftAccent}`, margin: '0 auto 14px' }}
+            />
+            <div style={{ fontFamily: fonts.serif, fontSize: 17, color: colors.textPrimary, marginBottom: 4 }}>{confirmDraft.playerName}</div>
+            <div style={{ fontFamily: fonts.sans, fontSize: 12, color: draftAccent, marginBottom: 16, letterSpacing: '1px', textTransform: 'uppercase' }}>
+              {confirmDraft.type === 'limited' ? 'Limited Player' : 'Unlimited Player'}
             </div>
-            <div className="text-sm text-gray-400 text-center mb-6">
-              Draft <span className="text-white font-bold">{confirmDraft.playerName}</span> for <span className="text-green-400 font-bold">{currentTeam.name}</span>?
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmDraft(null)}
-                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg font-bold transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDraftPlayer}
-                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold transition-colors"
-              >
-                Confirm Draft
-              </button>
+            <p style={{ ...theme.bodyText, marginBottom: 22 }}>
+              Draft for <span style={{ fontFamily: fonts.serif, color: colors.textGold }}>{currentTeam?.name}</span>?
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <Btn onClick={() => setConfirmDraft(null)} variant="secondary">Cancel</Btn>
+              <Btn onClick={confirmDraftPlayer}>Confirm Pick</Btn>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </Shell>
   );
 };
