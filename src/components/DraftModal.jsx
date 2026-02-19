@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Search } from 'lucide-react';
+import { draftStateApi } from '../api';
 
 export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots = {} }) => {
   const [phase, setPhase] = useState('order'); // 'order', 'keepers', or 'draft'
@@ -15,14 +16,88 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [confirmDraft, setConfirmDraft] = useState(null); // { playerName, type }
 
+  // Load saved draft state from Supabase on mount
+  useEffect(() => {
+    const loadDraftState = async () => {
+      try {
+        const savedState = await draftStateApi.get();
+        if (savedState && savedState.draft_order?.length === teams.length) {
+          setPhase(savedState.phase || 'order');
+          setDraftOrder(savedState.draft_order || draftOrder);
+          setKeeperTeamIndex(savedState.keeper_team_index || 0);
+          setKeepers(savedState.keepers || {});
+          setCurrentTeamIndex(savedState.current_team_index || 0);
+          setCurrentRound(savedState.current_round || 1);
+          setDraftedPlayers(savedState.drafted_players || []);
+        }
+      } catch (e) {
+        console.error('Failed to restore draft state:', e);
+      }
+    };
+    loadDraftState();
+  }, []); // Only run once on mount
+
+  // Save draft state to Supabase whenever it changes
+  useEffect(() => {
+    if (phase !== 'order' || Object.keys(keepers).length > 0) {
+      const saveDraftState = async () => {
+        try {
+          await draftStateApi.save({
+            phase,
+            draftOrder,
+            keeperTeamIndex,
+            keepers,
+            currentTeamIndex,
+            currentRound,
+            draftedPlayers,
+          });
+        } catch (e) {
+          console.error('Failed to save draft state:', e);
+        }
+      };
+      saveDraftState();
+    }
+  }, [phase, draftOrder, keeperTeamIndex, keepers, currentTeamIndex, currentRound, draftedPlayers]);
+
   // Initialize keepers object
   useEffect(() => {
-    const initialKeepers = {};
-    teams.forEach(team => {
-      initialKeepers[team.id] = { limited: null, unlimited: null };
-    });
-    setKeepers(initialKeepers);
+    // Only initialize if keepers is empty (no saved state)
+    if (Object.keys(keepers).length === 0) {
+      const initialKeepers = {};
+      teams.forEach(team => {
+        initialKeepers[team.id] = { limited: null, unlimited: null };
+      });
+      setKeepers(initialKeepers);
+    }
   }, [teams]);
+
+  // Clear saved draft state from Supabase
+  const clearDraftState = async () => {
+    try {
+      await draftStateApi.clear();
+    } catch (e) {
+      console.error('Failed to clear draft state:', e);
+    }
+  };
+
+  // Close and optionally clear draft
+  const handleClose = () => {
+    if (phase === 'draft' && draftedPlayers.length > 0) {
+      const save = window.confirm('Save draft progress? Click OK to save and resume later, or Cancel to discard and start over next time.');
+      if (!save) {
+        clearDraftState();
+      }
+    }
+    onClose();
+  };
+
+  // Start fresh draft (clear saved state)
+  const startFreshDraft = () => {
+    if (window.confirm('Start a brand new draft? This will discard any saved progress.')) {
+      clearDraftState();
+      window.location.reload();
+    }
+  };
 
   const currentTeam = phase === 'order' 
     ? null 
@@ -104,25 +179,11 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     if (!headshotId) {
       const player = allPlayers.find(p => p.name === playerName);
       headshotId = player?.pgaTourId;
-      
-      // Debug for Hideki
-      if (playerName === 'Hideki Matsuyama') {
-        console.log('[DraftModal] Hideki debug:');
-        console.log('  - allPlayers.length:', allPlayers.length);
-        console.log('  - found player:', player);
-        console.log('  - player.pgaTourId:', player?.pgaTourId);
-        console.log('  - headshots object:', headshots);
-        console.log('  - headshotId:', headshotId);
-      }
     }
     
     if (headshotId) {
-      // Use the same Cloudinary URL that works on Rosters page
-      const url = `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${headshotId}`;
-      if (playerName === 'Hideki Matsuyama') {
-        console.log('  - generated URL:', url);
-      }
-      return url;
+      // Try ESPN headshot URL
+      return `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${headshotId}.png&w=96&h=96`;
     }
     
     // Fallback to UI Avatars
@@ -362,6 +423,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
               <p className="text-sm text-gray-400 mt-1">
                 Team {keeperTeamIndex + 1} of {draftOrder.length} • <span className="text-green-400 font-medium">{currentTeam.name}</span>
               </p>
+              <p className="text-xs text-blue-400 mt-1">💾 Draft auto-saves - you can close and resume anytime</p>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-white">
               <X className="w-6 h-6" />
@@ -575,9 +637,12 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
           <div>
             <h2 className="text-xl font-bold">Fantasy Golf Draft</h2>
             {!isDraftComplete && (
-              <p className="text-sm text-gray-400 mt-1">
-                Round {currentRound} of {maxRounds} • {isLimitedRound ? '🟡 Limited' : '🔵 Unlimited'} • <span className="text-green-400 font-medium">{currentTeam.name}</span> is picking
-              </p>
+              <>
+                <p className="text-sm text-gray-400 mt-1">
+                  Round {currentRound} of {maxRounds} • {isLimitedRound ? '🟡 Limited' : '🔵 Unlimited'} • <span className="text-green-400 font-medium">{currentTeam.name}</span> is picking
+                </p>
+                <p className="text-xs text-blue-400 mt-1">💾 Draft auto-saves - you can close and resume anytime</p>
+              </>
             )}
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white">
@@ -591,7 +656,10 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
             <h3 className="text-2xl font-bold mb-2">Draft Complete!</h3>
             <p className="text-gray-400 mb-6">All teams have drafted their rosters.</p>
             <button
-              onClick={onClose}
+              onClick={() => {
+                clearDraftState();
+                onClose();
+              }}
               className="px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold"
             >
               Close Draft
