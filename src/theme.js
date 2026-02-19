@@ -1,0 +1,340 @@
+/**
+ * ============================================================================
+ * SFGL THEME
+ * Single source of truth for all visual styles across the app.
+ * To change the look of every view at once, edit values here.
+ * ============================================================================
+ */
+
+// ── Color tokens ─────────────────────────────────────────────────────────────
+export const colors = {
+  // Backgrounds
+  pageBg:        '#0a1628',
+  cardBg:        'rgba(255,255,255,0.03)',
+  cardBgHover:   'rgba(255,255,255,0.055)',
+  rowHover:      'rgba(255,255,255,0.04)',
+  headerBg:      'linear-gradient(90deg, rgba(26,51,102,0.6) 0%, transparent 100%)',
+  inputBg:       'rgba(255,255,255,0.04)',
+  inputBgFocus:  'rgba(255,255,255,0.07)',
+  buttonNavy:    '#1a3366',
+  buttonNavyHover: '#1e3d7a',
+
+  // Borders
+  border:        'rgba(180,160,100,0.15)',
+  borderSubtle:  'rgba(255,255,255,0.06)',
+  borderInput:   'rgba(255,255,255,0.1)',
+  borderFocus:   'rgba(180,160,100,0.5)',
+
+  // Text
+  textPrimary:   'rgba(255,255,255,0.9)',
+  textSecondary: 'rgba(255,255,255,0.4)',
+  textMuted:     'rgba(255,255,255,0.2)',
+  textLabel:     'rgba(255,255,255,0.25)',
+  textGold:      'rgba(180,160,100,0.9)',
+  textGoldDim:   'rgba(180,160,100,0.5)',
+
+  // Semantic
+  success:       'rgba(80,180,120,0.85)',
+  danger:        'rgba(220,80,80,0.85)',
+  dangerBg:      'rgba(180,60,60,0.12)',
+  dangerBorder:  'rgba(180,60,60,0.3)',
+  warning:       'rgba(220,170,60,0.85)',
+
+  // Medal positions
+  medal1:        { bg: 'rgba(180,160,100,0.9)',  text: '#0a1628' },
+  medal2:        { bg: 'rgba(180,180,190,0.75)', text: '#0a1628' },
+  medal3:        { bg: 'rgba(160,110,60,0.8)',   text: '#fff'    },
+  medalDefault:  { bg: 'rgba(255,255,255,0.06)', text: 'rgba(255,255,255,0.4)' },
+};
+
+// ── Typography ────────────────────────────────────────────────────────────────
+export const fonts = {
+  serif:      "Georgia, 'Times New Roman', serif",
+  sans:       "system-ui, -apple-system, sans-serif",
+};
+
+// ── Spacing / shape ───────────────────────────────────────────────────────────
+export const shape = {
+  cardRadius:  3,
+  inputRadius: 1,
+  btnRadius:   1,
+};
+
+// ── Reusable style objects ────────────────────────────────────────────────────
+// Use these directly on JSX elements: <div style={theme.card}>
+
+export const theme = {
+
+  // ── Layout ──
+  page: {
+    minHeight: '100vh',
+    background: colors.pageBg,
+    color: colors.textPrimary,
+    paddingBottom: 80,
+  },
+
+  // ── Cards ──
+  card: {
+    background: colors.cardBg,
+    border: `1px solid ${colors.border}`,
+    borderRadius: shape.cardRadius,
+    overflow: 'hidden',
+  },
+
+  cardHeader: {
+    padding: '16px 20px',
+    background: colors.headerBg,
+    borderBottom: `1px solid ${colors.borderSubtle}`,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  cardBody: {
+    padding: '16px 20px',
+  },
+
+  cardSection: {
+    padding: '12px 20px',
+    borderBottom: `1px solid ${colors.borderSubtle}`,
+  },
+
+  // ── Typography ──
+  h1: {
+    fontFamily: fonts.serif,
+    fontSize: 22,
+    fontWeight: 400,
+    color: colors.textPrimary,
+    letterSpacing: '0.3px',
+  },
+
+  h2: {
+    fontFamily: fonts.serif,
+    fontSize: 16,
+    fontWeight: 400,
+    color: colors.textPrimary,
+    letterSpacing: '0.5px',
+  },
+
+  h3: {
+    fontFamily: fonts.serif,
+    fontSize: 14,
+    fontWeight: 400,
+    color: colors.textPrimary,
+    letterSpacing: '0.3px',
+  },
+
+  label: {
+    fontFamily: fonts.sans,
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    color: colors.textLabel,
+  },
+
+  bodyText: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+
+  smallText: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+
+  goldText: {
+    fontFamily: fonts.serif,
+    color: colors.textGold,
+  },
+
+  // ── Table ──
+  tableHeaderCell: {
+    padding: '8px 16px',
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    color: colors.textLabel,
+    fontFamily: fonts.sans,
+    borderBottom: `1px solid ${colors.borderSubtle}`,
+    background: 'rgba(255,255,255,0.02)',
+  },
+
+  tableCell: {
+    padding: '12px 16px',
+    borderBottom: `1px solid ${colors.borderSubtle}`,
+  },
+
+  tableRow: {
+    transition: 'background 0.15s',
+    cursor: 'default',
+  },
+
+  // ── Inputs ──
+  input: {
+    width: '100%',
+    background: colors.inputBg,
+    border: `1px solid ${colors.borderInput}`,
+    borderRadius: shape.inputRadius,
+    padding: '10px 14px',
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textPrimary,
+    outline: 'none',
+    transition: 'border-color 0.2s, background 0.2s',
+    caretColor: colors.textGold,
+  },
+
+  select: {
+    width: '100%',
+    background: colors.inputBg,
+    border: `1px solid ${colors.borderInput}`,
+    borderRadius: shape.inputRadius,
+    padding: '9px 14px',
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textPrimary,
+    outline: 'none',
+    cursor: 'pointer',
+  },
+
+  // ── Buttons ──
+  btnPrimary: {
+    background: colors.buttonNavy,
+    border: `1px solid ${colors.border}`,
+    borderRadius: shape.btnRadius,
+    padding: '9px 18px',
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    color: colors.textGold,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+
+  btnSecondary: {
+    background: 'transparent',
+    border: `1px solid ${colors.borderInput}`,
+    borderRadius: shape.btnRadius,
+    padding: '9px 18px',
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    color: colors.textSecondary,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+
+  btnDanger: {
+    background: colors.dangerBg,
+    border: `1px solid ${colors.dangerBorder}`,
+    borderRadius: shape.btnRadius,
+    padding: '9px 18px',
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    color: colors.danger,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+
+  btnIconSmall: {
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    padding: 4,
+    color: colors.textSecondary,
+    display: 'flex',
+    alignItems: 'center',
+    transition: 'color 0.2s',
+  },
+
+  // ── Badges / pills ──
+  badge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 8px',
+    borderRadius: 2,
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
+    fontFamily: fonts.sans,
+  },
+
+  badgeGold: {
+    background: 'rgba(180,160,100,0.12)',
+    border: '1px solid rgba(180,160,100,0.25)',
+    color: colors.textGold,
+  },
+
+  badgeNavy: {
+    background: 'rgba(26,51,102,0.5)',
+    border: '1px solid rgba(26,51,102,0.8)',
+    color: 'rgba(150,170,220,0.8)',
+  },
+
+  badgeDanger: {
+    background: colors.dangerBg,
+    border: `1px solid ${colors.dangerBorder}`,
+    color: colors.danger,
+  },
+
+  badgeSuccess: {
+    background: 'rgba(80,180,120,0.1)',
+    border: '1px solid rgba(80,180,120,0.25)',
+    color: colors.success,
+  },
+
+  // ── Dividers ──
+  divider: {
+    height: 1,
+    background: colors.borderSubtle,
+    border: 'none',
+    margin: '0',
+  },
+
+  dividerGold: {
+    height: 1,
+    background: `linear-gradient(90deg, transparent, ${colors.borderFocus}, transparent)`,
+    border: 'none',
+    margin: '16px 0',
+  },
+
+  // ── Empty state ──
+  emptyState: {
+    padding: '48px 20px',
+    textAlign: 'center',
+    color: colors.textMuted,
+    fontFamily: fonts.serif,
+    fontSize: 14,
+    letterSpacing: '0.5px',
+  },
+};
+
+// ── Helper: medal style by position index ─────────────────────────────────────
+export const getMedalStyle = (index) => {
+  if (index === 0) return colors.medal1;
+  if (index === 1) return colors.medal2;
+  if (index === 2) return colors.medal3;
+  return colors.medalDefault;
+};
+
+// ── Helper: row hover handlers ────────────────────────────────────────────────
+export const rowHoverHandlers = (isHighlighted = false) => ({
+  onMouseEnter: (e) => { e.currentTarget.style.background = colors.rowHover; },
+  onMouseLeave: (e) => { e.currentTarget.style.background = isHighlighted ? 'rgba(180,160,100,0.04)' : 'transparent'; },
+});
+
+// ── Helper: earnings color ────────────────────────────────────────────────────
+export const earningsColor = (amount) =>
+  (amount || 0) > 0 ? colors.textGold : colors.textMuted;

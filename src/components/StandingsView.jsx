@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Trophy } from 'lucide-react';
 import { getSegmentByDate } from '../utils/index.js';
+import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor } from '../theme.js';
 
 export const StandingsView = ({ teams }) => {
   const sortedTeams = useMemo(() =>
@@ -16,55 +17,76 @@ export const StandingsView = ({ teams }) => {
   );
 
   return (
-    <div className="space-y-4">
-      <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-green-700/30 overflow-hidden">
-        <div className="p-4 bg-gradient-to-r from-green-600/20 to-transparent border-b border-green-700/30">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-yellow-400" />
-            Overall Standings
-          </h2>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={theme.card}>
+
+        {/* Header */}
+        <div style={theme.cardHeader}>
+          <Trophy style={{ width: 16, height: 16, color: colors.textGold }} />
+          <h2 style={theme.h2}>Overall Standings</h2>
         </div>
 
-        <table className="w-full" role="table">
-          <thead className="bg-gray-700/50 text-xs sm:text-sm">
+        {/* Table */}
+        <table style={{ width: '100%', borderCollapse: 'collapse' }} role="table">
+          <thead>
             <tr>
-              <th className="px-2 sm:px-4 py-2 text-left w-10 sm:w-14" scope="col">Pos</th>
-              <th className="px-2 sm:px-4 py-2 text-left"               scope="col">Team</th>
-              <th className="px-2 sm:px-4 py-2 text-right"              scope="col">Season</th>
-              <th className="px-2 sm:px-4 py-2 text-right"              scope="col">{getSegmentByDate()}</th>
+              {['Pos', 'Team', 'Season', getSegmentByDate()].map((h, i) => (
+                <th key={h} scope="col" style={{
+                  ...theme.tableHeaderCell,
+                  textAlign: i >= 2 ? 'right' : 'left',
+                  width: i === 0 ? 56 : 'auto',
+                }}>
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-700/50">
+          <tbody>
             {sortedTeams.map((team, index) => {
               const segmentPos = segmentStandings.findIndex(t => t.id === team.id) + 1;
+              const medal = getMedalStyle(index);
+              const isTop = index === 0;
               return (
-                <tr key={team.id} className="hover:bg-gray-700/30 transition-colors">
-                  <td className="px-2 sm:px-4 py-2">
-                    <div
-                      className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm ${
-                        index === 0 ? 'bg-yellow-500 text-gray-900'
-                        : index === 1 ? 'bg-gray-400 text-gray-900'
-                        : index === 2 ? 'bg-orange-600 text-white'
-                        : 'bg-gray-700 text-gray-300'
-                      }`}
+                <tr key={team.id}
+                  style={{ ...theme.tableRow, background: isTop ? 'rgba(180,160,100,0.04)' : 'transparent' }}
+                  {...rowHoverHandlers(isTop)}
+                >
+                  <td style={theme.tableCell}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: '50%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 12, fontWeight: 700, fontFamily: fonts.serif,
+                      background: medal.bg, color: medal.text,
+                    }}
                       aria-label={`Position ${team.position}`}
                     >
                       {team.position}
                     </div>
                   </td>
-                  <td className="px-2 sm:px-4 py-2">
-                    <div className="font-semibold text-sm sm:text-base">{team.name}</div>
-                    <div className="text-xs text-gray-400">{team.owner}</div>
+
+                  <td style={theme.tableCell}>
+                    <div style={{ ...theme.h3, fontSize: 14 }}>{team.name}</div>
+                    <div style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
                   </td>
-                  <td className="px-2 sm:px-4 py-2 text-right">
-                    <div className="text-base sm:text-lg font-bold text-green-400" style={{ fontVariantNumeric: 'tabular-nums' }}>
+
+                  <td style={{ ...theme.tableCell, textAlign: 'right' }}>
+                    <div style={{
+                      ...theme.goldText, fontSize: 15, fontWeight: 600,
+                      color: earningsColor(team.earnings),
+                      fontVariantNumeric: 'tabular-nums',
+                    }}>
                       ${(team.earnings || 0).toLocaleString()}
                     </div>
                   </td>
-                  <td className="px-2 sm:px-4 py-2 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span className="text-xs text-gray-500">#{segmentPos}</span>
-                      <span className="text-xs sm:text-sm text-gray-400" style={{ fontVariantNumeric: 'tabular-nums' }}>
+
+                  <td style={{ ...theme.tableCell, textAlign: 'right' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                      <span style={theme.smallText}>#{segmentPos}</span>
+                      <span style={{
+                        fontFamily: fonts.serif, fontSize: 13,
+                        color: earningsColor(team.segmentEarnings),
+                        fontVariantNumeric: 'tabular-nums',
+                      }}>
                         ${(team.segmentEarnings || 0).toLocaleString()}
                       </span>
                     </div>
