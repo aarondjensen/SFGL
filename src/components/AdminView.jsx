@@ -37,7 +37,6 @@ export const AdminView = ({
   const [showLivManager, setShowLivManager] = useState(false);
   const [livRoster, setLivRoster] = useState([]);
   const [livPlayerInput, setLivPlayerInput] = useState('');
-  const [seedingManagers, setSeedingManagers] = useState(false);
   const dialog = useDialog();
   const activeTournament = tournaments.find(t => t.playing);
 
@@ -407,31 +406,6 @@ export const AdminView = ({
     }
   };
 
-  // ── Seed Manager Credentials ───────────────────────────────────────────────
-  const handleSeedManagers = async () => {
-    const confirmed = await dialog.showConfirm(
-      'Set Manager Passwords',
-      `This will set passwords for all managers in the managers table.\n\nEach manager's password will be their last name in lowercase:\n• Crawforth → crawforth\n• Fano → fano\n• Hershey → hershey\n• Jensen → jensen\n• Lutz → lutz\n\nSafe to run again if needed.`,
-      { confirmText: 'Set Passwords' }
-    );
-    if (!confirmed) return;
-
-    setSeedingManagers(true);
-    try {
-      const results = await managerAuthApi.seedAllManagers(); // no args — fetches from Supabase
-      const failed = results.filter(r => !r.success);
-      if (failed.length > 0) {
-        dialog.showToast(`⚠ ${failed.length} failed: ${failed.map(r => r.name).join(', ')}`, 'error');
-      } else {
-        dialog.showToast(`✓ Passwords set for ${results.length} managers! They can now log in.`, 'success');
-      }
-    } catch (error) {
-      dialog.showToast(`Failed: ${error.message}`, 'error');
-    } finally {
-      setSeedingManagers(false);
-    }
-  };
-
   // ── Mulligan reset ────────────────────────────────────────────────────────
   const resetMulligan = (teamId, type) => {
     const team = teams.find(t => t.id === teamId);
@@ -516,46 +490,6 @@ export const AdminView = ({
           className="bg-red-600 hover:bg-red-700 px-4 py-1.5 rounded-lg text-sm font-bold transition-colors"
         >
           Logout
-        </button>
-      </div>
-
-      {/* ── Manager Login Setup ──────────────────────────────────────────── */}
-      <div className="bg-green-900/20 border border-green-700/50 p-4 rounded-xl">
-        <h3 className="font-bold text-green-400 flex items-center gap-2 mb-2">🔑 Manager Login Setup</h3>
-        <p className="text-xs text-gray-400 mb-3">
-          Run this once to set passwords for all managers. Each manager's password will be their name in lowercase.
-        </p>
-
-        {/* Credentials table — pulled from managers table */}
-        <div className="bg-gray-900/60 rounded-lg border border-gray-700 mb-3 overflow-hidden">
-          <div className="grid grid-cols-3 px-3 py-1.5 border-b border-gray-700 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-            <span>Team</span><span>Login name</span><span>Password</span>
-          </div>
-          {[
-            { team: 'Detroit Rock City', name: 'Crawforth' },
-            { team: 'Hip Happens',       name: 'Fano'      },
-            { team: 'Dirty Bird(ies)',   name: 'Hershey'   },
-            { team: 'World #1',          name: 'Jensen'    },
-            { team: 'POPS, LLC',         name: 'Lutz'      },
-          ].map(m => (
-            <div key={m.name} className="grid grid-cols-3 px-3 py-2 border-b border-gray-700/50 last:border-0 text-xs">
-              <span className="text-gray-300 truncate">{m.team}</span>
-              <span className="text-white font-medium">{m.name}</span>
-              <span className="text-green-400 font-mono">{m.name.toLowerCase()}</span>
-            </div>
-          ))}
-        </div>
-
-        <button
-          onClick={handleSeedManagers}
-          disabled={seedingManagers}
-          className="w-full py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2"
-        >
-          {seedingManagers ? (
-            <><span className="animate-spin">⏳</span> Setting passwords…</>
-          ) : (
-            <><span>🔑</span> Set All Manager Passwords</>
-          )}
         </button>
       </div>
 
