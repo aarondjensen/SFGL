@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { managerAuthApi } from "../supabase";
+import { managerAuthApi } from "../api/supabase";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // All styles are self-contained — no Tailwind needed for this component
