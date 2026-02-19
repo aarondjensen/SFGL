@@ -166,13 +166,13 @@ export default function LoginPage({ onLogin }) {
               <label htmlFor="sfgl-name" className="sfgl-label">Your Name</label>
               <div className="sfgl-field-wrap">
                 <input id="sfgl-name" type="text" className="sfgl-input"
-                  placeholder="e.g. Fano" value={name} autoFocus autoComplete="username"
+                  placeholder="e.g. Jensen" value={name} autoFocus autoComplete="username"
                   onChange={e => { setName(e.target.value); setErrors(v => ({...v, name:''})); }}
                 />
               </div>
               {errors.name
                 ? <p className="sfgl-field-error">⚠ {errors.name}</p>
-                : <p className="sfgl-hint">Use your first name exactly as it appears in the app</p>
+                : <p className="sfgl-hint">Your last name (e.g. Jensen, Fano, Lutz)</p>
               }
             </div>
 

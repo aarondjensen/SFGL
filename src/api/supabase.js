@@ -354,29 +354,28 @@ export const draftStateApi = {
  * ============================================================================
  * MANAGER AUTH API
  *
- * Login is name-based (not email). Managers log in with:
- *   Name:     their owner name  (e.g. "TJ", "Hershey", "Fano", "Jensen", "Lutz")
- *   Password: their name lowercased (e.g. "tj", "hershey", "fano", "jensen", "lutz")
+ * Credentials live in the `managers` table (password_hash column).
+ * Team-specific data (roster, lineup, etc.) lives in the `teams` table.
  *
- * Use seedAllManagers(teams) once from AdminView to populate credentials.
+ * Login:  managers.name  (e.g. "Crawforth", "Fano", "Hershey", "Jensen", "Lutz")
+ * Password: name lowercased (e.g. "crawforth") — set via seedAllManagers()
  * ============================================================================
  */
 export const managerAuthApi = {
 
   /**
-   * Login with name + password.
-   * Looks up the team row where owner = name (case-insensitive).
+   * Login with last name + password.
+   * Looks up row in `managers` table by name (case-insensitive).
    */
   async login(name, password) {
-    // Case-insensitive match on owner name
-    const { data: team, error: teamError } = await supabase
-      .from('teams')
+    const { data: manager, error: managerError } = await supabase
+      .from('managers')
       .select('*')
-      .ilike('owner', name.trim())
+      .ilike('name', name.trim())
       .single();
 
-    if (teamError || !team) throw new Error('Name not found. Check with your commissioner.');
-    if (team.manager_password_hash !== password) throw new Error('Incorrect password.');
+    if (managerError || !manager) throw new Error('Name not found. Check with your commissioner.');
+    if (manager.password_hash !== password) throw new Error('Incorrect password.');
 
     const sessionToken = crypto.randomUUID();
     const expiresAt = new Date();
@@ -385,7 +384,7 @@ export const managerAuthApi = {
     const { error: sessionError } = await supabase
       .from('manager_sessions')
       .insert({
-        team_id:          team.id,
+        manager_id:       manager.id,
         session_token:    sessionToken,
         is_commissioner:  false,
         expires_at:       expiresAt.toISOString(),
@@ -394,13 +393,15 @@ export const managerAuthApi = {
     if (sessionError) throw sessionError;
 
     localStorage.setItem('manager_session', sessionToken);
-    localStorage.setItem('manager_team_id', team.id);
+    localStorage.setItem('manager_id', String(manager.id));
+    localStorage.setItem('manager_name', manager.name);
+    localStorage.setItem('manager_team_name', manager.team_name);
 
-    return { team, sessionToken };
+    return { manager, sessionToken };
   },
 
   /**
-   * Restore session on page load. Returns session data or null.
+   * Restore session on page load. Returns session + manager data or null.
    */
   async getCurrentSession() {
     const sessionToken = localStorage.getItem('manager_session');
@@ -408,14 +409,16 @@ export const managerAuthApi = {
 
     const { data, error } = await supabase
       .from('manager_sessions')
-      .select('*, teams(*)')
+      .select('*, managers(*)')
       .eq('session_token', sessionToken)
       .gt('expires_at', new Date().toISOString())
       .single();
 
     if (error || !data) {
       localStorage.removeItem('manager_session');
-      localStorage.removeItem('manager_team_id');
+      localStorage.removeItem('manager_id');
+      localStorage.removeItem('manager_name');
+      localStorage.removeItem('manager_team_name');
       localStorage.removeItem('is_commissioner');
       return null;
     }
@@ -432,32 +435,37 @@ export const managerAuthApi = {
       await supabase.from('manager_sessions').delete().eq('session_token', sessionToken);
     }
     localStorage.removeItem('manager_session');
-    localStorage.removeItem('manager_team_id');
+    localStorage.removeItem('manager_id');
+    localStorage.removeItem('manager_name');
+    localStorage.removeItem('manager_team_name');
     localStorage.removeItem('is_commissioner');
   },
 
   /**
-   * Seed all manager credentials at once.
-   * Password defaults to owner name lowercased (e.g. "Fano" → password "fano").
-   * Call this once from AdminView — it's safe to run multiple times (upsert).
-   *
-   * @param {Array} teams - your INITIAL_TEAMS array (or live teams from state)
+   * Seed all manager passwords at once.
+   * Password = manager name lowercased (e.g. "Jensen" → "jensen").
+   * Safe to run multiple times — just overwrites with the same value.
    */
-  async seedAllManagers(teams) {
-    const results = [];
-    for (const team of teams) {
-      const password = team.owner.toLowerCase();
-      const { data, error } = await supabase
-        .from('teams')
-        .update({ manager_password_hash: password })
-        .eq('id', team.id)
-        .select();
+  async seedAllManagers() {
+    // Fetch all managers from Supabase directly
+    const { data: managers, error } = await supabase
+      .from('managers')
+      .select('id, name');
 
-      if (error) {
-        console.error(`Failed to seed credentials for ${team.owner}:`, error);
-        results.push({ owner: team.owner, success: false, error: error.message });
+    if (error) throw error;
+
+    const results = [];
+    for (const manager of managers) {
+      const password = manager.name.toLowerCase();
+      const { error: updateError } = await supabase
+        .from('managers')
+        .update({ password_hash: password })
+        .eq('id', manager.id);
+
+      if (updateError) {
+        results.push({ name: manager.name, success: false, error: updateError.message });
       } else {
-        results.push({ owner: team.owner, password, success: true });
+        results.push({ name: manager.name, password, success: true });
       }
     }
     return results;
@@ -466,11 +474,11 @@ export const managerAuthApi = {
   /**
    * Update a single manager's password.
    */
-  async updatePassword(teamId, newPassword) {
+  async updatePassword(managerId, newPassword) {
     const { data, error } = await supabase
-      .from('teams')
-      .update({ manager_password_hash: newPassword })
-      .eq('id', teamId)
+      .from('managers')
+      .update({ password_hash: newPassword })
+      .eq('id', managerId)
       .select();
     if (error) throw error;
     return data;
