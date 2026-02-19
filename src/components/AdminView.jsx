@@ -3,7 +3,7 @@ import { Settings, X } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { slashGolfFetch, processTournamentData, makePlayer, resolvePlayerName } from '../utils';
 import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA, LIV_GOLF_ROSTER } from '../constants';
-import { storage } from '../api';
+import { storage, draftStateApi } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi } from '../api/supabase';
@@ -120,8 +120,20 @@ export const AdminView = ({
   const [showLivManager, setShowLivManager]                       = useState(false);
   const [livRoster, setLivRoster]                                 = useState([]);
   const [livPlayerInput, setLivPlayerInput]                       = useState('');
+  const [hasSavedDraft, setHasSavedDraft]                         = useState(false);
+  const [draftInitialPhase, setDraftInitialPhase]                 = useState('resume_prompt');
   const dialog = useDialog();
   const activeTournament = tournaments.find(t => t.playing);
+
+  useEffect(() => {
+    const checkSavedDraft = async () => {
+      try {
+        const saved = await draftStateApi.get();
+        setHasSavedDraft(!!(saved && saved.draft_order?.length === teams.length && saved.phase !== 'order'));
+      } catch { setHasSavedDraft(false); }
+    };
+    checkSavedDraft();
+  }, []);
 
   useEffect(() => {
     const loadTimestamp = async () => {
@@ -335,9 +347,22 @@ export const AdminView = ({
     dialog.showToast('Season reset complete!', 'success');
   };
 
-  const handleDraft = async () => {
-    const confirm = await dialog.showConfirm('Start Draft', 'This will clear all rosters and open a draft interface. Continue?', { confirmText: 'Start Draft' });
+  const handleNewDraft = async () => {
+    const confirm = await dialog.showConfirm(
+      '🎯 New Draft',
+      'This will clear all rosters and delete any in-progress draft. Are you sure?',
+      { type: 'danger', confirmText: 'Start New Draft' },
+    );
     if (!confirm) return;
+    try { await draftStateApi.clear(); } catch {}
+    updateTeams(teams.map(t => ({ ...t, roster: [], lineup: [] })));
+    setHasSavedDraft(false);
+    setDraftInitialPhase('order');
+    setShowDraftModal(true);
+  };
+
+  const handleResumeDraft = () => {
+    setDraftInitialPhase('resume_prompt');
     setShowDraftModal(true);
   };
 
@@ -514,10 +539,18 @@ export const AdminView = ({
 
       {/* Draft */}
       <Section>
-        <SectionHeader icon="🎯" title="Start New Draft" />
+        <SectionHeader icon="🎯" title="Draft" />
         <SectionBody>
-          <p style={theme.bodyText}>This will clear all rosters and begin keeper selection.</p>
-          <Btn onClick={handleDraft}>Start Draft</Btn>
+          {hasSavedDraft && (
+            <div style={{ background: 'rgba(100,160,255,0.08)', border: '1px solid rgba(100,160,255,0.2)', borderRadius: 2, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13 }}>💾</span>
+              <span style={{ ...theme.smallText, color: 'rgba(100,160,255,0.8)' }}>A draft is in progress</span>
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: hasSavedDraft ? '1fr 1fr' : '1fr', gap: 8 }}>
+            <Btn onClick={handleNewDraft} variant="danger">🗑 New Draft</Btn>
+            {hasSavedDraft && <Btn onClick={handleResumeDraft}>▶ Resume Draft</Btn>}
+          </div>
         </SectionBody>
       </Section>
 
@@ -608,7 +641,12 @@ export const AdminView = ({
       )}
 
       {showDraftModal && (
-        <DraftModal teams={teams} allPlayers={allPlayers} updateTeams={updateTeams} onClose={() => setShowDraftModal(false)} headshots={headshots} />
+        <DraftModal
+          teams={teams} allPlayers={allPlayers} updateTeams={updateTeams}
+          onClose={() => { setShowDraftModal(false); draftStateApi.get().then(s => setHasSavedDraft(!!(s && s.phase !== 'order'))).catch(() => {}); }}
+          headshots={headshots}
+          initialPhase={draftInitialPhase}
+        />
       )}
     </div>
   );
