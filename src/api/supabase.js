@@ -465,7 +465,7 @@ export const managerAuthApi = {
 
     const sessionToken = crypto.randomUUID();
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    expiresAt.setDate(expiresAt.getDate() + 60);
 
     const { data: session, error: sessionError } = await supabase
       .from('manager_sessions')
@@ -497,7 +497,7 @@ export const managerAuthApi = {
 
     const sessionToken = crypto.randomUUID();
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    expiresAt.setDate(expiresAt.getDate() + 60);
 
     await supabase
       .from('manager_sessions')
