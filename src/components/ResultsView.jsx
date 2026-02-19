@@ -1,41 +1,52 @@
 import React, { useState, useMemo } from 'react';
 import { Calendar, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
+import { theme, colors, fonts } from '../theme.js';
 
+// ── Player slot grid ──────────────────────────────────────────────────────────
 const PlayerSlotGrid = ({ players, showEarnings }) => {
   const slots = [0, 1, 2, 3, 4].map(i => players[i] || null);
   return (
-    <div className="ml-7 grid grid-cols-5 gap-1">
+    <div style={{ marginLeft: 28, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
       {slots.map((p, idx) => (
-        <div key={idx} className="text-xs min-w-0 truncate">
+        <div key={idx} style={{ fontSize: 11, minWidth: 0, overflow: 'hidden' }}>
           {p ? (
             <>
-              <span className={
-                showEarnings
-                  ? p.limited ? (p.earnings > 0 ? 'text-yellow-400' : 'text-yellow-300/40') : (p.earnings > 0 ? 'text-gray-300' : 'text-gray-500')
-                  : p.limited ? 'text-yellow-400/60' : 'text-gray-400'
-              }>
+              <div style={{
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                color: showEarnings
+                  ? p.limited
+                    ? (p.earnings > 0 ? colors.textGold : 'rgba(180,160,100,0.3)')
+                    : (p.earnings > 0 ? colors.textPrimary : colors.textMuted)
+                  : p.limited ? colors.textGoldDim : colors.textSecondary,
+              }}>
                 {shortName(p.name)}
-              </span>
-              {showEarnings && p.roundsLed?.map((rl, ri) => (
-                <span key={ri} className="ml-0.5 px-1 bg-blue-600/60 text-blue-200 rounded">R{rl.round}</span>
-              ))}
-              <br />
+                {showEarnings && p.roundsLed?.map((rl, ri) => (
+                  <span key={ri} style={{
+                    marginLeft: 2, padding: '0 4px',
+                    background: 'rgba(60,100,200,0.4)',
+                    color: 'rgba(150,180,255,0.9)',
+                    borderRadius: 2, fontSize: 9,
+                  }}>R{rl.round}</span>
+                ))}
+              </div>
               {showEarnings ? (
-                <>
-                  <span className={p.earnings > 0 ? 'text-green-400' : 'text-gray-500'}>
+                <div>
+                  <span style={{ color: (p.earnings || 0) > 0 ? colors.textGold : colors.textMuted }}>
                     ${(p.earnings || 0).toLocaleString()}
                   </span>
                   {p.bonus > 0 && (
-                    <span className="text-blue-300 ml-0.5">+{p.bonus.toLocaleString()}</span>
+                    <span style={{ color: 'rgba(100,160,255,0.8)', marginLeft: 2 }}>
+                      +{p.bonus.toLocaleString()}
+                    </span>
                   )}
-                </>
+                </div>
               ) : (
-                <span className="text-gray-600">—</span>
+                <div style={{ color: colors.textMuted }}>—</div>
               )}
             </>
           ) : (
-            <span className="text-gray-700">—</span>
+            <span style={{ color: 'rgba(255,255,255,0.1)' }}>—</span>
           )}
         </div>
       ))}
@@ -43,11 +54,25 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
   );
 };
 
+// ── Tournament type badges ────────────────────────────────────────────────────
 const TournamentBadges = ({ tournament }) => (
   <>
-    {tournament.isMajor    && <span className="px-1.5 py-0.5 bg-yellow-600  text-white text-xs rounded font-bold">M</span>}
-    {tournament.isSignature && !tournament.isMajor && <span className="px-1.5 py-0.5 bg-purple-600 text-white text-xs rounded">S</span>}
+    {tournament.isMajor && (
+      <span style={{ ...theme.badge, ...theme.badgeGold }}>M</span>
+    )}
+    {tournament.isSignature && !tournament.isMajor && (
+      <span style={{ ...theme.badge, ...theme.badgeNavy }}>S</span>
+    )}
   </>
+);
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+const EmptyState = () => (
+  <div style={{ ...theme.card, ...theme.emptyState, padding: '52px 20px' }}>
+    <Calendar style={{ width: 48, height: 48, color: 'rgba(255,255,255,0.1)', margin: '0 auto 16px' }} />
+    <h3 style={{ ...theme.h2, marginBottom: 8 }}>No Completed Tournaments Yet</h3>
+    <p style={theme.bodyText}>Results will appear here after processing</p>
+  </div>
 );
 
 export const ResultsView = ({ teams, tournaments }) => {
@@ -66,66 +91,86 @@ export const ResultsView = ({ teams, tournaments }) => {
   const toggle = (name) => setExpandedTournament(prev => prev === name ? null : name);
 
   if (completedTournaments.length === 0 && inProgressTournaments.length === 0) {
-    return (
-      <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-green-700/30 p-8 text-center">
-        <Calendar className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-        <h3 className="text-xl font-bold text-gray-400 mb-2">No Completed Tournaments Yet</h3>
-        <p className="text-gray-500">Tournament results will appear here after processing</p>
-      </div>
-    );
+    return <EmptyState />;
   }
 
   return (
-    <div className="space-y-3">
-      {/* In-progress tournaments */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+      {/* ── In-progress tournaments ── */}
       {inProgressTournaments.map((tournament) => {
-        const isExpanded     = expandedTournament === tournament.name;
+        const isExpanded = expandedTournament === tournament.name;
         const teamsWithLineups = teams.filter(t => t.lineup?.length > 0).sort((a, b) => a.name.localeCompare(b.name));
 
         return (
-          <div key={tournament.name} className="bg-gray-800/50 backdrop-blur rounded-xl border border-green-500/40 overflow-hidden shadow-lg shadow-green-900/20">
+          <div key={tournament.name} style={{
+            ...theme.card,
+            border: '1px solid rgba(80,180,120,0.3)',
+            boxShadow: '0 4px 24px rgba(40,120,80,0.1)',
+          }}>
             <button
               onClick={() => toggle(tournament.name)}
-              className="w-full px-4 py-3 bg-gradient-to-r from-green-600/20 to-transparent border-b border-green-600/30 flex items-center justify-between hover:bg-green-600/10 transition-colors"
               aria-expanded={isExpanded}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '14px 20px',
+                background: isExpanded ? 'rgba(40,120,80,0.1)' : 'linear-gradient(90deg, rgba(40,120,80,0.12) 0%, transparent 100%)',
+                border: 'none', borderBottom: `1px solid rgba(80,180,120,0.15)`,
+                cursor: 'pointer', transition: 'background 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(40,120,80,0.1)'; }}
+              onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'linear-gradient(90deg, rgba(40,120,80,0.12) 0%, transparent 100%)'; }}
             >
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <Clock className="w-4 h-4 text-green-400 flex-shrink-0" />
-                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <Clock style={{ width: 15, height: 15, color: colors.success }} />
+                  <span style={{
+                    position: 'absolute', top: -2, right: -2,
+                    width: 7, height: 7, borderRadius: '50%',
+                    background: colors.success,
+                    animation: 'pulse 2s infinite',
+                  }} />
                 </div>
-                <div className="text-left">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-bold text-green-300">{tournament.name}</h3>
-                    <span className="px-1.5 py-0.5 bg-green-600/30 text-green-300 text-xs rounded font-semibold border border-green-500/40">In Progress</span>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <h3 style={{ ...theme.h3, color: colors.success }}>{tournament.name}</h3>
+                    <span style={{ ...theme.badge, background: 'rgba(80,180,120,0.15)', border: '1px solid rgba(80,180,120,0.3)', color: colors.success }}>
+                      In Progress
+                    </span>
                     <TournamentBadges tournament={tournament} />
                   </div>
-                  <p className="text-xs text-gray-400">{tournament.dates} · {tournament.location}</p>
+                  <p style={{ ...theme.smallText, marginTop: 2 }}>{tournament.dates} · {tournament.location}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 {!isExpanded && teamsWithLineups.length > 0 && (
-                  <div className="text-right hidden sm:block">
-                    <div className="text-xs text-gray-500">{teamsWithLineups.length} lineup{teamsWithLineups.length !== 1 ? 's' : ''} set</div>
-                  </div>
+                  <span style={{ ...theme.smallText, textAlign: 'right' }}>
+                    {teamsWithLineups.length} lineup{teamsWithLineups.length !== 1 ? 's' : ''} set
+                  </span>
                 )}
-                {isExpanded ? <ChevronDown className="w-4 h-4 text-green-400" /> : <ChevronRight className="w-4 h-4 text-green-400" />}
+                {isExpanded
+                  ? <ChevronDown style={{ width: 15, height: 15, color: colors.success }} />
+                  : <ChevronRight style={{ width: 15, height: 15, color: colors.success }} />
+                }
               </div>
             </button>
 
             {isExpanded && (
-              <div className="divide-y divide-gray-700/40">
+              <div>
                 {teamsWithLineups.length === 0 ? (
-                  <div className="px-4 py-4 text-center text-gray-500 text-sm">No teams have submitted lineups yet</div>
-                ) : teamsWithLineups.map((team) => {
+                  <div style={theme.emptyState}>No teams have submitted lineups yet</div>
+                ) : teamsWithLineups.map((team, i) => {
                   const lineupPlayers = team.lineup.map(name => team.roster.find(p => p.name === name) || { name, limited: false });
-                  const sortedLineup  = getSortedRoster(lineupPlayers);
+                  const sortedLineup = getSortedRoster(lineupPlayers);
                   return (
-                    <div key={team.id} className="px-4 py-2">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-bold w-5 text-center text-gray-500">—</span>
-                        <span className="font-semibold text-sm">{team.name}</span>
-                        <span className="text-green-400/50 text-xs italic">pending</span>
+                    <div key={team.id} style={{
+                      padding: '10px 20px',
+                      borderBottom: `1px solid ${colors.borderSubtle}`,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <span style={{ ...theme.smallText, width: 20, textAlign: 'center' }}>—</span>
+                        <span style={{ ...theme.h3, fontSize: 13 }}>{team.name}</span>
+                        <span style={{ ...theme.smallText, fontStyle: 'italic', color: colors.textGoldDim }}>pending</span>
                       </div>
                       <PlayerSlotGrid players={sortedLineup} showEarnings={false} />
                     </div>
@@ -137,54 +182,82 @@ export const ResultsView = ({ teams, tournaments }) => {
         );
       })}
 
-      {/* Completed tournaments */}
+      {/* ── Completed tournaments ── */}
       {completedTournaments.map((tournament) => {
-        const isExpanded  = expandedTournament === tournament.name;
-        const results     = tournament.results;
+        const isExpanded = expandedTournament === tournament.name;
+        const results = tournament.results;
         const rankedTeams = teams
           .map(t => ({ ...t, result: results?.teams?.[t.id] }))
           .filter(t => t.result)
           .sort((a, b) => (b.result.totalEarnings || 0) - (a.result.totalEarnings || 0));
 
         return (
-          <div key={tournament.name} className="bg-gray-800/50 backdrop-blur rounded-xl border border-purple-700/30 overflow-hidden">
+          <div key={tournament.name} style={theme.card}>
             <button
               onClick={() => toggle(tournament.name)}
-              className="w-full px-4 py-3 bg-gradient-to-r from-purple-600/20 to-transparent border-b border-purple-700/30 flex items-center justify-between hover:bg-purple-600/10 transition-colors"
               aria-expanded={isExpanded}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '14px 20px', background: isExpanded
+                  ? 'rgba(26,51,102,0.3)'
+                  : 'linear-gradient(90deg, rgba(26,51,102,0.3) 0%, transparent 100%)',
+                border: 'none', borderBottom: isExpanded ? `1px solid ${colors.borderSubtle}` : 'none',
+                cursor: 'pointer', transition: 'background 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,51,102,0.25)'; }}
+              onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'linear-gradient(90deg, rgba(26,51,102,0.3) 0%, transparent 100%)'; }}
             >
-              <div className="flex items-center gap-3">
-                <Calendar className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                <div className="text-left">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-bold">{tournament.name}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Calendar style={{ width: 15, height: 15, color: colors.textGoldDim, flexShrink: 0 }} />
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <h3 style={theme.h3}>{tournament.name}</h3>
                     <TournamentBadges tournament={tournament} />
                   </div>
-                  <p className="text-xs text-gray-400">{tournament.dates} · {tournament.location}</p>
+                  <p style={{ ...theme.smallText, marginTop: 2 }}>{tournament.dates} · {tournament.location}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 {!isExpanded && rankedTeams.length > 0 && (
-                  <div className="text-right hidden sm:block">
-                    <div className="text-xs text-gray-500">Winner</div>
-                    <div className="text-sm font-semibold text-green-400">{rankedTeams[0]?.name}</div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={theme.smallText}>Winner</div>
+                    <div style={{ ...theme.h3, fontSize: 13, color: colors.textGold }}>{rankedTeams[0]?.name}</div>
                   </div>
                 )}
-                {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                {isExpanded
+                  ? <ChevronDown style={{ width: 15, height: 15, color: colors.textSecondary }} />
+                  : <ChevronRight style={{ width: 15, height: 15, color: colors.textSecondary }} />
+                }
               </div>
             </button>
 
             {isExpanded && results && (
-              <div className="divide-y divide-gray-700/40">
+              <div>
                 {rankedTeams.map((team, rank) => {
-                  const tr      = team.result;
+                  const tr = team.result;
                   const players = getSortedRoster(tr.players || []);
                   return (
-                    <div key={team.id} className={`px-4 py-2 ${rank === 0 ? 'bg-green-600/5' : ''}`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-xs font-bold w-5 text-center ${rank === 0 ? 'text-yellow-400' : 'text-gray-500'}`}>{rank + 1}</span>
-                        <span className="font-semibold text-sm">{team.name}</span>
-                        <span className="text-green-400 font-bold text-sm">${(tr.totalEarnings || 0).toLocaleString()}</span>
+                    <div key={team.id} style={{
+                      padding: '10px 20px',
+                      borderBottom: `1px solid ${colors.borderSubtle}`,
+                      background: rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, width: 20, textAlign: 'center',
+                          fontFamily: fonts.serif,
+                          color: rank === 0 ? colors.textGold : colors.textMuted,
+                        }}>
+                          {rank + 1}
+                        </span>
+                        <span style={{ ...theme.h3, fontSize: 13 }}>{team.name}</span>
+                        <span style={{
+                          fontFamily: fonts.serif, fontSize: 13, fontWeight: 600,
+                          color: (tr.totalEarnings || 0) > 0 ? colors.textGold : colors.textMuted,
+                          marginLeft: 4,
+                        }}>
+                          ${(tr.totalEarnings || 0).toLocaleString()}
+                        </span>
                       </div>
                       <PlayerSlotGrid players={players} showEarnings />
                     </div>
