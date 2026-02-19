@@ -119,6 +119,77 @@ const SearchInput = ({ value, onChange, placeholder, autoFocus }) => (
   </div>
 );
 
+// ── KeeperBox — defined outside DraftModal to prevent focus loss on re-render ──
+const KeeperBox = ({ type, label, accentColor, searchVal, setSearch, searchResults, selectLabel, selected, onClear, onSelect, onStars, getHeadshot }) => (
+  <div style={{ background: `${accentColor}0d`, border: `1px solid ${accentColor}40`, borderRadius: 3, padding: 16 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      <div style={{
+        width: 28, height: 28, borderRadius: 2,
+        background: `${accentColor}25`, border: `1px solid ${accentColor}50`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: fonts.serif, fontSize: 13, color: accentColor, fontWeight: 700,
+      }}>
+        {type === 'limited' ? 'L' : '∞'}
+      </div>
+      <span style={{ fontFamily: fonts.serif, fontSize: 14, color: accentColor }}>{label}</span>
+      {selected && (
+        <button onClick={onClear}
+          style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: colors.danger, fontFamily: fonts.sans, fontSize: 11, fontWeight: 600 }}>
+          Clear
+        </button>
+      )}
+    </div>
+
+    {selected ? (
+      <div>
+        <div style={{
+          background: 'rgba(255,255,255,0.05)', border: `1px solid ${colors.borderSubtle}`,
+          borderRadius: 2, padding: '10px 14px',
+          fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary,
+        }}>
+          {selected.name}
+        </div>
+        {type === 'limited' && onStars && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ ...theme.label, marginBottom: 6 }}>Years of Service</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[1, 2, 3].map(num => (
+                <button key={num}
+                  onClick={() => onStars(selected.name, num)}
+                  style={{
+                    width: 36, height: 36, borderRadius: 2, fontSize: 18, cursor: 'pointer',
+                    background: num <= selected.stars ? `${accentColor}30` : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${num <= selected.stars ? accentColor : colors.borderSubtle}`,
+                    color: num <= selected.stars ? accentColor : colors.textMuted,
+                    transition: 'all 0.15s',
+                  }}
+                >★</button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    ) : (
+      <>
+        <SearchInput value={searchVal} onChange={e => setSearch(e.target.value)} placeholder={`Search ${label} player…`} />
+        <div style={{ marginTop: 8, height: 128, overflowY: 'auto', border: `1px solid ${colors.borderSubtle}`, borderRadius: 2, background: 'rgba(0,0,0,0.2)' }}>
+          {searchVal.trim() ? (
+            searchResults.length > 0
+              ? searchResults.map(player => (
+                  <PlayerRow key={player.name} player={player}
+                    onSelect={onSelect}
+                    accentColor={accentColor} label={selectLabel} getHeadshot={getHeadshot} />
+                ))
+              : <div style={theme.emptyState}>No players found</div>
+          ) : (
+            <div style={{ ...theme.emptyState, paddingTop: 28 }}>Type to search…</div>
+          )}
+        </div>
+      </>
+    )}
+  </div>
+);
+
 // ── Main DraftModal ───────────────────────────────────────────────────────────
 export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots = {}, initialPhase }) => {
   const [phase, setPhase]                     = useState('resume_prompt'); // 'resume_prompt','order','keepers','draft'
@@ -443,80 +514,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   if (phase === 'keepers') {
     const canProceed = currentKeeper.limited && currentKeeper.unlimited;
-
-    const KeeperBox = ({ type, label, accentColor, searchVal, setSearch, searchResults, selectLabel }) => {
-      const selected = type === 'limited' ? currentKeeper.limited : currentKeeper.unlimited;
-      return (
-        <div style={{ background: `${accentColor}0d`, border: `1px solid ${accentColor}40`, borderRadius: 3, padding: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <div style={{
-              width: 28, height: 28, borderRadius: 2,
-              background: `${accentColor}25`, border: `1px solid ${accentColor}50`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontFamily: fonts.serif, fontSize: 13, color: accentColor, fontWeight: 700,
-            }}>
-              {type === 'limited' ? 'L' : '∞'}
-            </div>
-            <span style={{ fontFamily: fonts.serif, fontSize: 14, color: accentColor }}>{label}</span>
-            {selected && (
-              <button onClick={() => handleKeeperSelect(null, type)}
-                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: colors.danger, fontFamily: fonts.sans, fontSize: 11, fontWeight: 600 }}>
-                Clear
-              </button>
-            )}
-          </div>
-
-          {selected ? (
-            <div>
-              <div style={{
-                background: 'rgba(255,255,255,0.05)', border: `1px solid ${colors.borderSubtle}`,
-                borderRadius: 2, padding: '10px 14px',
-                fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary,
-              }}>
-                {selected.name}
-              </div>
-              {type === 'limited' && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ ...theme.label, marginBottom: 6 }}>Years of Service</div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {[1, 2, 3].map(num => (
-                      <button key={num}
-                        onClick={() => handleKeeperSelect(selected.name, 'limited', num)}
-                        style={{
-                          width: 36, height: 36, borderRadius: 2, fontSize: 18, cursor: 'pointer',
-                          background: num <= selected.stars ? `${accentColor}30` : 'rgba(255,255,255,0.04)',
-                          border: `1px solid ${num <= selected.stars ? accentColor : colors.borderSubtle}`,
-                          color: num <= selected.stars ? accentColor : colors.textMuted,
-                          transition: 'all 0.15s',
-                        }}
-                      >★</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-              <SearchInput value={searchVal} onChange={e => setSearch(e.target.value)} placeholder={`Search ${label} player…`} />
-              <div style={{ marginTop: 8, height: 128, overflowY: 'auto', border: `1px solid ${colors.borderSubtle}`, borderRadius: 2, background: 'rgba(0,0,0,0.2)' }}>
-                {searchVal.trim() ? (
-                  searchResults.length > 0
-                    ? searchResults.map(player => (
-                        <PlayerRow key={player.name} player={player}
-                          onSelect={p => { handleKeeperSelect(p.name, type, type === 'limited' ? 2 : 0); }}
-                          accentColor={accentColor} label={selectLabel} getHeadshot={getPlayerHeadshot} />
-                      ))
-                    : <div style={theme.emptyState}>No players found</div>
-                ) : (
-                  <div style={{ ...theme.emptyState, paddingTop: 28 }}>Type to search…</div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      );
-    };
-
     return (
       <Shell>
         <ModalHeader
@@ -531,12 +528,22 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
             accentColor={colors.textGold}
             searchVal={limitedSearch} setSearch={setLimitedSearch}
             searchResults={limitedSearchResults} selectLabel="Select (L)"
+            selected={currentKeeper.limited}
+            onClear={() => handleKeeperSelect(null, 'limited')}
+            onSelect={p => handleKeeperSelect(p.name, 'limited', 2)}
+            onStars={(name, stars) => handleKeeperSelect(name, 'limited', stars)}
+            getHeadshot={getPlayerHeadshot}
           />
           <KeeperBox
             type="unlimited" label="Unlimited Keeper"
             accentColor="rgba(100,160,255,0.85)"
             searchVal={unlimitedSearch} setSearch={setUnlimitedSearch}
             searchResults={unlimitedSearchResults} selectLabel="Select (U)"
+            selected={currentKeeper.unlimited}
+            onClear={() => handleKeeperSelect(null, 'unlimited')}
+            onSelect={p => handleKeeperSelect(p.name, 'unlimited', 0)}
+            onStars={null}
+            getHeadshot={getPlayerHeadshot}
           />
         </div>
         <ModalFooter>
