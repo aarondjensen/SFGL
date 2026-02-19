@@ -116,8 +116,8 @@ export const playersApi = {
       if (p.headshot_url) {
         map[p.name] = p.headshot_url;
       } else if (p.pga_tour_id) {
-        // Generate Cloudinary CDN URL from ID (same format as utils/getPlayerHeadshot)
-        map[p.name] = `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${p.pga_tour_id}`;
+        // Try ESPN CDN URL format
+        map[p.name] = `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${p.pga_tour_id}.png&w=96&h=96`;
       }
     });
     return map;
@@ -397,5 +397,52 @@ export const settingsApi = {
       settings[row.key] = row.value;
     });
     return settings;
+  },
+};
+
+/**
+ * ============================================================================
+ * DRAFT STATE API
+ * ============================================================================
+ */
+export const draftStateApi = {
+  async get() {
+    const { data, error} = await supabase
+      .from('draft_state')
+      .select('*')
+      .eq('league_id', 'default')
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
+  async save(state) {
+    const { data, error } = await supabase
+      .from('draft_state')
+      .upsert({
+        league_id: 'default',
+        phase: state.phase,
+        draft_order: state.draftOrder,
+        keeper_team_index: state.keeperTeamIndex,
+        keepers: state.keepers,
+        current_team_index: state.currentTeamIndex,
+        current_round: state.currentRound,
+        drafted_players: state.draftedPlayers,
+        is_complete: state.isComplete || false,
+      }, { onConflict: 'league_id' })
+      .select();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async clear() {
+    const { error } = await supabase
+      .from('draft_state')
+      .delete()
+      .eq('league_id', 'default');
+    
+    if (error) throw error;
   },
 };
