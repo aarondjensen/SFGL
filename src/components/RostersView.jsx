@@ -374,7 +374,7 @@ export const RostersView = ({
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
             {/* Lineup button */}
             <button
               onClick={() => { if (lineupMode && team.lineup.length === 0) return; setLineupMode(!lineupMode); }}
@@ -408,9 +408,6 @@ export const RostersView = ({
             >
               {waiverStatus.open ? 'until Tue 7:59pm ET' : 'Waiver'}
             </button>
-
-            {/* Mulligan button */}
-            {renderMulliganButton()}
           </div>
         </div>
 
