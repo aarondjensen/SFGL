@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BarChart3, Trophy, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
 import { DialogProvider } from './components/DialogContext';
@@ -9,10 +9,12 @@ import { RostersView }    from './components/RostersView';
 import { TransactionsView } from './components/TransactionsView';
 import { TournamentsView }  from './components/TournamentsView';
 import { AdminView }        from './components/AdminView';
+import LoginPage            from './components/LoginPage';
 
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
+import { managerAuthApi }  from './supabase';
 
 import sfglLogo from './assets/logo.png';
 
@@ -47,20 +49,24 @@ const FantasyGolfLeague = () => {
     updateGlobalStats, updateHeadshots, updateRankings,
   } = league;
 
-  // Seed teams from INITIAL_TEAMS when storage is empty
-  const resolvedTeams      = teams.length      > 0 ? teams      : INITIAL_TEAMS;
-  const resolvedHeadshots  = Object.keys(headshots).length > 0 ? headshots : PGA_TOUR_IDS;
-  const currentTournament  = tournaments.find(t => t.playing);
+  const resolvedTeams     = teams.length      > 0 ? teams     : INITIAL_TEAMS;
+  const resolvedHeadshots = Object.keys(headshots).length > 0 ? headshots : PGA_TOUR_IDS;
+  const currentTournament = tournaments.find(t => t.playing);
 
-  // Fetch first tee time when current tournament changes
-  // DISABLED TO SAVE API CALLS - uncomment when needed
-  // useEffect(() => {
-  //   if (currentTournament?.slashGolfId) {
-  //     fetchFirstTeeTime(currentTournament).then(setFirstTeeTime);
-  //   } else {
-  //     setFirstTeeTime(null);
-  //   }
-  // }, [currentTournament?.slashGolfId]);
+  // ── Restore session on page load ──────────────────────────────────────────
+  // If the manager logged in within the last 60 days, they'll be auto-logged in
+  useEffect(() => {
+    managerAuthApi.getCurrentSession().then(session => {
+      if (!session) return;
+      if (session.is_commissioner) {
+        setIsCommissioner(true);
+      } else if (session.teams) {
+        setLoggedInUser(session.teams.owner);
+      }
+    }).catch(() => {
+      // Session check failed silently — user just won't be auto-logged in
+    });
+  }, []);
 
   // ── Admin login ────────────────────────────────────────────────────────────
   const handleAdminLogin = async () => {
@@ -71,12 +77,23 @@ const FantasyGolfLeague = () => {
       setAdminPassword('');
       setActiveTab('admin');
     } else {
-      // Toast surfaced from DialogContext — needs useDialog inside this component,
-      // which is already wrapped in DialogProvider below.
-      // We use a DOM approach here to avoid pulling in the hook in the shell.
       alert('Incorrect password');
       setAdminPassword('');
     }
+  };
+
+  // ── Manager login (called by LoginPage on success) ─────────────────────────
+  const handleManagerLogin = (result) => {
+    // result = { team, sessionToken } from managerAuthApi.login()
+    setLoggedInUser(result.team.owner);
+    setShowLoginModal(false);
+  };
+
+  // ── Logout ─────────────────────────────────────────────────────────────────
+  const handleLogout = async () => {
+    await managerAuthApi.logout(); // deletes session from Supabase + clears localStorage
+    setLoggedInUser(null);
+    setIsCommissioner(false);
   };
 
   if (loading) {
@@ -102,7 +119,7 @@ const FantasyGolfLeague = () => {
               </div>
             </div>
             {loggedInUser
-              ? <button onClick={() => setLoggedInUser(null)} className="text-xs bg-red-600/20 px-3 py-1 rounded border border-red-600/50">Logout</button>
+              ? <button onClick={handleLogout} className="text-xs bg-red-600/20 px-3 py-1 rounded border border-red-600/50">Logout</button>
               : <button onClick={() => setShowLoginModal(true)} className="text-xs bg-green-600/20 px-3 py-1 rounded border border-green-600/50">Login</button>
             }
           </div>
@@ -233,27 +250,17 @@ const FantasyGolfLeague = () => {
         </ErrorBoundary>
       </main>
 
-      {/* Team login modal */}
+      {/* Manager Login Modal — replaced old team-picker with full LoginPage */}
       {showLoginModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-800 p-6 rounded-xl w-full max-w-sm">
-            <h3 className="text-xl font-bold mb-4">Select Team</h3>
-            <div className="space-y-2">
-              {resolvedTeams.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => { setLoggedInUser(t.owner); setShowLoginModal(false); }}
-                  className="w-full text-left p-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-                >
-                  <div className="font-bold">{t.name}</div>
-                  <div className="text-xs text-gray-400">{t.owner}</div>
-                </button>
-              ))}
-            </div>
-            <button onClick={() => setShowLoginModal(false)} className="w-full mt-4 p-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm transition-colors">
-              Cancel
-            </button>
-          </div>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <LoginPage onLogin={handleManagerLogin} />
+          <button
+            onClick={() => setShowLoginModal(false)}
+            className="fixed top-4 right-4 text-white/50 hover:text-white text-3xl z-50 leading-none"
+            aria-label="Close login"
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>
