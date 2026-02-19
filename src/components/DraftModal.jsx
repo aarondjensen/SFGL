@@ -120,7 +120,7 @@ const SearchInput = ({ value, onChange, placeholder, autoFocus }) => (
 );
 
 // ── Main DraftModal ───────────────────────────────────────────────────────────
-export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots = {} }) => {
+export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots = {}, initialPhase }) => {
   const [phase, setPhase]                     = useState('resume_prompt'); // 'resume_prompt','order','keepers','draft'
   const [hasSavedState, setHasSavedState]     = useState(false);
   const [draftOrder, setDraftOrder]           = useState(teams.map((t, i) => ({ ...t, order: i })));
@@ -136,8 +136,15 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const [draggedIndex, setDraggedIndex]       = useState(null);
   const [confirmDraft, setConfirmDraft]       = useState(null);
 
-  // ── On mount: check for saved state ──
+  // ── On mount: use initialPhase from parent if provided ──
   useEffect(() => {
+    if (initialPhase === 'order') {
+      // Parent already cleared draft, go straight to order
+      setPhase('order');
+      initKeepers();
+      return;
+    }
+    // Default: check for saved state
     const checkSaved = async () => {
       try {
         const savedState = await draftStateApi.get();
