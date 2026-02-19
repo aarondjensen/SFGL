@@ -10,18 +10,25 @@ import {
   isPastRoundStart, getSegmentByDate, isTournamentLocked,
 } from '../utils';
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
+import { theme, colors, fonts } from '../theme.js';
 
-// ─── Waiver Priority Manager ───────────────────────────────────────────────
+// ── Border color by player type ───────────────────────────────────────────────
+const playerBorderColor = (player) =>
+  player.limited   ? 'rgba(180,160,100,0.8)' :
+  player.unlimited ? 'rgba(100,140,220,0.8)' :
+  'rgba(80,160,120,0.7)';
+
+// ── Waiver Priority Manager ───────────────────────────────────────────────────
 const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam }) => {
   const dialog = useDialog();
 
   const swapPriority = (fromIdx, toIdx) => {
     if (toIdx < 0 || toIdx >= pendingWaivers.length) return;
-    const updated    = [...transactions];
-    const fromTxIdx  = pendingWaivers[fromIdx]._txIdx;
-    const toTxIdx    = pendingWaivers[toIdx]._txIdx;
-    const fromPri    = pendingWaivers[fromIdx].priority || fromIdx + 1;
-    const toPri      = pendingWaivers[toIdx].priority   || toIdx + 1;
+    const updated   = [...transactions];
+    const fromTxIdx = pendingWaivers[fromIdx]._txIdx;
+    const toTxIdx   = pendingWaivers[toIdx]._txIdx;
+    const fromPri   = pendingWaivers[fromIdx].priority || fromIdx + 1;
+    const toPri     = pendingWaivers[toIdx].priority   || toIdx + 1;
     updated[fromTxIdx] = { ...updated[fromTxIdx], priority: toPri };
     updated[toTxIdx]   = { ...updated[toTxIdx],   priority: fromPri };
     setTransactions(updated);
@@ -30,55 +37,60 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
   if (pendingWaivers.length === 0) return null;
 
   return (
-    <div className="bg-yellow-600/20 border border-yellow-600/50 rounded-xl p-3">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-bold text-yellow-300 text-sm flex items-center gap-2">
+    <div style={{
+      background: 'rgba(180,160,60,0.08)',
+      border: '1px solid rgba(180,160,60,0.3)',
+      borderRadius: 3, padding: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: 11 }}>
           ⏰ Pending Waiver Claims ({pendingWaivers.length})
         </h3>
-        <div className="text-xs text-yellow-300">Processed Tue 8pm ET</div>
+        <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>Processed Tue 8pm ET</span>
       </div>
       {pendingWaivers.length > 1 && isOwnTeam && (
-        <div className="text-xs text-gray-400 mb-2">↕ Use arrows to set priority — #1 processes first</div>
+        <p style={{ ...theme.smallText, marginBottom: 8 }}>↕ Use arrows to set priority — #1 processes first</p>
       )}
-      <div className="space-y-2">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {pendingWaivers.map((waiver, index) => (
-          <div key={waiver._txIdx} className="bg-gray-800/50 rounded-lg p-2 flex items-center gap-2">
+          <div key={waiver._txIdx} style={{
+            background: 'rgba(255,255,255,0.04)',
+            borderRadius: 2, padding: '8px 10px',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
             {isOwnTeam && pendingWaivers.length > 1 && (
-              <div className="flex flex-col gap-0.5">
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                 <button onClick={() => swapPriority(index, index - 1)} disabled={index === 0}
-                  className={`text-xs px-1 rounded ${index === 0 ? 'text-gray-600 cursor-not-allowed' : 'text-yellow-400 hover:bg-yellow-600/20'}`}>▲</button>
-                <div className="text-[10px] text-yellow-400 font-bold text-center">{index + 1}</div>
+                  style={{ background: 'none', border: 'none', cursor: index === 0 ? 'not-allowed' : 'pointer',
+                    color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 11, padding: '0 2px' }}>▲</button>
+                <span style={{ fontSize: 10, color: 'rgba(220,200,80,0.8)', fontWeight: 700 }}>{index + 1}</span>
                 <button onClick={() => swapPriority(index, index + 1)} disabled={index === pendingWaivers.length - 1}
-                  className={`text-xs px-1 rounded ${index === pendingWaivers.length - 1 ? 'text-gray-600 cursor-not-allowed' : 'text-yellow-400 hover:bg-yellow-600/20'}`}>▼</button>
+                  style={{ background: 'none', border: 'none', cursor: index === pendingWaivers.length - 1 ? 'not-allowed' : 'pointer',
+                    color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 11, padding: '0 2px' }}>▼</button>
               </div>
             )}
-            <div className="flex-1 text-sm">
-              <span className="text-green-400 font-medium">Add: {waiver.player}</span>
+            <div style={{ flex: 1 }}>
+              <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: 12, fontWeight: 500 }}>Add: {waiver.player}</span>
               {waiver.droppedPlayer && (
-                <><span className="text-gray-500 mx-1">→</span><span className="text-red-400">Drop: {waiver.droppedPlayer}</span></>
+                <>
+                  <span style={{ color: colors.textMuted, margin: '0 4px' }}>→</span>
+                  <span style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 12 }}>Drop: {waiver.droppedPlayer}</span>
+                </>
               )}
-              <div className="text-xs text-gray-400 mt-0.5">${waiver.fee} fee · {waiver.segment || 'Current Swing'}</div>
+              <div style={{ ...theme.smallText, marginTop: 2 }}>${waiver.fee} fee · {waiver.segment || 'Current Swing'}</div>
             </div>
             {isOwnTeam && (
-              <div className="flex gap-1">
-                <button
-                  onClick={() => {
-                    // Revert fee and re-open the modal pre-filled
-                    setTransactions(transactions.filter((_, i) => i !== waiver._txIdx));
-                    updateTeams(teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t));
-                    // Parent handles re-opening via editingWaiverData
-                  }}
-                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs font-medium"
-                >✏️</button>
-                <button
-                  onClick={async () => {
-                    const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
-                    if (!ok) return;
-                    setTransactions(transactions.filter((_, i) => i !== waiver._txIdx));
-                    updateTeams(teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t));
-                  }}
-                  className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs font-medium"
-                >✕</button>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button onClick={() => {
+                  setTransactions(transactions.filter((_, i) => i !== waiver._txIdx));
+                  updateTeams(teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t));
+                }} style={{ ...theme.btnSecondary, padding: '4px 8px', fontSize: 10 }}>✏️</button>
+                <button onClick={async () => {
+                  const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
+                  if (!ok) return;
+                  setTransactions(transactions.filter((_, i) => i !== waiver._txIdx));
+                  updateTeams(teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t));
+                }} style={{ ...theme.btnDanger, padding: '4px 8px', fontSize: 10 }}>✕</button>
               </div>
             )}
           </div>
@@ -88,7 +100,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
   );
 };
 
-// ─── Main RostersView ──────────────────────────────────────────────────────
+// ── Main RostersView ──────────────────────────────────────────────────────────
 export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
@@ -106,7 +118,6 @@ export const RostersView = ({
   const activeTournament      = tournaments.find(t => t.playing);
   const activeTournamentIndex = activeTournament ? tournaments.findIndex(t => t.name === activeTournament.name) : -1;
 
-  // Default to logged-in user's team
   useEffect(() => {
     if (!selectedTeam && teams.length > 0) {
       const userTeam = loggedInUser ? teams.find(t => t.owner === loggedInUser) : null;
@@ -114,12 +125,11 @@ export const RostersView = ({
     }
   }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
 
-  const team         = teams.find(t => t.id === selectedTeam);
+  const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex);
   const windowStatus  = useWindowStatus(activeTournament);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
-  // ── Global player search ──────────────────────────────────────────────────
   const searchResults = useMemo(() => {
     if (!globalSearch.trim()) return [];
     const term = globalSearch.toLowerCase();
@@ -135,7 +145,6 @@ export const RostersView = ({
       .sort((a, b) => a.worldRank - b.worldRank);
   }, [globalSearch, allPlayers, teams]);
 
-  // ── Lineup toggle ─────────────────────────────────────────────────────────
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
     const isInLineup = team.lineup.includes(player.name);
@@ -147,26 +156,21 @@ export const RostersView = ({
     }
     updateTeams(teams.map(t => {
       if (t.id !== team.id) return t;
-      const newLineup = isInLineup
-        ? t.lineup.filter(p => p !== player.name)
-        : [...t.lineup, player.name];
+      const newLineup = isInLineup ? t.lineup.filter(p => p !== player.name) : [...t.lineup, player.name];
       return { ...t, lineup: newLineup };
     }));
   }, [team, teams, updateTeams, dialog]);
 
-  // ── Mulligan ──────────────────────────────────────────────────────────────
   const handleMulliganConfirm = useCallback(({ playerOut, playerIn, afterRound, isSignatureOrMajor }) => {
-    const mulliganKey = isSignatureOrMajor ? 'signatureMajor' : 'regular';
-    const newLineup   = team.lineup.map(p => p === playerOut ? playerIn : p);
+    const mulliganKey   = isSignatureOrMajor ? 'signatureMajor' : 'regular';
+    const newLineup     = team.lineup.map(p => p === playerOut ? playerIn : p);
     const updatedRoster = team.roster.map(p => {
       if (p.name === playerOut && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
       if (p.name === playerIn  && p.limited) return { ...p, starts: p.starts + 1 };
       return p;
     });
     const newMulligans = { ...team.mulligans, [mulliganKey]: (team.mulligans?.[mulliganKey] || 1) - 1 };
-    updateTeams(teams.map(t =>
-      t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t,
-    ));
+    updateTeams(teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t));
     setTransactions(prev => [...prev, {
       team: team.name, type: 'mulligan', player: playerIn, droppedPlayer: playerOut,
       fee: 0, segment: settings.currentSegment || '', date: new Date().toLocaleDateString(),
@@ -178,35 +182,31 @@ export const RostersView = ({
   }, [team, teams, updateTeams, setTransactions, activeTournament, activeTournamentIndex, settings, dialog]);
 
   const handleUndoMulligan = async (tx) => {
-    const ok = await dialog.showConfirm(
-      'Undo Mulligan',
+    const ok = await dialog.showConfirm('Undo Mulligan',
       `Undo mulligan?\n\nThis will restore ${tx.droppedPlayer} to your lineup and return ${tx.player} to the bench. Your mulligan will be restored.`,
-      { confirmText: 'Undo Mulligan' },
-    );
+      { confirmText: 'Undo Mulligan' });
     if (!ok) return;
-    const newLineup      = team.lineup.map(p => p === tx.player ? tx.droppedPlayer : p);
-    const updatedRoster  = team.roster.map(p => {
-      if (p.name === tx.player      && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
+    const newLineup     = team.lineup.map(p => p === tx.player ? tx.droppedPlayer : p);
+    const updatedRoster = team.roster.map(p => {
+      if (p.name === tx.player        && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
       if (p.name === tx.droppedPlayer && p.limited) return { ...p, starts: p.starts + 1 };
       return p;
     });
-    const mulliganKey    = tx.mulliganType === 'signature/major' ? 'signatureMajor' : 'regular';
-    const newMulligans   = { ...team.mulligans, [mulliganKey]: (team.mulligans?.[mulliganKey] || 0) + 1 };
+    const mulliganKey  = tx.mulliganType === 'signature/major' ? 'signatureMajor' : 'regular';
+    const newMulligans = { ...team.mulligans, [mulliganKey]: (team.mulligans?.[mulliganKey] || 0) + 1 };
     updateTeams(teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t));
     setTransactions(prev => prev.filter(t => t !== tx));
     dialog.showToast('Mulligan successfully undone', 'success');
   };
 
-  // ── Derived mulligan state ────────────────────────────────────────────────
-  const isSignatureOrMajor  = activeTournament?.isSignature || activeTournament?.isMajor;
-  const mulliganKey         = isSignatureOrMajor ? 'signatureMajor' : 'regular';
-  const mulliganRemaining   = team?.mulligans?.[mulliganKey] ?? 0;
-  const activeMulliganTx    = activeTournamentIndex >= 0
+  const isSignatureOrMajor = activeTournament?.isSignature || activeTournament?.isMajor;
+  const mulliganKey        = isSignatureOrMajor ? 'signatureMajor' : 'regular';
+  const mulliganRemaining  = team?.mulligans?.[mulliganKey] ?? 0;
+  const activeMulliganTx   = activeTournamentIndex >= 0
     ? transactions.find(tx => tx.type === 'mulligan' && tx.team === team?.name && tx.tournamentIndex === activeTournamentIndex)
     : null;
-  const canUndoMulligan     = activeMulliganTx && !isPastRoundStart(activeTournament, activeMulliganTx.afterRound + 1);
+  const canUndoMulligan = activeMulliganTx && !isPastRoundStart(activeTournament, activeMulliganTx.afterRound + 1);
 
-  // Pending waivers with stable indices into the full transactions array
   const pendingWaivers = useMemo(() => {
     if (!team) return [];
     return transactions
@@ -217,314 +217,377 @@ export const RostersView = ({
 
   if (!team) return null;
 
-  const lineupOpen         = windowStatus.lineupOpen;
-  const canEditLineup      = isOwnTeam && (lineupOpen || isCommissioner);
-  const lineupStatus       = getLineupStatus(activeTournament);
-  const faStatus           = getFreeAgentWindowStatus(activeTournament);
-  const waiverStatus       = getWaiverWindowStatus();
-  const lineupPlayers      = currentRoster.filter(p => team.lineup.includes(p.name));
-  const benchPlayers       = currentRoster.filter(p => !team.lineup.includes(p.name));
+  const lineupOpen    = windowStatus.lineupOpen;
+  const canEditLineup = isOwnTeam && (lineupOpen || isCommissioner);
+  const faStatus      = getFreeAgentWindowStatus(activeTournament);
+  const waiverStatus  = getWaiverWindowStatus();
+  const lineupPlayers = currentRoster.filter(p => team.lineup.includes(p.name));
+  const benchPlayers  = currentRoster.filter(p => !team.lineup.includes(p.name));
 
-  const renderMulliganButton = () => {
-    const etDay       = new Date().getDay(); // raw local — close enough for day-of-week display
-    const isMulliganDay = etDay >= 4 && etDay <= 6;
-    let btnLabel, btnIcon, btnAction, isDisabled, statusText, statusColor;
-
-    if (activeMulliganTx) {
-      btnLabel = 'Undo Mull.'; btnIcon = '↩️';
-      if (canUndoMulligan) {
-        statusText = '🟢 Undo available'; statusColor = 'text-blue-400';
-        btnAction = () => handleUndoMulligan(activeMulliganTx); isDisabled = false;
-      } else {
-        statusText = '🔴 Locked'; statusColor = 'text-gray-500'; isDisabled = true;
-      }
-    } else {
-      btnLabel = 'Mulligan'; btnIcon = '🚨'; btnAction = () => setShowMulliganModal(true);
-      if (mulliganRemaining === 0)     { statusText = `🔴 ${isSignatureOrMajor ? 'Signature' : 'Regular'} used`; statusColor = 'text-gray-500'; isDisabled = true; }
-      else if (!isMulliganDay)          { statusText = '🔴 Thu–Sat only'; statusColor = 'text-gray-500'; isDisabled = true; }
-      else if (!isOwnTeam || !activeTournament || team.lineup.length === 0)
-                                        { statusText = '🔴 Unavailable'; statusColor = 'text-gray-500'; isDisabled = true; }
-      else                              { statusText = `🟢 ${isSignatureOrMajor ? 'Signature' : 'Regular'}`; statusColor = 'text-gray-300'; isDisabled = false; }
-    }
-
-    return (
-      <div className="flex flex-col items-center gap-1">
-        <button
-          onClick={btnAction}
-          disabled={isDisabled}
-          className={`w-full h-14 flex items-center justify-center px-1 rounded-lg font-medium transition-colors text-[11px] sm:text-xs text-center ${
-            !isDisabled
-              ? activeMulliganTx
-                ? 'bg-gray-800 text-blue-400 border border-blue-500/40 hover:bg-blue-600/10'
-                : 'bg-gray-800 text-gray-300 border border-gray-500/40 hover:bg-gray-600/10'
-              : 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed'
-          }`}
-        >
-          {btnLabel}
-        </button>
-      </div>
-    );
-  };
-
-  // Format tee time for display
   const formatTeeTime = (date) => {
     if (!date) return '';
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const day = days[date.getDay()];
-    const hours = date.getHours();
-    const minutes = date.getMinutes();
+    const hours = date.getHours(); const minutes = date.getMinutes();
     const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    const displayMinutes = minutes.toString().padStart(2, '0');
-    return `${day} ${displayHours}:${displayMinutes} ${ampm} ET`;
+    return `${days[date.getDay()]} ${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${ampm} ET`;
+  };
+
+  // ── Action button styles ──
+  const actionBtn = (active, activeColor) => ({
+    width: '100%', height: 56,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: '0 4px', borderRadius: 2,
+    fontFamily: fonts.sans, fontSize: 11, fontWeight: 500,
+    textAlign: 'center', cursor: active ? 'pointer' : 'not-allowed',
+    transition: 'all 0.15s',
+    background: 'rgba(255,255,255,0.03)',
+    border: active
+      ? `1px solid ${activeColor}`
+      : `1px solid ${colors.borderSubtle}`,
+    color: active ? activeColor : colors.textMuted,
+  });
+
+  const renderMulliganButton = () => {
+    const etDay = new Date().getDay();
+    const isMulliganDay = etDay >= 4 && etDay <= 6;
+    let btnLabel, btnAction, isDisabled, activeColor;
+
+    if (activeMulliganTx) {
+      btnLabel = 'Undo Mull.'; activeColor = 'rgba(100,150,255,0.8)';
+      if (canUndoMulligan) { btnAction = () => handleUndoMulligan(activeMulliganTx); isDisabled = false; }
+      else { isDisabled = true; }
+    } else {
+      btnLabel = 'Mulligan'; activeColor = colors.textGoldDim; btnAction = () => setShowMulliganModal(true);
+      isDisabled = mulliganRemaining === 0 || !isMulliganDay || !isOwnTeam || !activeTournament || team.lineup.length === 0;
+    }
+
+    return (
+      <button onClick={isDisabled ? undefined : btnAction} disabled={isDisabled}
+        style={actionBtn(!isDisabled, activeColor)}>
+        {btnLabel}
+      </button>
+    );
   };
 
   return (
-    <div className="space-y-4">
-      {/* Team selector + lineup summary */}
-      <div className="bg-gradient-to-r from-green-600/20 to-gray-800/50 backdrop-blur rounded-xl border border-green-700/30 p-2">
-        <div className="flex items-center justify-between mb-2 gap-2">
-          <div className="flex items-center gap-1 flex-1 min-w-0">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+      {/* ── Team selector + lineup headshots ── */}
+      <div style={{
+        ...theme.card,
+        padding: 12,
+        background: 'linear-gradient(135deg, rgba(26,51,102,0.4) 0%, rgba(255,255,255,0.02) 100%)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
+          {/* Team selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
             <select
               value={selectedTeam || ''}
               onChange={e => { setSelectedTeam(e.target.value); setLineupMode(false); }}
-              className="bg-gray-800 text-base font-bold border border-gray-600 rounded-lg outline-none cursor-pointer px-2 py-1 pr-7 max-w-[140px] sm:max-w-[200px] truncate hover:border-green-500 transition-colors"
+              style={{
+                ...theme.select,
+                fontSize: 14, fontWeight: 700, fontFamily: fonts.serif,
+                maxWidth: 200, padding: '6px 10px',
+              }}
             >
               {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
             {loggedInUser && !isOwnTeam && (
-              <span className="px-1.5 py-0.5 bg-gray-600 text-gray-300 rounded text-[10px] whitespace-nowrap">View Only</span>
+              <span style={{ ...theme.badge, ...theme.badgeNavy }}>View Only</span>
             )}
           </div>
-          <div className="relative flex-shrink-0 w-36 sm:w-48">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+
+          {/* Global search */}
+          <div style={{ position: 'relative', flexShrink: 0, width: 160 }}>
+            <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary }} />
             <input
-              type="text"
-              placeholder="Search player..."
-              value={globalSearch}
-              onChange={e => setGlobalSearch(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-600 rounded-lg pl-8 pr-2 py-1.5 text-xs text-white focus:outline-none focus:border-green-500 transition-colors"
+              type="text" placeholder="Search player…"
+              value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
+              style={{ ...theme.input, paddingLeft: 28, fontSize: 12, padding: '7px 10px 7px 28px' }}
+              onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
+              onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
             />
           </div>
         </div>
 
-        {/* Current lineup headshots */}
-        {team.lineup.length > 0 ? (
-          <div className="flex justify-center gap-4 sm:gap-6 pt-2 border-t border-gray-700/50">
-            {getSortedRoster(currentRoster)
-              .filter(p => team.lineup.includes(p.name))
-              .map(player => {
-                const lastName  = player.name.split(' ').pop();
-                const nameClass = lastName.length > 9 ? 'text-[9px]' : lastName.length > 7 ? 'text-[10px]' : 'text-xs';
-                return (
-                  <div key={player.name} className="flex flex-col items-center w-[52px] sm:w-[72px]">
-                    <img
-                      src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                      onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
-                      alt=""
-                      className={`w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 rounded-full object-cover border-2 ${
-                        player.limited ? 'border-yellow-500' : player.unlimited ? 'border-blue-500' : 'border-green-500'
-                      }`}
-                    />
-                    <div className={`${nameClass} font-medium mt-0.5 text-center w-full h-4 flex items-center justify-center truncate ${
-                      player.limited ? 'text-yellow-400' : player.unlimited ? 'text-blue-400' : ''
-                    }`}>{lastName}</div>
-                  </div>
-                );
-              })}
-          </div>
-        ) : (
-          <div className="text-gray-500 text-xs text-center pt-2 border-t border-gray-700/50">No lineup set</div>
-        )}
+        {/* Lineup headshots */}
+        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10 }}>
+          {team.lineup.length > 0 ? (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 16 }}>
+              {getSortedRoster(currentRoster)
+                .filter(p => team.lineup.includes(p.name))
+                .map(player => {
+                  const lastName  = player.name.split(' ').pop();
+                  const nameFontSize = lastName.length > 9 ? 9 : lastName.length > 7 ? 10 : 11;
+                  return (
+                    <div key={player.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56 }}>
+                      <img
+                        src={getPlayerHeadshot(player.name, player.limited, headshots)}
+                        onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
+                        alt=""
+                        style={{
+                          width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', flexShrink: 0,
+                          border: `2px solid ${playerBorderColor(player)}`,
+                        }}
+                      />
+                      <div style={{
+                        fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 3,
+                        textAlign: 'center', width: '100%',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        color: player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textSecondary,
+                      }}>
+                        {lastName}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          ) : (
+            <div style={{ ...theme.smallText, textAlign: 'center' }}>No lineup set</div>
+          )}
+        </div>
       </div>
 
-      {/* Waiver queue */}
+      {/* ── Waiver queue ── */}
       <WaiverQueue
         team={team} pendingWaivers={pendingWaivers} transactions={transactions}
         setTransactions={setTransactions} updateTeams={updateTeams} teams={teams}
         isOwnTeam={isOwnTeam}
       />
 
-      {/* Action buttons + roster table */}
-      <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-green-700/30 overflow-hidden">
-        <div className="p-2 bg-gradient-to-r from-green-600/20 to-transparent border-b border-green-700/30">
+      {/* ── Action buttons + roster table ── */}
+      <div style={theme.card}>
+
+        {/* Action header */}
+        <div style={{
+          ...theme.cardHeader,
+          flexDirection: 'column', alignItems: 'stretch', gap: 10,
+        }}>
           {activeTournament && (
-            <div className="mb-2 px-1 truncate">
-              <span className="text-blue-300 font-semibold text-sm">Current tournament: {activeTournament.name}</span>
-              {firstTeeTime && <span className="text-gray-400 text-xs ml-2">• {formatTeeTime(firstTeeTime)}</span>}
+            <div style={{ overflow: 'hidden' }}>
+              <span style={{ fontFamily: fonts.serif, fontSize: 13, color: 'rgba(120,160,255,0.8)', fontWeight: 400 }}>
+                {activeTournament.name}
+              </span>
+              {firstTeeTime && (
+                <span style={{ ...theme.smallText, marginLeft: 8 }}>· {formatTeeTime(firstTeeTime)}</span>
+              )}
             </div>
           )}
 
-          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
             {/* Lineup button */}
-            <div className="flex flex-col items-center gap-1">
-              <button
-                onClick={() => { if (lineupMode && team.lineup.length === 0) return; setLineupMode(!lineupMode); }}
-                disabled={!canEditLineup || (lineupMode && team.lineup.length === 0)}
-                className={`w-full h-14 flex items-center justify-center px-1 rounded-lg font-medium transition-all text-[11px] sm:text-xs text-center ${
-                  !canEditLineup
-                    ? 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed'
-                    : lineupMode
-                      ? team.lineup.length > 0
-                        ? 'bg-green-600 text-white border border-green-500 hover:bg-green-700 shadow-md shadow-green-600/30'
-                        : 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed'
-                      : isCommissioner && !lineupOpen
-                        ? 'bg-gray-800 text-red-400 border border-red-600/40 hover:bg-red-600/10'
-                        : 'bg-gray-800 text-blue-400 border border-blue-600/40 hover:bg-blue-600/10'
-                }`}
-              >
-                {lineupMode ? '✓ Save' : '✏️'}
-              </button>
-            </div>
+            <button
+              onClick={() => { if (lineupMode && team.lineup.length === 0) return; setLineupMode(!lineupMode); }}
+              disabled={!canEditLineup || (lineupMode && team.lineup.length === 0)}
+              style={actionBtn(
+                canEditLineup,
+                lineupMode && team.lineup.length > 0
+                  ? colors.success
+                  : isCommissioner && !lineupOpen
+                    ? colors.danger
+                    : 'rgba(100,150,255,0.8)',
+              )}
+            >
+              {lineupMode ? '✓ Save' : '✏️ Lineup'}
+            </button>
 
             {/* Free agent button */}
-            <div className="flex flex-col items-center gap-1">
-              <button
-                onClick={() => { setIsWaiverMode(false); setShowAddDropModal(true); }}
-                disabled={!isOwnTeam || !windowStatus.faOpen}
-                className={`w-full h-14 flex items-center justify-center px-1 rounded-lg font-medium transition-colors text-[11px] sm:text-xs text-center ${
-                  isOwnTeam && windowStatus.faOpen
-                    ? 'bg-gray-800 text-green-400 border border-green-600/40 hover:bg-green-600/10'
-                    : 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed'
-                }`}
-              >
-                {faStatus.open ? `Opens ${faStatus.label}` : 'Free Agent'}
-              </button>
-            </div>
+            <button
+              onClick={() => { setIsWaiverMode(false); setShowAddDropModal(true); }}
+              disabled={!isOwnTeam || !windowStatus.faOpen}
+              style={actionBtn(isOwnTeam && windowStatus.faOpen, colors.success)}
+            >
+              {faStatus.open ? `Opens ${faStatus.label}` : 'Free Agent'}
+            </button>
 
             {/* Waiver button */}
-            <div className="flex flex-col items-center gap-1">
-              <button
-                onClick={() => { setIsWaiverMode(true); setShowAddDropModal(true); }}
-                disabled={!isOwnTeam || !windowStatus.waiverOpen}
-                className={`w-full h-14 flex items-center justify-center px-1 rounded-lg font-medium transition-colors text-[11px] sm:text-xs text-center ${
-                  isOwnTeam && windowStatus.waiverOpen
-                    ? 'bg-gray-800 text-yellow-400 border border-yellow-600/40 hover:bg-yellow-600/10'
-                    : 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed'
-                }`}
-              >
-                {waiverStatus.open ? 'until Tue 7:59pm ET' : 'Waiver'}
-              </button>
-            </div>
+            <button
+              onClick={() => { setIsWaiverMode(true); setShowAddDropModal(true); }}
+              disabled={!isOwnTeam || !windowStatus.waiverOpen}
+              style={actionBtn(isOwnTeam && windowStatus.waiverOpen, 'rgba(220,200,80,0.8)')}
+            >
+              {waiverStatus.open ? 'until Tue 7:59pm ET' : 'Waiver'}
+            </button>
 
             {/* Mulligan button */}
             {renderMulliganButton()}
           </div>
         </div>
 
-        {/* Player table — global search OR roster */}
+        {/* ── Player table — global search ── */}
         {globalSearch.trim().length > 0 ? (
           <div>
-            <div className="px-2 py-1.5 bg-gray-700/50 text-xs font-bold text-gray-400 border-b border-gray-700">
-              Global Search Results ({searchResults.length})
+            <div style={{
+              ...theme.tableHeaderCell,
+              padding: '8px 16px',
+              borderBottom: `1px solid ${colors.borderSubtle}`,
+              color: colors.textSecondary,
+              fontSize: 11,
+            }}>
+              Search Results ({searchResults.length})
             </div>
-            <table className="w-full text-sm" role="table">
-              <thead className="bg-gray-700/50 sticky top-0">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }} role="table">
+              <thead>
                 <tr>
-                  <th className="px-2 py-1.5 text-left text-xs"                  scope="col">Player</th>
-                  <th className="px-2 py-1.5 text-center hidden sm:table-cell text-xs" scope="col">Events</th>
-                  <th className="px-2 py-1.5 text-center hidden sm:table-cell text-xs" scope="col">Cuts</th>
-                  <th className="px-2 py-1.5 text-right text-xs"                 scope="col">Status</th>
+                  {['Player', 'Events', 'Cuts', 'Status'].map((h, i) => (
+                    <th key={h} scope="col" style={{
+                      ...theme.tableHeaderCell,
+                      textAlign: i === 0 ? 'left' : i === 3 ? 'right' : 'center',
+                    }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-700/50">
+              <tbody>
                 {searchResults.slice(0, 50).map(player => (
-                  <tr key={player.name} className="hover:bg-gray-700/30 transition-colors">
-                    <td className="px-2 py-1.5">
-                      <div className="flex items-center gap-2">
+                  <tr key={player.name}
+                    style={{ borderBottom: `1px solid ${colors.borderSubtle}`, transition: 'background 0.15s' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <td style={{ padding: '8px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <img
                           src={getPlayerHeadshot(player.name, player.limited, headshots)}
                           onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
-                          alt="" className="w-8 h-8 flex-shrink-0 rounded-full object-cover border border-gray-600"
+                          alt="" style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}` }}
                         />
-                        <div className="min-w-0">
-                          <div className="font-semibold text-xs text-gray-300">{player.name}</div>
-                          <div className="text-[10px] text-gray-500">#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
+                        <div>
+                          <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{player.name}</div>
+                          <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-2 py-1.5 text-center hidden sm:table-cell text-xs text-gray-300">{globalPlayerStats[player.name]?.eventsPlayed || 0}</td>
-                    <td className="px-2 py-1.5 text-center hidden sm:table-cell text-xs text-gray-300">{globalPlayerStats[player.name]?.cutsMade || 0}</td>
-                    <td className="px-2 py-1.5 text-right text-xs">
+                    <td style={{ padding: '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.eventsPlayed || 0}</td>
+                    <td style={{ padding: '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.cutsMade || 0}</td>
+                    <td style={{ padding: '8px 16px', textAlign: 'right' }}>
                       {player.owner === 'Free Agent'
-                        ? <span className="text-green-400 font-medium">Free Agent</span>
-                        : <span className="text-gray-400 font-medium">{getTeamAbbreviation(player.owner)}</span>}
+                        ? <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: 12, fontWeight: 500 }}>Free Agent</span>
+                        : <span style={{ ...theme.bodyText, fontWeight: 500 }}>{getTeamAbbreviation(player.owner)}</span>}
                     </td>
                   </tr>
                 ))}
                 {searchResults.length === 0 && (
-                  <tr><td colSpan="4" className="text-center py-6 text-gray-500 text-xs">No matching players found</td></tr>
+                  <tr><td colSpan="4" style={theme.emptyState}>No matching players found</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+
         ) : (
-          <table className="w-full text-sm" role="table">
-            <thead className="bg-gray-700/50 sticky top-0">
+          /* ── Roster table ── */
+          <table style={{ width: '100%', borderCollapse: 'collapse' }} role="table">
+            <thead>
               <tr>
-                <th className="px-2 py-1.5 text-left text-xs"                        scope="col">Player</th>
-                <th className="px-2 py-1.5 text-center hidden sm:table-cell text-xs"  scope="col">Events</th>
-                <th className="px-2 py-1.5 text-center hidden sm:table-cell text-xs"  scope="col">Cuts</th>
-                <th className="px-2 py-1.5 text-right hidden md:table-cell text-xs"   scope="col">PGA $</th>
-                <th className="px-2 py-1.5 text-right text-xs"                        scope="col">SFGL $</th>
+                {['Player', 'Events', 'Cuts', 'PGA $', 'SFGL $'].map((h, i) => (
+                  <th key={h} scope="col" style={{
+                    ...theme.tableHeaderCell,
+                    textAlign: i === 0 ? 'left' : i <= 2 ? 'center' : 'right',
+                    display: i === 3 ? 'none' : undefined, // hide PGA $ on small — handled via media below
+                  }}>{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-700/50">
+            <tbody>
               {getSortedRoster(currentRoster).map(player => {
-                const isInLineup    = team.lineup.includes(player.name);
+                const isInLineup     = team.lineup.includes(player.name);
                 const canAddToLineup = team.lineup.length < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
-                const hasLineup     = team.lineup.length > 0;
-                const isBenched     = hasLineup && !isInLineup && !lineupMode;
+                const hasLineup      = team.lineup.length > 0;
+                const isBenched      = hasLineup && !isInLineup && !lineupMode;
+                const dimColor       = 'rgba(255,255,255,0.18)';
+
                 return (
-                  <tr key={player.name} className={`transition-colors ${isBenched ? '' : 'hover:bg-gray-700/30'}`}>
-                    <td className="px-2 py-1.5">
-                      <div className="flex items-center gap-2">
+                  <tr key={player.name}
+                    style={{ borderBottom: `1px solid ${colors.borderSubtle}`, background: 'transparent', transition: 'background 0.15s' }}
+                    onMouseEnter={e => { if (!isBenched) e.currentTarget.style.background = colors.rowHover; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    {/* Player cell */}
+                    <td style={{ padding: '8px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {/* Headshot / lineup toggle */}
                         <button
                           onClick={() => lineupMode && isOwnTeam && (isInLineup || canAddToLineup) && togglePlayerInLineup(player)}
-                          className={`relative ${lineupMode && isOwnTeam && (isInLineup || canAddToLineup) ? 'cursor-pointer' : 'cursor-default'}`}
                           disabled={!lineupMode || !isOwnTeam || (!isInLineup && !canAddToLineup)}
+                          style={{ position: 'relative', background: 'none', border: 'none', cursor: lineupMode && isOwnTeam && (isInLineup || canAddToLineup) ? 'pointer' : 'default', padding: 0 }}
                         >
                           <img
                             src={getPlayerHeadshot(player.name, player.limited, headshots)}
                             onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
                             alt=""
-                            className={`w-8 h-8 flex-shrink-0 rounded-full object-cover transition-all ${
-                              lineupMode
+                            style={{
+                              width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
+                              opacity: isBenched ? 0.3 : lineupMode && !isInLineup && !canAddToLineup ? 0.25 : lineupMode && !isInLineup ? 0.55 : 1,
+                              border: lineupMode
                                 ? isInLineup
-                                  ? `border-4 opacity-100 ${player.limited ? 'border-yellow-500' : player.unlimited ? 'border-blue-500' : 'border-green-500'}`
-                                  : canAddToLineup
-                                    ? 'border-2 border-gray-400 opacity-60 hover:opacity-100 hover:border-green-300'
-                                    : 'border border-gray-600 opacity-40'
+                                  ? `3px solid ${playerBorderColor(player)}`
+                                  : `2px solid ${colors.borderSubtle}`
                                 : isBenched
-                                  ? 'border border-gray-600 opacity-40'
-                                  : isInLineup
-                                    ? `border-2 ${player.limited ? 'border-yellow-500' : player.unlimited ? 'border-blue-500' : 'border-green-500'}`
-                                    : `border ${player.limited ? 'border-yellow-500' : player.unlimited ? 'border-blue-500' : 'border-gray-600'}`
-                            }`}
+                                  ? `1px solid ${colors.borderSubtle}`
+                                  : `2px solid ${playerBorderColor(player)}`,
+                              transition: 'all 0.15s',
+                            }}
                           />
                           {lineupMode && isInLineup && (
-                            <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center ${player.limited ? 'bg-yellow-500' : player.unlimited ? 'bg-blue-500' : 'bg-green-500'}`}>
-                              <span className="text-white text-xs font-bold">✓</span>
+                            <div style={{
+                              position: 'absolute', top: -3, right: -3,
+                              width: 14, height: 14, borderRadius: '50%',
+                              background: playerBorderColor(player),
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>
+                              <span style={{ color: '#0a1628', fontSize: 9, fontWeight: 900 }}>✓</span>
                             </div>
                           )}
                         </button>
-                        <div className="min-w-0">
-                          <div className={`font-semibold flex items-center gap-1 flex-wrap text-xs ${isBenched ? 'text-gray-500' : player.limited ? 'text-yellow-400' : player.unlimited ? 'text-blue-400' : ''}`}>
-                            {player.name}
-                            {player.limited   && <span className={isBenched ? 'text-gray-500 text-xs' : 'text-yellow-400 text-xs'}>{'⭐'.repeat(player.stars || 1)}</span>}
-                            {player.unlimited && <span className={isBenched ? 'text-gray-500 text-xs' : 'text-blue-400 text-xs'}>♾️</span>}
+
+                        {/* Name + metadata */}
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                            <span style={{
+                              fontFamily: fonts.sans, fontSize: 12, fontWeight: 500,
+                              color: isBenched ? dimColor : player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
+                            }}>
+                              {player.name}
+                            </span>
+                            {player.limited && (
+                              <span style={{ fontSize: 10, color: isBenched ? dimColor : colors.textGold }}>
+                                {'⭐'.repeat(player.stars || 1)}
+                              </span>
+                            )}
+                            {player.unlimited && (
+                              <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)' }}>♾️</span>
+                            )}
                           </div>
-                          <div className={`text-[10px] ${isBenched ? 'text-gray-600' : 'text-gray-400'}`}>
-                            {player.limited && <span className={isBenched ? 'text-gray-500' : 'text-yellow-400'}>{player.starts}/{MAX_LIMITED_STARTS} starts</span>}
-                            {player.yearsOfService > 1 && <span className="ml-1">(Yr {player.yearsOfService})</span>}
+                          <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.12)' : colors.textMuted }}>
+                            {player.limited && (
+                              <span style={{ color: isBenched ? 'rgba(255,255,255,0.12)' : colors.textGoldDim }}>
+                                {player.starts}/{MAX_LIMITED_STARTS} starts
+                              </span>
+                            )}
+                            {player.yearsOfService > 1 && <span style={{ marginLeft: 4 }}>(Yr {player.yearsOfService})</span>}
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td className={`px-2 py-1.5 text-center hidden sm:table-cell text-xs ${isBenched ? 'text-gray-500' : 'text-gray-300'}`}>{globalPlayerStats[player.name]?.eventsPlayed || 0}</td>
-                    <td className={`px-2 py-1.5 text-center hidden sm:table-cell text-xs ${isBenched ? 'text-gray-500' : 'text-gray-300'}`}>{globalPlayerStats[player.name]?.cutsMade || 0}</td>
-                    <td className={`px-2 py-1.5 text-right hidden md:table-cell text-xs ${isBenched ? 'text-gray-500' : 'text-gray-300'}`}>${(globalPlayerStats[player.name]?.pgaTourEarnings || 0).toLocaleString()}</td>
-                    <td className={`px-2 py-1.5 text-right font-medium text-xs ${isBenched ? 'text-gray-500' : 'text-green-400'}`}>${(player.sfglEarnings || 0).toLocaleString()}</td>
+
+                    {/* Events */}
+                    <td style={{ padding: '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
+                      {globalPlayerStats[player.name]?.eventsPlayed || 0}
+                    </td>
+
+                    {/* Cuts */}
+                    <td style={{ padding: '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
+                      {globalPlayerStats[player.name]?.cutsMade || 0}
+                    </td>
+
+                    {/* PGA $ */}
+                    <td style={{ padding: '8px 16px', textAlign: 'right', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
+                      ${(globalPlayerStats[player.name]?.pgaTourEarnings || 0).toLocaleString()}
+                    </td>
+
+                    {/* SFGL $ */}
+                    <td style={{ padding: '8px 16px', textAlign: 'right', fontFamily: fonts.serif, fontSize: 12, fontWeight: 600, color: isBenched ? dimColor : ((player.sfglEarnings || 0) > 0 ? colors.textGold : colors.textMuted) }}>
+                      ${(player.sfglEarnings || 0).toLocaleString()}
+                    </td>
                   </tr>
                 );
               })}
@@ -533,7 +596,7 @@ export const RostersView = ({
         )}
       </div>
 
-      {/* Modals */}
+      {/* ── Modals ── */}
       <MulliganModal
         isOpen={showMulliganModal}
         onClose={() => setShowMulliganModal(false)}
