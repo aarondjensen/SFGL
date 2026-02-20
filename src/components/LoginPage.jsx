@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { managerAuthApi } from "../api/supabase";
-import sfglLogo from "../assets/logo.png";
 
 const styles = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -43,15 +42,6 @@ const styles = `
     animation: sfglFadeUp 0.45s 0.1s cubic-bezier(0.22,1,0.36,1) both;
   }
 
-  .sfgl-logo-img {
-    width: 120px;
-    height: auto;
-    margin: 0 auto 20px;
-    display: block;
-    /* Invert dark logo to white for dark background */
-    filter: brightness(0) invert(1);
-    opacity: 0.92;
-  }
 
   .sfgl-login-subtitle {
     font-family: 'Raleway', sans-serif;
@@ -288,7 +278,13 @@ export default function LoginPage({ onLogin }) {
         <div className="sfgl-login-card">
 
           <div className="sfgl-login-header">
-            <img src={sfglLogo} alt="SFGL" className="sfgl-logo-img" />
+            <div style={{
+              fontFamily: "'Raleway', system-ui, sans-serif",
+              fontSize: 32, fontWeight: 600, letterSpacing: 8,
+              color: 'rgba(255,255,255,0.92)',
+              textAlign: 'center', marginBottom: 16,
+              userSelect: 'none',
+            }}>SFGL</div>
             <p className="sfgl-login-subtitle">Manager Portal · 2026 Season</p>
           </div>
 

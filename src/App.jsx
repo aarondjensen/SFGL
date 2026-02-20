@@ -132,9 +132,10 @@ const FantasyGolfLeague = () => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3"
         style={{ background: '#111d2e' }}>
-        <img src={sfglLogo} alt="SFGL"
-          style={{ width: 100, filter: 'brightness(0) invert(1)', opacity: 0.6 }} />
-        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', fontFamily: 'serif' }}>
+        <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 28, fontWeight: 600, letterSpacing: 8, color: 'rgba(255,255,255,0.5)' }}>
+          SFGL
+        </div>
+        <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', fontFamily: "'Raleway', sans-serif" }}>
           Loading Season…
         </div>
       </div>
