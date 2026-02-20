@@ -16,7 +16,7 @@ import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
 import { managerAuthApi, tournamentResultsApi } from './api/supabase';
 
-import sfglLogo from './assets/logo.png';
+
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
 const TABS = [
@@ -151,35 +151,30 @@ const FantasyGolfLeague = () => {
         backdropFilter: 'blur(12px)',
         position: 'sticky', top: 0, zIndex: 50,
       }}>
-        <div className="max-w-3xl mx-auto px-3 py-3">
-          <div className="flex items-center justify-between">
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
 
             {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div style={{ width: 44, height: 22, overflow: 'hidden', borderRadius: 2, flexShrink: 0 }}>
-                <img src={sfglLogo} alt="SFGL" style={{
-                  width: 44,
-                  height: 44,
-                  objectFit: 'cover',
-                  objectPosition: 'bottom center',
-                  display: 'block',
-                }} />
-              </div>
-              <div style={{
-                width: 1,
-                height: 20,
-                background: 'rgba(180,160,100,0.25)',
-              }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* Try image first; if it loads show it, otherwise the text fallback stays */}
+              <span style={{
+                fontFamily: "'Raleway', system-ui, sans-serif",
+                fontSize: 22, fontWeight: 600, letterSpacing: 5,
+                color: 'rgba(255,255,255,0.93)',
+                whiteSpace: 'nowrap', userSelect: 'none',
+              }}>SFGL</span>
+              <div style={{ width: 1, height: 22, background: 'rgba(180,160,100,0.25)' }} />
               <span style={{
                 fontFamily: "'Cormorant Garamond', Georgia, serif",
-                fontSize: 13,
-                color: 'rgba(255,255,255,0.4)',
-                letterSpacing: 1,
+                fontSize: 18,
+                fontWeight: 300,
+                color: 'rgba(255,255,255,0.55)',
+                letterSpacing: 3,
               }}>2026</span>
             </div>
 
             {/* Right side: user + login/logout */}
-            <div className="flex items-center gap-3">
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {loggedInUser && (
                 <span style={{
                   fontSize: 11,
@@ -230,13 +225,13 @@ const FantasyGolfLeague = () => {
       </header>
 
       {/* ── Segment / active tournament banner ── */}
-      <div className="max-w-3xl mx-auto px-3 mt-4 mb-2 flex items-center gap-4">
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px 4px", display: "flex", alignItems: "center", gap: 16 }}>
         <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 0.5 }}>
           {getSegmentByDate()}
         </div>
         {currentTournament && (
           <div style={{ fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-            className="flex items-center gap-1.5">
+style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span>⛳</span> {currentTournament.name}
           </div>
         )}
