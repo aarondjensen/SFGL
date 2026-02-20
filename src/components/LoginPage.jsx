@@ -3,8 +3,6 @@ import { managerAuthApi } from "../api/supabase";
 import sfglLogo from "../assets/logo.png";
 
 const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Raleway:wght@300;400;500;600&display=swap');
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   .sfgl-login-root {

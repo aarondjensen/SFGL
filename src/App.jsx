@@ -54,6 +54,16 @@ const FantasyGolfLeague = () => {
   const resolvedHeadshots = Object.keys(headshots).length > 0 ? headshots : PGA_TOUR_IDS;
   const currentTournament = tournaments.find(t => t.playing);
 
+  // ── Inject Google Fonts (Cormorant Garamond + Raleway) once on mount ────────
+  useEffect(() => {
+    if (document.getElementById('sfgl-google-fonts')) return; // already injected
+    const link = document.createElement('link');
+    link.id   = 'sfgl-google-fonts';
+    link.rel  = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Raleway:wght@300;400;500;600&display=swap';
+    document.head.appendChild(link);
+  }, []);
+
   // ── Restore session on page load ──────────────────────────────────────────
   useEffect(() => {
     managerAuthApi.getCurrentSession().then(session => {
@@ -161,7 +171,7 @@ const FantasyGolfLeague = () => {
                 background: 'rgba(180,160,100,0.25)',
               }} />
               <span style={{
-                fontFamily: 'Georgia, serif',
+                fontFamily: "'Cormorant Garamond', Georgia, serif",
                 fontSize: 13,
                 color: 'rgba(255,255,255,0.4)',
                 letterSpacing: 1,
@@ -221,11 +231,11 @@ const FantasyGolfLeague = () => {
 
       {/* ── Segment / active tournament banner ── */}
       <div className="max-w-3xl mx-auto px-3 mt-4 mb-2 flex items-center gap-4">
-        <div style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: 'rgba(255,255,255,0.82)', letterSpacing: 0.5 }}>
+        <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 13, color: 'rgba(255,255,255,0.82)', letterSpacing: 0.5 }}>
           {getSegmentByDate()}
         </div>
         {currentTournament && (
-          <div style={{ fontSize: 13, color: 'rgba(210,190,130,0.95)', fontFamily: 'Georgia, serif' }}
+          <div style={{ fontSize: 13, color: 'rgba(210,190,130,0.95)', fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             className="flex items-center gap-1.5">
             <span>⛳</span> {currentTournament.name}
           </div>
@@ -283,7 +293,7 @@ const FantasyGolfLeague = () => {
               >
                 <tab.Icon style={{ width: 13, height: 13 }} />
                 <span className="hidden sm:inline" style={{
-                  fontFamily: 'Georgia, serif',
+                  fontFamily: "'Cormorant Garamond', Georgia, serif",
                   fontSize: 11,
                   letterSpacing: '0.8px',
                 }}>{tab.label}</span>
