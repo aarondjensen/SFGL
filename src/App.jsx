@@ -182,7 +182,7 @@ const FantasyGolfLeague = () => {
                   color: 'rgba(180,160,100,0.7)',
                   letterSpacing: 1,
                   textTransform: 'uppercase',
-                  fontFamily: 'serif',
+                  fontFamily: "'Raleway', system-ui, sans-serif",
                 }}>
                   {loggedInUser}
                 </span>
@@ -227,11 +227,11 @@ const FantasyGolfLeague = () => {
 
       {/* ── Segment / active tournament banner ── */}
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px 4px", display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 0.5 }}>
+        <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400 }}>
           {getSegmentByDate()}
         </div>
         {currentTournament && (
-          <div style={{ fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+          <div style={{ fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}
 style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span>⛳</span> {currentTournament.name}
           </div>
