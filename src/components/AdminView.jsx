@@ -447,7 +447,7 @@ export const AdminView = ({
       const player = allPlayers.find(p => p.name.toLowerCase().includes(playerIdSearch.toLowerCase()));
       if (!player) { dialog.showToast('Player not found in rankings', 'error'); return; }
       const { supabase } = await import('../api/supabase');
-      const { error } = await supabase.from('player_rankings').update({ pga_tour_id: playerIdValue }).eq('name', player.name);
+      const { error } = await supabase.from('players').update({ pga_tour_id: playerIdValue }).eq('name', player.name);
       if (error) throw error;
       updateRankings(allPlayers.map(p => p.name === player.name ? { ...p, pgaTourId: playerIdValue } : p));
       dialog.showToast(`✓ Added ID ${playerIdValue} for ${player.name}`, 'success');
