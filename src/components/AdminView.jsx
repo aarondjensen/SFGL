@@ -214,9 +214,12 @@ export const AdminView = ({
       const rosteredNames = teams.flatMap(team => team.roster.map(p => p.name));
       const { fullLineups, rosterSnapshots } = buildSnapshots(tournIndex);
       const { newTeams, newStats, resultsData } = processTournamentData(t, apiPlayers, teams, globalPlayerStats, rosteredNames);
-      const newTournaments = tournaments.map((nt, idx) => idx === tournIndex ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
-      const nextIdx = newTournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
-      if (nextIdx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nextIdx].playing = true; }
+      const nextIdx = tournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
+      const newTournaments = tournaments.map((nt, idx) => {
+        if (idx === tournIndex) return { ...nt, completed: true, playing: false, results: resultsData };
+        if (nextIdx !== -1 && idx === nextIdx) return { ...nt, playing: true };
+        return { ...nt, playing: false };
+      });
       updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newTournaments);
       // Persist to Supabase so all managers see results
       try {
@@ -381,12 +384,14 @@ export const AdminView = ({
     });
 
     // ── 6. Advance tournaments ─────────────────────────────────────────────
+    // Find the next non-completed, non-alternate tournament to mark as playing
+    const nextIdx = tournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
     const newTournaments = tournaments.map((nt, idx) => {
       if (idx === tournIndex) return { ...nt, completed: true, playing: false, results: tournamentResults };
-      return nt;
+      if (nextIdx !== -1 && idx === nextIdx) return { ...nt, playing: true };
+      // Clear playing from any other tournament (including previously active ones)
+      return { ...nt, playing: false };
     });
-    const nextIdx = newTournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
-    if (nextIdx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nextIdx].playing = true; }
 
     updateTeams(updatedTeams);
     setGlobalPlayerStats(updatedGlobalStats);

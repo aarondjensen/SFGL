@@ -43,7 +43,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
     return `${days[date.getDay()]} ${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${ampm} ET`;
   };
 
-  const activeTournament = localTournaments.find(t => t.playing);
+  const activeTournament = localTournaments.find(t => t.playing && !t.completed);
 
   const saveChanges = () => {
     setTournaments(localTournaments);
@@ -89,10 +89,10 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 <td style={{ padding: '8px 16px', textAlign: 'center' }}>
                   <input
                     type="checkbox"
-                    checked={t.playing}
+                    checked={t.playing && !t.completed}
                     onChange={e => {
                       const updated = localTournaments.map(x => ({ ...x, playing: false }));
-                      if (e.target.checked) updated[realIndex].playing = true;
+                      if (e.target.checked && !t.completed) updated[realIndex].playing = true;
                       setLocalTournaments(updated);
                     }}
                     style={{ accentColor: colors.textGold, width: 14, height: 14, cursor: 'pointer' }}
@@ -201,7 +201,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                       Final
                     </span>
                   )}
-                  {t.playing && (
+                  {t.playing && !t.completed && (
                     <span style={{ ...theme.badge, background: 'rgba(80,180,120,0.1)', border: '1px solid rgba(80,180,120,0.3)', color: colors.success }}>
                       Active
                     </span>
