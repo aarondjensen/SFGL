@@ -5,12 +5,29 @@ import { AddDropPlayerModal } from './AddDropPlayerModal';
 import { MulliganModal } from './MulliganModal';
 import { useRoster, useWindowStatus } from '../hooks';
 import {
-  getSortedRoster, shortName, getPlayerHeadshot, getPlayerHeadshotFallback,
+  getSortedRoster, shortName,
   getTeamAbbreviation, getLineupStatus, getFreeAgentWindowStatus, getWaiverWindowStatus,
   isPastRoundStart, getSegmentByDate, isTournamentLocked,
 } from '../utils';
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
+
+// ── Headshot helpers (Cloudinary PGA Tour CDN — no ESPN 400 errors) ─────────
+const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
+  const pgaId = headshotMap[playerName];
+  if (pgaId) {
+    // Use Cloudinary PGA Tour CDN — reliable, no auth errors
+    return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${pgaId}`;
+  }
+  // Fallback: initials avatar
+  const bg = isLimited ? '8B6914' : '1a3366';
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
+};
+
+const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
+  const bg = isLimited ? '8B6914' : '1a3366';
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
+};
 
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
@@ -271,6 +288,16 @@ export const RostersView = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <style>{`
+        .sfgl-select option {
+          background: #0d1e38;
+          color: rgba(255,255,255,0.9);
+        }
+        .sfgl-select:focus {
+          border-color: rgba(180,160,100,0.5);
+          outline: none;
+        }
+      `}</style>
 
       {/* ── Team selector + lineup headshots ── */}
       <div style={{
@@ -284,10 +311,12 @@ export const RostersView = ({
             <select
               value={selectedTeam || ''}
               onChange={e => { setSelectedTeam(e.target.value); setLineupMode(false); }}
+              className="sfgl-select"
               style={{
                 ...theme.select,
                 fontSize: 14, fontWeight: 700, fontFamily: fonts.serif,
                 maxWidth: 200, padding: '6px 10px',
+                colorScheme: 'dark',
               }}
             >
               {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -311,9 +340,9 @@ export const RostersView = ({
         </div>
 
         {/* Lineup headshots */}
-        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10 }}>
+        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, minHeight: 72, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {team.lineup.length > 0 ? (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, width: '100%' }}>
               {getSortedRoster(currentRoster)
                 .filter(p => team.lineup.includes(p.name))
                 .map(player => {
@@ -343,7 +372,7 @@ export const RostersView = ({
                 })}
             </div>
           ) : (
-            <div style={{ ...theme.smallText, textAlign: 'center' }}>No lineup set</div>
+            <div style={{ ...theme.smallText, textAlign: 'center', width: '100%' }}>No lineup set</div>
           )}
         </div>
       </div>
