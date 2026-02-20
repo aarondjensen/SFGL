@@ -117,7 +117,7 @@ export const theme = {
   // ── Typography ──
   h1: {
     fontFamily: fonts.serif,
-    fontSize: 22,
+    fontSize: "clamp(24px, 2.2vw, 30px)",
     fontWeight: 400,
     color: colors.textPrimary,
     letterSpacing: '0.3px',
@@ -125,7 +125,7 @@ export const theme = {
 
   h2: {
     fontFamily: fonts.serif,
-    fontSize: 16,
+    fontSize: "clamp(17px, 1.5vw, 22px)",
     fontWeight: 400,
     color: colors.textPrimary,
     letterSpacing: '0.5px',
@@ -133,7 +133,7 @@ export const theme = {
 
   h3: {
     fontFamily: fonts.serif,
-    fontSize: 14,
+    fontSize: "clamp(15px, 1.3vw, 18px)",
     fontWeight: 400,
     color: colors.textPrimary,
     letterSpacing: '0.3px',
@@ -141,7 +141,7 @@ export const theme = {
 
   label: {
     fontFamily: fonts.sans,
-    fontSize: 10,
+    fontSize: "clamp(10px, 0.85vw, 12px)",
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
@@ -150,13 +150,13 @@ export const theme = {
 
   bodyText: {
     fontFamily: fonts.sans,
-    fontSize: 13,
+    fontSize: "clamp(13px, 1.1vw, 15px)",
     color: colors.textSecondary,
   },
 
   smallText: {
     fontFamily: fonts.sans,
-    fontSize: 11,
+    fontSize: "clamp(11px, 0.95vw, 13px)",
     color: colors.textMuted,
   },
 
@@ -170,7 +170,7 @@ export const theme = {
   statNumLg: {
     fontFamily: fonts.mono,
     fontVariantNumeric: 'tabular-nums',
-    fontSize: 15,
+    fontSize: "clamp(15px, 1.3vw, 18px)",
     fontWeight: 500,
     letterSpacing: '-0.5px',
   },
@@ -183,7 +183,7 @@ export const theme = {
   // ── Table ──
   tableHeaderCell: {
     padding: '8px 16px',
-    fontSize: 10,
+    fontSize: "clamp(10px, 0.85vw, 12px)",
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
@@ -238,7 +238,7 @@ export const theme = {
     borderRadius: shape.btnRadius,
     padding: '9px 18px',
     fontFamily: fonts.sans,
-    fontSize: 11,
+    fontSize: "clamp(11px, 0.9vw, 13px)",
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
@@ -253,7 +253,7 @@ export const theme = {
     borderRadius: shape.btnRadius,
     padding: '9px 18px',
     fontFamily: fonts.sans,
-    fontSize: 11,
+    fontSize: "clamp(11px, 0.9vw, 13px)",
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
@@ -268,7 +268,7 @@ export const theme = {
     borderRadius: shape.btnRadius,
     padding: '9px 18px',
     fontFamily: fonts.sans,
-    fontSize: 11,
+    fontSize: "clamp(11px, 0.9vw, 13px)",
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
