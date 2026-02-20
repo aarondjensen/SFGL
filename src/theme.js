@@ -37,6 +37,8 @@ export const colors = {
 
   // Semantic
   success:       'rgba(80,180,120,0.85)',
+  earningsGreen:      'rgba(80,195,120,0.95)',   // season earnings — full green
+  earningsGreenLight: 'rgba(100,210,150,0.65)',  // swing earnings — softer green
   danger:        'rgba(220,80,80,0.85)',
   dangerBg:      'rgba(180,60,60,0.12)',
   dangerBorder:  'rgba(180,60,60,0.3)',
@@ -379,7 +381,10 @@ export const rowHoverHandlers = (isHighlighted = false) => ({
 
 // ── Helper: earnings color ────────────────────────────────────────────────────
 export const earningsColor = (amount) =>
-  (amount || 0) > 0 ? colors.textGold : colors.textMuted;
+  (amount || 0) > 0 ? colors.earningsGreen : colors.textMuted;
+
+export const segmentEarningsColor = (amount) =>
+  (amount || 0) > 0 ? colors.earningsGreenLight : colors.textMuted;
 
 // ── Helper: card lift hover handlers ─────────────────────────────────────────
 export const cardLiftHandlers = () => ({

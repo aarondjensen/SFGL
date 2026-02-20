@@ -18,7 +18,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 color: showEarnings
                   ? p.limited
-                    ? (p.earnings > 0 ? colors.textGold : 'rgba(180,160,100,0.3)')
+                    ? (p.earnings > 0 ? colors.earningsGreen : 'rgba(80,195,120,0.25)')
                     : (p.earnings > 0 ? colors.textPrimary : colors.textMuted)
                   : p.limited ? colors.textGoldDim : colors.textSecondary,
               }}>
@@ -34,7 +34,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
               </div>
               {showEarnings ? (
                 <div>
-                  <span style={{ ...theme.statNum, fontSize: 11, color: (p.earnings || 0) > 0 ? colors.textGold : colors.textMuted }}>
+                  <span style={{ ...theme.statNum, fontSize: 11, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
                     ${(p.earnings || 0).toLocaleString()}
                   </span>
                   {p.bonus > 0 && (
@@ -260,7 +260,7 @@ export const ResultsView = ({ teams, tournaments }) => {
                         <span style={{ ...theme.h3, fontSize: 13 }}>{team.name}</span>
                         <span style={{
                           ...theme.statNum, fontSize: 13, fontWeight: 600,
-                          color: (tr.totalEarnings || 0) > 0 ? colors.textGold : colors.textMuted,
+                          color: (tr.totalEarnings || 0) > 0 ? colors.earningsGreen : colors.textMuted,
                           marginLeft: 4,
                         }}>
                           ${(tr.totalEarnings || 0).toLocaleString()}
