@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, Trophy, Users, DollarSign, Calendar, Settings } from 'lucide-react';
+import { Trophy, Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
 import { DialogProvider } from './components/DialogContext';
 import { ErrorBoundary }  from './components/ErrorBoundary';
@@ -20,8 +20,8 @@ import { managerAuthApi, tournamentResultsApi } from './api/supabase';
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'standings',    label: 'Standings',    Icon: BarChart3  },
-  { id: 'results',      label: 'Results',      Icon: Trophy     },
+  { id: 'standings',    label: 'Standings',    Icon: Trophy     },
+  { id: 'results',      label: 'Results',      Icon: Award      },
   { id: 'rosters',      label: 'Rosters',      Icon: Users      },
   { id: 'transactions', label: 'Transactions', Icon: DollarSign },
   { id: 'tournaments',  label: 'Tournaments',  Icon: Calendar   },
@@ -65,6 +65,20 @@ const FantasyGolfLeague = () => {
     // Set Raleway on body so everything inherits it — overrides Tailwind preflight
     document.body.style.fontFamily = "'Raleway', system-ui, sans-serif";
     document.body.style.fontVariantNumeric = 'tabular-nums lining-nums';
+    // Responsive tab styles
+    const style = document.createElement('style');
+    style.id = 'sfgl-tab-styles';
+    if (!document.getElementById('sfgl-tab-styles')) {
+      style.textContent = `
+        .sfgl-tab { flex: 0 0 auto; }
+        .sfgl-tab-label { display: none; }
+        @media (min-width: 640px) {
+          .sfgl-tab { flex: 1; }
+          .sfgl-tab-label { display: inline; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
   }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
@@ -256,6 +270,7 @@ const FantasyGolfLeague = () => {
             return (
               <button
                 key={tab.id}
+                className="sfgl-tab"
                 onClick={() => {
                   if (tab.id === 'admin' && !isCommissioner) {
                     setShowAdminLoginPopover(prev => !prev);
@@ -269,12 +284,11 @@ const FantasyGolfLeague = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 6,
-                  padding: '10px 16px',
+                  padding: '10px 12px',
                   borderRadius: 2,
                   fontSize: 'clamp(12px, 1vw, 14px)',
                   fontWeight: 400,
                   letterSpacing: 0.5,
-                  whiteSpace: 'nowrap',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   border: isActive
@@ -292,7 +306,7 @@ const FantasyGolfLeague = () => {
                 }}
               >
                 <tab.Icon style={{ width: 13, height: 13 }} />
-                <span style={{
+                <span className="sfgl-tab-label" style={{
                   fontFamily: "'Raleway', system-ui, sans-serif",
                   fontSize: 'clamp(12px, 1vw, 14px)',
                   fontWeight: 500,
