@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Trophy } from 'lucide-react';
 import { getSegmentByDate } from '../utils/index.js';
-import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor } from '../theme.js';
+import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, cardLiftHandlers } from '../theme.js';
 
 export const StandingsView = ({ teams }) => {
   const sortedTeams = useMemo(() =>
@@ -18,7 +18,7 @@ export const StandingsView = ({ teams }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={theme.card}>
+      <div style={theme.cardLift} {...cardLiftHandlers()}>
 
         {/* Header */}
         <div style={theme.cardHeader}>
@@ -71,9 +71,8 @@ export const StandingsView = ({ teams }) => {
 
                   <td style={{ ...theme.tableCell, textAlign: 'right' }}>
                     <div style={{
-                      ...theme.goldText, fontSize: 15, fontWeight: 600,
+                      ...theme.statNumLg,
                       color: earningsColor(team.earnings),
-                      fontVariantNumeric: 'tabular-nums',
                     }}>
                       ${(team.earnings || 0).toLocaleString()}
                     </div>
@@ -83,9 +82,8 @@ export const StandingsView = ({ teams }) => {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
                       <span style={theme.smallText}>#{segmentPos}</span>
                       <span style={{
-                        fontFamily: fonts.serif, fontSize: 13,
+                        ...theme.statNum, fontSize: 13,
                         color: earningsColor(team.segmentEarnings),
-                        fontVariantNumeric: 'tabular-nums',
                       }}>
                         ${(team.segmentEarnings || 0).toLocaleString()}
                       </span>

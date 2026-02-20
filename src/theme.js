@@ -51,6 +51,7 @@ export const colors = {
 export const fonts = {
   serif:      "Georgia, 'Times New Roman', serif",
   sans:       "system-ui, -apple-system, sans-serif",
+  mono:       "'Roboto Mono', 'JetBrains Mono', 'Fira Mono', monospace",
 };
 
 // ── Spacing / shape ───────────────────────────────────────────────────────────
@@ -79,6 +80,16 @@ export const theme = {
     border: `1px solid ${colors.border}`,
     borderRadius: shape.cardRadius,
     overflow: 'hidden',
+  },
+
+  // Card with hover lift — apply via onMouseEnter/Leave using cardLiftHandlers()
+  cardLift: {
+    background: colors.cardBg,
+    border: `1px solid ${colors.border}`,
+    borderRadius: shape.cardRadius,
+    overflow: 'hidden',
+    transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
+    cursor: 'pointer',
   },
 
   cardHeader: {
@@ -143,6 +154,21 @@ export const theme = {
     fontFamily: fonts.sans,
     fontSize: 11,
     color: colors.textMuted,
+  },
+
+  // Monospace stat numbers — for earnings, scores, rankings
+  statNum: {
+    fontFamily: fonts.mono,
+    fontVariantNumeric: 'tabular-nums',
+    letterSpacing: '-0.3px',
+  },
+
+  statNumLg: {
+    fontFamily: fonts.mono,
+    fontVariantNumeric: 'tabular-nums',
+    fontSize: 15,
+    fontWeight: 500,
+    letterSpacing: '-0.5px',
   },
 
   goldText: {
@@ -295,6 +321,18 @@ export const theme = {
     color: colors.success,
   },
 
+  badgeCut: {
+    background: 'rgba(220,80,80,0.1)',
+    border: '1px solid rgba(220,80,80,0.25)',
+    color: colors.danger,
+  },
+
+  badgeWarning: {
+    background: 'rgba(220,170,60,0.1)',
+    border: '1px solid rgba(220,170,60,0.25)',
+    color: colors.warning,
+  },
+
   // ── Dividers ──
   divider: {
     height: 1,
@@ -338,3 +376,17 @@ export const rowHoverHandlers = (isHighlighted = false) => ({
 // ── Helper: earnings color ────────────────────────────────────────────────────
 export const earningsColor = (amount) =>
   (amount || 0) > 0 ? colors.textGold : colors.textMuted;
+
+// ── Helper: card lift hover handlers ─────────────────────────────────────────
+export const cardLiftHandlers = () => ({
+  onMouseEnter: (e) => {
+    e.currentTarget.style.transform = 'translateY(-2px)';
+    e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
+    e.currentTarget.style.borderColor = 'rgba(180,160,100,0.3)';
+  },
+  onMouseLeave: (e) => {
+    e.currentTarget.style.transform = 'translateY(0)';
+    e.currentTarget.style.boxShadow = 'none';
+    e.currentTarget.style.borderColor = 'rgba(180,160,100,0.15)';
+  },
+});

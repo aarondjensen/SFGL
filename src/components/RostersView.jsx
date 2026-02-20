@@ -577,12 +577,12 @@ export const RostersView = ({
                     </td>
 
                     {/* PGA $ */}
-                    <td style={{ padding: '8px 16px', textAlign: 'right', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
+                    <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
                       ${(globalPlayerStats[player.name]?.pgaTourEarnings || 0).toLocaleString()}
                     </td>
 
                     {/* SFGL $ */}
-                    <td style={{ padding: '8px 16px', textAlign: 'right', fontFamily: fonts.serif, fontSize: 12, fontWeight: 600, color: isBenched ? dimColor : ((player.sfglEarnings || 0) > 0 ? colors.textGold : colors.textMuted) }}>
+                    <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, fontWeight: 600, color: isBenched ? dimColor : ((player.sfglEarnings || 0) > 0 ? colors.textGold : colors.textMuted) }}>
                       ${(player.sfglEarnings || 0).toLocaleString()}
                     </td>
                   </tr>
