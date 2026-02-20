@@ -166,11 +166,11 @@ const FantasyGolfLeague = () => {
               }}>SFGL</span>
               <div style={{ width: 1, height: 22, background: 'rgba(180,160,100,0.25)' }} />
               <span style={{
-                fontFamily: "'Cormorant Garamond', Georgia, serif",
-                fontSize: 18,
+                fontFamily: "'Raleway', system-ui, sans-serif",
+                fontSize: 16,
                 fontWeight: 300,
-                color: 'rgba(255,255,255,0.55)',
-                letterSpacing: 3,
+                color: 'rgba(255,255,255,0.45)',
+                letterSpacing: 4,
               }}>2026</span>
             </div>
 
@@ -190,6 +190,7 @@ const FantasyGolfLeague = () => {
               {loggedInUser
                 ? (
                   <button onClick={handleLogout} style={{
+                    fontFamily: "'Raleway', system-ui, sans-serif",
                     fontSize: 10,
                     letterSpacing: 1.5,
                     textTransform: 'uppercase',
@@ -205,6 +206,7 @@ const FantasyGolfLeague = () => {
                   </button>
                 ) : (
                   <button onClick={() => setShowLoginModal(true)} style={{
+                    fontFamily: "'Raleway', system-ui, sans-serif",
                     fontSize: 10,
                     letterSpacing: 1.5,
                     textTransform: 'uppercase',
@@ -231,8 +233,7 @@ const FantasyGolfLeague = () => {
           {getSegmentByDate()}
         </div>
         {currentTournament && (
-          <div style={{ fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}
-style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
             <span>⛳</span> {currentTournament.name}
           </div>
         )}
@@ -289,9 +290,10 @@ style={{ display: "flex", alignItems: "center", gap: 6 }}>
               >
                 <tab.Icon style={{ width: 13, height: 13 }} />
                 <span style={{
-                  fontFamily: "'Cormorant Garamond', Georgia, serif",
-                  fontSize: 'clamp(12px, 1vw, 15px)',
-                  letterSpacing: '0.8px',
+                  fontFamily: "'Raleway', system-ui, sans-serif",
+                  fontSize: 'clamp(12px, 1vw, 14px)',
+                  fontWeight: 500,
+                  letterSpacing: '1px',
                 }}>{tab.label}</span>
               </button>
             );
