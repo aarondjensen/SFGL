@@ -14,7 +14,7 @@ import LoginPage            from './components/LoginPage';
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi }  from './api/supabase';
+import { managerAuthApi, tournamentResultsApi } from './api/supabase';
 
 import sfglLogo from './assets/logo.png';
 
@@ -38,6 +38,7 @@ const FantasyGolfLeague = () => {
   const [showAdminLoginPopover, setShowAdminLoginPopover] = useState(false);
   const [adminPassword,         setAdminPassword]         = useState('');
   const [firstTeeTime,          setFirstTeeTime]          = useState(null);
+  const [resultsHydrated,       setResultsHydrated]       = useState(false);
 
   const league = useLeague(STORAGE_KEYS);
 
@@ -64,6 +65,31 @@ const FantasyGolfLeague = () => {
       }
     }).catch(() => {});
   }, []);
+
+  // ── Hydrate tournament results from Supabase ─────────────────────────────
+  // Runs once after tournaments are loaded. Merges Supabase results into the
+  // local tournaments array so ResultsView works for all managers, not just
+  // the one who processed results on their device.
+  useEffect(() => {
+    if (loading || resultsHydrated || tournaments.length === 0) return;
+    tournamentResultsApi.getAllForSeason().then(supabaseResults => {
+      if (!supabaseResults || supabaseResults.length === 0) { setResultsHydrated(true); return; }
+      setTournaments(prev => {
+        const updated = prev.map(t => {
+          // Only merge if local copy has no results (avoids overwriting fresher local data)
+          if (t.results) return t;
+          const remote = supabaseResults.find(r => r.tournamentName === t.name);
+          if (!remote) return t;
+          return { ...t, completed: true, results: remote.results };
+        });
+        return updated;
+      });
+      setResultsHydrated(true);
+    }).catch(e => {
+      console.warn('Could not load results from Supabase:', e.message);
+      setResultsHydrated(true);
+    });
+  }, [loading, tournaments.length, resultsHydrated]);
 
   // ── Admin login ────────────────────────────────────────────────────────────
   const handleAdminLogin = async () => {
