@@ -6,7 +6,7 @@ import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA, LIV_GOLF_ROSTER } from '../consta
 import { storage, draftStateApi } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi, tournamentResultsApi } from '../api/supabase';
+import { managerAuthApi, tournamentResultsApi, teamsApi, tournamentsApi } from '../api/supabase';
 import { theme, colors, fonts } from '../theme.js';
 
 if (typeof window !== 'undefined') {
@@ -229,7 +229,17 @@ export const AdminView = ({
           rosterSnapshots,
           isManualEntry: false,
         });
-      } catch (e) { console.warn('Supabase results save failed (non-fatal):', e.message); }
+      } catch (e) { console.warn('Supabase tournament_results save failed (non-fatal):', e.message); }
+      // Explicitly persist teams and tournament state to Supabase
+      try {
+        await teamsApi.setAll(newTeams);
+      } catch (e) { console.warn('Supabase teams save failed (non-fatal):', e.message); }
+      try {
+        await tournamentsApi.update(t.name, { completed: true, playing: false });
+        if (nextIdx !== -1) {
+          await tournamentsApi.update(newTournaments[nextIdx].name, { playing: true });
+        }
+      } catch (e) { console.warn('Supabase tournaments save failed (non-fatal):', e.message); }
       dialog.showToast(`Results processed for ${t.name}!`, 'success');
     } catch (error) { console.error('Results Sync Error:', error); dialog.showToast(`API Error: ${error.message}`, 'error'); }
   };
@@ -245,56 +255,171 @@ export const AdminView = ({
       if (!ok) return;
     }
 
-    // Build a Map of player name → earnings.
-    // processTournamentData checks tournamentData.isManualEntry and reads from
-    // tournamentData.earningsMap (a Map) — NOT from an apiPlayers array.
-    const earningsMap = new Map();
+    // ── 1. Parse earnings textarea → plain object { playerName: earnings }
+    const earningsMap = {};
     manualEntry.playerEarnings.split('\n').forEach(line => {
       const match = line.match(/^(.+?),\s*([\d,]+)$/);
       if (match) {
         const name = match[1].trim();
         const earnings = parseInt(match[2].replace(/,/g, '').trim());
-        if (name && !isNaN(earnings)) earningsMap.set(name, earnings);
+        if (name && !isNaN(earnings)) earningsMap[name] = earnings;
       }
     });
+    if (Object.keys(earningsMap).length === 0) {
+      dialog.showToast('No valid entries. Format: Player Name, 123456', 'error'); return;
+    }
 
-    if (earningsMap.size === 0) { dialog.showToast('No valid entries. Format: Player Name, 123456', 'error'); return; }
-
-    // manualData is passed as BOTH the tournament arg and the tournamentData arg.
-    // processTournamentData reads isManualEntry + earningsMap from tournamentData,
-    // and reads name/isMajor/roundLeaders from the tournament object.
-    const manualData = {
-      ...tournament,
-      competitors: [],
-      earningsMap,
-      isManualEntry: true,
-      roundLeaders: {
-        round1: manualEntry.round1Leaders.filter(l => l.trim()),
-        round2: manualEntry.round2Leaders.filter(l => l.trim()),
-        round3: manualEntry.round3Leaders.filter(l => l.trim()),
-      },
+    // ── 2. Name normalisation helpers (mirrors utils) ─────────────────────
+    const CHAR_MAP = { 'ø':'o','ö':'o','ó':'o','ô':'o','õ':'o','å':'a','ä':'a','á':'a','à':'a','â':'a','ã':'a','ü':'u','ú':'u','ù':'u','û':'u','é':'e','è':'e','ê':'e','ë':'e','í':'i','ì':'i','î':'i','ï':'i','ñ':'n','ç':'c','ß':'ss' };
+    const normName = (n) => {
+      if (!n) return '';
+      let s = n.toLowerCase().trim();
+      Object.keys(CHAR_MAP).forEach(c => { s = s.split(c).join(CHAR_MAP[c]); });
+      return s.replace(/[.-]/g, ' ').replace(/\s+/g, ' ').trim();
+    };
+    const matchNames = (a, b) => {
+      const na = normName(a), nb = normName(b);
+      if (na === nb) return true;
+      const wa = na.split(' '), wb = nb.split(' ');
+      return wa.length === wb.length && wa.every(w => wb.includes(w));
+    };
+    // Lookup earnings with fuzzy name matching
+    const getEarnings = (playerName) => {
+      if (earningsMap[playerName] !== undefined) return earningsMap[playerName];
+      const key = Object.keys(earningsMap).find(k => matchNames(k, playerName));
+      return key !== undefined ? earningsMap[key] : 0;
     };
 
-    const rosteredNames = teams.flatMap(t => t.roster.map(p => p.name));
+    // ── 3. Round leaders & bonuses ─────────────────────────────────────────
+    const roundLeaders = {
+      round1: manualEntry.round1Leaders.filter(l => l.trim()),
+      round2: manualEntry.round2Leaders.filter(l => l.trim()),
+      round3: manualEntry.round3Leaders.filter(l => l.trim()),
+    };
+    const BONUSES = tournament.isMajor
+      ? { round1: 40000, round2: 80000, round3: 120000 }
+      : { round1: 20000, round2: 40000, round3: 60000 };
+
+    // ── 4. Snapshot lineups & rosters BEFORE any mutations ─────────────────
     const { fullLineups, rosterSnapshots } = buildSnapshots(tournIndex);
-    const { newTeams, newStats, resultsData } = processTournamentData(manualData, manualData, teams, globalPlayerStats, rosteredNames);
-    const newTournaments = tournaments.map((nt, idx) => idx === tournIndex ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
+
+    // ── 5. Calculate per-team results ──────────────────────────────────────
+    const tournamentResults = { teams: {}, earningsMap: { ...earningsMap } };
+    const updatedGlobalStats = { ...globalPlayerStats };
+
+    // Update global stats for every player with earnings
+    Object.entries(earningsMap).forEach(([playerName, earnings]) => {
+      if (!updatedGlobalStats[playerName]) updatedGlobalStats[playerName] = { eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0 };
+      updatedGlobalStats[playerName] = {
+        ...updatedGlobalStats[playerName],
+        eventsPlayed: updatedGlobalStats[playerName].eventsPlayed + 1,
+        cutsMade: updatedGlobalStats[playerName].cutsMade + (earnings > 0 ? 1 : 0),
+        pgaTourEarnings: updatedGlobalStats[playerName].pgaTourEarnings + earnings,
+      };
+    });
+
+    const updatedTeams = teams.map(team => {
+      const rosterAtTime = getRosterAtTournament(team, tournIndex);
+
+      // Score each starter
+      const starterResults = team.lineup.map(playerName => {
+        const earnings = getEarnings(playerName);
+        const player = rosterAtTime.find(p => p.name === playerName) || rosterAtTime.find(p => matchNames(p.name, playerName));
+        return { player, playerName, earnings };
+      });
+
+      // Best 5 (or fewer if lineup is short)
+      const topStarters = [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5);
+      let totalEarnings = topStarters.reduce((sum, s) => sum + s.earnings, 0);
+      const bonusEarnings = { round1: 0, round2: 0, round3: 0 };
+      const playersWithBonuses = {};
+
+      // Round leader bonuses
+      ['round1', 'round2', 'round3'].forEach(round => {
+        (roundLeaders[round] || []).forEach(leaderName => {
+          if (!leaderName) return;
+          const actualName = team.lineup.find(pn => normName(pn) === normName(leaderName));
+          if (actualName) {
+            bonusEarnings[round] = BONUSES[round];
+            totalEarnings += BONUSES[round];
+            if (!playersWithBonuses[actualName]) playersWithBonuses[actualName] = { total: 0, rounds: [] };
+            playersWithBonuses[actualName].total += BONUSES[round];
+            playersWithBonuses[actualName].rounds.push({ round: round.replace('round', ''), bonus: BONUSES[round] });
+          }
+        });
+      });
+
+      tournamentResults.teams[team.id] = {
+        totalEarnings,
+        bonuses: bonusEarnings,
+        players: topStarters.map(s => ({
+          name: s.playerName,
+          earnings: s.earnings,
+          limited: s.player?.limited || false,
+          bonus: playersWithBonuses[s.playerName]?.total || 0,
+          roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
+          wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
+        })),
+      };
+
+      // Update roster starts + sfglEarnings
+      const updatedRoster = team.roster.map(player => {
+        if (team.lineup.includes(player.name)) {
+          const pe = getEarnings(player.name);
+          return { ...player, starts: player.starts + 1, sfglEarnings: (player.sfglEarnings || 0) + pe };
+        }
+        return player;
+      });
+
+      return {
+        ...team,
+        roster: updatedRoster,
+        earnings: team.earnings + totalEarnings,
+        segmentEarnings: (team.segmentEarnings || 0) + totalEarnings,
+        lineup: [],
+      };
+    });
+
+    // ── 6. Advance tournaments ─────────────────────────────────────────────
+    const newTournaments = tournaments.map((nt, idx) => {
+      if (idx === tournIndex) return { ...nt, completed: true, playing: false, results: tournamentResults };
+      return nt;
+    });
     const nextIdx = newTournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
     if (nextIdx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nextIdx].playing = true; }
-    updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newTournaments);
-    // Persist to Supabase so all managers see results
+
+    updateTeams(updatedTeams);
+    setGlobalPlayerStats(updatedGlobalStats);
+    setTournaments(newTournaments);
+
+    // ── 7. Persist to Supabase ─────────────────────────────────────────────
     try {
       await tournamentResultsApi.save({
         tournamentName: selectedTourneyForResults,
-        teamResults: resultsData.teams,
-        earningsMap: resultsData.earningsMap,
-        roundLeaders: manualData.roundLeaders,
+        teamResults: tournamentResults.teams,
+        earningsMap: tournamentResults.earningsMap,
+        roundLeaders,
         fullLineups,
         rosterSnapshots,
         isManualEntry: true,
       });
-    } catch (e) { console.warn('Supabase results save failed (non-fatal):', e.message); }
-    dialog.showToast(`Processed ${earningsMap.size} players for ${selectedTourneyForResults}!`, 'success');
+    } catch (e) { console.warn('Supabase tournament_results save failed (non-fatal):', e.message); }
+
+    // Explicitly persist teams (earnings, roster stats) and tournament completion
+    // to Supabase so all managers see updated standings immediately — don't rely
+    // on updateTeams/setTournaments hooks which may only write locally.
+    try {
+      await teamsApi.setAll(updatedTeams);
+    } catch (e) { console.warn('Supabase teams save failed (non-fatal):', e.message); }
+    try {
+      const completedTourn = newTournaments[tournIndex];
+      await tournamentsApi.update(completedTourn.name, { completed: true, playing: false });
+      if (nextIdx !== -1) {
+        await tournamentsApi.update(newTournaments[nextIdx].name, { playing: true });
+      }
+    } catch (e) { console.warn('Supabase tournaments save failed (non-fatal):', e.message); }
+
+    dialog.showToast(`Processed ${Object.keys(earningsMap).length} players for ${selectedTourneyForResults}!`, 'success');
     setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
     setManualEntryOpen(false);
   };
