@@ -405,6 +405,39 @@ export const AdminView = ({
     dialog.showToast(`Reset ${type} mulligan for ${team.name}`, 'success');
   };
 
+  // Fix unlimited flags: each team should have exactly 1 unlimited player (keeper).
+  // Any non-limited player beyond the first alphabetically-first gets unlimited: false.
+  // This repairs rosters drafted before the unlimited: false bug was fixed.
+  const handleRepairRosterFlags = async () => {
+    const ok = await dialog.showConfirm(
+      '🔧 Repair Roster Flags',
+      'This will fix the Unlimited (blue) flag on all rosters.\n\nEach team keeps exactly 1 Unlimited player (their keeper). All other non-limited players will show White.\n\nThis is safe to run and does not affect earnings or stats.',
+      { confirmText: 'Repair Rosters' }
+    );
+    if (!ok) return;
+
+    const repairedTeams = teams.map(team => {
+      let unlimitedAssigned = false;
+      // Preserve the existing unlimited keeper if one exists, otherwise promote first non-limited
+      const existingUnlimited = team.roster.find(p => p.unlimited);
+      const repairedRoster = team.roster.map(p => {
+        if (p.limited) return p; // limited players unchanged
+        if (existingUnlimited) {
+          // Keep the designated unlimited, clear all others
+          return { ...p, unlimited: p.name === existingUnlimited.name };
+        } else {
+          // No keeper was set — promote the first non-limited player (shouldn't happen but safe)
+          if (!unlimitedAssigned) { unlimitedAssigned = true; return { ...p, unlimited: true }; }
+          return { ...p, unlimited: false };
+        }
+      });
+      return { ...team, roster: repairedRoster };
+    });
+
+    updateTeams(repairedTeams);
+    dialog.showToast('✓ Roster flags repaired — Limited=Yellow, 1 Unlimited=Blue, rest=White', 'success');
+  };
+
   const handleSeasonReset = async () => {
     const c1 = await dialog.showConfirm('⚠️ DANGER: Reset Entire Season', 'This will DELETE all results, transactions, rosters, and stats. Cannot be undone.', { type: 'danger', confirmText: 'Continue' });
     if (!c1) return;
@@ -613,6 +646,9 @@ export const AdminView = ({
       <Section>
         <SectionHeader icon="👥" title="Roster Management" />
         <SectionBody>
+          <Btn onClick={handleRepairRosterFlags} variant="secondary">
+            🔧 Repair Roster Flags (Limited / Unlimited / White)
+          </Btn>
           <div>
             <FieldLabel>Select Team</FieldLabel>
             <ThemedSelect value={rosterMgmtTeam} onChange={e => { setRosterMgmtTeam(e.target.value); setPlayerSearch(''); }}>

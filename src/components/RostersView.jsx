@@ -33,7 +33,65 @@ const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
 const playerBorderColor = (player) =>
   player.limited   ? 'rgba(180,160,100,0.8)' :
   player.unlimited ? 'rgba(100,140,220,0.8)' :
-  'rgba(80,160,120,0.7)';
+  'rgba(255,255,255,0.35)';
+
+// ── Custom team dropdown — stays dark on all browsers ─────────────────────────
+const TeamDropdown = ({ teams, value, onChange }) => {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  const selected = teams.find(t => t.id === value);
+
+  React.useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={ref} style={{ position: 'relative', maxWidth: 200 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
+          background: '#0d1e38', border: `1px solid ${open ? 'rgba(180,160,100,0.5)' : 'rgba(255,255,255,0.12)'}`,
+          fontFamily: fonts.serif, fontSize: 14, fontWeight: 700,
+          color: 'rgba(255,255,255,0.9)', textAlign: 'left',
+          transition: 'border-color 0.15s',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selected?.name ?? '—'}
+        </span>
+        <span style={{ fontSize: 9, opacity: 0.6, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: 2,
+          background: '#0d1e38', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 2,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
+        }}>
+          {teams.map(t => (
+            <button key={t.id} onClick={() => { onChange(t.id); setOpen(false); }}
+              style={{
+                display: 'block', width: '100%', padding: '9px 12px', textAlign: 'left', cursor: 'pointer',
+                background: t.id === value ? 'rgba(180,160,100,0.15)' : 'transparent',
+                border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                fontFamily: fonts.serif, fontSize: 13, fontWeight: t.id === value ? 700 : 400,
+                color: t.id === value ? 'rgba(180,160,100,0.9)' : 'rgba(255,255,255,0.85)',
+                transition: 'background 0.1s',
+              }}
+              onMouseEnter={e => { if (t.id !== value) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
+              onMouseLeave={e => { if (t.id !== value) e.currentTarget.style.background = 'transparent'; }}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ── Waiver Priority Manager ───────────────────────────────────────────────────
 const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam }) => {
@@ -288,17 +346,6 @@ export const RostersView = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <style>{`
-        .sfgl-select option {
-          background: #0d1e38;
-          color: rgba(255,255,255,0.9);
-        }
-        .sfgl-select:focus {
-          border-color: rgba(180,160,100,0.5);
-          outline: none;
-        }
-      `}</style>
-
       {/* ── Team selector + lineup headshots ── */}
       <div style={{
         ...theme.card,
@@ -308,19 +355,11 @@ export const RostersView = ({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
           {/* Team selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-            <select
+            <TeamDropdown
+              teams={teams}
               value={selectedTeam || ''}
-              onChange={e => { setSelectedTeam(e.target.value); setLineupMode(false); }}
-              className="sfgl-select"
-              style={{
-                ...theme.select,
-                fontSize: 14, fontWeight: 700, fontFamily: fonts.serif,
-                maxWidth: 200, padding: '6px 10px',
-                colorScheme: 'dark',
-              }}
-            >
-              {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+              onChange={id => { setSelectedTeam(id); setLineupMode(false); }}
+            />
             {loggedInUser && !isOwnTeam && (
               <span style={{ ...theme.badge, ...theme.badgeNavy }}>View Only</span>
             )}
@@ -363,7 +402,7 @@ export const RostersView = ({
                         fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 3,
                         textAlign: 'center', width: '100%',
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        color: player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textSecondary,
+                        color: player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
                       }}>
                         {lastName}
                       </div>
@@ -410,11 +449,13 @@ export const RostersView = ({
               disabled={!canEditLineup || (lineupMode && team.lineup.length === 0)}
               style={actionBtn(
                 canEditLineup,
-                lineupMode && team.lineup.length > 0
-                  ? colors.success
-                  : isCommissioner && !lineupOpen
-                    ? colors.danger
-                    : 'rgba(100,150,255,0.8)',
+                lineupMode
+                  ? colors.textGold
+                  : team.lineup.length > 0
+                    ? colors.textGold
+                    : isCommissioner && !lineupOpen
+                      ? colors.danger
+                      : colors.success,
               )}
             >
               {lineupMode ? '✓ Save' : '✏️ Lineup'}
