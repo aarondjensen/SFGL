@@ -18,6 +18,8 @@ export const colors = {
   inputBgFocus:  'rgba(255,255,255,0.07)',
   buttonNavy:    '#1a3366',
   buttonNavyHover: '#1e3d7a',
+  sectionHeaderBlue: 'rgba(100,160,255,0.90)',   // bright blue for AdminView section headers
+  actionButtonBlue:  '#152c5a',                  // darker navy for action buttons inside sections
 
   // Borders
   border:        'rgba(180,160,100,0.15)',

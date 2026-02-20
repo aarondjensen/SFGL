@@ -149,8 +149,8 @@ const FantasyGolfLeague = () => {
               <img src={sfglLogo} alt="SFGL" style={{
                 height: 28,
                 width: 'auto',
-                filter: 'brightness(0) invert(1)',
-                opacity: 0.9,
+                mixBlendMode: 'screen',
+                opacity: 0.95,
               }} />
               <div style={{
                 width: 1,
@@ -218,11 +218,11 @@ const FantasyGolfLeague = () => {
 
       {/* ── Segment / active tournament banner ── */}
       <div className="max-w-3xl mx-auto px-3 mt-4 mb-2 flex items-center gap-4">
-        <div style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 }}>
+        <div style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: 'rgba(255,255,255,0.82)', letterSpacing: 0.5 }}>
           {getSegmentByDate()}
         </div>
         {currentTournament && (
-          <div style={{ fontSize: 13, color: 'rgba(180,160,100,0.85)', fontFamily: 'Georgia, serif' }}
+          <div style={{ fontSize: 13, color: 'rgba(210,190,130,0.95)', fontFamily: 'Georgia, serif' }}
             className="flex items-center gap-1.5">
             <span>⛳</span> {currentTournament.name}
           </div>
@@ -274,7 +274,7 @@ const FantasyGolfLeague = () => {
                       : 'rgba(255,255,255,0.04)',
                   color: isActive
                     ? 'rgba(180,160,100,0.9)'
-                    : 'rgba(255,255,255,0.4)',
+                    : 'rgba(255,255,255,0.78)',
                   boxShadow: isActive ? 'inset 0 1px 0 rgba(180,160,100,0.1)' : 'none',
                 }}
               >
