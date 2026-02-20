@@ -579,13 +579,13 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // PHASE: Draft
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  const draftAccent = isLimitedRound ? colors.textGold : 'rgba(100,160,255,0.85)';
+  const draftAccent = isLimitedRound ? colors.textGold : 'rgba(255,255,255,0.75)';
 
   return (
     <Shell wide>
       <ModalHeader
         title="Fantasy Golf Draft"
-        sub={isDraftComplete ? undefined : `Round ${currentRound} of ${maxRounds} · ${isLimitedRound ? '🟡 Limited' : '🔵 Unlimited'} · ${currentTeam?.name} is picking`}
+        sub={isDraftComplete ? undefined : `Round ${currentRound} of ${maxRounds} · ${isLimitedRound ? '🟡 Limited' : '⬜ Standard'} · ${currentTeam?.name} is picking`}
         badge={!isDraftComplete}
         onClose={handleClose}
       />
@@ -612,12 +612,12 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                   style={{
                     display: 'flex', alignItems: 'center', gap: 14,
                     padding: '10px 14px', borderRadius: 2, cursor: 'pointer',
-                    background: isLimitedRound ? 'rgba(180,160,100,0.05)' : 'rgba(100,140,220,0.05)',
-                    border: `1px solid ${isLimitedRound ? 'rgba(180,160,100,0.2)' : 'rgba(100,140,220,0.2)'}`,
+                    background: isLimitedRound ? 'rgba(180,160,100,0.05)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${isLimitedRound ? 'rgba(180,160,100,0.2)' : 'rgba(255,255,255,0.12)'}`,
                     textAlign: 'left', transition: 'all 0.15s',
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.background = isLimitedRound ? 'rgba(180,160,100,0.12)' : 'rgba(100,140,220,0.12)'; e.currentTarget.style.borderColor = draftAccent; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = isLimitedRound ? 'rgba(180,160,100,0.05)' : 'rgba(100,140,220,0.05)'; e.currentTarget.style.borderColor = isLimitedRound ? 'rgba(180,160,100,0.2)' : 'rgba(100,140,220,0.2)'; }}
+                  onMouseEnter={e => { e.currentTarget.style.background = isLimitedRound ? 'rgba(180,160,100,0.12)' : 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = draftAccent; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = isLimitedRound ? 'rgba(180,160,100,0.05)' : 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = isLimitedRound ? 'rgba(180,160,100,0.2)' : 'rgba(255,255,255,0.12)'; }}
                 >
                   <img
                     src={getPlayerHeadshot(player.name)}
@@ -641,7 +641,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
           <ModalFooter>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 8 }}>
               <span style={{ ...theme.label, flexShrink: 0 }}>
-                Round {currentRound} — {isLimitedRound ? 'Limited' : 'Unlimited'}
+                Round {currentRound} — {isLimitedRound ? 'Limited' : 'Standard'}
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {canUndo && (
