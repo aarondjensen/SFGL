@@ -198,7 +198,7 @@ export const AdminView = ({
     const t = tournaments[tournIndex];
     if (!t.slashGolfId) { dialog.showToast('No API ID found. Import 2026 Schedule first.', 'error'); return; }
     if (t.completed) {
-      const ok = await dialog.showConfirm('Already Processed', 'This tournament was already processed. Re-fetching will ADD earnings again (doubling them).\n\nAre you sure?', { type: 'danger', confirmText: 'Force Re-Fetch' });
+      const ok = await dialog.showConfirm('Already Processed', 'This tournament was already processed. Re-fetching will OVERWRITE the existing results and recalculate all earnings from scratch.\n\nAre you sure?', { type: 'danger', confirmText: 'Force Re-Fetch' });
       if (!ok) return;
     }
     try {
@@ -241,7 +241,7 @@ export const AdminView = ({
     const tournament = tournaments[tournIndex];
 
     if (tournament.completed) {
-      const ok = await dialog.showConfirm('Already Processed', 'This tournament was already processed. Re-processing will ADD earnings again.\n\nAre you sure?', { type: 'danger', confirmText: 'Process Anyway' });
+      const ok = await dialog.showConfirm('Already Processed', 'This tournament was already processed. Re-processing will OVERWRITE the existing results and recalculate all earnings from scratch.\n\nAre you sure?', { type: 'danger', confirmText: 'Process Anyway' });
       if (!ok) return;
     }
 
