@@ -64,7 +64,8 @@ const ThemedInput = ({ value, onChange, placeholder, type = 'text', onKeyPress, 
 
 const ThemedSelect = ({ value, onChange, children, style }) => (
   <select value={value} onChange={onChange}
-    style={{ ...theme.select, ...style }}
+    className="sfgl-admin-select"
+    style={{ ...theme.select, colorScheme: 'dark', ...style }}
     onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
     onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
   >
@@ -244,24 +245,29 @@ export const AdminView = ({
       if (!ok) return;
     }
 
-    // Parse earnings text → flat player array matching API shape
-    const apiPlayers = [];
+    // Build a Map of player name → earnings.
+    // processTournamentData checks tournamentData.isManualEntry and reads from
+    // tournamentData.earningsMap (a Map) — NOT from an apiPlayers array.
+    const earningsMap = new Map();
     manualEntry.playerEarnings.split('\n').forEach(line => {
       const match = line.match(/^(.+?),\s*([\d,]+)$/);
       if (match) {
         const name = match[1].trim();
         const earnings = parseInt(match[2].replace(/,/g, '').trim());
-        if (name && !isNaN(earnings)) {
-          apiPlayers.push({ athlete: { displayName: name }, earnings, isManualEntry: true });
-        }
+        if (name && !isNaN(earnings)) earningsMap.set(name, earnings);
       }
     });
 
-    if (apiPlayers.length === 0) { dialog.showToast('No valid entries. Format: Player Name, 123456', 'error'); return; }
+    if (earningsMap.size === 0) { dialog.showToast('No valid entries. Format: Player Name, 123456', 'error'); return; }
 
-    // Attach round leaders to tournament so processTournamentData can pick them up
-    const tournamentWithLeaders = {
+    // manualData is passed as BOTH the tournament arg and the tournamentData arg.
+    // processTournamentData reads isManualEntry + earningsMap from tournamentData,
+    // and reads name/isMajor/roundLeaders from the tournament object.
+    const manualData = {
       ...tournament,
+      competitors: [],
+      earningsMap,
+      isManualEntry: true,
       roundLeaders: {
         round1: manualEntry.round1Leaders.filter(l => l.trim()),
         round2: manualEntry.round2Leaders.filter(l => l.trim()),
@@ -271,7 +277,7 @@ export const AdminView = ({
 
     const rosteredNames = teams.flatMap(t => t.roster.map(p => p.name));
     const { fullLineups, rosterSnapshots } = buildSnapshots(tournIndex);
-    const { newTeams, newStats, resultsData } = processTournamentData(tournamentWithLeaders, apiPlayers, teams, globalPlayerStats, rosteredNames);
+    const { newTeams, newStats, resultsData } = processTournamentData(manualData, manualData, teams, globalPlayerStats, rosteredNames);
     const newTournaments = tournaments.map((nt, idx) => idx === tournIndex ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
     const nextIdx = newTournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
     if (nextIdx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nextIdx].playing = true; }
@@ -282,13 +288,13 @@ export const AdminView = ({
         tournamentName: selectedTourneyForResults,
         teamResults: resultsData.teams,
         earningsMap: resultsData.earningsMap,
-        roundLeaders: tournamentWithLeaders.roundLeaders,
+        roundLeaders: manualData.roundLeaders,
         fullLineups,
         rosterSnapshots,
         isManualEntry: true,
       });
     } catch (e) { console.warn('Supabase results save failed (non-fatal):', e.message); }
-    dialog.showToast(`Processed ${apiPlayers.length} players for ${selectedTourneyForResults}!`, 'success');
+    dialog.showToast(`Processed ${earningsMap.size} players for ${selectedTourneyForResults}!`, 'success');
     setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
     setManualEntryOpen(false);
   };
@@ -574,6 +580,17 @@ export const AdminView = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+      <style>{`
+        .sfgl-admin-select option {
+          background: #0d1e38 !important;
+          color: rgba(255,255,255,0.9) !important;
+        }
+        .sfgl-admin-select option:hover,
+        .sfgl-admin-select option:checked {
+          background: rgba(26,51,102,0.95) !important;
+        }
+      `}</style>
+
       {/* Header */}
       <div style={{ ...theme.card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -688,7 +705,7 @@ export const AdminView = ({
                 />
                 {manualEntry.playerEarnings.trim() && (
                   <p style={{ ...theme.smallText, marginTop: 4, color: colors.textGoldDim }}>
-                    {manualEntry.playerEarnings.split('\n').filter(l => l.match(/^.+,\s*[\d,]+$/)).length} valid entries detected
+                    {manualEntry.playerEarnings.split('\n').filter(l => l.match(/^.+?,\s*[\d,]+$/)).length} valid entries detected
                   </p>
                 )}
               </div>
