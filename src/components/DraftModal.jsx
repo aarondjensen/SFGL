@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Search, RotateCcw } from 'lucide-react';
+import { X, Search, RotateCcw, Flag } from 'lucide-react';
 import { draftStateApi } from '../api';
+import { useDialog } from './DialogContext';
 import { theme, colors, fonts } from '../theme.js';
 
 // ── Shared modal shell ────────────────────────────────────────────────────────
@@ -206,6 +207,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const [unlimitedSearch, setUnlimitedSearch] = useState('');
   const [draggedIndex, setDraggedIndex]       = useState(null);
   const [confirmDraft, setConfirmDraft]       = useState(null);
+  const dialog = useDialog();
 
   // ── On mount: use initialPhase from parent if provided ──
   useEffect(() => {
@@ -287,11 +289,27 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     try { await draftStateApi.clear(); } catch { /* ignore */ }
   };
 
-  const handleClose = () => {
+  const handleClose = async () => {
     if (phase === 'draft' && draftedPlayers.length > 0) {
-      const save = window.confirm('Save draft progress? OK to save and resume later, Cancel to discard.');
-      if (!save) clearDraftState();
+      const save = await dialog.showConfirm(
+        'Close Draft',
+        'Save progress so you can resume later?',
+        { confirmText: 'Save & Close', cancelText: 'Discard & Close' },
+      );
+      if (!save) await clearDraftState();
     }
+    onClose();
+  };
+
+  // ── End Draft ──
+  const handleEndDraft = async () => {
+    const confirmed = await dialog.showConfirm(
+      '🏁 End Draft',
+      `End the draft now? All picks so far will be saved to team rosters. Teams that haven't finished drafting will keep whatever they have.\n\n${draftedPlayers.length} picks made across ${pickHistory.length > 0 ? new Set(pickHistory.map(p => p.teamId)).size : 0} teams.`,
+      { confirmText: 'End Draft & Save Rosters', cancelText: 'Keep Drafting' },
+    );
+    if (!confirmed) return;
+    await clearDraftState();
     onClose();
   };
 
@@ -299,7 +317,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const getPlayerHeadshot = (playerName) => {
     let id = headshots[playerName];
     if (!id) { const p = allPlayers.find(p => p.name === playerName); id = p?.pgaTourId; }
-    if (id) return `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${id}.png&w=96&h=96`;
+    if (id) return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${id}`;
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=0d1e38&color=6b7280&size=128`;
   };
 
@@ -621,20 +639,30 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
 
           {/* Footer: draft order + undo */}
           <ModalFooter>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={theme.label}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 8 }}>
+              <span style={{ ...theme.label, flexShrink: 0 }}>
                 Round {currentRound} — {isLimitedRound ? 'Limited' : 'Unlimited'}
               </span>
-              {canUndo && (
-                <button onClick={handleUndo}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${colors.borderSubtle}`, borderRadius: 2, padding: '4px 10px', cursor: 'pointer', color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 11, transition: 'all 0.15s' }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = colors.danger; e.currentTarget.style.color = colors.danger; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = colors.borderSubtle; e.currentTarget.style.color = colors.textSecondary; }}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {canUndo && (
+                  <button onClick={handleUndo}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${colors.borderSubtle}`, borderRadius: 2, padding: '4px 10px', cursor: 'pointer', color: colors.textSecondary, fontFamily: fonts.sans, fontSize: 11, transition: 'all 0.15s', whiteSpace: 'nowrap' }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = colors.danger; e.currentTarget.style.color = colors.danger; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = colors.borderSubtle; e.currentTarget.style.color = colors.textSecondary; }}
+                  >
+                    <RotateCcw style={{ width: 11, height: 11 }} />
+                    Undo ({pickHistory[pickHistory.length - 1]?.playerName})
+                  </button>
+                )}
+                <button onClick={handleEndDraft}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(180,60,60,0.08)', border: `1px solid ${colors.dangerBorder}`, borderRadius: 2, padding: '4px 10px', cursor: 'pointer', color: colors.danger, fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, transition: 'all 0.15s', whiteSpace: 'nowrap' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(180,60,60,0.18)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(180,60,60,0.08)'; }}
                 >
-                  <RotateCcw style={{ width: 11, height: 11 }} />
-                  Undo Last Pick ({pickHistory[pickHistory.length - 1]?.playerName})
+                  <Flag style={{ width: 11, height: 11 }} />
+                  End Draft
                 </button>
-              )}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
               {(isSnakeDraft ? [...draftOrder].reverse() : draftOrder).map(team => (
