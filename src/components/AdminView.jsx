@@ -6,7 +6,7 @@ import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA, LIV_GOLF_ROSTER } from '../consta
 import { storage, draftStateApi } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi } from '../api/supabase';
+import { managerAuthApi, tournamentResultsApi } from '../api/supabase';
 import { theme, colors, fonts } from '../theme.js';
 
 if (typeof window !== 'undefined') {
@@ -122,6 +122,8 @@ export const AdminView = ({
   const [livPlayerInput, setLivPlayerInput]                       = useState('');
   const [hasSavedDraft, setHasSavedDraft]                         = useState(false);
   const [draftInitialPhase, setDraftInitialPhase]                 = useState('resume_prompt');
+  const [manualEntry, setManualEntry]                             = useState({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+  const [manualEntryOpen, setManualEntryOpen]                     = useState(false);
   const dialog = useDialog();
   const activeTournament = tournaments.find(t => t.playing);
 
@@ -210,8 +212,75 @@ export const AdminView = ({
       const nextIdx = newTournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
       if (nextIdx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nextIdx].playing = true; }
       updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newTournaments);
+      // Persist to Supabase so all managers see results
+      try {
+        await tournamentResultsApi.save({
+          tournamentName: t.name,
+          teamResults: resultsData.teams,
+          earningsMap: resultsData.earningsMap,
+          roundLeaders: t.roundLeaders || {},
+          isManualEntry: false,
+        });
+      } catch (e) { console.warn('Supabase results save failed (non-fatal):', e.message); }
       dialog.showToast(`Results processed for ${t.name}!`, 'success');
     } catch (error) { console.error('Results Sync Error:', error); dialog.showToast(`API Error: ${error.message}`, 'error'); }
+  };
+
+  const handleManualEntry = async () => {
+    if (!selectedTourneyForResults) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const tournIndex = tournaments.findIndex(t => t.name === selectedTourneyForResults);
+    if (tournIndex === -1) return;
+    const tournament = tournaments[tournIndex];
+
+    if (tournament.completed) {
+      const ok = await dialog.showConfirm('Already Processed', 'This tournament was already processed. Re-processing will ADD earnings again.\n\nAre you sure?', { type: 'danger', confirmText: 'Process Anyway' });
+      if (!ok) return;
+    }
+
+    // Parse earnings text → flat player array matching API shape
+    const apiPlayers = [];
+    manualEntry.playerEarnings.split('\n').forEach(line => {
+      const match = line.match(/^(.+?),\s*([\d,]+)$/);
+      if (match) {
+        const name = match[1].trim();
+        const earnings = parseInt(match[2].replace(/,/g, '').trim());
+        if (name && !isNaN(earnings)) {
+          apiPlayers.push({ athlete: { displayName: name }, earnings, isManualEntry: true });
+        }
+      }
+    });
+
+    if (apiPlayers.length === 0) { dialog.showToast('No valid entries. Format: Player Name, 123456', 'error'); return; }
+
+    // Attach round leaders to tournament so processTournamentData can pick them up
+    const tournamentWithLeaders = {
+      ...tournament,
+      roundLeaders: {
+        round1: manualEntry.round1Leaders.filter(l => l.trim()),
+        round2: manualEntry.round2Leaders.filter(l => l.trim()),
+        round3: manualEntry.round3Leaders.filter(l => l.trim()),
+      },
+    };
+
+    const rosteredNames = teams.flatMap(t => t.roster.map(p => p.name));
+    const { newTeams, newStats, resultsData } = processTournamentData(tournamentWithLeaders, apiPlayers, teams, globalPlayerStats, rosteredNames);
+    const newTournaments = tournaments.map((nt, idx) => idx === tournIndex ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
+    const nextIdx = newTournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
+    if (nextIdx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nextIdx].playing = true; }
+    updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newTournaments);
+    // Persist to Supabase so all managers see results
+    try {
+      await tournamentResultsApi.save({
+        tournamentName: selectedTourneyForResults,
+        teamResults: resultsData.teams,
+        earningsMap: resultsData.earningsMap,
+        roundLeaders: tournamentWithLeaders.roundLeaders,
+        isManualEntry: true,
+      });
+    } catch (e) { console.warn('Supabase results save failed (non-fatal):', e.message); }
+    dialog.showToast(`Processed ${apiPlayers.length} players for ${selectedTourneyForResults}!`, 'success');
+    setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+    setManualEntryOpen(false);
   };
 
   const handleCsvUpload = async (file) => {
@@ -344,6 +413,7 @@ export const AdminView = ({
     const resetTeams = teams.map(team => ({ ...team, earnings: 0, segmentEarnings: 0, lineup: [], roster: [], mulligans: { signatureMajor: 1, regular: 1 } }));
     const resetTournaments = tournaments.map((t, idx) => ({ ...t, completed: false, playing: idx === 0, results: null }));
     setTransactions([]); setGlobalPlayerStats({}); updateTeams(resetTeams); setTournaments(resetTournaments);
+    try { await tournamentResultsApi.deleteAllForSeason(); } catch (e) { console.warn('Supabase reset failed (non-fatal):', e.message); }
     dialog.showToast('Season reset complete!', 'success');
   };
 
@@ -403,6 +473,7 @@ export const AdminView = ({
       <Section>
         <SectionHeader icon="✏️" title="Enter Tournament Results" />
         <SectionBody>
+          {/* Tournament selector */}
           <div>
             <FieldLabel>Select Tournament</FieldLabel>
             <ThemedSelect value={selectedTourneyForResults} onChange={e => setSelectedTourneyForResults(e.target.value)}>
@@ -410,7 +481,110 @@ export const AdminView = ({
               {tournaments.map(t => <option key={t.name} value={t.name}>{t.name}{t.completed ? ' ✓' : t.playing ? ' ▶' : ''}</option>)}
             </ThemedSelect>
           </div>
+
+          {/* API fetch */}
           <Btn onClick={handleFetchApiResults}>⚡ Fetch Results from API</Btn>
+
+          {/* Divider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, height: 1, background: colors.borderSubtle }} />
+            <span style={{ ...theme.smallText, letterSpacing: '1px', textTransform: 'uppercase' }}>or</span>
+            <div style={{ flex: 1, height: 1, background: colors.borderSubtle }} />
+          </div>
+
+          {/* Manual entry toggle */}
+          <button
+            onClick={() => setManualEntryOpen(o => !o)}
+            style={{
+              ...theme.btnSecondary, width: '100%', padding: '10px 16px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              borderColor: manualEntryOpen ? colors.borderFocus : colors.borderInput,
+            }}
+          >
+            <span>✏️ Enter Results Manually</span>
+            <span style={{ fontSize: 10 }}>{manualEntryOpen ? '▲' : '▼'}</span>
+          </button>
+
+          {/* Manual entry form */}
+          {manualEntryOpen && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '16px 20px', background: 'rgba(255,255,255,0.02)', border: `1px solid ${colors.borderSubtle}`, borderRadius: 2 }}>
+              {/* Round leaders */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                {[
+                  { label: 'Round 1 Leaders', key: 'round1Leaders' },
+                  { label: 'Round 2 Leaders', key: 'round2Leaders' },
+                  { label: 'Round 3 Leaders', key: 'round3Leaders' },
+                ].map(({ label, key }) => (
+                  <div key={key}>
+                    <FieldLabel>{label}</FieldLabel>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {manualEntry[key].map((leader, idx) => (
+                        <div key={idx} style={{ display: 'flex', gap: 4 }}>
+                          <ThemedSelect
+                            value={leader}
+                            onChange={e => {
+                              const next = [...manualEntry[key]];
+                              next[idx] = e.target.value;
+                              setManualEntry({ ...manualEntry, [key]: next });
+                            }}
+                            style={{ flex: 1, fontSize: 11, padding: '6px 8px' }}
+                          >
+                            <option value="">(optional)</option>
+                            {selectedTourneyForResults && teams.flatMap(team =>
+                              team.lineup.map(pName => (
+                                <option key={`${team.name}-${pName}`} value={pName}>{pName}</option>
+                              ))
+                            ).sort((a, b) => a.props.value.localeCompare(b.props.value))}
+                          </ThemedSelect>
+                          {idx > 0 && (
+                            <button
+                              onClick={() => setManualEntry({ ...manualEntry, [key]: manualEntry[key].filter((_, i) => i !== idx) })}
+                              style={{ ...theme.btnDanger, padding: '4px 8px', fontSize: 10 }}
+                            >✕</button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => setManualEntry({ ...manualEntry, [key]: [...manualEntry[key], ''] })}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textGoldDim, fontFamily: fonts.sans, fontSize: 11, textAlign: 'left', padding: '2px 0' }}
+                      >+ co-leader</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Earnings textarea */}
+              <div>
+                <FieldLabel>Player Earnings — one per line: Player Name, 123456</FieldLabel>
+                <textarea
+                  value={manualEntry.playerEarnings}
+                  onChange={e => setManualEntry({ ...manualEntry, playerEarnings: e.target.value })}
+                  placeholder={"Scottie Scheffler, 3600000\nRory McIlroy, 2160000\nBrooks Koepka, 1368000"}
+                  rows={8}
+                  style={{
+                    ...theme.input,
+                    fontFamily: fonts.mono,
+                    fontSize: 12,
+                    resize: 'vertical',
+                    lineHeight: 1.6,
+                  }}
+                />
+                {manualEntry.playerEarnings.trim() && (
+                  <p style={{ ...theme.smallText, marginTop: 4, color: colors.textGoldDim }}>
+                    {manualEntry.playerEarnings.split('\n').filter(l => l.match(/^.+,\s*[\d,]+$/)).length} valid entries detected
+                  </p>
+                )}
+              </div>
+
+              {/* Submit */}
+              <Btn
+                onClick={handleManualEntry}
+                disabled={!selectedTourneyForResults || !manualEntry.playerEarnings.trim()}
+              >
+                Process Manual Results
+              </Btn>
+            </div>
+          )}
         </SectionBody>
       </Section>
 

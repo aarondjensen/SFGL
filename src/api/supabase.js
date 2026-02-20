@@ -11,25 +11,36 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * ============================================================================
  */
 export const playersApi = {
+  /**
+   * Get all players
+   */
   async getAll() {
     const { data, error } = await supabase
       .from('players')
       .select('*')
       .order('world_rank', { ascending: true, nullsLast: true });
+    
     if (error) throw error;
     return data || [];
   },
 
+  /**
+   * Get single player by name
+   */
   async getByName(name) {
     const { data, error } = await supabase
       .from('players')
       .select('*')
       .eq('name', name)
       .single();
+    
     if (error && error.code !== 'PGRST116') throw error;
     return data;
   },
 
+  /**
+   * Upsert multiple players (used for OWGR sync)
+   */
   async upsertMany(players) {
     const rows = players.map(p => ({
       name: p.name,
@@ -44,33 +55,45 @@ export const playersApi = {
       .from('players')
       .upsert(rows, { onConflict: 'name' })
       .select();
+    
     if (error) throw error;
-
+    
+    // Update metadata timestamp
     const timestamp = Date.now();
     await supabase
       .from('app_metadata')
-      .upsert({ key: 'players_last_updated', value: timestamp.toString() });
-
+      .upsert({ 
+        key: 'players_last_updated', 
+        value: timestamp.toString() 
+      });
+    
     return data;
   },
 
+  /**
+   * Update single player
+   */
   async update(name, updates) {
     const updateData = {};
-    if (updates.worldRank !== undefined)  updateData.world_rank   = updates.worldRank;
-    if (updates.pgaTourId !== undefined)  updateData.pga_tour_id  = updates.pgaTourId;
+    if (updates.worldRank !== undefined) updateData.world_rank = updates.worldRank;
+    if (updates.pgaTourId !== undefined) updateData.pga_tour_id = updates.pgaTourId;
     if (updates.headshotUrl !== undefined) updateData.headshot_url = updates.headshotUrl;
-    if (updates.stats !== undefined)      updateData.career_stats  = updates.stats;
-    if (updates.isLiv !== undefined)      updateData.is_liv        = updates.isLiv;
+    if (updates.stats !== undefined) updateData.career_stats = updates.stats;
+    if (updates.isLiv !== undefined) updateData.is_liv = updates.isLiv;
 
     const { data, error } = await supabase
       .from('players')
       .update(updateData)
       .eq('name', name)
       .select();
+    
     if (error) throw error;
     return data;
   },
 
+  /**
+   * Get players formatted for app (backward compatible with old format)
+   */
   async getAllForApp() {
     const players = await this.getAll();
     return players.map(p => ({
@@ -83,6 +106,9 @@ export const playersApi = {
     }));
   },
 
+  /**
+   * Get headshots map (for backward compatibility)
+   */
   async getHeadshotsMap() {
     const players = await this.getAll();
     const map = {};
@@ -90,12 +116,16 @@ export const playersApi = {
       if (p.headshot_url) {
         map[p.name] = p.headshot_url;
       } else if (p.pga_tour_id) {
+        // Try ESPN CDN URL format
         map[p.name] = `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${p.pga_tour_id}.png&w=96&h=96`;
       }
     });
     return map;
   },
 
+  /**
+   * Get stats map (for backward compatibility)
+   */
   async getStatsMap() {
     const players = await this.getAll();
     const map = {};
@@ -107,6 +137,9 @@ export const playersApi = {
     return map;
   },
 
+  /**
+   * Get last updated timestamp
+   */
   async getLastUpdated() {
     const { data } = await supabase
       .from('app_metadata')
@@ -116,6 +149,9 @@ export const playersApi = {
     return data?.value || null;
   },
 
+  /**
+   * Set last updated timestamp
+   */
   async setLastUpdated(timestamp) {
     await supabase
       .from('app_metadata')
@@ -126,23 +162,40 @@ export const playersApi = {
 /**
  * ============================================================================
  * LEGACY APIs - Backward compatibility wrappers
+ * These delegate to the new consolidated playersApi
  * ============================================================================
  */
 export const playerRankingsApi = {
-  async getAll()             { return await playersApi.getAllForApp(); },
-  async updateAll(players)   { return await playersApi.upsertMany(players); },
-  async getLastUpdated()     { return await playersApi.getLastUpdated(); },
+  async getAll() {
+    return await playersApi.getAllForApp();
+  },
+  async updateAll(players) {
+    return await playersApi.upsertMany(players);
+  },
+  async getLastUpdated() {
+    return await playersApi.getLastUpdated();
+  },
 };
 
 export const headshotsApi = {
-  async getAll()             { return await playersApi.getHeadshotsMap(); },
-  async setAll()             { console.warn('headshotsApi.setAll is deprecated'); },
+  async getAll() {
+    return await playersApi.getHeadshotsMap();
+  },
+  async setAll(headshotsObject) {
+    console.warn('headshotsApi.setAll is deprecated - headshots are now part of players table');
+  },
 };
 
 export const playerStatsApi = {
-  async getAll()             { return await playersApi.getStatsMap(); },
-  async set(playerName, stats) { return await playersApi.update(playerName, { stats }); },
-  async setAll()             { console.warn('playerStatsApi.setAll is deprecated'); },
+  async getAll() {
+    return await playersApi.getStatsMap();
+  },
+  async set(playerName, stats) {
+    return await playersApi.update(playerName, { stats });
+  },
+  async setAll(statsObject) {
+    console.warn('playerStatsApi.setAll is deprecated - stats are now part of players table');
+  },
 };
 
 /**
@@ -156,7 +209,12 @@ export const livRosterApi = {
       .from('liv_roster')
       .select('player_name')
       .order('player_name', { ascending: true });
-    if (error) { console.error('Error fetching LIV roster:', error); throw error; }
+    
+    if (error) {
+      console.error('Error fetching LIV roster:', error);
+      throw error;
+    }
+    
     return (data || []).map(row => row.player_name);
   },
 
@@ -166,14 +224,18 @@ export const livRosterApi = {
         .from('liv_roster')
         .delete()
         .neq('id', '00000000-0000-0000-0000-000000000000');
+      
       if (deleteError) throw deleteError;
-
+      
       const rows = players.map(name => ({ player_name: name }));
+      
       const { data, error: insertError } = await supabase
         .from('liv_roster')
         .insert(rows)
         .select();
+      
       if (insertError) throw insertError;
+      
       return data;
     } catch (error) {
       console.error('Error updating LIV roster:', error);
@@ -186,6 +248,7 @@ export const livRosterApi = {
       .from('liv_roster')
       .insert({ player_name: playerName })
       .select();
+    
     if (error) throw error;
     return data;
   },
@@ -195,6 +258,7 @@ export const livRosterApi = {
       .from('liv_roster')
       .delete()
       .eq('player_name', playerName);
+    
     if (error) throw error;
   },
 };
@@ -206,7 +270,10 @@ export const livRosterApi = {
  */
 export const teamsApi = {
   async getAll() {
-    const { data, error } = await supabase.from('teams').select('*').order('name');
+    const { data, error } = await supabase
+      .from('teams')
+      .select('*')
+      .order('name');
     if (error) throw error;
     return data || [];
   },
@@ -220,7 +287,10 @@ export const teamsApi = {
 
   async update(teamId, updates) {
     const { data, error } = await supabase
-      .from('teams').update(updates).eq('id', teamId).select();
+      .from('teams')
+      .update(updates)
+      .eq('id', teamId)
+      .select();
     if (error) throw error;
     return data;
   },
@@ -234,7 +304,9 @@ export const teamsApi = {
 export const tournamentsApi = {
   async getAll() {
     const { data, error } = await supabase
-      .from('tournaments').select('*').order('start_date');
+      .from('tournaments')
+      .select('*')
+      .order('start_date');
     if (error) throw error;
     return data || [];
   },
@@ -248,7 +320,10 @@ export const tournamentsApi = {
 
   async update(tournamentName, updates) {
     const { data, error } = await supabase
-      .from('tournaments').update(updates).eq('name', tournamentName).select();
+      .from('tournaments')
+      .update(updates)
+      .eq('name', tournamentName)
+      .select();
     if (error) throw error;
     return data;
   },
@@ -262,14 +337,18 @@ export const tournamentsApi = {
 export const transactionsApi = {
   async getAll() {
     const { data, error } = await supabase
-      .from('transactions').select('*').order('timestamp', { ascending: false });
+      .from('transactions')
+      .select('*')
+      .order('timestamp', { ascending: false });
     if (error) throw error;
     return data || [];
   },
 
   async add(transaction) {
     const { data, error } = await supabase
-      .from('transactions').insert(transaction).select();
+      .from('transactions')
+      .insert(transaction)
+      .select();
     if (error) throw error;
     return data;
   },
@@ -290,23 +369,33 @@ export const transactionsApi = {
 export const settingsApi = {
   async get(key) {
     const { data, error } = await supabase
-      .from('league_settings').select('value').eq('key', key).single();
+      .from('league_settings')
+      .select('value')
+      .eq('key', key)
+      .single();
     if (error && error.code !== 'PGRST116') throw error;
     return data?.value;
   },
 
   async set(key, value) {
     const { data, error } = await supabase
-      .from('league_settings').upsert({ key, value }).select();
+      .from('league_settings')
+      .upsert({ key, value })
+      .select();
     if (error) throw error;
     return data;
   },
 
   async getAll() {
-    const { data, error } = await supabase.from('league_settings').select('*');
+    const { data, error } = await supabase
+      .from('league_settings')
+      .select('*');
     if (error) throw error;
+    
     const settings = {};
-    data?.forEach(row => { settings[row.key] = row.value; });
+    data?.forEach(row => {
+      settings[row.key] = row.value;
+    });
     return settings;
   },
 };
@@ -318,8 +407,12 @@ export const settingsApi = {
  */
 export const draftStateApi = {
   async get() {
-    const { data, error } = await supabase
-      .from('draft_state').select('*').eq('league_id', 'default').single();
+    const { data, error} = await supabase
+      .from('draft_state')
+      .select('*')
+      .eq('league_id', 'default')
+      .single();
+    
     if (error && error.code !== 'PGRST116') throw error;
     return data;
   },
@@ -328,24 +421,28 @@ export const draftStateApi = {
     const { data, error } = await supabase
       .from('draft_state')
       .upsert({
-        league_id:           'default',
-        phase:               state.phase,
-        draft_order:         state.draftOrder,
-        keeper_team_index:   state.keeperTeamIndex,
-        keepers:             state.keepers,
-        current_team_index:  state.currentTeamIndex,
-        current_round:       state.currentRound,
-        drafted_players:     state.draftedPlayers,
-        is_complete:         state.isComplete || false,
+        league_id: 'default',
+        phase: state.phase,
+        draft_order: state.draftOrder,
+        keeper_team_index: state.keeperTeamIndex,
+        keepers: state.keepers,
+        current_team_index: state.currentTeamIndex,
+        current_round: state.currentRound,
+        drafted_players: state.draftedPlayers,
+        is_complete: state.isComplete || false,
       }, { onConflict: 'league_id' })
       .select();
+    
     if (error) throw error;
     return data;
   },
 
   async clear() {
     const { error } = await supabase
-      .from('draft_state').delete().eq('league_id', 'default');
+      .from('draft_state')
+      .delete()
+      .eq('league_id', 'default');
+    
     if (error) throw error;
   },
 };
@@ -353,72 +450,84 @@ export const draftStateApi = {
 /**
  * ============================================================================
  * MANAGER AUTH API
- *
- * Credentials live in the `managers` table (password_hash column).
- * Team-specific data (roster, lineup, etc.) lives in the `teams` table.
- *
- * Login:  managers.name  (e.g. "Crawforth", "Fano", "Hershey", "Jensen", "Lutz")
- * Password: name lowercased (e.g. "crawforth") — set via seedAllManagers()
  * ============================================================================
  */
 export const managerAuthApi = {
-
-  /**
-   * Login with last name + password.
-   * Looks up row in `managers` table by name (case-insensitive).
-   */
-  async login(name, password) {
-    const { data: manager, error: managerError } = await supabase
-      .from('managers')
+  async login(email, password) {
+    const { data: team, error: teamError } = await supabase
+      .from('teams')
       .select('*')
-      .ilike('name', name.trim())
+      .eq('manager_email', email)
       .single();
-
-    if (managerError || !manager) throw new Error('Name not found. Check with your commissioner.');
-    if (manager.password_hash !== password) throw new Error('Incorrect password.');
+    
+    if (teamError || !team) throw new Error('Invalid email or password');
+    if (team.manager_password_hash !== password) throw new Error('Invalid email or password');
 
     const sessionToken = crypto.randomUUID();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 60);
 
-    const { error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await supabase
       .from('manager_sessions')
       .insert({
-        manager_id:       manager.id,
-        session_token:    sessionToken,
-        is_commissioner:  false,
-        expires_at:       expiresAt.toISOString(),
-      });
+        team_id: team.id,
+        session_token: sessionToken,
+        is_commissioner: false,
+        expires_at: expiresAt.toISOString(),
+      })
+      .select()
+      .single();
 
     if (sessionError) throw sessionError;
 
     localStorage.setItem('manager_session', sessionToken);
-    localStorage.setItem('manager_id', String(manager.id));
-    localStorage.setItem('manager_name', manager.name);
-    localStorage.setItem('manager_team_name', manager.team_name);
+    localStorage.setItem('manager_team_id', team.id);
 
-    return { manager, sessionToken };
+    return { team, sessionToken };
   },
 
-  /**
-   * Restore session on page load. Returns session + manager data or null.
-   */
+  async loginCommissioner(password) {
+    const { data } = await supabase
+      .from('league_settings')
+      .select('value')
+      .eq('key', 'commissioner_password')
+      .single();
+
+    if (!data || data.value !== password) throw new Error('Invalid commissioner password');
+
+    const sessionToken = crypto.randomUUID();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 60);
+
+    await supabase
+      .from('manager_sessions')
+      .insert({
+        team_id: null,
+        session_token: sessionToken,
+        is_commissioner: true,
+        expires_at: expiresAt.toISOString(),
+      });
+
+    localStorage.setItem('manager_session', sessionToken);
+    localStorage.setItem('is_commissioner', 'true');
+
+    return { isCommissioner: true, sessionToken };
+  },
+
   async getCurrentSession() {
     const sessionToken = localStorage.getItem('manager_session');
     if (!sessionToken) return null;
 
     const { data, error } = await supabase
       .from('manager_sessions')
-      .select('*, managers(*)')
+      .select('*, teams(*)')
       .eq('session_token', sessionToken)
       .gt('expires_at', new Date().toISOString())
       .single();
 
     if (error || !data) {
       localStorage.removeItem('manager_session');
-      localStorage.removeItem('manager_id');
-      localStorage.removeItem('manager_name');
-      localStorage.removeItem('manager_team_name');
+      localStorage.removeItem('manager_team_id');
       localStorage.removeItem('is_commissioner');
       return null;
     }
@@ -426,59 +535,21 @@ export const managerAuthApi = {
     return data;
   },
 
-  /**
-   * Logout — deletes session from Supabase and clears localStorage.
-   */
   async logout() {
     const sessionToken = localStorage.getItem('manager_session');
     if (sessionToken) {
       await supabase.from('manager_sessions').delete().eq('session_token', sessionToken);
     }
     localStorage.removeItem('manager_session');
-    localStorage.removeItem('manager_id');
-    localStorage.removeItem('manager_name');
-    localStorage.removeItem('manager_team_name');
+    localStorage.removeItem('manager_team_id');
     localStorage.removeItem('is_commissioner');
   },
 
-  /**
-   * Seed all manager passwords at once.
-   * Password = manager name lowercased (e.g. "Jensen" → "jensen").
-   * Safe to run multiple times — just overwrites with the same value.
-   */
-  async seedAllManagers() {
-    // Fetch all managers from Supabase directly
-    const { data: managers, error } = await supabase
-      .from('managers')
-      .select('id, name');
-
-    if (error) throw error;
-
-    const results = [];
-    for (const manager of managers) {
-      const password = manager.name.toLowerCase();
-      const { error: updateError } = await supabase
-        .from('managers')
-        .update({ password_hash: password })
-        .eq('id', manager.id);
-
-      if (updateError) {
-        results.push({ name: manager.name, success: false, error: updateError.message });
-      } else {
-        results.push({ name: manager.name, password, success: true });
-      }
-    }
-    return results;
-  },
-
-  /**
-   * Update a single manager's password.
-   */
-  async updatePassword(managerId, newPassword) {
+  async assignManagerToTeam(teamId, email, password) {
     const { data, error } = await supabase
-      .from('managers')
-      .update({ password_hash: newPassword })
-      .eq('id', managerId)
+      .from('teams')
+      .update({ manager_email: email, manager_password_hash: password })
+      .eq('id', teamId)
       .select();
     if (error) throw error;
     return data;
@@ -493,7 +564,9 @@ export const managerAuthApi = {
 export const draftPicksApi = {
   async getAllForDraft(draftId = 'default') {
     const { data, error } = await supabase
-      .from('draft_picks').select('*').eq('draft_id', draftId)
+      .from('draft_picks')
+      .select('*')
+      .eq('draft_id', draftId)
       .order('pick_number', { ascending: true });
     if (error) throw error;
     return data || [];
@@ -503,13 +576,13 @@ export const draftPicksApi = {
     const { data, error } = await supabase
       .from('draft_picks')
       .insert({
-        draft_id:          pick.draftId || 'default',
-        pick_number:       pick.pickNumber,
-        round_number:      pick.roundNumber,
-        team_id:           pick.teamId,
-        team_name:         pick.teamName,
-        player_name:       pick.playerName,
-        player_type:       pick.playerType,
+        draft_id: pick.draftId || 'default',
+        pick_number: pick.pickNumber,
+        round_number: pick.roundNumber,
+        team_id: pick.teamId,
+        team_name: pick.teamName,
+        player_name: pick.playerName,
+        player_type: pick.playerType,
         picked_by_manager: pick.pickedByManager !== false,
       })
       .select();
@@ -519,11 +592,156 @@ export const draftPicksApi = {
 
   async deleteLastPick(draftId = 'default') {
     const { data: picks } = await supabase
-      .from('draft_picks').select('*').eq('draft_id', draftId)
-      .order('pick_number', { ascending: false }).limit(1);
+      .from('draft_picks')
+      .select('*')
+      .eq('draft_id', draftId)
+      .order('pick_number', { ascending: false })
+      .limit(1);
     if (!picks || picks.length === 0) return null;
     const lastPick = picks[0];
     await supabase.from('draft_picks').delete().eq('id', lastPick.id);
     return lastPick;
+  },
+};
+
+/**
+ * ============================================================================
+ * TOURNAMENT RESULTS API
+ * Stores processed tournament results in Supabase so all managers can access
+ * historical data without relying on localStorage.
+ *
+ * Table: tournament_results
+ *   id              uuid primary key default gen_random_uuid()
+ *   tournament_name text not null
+ *   season          int  not null default 2026
+ *   processed_at    timestamptz not null default now()
+ *   is_manual_entry boolean not null default false
+ *   team_results    jsonb not null   -- { [teamId]: { totalEarnings, rank, players[], bonuses } }
+ *   earnings_map    jsonb not null   -- { [playerName]: earnings } full field
+ *   round_leaders   jsonb not null   -- { round1: [], round2: [], round3: [] }
+ *   meta            jsonb            -- future use
+ *
+ * SQL to create (run in Supabase SQL editor):
+ *
+ *   create table tournament_results (
+ *     id              uuid primary key default gen_random_uuid(),
+ *     tournament_name text not null,
+ *     season          int  not null default 2026,
+ *     processed_at    timestamptz not null default now(),
+ *     is_manual_entry boolean not null default false,
+ *     team_results    jsonb not null default '{}'::jsonb,
+ *     earnings_map    jsonb not null default '{}'::jsonb,
+ *     round_leaders   jsonb not null default '{}'::jsonb,
+ *     meta            jsonb,
+ *     unique (tournament_name, season)
+ *   );
+ *
+ *   -- Allow all authenticated and anon reads; restrict writes to service role
+ *   alter table tournament_results enable row level security;
+ *   create policy "Public read" on tournament_results for select using (true);
+ *   create policy "Service write" on tournament_results for all using (true);
+ * ============================================================================
+ */
+export const tournamentResultsApi = {
+  /**
+   * Save (upsert) results for a single tournament.
+   * Called immediately after processing results in AdminView.
+   */
+  async save({ tournamentName, season = 2026, teamResults, earningsMap, roundLeaders, isManualEntry = false }) {
+    // earningsMap may be a plain object or a JS Map — normalise to plain object
+    const earningsObj = earningsMap instanceof Map
+      ? Object.fromEntries(earningsMap)
+      : (earningsMap || {});
+
+    const { data, error } = await supabase
+      .from('tournament_results')
+      .upsert({
+        tournament_name: tournamentName,
+        season,
+        processed_at: new Date().toISOString(),
+        is_manual_entry: isManualEntry,
+        team_results: teamResults || {},
+        earnings_map: earningsObj,
+        round_leaders: roundLeaders || {},
+      }, { onConflict: 'tournament_name,season' })
+      .select();
+
+    if (error) throw error;
+    return data?.[0];
+  },
+
+  /**
+   * Get results for a single tournament.
+   */
+  async getByName(tournamentName, season = 2026) {
+    const { data, error } = await supabase
+      .from('tournament_results')
+      .select('*')
+      .eq('tournament_name', tournamentName)
+      .eq('season', season)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    if (!data) return null;
+    return {
+      tournamentName: data.tournament_name,
+      season: data.season,
+      processedAt: data.processed_at,
+      isManualEntry: data.is_manual_entry,
+      teamResults: data.team_results,
+      earningsMap: data.earnings_map,
+      roundLeaders: data.round_leaders,
+    };
+  },
+
+  /**
+   * Get all results for a season, ordered by processed_at.
+   * Returns in the shape ResultsView expects: { teams: {}, earningsMap: {} }
+   */
+  async getAllForSeason(season = 2026) {
+    const { data, error } = await supabase
+      .from('tournament_results')
+      .select('*')
+      .eq('season', season)
+      .order('processed_at', { ascending: true });
+
+    if (error) throw error;
+    return (data || []).map(row => ({
+      tournamentName: row.tournament_name,
+      season: row.season,
+      processedAt: row.processed_at,
+      isManualEntry: row.is_manual_entry,
+      // Shape matches tournament.results used throughout the app
+      results: {
+        teams: row.team_results,
+        earningsMap: row.earnings_map,
+        roundLeaders: row.round_leaders,
+      },
+    }));
+  },
+
+  /**
+   * Delete results for a tournament (used on season reset).
+   */
+  async deleteByName(tournamentName, season = 2026) {
+    const { error } = await supabase
+      .from('tournament_results')
+      .delete()
+      .eq('tournament_name', tournamentName)
+      .eq('season', season);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Delete all results for a season (used on full season reset).
+   */
+  async deleteAllForSeason(season = 2026) {
+    const { error } = await supabase
+      .from('tournament_results')
+      .delete()
+      .eq('season', season);
+
+    if (error) throw error;
   },
 };
