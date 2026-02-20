@@ -231,11 +231,11 @@ const FantasyGolfLeague = () => {
 
       {/* ── Segment / active tournament banner ── */}
       <div className="max-w-3xl mx-auto px-3 mt-4 mb-2 flex items-center gap-4">
-        <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 13, color: 'rgba(255,255,255,0.82)', letterSpacing: 0.5 }}>
+        <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 0.5 }}>
           {getSegmentByDate()}
         </div>
         {currentTournament && (
-          <div style={{ fontSize: 13, color: 'rgba(210,190,130,0.95)', fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+          <div style={{ fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             className="flex items-center gap-1.5">
             <span>⛳</span> {currentTournament.name}
           </div>
@@ -248,8 +248,8 @@ const FantasyGolfLeague = () => {
       </div>
 
       {/* ── Navigation ── */}
-      <nav className="max-w-3xl mx-auto px-3 mt-2 relative">
-        <div className="flex gap-1 pb-2 overflow-x-auto">
+      <nav style={{ maxWidth: 1100, margin: "0 auto", padding: "0 16px", position: "relative", marginTop: 8 }}>
+        <div style={{ display: "flex", gap: 4, paddingBottom: 8, overflowX: "auto" }}>
           {TABS.map(tab => {
             const isActive = activeTab === tab.id;
             const isAdminPopover = tab.id === 'admin' && showAdminLoginPopover;
@@ -265,16 +265,16 @@ const FantasyGolfLeague = () => {
                   setActiveTab(tab.id);
                 }}
                 style={{
-                  flex: 1,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 6,
-                  padding: '10px 8px',
+                  padding: '10px 16px',
                   borderRadius: 2,
-                  fontSize: 11,
+                  fontSize: 'clamp(12px, 1vw, 14px)',
                   fontWeight: 400,
                   letterSpacing: 0.5,
+                  whiteSpace: 'nowrap',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   border: isActive
@@ -292,9 +292,9 @@ const FantasyGolfLeague = () => {
                 }}
               >
                 <tab.Icon style={{ width: 13, height: 13 }} />
-                <span className="hidden sm:inline" style={{
+                <span style={{
                   fontFamily: "'Cormorant Garamond', Georgia, serif",
-                  fontSize: 11,
+                  fontSize: 'clamp(12px, 1vw, 15px)',
                   letterSpacing: '0.8px',
                 }}>{tab.label}</span>
               </button>
@@ -429,21 +429,26 @@ const FantasyGolfLeague = () => {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 50, padding: 16,
         }}>
-          <LoginPage onLogin={handleManagerLogin} />
-          <button
-            onClick={() => setShowLoginModal(false)}
-            aria-label="Close"
-            style={{
-              position: 'fixed', top: 16, right: 16,
-              background: 'none', border: 'none',
-              color: 'rgba(255,255,255,0.3)',
-              fontSize: 24, cursor: 'pointer',
-              lineHeight: 1, zIndex: 51,
-              transition: 'color 0.2s',
-            }}
-          >
-            ✕
-          </button>
+          <div style={{ position: 'relative' }}>
+            <LoginPage onLogin={handleManagerLogin} />
+            <button
+              onClick={() => setShowLoginModal(false)}
+              aria-label="Close"
+              style={{
+                position: 'absolute', top: 12, right: 12,
+                background: 'none', border: 'none',
+                color: 'rgba(255,255,255,0.3)',
+                fontSize: 20, cursor: 'pointer',
+                lineHeight: 1, zIndex: 51,
+                transition: 'color 0.2s',
+                padding: 4,
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.7)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.3)'}
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
     </div>
