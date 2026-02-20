@@ -312,7 +312,7 @@ const FantasyGolfLeague = () => {
       </nav>
 
       {/* ── Main content ── */}
-      <main className="max-w-3xl mx-auto px-3 mt-4">
+      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 80px" }}>
         <ErrorBoundary>
           {activeTab === 'standings' && (
             <StandingsView teams={resolvedTeams} />

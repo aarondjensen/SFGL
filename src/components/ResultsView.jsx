@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Calendar, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
-import { theme, colors, fonts } from '../theme.js';
+import { theme, colors, fonts, cardLiftHandlers } from '../theme.js';
 
 // ── Player slot grid ──────────────────────────────────────────────────────────
 const PlayerSlotGrid = ({ players, showEarnings }) => {
@@ -32,7 +32,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
               </div>
               {showEarnings ? (
                 <div>
-                  <span style={{ color: (p.earnings || 0) > 0 ? colors.textGold : colors.textMuted }}>
+                  <span style={{ ...theme.statNum, fontSize: 11, color: (p.earnings || 0) > 0 ? colors.textGold : colors.textMuted }}>
                     ${(p.earnings || 0).toLocaleString()}
                   </span>
                   {p.bonus > 0 && (
@@ -192,7 +192,7 @@ export const ResultsView = ({ teams, tournaments }) => {
           .sort((a, b) => (b.result.totalEarnings || 0) - (a.result.totalEarnings || 0));
 
         return (
-          <div key={tournament.name} style={theme.card}>
+          <div key={tournament.name} style={theme.cardLift} {...cardLiftHandlers()}>
             <button
               onClick={() => toggle(tournament.name)}
               aria-expanded={isExpanded}
@@ -237,11 +237,16 @@ export const ResultsView = ({ teams, tournaments }) => {
                   const tr = team.result;
                   const players = getSortedRoster(tr.players || []);
                   return (
-                    <div key={team.id} style={{
-                      padding: '10px 20px',
-                      borderBottom: `1px solid ${colors.borderSubtle}`,
-                      background: rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent',
-                    }}>
+                    <div key={team.id}
+                      style={{
+                        padding: '10px 20px',
+                        borderBottom: `1px solid ${colors.borderSubtle}`,
+                        background: rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent',
+                        transition: 'background 0.15s',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.07)' : 'rgba(255,255,255,0.04)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent'; }}
+                    >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                         <span style={{
                           fontSize: 11, fontWeight: 700, width: 20, textAlign: 'center',
@@ -252,7 +257,7 @@ export const ResultsView = ({ teams, tournaments }) => {
                         </span>
                         <span style={{ ...theme.h3, fontSize: 13 }}>{team.name}</span>
                         <span style={{
-                          fontFamily: fonts.serif, fontSize: 13, fontWeight: 600,
+                          ...theme.statNum, fontSize: 13, fontWeight: 600,
                           color: (tr.totalEarnings || 0) > 0 ? colors.textGold : colors.textMuted,
                           marginLeft: 4,
                         }}>

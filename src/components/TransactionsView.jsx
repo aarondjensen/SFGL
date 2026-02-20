@@ -77,7 +77,7 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
                   <div style={{ fontFamily: fonts.serif, fontSize: 13, fontWeight: 400, color: colors.textPrimary }}>
                     {abbr}
                   </div>
-                  <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textGold, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ ...theme.statNum, fontSize: 13, color: colors.textGold, marginTop: 2 }}>
                     ${team.seasonTotal}
                   </div>
                   <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 1 }}>
@@ -149,9 +149,8 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                 {tx.type !== 'mulligan' && (
                   <span style={{
-                    fontFamily: fonts.serif, fontSize: 13, fontWeight: 600,
+                    ...theme.statNum, fontSize: 13, fontWeight: 600,
                     color: tx.fee > 0 ? colors.textGold : colors.textMuted,
-                    fontVariantNumeric: 'tabular-nums',
                   }}>
                     ${tx.fee}
                   </span>
