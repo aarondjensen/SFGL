@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { X, Check, AlertCircle, Clock } from 'lucide-react';
+import { theme, colors, fonts } from '../theme.js';
 
 const DialogContext = createContext(null);
 export const useDialog = () => useContext(DialogContext);
@@ -32,42 +33,122 @@ export const DialogProvider = ({ children }) => {
     setConfirm(null);
   }, []);
 
+  // Toast accent colors
+  const toastAccent = (type) => {
+    if (type === 'success') return { bg: 'rgba(40,100,60,0.95)',  border: 'rgba(80,180,120,0.4)',  icon: colors.success };
+    if (type === 'error')   return { bg: 'rgba(100,30,30,0.95)',  border: 'rgba(200,70,70,0.4)',   icon: colors.danger  };
+    if (type === 'warning') return { bg: 'rgba(100,80,20,0.95)',  border: 'rgba(200,170,60,0.4)',  icon: colors.warning };
+    return                         { bg: 'rgba(20,40,90,0.95)',   border: 'rgba(100,140,220,0.4)', icon: 'rgba(100,160,255,0.9)' };
+  };
+
+  const ToastIcon = (type) => type === 'success' ? Check : type === 'error' ? AlertCircle : Clock;
+
   return (
     <DialogContext.Provider value={{ showToast, showConfirm }}>
       {children}
 
-      {/* Toasts */}
-      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+      {/* ── Toasts ── */}
+      <div style={{
+        position: 'fixed', top: 16, right: 16, zIndex: 100,
+        display: 'flex', flexDirection: 'column', gap: 8,
+        pointerEvents: 'none',
+      }}>
         {toasts.map(toast => {
-          const bg   = toast.type === 'success' ? 'bg-green-600' : toast.type === 'error' ? 'bg-red-600' : 'bg-blue-600';
-          const Icon = toast.type === 'success' ? Check : toast.type === 'error' ? AlertCircle : Clock;
+          const accent = toastAccent(toast.type);
+          const Icon   = ToastIcon(toast.type);
           return (
-            <div key={toast.id} className={`${bg} text-white px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 max-w-sm pointer-events-auto animate-[slideIn_0.3s_ease-out]`}>
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              <span className="text-sm flex-1">{toast.message}</span>
-              <button onClick={() => removeToast(toast.id)} className="hover:bg-white/20 rounded p-0.5" aria-label="Dismiss">
-                <X className="w-3.5 h-3.5" />
+            <div key={toast.id} style={{
+              background: accent.bg,
+              border: `1px solid ${accent.border}`,
+              borderRadius: 3,
+              padding: '10px 14px',
+              display: 'flex', alignItems: 'center', gap: 10,
+              maxWidth: 340,
+              pointerEvents: 'auto',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+              backdropFilter: 'blur(8px)',
+              animation: 'sfgl-slideIn 0.25s ease-out',
+            }}>
+              <Icon style={{ width: 14, height: 14, color: accent.icon, flexShrink: 0 }} />
+              <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary, flex: 1 }}>
+                {toast.message}
+              </span>
+              <button onClick={() => removeToast(toast.id)}
+                aria-label="Dismiss"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, padding: 2, display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                onMouseEnter={e => { e.currentTarget.style.color = colors.textPrimary; }}
+                onMouseLeave={e => { e.currentTarget.style.color = colors.textSecondary; }}
+              >
+                <X style={{ width: 13, height: 13 }} />
               </button>
             </div>
           );
         })}
       </div>
 
-      {/* Confirm dialog */}
+      {/* ── Confirm dialog ── */}
       {confirm && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4" onClick={() => handleResult(false)}>
+        <div
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(5,10,25,0.82)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 100, padding: 16,
+          }}
+          onClick={() => handleResult(false)}
+        >
           <div
-            className="bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 border border-gray-700 animate-[scaleIn_0.2s_ease-out]"
+            style={{
+              background: '#0d1e38',
+              border: `1px solid ${confirm.type === 'danger' ? colors.dangerBorder : colors.border}`,
+              borderRadius: 3,
+              boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+              maxWidth: 420, width: '100%',
+              padding: '24px 26px',
+              animation: 'sfgl-scaleIn 0.18s ease-out',
+            }}
             onClick={e => e.stopPropagation()}
             role="alertdialog"
           >
-            <h3 className="text-lg font-bold mb-2">{confirm.title}</h3>
-            <p className="text-gray-300 text-sm mb-6 whitespace-pre-line">{confirm.message}</p>
-            <div className="flex gap-3">
-              <button onClick={() => handleResult(false)} className="flex-1 py-2.5 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium text-sm transition-colors">
-                {confirm.cancelText  || 'Cancel'}
+            {/* Title */}
+            <h3 style={{
+              ...theme.h2,
+              marginBottom: 10,
+              color: confirm.type === 'danger' ? colors.danger : colors.textPrimary,
+            }}>
+              {confirm.title}
+            </h3>
+
+            {/* Message */}
+            <p style={{
+              fontFamily: fonts.sans, fontSize: 13,
+              color: colors.textSecondary,
+              lineHeight: 1.6, whiteSpace: 'pre-line',
+              marginBottom: 22,
+            }}>
+              {confirm.message}
+            </p>
+
+            {/* Buttons */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <button
+                onClick={() => handleResult(false)}
+                style={{ ...theme.btnSecondary, padding: '10px 16px' }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.8'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+              >
+                {confirm.cancelText || 'Cancel'}
               </button>
-              <button onClick={() => handleResult(true)} autoFocus className={`flex-1 py-2.5 rounded-lg font-medium text-sm transition-colors ${confirm.type === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}>
+              <button
+                onClick={() => handleResult(true)}
+                autoFocus
+                style={{
+                  ...(confirm.type === 'danger' ? theme.btnDanger : theme.btnPrimary),
+                  padding: '10px 16px',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.8'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+              >
                 {confirm.confirmText || 'Confirm'}
               </button>
             </div>
@@ -77,8 +158,14 @@ export const DialogProvider = ({ children }) => {
 
       <style>{`
         html { scrollbar-gutter: stable; }
-        @keyframes slideIn { from { transform: translateX(100%); opacity:0; } to { transform: translateX(0); opacity:1; } }
-        @keyframes scaleIn { from { transform: scale(0.95); opacity:0; } to { transform: scale(1); opacity:1; } }
+        @keyframes sfgl-slideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
+        @keyframes sfgl-scaleIn {
+          from { transform: scale(0.96); opacity: 0; }
+          to   { transform: scale(1);    opacity: 1; }
+        }
       `}</style>
     </DialogContext.Provider>
   );
