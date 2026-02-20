@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, X } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { slashGolfFetch, processTournamentData, getRosterForTournament, makePlayer, resolvePlayerName } from '../utils';
+import { slashGolfFetch, processTournamentData, makePlayer, resolvePlayerName } from '../utils';
 import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA, LIV_GOLF_ROSTER } from '../constants';
 import { storage, draftStateApi } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
@@ -293,6 +293,21 @@ export const AdminView = ({
     setManualEntryOpen(false);
   };
 
+  // ── Roster reconstruction (mirrors utils getRosterForTournament) ──────────
+  // Replays transactions up to tournamentIndex to get the roster as it existed
+  // during that tournament week, regardless of subsequent adds/drops.
+  const getRosterAtTournament = (team, tournamentIndex) => {
+    let roster = [...team.roster];
+    const relevant = transactions
+      .filter(tx => tx.team === team.name && tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex && tx.status !== 'pending')
+      .sort((a, b) => a.tournamentIndex - b.tournamentIndex);
+    relevant.forEach(tx => {
+      if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
+      if (tx.player && !roster.some(p => p.name === tx.player)) roster.push(makePlayer(tx.player));
+    });
+    return roster;
+  };
+
   // ── Build lineup/roster snapshots before processing ─────────────────────
   // Call this immediately before processTournamentData so we capture the
   // state of every team's lineup and roster at the moment of processing,
@@ -303,7 +318,7 @@ export const AdminView = ({
     teams.forEach(team => {
       fullLineups[team.id] = [...(team.lineup || [])];
       try {
-        rosterSnapshots[team.id] = getRosterForTournament(team, tournIndex, transactions);
+        rosterSnapshots[team.id] = getRosterAtTournament(team, tournIndex);
       } catch {
         rosterSnapshots[team.id] = [...team.roster];
       }
