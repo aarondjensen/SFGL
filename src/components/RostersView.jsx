@@ -351,8 +351,9 @@ export const RostersView = ({
         ...theme.card,
         padding: 12,
         background: 'linear-gradient(135deg, rgba(26,51,102,0.4) 0%, rgba(255,255,255,0.02) 100%)',
+        overflow: 'visible',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, overflow: 'visible' }}>
           {/* Team selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
             <TeamDropdown
@@ -449,13 +450,9 @@ export const RostersView = ({
               disabled={!canEditLineup || (lineupMode && team.lineup.length === 0)}
               style={actionBtn(
                 canEditLineup,
-                lineupMode
+                lineupMode || team.lineup.length > 0
                   ? colors.textGold
-                  : team.lineup.length > 0
-                    ? colors.textGold
-                    : isCommissioner && !lineupOpen
-                      ? colors.danger
-                      : colors.success,
+                  : colors.success,
               )}
             >
               {lineupMode ? '✓ Save' : '✏️ Lineup'}
