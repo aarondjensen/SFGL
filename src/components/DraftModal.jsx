@@ -13,7 +13,7 @@ const Shell = ({ children, wide }) => (
     padding: 16, zIndex: 50,
   }}>
     <div style={{
-      background: '#0d1e38',
+      background: '#0f1d35',
       border: `1px solid ${colors.border}`,
       borderRadius: 4,
       maxWidth: wide ? 780 : 560,
@@ -32,7 +32,7 @@ const ModalHeader = ({ title, sub, badge, onClose }) => (
   <div style={{
     padding: '18px 22px',
     borderBottom: `1px solid ${colors.borderSubtle}`,
-    background: 'linear-gradient(90deg, rgba(26,51,102,0.5) 0%, transparent 100%)',
+    background: 'linear-gradient(90deg, rgba(18,46,82,0.5) 0%, transparent 100%)',
     flexShrink: 0,
   }}>
     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -94,7 +94,7 @@ const PlayerRow = ({ player, onSelect, accentColor, label, getHeadshot }) => (
   >
     <img
       src={getHeadshot(player.name)}
-      onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0d1e38&color=6b7280&size=64`; }}
+      onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0f1d35&color=6b7280&size=64`; }}
       alt=""
       style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${accentColor}`, flexShrink: 0 }}
     />
@@ -318,7 +318,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     let id = headshots[playerName];
     if (!id) { const p = allPlayers.find(p => p.name === playerName); id = p?.pgaTourId; }
     if (id) return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${id}`;
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=0d1e38&color=6b7280&size=128`;
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=0f1d35&color=6b7280&size=128`;
   };
 
   const currentTeam = phase === 'order' || phase === 'resume_prompt'
@@ -621,7 +621,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                 >
                   <img
                     src={getPlayerHeadshot(player.name)}
-                    onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0d1e38&color=6b7280&size=64`; }}
+                    onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0f1d35&color=6b7280&size=64`; }}
                     alt=""
                     style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${draftAccent}`, flexShrink: 0 }}
                   />
@@ -671,7 +671,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                   fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
                   background: team.id === currentTeam?.id ? draftAccent : 'rgba(255,255,255,0.05)',
                   border: `1px solid ${team.id === currentTeam?.id ? draftAccent : colors.borderSubtle}`,
-                  color: team.id === currentTeam?.id ? '#0a1628' : colors.textSecondary,
+                  color: team.id === currentTeam?.id ? '#111d2e' : colors.textSecondary,
                   transition: 'all 0.2s',
                 }}>
                   {team.name}
@@ -689,14 +689,14 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 10,
         }}>
           <div style={{
-            background: '#0d1e38', border: `1px solid ${draftAccent}`,
+            background: '#0f1d35', border: `1px solid ${draftAccent}`,
             borderRadius: 4, padding: 28, maxWidth: 380, width: '100%', textAlign: 'center',
             boxShadow: '0 16px 60px rgba(0,0,0,0.5)',
           }}>
             <h3 style={{ ...theme.h2, marginBottom: 20 }}>Confirm Draft Pick</h3>
             <img
               src={getPlayerHeadshot(confirmDraft.playerName)}
-              onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(confirmDraft.playerName)}&background=0d1e38&color=6b7280&size=128`; }}
+              onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(confirmDraft.playerName)}&background=0f1d35&color=6b7280&size=128`; }}
               alt=""
               style={{ width: 88, height: 88, borderRadius: '50%', objectFit: 'cover', border: `3px solid ${draftAccent}`, margin: '0 auto 14px' }}
             />

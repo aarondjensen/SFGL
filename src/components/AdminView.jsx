@@ -81,7 +81,7 @@ const Modal = ({ title, onClose, children, borderColor }) => (
     padding: 16, zIndex: 50,
   }}>
     <div style={{
-      background: '#0d1e38',
+      background: '#0f1d35',
       border: `1px solid ${borderColor || colors.border}`,
       borderRadius: 3, padding: 28,
       maxWidth: 480, width: '100%',
@@ -712,12 +712,12 @@ export const AdminView = ({
 
       <style>{`
         .sfgl-admin-select option {
-          background: #0d1e38 !important;
+          background: #0f1d35 !important;
           color: rgba(255,255,255,0.9) !important;
         }
         .sfgl-admin-select option:hover,
         .sfgl-admin-select option:checked {
-          background: rgba(26,51,102,0.95) !important;
+          background: rgba(18,46,82,0.95) !important;
         }
       `}</style>
 
@@ -1046,7 +1046,7 @@ export const AdminView = ({
                     <div key={player.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <img src={`https://pga-tour-res.cloudflare.com/resources/photoplayer/${headshots[player.name] || 'default'}.jpg`}
-                          onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0d1e38&color=6b7280&size=32`; }}
+                          onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0f1d35&color=6b7280&size=32`; }}
                           alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}` }} />
                         <span style={{ ...theme.bodyText, fontSize: 13 }}>{player.name}</span>
                       </div>
@@ -1070,7 +1070,7 @@ export const AdminView = ({
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <img src={`https://pga-tour-res.cloudflare.com/resources/photoplayer/${headshots[player.name] || 'default'}.jpg`}
-                            onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0d1e38&color=6b7280&size=32`; }}
+                            onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0f1d35&color=6b7280&size=32`; }}
                             alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}` }} />
                           <div>
                             <div style={{ ...theme.bodyText, fontSize: 13 }}>{player.name}</div>

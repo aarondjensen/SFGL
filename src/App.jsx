@@ -121,7 +121,7 @@ const FantasyGolfLeague = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3"
-        style={{ background: '#0a1628' }}>
+        style={{ background: '#111d2e' }}>
         <img src={sfglLogo} alt="SFGL"
           style={{ width: 100, filter: 'brightness(0) invert(1)', opacity: 0.6 }} />
         <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', fontFamily: 'serif' }}>
@@ -132,7 +132,7 @@ const FantasyGolfLeague = () => {
   }
 
   return (
-    <div className="min-h-screen pb-20 text-white" style={{ background: '#0a1628' }}>
+    <div className="min-h-screen pb-20 text-white" style={{ background: '#111d2e' }}>
 
       {/* ── Header ── */}
       <header style={{
@@ -146,12 +146,15 @@ const FantasyGolfLeague = () => {
 
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <img src={sfglLogo} alt="SFGL" style={{
-                height: 28,
-                width: 'auto',
-                mixBlendMode: 'screen',
-                opacity: 0.95,
-              }} />
+              <div style={{ width: 44, height: 22, overflow: 'hidden', borderRadius: 2, flexShrink: 0 }}>
+                <img src={sfglLogo} alt="SFGL" style={{
+                  width: 44,
+                  height: 44,
+                  objectFit: 'cover',
+                  objectPosition: 'bottom center',
+                  display: 'block',
+                }} />
+              </div>
               <div style={{
                 width: 1,
                 height: 20,
@@ -200,7 +203,7 @@ const FantasyGolfLeague = () => {
                     letterSpacing: 1.5,
                     textTransform: 'uppercase',
                     padding: '5px 12px',
-                    background: 'rgba(26,51,102,0.5)',
+                    background: 'rgba(18,46,82,0.5)',
                     border: '1px solid rgba(180,160,100,0.25)',
                     borderRadius: 1,
                     color: 'rgba(180,160,100,0.8)',
@@ -268,7 +271,7 @@ const FantasyGolfLeague = () => {
                     ? '1px solid rgba(180,160,100,0.3)'
                     : '1px solid transparent',
                   background: isActive
-                    ? 'rgba(26,51,102,0.7)'
+                    ? 'rgba(18,46,82,0.75)'
                     : isAdminPopover
                       ? 'rgba(255,255,255,0.06)'
                       : 'rgba(255,255,255,0.04)',
@@ -293,7 +296,7 @@ const FantasyGolfLeague = () => {
         {showAdminLoginPopover && !isCommissioner && (
           <div style={{
             position: 'absolute', right: 12, top: '100%', marginTop: 4,
-            background: '#0f1f3d',
+            background: '#0f1d35',
             border: '1px solid rgba(180,160,100,0.25)',
             borderRadius: 2,
             padding: 10,
@@ -321,7 +324,7 @@ const FantasyGolfLeague = () => {
               }}
             />
             <button onClick={handleAdminLogin} style={{
-              background: '#1a3366',
+              background: '#1c3a5e',
               border: '1px solid rgba(180,160,100,0.25)',
               borderRadius: 1,
               padding: '7px 14px',

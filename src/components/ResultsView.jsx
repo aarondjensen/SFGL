@@ -201,13 +201,13 @@ export const ResultsView = ({ teams, tournaments }) => {
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '14px 20px', background: isExpanded
-                  ? 'rgba(26,51,102,0.3)'
-                  : 'linear-gradient(90deg, rgba(26,51,102,0.3) 0%, transparent 100%)',
+                  ? 'rgba(18,46,82,0.3)'
+                  : 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)',
                 border: 'none', borderBottom: isExpanded ? `1px solid ${colors.borderSubtle}` : 'none',
                 cursor: 'pointer', transition: 'background 0.2s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,51,102,0.25)'; }}
-              onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'linear-gradient(90deg, rgba(26,51,102,0.3) 0%, transparent 100%)'; }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(18,46,82,0.25)'; }}
+              onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)'; }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <Calendar style={{ width: 15, height: 15, color: colors.textGoldDim, flexShrink: 0 }} />
