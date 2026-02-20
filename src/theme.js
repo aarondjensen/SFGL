@@ -54,10 +54,13 @@ export const colors = {
 // ── Typography ────────────────────────────────────────────────────────────────
 // Matches the LoginPage font stack: Cormorant Garamond for display/serif,
 // Raleway for UI/sans. Google Fonts import is injected in App.jsx root.
+// All font stacks resolve to Raleway — one font throughout the entire app.
+// serif and mono are kept as aliases so existing code doesn't need touching.
+const RALEWAY = "'Raleway', system-ui, sans-serif";
 export const fonts = {
-  serif:      "'Cormorant Garamond', Georgia, serif",
-  sans:       "'Raleway', system-ui, sans-serif",
-  mono:       "'Roboto Mono', 'JetBrains Mono', 'Fira Mono', monospace",
+  serif: RALEWAY,
+  sans:  RALEWAY,
+  mono:  RALEWAY,
 };
 
 // ── Spacing / shape ───────────────────────────────────────────────────────────
