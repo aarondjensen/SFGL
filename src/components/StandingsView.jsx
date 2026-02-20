@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Trophy } from 'lucide-react';
 import { getSegmentByDate } from '../utils/index.js';
-import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, cardLiftHandlers } from '../theme.js';
+import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, segmentEarningsColor, cardLiftHandlers } from '../theme.js';
 
 export const StandingsView = ({ teams }) => {
   const sortedTeams = useMemo(() =>
@@ -65,7 +65,7 @@ export const StandingsView = ({ teams }) => {
                   </td>
 
                   <td style={theme.tableCell}>
-                    <div style={{ ...theme.h3, fontSize: 14 }}>{team.name}</div>
+                    <div style={{ ...theme.h3, fontSize: 'clamp(16px, 1.4vw, 20px)' }}>{team.name}</div>
                     <div style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
                   </td>
 
@@ -83,7 +83,7 @@ export const StandingsView = ({ teams }) => {
                       <span style={theme.smallText}>#{segmentPos}</span>
                       <span style={{
                         ...theme.statNum, fontSize: 13,
-                        color: earningsColor(team.segmentEarnings),
+                        color: segmentEarningsColor(team.segmentEarnings),
                       }}>
                         ${(team.segmentEarnings || 0).toLocaleString()}
                       </span>
