@@ -20,12 +20,12 @@ const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
     return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${pgaId}`;
   }
   // Fallback: initials avatar
-  const bg = isLimited ? '8B6914' : '1a3366';
+  const bg = isLimited ? '8B6914' : '1c3a5e';
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
 };
 
 const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
-  const bg = isLimited ? '8B6914' : '1a3366';
+  const bg = isLimited ? '8B6914' : '1c3a5e';
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
 };
 
@@ -54,7 +54,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
           padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
-          background: '#0d1e38', border: `1px solid ${open ? 'rgba(180,160,100,0.5)' : 'rgba(255,255,255,0.12)'}`,
+          background: '#0f1d35', border: `1px solid ${open ? 'rgba(180,160,100,0.5)' : 'rgba(255,255,255,0.12)'}`,
           fontFamily: fonts.serif, fontSize: 14, fontWeight: 700,
           color: 'rgba(255,255,255,0.9)', textAlign: 'left',
           transition: 'border-color 0.15s',
@@ -68,7 +68,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
       {open && (
         <div style={{
           position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: 2,
-          background: '#0d1e38', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 2,
+          background: '#0f1d35', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 2,
           boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
         }}>
           {teams.map(t => (
@@ -350,7 +350,7 @@ export const RostersView = ({
       <div style={{
         ...theme.card,
         padding: 12,
-        background: 'linear-gradient(135deg, rgba(26,51,102,0.4) 0%, rgba(255,255,255,0.02) 100%)',
+        background: 'linear-gradient(135deg, rgba(18,46,82,0.4) 0%, rgba(255,255,255,0.02) 100%)',
         overflow: 'visible',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, overflow: 'visible' }}>
@@ -598,7 +598,7 @@ export const RostersView = ({
                               background: playerBorderColor(player),
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>
-                              <span style={{ color: '#0a1628', fontSize: 9, fontWeight: 900 }}>✓</span>
+                              <span style={{ color: '#111d2e', fontSize: 9, fontWeight: 900 }}>✓</span>
                             </div>
                           )}
                         </button>

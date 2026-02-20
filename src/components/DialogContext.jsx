@@ -99,7 +99,7 @@ export const DialogProvider = ({ children }) => {
         >
           <div
             style={{
-              background: '#0d1e38',
+              background: '#0f1d35',
               border: `1px solid ${confirm.type === 'danger' ? colors.dangerBorder : colors.border}`,
               borderRadius: 3,
               boxShadow: '0 24px 80px rgba(0,0,0,0.6)',

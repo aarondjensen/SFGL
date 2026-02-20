@@ -159,7 +159,7 @@ const styles = `
     transition: border-color 0.2s, background 0.2s; flex-shrink: 0;
   }
   .sfgl-checkbox:checked {
-    background: #1a3366;
+    background: #1c3a5e;
     border-color: rgba(180,160,100,0.6);
   }
   .sfgl-checkbox:checked::after {
@@ -178,7 +178,7 @@ const styles = `
   /* ── Submit button ── */
   .sfgl-btn {
     width: 100%; padding: 14px;
-    background: #1a3366;
+    background: #1c3a5e;
     border: 1px solid rgba(180,160,100,0.25);
     border-radius: 1px;
     font-family: 'Raleway', sans-serif;
@@ -198,7 +198,7 @@ const styles = `
   .sfgl-btn:hover {
     background: #1e3d7a;
     border-color: rgba(180,160,100,0.45);
-    box-shadow: 0 4px 24px rgba(26,51,102,0.5), 0 0 0 1px rgba(180,160,100,0.2);
+    box-shadow: 0 4px 24px rgba(18,46,82,0.5), 0 0 0 1px rgba(180,160,100,0.2);
     transform: translateY(-1px);
   }
   .sfgl-btn:active { transform: translateY(0); }

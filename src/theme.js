@@ -9,17 +9,17 @@
 // ── Color tokens ─────────────────────────────────────────────────────────────
 export const colors = {
   // Backgrounds
-  pageBg:        '#0a1628',
+  pageBg:        '#111d2e',
   cardBg:        'rgba(255,255,255,0.03)',
   cardBgHover:   'rgba(255,255,255,0.055)',
   rowHover:      'rgba(255,255,255,0.04)',
-  headerBg:      'linear-gradient(90deg, rgba(26,51,102,0.6) 0%, transparent 100%)',
+  headerBg:      'linear-gradient(90deg, rgba(16,40,72,0.5) 0%, transparent 100%)',
   inputBg:       'rgba(255,255,255,0.04)',
   inputBgFocus:  'rgba(255,255,255,0.07)',
-  buttonNavy:    '#1a3366',
-  buttonNavyHover: '#1e3d7a',
+  buttonNavy:    '#1c3a5e',
+  buttonNavyHover: '#22456e',
   sectionHeaderBlue: 'rgba(100,160,255,0.90)',   // bright blue for AdminView section headers
-  actionButtonBlue:  '#152c5a',                  // darker navy for action buttons inside sections
+  actionButtonBlue:  '#163253',                  // darker navy for action buttons inside sections
 
   // Borders
   border:        'rgba(180,160,100,0.15)',
@@ -43,8 +43,8 @@ export const colors = {
   warning:       'rgba(220,170,60,0.85)',
 
   // Medal positions
-  medal1:        { bg: 'rgba(180,160,100,0.9)',  text: '#0a1628' },
-  medal2:        { bg: 'rgba(180,180,190,0.75)', text: '#0a1628' },
+  medal1:        { bg: 'rgba(180,160,100,0.9)',  text: '#111d2e' },
+  medal2:        { bg: 'rgba(180,180,190,0.75)', text: '#111d2e' },
   medal3:        { bg: 'rgba(160,110,60,0.8)',   text: '#fff'    },
   medalDefault:  { bg: 'rgba(255,255,255,0.06)', text: 'rgba(255,255,255,0.4)' },
 };
@@ -306,8 +306,8 @@ export const theme = {
   },
 
   badgeNavy: {
-    background: 'rgba(26,51,102,0.5)',
-    border: '1px solid rgba(26,51,102,0.8)',
+    background: 'rgba(20,45,82,0.5)',
+    border: '1px solid rgba(20,45,82,0.8)',
     color: 'rgba(150,170,220,0.8)',
   },
 
