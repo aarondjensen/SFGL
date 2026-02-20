@@ -117,7 +117,7 @@ export const playersApi = {
         map[p.name] = p.headshot_url;
       } else if (p.pga_tour_id) {
         // Try ESPN CDN URL format
-        map[p.name] = `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${p.pga_tour_id}.png&w=96&h=96`;
+        map[p.name] = `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${p.pga_tour_id}`;
       }
     });
     return map;
@@ -647,7 +647,7 @@ export const tournamentResultsApi = {
    * Save (upsert) results for a single tournament.
    * Called immediately after processing results in AdminView.
    */
-  async save({ tournamentName, season = 2026, teamResults, earningsMap, roundLeaders, isManualEntry = false }) {
+  async save({ tournamentName, season = 2026, teamResults, earningsMap, roundLeaders, fullLineups = {}, rosterSnapshots = {}, isManualEntry = false }) {
     // earningsMap may be a plain object or a JS Map — normalise to plain object
     const earningsObj = earningsMap instanceof Map
       ? Object.fromEntries(earningsMap)
@@ -663,6 +663,8 @@ export const tournamentResultsApi = {
         team_results: teamResults || {},
         earnings_map: earningsObj,
         round_leaders: roundLeaders || {},
+        full_lineups: fullLineups,       // { [teamId]: [playerName, ...] }
+        roster_snapshots: rosterSnapshots, // { [teamId]: [playerObj, ...] }
       }, { onConflict: 'tournament_name,season' })
       .select();
 
@@ -691,6 +693,8 @@ export const tournamentResultsApi = {
       teamResults: data.team_results,
       earningsMap: data.earnings_map,
       roundLeaders: data.round_leaders,
+      fullLineups: data.full_lineups || {},
+      rosterSnapshots: data.roster_snapshots || {},
     };
   },
 
@@ -716,6 +720,8 @@ export const tournamentResultsApi = {
         teams: row.team_results,
         earningsMap: row.earnings_map,
         roundLeaders: row.round_leaders,
+        fullLineups: row.full_lineups || {},
+        rosterSnapshots: row.roster_snapshots || {},
       },
     }));
   },

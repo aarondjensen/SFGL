@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, X } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { slashGolfFetch, processTournamentData, makePlayer, resolvePlayerName } from '../utils';
+import { slashGolfFetch, processTournamentData, getRosterForTournament, makePlayer, resolvePlayerName } from '../utils';
 import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA, LIV_GOLF_ROSTER } from '../constants';
 import { storage, draftStateApi } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
@@ -124,6 +124,10 @@ export const AdminView = ({
   const [draftInitialPhase, setDraftInitialPhase]                 = useState('resume_prompt');
   const [manualEntry, setManualEntry]                             = useState({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
   const [manualEntryOpen, setManualEntryOpen]                     = useState(false);
+  const [historyTourney, setHistoryTourney]                       = useState('');
+  const [historyData, setHistoryData]                             = useState(null);  // loaded from Supabase
+  const [historyLoading, setHistoryLoading]                       = useState(false);
+  const [historyEdits, setHistoryEdits]                           = useState({});    // { [teamId]: [playerName, ...] }
   const dialog = useDialog();
   const activeTournament = tournaments.find(t => t.playing);
 
@@ -207,6 +211,7 @@ export const AdminView = ({
         if (earningsPlayers.length > 0) apiPlayers = apiPlayers.map(lp => { const ep = earningsPlayers.find(e => e.playerId === lp.playerId); return { ...lp, earnings: ep?.earnings || 0 }; });
       } catch (e) { console.log('Earnings endpoint not available:', e.message); }
       const rosteredNames = teams.flatMap(team => team.roster.map(p => p.name));
+      const { fullLineups, rosterSnapshots } = buildSnapshots(tournIndex);
       const { newTeams, newStats, resultsData } = processTournamentData(t, apiPlayers, teams, globalPlayerStats, rosteredNames);
       const newTournaments = tournaments.map((nt, idx) => idx === tournIndex ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
       const nextIdx = newTournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
@@ -219,6 +224,8 @@ export const AdminView = ({
           teamResults: resultsData.teams,
           earningsMap: resultsData.earningsMap,
           roundLeaders: t.roundLeaders || {},
+          fullLineups,
+          rosterSnapshots,
           isManualEntry: false,
         });
       } catch (e) { console.warn('Supabase results save failed (non-fatal):', e.message); }
@@ -263,6 +270,7 @@ export const AdminView = ({
     };
 
     const rosteredNames = teams.flatMap(t => t.roster.map(p => p.name));
+    const { fullLineups, rosterSnapshots } = buildSnapshots(tournIndex);
     const { newTeams, newStats, resultsData } = processTournamentData(tournamentWithLeaders, apiPlayers, teams, globalPlayerStats, rosteredNames);
     const newTournaments = tournaments.map((nt, idx) => idx === tournIndex ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
     const nextIdx = newTournaments.findIndex((nt, idx) => idx > tournIndex && !nt.completed && !nt.isAlternate);
@@ -275,12 +283,73 @@ export const AdminView = ({
         teamResults: resultsData.teams,
         earningsMap: resultsData.earningsMap,
         roundLeaders: tournamentWithLeaders.roundLeaders,
+        fullLineups,
+        rosterSnapshots,
         isManualEntry: true,
       });
     } catch (e) { console.warn('Supabase results save failed (non-fatal):', e.message); }
     dialog.showToast(`Processed ${apiPlayers.length} players for ${selectedTourneyForResults}!`, 'success');
     setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
     setManualEntryOpen(false);
+  };
+
+  // ── Build lineup/roster snapshots before processing ─────────────────────
+  // Call this immediately before processTournamentData so we capture the
+  // state of every team's lineup and roster at the moment of processing,
+  // before the lineup is cleared and before future adds/drops overwrite the roster.
+  const buildSnapshots = (tournIndex) => {
+    const fullLineups = {};
+    const rosterSnapshots = {};
+    teams.forEach(team => {
+      fullLineups[team.id] = [...(team.lineup || [])];
+      try {
+        rosterSnapshots[team.id] = getRosterForTournament(team, tournIndex, transactions);
+      } catch {
+        rosterSnapshots[team.id] = [...team.roster];
+      }
+    });
+    return { fullLineups, rosterSnapshots };
+  };
+
+  // ── Load historical lineup data from Supabase ──────────────────────────────
+  const handleLoadHistory = async () => {
+    if (!historyTourney) return;
+    setHistoryLoading(true); setHistoryData(null); setHistoryEdits({});
+    try {
+      const data = await tournamentResultsApi.getByName(historyTourney);
+      if (!data) { dialog.showToast('No Supabase record for this tournament yet', 'error'); setHistoryLoading(false); return; }
+      setHistoryData(data);
+      // Pre-populate edits with the saved lineups
+      const edits = {};
+      Object.entries(data.fullLineups || {}).forEach(([teamId, lineup]) => { edits[teamId] = [...lineup]; });
+      setHistoryEdits(edits);
+    } catch (e) { dialog.showToast(`Failed to load: ${e.message}`, 'error'); }
+    setHistoryLoading(false);
+  };
+
+  // ── Save corrected lineups back to Supabase (no reprocessing) ─────────────
+  // For a full re-process, the commissioner uses the main "Enter Results" section.
+  const handleSaveHistoryEdits = async () => {
+    if (!historyData) return;
+    const ok = await dialog.showConfirm(
+      'Save Corrected Lineups',
+      'Save these corrected lineups to the historical record?\n\nThis updates the Supabase snapshot only — it does NOT recalculate earnings or update standings. To recalculate, use the main results section.',
+      { confirmText: 'Save Lineup Record' }
+    );
+    if (!ok) return;
+    try {
+      await tournamentResultsApi.save({
+        tournamentName: historyData.tournamentName,
+        teamResults: historyData.teamResults,
+        earningsMap: historyData.earningsMap,
+        roundLeaders: historyData.roundLeaders,
+        fullLineups: historyEdits,
+        rosterSnapshots: historyData.rosterSnapshots,
+        isManualEntry: historyData.isManualEntry,
+      });
+      setHistoryData({ ...historyData, fullLineups: historyEdits });
+      dialog.showToast('✓ Corrected lineups saved to history', 'success');
+    } catch (e) { dialog.showToast(`Save failed: ${e.message}`, 'error'); }
   };
 
   const handleCsvUpload = async (file) => {
@@ -618,6 +687,138 @@ export const AdminView = ({
               </Btn>
             </div>
           )}
+        </SectionBody>
+      </Section>
+
+      {/* Historical Lineups */}
+      <Section>
+        <SectionHeader icon="📋" title="Historical Lineup Viewer" />
+        <SectionBody>
+          <p style={{ ...theme.smallText, marginBottom: 4 }}>
+            View and correct the lineups submitted for any completed tournament. Lineups are frozen at processing time — roster adds/drops after the fact don't affect the snapshot.
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+            <div>
+              <FieldLabel>Select Completed Tournament</FieldLabel>
+              <ThemedSelect value={historyTourney} onChange={e => { setHistoryTourney(e.target.value); setHistoryData(null); setHistoryEdits({}); }}>
+                <option value="">Choose tournament…</option>
+                {tournaments.filter(t => t.completed).map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+              </ThemedSelect>
+            </div>
+            <Btn onClick={handleLoadHistory} disabled={!historyTourney || historyLoading}>
+              {historyLoading ? 'Loading…' : 'Load'}
+            </Btn>
+          </div>
+
+          {historyData && (() => {
+            const completedTeams = teams.filter(t => historyData.fullLineups?.[t.id] !== undefined || historyData.teamResults?.[t.id] !== undefined);
+            if (completedTeams.length === 0) return (
+              <div style={{ ...theme.smallText, textAlign: 'center', padding: 16 }}>
+                No lineup data in this record — it was processed before snapshots were added.
+              </div>
+            );
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ ...theme.smallText, color: colors.textGoldDim }}>
+                  Processed: {new Date(historyData.processedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {historyData.isManualEntry && ' · Manual entry'}
+                </div>
+
+                {teams.map(team => {
+                  const savedLineup   = historyData.fullLineups?.[team.id] || [];
+                  const rosterSnap    = historyData.rosterSnapshots?.[team.id] || team.roster;
+                  const editedLineup  = historyEdits[team.id] || savedLineup;
+                  const teamResult    = historyData.teamResults?.[team.id];
+                  const hasData       = savedLineup.length > 0 || teamResult;
+                  if (!hasData) return null;
+
+                  return (
+                    <div key={team.id} style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${colors.borderSubtle}`, borderRadius: 2, padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <span style={{ fontFamily: fonts.serif, fontSize: 13, fontWeight: 700, color: colors.textPrimary }}>{team.name}</span>
+                        {teamResult && (
+                          <span style={{ ...theme.statNum, fontSize: 12, color: colors.textGold }}>
+                            ${(teamResult.totalEarnings || 0).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Saved lineup pills */}
+                      {savedLineup.length > 0 ? (
+                        <div style={{ marginBottom: 10 }}>
+                          <p style={{ ...theme.smallText, marginBottom: 6 }}>
+                            Submitted lineup ({savedLineup.length} player{savedLineup.length !== 1 ? 's' : ''}):
+                          </p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {savedLineup.map(name => {
+                              const player = rosterSnap.find(p => p.name === name) || { name, limited: false };
+                              const inEdit = editedLineup.includes(name);
+                              return (
+                                <span key={name} style={{
+                                  padding: '3px 8px', borderRadius: 2, fontSize: 11,
+                                  fontFamily: fonts.sans, cursor: 'pointer',
+                                  background: inEdit ? (player.limited ? 'rgba(180,160,100,0.2)' : 'rgba(100,140,220,0.15)') : 'rgba(255,255,255,0.04)',
+                                  border: `1px solid ${inEdit ? (player.limited ? 'rgba(180,160,100,0.5)' : 'rgba(100,140,220,0.4)') : colors.borderSubtle}`,
+                                  color: inEdit ? (player.limited ? colors.textGold : 'rgba(160,190,255,0.9)') : colors.textMuted,
+                                  textDecoration: inEdit ? 'none' : 'line-through',
+                                }}
+                                  onClick={() => {
+                                    const next = inEdit ? editedLineup.filter(n => n !== name) : [...editedLineup, name];
+                                    setHistoryEdits(prev => ({ ...prev, [team.id]: next }));
+                                  }}
+                                  title={inEdit ? 'Click to remove from corrected lineup' : 'Click to restore to corrected lineup'}
+                                >
+                                  {name}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <p style={{ ...theme.smallText, marginBottom: 10, color: colors.textMuted }}>No lineup snapshot — processed before this feature was added.</p>
+                      )}
+
+                      {/* Roster snapshot for adding missed players */}
+                      {rosterSnap.length > 0 && (() => {
+                        const notInLineup = rosterSnap.filter(p => !savedLineup.includes(p.name));
+                        if (notInLineup.length === 0) return null;
+                        return (
+                          <div>
+                            <p style={{ ...theme.smallText, marginBottom: 6, color: colors.textGoldDim }}>Roster that week (click to add to corrected lineup):</p>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {notInLineup.map(player => {
+                                const inEdit = editedLineup.includes(player.name);
+                                return (
+                                  <span key={player.name} style={{
+                                    padding: '3px 8px', borderRadius: 2, fontSize: 11,
+                                    fontFamily: fonts.sans, cursor: 'pointer',
+                                    background: inEdit ? 'rgba(80,180,120,0.15)' : 'rgba(255,255,255,0.03)',
+                                    border: `1px solid ${inEdit ? 'rgba(80,180,120,0.4)' : colors.borderSubtle}`,
+                                    color: inEdit ? colors.success : colors.textMuted,
+                                  }}
+                                    onClick={() => {
+                                      const next = inEdit ? editedLineup.filter(n => n !== player.name) : [...editedLineup, player.name];
+                                      setHistoryEdits(prev => ({ ...prev, [team.id]: next }));
+                                    }}
+                                  >
+                                    {player.name}
+                                    {player.limited && <span style={{ marginLeft: 3, color: colors.textGoldDim }}>L</span>}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })}
+
+                <Btn onClick={handleSaveHistoryEdits}>💾 Save Corrected Lineups to History</Btn>
+              </div>
+            );
+          })()}
         </SectionBody>
       </Section>
 

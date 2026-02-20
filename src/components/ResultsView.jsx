@@ -5,9 +5,11 @@ import { theme, colors, fonts, cardLiftHandlers } from '../theme.js';
 
 // ── Player slot grid ──────────────────────────────────────────────────────────
 const PlayerSlotGrid = ({ players, showEarnings }) => {
-  const slots = [0, 1, 2, 3, 4].map(i => players[i] || null);
+  // Use actual lineup length (up to 5 max), never pad beyond what was submitted
+  const count = Math.min(Math.max(players.length, 1), 5);
+  const slots = Array.from({ length: count }, (_, i) => players[i] || null);
   return (
-    <div style={{ marginLeft: 28, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+    <div style={{ marginLeft: 28, display: 'grid', gridTemplateColumns: `repeat(${count}, 1fr)`, gap: 4 }}>
       {slots.map((p, idx) => (
         <div key={idx} style={{ fontSize: 11, minWidth: 0, overflow: 'hidden' }}>
           {p ? (
