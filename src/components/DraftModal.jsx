@@ -397,7 +397,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
 
     const updatedTeams = teams.map(team => {
       if (team.id !== currentTeam.id) return team;
-      return { ...team, roster: [...team.roster, { name: playerName, stars: isLimitedRound ? 1 : 0, starts: 0, limited: isLimitedRound, unlimited: !isLimitedRound, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0, headshot: '' }] };
+      return { ...team, roster: [...team.roster, { name: playerName, stars: isLimitedRound ? 1 : 0, starts: 0, limited: isLimitedRound, unlimited: false, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0, headshot: '' }] };
     });
 
     // Record pick for undo
