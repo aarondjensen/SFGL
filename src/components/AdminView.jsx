@@ -21,7 +21,7 @@ const Section = ({ children, style }) => (
 const SectionHeader = ({ icon, title, color }) => (
   <div style={theme.cardHeader}>
     <span style={{ fontSize: 15 }}>{icon}</span>
-    <h3 style={{ ...theme.h2, color: color || colors.textGold }}>{title}</h3>
+    <h3 style={{ ...theme.h2, color: color || colors.sectionHeaderBlue }}>{title}</h3>
   </div>
 );
 
@@ -35,7 +35,7 @@ const SectionBody = ({ children }) => (
 const Btn = ({ onClick, children, variant = 'primary', style, disabled, title }) => {
   const base = variant === 'danger'    ? theme.btnDanger
              : variant === 'secondary' ? theme.btnSecondary
-             : theme.btnPrimary;
+             : { ...theme.btnPrimary, background: colors.actionButtonBlue, border: `1px solid rgba(100,160,255,0.2)` };
   return (
     <button onClick={onClick} disabled={disabled} title={title} style={{
       ...base, width: '100%', padding: '10px 16px',
