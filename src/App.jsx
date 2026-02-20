@@ -54,14 +54,16 @@ const FantasyGolfLeague = () => {
   const resolvedHeadshots = Object.keys(headshots).length > 0 ? headshots : PGA_TOUR_IDS;
   const currentTournament = tournaments.find(t => t.playing);
 
-  // ── Inject Google Fonts (Cormorant Garamond + Raleway) once on mount ────────
+  // ── Inject Google Fonts (Raleway only) once on mount ────────────────────────
   useEffect(() => {
     if (document.getElementById('sfgl-google-fonts')) return; // already injected
     const link = document.createElement('link');
     link.id   = 'sfgl-google-fonts';
     link.rel  = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Raleway:wght@300;400;500;600&display=swap';
+    link.href = 'https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap';
     document.head.appendChild(link);
+    // Set Raleway on body so everything inherits it — overrides Tailwind preflight
+    document.body.style.fontFamily = "'Raleway', system-ui, sans-serif";
   }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
@@ -135,7 +137,7 @@ const FantasyGolfLeague = () => {
         <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 28, fontWeight: 600, letterSpacing: 8, color: 'rgba(255,255,255,0.5)' }}>
           SFGL
         </div>
-        <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', fontFamily: "'Raleway', sans-serif" }}>
+        <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', fontFamily: "'Raleway', system-ui, sans-serif" }}>
           Loading Season…
         </div>
       </div>
@@ -143,7 +145,7 @@ const FantasyGolfLeague = () => {
   }
 
   return (
-    <div className="min-h-screen pb-20 text-white" style={{ background: '#111d2e' }}>
+    <div className="min-h-screen pb-20 text-white" style={{ background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
 
       {/* ── Header ── */}
       <header style={{
