@@ -64,6 +64,7 @@ const FantasyGolfLeague = () => {
     document.head.appendChild(link);
     // Set Raleway on body so everything inherits it — overrides Tailwind preflight
     document.body.style.fontFamily = "'Raleway', system-ui, sans-serif";
+    document.body.style.fontVariantNumeric = 'tabular-nums lining-nums';
   }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
@@ -145,7 +146,7 @@ const FantasyGolfLeague = () => {
   }
 
   return (
-    <div className="min-h-screen pb-20 text-white" style={{ background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
+    <div className="min-h-screen pb-20 text-white" style={{ background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
       {/* ── Header ── */}
       <header style={{

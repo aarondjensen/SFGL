@@ -168,13 +168,13 @@ export const theme = {
   // Monospace stat numbers — for earnings, scores, rankings
   statNum: {
     fontFamily: fonts.mono,
-    fontVariantNumeric: 'tabular-nums',
+    fontVariantNumeric: 'tabular-nums lining-nums',
     letterSpacing: '-0.3px',
   },
 
   statNumLg: {
     fontFamily: fonts.mono,
-    fontVariantNumeric: 'tabular-nums',
+    fontVariantNumeric: 'tabular-nums lining-nums',
     fontSize: "clamp(15px, 1.3vw, 18px)",
     fontWeight: 500,
     letterSpacing: '-0.5px',
