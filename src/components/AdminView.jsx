@@ -670,6 +670,51 @@ export const AdminView = ({
   // Fix unlimited flags: each team should have exactly 1 unlimited player (keeper).
   // Any non-limited player beyond the first alphabetically-first gets unlimited: false.
   // This repairs rosters drafted before the unlimited: false bug was fixed.
+  const handleSyncRostersFromTransactions = async () => {
+    const ok = await dialog.showConfirm(
+      'Sync Rosters from Transactions',
+      'This will replay all processed transactions against each team\'s draft roster to fix any add/drop drift.\n\nSafe to run — does not affect earnings or Limited/Unlimited flags.',
+      { confirmText: 'Sync Rosters' }
+    );
+    if (!ok) return;
+
+    // For each team, start from their base draft roster and replay processed (non-mulligan) transactions in order
+    const updatedTeams = teams.map(team => {
+      // Base: current roster but strip out anyone who was added via a processed FA/waiver
+      // Strategy: start from scratch using only draft-era players (no add transactions),
+      // then replay all processed adds/drops in timestamp order.
+      const processedTx = transactions
+        .filter(tx => tx.team === team.name && tx.status === 'processed' && tx.type !== 'mulligan')
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+      // Build set of all players ever added via transaction for this team
+      const addedViaTransaction = new Set(processedTx.map(tx => tx.player).filter(Boolean));
+
+      // Base roster = players NOT added via transaction (i.e. drafted)
+      let roster = team.roster.filter(p => !addedViaTransaction.has(p.name));
+
+      // Also remove anyone who was dropped in a processed transaction
+      const droppedViaTransaction = new Set(processedTx.map(tx => tx.droppedPlayer).filter(Boolean));
+      roster = roster.filter(p => !droppedViaTransaction.has(p.name));
+
+      // Replay each processed transaction in order
+      processedTx.forEach(tx => {
+        if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
+        if (tx.player && !roster.some(p => p.name === tx.player)) {
+          // Preserve existing player object if present, otherwise create fresh
+          const existing = team.roster.find(p => p.name === tx.player);
+          roster.push(existing || { name: tx.player, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' });
+        }
+      });
+
+      return { ...team, roster };
+    });
+
+    updateTeams(updatedTeams);
+    await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+    dialog.showToast('Rosters synced from transaction history', 'success');
+  };
+
   const handleRepairRosterFlags = async () => {
     const ok = await dialog.showConfirm(
       '🔧 Repair Roster Flags',
@@ -1341,6 +1386,9 @@ export const AdminView = ({
         <SectionBody>
           <Btn onClick={handleRepairRosterFlags} variant="secondary">
             🔧 Repair Roster Flags (Limited / Unlimited / White)
+          </Btn>
+          <Btn onClick={handleSyncRostersFromTransactions} variant="secondary">
+            🔄 Sync Rosters from Transactions (fix add/drop drift)
           </Btn>
           <div>
             <FieldLabel>Select Team</FieldLabel>
