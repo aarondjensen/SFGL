@@ -19,6 +19,13 @@ if (typeof document !== 'undefined' && !document.getElementById('sfgl-standings-
   document.head.appendChild(s);
 }
 
+const formatEarnings = (n) => {
+  n = n || 0;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(3)}M`;
+  if (n >= 1_000)     return `$${Math.round(n / 1_000)}k`;
+  return `$${n}`;
+};
+
 export const StandingsView = ({ teams }) => {
   const sortedTeams = useMemo(() =>
     [...teams]
@@ -100,7 +107,7 @@ export const StandingsView = ({ teams }) => {
 
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
                     <div style={{ ...theme.statNumLg, color: earningsColor(team.earnings) }}>
-                      ${(team.earnings || 0).toLocaleString()}
+                      {formatEarnings(team.earnings)}
                     </div>
                   </td>
 
@@ -108,7 +115,7 @@ export const StandingsView = ({ teams }) => {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
                       <span style={theme.smallText}>#{segmentPos}</span>
                       <span style={{ ...theme.statNum, fontSize: 13, color: segmentEarningsColor(team.segmentEarnings) }}>
-                        ${(team.segmentEarnings || 0).toLocaleString()}
+                        {formatEarnings(team.segmentEarnings)}
                       </span>
                     </div>
                   </td>
