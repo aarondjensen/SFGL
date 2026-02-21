@@ -14,7 +14,7 @@ import LoginPage            from './components/LoginPage';
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi, globalPlayerStatsApi } from './api/supabase';
+import { managerAuthApi, tournamentResultsApi, globalPlayerStatsApi, teamsApi, tournamentsApi, transactionsApi, settingsApi } from './api/supabase';
 
 
 
@@ -95,24 +95,49 @@ const FantasyGolfLeague = () => {
     }).catch(() => {});
   }, []);
 
+  // ── Primary Supabase boot hydration ──────────────────────────────────────
+  // useLeague reads from localStorage first. On any device that has never
+  // loaded the app (mobile, new browser, incognito), localStorage is empty
+  // and INITIAL_TEAMS is shown. This effect loads the real data from Supabase
+  // and replaces the empty/default state. Runs once after loading completes.
+  useEffect(() => {
+    if (loading) return;
+    const hydrateFromSupabase = async () => {
+      try {
+        const [sbTeams, sbTournaments, sbTransactions] = await Promise.all([
+          teamsApi.getAll(),
+          tournamentsApi.getAll(),
+          transactionsApi.getAll(),
+        ]);
+        if (sbTeams?.length > 0)        setTeams(sbTeams);
+        if (sbTournaments?.length > 0)  setTournaments(sbTournaments);
+        if (sbTransactions?.length > 0) setTransactions(sbTransactions);
+        // Also load settings
+        const sbSettings = await settingsApi.getAll().catch(() => null);
+        if (sbSettings && Object.keys(sbSettings).length > 0) {
+          // Merge individual setting keys back into settings object
+          if (sbSettings.app_settings) setSettings(sbSettings.app_settings);
+        }
+      } catch (e) {
+        console.warn('Supabase boot hydration failed:', e.message);
+      }
+    };
+    hydrateFromSupabase();
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Hydrate tournament results from Supabase ─────────────────────────────
-  // Runs once after tournaments are loaded. Merges Supabase results into the
-  // local tournaments array so ResultsView works for all managers, not just
-  // the one who processed results on their device.
+  // Merges completed tournament results into the tournaments array.
+  // Always prefer Supabase — overwrites local data to ensure all devices
+  // see the same completed tournament state.
   useEffect(() => {
     if (loading || resultsHydrated || tournaments.length === 0) return;
     tournamentResultsApi.getAllForSeason().then(supabaseResults => {
       if (!supabaseResults || supabaseResults.length === 0) { setResultsHydrated(true); return; }
-      setTournaments(prev => {
-        const updated = prev.map(t => {
-          // Only merge if local copy has no results (avoids overwriting fresher local data)
-          if (t.results) return t;
-          const remote = supabaseResults.find(r => r.tournamentName === t.name);
-          if (!remote) return t;
-          return { ...t, completed: true, results: remote.results };
-        });
-        return updated;
-      });
+      setTournaments(prev => prev.map(t => {
+        const remote = supabaseResults.find(r => r.tournamentName === t.name);
+        if (!remote) return t;
+        return { ...t, completed: true, results: remote.results };
+      }));
       setResultsHydrated(true);
     }).catch(e => {
       console.warn('Could not load results from Supabase:', e.message);
