@@ -6,7 +6,7 @@ import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA, LIV_GOLF_ROSTER } from '../consta
 import { storage, draftStateApi } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi, tournamentResultsApi } from '../api/supabase';
+import { managerAuthApi, tournamentResultsApi, sfglDataApi } from '../api/supabase';
 import { theme, colors, fonts } from '../theme.js';
 
 if (typeof window !== 'undefined') {
@@ -168,17 +168,50 @@ export const AdminView = ({
     dialog.showToast('Data exported successfully', 'success');
   };
 
+  const handlePushToSupabase = async () => {
+    const ok = await dialog.showConfirm(
+      '☁️ Push All Data to Supabase',
+      'This will overwrite the shared Supabase database with the data currently loaded on this device. All other devices will see this data on next refresh.
+
+Use this to sync your desktop data to mobile.',
+      { confirmText: 'Push to Supabase' }
+    );
+    if (!ok) return;
+    dialog.showToast('Pushing to Supabase…', 'info');
+    try {
+      await Promise.all([
+        sfglDataApi.set(STORAGE_KEYS.TEAMS,               teams),
+        sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS,         tournaments),
+        sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS,        transactions),
+        sfglDataApi.set(STORAGE_KEYS.SETTINGS,            settings),
+        sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, globalPlayerStats),
+      ]);
+      dialog.showToast('✓ All data pushed to Supabase! Other devices will see it on refresh.', 'success');
+    } catch (e) {
+      dialog.showToast('Push failed: ' + e.message, 'error');
+    }
+  };
+
   const handleImport = (e) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
         const data = JSON.parse(event.target.result);
-        if (data.teams)        { updateTeams(data.teams);        await storage.set(STORAGE_KEYS.TEAMS,               data.teams).catch?.(e => console.warn('import teams:', e.message)); }
-        if (data.tournaments)  { setTournaments(data.tournaments); await storage.set(STORAGE_KEYS.TOURNAMENTS,          data.tournaments).catch?.(e => console.warn('import tournaments:', e.message)); }
-        if (data.transactions) { setTransactions(data.transactions); await storage.set(STORAGE_KEYS.TRANSACTIONS,       data.transactions).catch?.(e => console.warn('import transactions:', e.message)); }
-        if (data.settings)     { setSettings(data.settings);         await storage.set(STORAGE_KEYS.SETTINGS,           data.settings).catch?.(e => console.warn('import settings:', e.message)); }
-        if (data.globalPlayerStats) { setGlobalPlayerStats(data.globalPlayerStats); await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, data.globalPlayerStats).catch?.(e => console.warn('import stats:', e.message)); }
+        if (data.teams)        { updateTeams(data.teams); }
+        if (data.tournaments)  { setTournaments(data.tournaments); }
+        if (data.transactions) { setTransactions(data.transactions); }
+        if (data.settings)     { setSettings(data.settings); }
+        if (data.globalPlayerStats) { setGlobalPlayerStats(data.globalPlayerStats); }
+        // Write directly to sfgl_data (the real shared Supabase store)
+        dialog.showToast('Saving to Supabase…', 'info');
+        await Promise.all([
+          data.teams        && sfglDataApi.set(STORAGE_KEYS.TEAMS,               data.teams),
+          data.tournaments  && sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS,         data.tournaments),
+          data.transactions && sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS,        data.transactions),
+          data.settings     && sfglDataApi.set(STORAGE_KEYS.SETTINGS,            data.settings),
+          data.globalPlayerStats && sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, data.globalPlayerStats),
+        ].filter(Boolean));
         dialog.showToast('Import complete — reloading…', 'success');
         setTimeout(() => window.location.reload(), 1200);
       } catch { dialog.showToast('Failed to parse backup file.', 'error'); }
@@ -1100,6 +1133,9 @@ export const AdminView = ({
               <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
             </label>
           </div>
+          <Btn onClick={handlePushToSupabase} style={{ marginTop: 8, width: '100%', background: 'rgba(40,120,80,0.2)', border: '1px solid rgba(80,195,120,0.4)', color: 'rgba(80,195,120,0.95)' }}>
+            ☁️ Push Current Data to Supabase (sync all devices)
+          </Btn>
         </SectionBody>
       </Section>
 
