@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, makePlayer, getTeamAbbreviation } from '../utils/index.js';
+import { storage } from '../api';
+import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
 
 export const TransactionsView = ({ transactions, teams, setTransactions, updateTeams, isCommissioner }) => {
@@ -27,21 +29,31 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
   const undoTransaction = async (tx) => {
     const ok = await dialog.showConfirm(
       'Undo Transaction',
-      `Undo: ${tx.team} added ${tx.player}?`,
+      `Undo ${tx.type}: ${tx.team} added ${tx.player}${tx.droppedPlayer ? ` / dropped ${tx.droppedPlayer}` : ''}?\n\nThis will reverse the roster change and refund the $${tx.fee} fee.`,
       { type: 'danger', confirmText: 'Undo' },
     );
     if (!ok) return;
     const team = teams.find(t => t.name === tx.team);
     if (!team) return;
+
+    // Reverse the roster change
     let newRoster = team.roster.filter(p => p.name !== tx.player);
     if (tx.droppedPlayer) newRoster.push(makePlayer(tx.droppedPlayer));
-    updateTeams(teams.map(t =>
+    const newTeams = teams.map(t =>
       t.id === team.id
         ? { ...t, roster: newRoster, transactionFees: Math.max(0, (t.transactionFees || 0) - tx.fee) }
         : t,
-    ));
-    setTransactions(prev => prev.filter(t => t !== tx));
-    dialog.showToast('Transaction undone', 'success');
+    );
+    const newTransactions = transactions.filter(t => t !== tx);
+
+    updateTeams(newTeams);
+    setTransactions(newTransactions);
+
+    // Persist to Supabase so all devices see the undo
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, newTransactions);
+
+    dialog.showToast(`Undone: ${tx.player} removed from ${tx.team}`, 'success');
   };
 
   // Label for transaction type
