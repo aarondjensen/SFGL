@@ -1224,42 +1224,83 @@ export const AdminView = ({
                       Normally auto-processes Tue 8pm ET · use this to force-process retroactive weeks
                     </div>
                   </div>
-                  <Btn onClick={handleProcessAll} variant="warning" style={{ whiteSpace: 'nowrap' }}>
+                  <button
+                    onClick={handleProcessAll}
+                    style={{
+                      flexShrink: 0, whiteSpace: 'nowrap',
+                      fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
+                      padding: '8px 16px', borderRadius: 3, cursor: 'pointer',
+                      background: 'rgba(220,170,60,0.15)',
+                      border: '1px solid rgba(220,170,60,0.45)',
+                      color: colors.warning,
+                      transition: 'opacity 0.15s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                  >
                     ⚡ Process All ({allPendingWaivers.length})
-                  </Btn>
+                  </button>
                 </div>
 
                 {/* Individual waiver rows */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {allPendingWaivers.map((waiver) => (
                     <div key={waiver._idx} style={{
                       background: 'rgba(255,255,255,0.03)',
                       border: `1px solid ${colors.borderSubtle}`,
-                      borderRadius: 3, padding: '10px 12px',
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                      borderRadius: 3, padding: '8px 12px',
+                      display: 'flex', alignItems: 'center', gap: 10,
                     }}>
+                      {/* Priority badge */}
+                      <div style={{
+                        width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+                        background: 'rgba(220,170,60,0.15)', border: '1px solid rgba(220,170,60,0.35)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, color: colors.warning,
+                      }}>
+                        {waiver.priority || '?'}
+                      </div>
+
+                      {/* Main content */}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, marginBottom: 3 }}>
-                          {waiver.team}
-                          <span style={{ ...theme.badge, marginLeft: 6, background: 'rgba(220,170,60,0.12)', border: '1px solid rgba(220,170,60,0.3)', color: colors.warning }}>
-                            ${waiver.fee} waiver
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontFamily: fonts.serif, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>
+                            {waiver.team}
                           </span>
-                        </div>
-                        <div style={{ fontFamily: fonts.sans, fontSize: 12 }}>
-                          <span style={{ color: colors.success }}>+ {waiver.player}</span>
+                          <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: 12 }}>
+                            + {waiver.player}
+                          </span>
                           {waiver.droppedPlayer && (
-                            <span style={{ color: colors.danger, marginLeft: 8 }}>− {waiver.droppedPlayer}</span>
+                            <span style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 12 }}>
+                              − {waiver.droppedPlayer}
+                            </span>
                           )}
                         </div>
-                        <div style={{ ...theme.smallText, marginTop: 2 }}>
-                          {waiver.date} · Priority #{waiver.priority || '?'} · {waiver.segment || 'Current Swing'}
+                        <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 2 }}>
+                          {waiver.date} · {waiver.segment || 'West Coast Swing'}
                         </div>
                       </div>
-                      <Btn onClick={() => handleProcessSingle(waiver)} variant="success" style={{ flexShrink: 0 }}>
+
+                      {/* Process button — inline, not full-width */}
+                      <button
+                        onClick={() => handleProcessSingle(waiver)}
+                        style={{
+                          flexShrink: 0,
+                          fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                          padding: '5px 12px', borderRadius: 3, cursor: 'pointer',
+                          background: 'rgba(80,180,120,0.15)',
+                          border: '1px solid rgba(80,180,120,0.4)',
+                          color: colors.success,
+                          transition: 'opacity 0.15s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
+                        onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                      >
                         Process
-                      </Btn>
+                      </button>
                     </div>
                   ))}
+                </div>
                 </div>
               </div>
             );
