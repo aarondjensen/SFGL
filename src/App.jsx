@@ -28,23 +28,6 @@ const TABS = [
   { id: 'admin',        label: 'Commish',      Icon: Settings   },
 ];
 
-// ── Debug wrapper — shows StandingsView errors visibly on screen ─────────────
-class StandingsViewWrapper extends React.Component {
-  constructor(props) { super(props); this.state = { error: null }; }
-  static getDerivedStateFromError(e) { return { error: e }; }
-  render() {
-    if (this.state.error) {
-      return (
-        <div style={{ background: 'rgba(180,0,0,0.3)', border: '1px solid red', borderRadius: 4, padding: 16, color: 'white', fontFamily: 'monospace', fontSize: 12 }}>
-          <b>StandingsView ERROR:</b> {this.state.error?.message}<br/>
-          <pre style={{ whiteSpace: 'pre-wrap', marginTop: 8, fontSize: 10 }}>{this.state.error?.stack?.slice(0, 400)}</pre>
-        </div>
-      );
-    }
-    return React.createElement(StandingsView, this.props);
-  }
-}
-
 // ── App shell ───────────────────────────────────────────────────────────────
 const FantasyGolfLeague = () => {
   const [activeTab,             setActiveTab]             = useState('standings');
@@ -129,14 +112,6 @@ const FantasyGolfLeague = () => {
           STORAGE_KEYS.SETTINGS,
           STORAGE_KEYS.GLOBAL_PLAYER_STATS,
         ]);
-        // Store raw result for diagnostic display
-        window.__sfglDiag = {
-          teamsCount: rows[STORAGE_KEYS.TEAMS]?.length,
-          team0earn: rows[STORAGE_KEYS.TEAMS]?.[0]?.earnings,
-          team0roster: rows[STORAGE_KEYS.TEAMS]?.[0]?.roster?.length,
-          keys: Object.keys(rows),
-          error: null,
-        };
         if (rows[STORAGE_KEYS.TEAMS]?.length > 0)
           setTeams(rows[STORAGE_KEYS.TEAMS]);
         if (rows[STORAGE_KEYS.TOURNAMENTS]?.length > 0)
@@ -149,7 +124,6 @@ const FantasyGolfLeague = () => {
             Object.keys(rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS]).length > 0)
           setGlobalPlayerStats(rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
       } catch (e) {
-        window.__sfglDiag = { error: e.message };
         console.warn('Supabase boot hydration failed:', e.message);
       } finally {
         setSupabaseReady(true);
@@ -424,21 +398,9 @@ const FantasyGolfLeague = () => {
       {/* ── Main content ── */}
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 80px" }}>
 
-        {/* ── DIAGNOSTIC PANEL — remove after debugging ── */}
-        {activeTab === 'standings' && (
-          <div style={{ background: 'rgba(0,0,0,0.85)', border: '1px solid rgba(255,100,100,0.5)', borderRadius: 4, padding: '10px 12px', marginBottom: 12, fontSize: 11, fontFamily: 'monospace', color: 'rgba(255,220,80,0.95)', lineHeight: 1.8 }}>
-            <div><b>DIAG v3</b> sbReady:{String(supabaseReady)} teams:{teams.length} resolved:{resolvedTeams.length}</div>
-            <div>team[0] name:{resolvedTeams[0]?.name} | earn:{resolvedTeams[0]?.earnings} | roster:{resolvedTeams[0]?.roster?.length ?? 'MISSING'}</div>
-            <div>sfgl_data read → teams:{window.__sfglDiag?.teamsCount ?? 'n/a'} earn:{window.__sfglDiag?.team0earn ?? 'n/a'} roster:{window.__sfglDiag?.team0roster ?? 'n/a'}</div>
-            <div>sfgl_data keys returned:{(window.__sfglDiag?.keys ?? []).join(',') || 'NONE'}</div>
-            <div>sfgl_data error:{window.__sfglDiag?.error ?? 'none'}</div>
-            <div>tournaments:{tournaments.length} transactions:{transactions.length}</div>
-          </div>
-        )}
-
         <ErrorBoundary>
           {activeTab === 'standings' && (
-            <StandingsViewWrapper teams={resolvedTeams} />
+            <StandingsView teams={resolvedTeams} />
           )}
           {activeTab === 'results' && (
             <ResultsView teams={resolvedTeams} tournaments={tournaments} />
