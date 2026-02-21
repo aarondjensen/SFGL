@@ -60,24 +60,24 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
         <div style={theme.cardHeader}>
           <h2 style={theme.h2}>Transaction Fees</h2>
         </div>
-        <div style={{ padding: '12px 16px', overflowX: 'auto' }}>
-          <div style={{ display: 'flex', gap: 8, paddingBottom: 4 }}>
+        <div style={{ padding: '12px 16px' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
             {teamFees.map(team => {
               const abbr = getTeamAbbreviation(team.teamName);
               return (
                 <div key={team.teamId} style={{
-                  flexShrink: 0,
+                  flex: 1,
                   background: 'rgba(255,255,255,0.03)',
                   border: `1px solid ${colors.borderSubtle}`,
                   borderRadius: 2,
-                  padding: '8px 14px',
+                  padding: '8px 6px',
                   textAlign: 'center',
-                  minWidth: 68,
+                  minWidth: 0,
                 }}>
                   <div style={{ fontFamily: fonts.serif, fontSize: 13, fontWeight: 400, color: colors.textPrimary }}>
                     {abbr}
                   </div>
-                  <div style={{ ...theme.statNum, fontSize: 13, color: colors.textGold, marginTop: 2 }}>
+                  <div style={{ ...theme.statNum, fontSize: 13, color: colors.earningsGreen, marginTop: 2 }}>
                     ${team.seasonTotal}
                   </div>
                   <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 1 }}>
@@ -150,7 +150,7 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
                 {tx.type !== 'mulligan' && (
                   <span style={{
                     ...theme.statNum, fontSize: 13, fontWeight: 600,
-                    color: tx.fee > 0 ? colors.textGold : colors.textMuted,
+                    color: tx.fee > 0 ? colors.earningsGreen : colors.textMuted,
                   }}>
                     ${tx.fee}
                   </span>

@@ -179,7 +179,8 @@ export const AdminView = ({
         if (data.transactions) { setTransactions(data.transactions); await transactionsApi.setAll(data.transactions).catch(e => console.warn('import transactions:', e.message)); }
         if (data.settings)     { setSettings(data.settings);     await settingsApi.set('app_settings', data.settings).catch(e => console.warn('import settings:', e.message)); }
         if (data.globalPlayerStats) { setGlobalPlayerStats(data.globalPlayerStats); await globalPlayerStatsApi.set(data.globalPlayerStats).catch(e => console.warn('import stats:', e.message)); }
-        dialog.showToast('Data imported successfully!', 'success');
+        dialog.showToast('Import complete — reloading…', 'success');
+        setTimeout(() => window.location.reload(), 1200);
       } catch { dialog.showToast('Failed to parse backup file.', 'error'); }
     };
     reader.readAsText(file); e.target.value = null;

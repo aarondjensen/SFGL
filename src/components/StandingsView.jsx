@@ -38,7 +38,7 @@ export const StandingsView = ({ teams }) => {
 
         {/* Header */}
         <div style={theme.cardHeader}>
-          <Trophy style={{ width: 16, height: 16, color: colors.textGold }} />
+          <Trophy style={{ width: 16, height: 16, color: colors.earningsGreen }} />
           <h2 style={theme.h2}>Overall Standings</h2>
         </div>
 

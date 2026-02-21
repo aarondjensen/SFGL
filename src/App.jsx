@@ -70,9 +70,11 @@ const FantasyGolfLeague = () => {
     style.id = 'sfgl-tab-styles';
     if (!document.getElementById('sfgl-tab-styles')) {
       style.textContent = `
-        .sfgl-tab { flex: 0 0 auto; }
+        .sfgl-nav-row { justify-content: space-between; }
+        .sfgl-tab { flex: 1; }
         .sfgl-tab-label { display: none; }
         @media (min-width: 640px) {
+          .sfgl-nav-row { justify-content: flex-start; }
           .sfgl-tab { flex: 1; }
           .sfgl-tab-label { display: inline; }
         }
@@ -161,14 +163,9 @@ const FantasyGolfLeague = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3"
-        style={{ background: '#111d2e' }}>
-        <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 28, fontWeight: 600, letterSpacing: 8, color: 'rgba(255,255,255,0.5)' }}>
-          SFGL
-        </div>
-        <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', fontFamily: "'Raleway', system-ui, sans-serif" }}>
-          Loading Season…
-        </div>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
+        <div style={{ fontSize: 28, fontWeight: 600, letterSpacing: 8, color: 'rgba(255,255,255,0.5)' }}>SFGL</div>
+        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>Loading…</div>
       </div>
     );
   }
@@ -242,10 +239,10 @@ const FantasyGolfLeague = () => {
                     letterSpacing: 1.5,
                     textTransform: 'uppercase',
                     padding: '5px 12px',
-                    background: 'rgba(18,46,82,0.5)',
-                    border: '1px solid rgba(180,160,100,0.25)',
+                    background: 'rgba(40,120,80,0.15)',
+                    border: '1px solid rgba(80,195,120,0.35)',
                     borderRadius: 1,
-                    color: 'rgba(180,160,100,0.8)',
+                    color: 'rgba(80,195,120,0.9)',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
                   }}>
@@ -277,7 +274,7 @@ const FantasyGolfLeague = () => {
 
       {/* ── Navigation ── */}
       <nav style={{ maxWidth: 1100, margin: "0 auto", padding: "0 16px", position: "relative", marginTop: 8 }}>
-        <div style={{ display: "flex", gap: 4, paddingBottom: 8, overflowX: "auto" }}>
+        <div className="sfgl-nav-row" style={{ display: "flex", gap: 0, paddingBottom: 8, overflowX: "auto" }}>
           {TABS.map(tab => {
             const isActive = activeTab === tab.id;
             const isAdminPopover = tab.id === 'admin' && showAdminLoginPopover;
@@ -306,17 +303,17 @@ const FantasyGolfLeague = () => {
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   border: isActive
-                    ? '1px solid rgba(180,160,100,0.3)'
+                    ? '1px solid rgba(80,195,120,0.35)'
                     : '1px solid transparent',
                   background: isActive
-                    ? 'rgba(18,46,82,0.75)'
+                    ? 'rgba(20,80,50,0.5)'
                     : isAdminPopover
                       ? 'rgba(255,255,255,0.06)'
                       : 'rgba(255,255,255,0.04)',
                   color: isActive
-                    ? 'rgba(180,160,100,0.9)'
+                    ? 'rgba(80,195,120,0.95)'
                     : 'rgba(255,255,255,0.78)',
-                  boxShadow: isActive ? 'inset 0 1px 0 rgba(180,160,100,0.1)' : 'none',
+                  boxShadow: isActive ? 'inset 0 1px 0 rgba(80,195,120,0.15)' : 'none',
                 }}
               >
                 <tab.Icon style={{ width: 13, height: 13 }} />
