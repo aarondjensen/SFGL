@@ -99,6 +99,11 @@ const TeamDropdown = ({ teams, value, onChange }) => {
 const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam }) => {
   const dialog = useDialog();
 
+  const persistTransactions = (newTx) => {
+    setTransactions(newTx);
+    storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
+  };
+
   const swapPriority = (fromIdx, toIdx) => {
     if (toIdx < 0 || toIdx >= pendingWaivers.length) return;
     const updated   = [...transactions];
@@ -108,7 +113,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
     const toPri     = pendingWaivers[toIdx].priority   || toIdx + 1;
     updated[fromTxIdx] = { ...updated[fromTxIdx], priority: toPri };
     updated[toTxIdx]   = { ...updated[toTxIdx],   priority: fromPri };
-    setTransactions(updated);
+    persistTransactions(updated);
   };
 
   if (pendingWaivers.length === 0) return null;
@@ -159,14 +164,18 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
             {isOwnTeam && (
               <div style={{ display: 'flex', gap: 4 }}>
                 <button onClick={() => {
-                  setTransactions(transactions.filter((_, i) => i !== waiver._txIdx));
-                  updateTeams(teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t));
+                  const newTx = transactions.filter((_, i) => i !== waiver._txIdx);
+                  const newTeams = teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t);
+                  persistTransactions(newTx);
+                  updateTeams(newTeams);
                 }} style={{ ...theme.btnSecondary, padding: '4px 8px', fontSize: 10 }}>✏️</button>
                 <button onClick={async () => {
                   const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
                   if (!ok) return;
-                  setTransactions(transactions.filter((_, i) => i !== waiver._txIdx));
-                  updateTeams(teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t));
+                  const newTx = transactions.filter((_, i) => i !== waiver._txIdx);
+                  const newTeams = teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t);
+                  persistTransactions(newTx);
+                  updateTeams(newTeams);
                 }} style={{ ...theme.btnDanger, padding: '4px 8px', fontSize: 10 }}>✕</button>
               </div>
             )}
@@ -375,6 +384,11 @@ export const RostersView = ({
             {loggedInUser && !isOwnTeam && (
               <span style={{ ...theme.badge, ...theme.badgeNavy }}>View Only</span>
             )}
+            {isCommissioner && team && (
+              <span style={{ ...theme.badge, background: 'rgba(80,195,120,0.1)', border: '1px solid rgba(80,195,120,0.3)', color: colors.success, fontSize: 10 }}>
+                Acting as Commish
+              </span>
+            )}
           </div>
 
           {/* Global search */}
@@ -472,19 +486,19 @@ export const RostersView = ({
             {/* Free agent button */}
             <button
               onClick={() => { setIsWaiverMode(false); setShowAddDropModal(true); }}
-              disabled={!isOwnTeam || !windowStatus.faOpen}
-              style={actionBtn(isOwnTeam && windowStatus.faOpen, colors.success)}
+              disabled={!isOwnTeam}
+              style={actionBtn(isOwnTeam, colors.success)}
             >
-              {faStatus.open ? `Opens ${faStatus.label}` : 'Free Agent'}
+              Free Agent
             </button>
 
             {/* Waiver button */}
             <button
               onClick={() => { setIsWaiverMode(true); setShowAddDropModal(true); }}
-              disabled={!isOwnTeam || !windowStatus.waiverOpen}
-              style={actionBtn(isOwnTeam && windowStatus.waiverOpen, 'rgba(220,200,80,0.8)')}
+              disabled={!isOwnTeam}
+              style={actionBtn(isOwnTeam, 'rgba(220,200,80,0.8)')}
             >
-              {waiverStatus.open ? 'until Tue 7:59pm ET' : 'Waiver'}
+              Waiver
             </button>
           </div>
         </div>
