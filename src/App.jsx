@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trophy, Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
-import { DialogProvider } from './DialogContext';
+import { DialogProvider } from './components/DialogContext';
 import { ErrorBoundary }  from './components/ErrorBoundary';
 import { StandingsView }  from './components/StandingsView';
 import { ResultsView }    from './components/ResultsView';
