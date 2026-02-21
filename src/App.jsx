@@ -133,25 +133,16 @@ const FantasyGolfLeague = () => {
   }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Hydrate tournament results from Supabase ─────────────────────────────
-  // Reset resultsHydrated whenever the number of completed tournaments increases
-  // (e.g. after a Push to Supabase updates sfgl_data on another device)
-  const completedCount = tournaments.filter(t => t.completed).length;
-  const prevCompletedRef = React.useRef(completedCount);
-  useEffect(() => {
-    if (completedCount > prevCompletedRef.current) {
-      setResultsHydrated(false);
-    }
-    prevCompletedRef.current = completedCount;
-  }, [completedCount]);
-
-  // Merges completed tournament results into the tournaments array.
-  // Always prefer Supabase — overwrites local data to ensure all devices
-  // see the same completed tournament state.
+  // Hydrate tournament results from Supabase once after load.
+  // MERGE only — never overwrites a tournament that already has local results.
+  // Remote results win only when the local tournament has none.
   useEffect(() => {
     if (loading || resultsHydrated || tournaments.length === 0) return;
     tournamentResultsApi.getAllForSeason().then(supabaseResults => {
       if (!supabaseResults || supabaseResults.length === 0) { setResultsHydrated(true); return; }
       setTournaments(prev => prev.map(t => {
+        // Keep local results if they already exist — don't overwrite with remote
+        if (t.completed && t.results) return t;
         const remote = supabaseResults.find(r => r.tournamentName === t.name);
         if (!remote) return t;
         return { ...t, completed: true, results: remote.results };
