@@ -1109,7 +1109,7 @@ export const AdminView = ({
               updateTeams(updatedTeams);
               await storage.set(STORAGE_KEYS.TRANSACTIONS, updatedTx);
               await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
-              dialog.showToast(`✓ Processed: ${waiver.team} adds ${waiver.player}${waiver.droppedPlayer ? ` / drops ${waiver.droppedPlayer}` : ''}`, 'success');
+              dialog.showToast('✓ Processed: ' + waiver.team + ' adds ' + waiver.player + (waiver.droppedPlayer ? ' / drops ' + waiver.droppedPlayer : ''), 'success');
             };
 
             const handleProcessAll = async () => {
@@ -1199,7 +1199,7 @@ export const AdminView = ({
               await storage.set(STORAGE_KEYS.TRANSACTIONS, updatedTx);
               await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
 
-              const msg = `Processed ${processedCount} waiver${processedCount !== 1 ? 's' : ''}${failedCount > 0 ? ` · ${failedCount} failed (tiebreaker / already rostered)` : ''}`;
+              const msg = 'Processed ' + processedCount + ' waiver' + (processedCount !== 1 ? 's' : '') + (failedCount > 0 ? ' · ' + failedCount + ' failed (tiebreaker / already rostered)' : '');
               dialog.showToast(msg, processedCount > 0 ? 'success' : 'error');
             };
 
@@ -1300,7 +1300,6 @@ export const AdminView = ({
                       </button>
                     </div>
                   ))}
-                </div>
                 </div>
               </div>
             );
