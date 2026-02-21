@@ -3,15 +3,17 @@ import { Calendar, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
 import { theme, colors, fonts, cardLiftHandlers } from '../theme.js';
 
+const GOLD_BRIGHT = 'rgba(240,200,60,0.95)';
+const GOLD_DIM    = 'rgba(240,200,60,0.35)';
+const BLUE_BRIGHT = 'rgba(100,180,255,0.95)';
+const BLUE_DIM    = 'rgba(100,180,255,0.35)';
+
 const playerNameColor = (p, showEarnings) => {
-  if (showEarnings) {
-    if (p.unlimited) return p.earnings > 0 ? 'rgba(100,180,255,0.95)' : 'rgba(100,180,255,0.3)';
-    if (p.limited)   return p.earnings > 0 ? colors.earningsGreen      : 'rgba(80,195,120,0.25)';
-    return p.earnings > 0 ? colors.textPrimary : colors.textMuted;
-  }
-  if (p.unlimited) return 'rgba(100,180,255,0.85)';
-  if (p.limited)   return colors.textGold ?? 'rgba(220,180,60,0.9)';
-  return colors.textSecondary;
+  if (p.unlimited) return showEarnings ? (p.earnings > 0 ? BLUE_BRIGHT : BLUE_DIM) : BLUE_BRIGHT;
+  if (p.limited)   return showEarnings ? (p.earnings > 0 ? GOLD_BRIGHT : GOLD_DIM)  : GOLD_BRIGHT;
+  return showEarnings
+    ? (p.earnings > 0 ? colors.textPrimary : colors.textMuted)
+    : colors.textSecondary;
 };
 
 // ── Player slot grid ──────────────────────────────────────────────────────────

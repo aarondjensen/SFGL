@@ -150,8 +150,8 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 {/* Swing selector */}
                 <td style={{ padding: '8px 12px' }}>
                   <select
-                    value={t.swing || ''}
-                    onChange={e => updateLocal(realIndex, { swing: e.target.value })}
+                    value={t.segment || ''}
+                    onChange={e => updateLocal(realIndex, { segment: e.target.value })}
                     style={{ ...theme.select, fontSize: 11, padding: '5px 8px' }}
                   >
                     <option value="">Auto</option>
@@ -214,7 +214,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
 
               {/* Dates (colored by swing) */}
               <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
-                <span style={{ fontFamily: fonts.sans, fontSize: 12, color: alt ? colors.textMuted : swingColor(t.swing, t.dates) }}>
+                <span style={{ fontFamily: fonts.sans, fontSize: 12, color: alt ? colors.textMuted : swingColor(t.segment, t.dates) }}>
                   {t.dates}
                 </span>
               </td>
