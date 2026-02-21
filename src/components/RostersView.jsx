@@ -11,6 +11,7 @@ import {
 } from '../utils';
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
+import { teamsApi, transactionsApi } from '../api/supabase';
 
 // ── Headshot helpers (Cloudinary PGA Tour CDN — no ESPN 400 errors) ─────────
 const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
@@ -229,11 +230,13 @@ export const RostersView = ({
     if (!isInLineup && player.limited && player.starts >= MAX_LIMITED_STARTS) {
       dialog.showToast('This player has reached their 12-start limit', 'error'); return;
     }
-    updateTeams(teams.map(t => {
+    const newTeams = teams.map(t => {
       if (t.id !== team.id) return t;
       const newLineup = isInLineup ? t.lineup.filter(p => p !== player.name) : [...t.lineup, player.name];
       return { ...t, lineup: newLineup };
-    }));
+    });
+    updateTeams(newTeams);
+    teamsApi.setAll(newTeams).catch(e => console.warn('Supabase lineup save failed:', e.message));
   }, [team, teams, updateTeams, dialog]);
 
   const handleMulliganConfirm = useCallback(({ playerOut, playerIn, afterRound, isSignatureOrMajor }) => {
@@ -245,14 +248,18 @@ export const RostersView = ({
       return p;
     });
     const newMulligans = { ...team.mulligans, [mulliganKey]: (team.mulligans?.[mulliganKey] || 1) - 1 };
-    updateTeams(teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t));
-    setTransactions(prev => [...prev, {
+    const newTeams = teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
+    const newTx = {
       team: team.name, type: 'mulligan', player: playerIn, droppedPlayer: playerOut,
       fee: 0, segment: settings.currentSegment || '', date: new Date().toLocaleDateString(),
       tournamentIndex: activeTournamentIndex, status: 'completed',
       mulliganType: isSignatureOrMajor ? 'signature/major' : 'regular',
       afterRound, tournament: activeTournament.name,
-    }]);
+    };
+    updateTeams(newTeams);
+    setTransactions(prev => [...prev, newTx]);
+    teamsApi.setAll(newTeams).catch(e => console.warn('Supabase mulligan teams save failed:', e.message));
+    transactionsApi.add(newTx).catch(e => console.warn('Supabase mulligan tx save failed:', e.message));
     dialog.showToast(`Mulligan used: ${playerOut} → ${playerIn}`, 'success');
   }, [team, teams, updateTeams, setTransactions, activeTournament, activeTournamentIndex, settings, dialog]);
 
@@ -269,8 +276,11 @@ export const RostersView = ({
     });
     const mulliganKey  = tx.mulliganType === 'signature/major' ? 'signatureMajor' : 'regular';
     const newMulligans = { ...team.mulligans, [mulliganKey]: (team.mulligans?.[mulliganKey] || 0) + 1 };
-    updateTeams(teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t));
+    const newTeams = teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
+    updateTeams(newTeams);
     setTransactions(prev => prev.filter(t => t !== tx));
+    teamsApi.setAll(newTeams).catch(e => console.warn('Supabase undo mulligan teams save failed:', e.message));
+    transactionsApi.setAll(transactions.filter(t => t !== tx)).catch(e => console.warn('Supabase undo mulligan tx save failed:', e.message));
     dialog.showToast('Mulligan successfully undone', 'success');
   };
 
