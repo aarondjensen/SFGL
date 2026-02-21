@@ -3,6 +3,17 @@ import { Calendar, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
 import { theme, colors, fonts, cardLiftHandlers } from '../theme.js';
 
+const playerNameColor = (p, showEarnings) => {
+  if (showEarnings) {
+    if (p.unlimited) return p.earnings > 0 ? 'rgba(100,180,255,0.95)' : 'rgba(100,180,255,0.3)';
+    if (p.limited)   return p.earnings > 0 ? colors.earningsGreen      : 'rgba(80,195,120,0.25)';
+    return p.earnings > 0 ? colors.textPrimary : colors.textMuted;
+  }
+  if (p.unlimited) return 'rgba(100,180,255,0.85)';
+  if (p.limited)   return colors.textGold ?? 'rgba(220,180,60,0.9)';
+  return colors.textSecondary;
+};
+
 // ── Player slot grid ──────────────────────────────────────────────────────────
 const PlayerSlotGrid = ({ players, showEarnings }) => {
   // Use actual lineup length (up to 5 max), never pad beyond what was submitted
@@ -16,11 +27,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
             <>
               <div style={{
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                color: showEarnings
-                  ? p.limited
-                    ? (p.earnings > 0 ? colors.earningsGreen : 'rgba(80,195,120,0.25)')
-                    : (p.earnings > 0 ? colors.textPrimary : colors.textMuted)
-                  : p.limited ? colors.textGoldDim : colors.textSecondary,
+                color: playerNameColor(p, showEarnings),
               }}>
                 {shortName(p.name)}
                 {showEarnings && p.roundsLed?.map((rl, ri) => (
@@ -162,7 +169,7 @@ export const ResultsView = ({ teams, tournaments }) => {
                 {teamsWithLineups.length === 0 ? (
                   <div style={theme.emptyState}>No teams have submitted lineups yet</div>
                 ) : teamsWithLineups.map((team, i) => {
-                  const lineupPlayers = team.lineup.map(name => team.roster.find(p => p.name === name) || { name, limited: false });
+                  const lineupPlayers = team.lineup.map(name => team.roster.find(p => p.name === name) || { name, limited: false, unlimited: false });
                   const sortedLineup = getSortedRoster(lineupPlayers);
                   return (
                     <div key={team.id} style={{
