@@ -587,7 +587,7 @@ export const AdminView = ({
   const handleSyncRostersFromTransactions = async () => {
     const ok = await dialog.showConfirm(
       'Sync Rosters from Transactions',
-      'This will replay all processed transactions against each team's draft roster to fix any add/drop drift.\n\nSafe to run - does not affect earnings or Limited/Unlimited flags.',
+      "This will replay all processed transactions against each team's draft roster to fix any add/drop drift.\n\nSafe to run - does not affect earnings or Limited/Unlimited flags.",
       { confirmText: 'Sync Rosters' }
     );
     if (!ok) return;
