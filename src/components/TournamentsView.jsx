@@ -3,7 +3,8 @@ import { Calendar, Trophy, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { SWINGS } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
-import { tournamentsApi } from '../api/supabase';
+import { storage } from '../api';
+import { STORAGE_KEYS } from '../constants';
 
 const ALTERNATE_KEYWORDS = ['Puerto Rico', 'Zurich', 'Corales', 'Myrtle Beach', 'ISCO', 'Barracuda'];
 
@@ -49,7 +50,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
   const saveChanges = async () => {
     setTournaments(localTournaments);
     setEditMode(false);
-    tournamentsApi.setAll(localTournaments).catch(e => console.warn('Supabase tournament save failed:', e.message));
+    storage.set(STORAGE_KEYS.TOURNAMENTS, localTournaments);
     dialog.showToast('Schedule updated!', 'success');
   };
 

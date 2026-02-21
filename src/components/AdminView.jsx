@@ -6,7 +6,7 @@ import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA, LIV_GOLF_ROSTER } from '../consta
 import { storage, draftStateApi } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi, tournamentResultsApi, teamsApi, tournamentsApi, transactionsApi, settingsApi, globalPlayerStatsApi } from '../api/supabase';
+import { managerAuthApi, tournamentResultsApi } from '../api/supabase';
 import { theme, colors, fonts } from '../theme.js';
 
 if (typeof window !== 'undefined') {
@@ -174,11 +174,11 @@ export const AdminView = ({
     reader.onload = async (event) => {
       try {
         const data = JSON.parse(event.target.result);
-        if (data.teams)        { updateTeams(data.teams);        await teamsApi.setAll(data.teams).catch(e => console.warn('import teams:', e.message)); }
-        if (data.tournaments)  { setTournaments(data.tournaments); await tournamentsApi.setAll(data.tournaments).catch(e => console.warn('import tournaments:', e.message)); }
-        if (data.transactions) { setTransactions(data.transactions); await transactionsApi.setAll(data.transactions).catch(e => console.warn('import transactions:', e.message)); }
-        if (data.settings)     { setSettings(data.settings);     await settingsApi.set('app_settings', data.settings).catch(e => console.warn('import settings:', e.message)); }
-        if (data.globalPlayerStats) { setGlobalPlayerStats(data.globalPlayerStats); await globalPlayerStatsApi.set(data.globalPlayerStats).catch(e => console.warn('import stats:', e.message)); }
+        if (data.teams)        { updateTeams(data.teams);        await storage.set(STORAGE_KEYS.TEAMS,               data.teams).catch?.(e => console.warn('import teams:', e.message)); }
+        if (data.tournaments)  { setTournaments(data.tournaments); await storage.set(STORAGE_KEYS.TOURNAMENTS,          data.tournaments).catch?.(e => console.warn('import tournaments:', e.message)); }
+        if (data.transactions) { setTransactions(data.transactions); await storage.set(STORAGE_KEYS.TRANSACTIONS,       data.transactions).catch?.(e => console.warn('import transactions:', e.message)); }
+        if (data.settings)     { setSettings(data.settings);         await storage.set(STORAGE_KEYS.SETTINGS,           data.settings).catch?.(e => console.warn('import settings:', e.message)); }
+        if (data.globalPlayerStats) { setGlobalPlayerStats(data.globalPlayerStats); await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, data.globalPlayerStats).catch?.(e => console.warn('import stats:', e.message)); }
         dialog.showToast('Import complete — reloading…', 'success');
         setTimeout(() => window.location.reload(), 1200);
       } catch { dialog.showToast('Failed to parse backup file.', 'error'); }
@@ -188,7 +188,7 @@ export const AdminView = ({
 
   const handleImportSchedule = async (importedTournaments) => {
     setTournaments(importedTournaments); setShowScheduleImporter(false);
-    try { await tournamentsApi.setAll(importedTournaments); } catch (e) { console.warn('Supabase tournaments save failed:', e.message); }
+    await storage.set(STORAGE_KEYS.TOURNAMENTS, importedTournaments);
     dialog.showToast(`Imported ${importedTournaments.length} tournaments!`, 'success');
   };
 
@@ -235,18 +235,9 @@ export const AdminView = ({
         });
       } catch (e) { console.warn('Supabase tournament_results save failed (non-fatal):', e.message); }
       // Explicitly persist teams and tournament state to Supabase
-      try {
-        await teamsApi.setAll(newTeams);
-      } catch (e) { console.warn('Supabase teams save failed (non-fatal):', e.message); }
-      try {
-        await tournamentsApi.update(t.name, { completed: true, playing: false });
-        if (nextIdx !== -1) {
-          await tournamentsApi.update(newTournaments[nextIdx].name, { playing: true });
-        }
-      } catch (e) { console.warn('Supabase tournaments save failed (non-fatal):', e.message); }
-      try {
-        await settingsApi.set('global_player_stats', newStats);
-      } catch (e) { console.warn('Supabase globalPlayerStats save failed (non-fatal):', e.message); }
+      await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
+      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
       dialog.showToast(`Results processed for ${t.name}!`, 'success');
     } catch (error) { console.error('Results Sync Error:', error); dialog.showToast(`API Error: ${error.message}`, 'error'); }
   };
@@ -417,19 +408,9 @@ export const AdminView = ({
     // Explicitly persist teams (earnings, roster stats) and tournament completion
     // to Supabase so all managers see updated standings immediately — don't rely
     // on updateTeams/setTournaments hooks which may only write locally.
-    try {
-      await teamsApi.setAll(updatedTeams);
-    } catch (e) { console.warn('Supabase teams save failed (non-fatal):', e.message); }
-    try {
-      const completedTourn = newTournaments[tournIndex];
-      await tournamentsApi.update(completedTourn.name, { completed: true, playing: false });
-      if (nextIdx !== -1) {
-        await tournamentsApi.update(newTournaments[nextIdx].name, { playing: true });
-      }
-    } catch (e) { console.warn('Supabase tournaments save failed (non-fatal):', e.message); }
-    try {
-      await settingsApi.set('global_player_stats', updatedGlobalStats);
-    } catch (e) { console.warn('Supabase globalPlayerStats save failed (non-fatal):', e.message); }
+    await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+    await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
+    await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, updatedGlobalStats);
 
     dialog.showToast(`Processed ${Object.keys(earningsMap).length} players for ${selectedTourneyForResults}!`, 'success');
     setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
@@ -630,7 +611,7 @@ export const AdminView = ({
     const key = type === 'sig' ? 'signatureMajor' : 'regular';
     const newTeams = teams.map(t => t.id === teamId ? { ...t, mulligans: { ...t.mulligans, [key]: 1 } } : t);
     updateTeams(newTeams);
-    try { await teamsApi.setAll(newTeams); } catch (e) { console.warn('Supabase mulligan save failed:', e.message); }
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     dialog.showToast(`Reset ${type} mulligan for ${team.name}`, 'success');
   };
 
@@ -664,7 +645,7 @@ export const AdminView = ({
     });
 
     updateTeams(repairedTeams);
-    try { await teamsApi.setAll(repairedTeams); } catch (e) { console.warn('Supabase repair save failed:', e.message); }
+    await storage.set(STORAGE_KEYS.TEAMS, repairedTeams);
     dialog.showToast('✓ Roster flags repaired — Limited=Yellow, 1 Unlimited=Blue, rest=White', 'success');
   };
 
@@ -676,11 +657,11 @@ export const AdminView = ({
     const resetTeams = teams.map(team => ({ ...team, earnings: 0, segmentEarnings: 0, lineup: [], roster: [], mulligans: { signatureMajor: 1, regular: 1 } }));
     const resetTournaments = tournaments.map((t, idx) => ({ ...t, completed: false, playing: idx === 0, results: null }));
     setTransactions([]); setGlobalPlayerStats({}); updateTeams(resetTeams); setTournaments(resetTournaments);
-    try { await tournamentResultsApi.deleteAllForSeason(); } catch (e) { console.warn('Supabase results reset failed:', e.message); }
-    try { await teamsApi.setAll(resetTeams); } catch (e) { console.warn('Supabase teams reset failed:', e.message); }
-    try { await tournamentsApi.setAll(resetTournaments); } catch (e) { console.warn('Supabase tournaments reset failed:', e.message); }
-    try { await transactionsApi.setAll([]); } catch (e) { console.warn('Supabase transactions reset failed:', e.message); }
-    try { await globalPlayerStatsApi.set({}); } catch (e) { console.warn('Supabase stats reset failed:', e.message); }
+    try { await tournamentResultsApi.deleteAllForSeason(); } catch (e) { console.warn('Results reset failed:', e.message); }
+    await storage.set(STORAGE_KEYS.TEAMS, resetTeams);
+    await storage.set(STORAGE_KEYS.TOURNAMENTS, resetTournaments);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, []);
+    await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, {});
     dialog.showToast('Season reset complete!', 'success');
   };
 
@@ -694,7 +675,7 @@ export const AdminView = ({
     try { await draftStateApi.clear(); } catch {}
     const clearedTeams = teams.map(t => ({ ...t, roster: [], lineup: [] }));
     updateTeams(clearedTeams);
-    try { await teamsApi.setAll(clearedTeams); } catch (e) { console.warn('Supabase draft clear failed:', e.message); }
+    await storage.set(STORAGE_KEYS.TEAMS, clearedTeams);
     setHasSavedDraft(false);
     setDraftInitialPhase('order');
     setShowDraftModal(true);
@@ -712,7 +693,7 @@ export const AdminView = ({
     if (!player) { dialog.showToast('Player not found', 'error'); return; }
     const newTeams = teams.map(t => t.id === teamId ? { ...t, roster: [...t.roster, makePlayer(player.name, player.worldRank)] } : t);
     updateTeams(newTeams);
-    try { await teamsApi.setAll(newTeams); } catch (e) { console.warn('Supabase addPlayer failed:', e.message); }
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     dialog.showToast(`Added ${playerName} to ${team.name}`, 'success');
   };
 
@@ -722,7 +703,7 @@ export const AdminView = ({
     if (!confirm) return;
     const newTeams = teams.map(t => t.id === teamId ? { ...t, roster: t.roster.filter(p => p.name !== playerName) } : t);
     updateTeams(newTeams);
-    try { await teamsApi.setAll(newTeams); } catch (e) { console.warn('Supabase dropPlayer failed:', e.message); }
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     dialog.showToast(`Dropped ${playerName}`, 'success');
   };
 

@@ -11,7 +11,8 @@ import {
 } from '../utils';
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
-import { teamsApi, transactionsApi } from '../api/supabase';
+import { storage } from '../api';
+import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers (Cloudinary PGA Tour CDN — no ESPN 400 errors) ─────────
 const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
@@ -236,7 +237,7 @@ export const RostersView = ({
       return { ...t, lineup: newLineup };
     });
     updateTeams(newTeams);
-    teamsApi.setAll(newTeams).catch(e => console.warn('Supabase lineup save failed:', e.message));
+    storage.set(STORAGE_KEYS.TEAMS, newTeams);
   }, [team, teams, updateTeams, dialog]);
 
   const handleMulliganConfirm = useCallback(({ playerOut, playerIn, afterRound, isSignatureOrMajor }) => {
@@ -258,8 +259,8 @@ export const RostersView = ({
     };
     updateTeams(newTeams);
     setTransactions(prev => [...prev, newTx]);
-    teamsApi.setAll(newTeams).catch(e => console.warn('Supabase mulligan teams save failed:', e.message));
-    transactionsApi.add(newTx).catch(e => console.warn('Supabase mulligan tx save failed:', e.message));
+    storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    // transaction saved via setTransactions -> storage via parent
     dialog.showToast(`Mulligan used: ${playerOut} → ${playerIn}`, 'success');
   }, [team, teams, updateTeams, setTransactions, activeTournament, activeTournamentIndex, settings, dialog]);
 
@@ -279,8 +280,8 @@ export const RostersView = ({
     const newTeams = teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
     updateTeams(newTeams);
     setTransactions(prev => prev.filter(t => t !== tx));
-    teamsApi.setAll(newTeams).catch(e => console.warn('Supabase undo mulligan teams save failed:', e.message));
-    transactionsApi.setAll(transactions.filter(t => t !== tx)).catch(e => console.warn('Supabase undo mulligan tx save failed:', e.message));
+    storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    // transactions saved via setTransactions -> storage via parent
     dialog.showToast('Mulligan successfully undone', 'success');
   };
 

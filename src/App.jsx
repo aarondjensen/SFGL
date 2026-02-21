@@ -14,7 +14,7 @@ import LoginPage            from './components/LoginPage';
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi, globalPlayerStatsApi, teamsApi, tournamentsApi, transactionsApi, settingsApi } from './api/supabase';
+import { managerAuthApi, tournamentResultsApi, sfglDataApi } from './api/supabase';
 
 
 
@@ -114,38 +114,34 @@ const FantasyGolfLeague = () => {
   }, []);
 
   // ── Primary Supabase boot hydration ──────────────────────────────────────
+  // The app's storage layer reads/writes sfgl_data using STORAGE_KEYS as keys.
+  // On a fresh device (mobile/new browser) localStorage is empty so useLeague
+  // returns INITIAL_TEAMS. This effect reads the real data directly from the
+  // sfgl_data table and overwrites empty state before rendering begins.
   useEffect(() => {
     if (loading) return;
     const hydrateFromSupabase = async () => {
       try {
-        const [sbTeams, sbTournaments, sbTransactions] = await Promise.all([
-          teamsApi.getAll(),
-          tournamentsApi.getAll(),
-          transactionsApi.getAll(),
+        const rows = await sfglDataApi.getMany([
+          STORAGE_KEYS.TEAMS,
+          STORAGE_KEYS.TOURNAMENTS,
+          STORAGE_KEYS.TRANSACTIONS,
+          STORAGE_KEYS.SETTINGS,
+          STORAGE_KEYS.GLOBAL_PLAYER_STATS,
         ]);
-
-        // DIAGNOSTIC — open browser console on mobile to see this
-        console.log('=== SUPABASE BOOT HYDRATION ===');
-        console.log('sbTeams count:', sbTeams?.length);
-        console.log('sbTeams[0] keys:', sbTeams?.[0] ? Object.keys(sbTeams[0]) : 'empty');
-        console.log('sbTeams[0] roster length:', sbTeams?.[0]?.roster?.length);
-        console.log('sbTeams[0] sample:', JSON.stringify(sbTeams?.[0])?.slice(0, 300));
-        console.log('sbTournaments count:', sbTournaments?.length);
-        console.log('sbTransactions count:', sbTransactions?.length);
-
-        if (sbTeams?.length > 0)        setTeams(sbTeams);
-        if (sbTournaments?.length > 0)  setTournaments(sbTournaments);
-        if (sbTransactions?.length > 0) setTransactions(sbTransactions);
-        try {
-          const sbSettings = await settingsApi.get('app_settings');
-          if (sbSettings) setSettings(sbSettings);
-        } catch {}
-        try {
-          const sbStats = await globalPlayerStatsApi.get();
-          if (sbStats && Object.keys(sbStats).length > 0) setGlobalPlayerStats(sbStats);
-        } catch {}
+        if (rows[STORAGE_KEYS.TEAMS]?.length > 0)
+          setTeams(rows[STORAGE_KEYS.TEAMS]);
+        if (rows[STORAGE_KEYS.TOURNAMENTS]?.length > 0)
+          setTournaments(rows[STORAGE_KEYS.TOURNAMENTS]);
+        if (rows[STORAGE_KEYS.TRANSACTIONS]?.length > 0)
+          setTransactions(rows[STORAGE_KEYS.TRANSACTIONS]);
+        if (rows[STORAGE_KEYS.SETTINGS])
+          setSettings(rows[STORAGE_KEYS.SETTINGS]);
+        if (rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS] &&
+            Object.keys(rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS]).length > 0)
+          setGlobalPlayerStats(rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
       } catch (e) {
-        console.error('Supabase boot hydration FAILED:', e.message, e);
+        console.warn('Supabase boot hydration failed:', e.message);
       } finally {
         setSupabaseReady(true);
       }
