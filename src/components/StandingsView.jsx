@@ -41,6 +41,22 @@ const SWING_ACCENT = {
   'Fall Finish':      'rgba(220,120,60,0.85)',
 };
 
+// Derive segment from tournament.segment or its dates string month
+const MONTH_ABBREVS = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+const getSegmentForTournament = (t) => {
+  if (t.segment) return t.segment;
+  if (t.swing) return t.swing; // legacy fallback
+  if (!t.dates) return null;
+  const match = t.dates.match(/^([A-Za-z]+)/);
+  if (!match) return null;
+  const month = MONTH_ABBREVS[match[1]];
+  if (!month) return null;
+  if (month >= 1 && month <= 3) return 'West Coast Swing';
+  if (month >= 4 && month <= 6) return 'Spring Swing';
+  if (month >= 7 && month <= 9) return 'Summer Swing';
+  return 'Fall Finish';
+};
+
 export const StandingsView = ({ teams, tournaments = [] }) => {
 
   const sortedTeams = useMemo(() =>
@@ -54,14 +70,15 @@ export const StandingsView = ({ teams, tournaments = [] }) => {
   const swingsWithResults = useMemo(() => {
     const seen = new Set();
     tournaments.forEach(t => {
-      if (t.segment && t.completed && t.results && t.results.teams) seen.add(t.segment);
+      const seg = getSegmentForTournament(t);
+      if (seg && t.completed && t.results && t.results.teams) seen.add(seg);
     });
     return ALL_SWINGS.filter(s => seen.has(s));
   }, [tournaments]);
 
   const [selectedSwing, setSelectedSwing] = useState(() =>
     ALL_SWINGS.slice().reverse().find(s =>
-      tournaments.some(t => t.segment === s && t.completed && t.results && t.results.teams)
+      tournaments.some(t => getSegmentForTournament(t) === s && t.completed && t.results && t.results.teams)
     ) || null
   );
 
@@ -70,7 +87,7 @@ export const StandingsView = ({ teams, tournaments = [] }) => {
     const totals = {};
     teams.forEach(t => { totals[t.id] = 0; });
     tournaments.forEach(t => {
-      if (t.segment !== selectedSwing || !t.completed || !t.results || !t.results.teams) return;
+      if (getSegmentForTournament(t) !== selectedSwing || !t.completed || !t.results || !t.results.teams) return;
       Object.entries(t.results.teams).forEach(([teamId, result]) => {
         if (totals[teamId] !== undefined) totals[teamId] += (result.totalEarnings || 0);
       });
@@ -84,7 +101,7 @@ export const StandingsView = ({ teams, tournaments = [] }) => {
   const swingLeader = swingStandings[0]?.swingEarnings || 0;
   const swingEventCount = useMemo(() =>
     !selectedSwing ? 0 : tournaments.filter(t =>
-      t.segment === selectedSwing && t.completed && t.results && t.results.teams
+      getSegmentForTournament(t) === selectedSwing && t.completed && t.results && t.results.teams
     ).length,
     [selectedSwing, tournaments]
   );
