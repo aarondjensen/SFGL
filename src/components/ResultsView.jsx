@@ -85,6 +85,24 @@ const EmptyState = () => (
 );
 
 export const ResultsView = ({ teams, tournaments }) => {
+  // Build name → {limited, unlimited} from live roster so historical results
+  // (which may predate the unlimited field being stored) still render correctly
+  const rosterFlagMap = useMemo(() => {
+    const map = {};
+    teams.forEach(team => {
+      (team.roster || []).forEach(p => {
+        map[p.name] = { limited: p.limited || false, unlimited: p.unlimited || false };
+      });
+    });
+    return map;
+  }, [teams]);
+
+  // Enrich a result player with live roster flags as fallback
+  const enrich = (p) => ({
+    ...p,
+    limited:   p.limited   ?? rosterFlagMap[p.name]?.limited   ?? false,
+    unlimited: p.unlimited ?? rosterFlagMap[p.name]?.unlimited ?? false,
+  });
   const [expandedTournament, setExpandedTournament] = useState(null);
 
   const completedTournaments = useMemo(() =>
@@ -181,7 +199,7 @@ export const ResultsView = ({ teams, tournaments }) => {
                         <span style={{ ...theme.h3, fontSize: 13 }}>{team.name}</span>
                         <span style={{ ...theme.smallText, fontStyle: 'italic', color: colors.textGoldDim }}>pending</span>
                       </div>
-                      <PlayerSlotGrid players={sortedLineup} showEarnings={false} />
+                      <PlayerSlotGrid players={sortedLineup.map(enrich)} showEarnings={false} />
                     </div>
                   );
                 })}
@@ -273,7 +291,7 @@ export const ResultsView = ({ teams, tournaments }) => {
                           ${(tr.totalEarnings || 0).toLocaleString()}
                         </span>
                       </div>
-                      <PlayerSlotGrid players={players} showEarnings />
+                      <PlayerSlotGrid players={players.map(enrich)} showEarnings />
                     </div>
                   );
                 })}

@@ -389,6 +389,7 @@ export const AdminView = ({
           name: s.playerName,
           earnings: s.earnings,
           limited: s.player?.limited || false,
+          unlimited: s.player?.unlimited || false,
           bonus: playersWithBonuses[s.playerName]?.total || 0,
           roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
           wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
