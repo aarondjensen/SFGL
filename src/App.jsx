@@ -427,6 +427,7 @@ const FantasyGolfLeague = () => {
             <TransactionsView
               transactions={transactions}
               teams={resolvedTeams}
+              allPlayers={allPlayers}
               setTransactions={updateTransactions}
               updateTeams={updateTeams}
               isCommissioner={isCommissioner}

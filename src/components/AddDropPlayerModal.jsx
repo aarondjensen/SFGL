@@ -64,6 +64,13 @@ export const AddDropPlayerModal = ({
   );
 
   const rosterFull   = currentRoster.length >= ROSTER_LIMIT;
+
+  // Players already listed as the drop in another pending waiver for this team
+  const pendingDropNames = new Set(
+    transactions
+      .filter(tx => tx.team === team.name && tx.type === 'waiver' && tx.status === 'pending' && tx.droppedPlayer)
+      .map(tx => tx.droppedPlayer)
+  );
   const needsDrop    = rosterFull && selectedPlayerToAdd;
   const canConfirm   = selectedPlayerToAdd && (!rosterFull || selectedPlayerToDrop);
   const fee          = isWaiverMode ? TRANSACTION_FEE_WAIVER : TRANSACTION_FEE_FREE_AGENT;
@@ -253,8 +260,9 @@ export const AddDropPlayerModal = ({
                 Roster full · select a player to drop (Limited players cannot be dropped)
               </p>
               {currentRoster.map(player => {
-                const isSelected = selectedPlayerToDrop?.name === player.name;
-                const canDrop    = !player.limited;
+                const isSelected     = selectedPlayerToDrop?.name === player.name;
+                const canDrop        = !player.limited;
+                const inPendingDrop  = pendingDropNames.has(player.name);
                 return (
                   <div
                     key={player.name}
@@ -297,11 +305,24 @@ export const AddDropPlayerModal = ({
                         {player.name}
                       </span>
                     </div>
-                    {isSelected && (
-                      <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, color: colors.danger, letterSpacing: 1, textTransform: 'uppercase' }}>
-                        DROP
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      {inPendingDrop && (
+                        <span style={{
+                          fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
+                          letterSpacing: 0.6, textTransform: 'uppercase',
+                          color: 'rgba(220,170,60,0.85)',
+                          border: '1px solid rgba(220,170,60,0.35)',
+                          borderRadius: 2, padding: '2px 5px', flexShrink: 0,
+                        }}>
+                          in waiver
+                        </span>
+                      )}
+                      {isSelected && (
+                        <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, color: colors.danger, letterSpacing: 1, textTransform: 'uppercase' }}>
+                          DROP
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}

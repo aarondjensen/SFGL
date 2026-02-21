@@ -1,12 +1,271 @@
 import React, { useState, useMemo } from 'react';
+import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, makePlayer, getTeamAbbreviation } from '../utils/index.js';
 import { storage } from '../api';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
 
-export const TransactionsView = ({ transactions, teams, setTransactions, updateTeams, isCommissioner }) => {
-  const [filterTeam, setFilterTeam] = useState('all');
+// ── Inline edit modal ─────────────────────────────────────────────────────────
+const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, setTransactions, updateTeams, onClose }) => {
+  const dialog = useDialog();
+
+  // Derive initial values from the transaction
+  const [editTeam,   setEditTeam]   = useState(tx.team);
+  const [editAdd,    setEditAdd]    = useState(tx.player || '');
+  const [editDrop,   setEditDrop]   = useState(tx.droppedPlayer || '');
+  const [addSearch,  setAddSearch]  = useState('');
+  const [saving,     setSaving]     = useState(false);
+
+  const team = teams.find(t => t.name === editTeam);
+
+  // All players not currently on any roster (available to be added)
+  const rosteredNames = useMemo(() => {
+    const s = new Set();
+    teams.forEach(t => t.roster.forEach(p => s.add(p.name)));
+    // Also include the original tx.player so it stays in the list even if on a roster
+    return s;
+  }, [teams]);
+
+  const availableToAdd = useMemo(() => {
+    return allPlayers.filter(p =>
+      !rosteredNames.has(p.name) || p.name === tx.player // keep original selectable
+    );
+  }, [allPlayers, rosteredNames, tx.player]);
+
+  const filteredAdd = addSearch.trim()
+    ? availableToAdd.filter(p => p.name.toLowerCase().includes(addSearch.toLowerCase()))
+    : availableToAdd.slice(0, 30);
+
+  const currentRoster = team?.roster || [];
+  // Droppable: all roster players except Limited, plus the original dropped player
+  const droppableRoster = currentRoster.filter(p => !p.limited || p.name === tx.droppedPlayer);
+
+  const canSave = editAdd.trim() && (!tx.droppedPlayer || editDrop.trim());
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+
+    // Build old and new state
+    const oldAdd  = tx.player;
+    const oldDrop = tx.droppedPlayer;
+    const newAdd  = editAdd.trim();
+    const newDrop = editDrop.trim() || null;
+    const oldTeam = tx.team;
+    const newTeam = editTeam;
+
+    // Update the transaction record
+    const updatedTx = transactions.map((t, i) =>
+      i === txIndex
+        ? { ...t, team: newTeam, player: newAdd, droppedPlayer: newDrop || undefined }
+        : t
+    );
+
+    // Patch the old team's roster: undo old change, apply new change
+    let updatedTeams = teams.map(t => {
+      // Reverse old transaction on old team
+      if (t.name === oldTeam) {
+        let r = [...t.roster];
+        // Remove the old added player
+        r = r.filter(p => p.name !== oldAdd);
+        // Re-add the old dropped player (if there was one)
+        if (oldDrop && !r.some(p => p.name === oldDrop)) r.push(makePlayer(oldDrop));
+        return { ...t, roster: r };
+      }
+      return t;
+    });
+
+    updatedTeams = updatedTeams.map(t => {
+      // Apply new transaction on new team
+      if (t.name === newTeam) {
+        let r = [...t.roster];
+        // Remove new dropped player
+        if (newDrop) r = r.filter(p => p.name !== newDrop);
+        // Add new added player
+        if (!r.some(p => p.name === newAdd)) r.push(makePlayer(newAdd));
+        return { ...t, roster: r };
+      }
+      return t;
+    });
+
+    setTransactions(updatedTx);
+    updateTeams(updatedTeams);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, updatedTx);
+    await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+
+    setSaving(false);
+    dialog.showToast('Transaction updated', 'success');
+    onClose();
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0,
+      background: 'rgba(5,10,25,0.85)', backdropFilter: 'blur(4px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 16, zIndex: 60,
+    }}>
+      <div style={{
+        background: '#0f1d35',
+        border: `2px solid rgba(100,160,255,0.5)`,
+        borderRadius: 4, width: '100%', maxWidth: 460,
+        maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '14px 18px',
+          background: 'rgba(100,160,255,0.08)',
+          borderBottom: `1px solid ${colors.borderSubtle}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          flexShrink: 0,
+        }}>
+          <div>
+            <h2 style={{ fontFamily: fonts.serif, fontSize: 15, color: 'rgba(150,190,255,0.9)', margin: 0 }}>
+              ✏️ Edit Transaction
+            </h2>
+            <p style={{ ...theme.smallText, marginTop: 2 }}>
+              {tx.type} · {tx.date}
+            </p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, padding: 4 }}>
+            <X style={{ width: 18, height: 18 }} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
+
+          {/* Team selector */}
+          <div>
+            <label style={{ ...theme.label, display: 'block', marginBottom: 5 }}>Team</label>
+            <select
+              value={editTeam}
+              onChange={e => { setEditTeam(e.target.value); setEditDrop(''); }}
+              style={{ ...theme.select, colorScheme: 'dark' }}
+              onFocus={e => e.target.style.borderColor = colors.borderFocus}
+              onBlur={e => e.target.style.borderColor = colors.borderInput}
+            >
+              {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+            </select>
+          </div>
+
+          {/* Player added */}
+          <div>
+            <label style={{ ...theme.label, display: 'block', marginBottom: 5 }}>
+              Player Added
+              <span style={{ color: colors.success, marginLeft: 6, fontWeight: 400 }}>{editAdd || '—'}</span>
+            </label>
+            <input
+              type="text"
+              placeholder="Search free agents…"
+              value={addSearch}
+              onChange={e => setAddSearch(e.target.value)}
+              style={{ ...theme.input, marginBottom: 6 }}
+              onFocus={e => { e.target.style.borderColor = colors.borderFocus; e.target.style.background = colors.inputBgFocus; }}
+              onBlur={e => { e.target.style.borderColor = colors.borderInput; e.target.style.background = colors.inputBg; }}
+            />
+            <div style={{ maxHeight: 150, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {filteredAdd.map(p => {
+                const sel = editAdd === p.name;
+                return (
+                  <div
+                    key={p.name}
+                    onClick={() => setEditAdd(p.name)}
+                    style={{
+                      padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
+                      background: sel ? 'rgba(80,180,120,0.15)' : 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${sel ? 'rgba(80,180,120,0.4)' : colors.borderSubtle}`,
+                      fontFamily: fonts.serif, fontSize: 12,
+                      color: sel ? colors.success : colors.textPrimary,
+                      transition: 'all 0.1s',
+                    }}
+                    onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'rgba(255,255,255,0.055)'; }}
+                    onMouseLeave={e => { if (!sel) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+                  >
+                    {p.name}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Player dropped — only if original tx had a drop */}
+          {tx.droppedPlayer !== undefined && (
+            <div>
+              <label style={{ ...theme.label, display: 'block', marginBottom: 5 }}>
+                Player Dropped
+                <span style={{ color: colors.danger, marginLeft: 6, fontWeight: 400 }}>{editDrop || '—'}</span>
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div
+                  onClick={() => setEditDrop('')}
+                  style={{
+                    padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
+                    background: !editDrop ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${!editDrop ? colors.borderInput : colors.borderSubtle}`,
+                    fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
+                  }}
+                >
+                  — None —
+                </div>
+                {currentRoster.filter(p => !p.limited || p.name === tx.droppedPlayer).map(p => {
+                  const sel = editDrop === p.name;
+                  return (
+                    <div
+                      key={p.name}
+                      onClick={() => setEditDrop(p.name)}
+                      style={{
+                        padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
+                        background: sel ? colors.dangerBg : 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${sel ? colors.dangerBorder : colors.borderSubtle}`,
+                        fontFamily: fonts.serif, fontSize: 12,
+                        color: sel ? colors.danger : colors.textPrimary,
+                        transition: 'all 0.1s',
+                      }}
+                      onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'rgba(180,60,60,0.07)'; }}
+                      onMouseLeave={e => { if (!sel) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+                    >
+                      {p.name}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: '10px 18px', borderTop: `1px solid ${colors.borderSubtle}`,
+          display: 'flex', gap: 8, flexShrink: 0,
+        }}>
+          <button onClick={onClose} style={{ ...theme.btnSecondary, flex: 1, padding: '9px 0' }}>
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !canSave}
+            style={{
+              ...theme.btnPrimary, flex: 2, padding: '9px 0',
+              background: canSave ? 'rgba(100,160,255,0.18)' : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${canSave ? 'rgba(100,160,255,0.45)' : colors.borderSubtle}`,
+              color: canSave ? 'rgba(150,190,255,0.9)' : colors.textMuted,
+              cursor: canSave && !saving ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Main view ─────────────────────────────────────────────────────────────────
+export const TransactionsView = ({ transactions, teams, allPlayers = [], setTransactions, updateTeams, isCommissioner }) => {
+  const [filterTeam,   setFilterTeam]   = useState('all');
+  const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
   const dialog = useDialog();
 
   const teamFees = useMemo(() => {
@@ -29,14 +288,13 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
   const undoTransaction = async (tx) => {
     const ok = await dialog.showConfirm(
       'Undo Transaction',
-      `Undo ${tx.type}: ${tx.team} added ${tx.player}${tx.droppedPlayer ? ` / dropped ${tx.droppedPlayer}` : ''}?\n\nThis will reverse the roster change and refund the $${tx.fee} fee.`,
+      'Undo ' + tx.type + ': ' + tx.team + ' added ' + tx.player + (tx.droppedPlayer ? ' / dropped ' + tx.droppedPlayer : '') + '?\n\nThis will reverse the roster change and refund the $' + tx.fee + ' fee.',
       { type: 'danger', confirmText: 'Undo' },
     );
     if (!ok) return;
     const team = teams.find(t => t.name === tx.team);
     if (!team) return;
 
-    // Reverse the roster change
     let newRoster = team.roster.filter(p => p.name !== tx.player);
     if (tx.droppedPlayer) newRoster.push(makePlayer(tx.droppedPlayer));
     const newTeams = teams.map(t =>
@@ -48,15 +306,11 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
 
     updateTeams(newTeams);
     setTransactions(newTransactions);
-
-    // Persist to Supabase so all devices see the undo
     await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, newTransactions);
-
-    dialog.showToast(`Undone: ${tx.player} removed from ${tx.team}`, 'success');
+    dialog.showToast('Undone: ' + tx.player + ' removed from ' + tx.team, 'success');
   };
 
-  // Label for transaction type
   const txTypeColor = (type) => {
     if (type === 'mulligan') return colors.textGoldDim;
     if (type === 'waiver')   return 'rgba(220,200,80,0.8)';
@@ -64,36 +318,174 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
     return colors.success;
   };
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+  const statusColor = (status) => {
+    if (status === 'pending')   return 'rgba(220,200,80,0.75)';
+    if (status === 'failed')    return colors.danger;
+    if (status === 'processed') return colors.success;
+    return colors.textMuted;
+  };
 
-      {/* ── Fee summary ── */}
-      <div style={theme.card}>
-        <div style={theme.cardHeader}>
-          <h2 style={theme.h2}>Transaction Fees</h2>
+  // Find the real index in the full transactions array for a filtered tx
+  const realIndex = (tx) => transactions.indexOf(tx);
+
+  return (
+    <>
+      {editingTx && (
+        <EditTransactionModal
+          tx={editingTx.tx}
+          txIndex={editingTx.txIndex}
+          teams={teams}
+          allPlayers={allPlayers}
+          transactions={transactions}
+          setTransactions={setTransactions}
+          updateTeams={updateTeams}
+          onClose={() => setEditingTx(null)}
+        />
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+        {/* ── Fee summary ── */}
+        <div style={theme.card}>
+          <div style={theme.cardHeader}>
+            <h2 style={theme.h2}>Transaction Fees</h2>
+          </div>
+          <div style={{ padding: '12px 16px' }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
+              {teamFees.map(team => {
+                const abbr = getTeamAbbreviation(team.teamName);
+                return (
+                  <div key={team.teamId} style={{
+                    flex: 1,
+                    background: 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${colors.borderSubtle}`,
+                    borderRadius: 2, padding: '8px 6px', textAlign: 'center', minWidth: 0,
+                  }}>
+                    <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>
+                      {abbr}
+                    </div>
+                    <div style={{ ...theme.statNum, fontSize: 13, color: colors.earningsGreen, marginTop: 2 }}>
+                      ${team.seasonTotal}
+                    </div>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 1 }}>
+                      ${team.swingTotal} swing
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-        <div style={{ padding: '12px 16px' }}>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
-            {teamFees.map(team => {
-              const abbr = getTeamAbbreviation(team.teamName);
+
+        {/* ── Transaction history ── */}
+        <div style={theme.card}>
+          <div style={{ ...theme.cardHeader, justifyContent: 'space-between' }}>
+            <h2 style={theme.h2}>Transaction History</h2>
+            <select
+              value={filterTeam}
+              onChange={e => setFilterTeam(e.target.value)}
+              style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
+              onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
+              onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
+            >
+              <option value="all">All Teams</option>
+              {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+            </select>
+          </div>
+
+          <div style={{ padding: '0 4px' }}>
+            {filteredTransactions.length === 0 && (
+              <div style={theme.emptyState}>No transactions yet</div>
+            )}
+            {filteredTransactions.map((tx) => {
+              const idx = realIndex(tx);
               return (
-                <div key={team.teamId} style={{
-                  flex: 1,
-                  background: 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${colors.borderSubtle}`,
-                  borderRadius: 2,
-                  padding: '8px 6px',
-                  textAlign: 'center',
-                  minWidth: 0,
-                }}>
-                  <div style={{ fontFamily: fonts.serif, fontSize: 13, fontWeight: 400, color: colors.textPrimary }}>
-                    {abbr}
+                <div key={idx} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '10px 16px', gap: 8,
+                  borderBottom: `1px solid ${colors.borderSubtle}`,
+                  transition: 'background 0.15s',
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    {/* Team name */}
+                    <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, marginBottom: 2 }}>
+                      {tx.team}
+                    </div>
+
+                    {/* Transaction detail */}
+                    <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary }}>
+                      <span style={{ color: txTypeColor(tx.type) }}>{tx.type}</span>
+                      {': '}
+                      <span style={{ color: colors.success }}>{tx.player}</span>
+                      {tx.droppedPlayer && (
+                        <>
+                          <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ drop</span>
+                          <span style={{ color: colors.danger }}>{tx.droppedPlayer}</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Date + segment + status */}
+                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>{tx.date}{tx.segment ? ' · ' + tx.segment : ''}</span>
+                      {tx.status && tx.status !== 'processed' && (
+                        <span style={{ color: statusColor(tx.status), fontWeight: 600 }}>
+                          {tx.status}{tx.failReason ? ' — ' + tx.failReason : ''}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ ...theme.statNum, fontSize: 13, color: colors.earningsGreen, marginTop: 2 }}>
-                    ${team.seasonTotal}
-                  </div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 1 }}>
-                    ${team.swingTotal} swing
+
+                  {/* Fee + commish actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    {tx.type !== 'mulligan' && (
+                      <span style={{
+                        ...theme.statNum, fontSize: 13, fontWeight: 600,
+                        color: tx.fee > 0 ? colors.earningsGreen : colors.textMuted,
+                      }}>
+                        ${tx.fee}
+                      </span>
+                    )}
+
+                    {isCommissioner && tx.type !== 'mulligan' && (
+                      <>
+                        {/* Edit button */}
+                        <button
+                          onClick={() => setEditingTx({ tx, txIndex: idx })}
+                          title="Edit transaction"
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'rgba(100,160,255,0.65)',
+                            padding: '3px 4px', borderRadius: 2,
+                            display: 'flex', alignItems: 'center',
+                            transition: 'color 0.15s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.color = 'rgba(150,190,255,0.9)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(100,160,255,0.65)'; }}
+                        >
+                          <Edit2 style={{ width: 13, height: 13 }} />
+                        </button>
+
+                        {/* Undo button */}
+                        <button
+                          onClick={() => undoTransaction(tx)}
+                          title="Undo transaction"
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
+                            letterSpacing: '0.5px', color: colors.danger,
+                            padding: '2px 0', transition: 'opacity 0.15s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
+                          onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+                        >
+                          Undo
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -101,90 +493,6 @@ export const TransactionsView = ({ transactions, teams, setTransactions, updateT
           </div>
         </div>
       </div>
-
-      {/* ── Transaction history ── */}
-      <div style={theme.card}>
-        <div style={{ ...theme.cardHeader, justifyContent: 'space-between' }}>
-          <h2 style={theme.h2}>Transaction History</h2>
-          <select
-            value={filterTeam}
-            onChange={e => setFilterTeam(e.target.value)}
-            style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
-            onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
-            onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
-          >
-            <option value="all">All Teams</option>
-            {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-          </select>
-        </div>
-
-        <div style={{ padding: '0 4px' }}>
-          {filteredTransactions.length === 0 && (
-            <div style={theme.emptyState}>No transactions yet</div>
-          )}
-          {filteredTransactions.map((tx, index) => (
-            <div key={index} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-              padding: '10px 16px', gap: 8,
-              borderBottom: `1px solid ${colors.borderSubtle}`,
-              transition: 'background 0.15s',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              <div style={{ minWidth: 0 }}>
-                {/* Team name */}
-                <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, marginBottom: 2 }}>
-                  {tx.team}
-                </div>
-
-                {/* Transaction detail */}
-                <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary }}>
-                  <span style={{ color: txTypeColor(tx.type) }}>{tx.type}</span>
-                  {': '}
-                  <span style={{ color: colors.success }}>{tx.player}</span>
-                  {tx.droppedPlayer && (
-                    <>
-                      <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ drop</span>
-                      <span style={{ color: colors.danger }}>{tx.droppedPlayer}</span>
-                    </>
-                  )}
-                </div>
-
-                {/* Date + segment */}
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 2 }}>
-                  {tx.date}{tx.segment ? ` · ${tx.segment}` : ''}
-                </div>
-              </div>
-
-              {/* Fee + undo */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                {tx.type !== 'mulligan' && (
-                  <span style={{
-                    ...theme.statNum, fontSize: 13, fontWeight: 600,
-                    color: tx.fee > 0 ? colors.earningsGreen : colors.textMuted,
-                  }}>
-                    ${tx.fee}
-                  </span>
-                )}
-                {isCommissioner && tx.type !== 'mulligan' && (
-                  <button onClick={() => undoTransaction(tx)} style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
-                    letterSpacing: '0.5px', color: colors.danger,
-                    padding: '2px 0', transition: 'opacity 0.15s',
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
-                    onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-                  >
-                    Undo
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+    </>
   );
 };
