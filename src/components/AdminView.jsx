@@ -113,6 +113,10 @@ export const AdminView = ({
   const [showScheduleImporter, setShowScheduleImporter]           = useState(false);
   const [showDraftModal, setShowDraftModal]                       = useState(false);
   const [rosterMgmtTeam, setRosterMgmtTeam]                       = useState('');
+  const [mgCredTeam,    setMgCredTeam]                           = useState('');
+  const [mgCredName,    setMgCredName]                           = useState('');
+  const [mgCredPass,    setMgCredPass]                           = useState('');
+  const [mgCredSaving,  setMgCredSaving]                         = useState(false);
   const [playerSearch, setPlayerSearch]                           = useState('');
   const [owgrLastSynced, setOwgrLastSynced]                       = useState(null);
   const [showPlayerIdInput, setShowPlayerIdInput]                 = useState(false);
@@ -588,6 +592,20 @@ export const AdminView = ({
       } else { await storage.set(STORAGE_KEYS.OWGR_LAST_SYNCED, now.toString()); setOwgrLastSynced(now); dialog.showToast(`✓ Loaded ${newPlayers.length} players!`, 'success'); }
       updateRankings(newPlayers);
     } catch (error) { dialog.showToast(`API Error: ${error.message}`, 'error'); }
+  };
+
+  const handleSetManagerCredentials = async () => {
+    if (!mgCredTeam || !mgCredName.trim() || !mgCredPass.trim()) {
+      dialog.showToast('Select a team and enter both name and password', 'error'); return;
+    }
+    setMgCredSaving(true);
+    try {
+      await managerAuthApi.assignManagerToTeam(mgCredTeam, mgCredName.trim(), mgCredPass.trim());
+      dialog.showToast(`✓ Login set for ${mgCredName.trim()}`, 'success');
+      setMgCredName(''); setMgCredPass('');
+    } catch (e) {
+      dialog.showToast('Failed: ' + e.message, 'error');
+    } finally { setMgCredSaving(false); }
   };
 
   const handleAddPlayerId = async () => {
@@ -1117,6 +1135,37 @@ export const AdminView = ({
               </>
             );
           })()}
+        </SectionBody>
+      </Section>
+
+      {/* Manager Logins */}
+      <Section>
+        <SectionHeader icon="🔑" title="Manager Logins" />
+        <SectionBody>
+          <p style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
+            Set the last name and password each manager uses to log in.
+          </p>
+          <ThemedSelect value={mgCredTeam} onChange={e => setMgCredTeam(e.target.value)} style={{ marginBottom: 8 }}>
+            <option value="">Select team…</option>
+            {teams.map(t => <option key={t.id} value={t.id}>{t.name} ({t.owner})</option>)}
+          </ThemedSelect>
+          <input
+            type="text"
+            placeholder="Last name (e.g. Hershfield)"
+            value={mgCredName}
+            onChange={e => setMgCredName(e.target.value)}
+            style={{ ...theme.input, marginBottom: 8 }}
+          />
+          <input
+            type="text"
+            placeholder="Password"
+            value={mgCredPass}
+            onChange={e => setMgCredPass(e.target.value)}
+            style={{ ...theme.input, marginBottom: 8 }}
+          />
+          <Btn onClick={handleSetManagerCredentials} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}>
+            {mgCredSaving ? 'Saving…' : '✓ Set Login'}
+          </Btn>
         </SectionBody>
       </Section>
 
