@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Trash2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate } from '../utils/index.js';
 import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
 import { STORAGE_KEYS } from '../constants/index.js';
+
+const accentColor   = (waiver) => waiver ? colors.warning         : colors.success;
+const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.12)' : 'rgba(80,180,120,0.12)';
+const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,180,120,0.35)';
 
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, allPlayers, teams,
@@ -15,9 +19,9 @@ export const AddDropPlayerModal = ({
   const [searchTerm,           setSearchTerm]           = useState('');
   const [selectedPlayerToAdd,  setSelectedPlayerToAdd]  = useState(null);
   const [selectedPlayerToDrop, setSelectedPlayerToDrop] = useState(null);
-  const [step,                 setStep]                 = useState('browse');
   const [saving,               setSaving]               = useState(false);
-  const dialog = useDialog();
+  const bodyRef  = useRef(null);
+  const dialog   = useDialog();
 
   // Pre-populate when editing an existing waiver claim
   useEffect(() => {
@@ -28,13 +32,19 @@ export const AddDropPlayerModal = ({
         const toDrop = currentRoster.find(p => p.name === editingWaiverData.droppedPlayer);
         if (toDrop) setSelectedPlayerToDrop(toDrop);
       }
-      setStep('confirm');
     }
   }, [editingWaiverData, isOpen, allPlayers, currentRoster]);
 
+  // Scroll to top whenever drop selection changes (or add selection is made)
+  useEffect(() => {
+    if (selectedPlayerToDrop && bodyRef.current) {
+      bodyRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [selectedPlayerToDrop]);
+
   if (!isOpen || !team) return null;
 
-  // ── Available players ────────────────────────────────────────────────────────
+  // ── Available players ──────────────────────────────────────────────────────
   const rosteredPlayers = new Set();
   teams.forEach(t => {
     let effective = t.roster.map(p => p.name);
@@ -53,13 +63,14 @@ export const AddDropPlayerModal = ({
     p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  const rosterFull = currentRoster.length >= ROSTER_LIMIT;
-  const fee        = isWaiverMode ? TRANSACTION_FEE_WAIVER : TRANSACTION_FEE_FREE_AGENT;
+  const rosterFull   = currentRoster.length >= ROSTER_LIMIT;
+  const needsDrop    = rosterFull && selectedPlayerToAdd;
+  const canConfirm   = selectedPlayerToAdd && (!rosterFull || selectedPlayerToDrop);
+  const fee          = isWaiverMode ? TRANSACTION_FEE_WAIVER : TRANSACTION_FEE_FREE_AGENT;
 
-  // ── Confirm & persist ────────────────────────────────────────────────────────
+  // ── Confirm & persist ──────────────────────────────────────────────────────
   const handleConfirm = async () => {
-    if (!selectedPlayerToAdd) return;
-    if (rosterFull && !selectedPlayerToDrop) return;
+    if (!canConfirm) return;
     setSaving(true);
 
     const newTx = {
@@ -78,45 +89,75 @@ export const AddDropPlayerModal = ({
       timestamp: Date.now(),
     };
 
-    const updatedTeams = teams.map(t =>
-      t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) + fee } : t,
-    );
+    const newPlayer = {
+      name: selectedPlayerToAdd.name,
+      limited: false, unlimited: false, stars: 0,
+      starts: 0, eventsPlayed: 0, cutsMade: 0,
+      pgaTourEarnings: 0, sfglEarnings: 0, headshot: '',
+    };
 
-    // Optimistic local update first
+    const updatedTeams = teams.map(t => {
+      if (t.id !== team.id) return t;
+      let newRoster = [...t.roster];
+      if (!isWaiverMode) {
+        if (selectedPlayerToDrop) newRoster = newRoster.filter(p => p.name !== selectedPlayerToDrop.name);
+        if (!newRoster.some(p => p.name === newPlayer.name)) newRoster.push(newPlayer);
+      }
+      return { ...t, roster: newRoster, transactionFees: (t.transactionFees || 0) + fee };
+    });
+
+    const newTransactions = [newTx, ...transactions];
     updateTeams(updatedTeams);
-    setTransactions(prev => [newTx, ...prev]);
-
-    // Persist to sfgl_data so all devices see this
+    setTransactions(newTransactions);
     await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, [newTx, ...transactions]);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, newTransactions);
 
     setSaving(false);
     dialog.showToast(
-      `${isWaiverMode ? 'Waiver claim' : 'Free agent add'}: ${selectedPlayerToAdd.name}`,
+      `${isWaiverMode ? 'Waiver claim submitted' : `Added ${selectedPlayerToAdd.name}`}${selectedPlayerToDrop ? ` / Dropped ${selectedPlayerToDrop.name}` : ''}`,
       'success',
     );
     reset();
   };
 
   const reset = () => {
-    setStep('browse');
     setSelectedPlayerToAdd(null);
     setSelectedPlayerToDrop(null);
     setSearchTerm('');
     onClose();
   };
 
-  // ── Shared sub-styles ────────────────────────────────────────────────────────
-  const playerRow = {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '9px 12px',
-    background: colors.cardBg,
-    border: `1px solid ${colors.borderSubtle}`,
-    borderRadius: 3,
-    marginBottom: 6,
-    cursor: 'pointer',
-    transition: 'background 0.15s, border-color 0.15s',
+  const selectPlayerToAdd = (player) => {
+    setSelectedPlayerToAdd(player);
+    setSelectedPlayerToDrop(null);
+    // Scroll to top to show the transaction tiles
+    if (bodyRef.current) bodyRef.current.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // ── Confirm button (reused in header and inline) ──────────────────────────
+  const ConfirmBtn = ({ compact = false }) => (
+    <button
+      onClick={handleConfirm}
+      disabled={saving || !canConfirm}
+      style={{
+        fontFamily: fonts.sans,
+        fontSize: compact ? 11 : 13,
+        fontWeight: 600,
+        padding: compact ? '6px 14px' : '10px 20px',
+        borderRadius: 3,
+        border: `1px solid ${canConfirm ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
+        background: canConfirm
+          ? (isWaiverMode ? 'rgba(220,170,60,0.18)' : 'rgba(80,180,120,0.18)')
+          : 'rgba(255,255,255,0.04)',
+        color: canConfirm ? accentColor(isWaiverMode) : colors.textMuted,
+        cursor: canConfirm && !saving ? 'pointer' : 'not-allowed',
+        transition: 'all 0.15s',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {saving ? 'Saving…' : 'Confirm'}
+    </button>
+  );
 
   return (
     <div style={{
@@ -130,204 +171,248 @@ export const AddDropPlayerModal = ({
         border: `2px solid ${isWaiverMode ? colors.warning : colors.success}`,
         borderRadius: 4,
         width: '100%', maxWidth: 480,
-        maxHeight: '75vh',
+        maxHeight: '82vh',
         display: 'flex', flexDirection: 'column',
       }}>
 
         {/* ── Header ── */}
         <div style={{
           padding: '14px 18px',
-          background: `linear-gradient(90deg, ${isWaiverMode ? 'rgba(220,170,60,0.12)' : 'rgba(80,180,120,0.12)'} 0%, transparent 100%)`,
+          background: `linear-gradient(90deg, ${accentBg(isWaiverMode)} 0%, transparent 100%)`,
           borderBottom: `1px solid ${colors.borderSubtle}`,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          flexShrink: 0,
+          flexShrink: 0, gap: 10,
         }}>
-          <div>
-            <h2 style={{ fontFamily: fonts.serif, fontSize: 15, color: isWaiverMode ? colors.warning : colors.success, margin: 0 }}>
-              {isWaiverMode ? `⏰ Waiver Claim · $${TRANSACTION_FEE_WAIVER.toLocaleString()}` : `✅ Add Free Agent · $${TRANSACTION_FEE_FREE_AGENT.toLocaleString()}`}
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{ fontFamily: fonts.serif, fontSize: 15, color: accentColor(isWaiverMode), margin: 0 }}>
+              {isWaiverMode
+                ? `⏰ Waiver Claim · $${TRANSACTION_FEE_WAIVER.toLocaleString()}`
+                : `✅ Free Agent · $${TRANSACTION_FEE_FREE_AGENT.toLocaleString()}`}
             </h2>
-            <p style={{ ...theme.smallText, marginTop: 3 }}>
-              {team.name} · {step === 'browse' ? 'Search and select a player' : 'Confirm transaction'}
-            </p>
+            <p style={{ ...theme.smallText, marginTop: 2 }}>{team.name}</p>
           </div>
-          <button onClick={reset} style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: colors.textSecondary, padding: 4,
-          }}>
-            <X style={{ width: 18, height: 18 }} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {/* Confirm button in header — only when both players selected */}
+            {canConfirm && <ConfirmBtn compact />}
+            <button onClick={reset} style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, padding: 4 }}>
+              <X style={{ width: 18, height: 18 }} />
+            </button>
+          </div>
         </div>
 
+        {/* ── Transaction tiles (sticky below header once add is selected) ── */}
+        {selectedPlayerToAdd && (
+          <div style={{
+            display: 'flex', gap: 8, padding: '10px 18px',
+            borderBottom: `1px solid ${colors.borderSubtle}`,
+            flexShrink: 0,
+            background: '#0d1a2e',
+          }}>
+            {/* Adding tile */}
+            <div style={{
+              flex: 1, padding: '8px 12px',
+              background: accentBg(isWaiverMode),
+              border: `1px solid ${accentBorder(isWaiverMode)}`,
+              borderRadius: 3,
+            }}>
+              <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: accentColor(isWaiverMode), marginBottom: 3 }}>
+                Adding
+              </div>
+              <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {selectedPlayerToAdd.name}
+              </div>
+            </div>
+
+            {/* Drop tile — shows placeholder or selected player */}
+            {rosterFull && (
+              <div style={{
+                flex: 1, padding: '8px 12px',
+                background: selectedPlayerToDrop ? colors.dangerBg : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${selectedPlayerToDrop ? colors.dangerBorder : 'rgba(255,255,255,0.06)'}`,
+                borderRadius: 3,
+                display: 'flex', flexDirection: 'column', justifyContent: 'center',
+              }}>
+                <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: selectedPlayerToDrop ? colors.danger : colors.textMuted, marginBottom: 3 }}>
+                  Dropping
+                </div>
+                <div style={{ fontFamily: fonts.serif, fontSize: 13, color: selectedPlayerToDrop ? colors.danger : colors.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {selectedPlayerToDrop ? selectedPlayerToDrop.name : '← tap a player'}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Body ── */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', minHeight: 0 }}>
+        <div ref={bodyRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', minHeight: 0 }}>
 
-          {step === 'browse' ? (
-            <>
-              {/* Search input */}
-              <input
-                type="text"
-                placeholder="Search players…"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                autoFocus
-                style={{ ...theme.input, marginBottom: 12 }}
-                onFocus={e => { e.target.style.borderColor = colors.borderFocus; e.target.style.background = colors.inputBgFocus; }}
-                onBlur={e => { e.target.style.borderColor = colors.borderInput; e.target.style.background = colors.inputBg; }}
-              />
-
-              {/* Player list */}
-              {filteredPlayers.length === 0 ? (
-                <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0' }}>No available players found</p>
-              ) : (
-                filteredPlayers.slice(0, 50).map(player => (
+          {/* ── Drop list — shown when add player is selected and roster full ── */}
+          {needsDrop && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ ...theme.smallText, marginBottom: 8, color: colors.textSecondary }}>
+                Roster full · select a player to drop (Limited players cannot be dropped)
+              </p>
+              {currentRoster.map(player => {
+                const isSelected = selectedPlayerToDrop?.name === player.name;
+                const canDrop    = !player.limited;
+                return (
                   <div
                     key={player.name}
-                    style={playerRow}
-                    onMouseEnter={e => { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; }}
+                    onClick={() => canDrop && setSelectedPlayerToDrop(isSelected ? null : player)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '9px 12px', marginBottom: 6, borderRadius: 3,
+                      background: isSelected ? colors.dangerBg : 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${isSelected ? colors.dangerBorder : colors.borderSubtle}`,
+                      cursor: canDrop ? 'pointer' : 'not-allowed',
+                      opacity: canDrop ? 1 : 0.4,
+                      transition: 'all 0.15s',
+                    }}
+                    onMouseEnter={e => { if (canDrop && !isSelected) e.currentTarget.style.background = 'rgba(180,60,60,0.08)'; }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{
-                        width: 28, height: 28, borderRadius: '50%',
-                        background: colors.buttonNavy,
-                        border: `1px solid ${colors.borderSubtle}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontFamily: fonts.sans, fontSize: 10, color: colors.textSecondary,
-                        flexShrink: 0,
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {/* Limited badge or drop icon */}
+                      {player.limited ? (
+                        <span style={{
+                          fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
+                          letterSpacing: 0.8, textTransform: 'uppercase',
+                          color: 'rgba(240,200,60,0.7)',
+                          border: '1px solid rgba(240,200,60,0.3)',
+                          borderRadius: 2, padding: '2px 5px',
+                          flexShrink: 0,
+                        }}>
+                          LTD
+                        </span>
+                      ) : (
+                        <Trash2 style={{
+                          width: 14, height: 14, flexShrink: 0,
+                          color: isSelected ? colors.danger : 'rgba(220,80,80,0.55)',
+                        }} />
+                      )}
+                      <span style={{
+                        fontFamily: fonts.serif, fontSize: 13,
+                        color: isSelected ? colors.danger : (player.limited ? 'rgba(240,200,60,0.85)' : colors.textPrimary),
                       }}>
-                        {player.worldRank === 999 ? 'NR' : `#${player.worldRank}`}
-                      </div>
-                      <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>
                         {player.name}
                       </span>
                     </div>
-                    <button
-                      onClick={() => { setSelectedPlayerToAdd(player); setStep('confirm'); }}
-                      style={{
-                        ...theme.btnPrimary,
-                        padding: '5px 14px', fontSize: 11,
-                        background: isWaiverMode ? 'rgba(220,170,60,0.15)' : 'rgba(80,180,120,0.15)',
-                        border: `1px solid ${isWaiverMode ? 'rgba(220,170,60,0.4)' : 'rgba(80,180,120,0.4)'}`,
-                        color: isWaiverMode ? colors.warning : colors.success,
-                      }}
-                    >
-                      Select
-                    </button>
+                    {isSelected && (
+                      <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, color: colors.danger, letterSpacing: 1, textTransform: 'uppercase' }}>
+                        DROP
+                      </span>
+                    )}
                   </div>
-                ))
-              )}
-            </>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-              {/* Adding pill */}
-              <div style={{
-                padding: '10px 14px',
-                background: isWaiverMode ? 'rgba(220,170,60,0.1)' : 'rgba(80,180,120,0.1)',
-                border: `1px solid ${isWaiverMode ? 'rgba(220,170,60,0.35)' : 'rgba(80,180,120,0.35)'}`,
-                borderRadius: 3,
-              }}>
-                <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: isWaiverMode ? colors.warning : colors.success }}>
-                  Adding
-                </span>
-                <div style={{ fontFamily: fonts.serif, fontSize: 14, color: colors.textPrimary, marginTop: 3 }}>
-                  {selectedPlayerToAdd?.name}
-                </div>
-              </div>
-
-              {/* Drop selector (if roster full) */}
-              {rosterFull && (
-                <div>
-                  <p style={{ ...theme.smallText, marginBottom: 8 }}>
-                    Roster is full ({ROSTER_LIMIT}). Select a player to drop:
-                  </p>
-                  {currentRoster.map(player => {
-                    const isSelected = selectedPlayerToDrop?.name === player.name;
-                    return (
-                      <button
-                        key={player.name}
-                        onClick={() => setSelectedPlayerToDrop(isSelected ? null : player)}
-                        style={{
-                          ...playerRow,
-                          width: '100%', textAlign: 'left',
-                          background: isSelected ? colors.dangerBg : colors.cardBg,
-                          border: `1px solid ${isSelected ? colors.dangerBorder : colors.borderSubtle}`,
-                          cursor: 'pointer',
-                        }}
-                        onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = colors.cardBgHover; }}
-                        onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = colors.cardBg; }}
-                      >
-                        <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isSelected ? colors.danger : colors.textPrimary }}>
-                          {player.name}
-                        </span>
-                        {isSelected && (
-                          <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: 1, color: colors.danger, textTransform: 'uppercase' }}>
-                            Drop
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Summary */}
-              <div style={{
-                padding: '10px 14px',
-                background: colors.cardBg,
-                border: `1px solid ${colors.borderSubtle}`,
-                borderRadius: 3,
-                fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary,
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span>Transaction fee</span>
-                  <span style={{ color: colors.textGold }}>${fee.toLocaleString()}</span>
-                </div>
-                {selectedPlayerToDrop && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Dropping</span>
-                    <span style={{ color: colors.danger }}>{selectedPlayerToDrop.name}</span>
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                  <span>Type</span>
-                  <span style={{ color: isWaiverMode ? colors.warning : colors.success }}>
-                    {isWaiverMode ? 'Waiver (pending)' : 'Free agent (immediate)'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4 }}>
-                <button
-                  onClick={() => setStep('browse')}
-                  style={{ ...theme.btnSecondary, padding: '10px 0' }}
-                >
-                  ← Back
-                </button>
-                <button
-                  onClick={handleConfirm}
-                  disabled={saving || (rosterFull && !selectedPlayerToDrop)}
-                  style={{
-                    ...theme.btnPrimary,
-                    padding: '10px 0',
-                    background: (saving || (rosterFull && !selectedPlayerToDrop))
-                      ? 'rgba(255,255,255,0.06)'
-                      : (isWaiverMode ? 'rgba(220,170,60,0.18)' : 'rgba(80,180,120,0.18)'),
-                    border: `1px solid ${(rosterFull && !selectedPlayerToDrop) ? colors.borderSubtle : (isWaiverMode ? 'rgba(220,170,60,0.5)' : 'rgba(80,180,120,0.5)')}`,
-                    color: (saving || (rosterFull && !selectedPlayerToDrop))
-                      ? colors.textMuted
-                      : (isWaiverMode ? colors.warning : colors.success),
-                    cursor: (saving || (rosterFull && !selectedPlayerToDrop)) ? 'not-allowed' : 'pointer',
-                    opacity: 1,
-                  }}
-                >
-                  {saving ? 'Saving…' : 'Confirm'}
-                </button>
-              </div>
+                );
+              })}
             </div>
           )}
+
+          {/* ── Confirm row (inline, when drop not needed or already done) ── */}
+          {selectedPlayerToAdd && !needsDrop && (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 14px', marginBottom: 16,
+              background: colors.cardBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3,
+              fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary,
+            }}>
+              <span>Fee: <span style={{ color: 'rgba(240,200,60,0.85)' }}>${fee.toLocaleString()}</span> · <span style={{ color: accentColor(isWaiverMode) }}>{isWaiverMode ? 'Waiver (pending)' : 'Immediate'}</span></span>
+              <ConfirmBtn compact />
+            </div>
+          )}
+
+          {/* ── Browse list ── */}
+          <input
+            type="text"
+            placeholder="Search free agents…"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            autoFocus={!selectedPlayerToAdd}
+            style={{ ...theme.input, marginBottom: 12 }}
+            onFocus={e => { e.target.style.borderColor = colors.borderFocus; e.target.style.background = colors.inputBgFocus; }}
+            onBlur={e => { e.target.style.borderColor = colors.borderInput; e.target.style.background = colors.inputBg; }}
+          />
+
+          {filteredPlayers.length === 0 ? (
+            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0' }}>No available players found</p>
+          ) : (
+            filteredPlayers.slice(0, 50).map(player => {
+              const isCurrentlySelected = selectedPlayerToAdd?.name === player.name;
+              return (
+                <div
+                  key={player.name}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '9px 12px', marginBottom: 6, borderRadius: 3,
+                    background: isCurrentlySelected ? accentBg(isWaiverMode) : colors.cardBg,
+                    border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { if (!isCurrentlySelected) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
+                  onMouseLeave={e => { if (!isCurrentlySelected) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: '50%',
+                      background: colors.buttonNavy, border: `1px solid ${colors.borderSubtle}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontFamily: fonts.sans, fontSize: 10, color: colors.textSecondary, flexShrink: 0,
+                    }}>
+                      {player.worldRank === 999 ? 'NR' : `#${player.worldRank}`}
+                    </div>
+                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
+                      {player.name}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => selectPlayerToAdd(player)}
+                    style={{
+                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      padding: '5px 14px', borderRadius: 3, cursor: 'pointer',
+                      transition: 'all 0.15s',
+                      background: isCurrentlySelected ? accentBg(isWaiverMode) : (isWaiverMode ? 'rgba(220,170,60,0.1)' : 'rgba(80,180,120,0.1)'),
+                      border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : (isWaiverMode ? 'rgba(220,170,60,0.3)' : 'rgba(80,180,120,0.3)')}`,
+                      color: isCurrentlySelected ? accentColor(isWaiverMode) : (isWaiverMode ? colors.warning : colors.success),
+                    }}
+                  >
+                    {isCurrentlySelected ? '✓ Selected' : 'Select'}
+                  </button>
+                </div>
+              );
+            })
+          )}
         </div>
+
+        {/* ── Footer — only when drop needed and not yet selected ── */}
+        {needsDrop && !selectedPlayerToDrop && (
+          <div style={{
+            padding: '10px 18px',
+            borderTop: `1px solid ${colors.borderSubtle}`,
+            background: 'rgba(180,60,60,0.06)',
+            flexShrink: 0,
+            fontFamily: fonts.sans, fontSize: 11, color: colors.danger,
+            textAlign: 'center',
+          }}>
+            Select a player to drop above to continue
+          </div>
+        )}
+
+        {/* ── Footer confirm — when drop is selected ── */}
+        {needsDrop && selectedPlayerToDrop && (
+          <div style={{
+            padding: '10px 18px', borderTop: `1px solid ${colors.borderSubtle}`,
+            background: 'rgba(180,60,60,0.06)', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            fontFamily: fonts.sans, fontSize: 11,
+          }}>
+            <span style={{ color: colors.textSecondary }}>
+              Fee: <span style={{ color: 'rgba(240,200,60,0.85)' }}>${fee.toLocaleString()}</span>
+              {' · '}
+              <span style={{ color: accentColor(isWaiverMode) }}>{isWaiverMode ? 'Waiver (pending)' : 'Immediate'}</span>
+            </span>
+            <ConfirmBtn compact />
+          </div>
+        )}
       </div>
     </div>
   );
