@@ -129,6 +129,14 @@ const FantasyGolfLeague = () => {
           STORAGE_KEYS.SETTINGS,
           STORAGE_KEYS.GLOBAL_PLAYER_STATS,
         ]);
+        // Store raw result for diagnostic display
+        window.__sfglDiag = {
+          teamsCount: rows[STORAGE_KEYS.TEAMS]?.length,
+          team0earn: rows[STORAGE_KEYS.TEAMS]?.[0]?.earnings,
+          team0roster: rows[STORAGE_KEYS.TEAMS]?.[0]?.roster?.length,
+          keys: Object.keys(rows),
+          error: null,
+        };
         if (rows[STORAGE_KEYS.TEAMS]?.length > 0)
           setTeams(rows[STORAGE_KEYS.TEAMS]);
         if (rows[STORAGE_KEYS.TOURNAMENTS]?.length > 0)
@@ -141,6 +149,7 @@ const FantasyGolfLeague = () => {
             Object.keys(rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS]).length > 0)
           setGlobalPlayerStats(rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
       } catch (e) {
+        window.__sfglDiag = { error: e.message };
         console.warn('Supabase boot hydration failed:', e.message);
       } finally {
         setSupabaseReady(true);
@@ -418,13 +427,12 @@ const FantasyGolfLeague = () => {
         {/* ── DIAGNOSTIC PANEL — remove after debugging ── */}
         {activeTab === 'standings' && (
           <div style={{ background: 'rgba(0,0,0,0.85)', border: '1px solid rgba(255,100,100,0.5)', borderRadius: 4, padding: '10px 12px', marginBottom: 12, fontSize: 11, fontFamily: 'monospace', color: 'rgba(255,220,80,0.95)', lineHeight: 1.8 }}>
-            <div><b>DIAG v2</b> sbReady:{String(supabaseReady)} teams:{teams.length} resolved:{resolvedTeams.length}</div>
-            <div>team[0] name:{resolvedTeams[0]?.name} | earn:{resolvedTeams[0]?.earnings} | segEarn:{resolvedTeams[0]?.segmentEarnings}</div>
-            <div>team[0] roster:{resolvedTeams[0]?.roster?.length ?? 'MISSING'} | lineup:{JSON.stringify(resolvedTeams[0]?.lineup ?? 'MISSING')}</div>
-            <div>team[0] keys:{resolvedTeams[0] ? Object.keys(resolvedTeams[0]).join(',') : 'NONE'}</div>
-            <div>team[1] roster[0]:{JSON.stringify(resolvedTeams[1]?.roster?.[0])?.slice(0,80)}</div>
-            <div>tournaments:{tournaments.length} | playing:{tournaments.find(t=>t.playing)?.name ?? 'none'}</div>
-            <div>transactions:{transactions.length}</div>
+            <div><b>DIAG v3</b> sbReady:{String(supabaseReady)} teams:{teams.length} resolved:{resolvedTeams.length}</div>
+            <div>team[0] name:{resolvedTeams[0]?.name} | earn:{resolvedTeams[0]?.earnings} | roster:{resolvedTeams[0]?.roster?.length ?? 'MISSING'}</div>
+            <div>sfgl_data read → teams:{window.__sfglDiag?.teamsCount ?? 'n/a'} earn:{window.__sfglDiag?.team0earn ?? 'n/a'} roster:{window.__sfglDiag?.team0roster ?? 'n/a'}</div>
+            <div>sfgl_data keys returned:{(window.__sfglDiag?.keys ?? []).join(',') || 'NONE'}</div>
+            <div>sfgl_data error:{window.__sfglDiag?.error ?? 'none'}</div>
+            <div>tournaments:{tournaments.length} transactions:{transactions.length}</div>
           </div>
         )}
 
