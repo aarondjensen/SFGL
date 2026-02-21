@@ -613,3 +613,42 @@ export const sfglDataApi = {
     return result;
   },
 };
+
+// ── Compatibility stubs — exported for files that still import these ──────────
+// The actual data now lives in sfgl_data via sfglDataApi.
+export const playerRankingsApi = {
+  async get() { return null; },
+  async set() {},
+};
+export const headshotsApi = {
+  async get() { return {}; },
+  async setAll() {},
+};
+export const playerStatsApi = {
+  async getAll() { return []; },
+  async setAll() {},
+};
+export const globalPlayerStatsApi = {
+  async get() { return {}; },
+  async set() {},
+};
+export const teamsApi = {
+  async getAll() { return []; },
+  async setAll() {},
+  async update() {},
+};
+export const tournamentsApi = {
+  async getAll() { return []; },
+  async setAll() {},
+  async update() {},
+};
+export const transactionsApi = {
+  async getAll() { return []; },
+  async add() {},
+  async setAll() {},
+};
+export const settingsApi = {
+  async get() { return null; },
+  async set() {},
+  async getAll() { return {}; },
+};
