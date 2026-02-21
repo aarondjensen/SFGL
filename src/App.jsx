@@ -39,6 +39,7 @@ const FantasyGolfLeague = () => {
   const [adminPassword,         setAdminPassword]         = useState('');
   const [firstTeeTime,          setFirstTeeTime]          = useState(null);
   const [resultsHydrated,       setResultsHydrated]       = useState(false);
+  const [supabaseReady,         setSupabaseReady]         = useState(false);
 
   const league = useLeague(STORAGE_KEYS);
 
@@ -96,10 +97,9 @@ const FantasyGolfLeague = () => {
   }, []);
 
   // ── Primary Supabase boot hydration ──────────────────────────────────────
-  // useLeague reads from localStorage first. On any device that has never
-  // loaded the app (mobile, new browser, incognito), localStorage is empty
-  // and INITIAL_TEAMS is shown. This effect loads the real data from Supabase
-  // and replaces the empty/default state. Runs once after loading completes.
+  // window.storage (used by useLeague) is device/session scoped — not shared.
+  // This effect loads ALL core data from Supabase so every device always sees
+  // the same state. supabaseReady gates rendering until hydration completes.
   useEffect(() => {
     if (loading) return;
     const hydrateFromSupabase = async () => {
@@ -112,14 +112,18 @@ const FantasyGolfLeague = () => {
         if (sbTeams?.length > 0)        setTeams(sbTeams);
         if (sbTournaments?.length > 0)  setTournaments(sbTournaments);
         if (sbTransactions?.length > 0) setTransactions(sbTransactions);
-        // Also load settings
-        const sbSettings = await settingsApi.getAll().catch(() => null);
-        if (sbSettings && Object.keys(sbSettings).length > 0) {
-          // Merge individual setting keys back into settings object
-          if (sbSettings.app_settings) setSettings(sbSettings.app_settings);
-        }
+        try {
+          const sbSettings = await settingsApi.get('app_settings');
+          if (sbSettings) setSettings(sbSettings);
+        } catch {}
+        try {
+          const sbStats = await globalPlayerStatsApi.get();
+          if (sbStats && Object.keys(sbStats).length > 0) setGlobalPlayerStats(sbStats);
+        } catch {}
       } catch (e) {
         console.warn('Supabase boot hydration failed:', e.message);
+      } finally {
+        setSupabaseReady(true);
       }
     };
     hydrateFromSupabase();
@@ -145,19 +149,6 @@ const FantasyGolfLeague = () => {
     });
   }, [loading, tournaments.length, resultsHydrated]);
 
-  // ── Hydrate globalPlayerStats from Supabase ───────────────────────────────
-  // Ensures Tour $ data (eventsPlayed, cutsMade, pgaTourEarnings) is visible
-  // to all managers on any device, not just the one who processed results.
-  useEffect(() => {
-    if (loading) return;
-    globalPlayerStatsApi.get().then(supabaseStats => {
-      if (supabaseStats && Object.keys(supabaseStats).length > 0) {
-        setGlobalPlayerStats(supabaseStats);
-      }
-    }).catch(e => {
-      console.warn('Could not load globalPlayerStats from Supabase:', e.message);
-    });
-  }, [loading]);
 
   // ── Admin login ────────────────────────────────────────────────────────────
   const handleAdminLogin = async () => {
@@ -186,7 +177,7 @@ const FantasyGolfLeague = () => {
     setIsCommissioner(false);
   };
 
-  if (loading) {
+  if (loading || !supabaseReady) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
         <div style={{ fontSize: 28, fontWeight: 600, letterSpacing: 8, color: 'rgba(255,255,255,0.5)' }}>SFGL</div>
