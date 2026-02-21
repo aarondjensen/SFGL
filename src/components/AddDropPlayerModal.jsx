@@ -4,7 +4,8 @@ import { useDialog } from './DialogContext';
 import { getSegmentByDate } from '../utils/index.js';
 import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
-import { transactionsApi, teamsApi } from '../api/supabase';
+import { storage } from '../api';
+import { STORAGE_KEYS } from '../constants/index.js';
 
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, allPlayers, teams,
@@ -85,17 +86,9 @@ export const AddDropPlayerModal = ({
     updateTeams(updatedTeams);
     setTransactions(prev => [newTx, ...prev]);
 
-    // Explicit Supabase persistence — all managers must see this
-    try {
-      await transactionsApi.add(newTx);
-    } catch (e) {
-      console.warn('Supabase transaction save failed:', e.message);
-    }
-    try {
-      await teamsApi.setAll(updatedTeams);
-    } catch (e) {
-      console.warn('Supabase teams save failed:', e.message);
-    }
+    // Persist to sfgl_data so all devices see this
+    await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, [newTx, ...transactions]);
 
     setSaving(false);
     dialog.showToast(
