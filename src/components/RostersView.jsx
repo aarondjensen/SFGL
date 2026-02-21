@@ -591,12 +591,12 @@ export const RostersView = ({
                   >
                     {/* Player cell */}
                     <td style={{ padding: '8px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                         {/* Headshot / lineup toggle */}
                         <button
                           onClick={() => lineupMode && isOwnTeam && (isInLineup || canAddToLineup) && togglePlayerInLineup(player)}
                           disabled={!lineupMode || !isOwnTeam || (!isInLineup && !canAddToLineup)}
-                          style={{ position: 'relative', background: 'none', border: 'none', cursor: lineupMode && isOwnTeam && (isInLineup || canAddToLineup) ? 'pointer' : 'default', padding: 0 }}
+                          style={{ position: 'relative', background: 'none', border: 'none', cursor: lineupMode && isOwnTeam && (isInLineup || canAddToLineup) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
                             src={getPlayerHeadshot(player.name, player.limited, headshots)}
