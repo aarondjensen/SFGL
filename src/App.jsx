@@ -400,7 +400,7 @@ const FantasyGolfLeague = () => {
 
         <ErrorBoundary>
           {activeTab === 'standings' && (
-            <StandingsView teams={resolvedTeams} />
+            <StandingsView teams={resolvedTeams} tournaments={tournaments} />
           )}
           {activeTab === 'results' && (
             <ResultsView teams={resolvedTeams} tournaments={tournaments} />
