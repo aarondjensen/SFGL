@@ -133,6 +133,17 @@ const FantasyGolfLeague = () => {
   }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Hydrate tournament results from Supabase ─────────────────────────────
+  // Reset resultsHydrated whenever the number of completed tournaments increases
+  // (e.g. after a Push to Supabase updates sfgl_data on another device)
+  const completedCount = tournaments.filter(t => t.completed).length;
+  const prevCompletedRef = React.useRef(completedCount);
+  useEffect(() => {
+    if (completedCount > prevCompletedRef.current) {
+      setResultsHydrated(false);
+    }
+    prevCompletedRef.current = completedCount;
+  }, [completedCount]);
+
   // Merges completed tournament results into the tournaments array.
   // Always prefer Supabase — overwrites local data to ensure all devices
   // see the same completed tournament state.

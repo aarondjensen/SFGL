@@ -183,6 +183,7 @@ export const AdminView = ({
     if (!ok) return;
     dialog.showToast('Pushing to Supabase…', 'info');
     try {
+      // Push sfgl_data keys
       await Promise.all([
         sfglDataApi.set(STORAGE_KEYS.TEAMS,               teams),
         sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS,         tournaments),
@@ -190,7 +191,21 @@ export const AdminView = ({
         sfglDataApi.set(STORAGE_KEYS.SETTINGS,            settings),
         sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, globalPlayerStats),
       ]);
-      dialog.showToast('✓ All data pushed to Supabase! Other devices will see it on refresh.', 'success');
+      // Also push each completed tournament's results to tournament_results table
+      // so mobile hydration picks them up on next load
+      const completedTournaments = tournaments.filter(t => t.completed && t.results);
+      if (completedTournaments.length > 0) {
+        await Promise.all(completedTournaments.map(t =>
+          tournamentResultsApi.save({
+            tournamentName: t.name,
+            teamResults:    t.results.teams || {},
+            earningsMap:    t.results.earningsMap || {},
+            roundLeaders:   t.results.roundLeaders || {},
+            fullLineups:    t.results.fullLineups || {},
+          }).catch(() => {})
+        ));
+      }
+      dialog.showToast('✓ All data pushed! Other devices will see it on refresh.', 'success');
     } catch (e) {
       dialog.showToast('Push failed: ' + e.message, 'error');
     }
