@@ -171,9 +171,7 @@ export const AdminView = ({
   const handlePushToSupabase = async () => {
     const ok = await dialog.showConfirm(
       '☁️ Push All Data to Supabase',
-      'This will overwrite the shared Supabase database with the data currently loaded on this device. All other devices will see this data on next refresh.
-
-Use this to sync your desktop data to mobile.',
+      'This will overwrite the shared Supabase database with the data currently loaded on this device. All other devices will see this data on next refresh.\n\nUse this to sync your desktop data to mobile.',
       { confirmText: 'Push to Supabase' }
     );
     if (!ok) return;
