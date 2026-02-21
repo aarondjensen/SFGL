@@ -35,6 +35,8 @@ const SectionBody = ({ children }) => (
 const Btn = ({ onClick, children, variant = 'primary', style, disabled, title }) => {
   const base = variant === 'danger'    ? theme.btnDanger
              : variant === 'secondary' ? theme.btnSecondary
+             : variant === 'warning'   ? { ...theme.btnPrimary, background: 'rgba(220,170,60,0.15)', border: '1px solid rgba(220,170,60,0.4)', color: colors.warning }
+             : variant === 'success'   ? { ...theme.btnPrimary, background: 'rgba(80,180,120,0.15)', border: '1px solid rgba(80,180,120,0.4)', color: colors.success }
              : { ...theme.btnPrimary, background: colors.actionButtonBlue, border: `1px solid rgba(100,160,255,0.2)` };
   return (
     <button onClick={onClick} disabled={disabled} title={title} style={{
@@ -1053,6 +1055,215 @@ export const AdminView = ({
               {owgrLastSynced && <p style={{ ...theme.smallText, fontSize: 10, color: colors.textGoldDim, marginTop: 2 }}>OWGR sync: {new Date(owgrLastSynced).toLocaleDateString()} at {new Date(owgrLastSynced).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}
             </div>
           )}
+        </SectionBody>
+      </Section>
+
+      {/* Process Waivers */}
+      <Section>
+        <SectionHeader icon="⏰" title="Process Waivers" color={colors.warning} />
+        <SectionBody>
+          {(() => {
+            const allPendingWaivers = transactions
+              .map((tx, idx) => ({ ...tx, _idx: idx }))
+              .filter(tx => tx.type === 'waiver' && tx.status === 'pending')
+              .sort((a, b) => (a.priority || 999) - (b.priority || 999));
+
+            // Build current effective roster for a team (base + processed transactions)
+            const buildEffectiveRoster = (team) => {
+              let roster = team.roster.map(p => p.name);
+              transactions
+                .filter(tx => tx.team === team.name && tx.status === 'processed' && tx.type !== 'mulligan')
+                .forEach(tx => {
+                  if (tx.droppedPlayer) roster = roster.filter(n => n !== tx.droppedPlayer);
+                  if (!roster.includes(tx.player)) roster.push(tx.player);
+                });
+              return new Set(roster);
+            };
+
+            // Apply a single processed waiver to the team's actual roster array
+            const applyWaiverToTeam = (t, waiver) => {
+              if (t.name !== waiver.team) return t;
+              let newRoster = [...t.roster];
+              if (waiver.droppedPlayer) newRoster = newRoster.filter(p => p.name !== waiver.droppedPlayer);
+              if (!newRoster.some(p => p.name === waiver.player)) {
+                newRoster.push({ name: waiver.player, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' });
+              }
+              return { ...t, roster: newRoster };
+            };
+
+            const handleProcessSingle = async (waiver) => {
+              // Build all-team rostered set
+              const allRostered = new Set();
+              teams.forEach(t => buildEffectiveRoster(t).forEach(n => allRostered.add(n)));
+              if (allRostered.has(waiver.player)) {
+                dialog.showToast(`${waiver.player} is already rostered — cannot process`, 'error');
+                return;
+              }
+              const updatedTx = transactions.map((tx, idx) =>
+                idx === waiver._idx
+                  ? { ...tx, status: 'processed', processedDate: new Date().toLocaleDateString() }
+                  : tx
+              );
+              const updatedTeams = teams.map(t => applyWaiverToTeam(t, waiver));
+              setTransactions(updatedTx);
+              updateTeams(updatedTeams);
+              await storage.set(STORAGE_KEYS.TRANSACTIONS, updatedTx);
+              await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+              dialog.showToast(`✓ Processed: ${waiver.team} adds ${waiver.player}${waiver.droppedPlayer ? ` / drops ${waiver.droppedPlayer}` : ''}`, 'success');
+            };
+
+            const handleProcessAll = async () => {
+              if (allPendingWaivers.length === 0) return;
+              const ok = await dialog.showConfirm(
+                'Process All Waivers',
+                `Process ${allPendingWaivers.length} pending waiver claim${allPendingWaivers.length !== 1 ? 's' : ''}?\n\nTie-breaker: reverse standings order (lowest season earnings = highest priority).\nEach team's claims process in their set priority order.`,
+                { confirmText: `Process ${allPendingWaivers.length} Waiver${allPendingWaivers.length !== 1 ? 's' : ''}` }
+              );
+              if (!ok) return;
+
+              // Build waiver priority order: reverse season standings
+              const standingsOrder = [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0));
+              const teamPriorityMap = {};
+              standingsOrder.forEach((t, i) => { teamPriorityMap[t.name] = i; });
+
+              // Group by team, sorted by claim priority
+              const waiversByTeam = {};
+              allPendingWaivers.forEach(w => {
+                if (!waiversByTeam[w.team]) waiversByTeam[w.team] = [];
+                waiversByTeam[w.team].push(w);
+              });
+              Object.values(waiversByTeam).forEach(claims => claims.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
+
+              // Seed rostered set from current rosters + processed transactions
+              const allRostered = new Set();
+              teams.forEach(t => buildEffectiveRoster(t).forEach(n => allRostered.add(n)));
+
+              let processedCount = 0, failedCount = 0;
+              const updatedTx = [...transactions];
+              const processedIdxs = new Set();
+              const failedIdxs = new Set();
+              let appliedWaivers = [];
+
+              let moreToProcess = true;
+              while (moreToProcess) {
+                moreToProcess = false;
+                const roundClaims = [];
+                Object.entries(waiversByTeam).forEach(([teamName, claims]) => {
+                  const top = claims.find(c => !processedIdxs.has(c._idx) && !failedIdxs.has(c._idx));
+                  if (top) roundClaims.push({ teamName, claim: top, waiverOrder: teamPriorityMap[teamName] ?? 999 });
+                });
+                if (roundClaims.length === 0) break;
+
+                // Group by player being claimed — resolve ties
+                const byPlayer = {};
+                roundClaims.forEach(rc => {
+                  if (!byPlayer[rc.claim.player]) byPlayer[rc.claim.player] = [];
+                  byPlayer[rc.claim.player].push(rc);
+                });
+
+                Object.entries(byPlayer).forEach(([playerName, contestants]) => {
+                  contestants.sort((a, b) => a.waiverOrder - b.waiverOrder);
+                  const winner = contestants[0];
+                  if (allRostered.has(playerName)) {
+                    contestants.forEach(c => {
+                      failedIdxs.add(c.claim._idx);
+                      updatedTx[c.claim._idx] = { ...updatedTx[c.claim._idx], status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() };
+                      failedCount++;
+                    });
+                    moreToProcess = true;
+                    return;
+                  }
+                  if (winner.claim.droppedPlayer) allRostered.delete(winner.claim.droppedPlayer);
+                  allRostered.add(playerName);
+                  processedIdxs.add(winner.claim._idx);
+                  updatedTx[winner.claim._idx] = { ...updatedTx[winner.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() };
+                  appliedWaivers.push(winner.claim);
+                  processedCount++;
+                  contestants.slice(1).forEach(loser => {
+                    failedIdxs.add(loser.claim._idx);
+                    updatedTx[loser.claim._idx] = { ...updatedTx[loser.claim._idx], status: 'failed', failReason: `Lost tiebreaker to ${winner.teamName}`, processedDate: new Date().toLocaleDateString() };
+                    failedCount++;
+                  });
+                  moreToProcess = true;
+                });
+              }
+
+              // Apply all successful waivers to team rosters
+              let updatedTeams = [...teams];
+              appliedWaivers.forEach(waiver => {
+                updatedTeams = updatedTeams.map(t => applyWaiverToTeam(t, waiver));
+              });
+
+              setTransactions(updatedTx);
+              updateTeams(updatedTeams);
+              await storage.set(STORAGE_KEYS.TRANSACTIONS, updatedTx);
+              await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+
+              const msg = `Processed ${processedCount} waiver${processedCount !== 1 ? 's' : ''}${failedCount > 0 ? ` · ${failedCount} failed (tiebreaker / already rostered)` : ''}`;
+              dialog.showToast(msg, processedCount > 0 ? 'success' : 'error');
+            };
+
+            if (allPendingWaivers.length === 0) {
+              return (
+                <div style={{ textAlign: 'center', padding: '20px 0', color: colors.textMuted }}>
+                  <div style={{ fontSize: 24, marginBottom: 6 }}>✅</div>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 12 }}>No pending waiver claims</div>
+                </div>
+              );
+            }
+
+            return (
+              <div>
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.warning, fontWeight: 600 }}>
+                      {allPendingWaivers.length} pending claim{allPendingWaivers.length !== 1 ? 's' : ''}
+                    </div>
+                    <div style={{ ...theme.smallText, marginTop: 2 }}>
+                      Normally auto-processes Tue 8pm ET · use this to force-process retroactive weeks
+                    </div>
+                  </div>
+                  <Btn onClick={handleProcessAll} variant="warning" style={{ whiteSpace: 'nowrap' }}>
+                    ⚡ Process All ({allPendingWaivers.length})
+                  </Btn>
+                </div>
+
+                {/* Individual waiver rows */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {allPendingWaivers.map((waiver) => (
+                    <div key={waiver._idx} style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${colors.borderSubtle}`,
+                      borderRadius: 3, padding: '10px 12px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, marginBottom: 3 }}>
+                          {waiver.team}
+                          <span style={{ ...theme.badge, marginLeft: 6, background: 'rgba(220,170,60,0.12)', border: '1px solid rgba(220,170,60,0.3)', color: colors.warning }}>
+                            ${waiver.fee} waiver
+                          </span>
+                        </div>
+                        <div style={{ fontFamily: fonts.sans, fontSize: 12 }}>
+                          <span style={{ color: colors.success }}>+ {waiver.player}</span>
+                          {waiver.droppedPlayer && (
+                            <span style={{ color: colors.danger, marginLeft: 8 }}>− {waiver.droppedPlayer}</span>
+                          )}
+                        </div>
+                        <div style={{ ...theme.smallText, marginTop: 2 }}>
+                          {waiver.date} · Priority #{waiver.priority || '?'} · {waiver.segment || 'Current Swing'}
+                        </div>
+                      </div>
+                      <Btn onClick={() => handleProcessSingle(waiver)} variant="success" style={{ flexShrink: 0 }}>
+                        Process
+                      </Btn>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </SectionBody>
       </Section>
 
