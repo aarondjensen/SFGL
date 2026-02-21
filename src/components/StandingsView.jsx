@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Trophy } from 'lucide-react';
 import { getSegmentByDate } from '../utils/index.js';
-import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, segmentEarningsColor, cardLiftHandlers } from '../theme.js';
+import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, segmentEarningsColor } from '../theme.js';
 
 // Inject once — consistent row height on mobile
 if (typeof document !== 'undefined' && !document.getElementById('sfgl-standings-styles')) {
@@ -41,7 +41,7 @@ export const StandingsView = ({ teams }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={theme.cardLift} {...cardLiftHandlers()}>
+      <div style={theme.card}>
 
         {/* Header */}
         <div style={theme.cardHeader}>
