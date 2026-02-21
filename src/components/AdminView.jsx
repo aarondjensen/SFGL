@@ -1096,8 +1096,23 @@ export const AdminView = ({
               const allRostered = new Set();
               teams.forEach(t => buildEffectiveRoster(t).forEach(n => allRostered.add(n)));
               if (allRostered.has(waiver.player)) {
-                dialog.showToast(`${waiver.player} is already rostered — cannot process`, 'error');
+                dialog.showToast(waiver.player + ' already rostered — cannot process', 'error');
                 return;
+              }
+              // Check dropped player is still on this team's effective roster
+              if (waiver.droppedPlayer) {
+                const teamRoster = buildEffectiveRoster(teams.find(t => t.name === waiver.team) || {});
+                if (!teamRoster.has(waiver.droppedPlayer)) {
+                  const updatedTx = transactions.map((tx, idx) =>
+                    idx === waiver._idx
+                      ? { ...tx, status: 'failed', failReason: waiver.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }
+                      : tx
+                  );
+                  setTransactions(updatedTx);
+                  await storage.set(STORAGE_KEYS.TRANSACTIONS, updatedTx);
+                  dialog.showToast(waiver.droppedPlayer + ' already dropped — claim failed', 'error');
+                  return;
+                }
               }
               const updatedTx = transactions.map((tx, idx) =>
                 idx === waiver._idx
@@ -1137,6 +1152,8 @@ export const AdminView = ({
               // Seed rostered set from current rosters + processed transactions
               const allRostered = new Set();
               teams.forEach(t => buildEffectiveRoster(t).forEach(n => allRostered.add(n)));
+              // Track players already dropped during this processing run
+              const alreadyDropped = new Set();
 
               let processedCount = 0, failedCount = 0;
               const updatedTx = [...transactions];
@@ -1173,7 +1190,18 @@ export const AdminView = ({
                     moreToProcess = true;
                     return;
                   }
-                  if (winner.claim.droppedPlayer) allRostered.delete(winner.claim.droppedPlayer);
+                  // Fail if the drop target was already dropped in this run
+                  if (winner.claim.droppedPlayer && (alreadyDropped.has(winner.claim.droppedPlayer) || !allRostered.has(winner.claim.droppedPlayer))) {
+                    failedIdxs.add(winner.claim._idx);
+                    updatedTx[winner.claim._idx] = { ...updatedTx[winner.claim._idx], status: 'failed', failReason: winner.claim.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() };
+                    failedCount++;
+                    moreToProcess = true;
+                    return;
+                  }
+                  if (winner.claim.droppedPlayer) {
+                    allRostered.delete(winner.claim.droppedPlayer);
+                    alreadyDropped.add(winner.claim.droppedPlayer);
+                  }
                   allRostered.add(playerName);
                   processedIdxs.add(winner.claim._idx);
                   updatedTx[winner.claim._idx] = { ...updatedTx[winner.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() };
