@@ -542,11 +542,10 @@ export const RostersView = ({
           <table style={{ width: '100%', borderCollapse: 'collapse' }} role="table">
             <thead>
               <tr>
-                {['Player', 'Events', 'Cuts', 'PGA $', 'SFGL $'].map((h, i) => (
+                {['Player', 'Events', 'Cuts', 'Tour $', 'SFGL $'].map((h, i) => (
                   <th key={h} scope="col" style={{
                     ...theme.tableHeaderCell,
                     textAlign: i === 0 ? 'left' : i <= 2 ? 'center' : 'right',
-                    display: i === 3 ? 'none' : undefined, // hide PGA $ on small — handled via media below
                   }}>{h}</th>
                 ))}
               </tr>
@@ -643,13 +642,13 @@ export const RostersView = ({
                       {globalPlayerStats[player.name]?.cutsMade || 0}
                     </td>
 
-                    {/* PGA $ */}
-                    <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
+                    {/* Tour $ */}
+                    <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, color: isBenched ? dimColor : ((globalPlayerStats[player.name]?.pgaTourEarnings || 0) > 0 ? colors.earningsGreenLight : colors.textMuted) }}>
                       ${(globalPlayerStats[player.name]?.pgaTourEarnings || 0).toLocaleString()}
                     </td>
 
                     {/* SFGL $ */}
-                    <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, fontWeight: 600, color: isBenched ? dimColor : ((player.sfglEarnings || 0) > 0 ? colors.textGold : colors.textMuted) }}>
+                    <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, fontWeight: 600, color: isBenched ? dimColor : ((player.sfglEarnings || 0) > 0 ? colors.earningsGreen : colors.textMuted) }}>
                       ${(player.sfglEarnings || 0).toLocaleString()}
                     </td>
                   </tr>
