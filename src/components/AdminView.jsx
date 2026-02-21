@@ -6,7 +6,7 @@ import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA, LIV_GOLF_ROSTER } from '../consta
 import { storage, draftStateApi } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi, tournamentResultsApi, teamsApi, tournamentsApi } from '../api/supabase';
+import { managerAuthApi, tournamentResultsApi, teamsApi, tournamentsApi, transactionsApi, settingsApi, globalPlayerStatsApi } from '../api/supabase';
 import { theme, colors, fonts } from '../theme.js';
 
 if (typeof window !== 'undefined') {
@@ -174,20 +174,20 @@ export const AdminView = ({
     reader.onload = async (event) => {
       try {
         const data = JSON.parse(event.target.result);
-        if (data.teams)             updateTeams(data.teams);
-        if (data.tournaments)       setTournaments(data.tournaments);
-        if (data.transactions)      setTransactions(data.transactions);
-        if (data.settings)        { setSettings(data.settings); await storage.set(STORAGE_KEYS.SETTINGS, data.settings); }
-        if (data.globalPlayerStats){ setGlobalPlayerStats(data.globalPlayerStats); await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, data.globalPlayerStats); }
-        if (data.headshots)       { setHeadshots(data.headshots); await storage.set(STORAGE_KEYS.HEADSHOTS, data.headshots); }
+        if (data.teams)        { updateTeams(data.teams);        await teamsApi.setAll(data.teams).catch(e => console.warn('import teams:', e.message)); }
+        if (data.tournaments)  { setTournaments(data.tournaments); await tournamentsApi.setAll(data.tournaments).catch(e => console.warn('import tournaments:', e.message)); }
+        if (data.transactions) { setTransactions(data.transactions); await transactionsApi.setAll(data.transactions).catch(e => console.warn('import transactions:', e.message)); }
+        if (data.settings)     { setSettings(data.settings);     await settingsApi.set('app_settings', data.settings).catch(e => console.warn('import settings:', e.message)); }
+        if (data.globalPlayerStats) { setGlobalPlayerStats(data.globalPlayerStats); await globalPlayerStatsApi.set(data.globalPlayerStats).catch(e => console.warn('import stats:', e.message)); }
         dialog.showToast('Data imported successfully!', 'success');
       } catch { dialog.showToast('Failed to parse backup file.', 'error'); }
     };
     reader.readAsText(file); e.target.value = null;
   };
 
-  const handleImportSchedule = (importedTournaments) => {
+  const handleImportSchedule = async (importedTournaments) => {
     setTournaments(importedTournaments); setShowScheduleImporter(false);
+    try { await tournamentsApi.setAll(importedTournaments); } catch (e) { console.warn('Supabase tournaments save failed:', e.message); }
     dialog.showToast(`Imported ${importedTournaments.length} tournaments!`, 'success');
   };
 
@@ -243,6 +243,9 @@ export const AdminView = ({
           await tournamentsApi.update(newTournaments[nextIdx].name, { playing: true });
         }
       } catch (e) { console.warn('Supabase tournaments save failed (non-fatal):', e.message); }
+      try {
+        await settingsApi.set('global_player_stats', newStats);
+      } catch (e) { console.warn('Supabase globalPlayerStats save failed (non-fatal):', e.message); }
       dialog.showToast(`Results processed for ${t.name}!`, 'success');
     } catch (error) { console.error('Results Sync Error:', error); dialog.showToast(`API Error: ${error.message}`, 'error'); }
   };
@@ -423,6 +426,9 @@ export const AdminView = ({
         await tournamentsApi.update(newTournaments[nextIdx].name, { playing: true });
       }
     } catch (e) { console.warn('Supabase tournaments save failed (non-fatal):', e.message); }
+    try {
+      await settingsApi.set('global_player_stats', updatedGlobalStats);
+    } catch (e) { console.warn('Supabase globalPlayerStats save failed (non-fatal):', e.message); }
 
     dialog.showToast(`Processed ${Object.keys(earningsMap).length} players for ${selectedTourneyForResults}!`, 'success');
     setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
@@ -618,10 +624,12 @@ export const AdminView = ({
     } catch (error) { dialog.showToast('Failed to save LIV roster', 'error'); }
   };
 
-  const resetMulligan = (teamId, type) => {
+  const resetMulligan = async (teamId, type) => {
     const team = teams.find(t => t.id === teamId); if (!team) return;
     const key = type === 'sig' ? 'signatureMajor' : 'regular';
-    updateTeams(teams.map(t => t.id === teamId ? { ...t, mulligans: { ...t.mulligans, [key]: 1 } } : t));
+    const newTeams = teams.map(t => t.id === teamId ? { ...t, mulligans: { ...t.mulligans, [key]: 1 } } : t);
+    updateTeams(newTeams);
+    try { await teamsApi.setAll(newTeams); } catch (e) { console.warn('Supabase mulligan save failed:', e.message); }
     dialog.showToast(`Reset ${type} mulligan for ${team.name}`, 'success');
   };
 
@@ -655,6 +663,7 @@ export const AdminView = ({
     });
 
     updateTeams(repairedTeams);
+    try { await teamsApi.setAll(repairedTeams); } catch (e) { console.warn('Supabase repair save failed:', e.message); }
     dialog.showToast('✓ Roster flags repaired — Limited=Yellow, 1 Unlimited=Blue, rest=White', 'success');
   };
 
@@ -666,7 +675,11 @@ export const AdminView = ({
     const resetTeams = teams.map(team => ({ ...team, earnings: 0, segmentEarnings: 0, lineup: [], roster: [], mulligans: { signatureMajor: 1, regular: 1 } }));
     const resetTournaments = tournaments.map((t, idx) => ({ ...t, completed: false, playing: idx === 0, results: null }));
     setTransactions([]); setGlobalPlayerStats({}); updateTeams(resetTeams); setTournaments(resetTournaments);
-    try { await tournamentResultsApi.deleteAllForSeason(); } catch (e) { console.warn('Supabase reset failed (non-fatal):', e.message); }
+    try { await tournamentResultsApi.deleteAllForSeason(); } catch (e) { console.warn('Supabase results reset failed:', e.message); }
+    try { await teamsApi.setAll(resetTeams); } catch (e) { console.warn('Supabase teams reset failed:', e.message); }
+    try { await tournamentsApi.setAll(resetTournaments); } catch (e) { console.warn('Supabase tournaments reset failed:', e.message); }
+    try { await transactionsApi.setAll([]); } catch (e) { console.warn('Supabase transactions reset failed:', e.message); }
+    try { await globalPlayerStatsApi.set({}); } catch (e) { console.warn('Supabase stats reset failed:', e.message); }
     dialog.showToast('Season reset complete!', 'success');
   };
 
@@ -678,7 +691,9 @@ export const AdminView = ({
     );
     if (!confirm) return;
     try { await draftStateApi.clear(); } catch {}
-    updateTeams(teams.map(t => ({ ...t, roster: [], lineup: [] })));
+    const clearedTeams = teams.map(t => ({ ...t, roster: [], lineup: [] }));
+    updateTeams(clearedTeams);
+    try { await teamsApi.setAll(clearedTeams); } catch (e) { console.warn('Supabase draft clear failed:', e.message); }
     setHasSavedDraft(false);
     setDraftInitialPhase('order');
     setShowDraftModal(true);
@@ -694,7 +709,9 @@ export const AdminView = ({
     if (team.roster.some(p => p.name === playerName)) { dialog.showToast('Player already on roster', 'error'); return; }
     const player = allPlayers.find(p => p.name === playerName);
     if (!player) { dialog.showToast('Player not found', 'error'); return; }
-    updateTeams(teams.map(t => t.id === teamId ? { ...t, roster: [...t.roster, makePlayer(player.name, player.worldRank)] } : t));
+    const newTeams = teams.map(t => t.id === teamId ? { ...t, roster: [...t.roster, makePlayer(player.name, player.worldRank)] } : t);
+    updateTeams(newTeams);
+    try { await teamsApi.setAll(newTeams); } catch (e) { console.warn('Supabase addPlayer failed:', e.message); }
     dialog.showToast(`Added ${playerName} to ${team.name}`, 'success');
   };
 
@@ -702,7 +719,9 @@ export const AdminView = ({
     const team = teams.find(t => t.id === teamId); if (!team) return;
     const confirm = await dialog.showConfirm('Drop Player', `Remove ${playerName} from ${team.name}?`, { type: 'danger', confirmText: 'Drop Player' });
     if (!confirm) return;
-    updateTeams(teams.map(t => t.id === teamId ? { ...t, roster: t.roster.filter(p => p.name !== playerName) } : t));
+    const newTeams = teams.map(t => t.id === teamId ? { ...t, roster: t.roster.filter(p => p.name !== playerName) } : t);
+    updateTeams(newTeams);
+    try { await teamsApi.setAll(newTeams); } catch (e) { console.warn('Supabase dropPlayer failed:', e.message); }
     dialog.showToast(`Dropped ${playerName}`, 'success');
   };
 

@@ -14,7 +14,7 @@ import LoginPage            from './components/LoginPage';
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi } from './api/supabase';
+import { managerAuthApi, tournamentResultsApi, globalPlayerStatsApi } from './api/supabase';
 
 
 
@@ -117,6 +117,20 @@ const FantasyGolfLeague = () => {
       setResultsHydrated(true);
     });
   }, [loading, tournaments.length, resultsHydrated]);
+
+  // ── Hydrate globalPlayerStats from Supabase ───────────────────────────────
+  // Ensures Tour $ data (eventsPlayed, cutsMade, pgaTourEarnings) is visible
+  // to all managers on any device, not just the one who processed results.
+  useEffect(() => {
+    if (loading) return;
+    globalPlayerStatsApi.get().then(supabaseStats => {
+      if (supabaseStats && Object.keys(supabaseStats).length > 0) {
+        setGlobalPlayerStats(supabaseStats);
+      }
+    }).catch(e => {
+      console.warn('Could not load globalPlayerStats from Supabase:', e.message);
+    });
+  }, [loading]);
 
   // ── Admin login ────────────────────────────────────────────────────────────
   const handleAdminLogin = async () => {

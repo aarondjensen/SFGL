@@ -200,6 +200,35 @@ export const playerStatsApi = {
 
 /**
  * ============================================================================
+ * GLOBAL PLAYER STATS API
+ * Stores { [playerName]: { eventsPlayed, cutsMade, pgaTourEarnings } }
+ * as a single JSON blob in league_settings under key 'global_player_stats'.
+ * This ensures Tour $ column data is visible to all managers.
+ * ============================================================================
+ */
+export const globalPlayerStatsApi = {
+  async get() {
+    const { data, error } = await supabase
+      .from('league_settings')
+      .select('value')
+      .eq('key', 'global_player_stats')
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data?.value || {};
+  },
+
+  async set(statsObject) {
+    const { data, error } = await supabase
+      .from('league_settings')
+      .upsert({ key: 'global_player_stats', value: statsObject })
+      .select();
+    if (error) throw error;
+    return data;
+  },
+};
+
+/**
+ * ============================================================================
  * LIV ROSTER API
  * ============================================================================
  */
