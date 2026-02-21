@@ -780,3 +780,41 @@ export const tournamentResultsApi = {
     if (error) throw error;
   },
 };
+
+/**
+ * ============================================================================
+ * SFGL DATA API
+ * Reads/writes the sfgl_data key-value table — the same table that the app's
+ * internal storage layer uses. This is the source of truth for teams,
+ * tournaments, transactions, settings, and globalPlayerStats.
+ * ============================================================================
+ */
+export const sfglDataApi = {
+  async get(key) {
+    const { data, error } = await supabase
+      .from('sfgl_data')
+      .select('value')
+      .eq('key', key)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data?.value ?? null;
+  },
+
+  async set(key, value) {
+    const { error } = await supabase
+      .from('sfgl_data')
+      .upsert({ key, value }, { onConflict: 'key' });
+    if (error) throw error;
+  },
+
+  async getMany(keys) {
+    const { data, error } = await supabase
+      .from('sfgl_data')
+      .select('key, value')
+      .in('key', keys);
+    if (error) throw error;
+    const result = {};
+    (data || []).forEach(row => { result[row.key] = row.value; });
+    return result;
+  },
+};
