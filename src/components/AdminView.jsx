@@ -83,6 +83,10 @@ export const AdminView = ({
       const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
       if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
       updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
+      await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
+      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+      sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
       dialog.showToast('Results processed for ' + t.name + '!', 'success');
     } catch (err) { dialog.showToast('API Error: ' + err.message, 'error'); }
   };
@@ -118,6 +122,10 @@ export const AdminView = ({
     const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
     if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
     updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
+    await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
     dialog.showToast('Results processed! ' + earningsMap.size + ' players with earnings', 'success');
     setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
   };
