@@ -233,6 +233,16 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
             {'\u00D7'}
           </button>
         )}
+        {player.limited && (player.stars || 1) > 0 && (
+          <div style={{
+            position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(15,25,45,0.88)', borderRadius: 6,
+            padding: '0px 3px', lineHeight: 1, zIndex: 5,
+            fontSize: 8, letterSpacing: 1,
+          }}>
+            {'⭐'.repeat(player.stars || 1)}
+          </div>
+        )}
       </div>
       <div style={{
         fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 3,
@@ -679,6 +689,17 @@ export const RostersView = ({
                               <span style={{ color: '#111d2e', fontSize: 9, fontWeight: 900 }}>✓</span>
                             </div>
                           )}
+                          {player.limited && (player.stars || 1) > 0 && (
+                            <div style={{
+                              position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
+                              background: 'rgba(15,25,45,0.88)', borderRadius: 6,
+                              padding: '0px 3px', lineHeight: 1, zIndex: 5,
+                              fontSize: 7, letterSpacing: 0.5,
+                              pointerEvents: 'none',
+                            }}>
+                              {'⭐'.repeat(player.stars || 1)}
+                            </div>
+                          )}
                         </button>
 
                         {/* Name + metadata */}
@@ -690,11 +711,7 @@ export const RostersView = ({
                             }}>
                               {player.name}
                             </span>
-                            {player.limited && (
-                              <span style={{ fontSize: 10, color: isBenched ? dimColor : colors.textGold }}>
-                                {'⭐'.repeat(player.stars || 1)}
-                              </span>
-                            )}
+
                             {player.unlimited && (
                               <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)' }}>♾️</span>
                             )}
