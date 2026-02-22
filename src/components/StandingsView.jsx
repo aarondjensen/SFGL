@@ -132,20 +132,7 @@ export const StandingsView = ({ teams, tournaments = [] }) => {
   const posKey        = showSwing ? 'swingPos' : 'position';
   const earningsLabel = showSwing ? 'Swing $' : 'Season $';
 
-  const tabStyle = (active, accent) => ({
-    padding: '5px 14px',
-    borderRadius: 2,
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: '1.2px',
-    textTransform: 'uppercase',
-    cursor: 'pointer',
-    transition: 'all 0.18s',
-    border: `1px solid ${active ? (accent || colors.border) : colors.borderSubtle}`,
-    background: active ? (accent ? accent.replace('0.85)', '0.12)') : 'rgba(180,160,100,0.08)') : 'transparent',
-    color: active ? (accent || colors.textGold) : colors.textMuted,
-  });
+  // slider toggle — no tabStyle needed
 
   return (
     <div style={theme.card}>
@@ -158,20 +145,75 @@ export const StandingsView = ({ teams, tournaments = [] }) => {
             <Trophy style={{ width: 16, height: 16, color: colors.earningsGreen }} />
             <h2 style={theme.h2}>Standings</h2>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            <button onClick={() => setView('overall')} style={tabStyle(!showSwing, null)}>
-              Overall
-            </button>
-            <button
-              onClick={() => {
-                setView('swing');
-                if (!selectedSwing && swingsWithResults.length) setSelectedSwing(swingsWithResults[swingsWithResults.length - 1]);
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {/* Slider toggle */}
+            <div
+              style={{
+                position: 'relative',
+                display: 'flex',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(180,160,100,0.2)',
+                borderRadius: 4,
+                padding: 3,
+                gap: 0,
+                width: 148,
               }}
-              disabled={swingsWithResults.length === 0}
-              style={{ ...tabStyle(showSwing, showSwing ? accentColor : null), opacity: swingsWithResults.length === 0 ? 0.35 : 1, cursor: swingsWithResults.length === 0 ? 'default' : 'pointer' }}
             >
-              Swing
-            </button>
+              {/* Sliding pill */}
+              <div style={{
+                position: 'absolute',
+                top: 3, bottom: 3,
+                left: showSwing ? 'calc(50% + 1px)' : 3,
+                width: 'calc(50% - 4px)',
+                borderRadius: 2,
+                background: showSwing
+                  ? accentColor.replace('0.85)', '0.18)')
+                  : 'rgba(180,160,100,0.14)',
+                border: `1px solid ${showSwing ? accentColor.replace('0.85)', '0.45)') : 'rgba(180,160,100,0.4)'}`,
+                transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
+                pointerEvents: 'none',
+              }} />
+              {/* Overall */}
+              <button
+                onClick={() => setView('overall')}
+                style={{
+                  flex: 1, position: 'relative', zIndex: 1,
+                  padding: '5px 0',
+                  background: 'none', border: 'none',
+                  fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
+                  letterSpacing: '1px', textTransform: 'uppercase',
+                  color: !showSwing ? colors.textGold : colors.textMuted,
+                  cursor: 'pointer',
+                  transition: 'color 0.18s',
+                  borderRadius: 2,
+                }}
+              >
+                Overall
+              </button>
+              {/* Swing */}
+              <button
+                onClick={() => {
+                  if (swingsWithResults.length === 0) return;
+                  setView('swing');
+                  if (!selectedSwing && swingsWithResults.length) setSelectedSwing(swingsWithResults[swingsWithResults.length - 1]);
+                }}
+                style={{
+                  flex: 1, position: 'relative', zIndex: 1,
+                  padding: '5px 0',
+                  background: 'none', border: 'none',
+                  fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
+                  letterSpacing: '1px', textTransform: 'uppercase',
+                  color: showSwing ? accentColor : swingsWithResults.length === 0 ? 'rgba(255,255,255,0.15)' : colors.textMuted,
+                  cursor: swingsWithResults.length === 0 ? 'default' : 'pointer',
+                  transition: 'color 0.18s',
+                  borderRadius: 2,
+                  opacity: swingsWithResults.length === 0 ? 0.4 : 1,
+                }}
+              >
+                Swing
+              </button>
+            </div>
+            {/* Swing selector dropdown */}
             {showSwing && swingsWithResults.length > 1 && (
               <select
                 value={selectedSwing || ''}
