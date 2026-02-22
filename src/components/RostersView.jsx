@@ -187,6 +187,64 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 };
 
 // ── Main RostersView ──────────────────────────────────────────────────────────
+// ── LineupHeadshot — shows ×-remove button on hover when editable ─────────────
+const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, onRemove }) => {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <div
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div style={{ position: 'relative', width: 44, height: 44 }}>
+        <img
+          src={getPlayerHeadshot(player.name, player.limited, headshots)}
+          onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
+          alt=""
+          style={{
+            width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
+            border: `2px solid ${playerBorderColor(player)}`,
+            transition: 'opacity 0.15s',
+            opacity: canEdit && hovered ? 0.55 : 1,
+          }}
+        />
+        {canEdit && hovered && (
+          <button
+            onClick={e => { e.stopPropagation(); onRemove(); }}
+            style={{
+              position: 'absolute', top: -3, right: -3,
+              width: 18, height: 18, borderRadius: '50%',
+              background: 'rgba(220,60,60,0.92)',
+              border: '1.5px solid rgba(255,255,255,0.25)',
+              color: '#fff',
+              fontSize: 11, fontWeight: 700, lineHeight: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
+              padding: 0,
+              zIndex: 10,
+              transition: 'transform 0.1s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.15)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+            title={\`Remove \${player.name} from lineup\`}
+          >
+            ×
+          </button>
+        )}
+      </div>
+      <div style={{
+        fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 3,
+        textAlign: 'center', width: '100%',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        color: player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
+      }}>
+        {lastName}
+      </div>
+    </div>
+  );
+};
+
 export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
@@ -414,25 +472,15 @@ export const RostersView = ({
                   const lastName  = player.name.split(' ').pop();
                   const nameFontSize = lastName.length > 9 ? 9 : lastName.length > 7 ? 10 : 11;
                   return (
-                    <div key={player.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56 }}>
-                      <img
-                        src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                        onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
-                        alt=""
-                        style={{
-                          width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', flexShrink: 0,
-                          border: `2px solid ${playerBorderColor(player)}`,
-                        }}
-                      />
-                      <div style={{
-                        fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 3,
-                        textAlign: 'center', width: '100%',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        color: player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
-                      }}>
-                        {lastName}
-                      </div>
-                    </div>
+                    <LineupHeadshot
+                      key={player.name}
+                      player={player}
+                      lastName={lastName}
+                      nameFontSize={nameFontSize}
+                      headshots={headshots}
+                      canEdit={canEditLineup}
+                      onRemove={() => { if (!lineupMode) setLineupMode(true); togglePlayerInLineup(player); }}
+                    />
                   );
                 })}
             </div>
