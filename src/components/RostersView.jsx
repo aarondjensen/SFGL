@@ -227,7 +227,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
             }}
             onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.15)'; }}
             onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-            title={\`Remove \${player.name} from lineup\`}
+            title={'Remove ' + player.name + ' from lineup'}
           >
             {'\u00D7'}
           </button>
