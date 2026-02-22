@@ -117,7 +117,7 @@ export const playersApi = {
         map[p.name] = p.headshot_url;
       } else if (p.pga_tour_id) {
         // Try ESPN CDN URL format
-        map[p.name] = `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${p.pga_tour_id}`;
+        map[p.name] = `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${p.pga_tour_id}.png&w=96&h=96`;
       }
     });
     return map;
@@ -156,6 +156,45 @@ export const playersApi = {
     await supabase
       .from('app_metadata')
       .upsert({ key: 'players_last_updated', value: timestamp });
+  },
+};
+
+/**
+ * ============================================================================
+ * LEGACY APIs - Backward compatibility wrappers
+ * These delegate to the new consolidated playersApi
+ * ============================================================================
+ */
+export const playerRankingsApi = {
+  async getAll() {
+    return await playersApi.getAllForApp();
+  },
+  async updateAll(players) {
+    return await playersApi.upsertMany(players);
+  },
+  async getLastUpdated() {
+    return await playersApi.getLastUpdated();
+  },
+};
+
+export const headshotsApi = {
+  async getAll() {
+    return await playersApi.getHeadshotsMap();
+  },
+  async setAll(headshotsObject) {
+    console.warn('headshotsApi.setAll is deprecated - headshots are now part of players table');
+  },
+};
+
+export const playerStatsApi = {
+  async getAll() {
+    return await playersApi.getStatsMap();
+  },
+  async set(playerName, stats) {
+    return await playersApi.update(playerName, { stats });
+  },
+  async setAll(statsObject) {
+    console.warn('playerStatsApi.setAll is deprecated - stats are now part of players table');
   },
 };
 
@@ -221,6 +260,143 @@ export const livRosterApi = {
       .eq('player_name', playerName);
     
     if (error) throw error;
+  },
+};
+
+/**
+ * ============================================================================
+ * TEAMS API
+ * ============================================================================
+ */
+export const teamsApi = {
+  async getAll() {
+    const { data, error } = await supabase
+      .from('teams')
+      .select('*')
+      .order('name');
+    if (error) throw error;
+    return data || [];
+  },
+
+  async setAll(teams) {
+    await supabase.from('teams').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { data, error } = await supabase.from('teams').insert(teams).select();
+    if (error) throw error;
+    return data;
+  },
+
+  async update(teamId, updates) {
+    const { data, error } = await supabase
+      .from('teams')
+      .update(updates)
+      .eq('id', teamId)
+      .select();
+    if (error) throw error;
+    return data;
+  },
+};
+
+/**
+ * ============================================================================
+ * TOURNAMENTS API
+ * ============================================================================
+ */
+export const tournamentsApi = {
+  async getAll() {
+    const { data, error } = await supabase
+      .from('tournaments')
+      .select('*')
+      .order('start_date');
+    if (error) throw error;
+    return data || [];
+  },
+
+  async setAll(tournaments) {
+    await supabase.from('tournaments').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { data, error } = await supabase.from('tournaments').insert(tournaments).select();
+    if (error) throw error;
+    return data;
+  },
+
+  async update(tournamentName, updates) {
+    const { data, error } = await supabase
+      .from('tournaments')
+      .update(updates)
+      .eq('name', tournamentName)
+      .select();
+    if (error) throw error;
+    return data;
+  },
+};
+
+/**
+ * ============================================================================
+ * TRANSACTIONS API
+ * ============================================================================
+ */
+export const transactionsApi = {
+  async getAll() {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .order('timestamp', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async add(transaction) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert(transaction)
+      .select();
+    if (error) throw error;
+    return data;
+  },
+
+  async setAll(transactions) {
+    await supabase.from('transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { data, error } = await supabase.from('transactions').insert(transactions).select();
+    if (error) throw error;
+    return data;
+  },
+};
+
+/**
+ * ============================================================================
+ * SETTINGS API
+ * ============================================================================
+ */
+export const settingsApi = {
+  async get(key) {
+    const { data, error } = await supabase
+      .from('league_settings')
+      .select('value')
+      .eq('key', key)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data?.value;
+  },
+
+  async set(key, value) {
+    const { data, error } = await supabase
+      .from('league_settings')
+      .upsert({ key, value })
+      .select();
+    if (error) throw error;
+    return data;
+  },
+
+  async getAll() {
+    const { data, error } = await supabase
+      .from('league_settings')
+      .select('*');
+    if (error) throw error;
+    
+    const settings = {};
+    data?.forEach(row => {
+      settings[row.key] = row.value;
+    });
+    return settings;
   },
 };
 
@@ -428,44 +604,6 @@ export const draftPicksApi = {
   },
 };
 
-/**
- * ============================================================================
- * TOURNAMENT RESULTS API
- * Stores processed tournament results in Supabase so all managers can access
- * historical data without relying on localStorage.
- *
- * Table: tournament_results
- *   id              uuid primary key default gen_random_uuid()
- *   tournament_name text not null
- *   season          int  not null default 2026
- *   processed_at    timestamptz not null default now()
- *   is_manual_entry boolean not null default false
- *   team_results    jsonb not null   -- { [teamId]: { totalEarnings, rank, players[], bonuses } }
- *   earnings_map    jsonb not null   -- { [playerName]: earnings } full field
- *   round_leaders   jsonb not null   -- { round1: [], round2: [], round3: [] }
- *   meta            jsonb            -- future use
- *
- * SQL to create (run in Supabase SQL editor):
- *
- *   create table tournament_results (
- *     id              uuid primary key default gen_random_uuid(),
- *     tournament_name text not null,
- *     season          int  not null default 2026,
- *     processed_at    timestamptz not null default now(),
- *     is_manual_entry boolean not null default false,
- *     team_results    jsonb not null default '{}'::jsonb,
- *     earnings_map    jsonb not null default '{}'::jsonb,
- *     round_leaders   jsonb not null default '{}'::jsonb,
- *     meta            jsonb,
- *     unique (tournament_name, season)
- *   );
- *
- *   -- Allow all authenticated and anon reads; restrict writes to service role
- *   alter table tournament_results enable row level security;
- *   create policy "Public read" on tournament_results for select using (true);
- *   create policy "Service write" on tournament_results for all using (true);
- * ============================================================================
- */
 export const tournamentResultsApi = {
   /**
    * Save (upsert) results for a single tournament.
@@ -584,6 +722,16 @@ export const tournamentResultsApi = {
  * tournaments, transactions, settings, and globalPlayerStats.
  * ============================================================================
  */
+
+
+/**
+ * ============================================================================
+ * SFGL DATA API
+ * Reads/writes the sfgl_data key-value table — the same table that the app's
+ * internal storage layer uses. This is the source of truth for teams,
+ * tournaments, transactions, settings, and globalPlayerStats.
+ * ============================================================================
+ */
 export const sfglDataApi = {
   async get(key) {
     const { data, error } = await supabase
@@ -616,39 +764,17 @@ export const sfglDataApi = {
 
 // ── Compatibility stubs — exported for files that still import these ──────────
 // The actual data now lives in sfgl_data via sfglDataApi.
-export const playerRankingsApi = {
-  async get() { return null; },
-  async set() {},
-};
-export const headshotsApi = {
-  async get() { return {}; },
-  async setAll() {},
-};
-export const playerStatsApi = {
-  async getAll() { return []; },
-  async setAll() {},
-};
+
+
+/**
+ * globalPlayerStatsApi - reads/writes global player stats via sfgl_data
+ */
 export const globalPlayerStatsApi = {
-  async get() { return {}; },
-  async set() {},
-};
-export const teamsApi = {
-  async getAll() { return []; },
-  async setAll() {},
-  async update() {},
-};
-export const tournamentsApi = {
-  async getAll() { return []; },
-  async setAll() {},
-  async update() {},
-};
-export const transactionsApi = {
-  async getAll() { return []; },
-  async add() {},
-  async setAll() {},
-};
-export const settingsApi = {
-  async get() { return null; },
-  async set() {},
-  async getAll() { return {}; },
+  async get() {
+    const result = await sfglDataApi.get('fantasy-golf-global-stats');
+    return result || {};
+  },
+  async set(stats) {
+    await sfglDataApi.set('fantasy-golf-global-stats', stats);
+  },
 };
