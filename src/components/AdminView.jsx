@@ -26,6 +26,11 @@ export const AdminView = ({
   const [mgCredPass, setMgCredPass] = useState('');
   const [mgCredSaving, setMgCredSaving] = useState(false);
   const [showDraftModal, setShowDraftModal] = useState(false);
+  // Apply mulligan (live, inside Roster Management)
+  const [mulliganMode, setMulliganMode]     = useState(false);
+  const [mulliganOut,  setMulliganOut]      = useState('');
+  const [mulliganIn,   setMulliganIn]       = useState('');
+  const [mulliganRound, setMulliganRound]   = useState('2');
   // Retroactive mulligan
   const [retMulTeam, setRetMulTeam] = useState('');
   const [retMulTourney, setRetMulTourney] = useState('');
@@ -259,6 +264,49 @@ export const AdminView = ({
     dialog.showToast('Season reset complete.', 'success');
   };
 
+  // ── Apply Mulligan (live, from Roster Management) ───────────────────────
+  const handleApplyMulligan = async (teamId) => {
+    if (!mulliganOut || !mulliganIn) return;
+    const team = teams.find(t => t.id === teamId);
+    const activeTournament = tournaments.find(t => t.playing);
+    if (!team || !activeTournament) { dialog.showToast('No active tournament', 'error'); return; }
+
+    const isSignatureOrMajor = activeTournament.isSignature || activeTournament.isMajor;
+    const mulliganKey = isSignatureOrMajor ? 'signatureMajor' : 'regular';
+    const remaining = team.mulligans?.[mulliganKey] ?? 0;
+    if (remaining < 1) { dialog.showToast('No ' + (isSignatureOrMajor ? 'signature/major' : 'regular') + ' mulligans remaining', 'error'); return; }
+
+    const ok = await dialog.showConfirm('Apply Mulligan',
+      team.name + ': swap ' + mulliganOut + ' OUT → ' + mulliganIn + ' IN (after Round ' + mulliganRound + ')?\n\nDeducts one ' + (isSignatureOrMajor ? 'signature/major' : 'regular') + ' mulligan.',
+      { confirmText: 'Apply Mulligan' });
+    if (!ok) return;
+
+    const newLineup = team.lineup.map(p => p === mulliganOut ? mulliganIn : p);
+    const updatedRoster = team.roster.map(p => {
+      if (p.name === mulliganOut && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
+      if (p.name === mulliganIn  && p.limited) return { ...p, starts: p.starts + 1 };
+      return p;
+    });
+    const newMulligans = { ...team.mulligans, [mulliganKey]: remaining - 1 };
+    const tournamentIndex = tournaments.findIndex(t => t.playing);
+    const newTx = {
+      team: team.name, type: 'mulligan', player: mulliganIn, droppedPlayer: mulliganOut,
+      fee: 0, segment: activeTournament.segment || '', date: new Date().toLocaleDateString(),
+      tournamentIndex, status: 'completed',
+      mulliganType: isSignatureOrMajor ? 'signature/major' : 'regular',
+      afterRound: parseInt(mulliganRound), tournament: activeTournament.name,
+    };
+    const newTeams = teams.map(t => t.id === teamId ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
+    updateTeams(newTeams);
+    setTransactions(prev => [...prev, newTx]);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
+
+    dialog.showToast('Mulligan applied: ' + mulliganOut + ' → ' + mulliganIn, 'success');
+    setMulliganMode(false); setMulliganOut(''); setMulliganIn(''); setMulliganRound('2');
+  };
+
   // ── Retroactive Mulligan ────────────────────────────────────────────────
   const handleRetroMulligan = async () => {
     if (!retMulTeam || !retMulTourney || !retMulOut || !retMulIn) return;
@@ -389,10 +437,64 @@ export const AdminView = ({
                   <span style={S.lbl}>Mulligans</span>
                   <span style={{ ...theme.smallText }}>Sig: {team.mulligans?.signatureMajor ?? 0} · Reg: {team.mulligans?.regular ?? 0}</span>
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                   <button onClick={() => resetMulligan(team.id, 'sig')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Sig</button>
                   <button onClick={() => resetMulligan(team.id, 'reg')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Reg</button>
                 </div>
+                {/* Apply Mulligan */}
+                {(() => {
+                  const activeTournament = tournaments.find(t => t.playing);
+                  if (!activeTournament) return (
+                    <div style={{ ...theme.smallText, color: colors.textMuted, textAlign: 'center', paddingTop: 4 }}>No active tournament — can't apply mulligan</div>
+                  );
+                  const isSignatureOrMajor = activeTournament.isSignature || activeTournament.isMajor;
+                  const mulliganKey = isSignatureOrMajor ? 'signatureMajor' : 'regular';
+                  const remaining = team.mulligans?.[mulliganKey] ?? 0;
+                  const lineupPlayers = team.lineup || [];
+                  const benchPlayers = (team.roster || []).map(p => p.name).filter(n => !lineupPlayers.includes(n));
+                  return (
+                    <div>
+                      <button
+                        onClick={() => { setMulliganMode(!mulliganMode); setMulliganOut(''); setMulliganIn(''); setMulliganRound('2'); }}
+                        style={{ ...theme.btnSecondary, width: '100%', padding: '7px 10px', fontSize: 11, marginBottom: mulliganMode ? 8 : 0,
+                          borderColor: mulliganMode ? colors.border : colors.borderInput,
+                          color: mulliganMode ? colors.textGold : colors.textSecondary }}>
+                        🚨 {mulliganMode ? 'Cancel Mulligan' : 'Apply Mulligan'} ({remaining} {isSignatureOrMajor ? 'sig' : 'reg'} left)
+                      </button>
+                      {mulliganMode && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <select value={mulliganOut} onChange={e => setMulliganOut(e.target.value)} style={{ ...S.select, marginBottom: 0 }}>
+                            <option value="">Player OUT (from lineup)...</option>
+                            {lineupPlayers.map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                          <select value={mulliganIn} onChange={e => setMulliganIn(e.target.value)} style={{ ...S.select, marginBottom: 0 }}>
+                            <option value="">Player IN (from bench)...</option>
+                            {benchPlayers.map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {['1','2','3'].map(r => (
+                              <button key={r} onClick={() => setMulliganRound(r)}
+                                style={{ flex: 1, padding: '6px 0', borderRadius: 2, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
+                                  background: mulliganRound === r ? colors.buttonNavy : 'transparent',
+                                  border: `1px solid ${mulliganRound === r ? colors.border : colors.borderInput}`,
+                                  color: mulliganRound === r ? colors.textGold : colors.textSecondary }}>
+                                R{r}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            onClick={() => handleApplyMulligan(team.id)}
+                            disabled={!mulliganOut || !mulliganIn || remaining < 1}
+                            style={{ ...theme.btnPrimary, padding: '8px 10px', fontSize: 11,
+                              opacity: (!mulliganOut || !mulliganIn || remaining < 1) ? 0.4 : 1,
+                              cursor: (!mulliganOut || !mulliganIn || remaining < 1) ? 'not-allowed' : 'pointer' }}>
+                            Confirm Mulligan
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               <div style={{ maxHeight: 200, overflowY: 'auto', border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, marginBottom: 8 }}>
                 {!team.roster.length
