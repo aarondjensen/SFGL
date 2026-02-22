@@ -35,8 +35,8 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                 {showEarnings && p.roundsLed?.map((rl, ri) => (
                   <span key={ri} style={{
                     marginLeft: 2, padding: '0 4px',
-                    background: 'rgba(60,100,200,0.4)',
-                    color: 'rgba(150,180,255,0.9)',
+                    background: 'rgba(220,110,30,0.35)',
+                    color: 'rgba(255,165,80,0.95)',
                     borderRadius: 2, fontSize: 9,
                   }}>R{rl.round}</span>
                 ))}
@@ -47,7 +47,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                     ${(p.earnings || 0).toLocaleString()}
                   </span>
                   {p.bonus > 0 && (
-                    <span style={{ color: 'rgba(100,160,255,0.8)', marginLeft: 2 }}>
+                    <span style={{ color: 'rgba(255,150,60,0.9)', marginLeft: 2 }}>
                       +{p.bonus.toLocaleString()}
                     </span>
                   )}
