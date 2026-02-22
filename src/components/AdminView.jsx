@@ -26,6 +26,13 @@ export const AdminView = ({
   const [mgCredPass, setMgCredPass] = useState('');
   const [mgCredSaving, setMgCredSaving] = useState(false);
   const [showDraftModal, setShowDraftModal] = useState(false);
+  // Retroactive mulligan
+  const [retMulTeam, setRetMulTeam] = useState('');
+  const [retMulTourney, setRetMulTourney] = useState('');
+  const [retMulOut, setRetMulOut] = useState('');
+  const [retMulIn, setRetMulIn] = useState('');
+  const [retMulType, setRetMulType] = useState('regular');
+  const [retMulRound, setRetMulRound] = useState('2');
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -40,7 +47,7 @@ export const AdminView = ({
     btnSec: { ...theme.btnSecondary, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
     btnDgr: { ...theme.btnDanger, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
     input: { ...theme.input, marginBottom: 8 },
-    select: { ...theme.select, marginBottom: 8 },
+    select: { ...theme.select, marginBottom: 8, color: colors.textPrimary, backgroundColor: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' },
     lbl: { ...theme.label, display: 'block', marginBottom: 6 },
   };
 
@@ -252,6 +259,45 @@ export const AdminView = ({
     dialog.showToast('Season reset complete.', 'success');
   };
 
+  // ── Retroactive Mulligan ────────────────────────────────────────────────
+  const handleRetroMulligan = async () => {
+    if (!retMulTeam || !retMulTourney || !retMulOut || !retMulIn) return;
+    const team = teams.find(t => t.id === retMulTeam);
+    const tournament = tournaments.find(t => t.name === retMulTourney);
+    const tournamentIndex = tournaments.findIndex(t => t.name === retMulTourney);
+    if (!team || !tournament) return;
+
+    const mulliganKey = retMulType === 'sig' ? 'signatureMajor' : 'regular';
+    const ok = await dialog.showConfirm('Apply Retroactive Mulligan',
+      'Apply mulligan for ' + team.name + ' at ' + retMulTourney + '?\n\n' +
+      retMulOut + ' OUT → ' + retMulIn + ' IN (after Round ' + retMulRound + ')\n\n' +
+      'This will record the mulligan transaction and deduct one ' + retMulType + ' mulligan.',
+      { confirmText: 'Apply Mulligan' });
+    if (!ok) return;
+
+    // Record transaction
+    const newTx = {
+      team: team.name, type: 'mulligan', player: retMulIn, droppedPlayer: retMulOut,
+      fee: 0, segment: tournament.segment || '', date: new Date().toLocaleDateString(),
+      tournamentIndex, status: 'completed',
+      mulliganType: retMulType === 'sig' ? 'signature/major' : 'regular',
+      afterRound: parseInt(retMulRound),
+      tournament: retMulTourney,
+      retroactive: true,
+    };
+
+    // Deduct mulligan from team
+    const newMulligans = { ...team.mulligans, [mulliganKey]: Math.max(0, (team.mulligans?.[mulliganKey] || 1) - 1) };
+    const updatedTeams = teams.map(t => t.id === team.id ? { ...t, mulligans: newMulligans } : t);
+
+    updateTeams(updatedTeams);
+    setTransactions(prev => [...prev, newTx]);
+    await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+
+    dialog.showToast('Retroactive mulligan applied: ' + retMulOut + ' → ' + retMulIn, 'success');
+    setRetMulTeam(''); setRetMulTourney(''); setRetMulOut(''); setRetMulIn(''); setRetMulType('regular'); setRetMulRound('2');
+  };
+
   const pending = transactions.map((tx, idx) => ({ ...tx, _idx: idx })).filter(tx => tx.type === 'waiver' && tx.status === 'pending');
   const disabledBtn = (cond) => cond ? { opacity: 0.4, cursor: 'not-allowed' } : {};
 
@@ -394,6 +440,93 @@ export const AdminView = ({
         <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
           style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
           {mgCredSaving ? 'Saving...' : 'Set Login'}
+        </button>
+      </div>
+
+      {/* Retroactive Mulligan */}
+      <div style={S.section}>
+        <div style={S.title}>🚨 Retroactive Mulligan</div>
+        <div style={{ ...theme.smallText, marginBottom: 12 }}>
+          Apply a missed mulligan to a completed tournament. Records the transaction and deducts one mulligan.
+        </div>
+
+        <label style={S.lbl}>Team</label>
+        <select value={retMulTeam} onChange={e => { setRetMulTeam(e.target.value); setRetMulOut(''); setRetMulIn(''); }} style={S.select}>
+          <option value="">Select team...</option>
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
+        </select>
+
+        <label style={S.lbl}>Tournament</label>
+        <select value={retMulTourney} onChange={e => { setRetMulTourney(e.target.value); setRetMulOut(''); setRetMulIn(''); }} style={S.select}>
+          <option value="">Select tournament...</option>
+          {tournaments.filter(t => t.completed).map(t => (
+            <option key={t.name} value={t.name}>✓ {t.name}</option>
+          ))}
+        </select>
+
+        {retMulTeam && retMulTourney && (() => {
+          const team = teams.find(t => t.id === retMulTeam);
+          const tournament = tournaments.find(t => t.name === retMulTourney);
+          // Try to pull lineup from that tournament's saved results; fall back to current roster
+          const savedLineup = tournament?.results?.fullLineups?.[retMulTeam] || [];
+          const lineupPlayers = savedLineup.length > 0 ? savedLineup : (team?.lineup || []);
+          const rosterPlayers = team?.roster?.map(p => p.name) || [];
+          // Bench = rostered players not in lineup
+          const benchPlayers = rosterPlayers.filter(n => !lineupPlayers.includes(n));
+
+          return (
+            <div>
+              <label style={S.lbl}>Player OUT <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>(was in lineup)</span></label>
+              <select value={retMulOut} onChange={e => setRetMulOut(e.target.value)} style={S.select}>
+                <option value="">Select player out...</option>
+                {lineupPlayers.length > 0
+                  ? lineupPlayers.map(name => <option key={name} value={name}>{name}</option>)
+                  : rosterPlayers.map(name => <option key={name} value={name}>{name}</option>)
+                }
+              </select>
+
+              <label style={S.lbl}>Player IN <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>(was on bench)</span></label>
+              <select value={retMulIn} onChange={e => setRetMulIn(e.target.value)} style={S.select}>
+                <option value="">Select player in...</option>
+                {benchPlayers.length > 0
+                  ? benchPlayers.map(name => <option key={name} value={name}>{name}</option>)
+                  : rosterPlayers.filter(n => n !== retMulOut).map(name => <option key={name} value={name}>{name}</option>)
+                }
+              </select>
+            </div>
+          );
+        })()}
+
+        <label style={S.lbl}>Mulligan Type</label>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          {[['regular', 'Regular'], ['sig', 'Signature / Major']].map(([val, label]) => (
+            <button key={val} onClick={() => setRetMulType(val)}
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 2, fontSize: 12, fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
+                background: retMulType === val ? colors.buttonNavy : 'transparent',
+                border: `1px solid ${retMulType === val ? colors.border : colors.borderInput}`,
+                color: retMulType === val ? colors.textGold : colors.textSecondary }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <label style={S.lbl}>Takes effect after round</label>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+          {['1', '2', '3'].map(r => (
+            <button key={r} onClick={() => setRetMulRound(r)}
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 2, fontSize: 12, fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
+                background: retMulRound === r ? colors.buttonNavy : 'transparent',
+                border: `1px solid ${retMulRound === r ? colors.border : colors.borderInput}`,
+                color: retMulRound === r ? colors.textGold : colors.textSecondary }}>
+              Round {r}
+            </button>
+          ))}
+        </div>
+
+        <button onClick={handleRetroMulligan}
+          disabled={!retMulTeam || !retMulTourney || !retMulOut || !retMulIn}
+          style={{ ...S.btn, ...disabledBtn(!retMulTeam || !retMulTourney || !retMulOut || !retMulIn) }}>
+          Apply Retroactive Mulligan
         </button>
       </div>
 

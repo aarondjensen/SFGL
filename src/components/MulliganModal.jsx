@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useDialog } from './DialogContext';
+import { theme, colors, fonts } from '../theme.js';
 
 /**
- * MulliganModal is now a proper top-level component.
- * Previously it was defined *inside* the RostersView render function,
- * which caused React to destroy and recreate it on every render.
+ * MulliganModal — top-level component (not defined inside RostersView render)
+ * to prevent React from destroying and recreating it on every render.
  */
 export const MulliganModal = ({
   isOpen,
@@ -16,9 +16,9 @@ export const MulliganModal = ({
   benchPlayers,
   onConfirm,
 }) => {
-  const [playerOut,   setPlayerOut]   = useState('');
-  const [playerIn,    setPlayerIn]    = useState('');
-  const [afterRound,  setAfterRound]  = useState('2');
+  const [playerOut,  setPlayerOut]  = useState('');
+  const [playerIn,   setPlayerIn]   = useState('');
+  const [afterRound, setAfterRound] = useState('2');
   const dialog = useDialog();
 
   if (!isOpen || !activeTournament) return null;
@@ -42,30 +42,47 @@ export const MulliganModal = ({
     onClose();
   };
 
+  const sel = {
+    width: '100%',
+    background: '#0d1b2e',
+    border: `1px solid ${colors.borderInput}`,
+    borderRadius: 2,
+    padding: '9px 12px',
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textPrimary,
+    outline: 'none',
+    cursor: 'pointer',
+    appearance: 'none',
+    WebkitAppearance: 'none',
+  };
+
   return (
     <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
       onClick={handleClose}
     >
       <div
-        className="bg-gray-800 rounded-xl border border-gray-500/50 max-w-md w-full shadow-2xl"
+        style={{ background: '#0f1e30', border: `1px solid ${colors.border}`, borderRadius: 4, maxWidth: 420, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.6)' }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="p-4 border-b border-gray-700">
-          <h2 className="text-lg font-bold">🚨 Use Mulligan</h2>
-          <p className="text-xs text-gray-400 mt-1">
-            {isSignatureOrMajor ? 'Signature/Major' : 'Regular'} mulligan · {activeTournament.name}
-          </p>
+        {/* Header */}
+        <div style={{ padding: '14px 18px', borderBottom: `1px solid ${colors.borderSubtle}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: colors.sectionHeaderBlue }}>
+            🚨 Use Mulligan
+          </span>
+          <span style={{ ...theme.smallText }}>
+            {isSignatureOrMajor ? 'Signature / Major' : 'Regular'} mulligan · {activeTournament.name}
+          </span>
         </div>
 
-        <div className="p-4 space-y-4">
+        {/* Body */}
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Player OUT */}
           <div>
-            <label className="text-xs font-semibold text-red-300 block mb-1">Player OUT</label>
-            <select
-              value={playerOut}
-              onChange={e => setPlayerOut(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 rounded-lg text-sm"
-            >
+            <label style={{ ...theme.label, display: 'block', marginBottom: 6, color: colors.danger }}>Player Out</label>
+            <select value={playerOut} onChange={e => setPlayerOut(e.target.value)} style={sel}>
               <option value="">Select...</option>
               {lineupPlayers.map(p => (
                 <option key={p.name} value={p.name}>{p.name}</option>
@@ -73,13 +90,10 @@ export const MulliganModal = ({
             </select>
           </div>
 
+          {/* Player IN */}
           <div>
-            <label className="text-xs font-semibold text-green-300 block mb-1">Player IN</label>
-            <select
-              value={playerIn}
-              onChange={e => setPlayerIn(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 rounded-lg text-sm"
-            >
+            <label style={{ ...theme.label, display: 'block', marginBottom: 6, color: colors.earningsGreen }}>Player In</label>
+            <select value={playerIn} onChange={e => setPlayerIn(e.target.value)} style={sel}>
               <option value="">Select...</option>
               {benchPlayers.map(p => (
                 <option key={p.name} value={p.name}>{p.name}</option>
@@ -87,18 +101,22 @@ export const MulliganModal = ({
             </select>
           </div>
 
+          {/* After round */}
           <div>
-            <label className="text-xs font-semibold text-gray-300 block mb-1">Takes effect after...</label>
-            <div className="flex gap-2">
+            <label style={{ ...theme.label, display: 'block', marginBottom: 8 }}>Takes Effect After</label>
+            <div style={{ display: 'flex', gap: 6 }}>
               {['1', '2', '3'].map(r => (
                 <button
                   key={r}
                   onClick={() => setAfterRound(r)}
-                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    afterRound === r
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
-                  }`}
+                  style={{
+                    flex: 1, padding: '9px 10px', borderRadius: 2,
+                    fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
+                    cursor: 'pointer', transition: 'all 0.15s',
+                    background: afterRound === r ? colors.buttonNavy : 'transparent',
+                    border: `1px solid ${afterRound === r ? colors.border : colors.borderInput}`,
+                    color: afterRound === r ? colors.textGold : colors.textSecondary,
+                  }}
                 >
                   Round {r}
                 </button>
@@ -107,14 +125,17 @@ export const MulliganModal = ({
           </div>
         </div>
 
-        <div className="p-4 border-t border-gray-700 flex gap-2">
-          <button onClick={handleClose} className="flex-1 py-2 bg-gray-700 rounded-lg">Cancel</button>
+        {/* Footer */}
+        <div style={{ padding: '12px 18px', borderTop: `1px solid ${colors.borderSubtle}`, display: 'flex', gap: 8 }}>
+          <button onClick={handleClose}
+            style={{ ...theme.btnSecondary, flex: 1, padding: '10px 16px' }}>
+            Cancel
+          </button>
           <button
             onClick={handleConfirm}
             disabled={!playerOut || !playerIn}
-            className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg transition-colors"
-          >
-            Confirm
+            style={{ ...theme.btnPrimary, flex: 1, padding: '10px 16px', opacity: (!playerOut || !playerIn) ? 0.4 : 1, cursor: (!playerOut || !playerIn) ? 'not-allowed' : 'pointer' }}>
+            Confirm Mulligan
           </button>
         </div>
       </div>
