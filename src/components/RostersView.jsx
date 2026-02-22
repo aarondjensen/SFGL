@@ -281,6 +281,7 @@ export const RostersView = ({
   firstTeeTime,
 }) => {
   const isMobile            = useIsMobile();
+  const [statsView,         setStatsView]         = useState('sfgl');
   const [lineupMode,        setLineupMode]        = useState(false);
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
@@ -400,6 +401,22 @@ export const RostersView = ({
       .filter(t => t.team === team.name && t.type === 'waiver' && t.status === 'pending')
       .sort((a, b) => (a.priority || 999) - (b.priority || 999));
   }, [team, transactions]);
+
+  // Derive SFGL cuts per player per team from completed tournament results
+  const sfglCutsMap = useMemo(() => {
+    const map = {}; // teamId -> playerName -> cutsMade
+    if (!team) return map;
+    tournaments.forEach(t => {
+      if (!t.completed || !t.results?.teams?.[team.id]) return;
+      const players = t.results.teams[team.id].players || [];
+      players.forEach(p => {
+        const name = p.name || p;
+        if (!map[name]) map[name] = 0;
+        if ((p.earnings || 0) > 0) map[name] += 1;
+      });
+    });
+    return map;
+  }, [team, tournaments]);
 
   if (!team) return null;
 
@@ -650,12 +667,51 @@ export const RostersView = ({
           <table style={{ width: '100%', borderCollapse: 'collapse' }} role="table">
             <thead>
               <tr>
-                {['Player', 'Events', 'Cuts', 'Tour $', 'SFGL $'].map((h, i) => (
-                  <th key={h} scope="col" style={{
-                    ...theme.tableHeaderCell,
-                    textAlign: i === 0 ? 'left' : i <= 2 ? 'center' : 'right',
-                  }}>{h}</th>
-                ))}
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center' }}>
+                  {statsView === 'sfgl' ? 'Starts' : 'Events'}
+                </th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center' }}>Cuts</th>
+                <th scope="col" colSpan={statsView === 'pgat' ? 1 : 0} style={{ ...theme.tableHeaderCell, textAlign: 'right', display: statsView === 'pgat' ? '' : 'none' }}>Tour $</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right' }}>
+                  {/* Slider pill lives in this header cell */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0 }}>
+                    <div style={{
+                      position: 'relative', display: 'flex',
+                      background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(180,160,100,0.2)',
+                      borderRadius: 4, padding: 2, width: 100,
+                    }}>
+                      {/* Sliding pill */}
+                      <div style={{
+                        position: 'absolute', top: 2, bottom: 2,
+                        left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2,
+                        width: 'calc(50% - 3px)',
+                        borderRadius: 2,
+                        background: statsView === 'pgat' ? 'rgba(80,195,120,0.15)' : 'rgba(245,197,24,0.15)',
+                        border: `1px solid ${statsView === 'pgat' ? 'rgba(80,195,120,0.45)' : 'rgba(245,197,24,0.45)'}`,
+                        transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
+                        pointerEvents: 'none',
+                      }} />
+                      <button onClick={() => setStatsView('sfgl')} style={{
+                        flex: 1, position: 'relative', zIndex: 1,
+                        padding: '3px 0', background: 'none', border: 'none',
+                        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                        letterSpacing: '0.8px', textTransform: 'uppercase',
+                        color: statsView === 'sfgl' ? colors.textGold : colors.textMuted,
+                        cursor: 'pointer', transition: 'color 0.18s',
+                      }}>SFGL</button>
+                      <button onClick={() => setStatsView('pgat')} style={{
+                        flex: 1, position: 'relative', zIndex: 1,
+                        padding: '3px 0', background: 'none', border: 'none',
+                        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                        letterSpacing: '0.8px', textTransform: 'uppercase',
+                        color: statsView === 'pgat' ? colors.success : colors.textMuted,
+                        cursor: 'pointer', transition: 'color 0.18s',
+                      }}>PGAT</button>
+                    </div>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -749,24 +805,26 @@ export const RostersView = ({
                       </div>
                     </td>
 
-                    {/* Events */}
+                    {/* Events / Starts */}
                     <td style={{ padding: '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
-                      {globalPlayerStats[player.name]?.eventsPlayed || 0}
+                      {statsView === 'sfgl' ? (player.starts || 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0)}
                     </td>
 
                     {/* Cuts */}
                     <td style={{ padding: '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
-                      {globalPlayerStats[player.name]?.cutsMade || 0}
+                      {statsView === 'sfgl' ? (sfglCutsMap[player.name] || 0) : (globalPlayerStats[player.name]?.cutsMade || 0)}
                     </td>
 
-                    {/* Tour $ */}
-                    <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, color: isBenched ? dimColor : ((globalPlayerStats[player.name]?.pgaTourEarnings || 0) > 0 ? colors.earningsGreenLight : colors.textMuted) }}>
-                      ${(globalPlayerStats[player.name]?.pgaTourEarnings || 0).toLocaleString()}
-                    </td>
+                    {/* Tour $ — only in PGAT mode */}
+                    {statsView === 'pgat' && (
+                      <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, color: isBenched ? dimColor : ((globalPlayerStats[player.name]?.pgaTourEarnings || 0) > 0 ? colors.earningsGreenLight : colors.textMuted) }}>
+                        ${(globalPlayerStats[player.name]?.pgaTourEarnings || 0).toLocaleString()}
+                      </td>
+                    )}
 
-                    {/* SFGL $ */}
-                    <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, fontWeight: 600, color: isBenched ? dimColor : ((player.sfglEarnings || 0) > 0 ? colors.earningsGreen : colors.textMuted) }}>
-                      ${(player.sfglEarnings || 0).toLocaleString()}
+                    {/* SFGL $ / PGA $ label slot */}
+                    <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, fontWeight: 600, color: isBenched ? dimColor : ((statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0)) > 0 ? (statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight) : colors.textMuted) }}>
+                      ${(statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0)).toLocaleString()}
                     </td>
                   </tr>
                 );
