@@ -32,8 +32,8 @@ export const colors = {
   textSecondary: 'rgba(255,255,255,0.4)',
   textMuted:     'rgba(255,255,255,0.2)',
   textLabel:     'rgba(255,255,255,0.25)',
-  textGold:      'rgba(180,160,100,0.9)',
-  textGoldDim:   'rgba(180,160,100,0.5)',
+  textGold:      '#f5c518',
+  textGoldDim:   'rgba(245,197,24,0.45)',
 
   // Semantic
   success:       'rgba(80,180,120,0.85)',

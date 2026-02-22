@@ -481,7 +481,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '12px 16px',
-                background: draggedIndex === idx ? 'rgba(180,160,100,0.08)' : 'rgba(255,255,255,0.03)',
+                background: draggedIndex === idx ? 'rgba(245,197,24,0.08)' : 'rgba(255,255,255,0.03)',
                 border: `1px solid ${draggedIndex === idx ? colors.border : colors.borderSubtle}`,
                 borderRadius: 2, cursor: 'grab',
                 opacity: draggedIndex === idx ? 0.6 : 1,
@@ -491,7 +491,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{
                   width: 32, height: 32, borderRadius: '50%',
-                  background: 'rgba(180,160,100,0.15)', border: `1px solid ${colors.border}`,
+                  background: 'rgba(245,197,24,0.15)', border: `1px solid ${colors.border}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontFamily: fonts.serif, fontSize: 14, color: colors.textGold,
                 }}>
@@ -612,12 +612,12 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                   style={{
                     display: 'flex', alignItems: 'center', gap: 14,
                     padding: '10px 14px', borderRadius: 2, cursor: 'pointer',
-                    background: isLimitedRound ? 'rgba(180,160,100,0.05)' : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${isLimitedRound ? 'rgba(180,160,100,0.2)' : 'rgba(255,255,255,0.12)'}`,
+                    background: isLimitedRound ? 'rgba(245,197,24,0.05)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${isLimitedRound ? 'rgba(245,197,24,0.2)' : 'rgba(255,255,255,0.12)'}`,
                     textAlign: 'left', transition: 'all 0.15s',
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.background = isLimitedRound ? 'rgba(180,160,100,0.12)' : 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = draftAccent; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = isLimitedRound ? 'rgba(180,160,100,0.05)' : 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = isLimitedRound ? 'rgba(180,160,100,0.2)' : 'rgba(255,255,255,0.12)'; }}
+                  onMouseEnter={e => { e.currentTarget.style.background = isLimitedRound ? 'rgba(245,197,24,0.12)' : 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = draftAccent; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = isLimitedRound ? 'rgba(245,197,24,0.05)' : 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = isLimitedRound ? 'rgba(245,197,24,0.2)' : 'rgba(255,255,255,0.12)'; }}
                 >
                   <img
                     src={getPlayerHeadshot(player.name)}

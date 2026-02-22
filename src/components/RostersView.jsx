@@ -34,7 +34,7 @@ const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
 
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
-  player.limited   ? 'rgba(180,160,100,0.8)' :
+  player.limited   ? 'rgba(245,197,24,0.8)' :
   player.unlimited ? 'rgba(100,140,220,0.8)' :
   'rgba(255,255,255,0.35)';
 
@@ -57,7 +57,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
           padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
-          background: '#0f1d35', border: `1px solid ${open ? 'rgba(180,160,100,0.5)' : 'rgba(255,255,255,0.12)'}`,
+          background: '#0f1d35', border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
           fontFamily: fonts.serif, fontSize: 14, fontWeight: 700,
           color: 'rgba(255,255,255,0.9)', textAlign: 'left',
           transition: 'border-color 0.15s',
@@ -78,10 +78,10 @@ const TeamDropdown = ({ teams, value, onChange }) => {
             <button key={t.id} onClick={() => { onChange(t.id); setOpen(false); }}
               style={{
                 display: 'block', width: '100%', padding: '9px 12px', textAlign: 'left', cursor: 'pointer',
-                background: t.id === value ? 'rgba(180,160,100,0.15)' : 'transparent',
+                background: t.id === value ? 'rgba(245,197,24,0.12)' : 'transparent',
                 border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)',
                 fontFamily: fonts.serif, fontSize: 13, fontWeight: t.id === value ? 700 : 400,
-                color: t.id === value ? 'rgba(180,160,100,0.9)' : 'rgba(255,255,255,0.85)',
+                color: t.id === value ? colors.textGold : 'rgba(255,255,255,0.85)',
                 transition: 'background 0.1s',
               }}
               onMouseEnter={e => { if (t.id !== value) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
