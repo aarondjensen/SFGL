@@ -497,6 +497,10 @@ export const AdminView = ({
     );
 
     // 4. Insert mulligan transaction in chronological order by tournamentIndex
+    //    Read fresh from storage to avoid stale closure issues
+    const freshTx = await storage.get(STORAGE_KEYS.TRANSACTIONS, []);
+    const liveTx = Array.isArray(freshTx) && freshTx.length >= transactions.length ? freshTx : transactions;
+
     const mulliganTx = {
       team: team.name, type: 'mulligan', player: retMulIn, droppedPlayer: retMulOut,
       fee: 0, segment: tournament.segment || '', date: new Date().toLocaleDateString(),
@@ -507,7 +511,7 @@ export const AdminView = ({
       retroactive: true,
     };
     // Insert after the last tx with tournamentIndex <= this one
-    const txCopy = [...transactions];
+    const txCopy = [...liveTx];
     const insertAt = txCopy.reduce((last, tx, i) =>
       (tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex) ? i + 1 : last
     , 0);
@@ -536,8 +540,8 @@ export const AdminView = ({
     await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, txCopy);
     await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings).catch(() => {});
-    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, txCopy).catch(() => {});
+    try { await sfglDataApi.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings); } catch(e) { console.error('sfgl teams sync failed:', e); }
+    try { await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, txCopy); } catch(e) { console.error('sfgl tx sync failed:', e); dialog.showToast('Warning: transaction saved locally but Supabase sync failed', 'error'); }
 
     dialog.showToast('Reprocessed ' + retMulTourney + ' with mulligan: ' + retMulOut + ' → ' + retMulIn + (earningsDelta !== 0 ? ' · earnings delta $' + earningsDelta.toLocaleString() : ''), 'success');
     setRetMulTeam(''); setRetMulTourney(''); setRetMulOut(''); setRetMulIn('');
