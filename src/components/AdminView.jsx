@@ -537,6 +537,7 @@ export const AdminView = ({
     await storage.set(STORAGE_KEYS.TRANSACTIONS, txCopy);
     await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
     sfglDataApi.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings).catch(() => {});
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, txCopy).catch(() => {});
 
     dialog.showToast('Reprocessed ' + retMulTourney + ' with mulligan: ' + retMulOut + ' → ' + retMulIn + (earningsDelta !== 0 ? ' · earnings delta $' + earningsDelta.toLocaleString() : ''), 'success');
     setRetMulTeam(''); setRetMulTourney(''); setRetMulOut(''); setRetMulIn('');
