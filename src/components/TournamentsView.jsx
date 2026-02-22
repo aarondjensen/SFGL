@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Trophy, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { SWINGS } from '../constants';
+// SWINGS defined locally (4 swings only)
+const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
 import { STORAGE_KEYS } from '../constants';
@@ -17,10 +18,10 @@ const isAlternate = (t) => {
 const swingColor = (swing, dateStr) => {
   if (swing) {
     if (swing === 'West Coast Swing') return 'rgba(220,80,80,0.8)';
-    if (swing === 'Florida Swing')    return 'rgba(220,180,60,0.8)';
     if (swing === 'Spring Swing')     return 'rgba(80,180,120,0.8)';
     if (swing === 'Summer Swing')     return 'rgba(80,140,220,0.8)';
-    return 'rgba(220,140,60,0.8)';
+    if (swing === 'Fall Finish')      return 'rgba(220,140,60,0.8)';
+    return colors.textSecondary;
   }
   if (!dateStr) return colors.textSecondary;
   const month = dateStr.split(' ')[0];
