@@ -501,6 +501,8 @@ export const AdminView = ({
     const freshTx = await storage.get(STORAGE_KEYS.TRANSACTIONS, []);
     const liveTx = Array.isArray(freshTx) && freshTx.length >= transactions.length ? freshTx : transactions;
 
+    console.log('[retro mulligan] transactions in closure:', transactions.length, 'from storage:', Array.isArray(freshTx) ? freshTx.length : 'not array', 'using:', liveTx.length);
+
     const mulliganTx = {
       team: team.name, type: 'mulligan', player: retMulIn, droppedPlayer: retMulOut,
       fee: 0, segment: tournament.segment || '', date: new Date().toLocaleDateString(),
@@ -517,6 +519,9 @@ export const AdminView = ({
     , 0);
     txCopy.splice(insertAt, 0, mulliganTx);
 
+    console.log('[retro mulligan] mulliganTx:', JSON.stringify(mulliganTx));
+    console.log('[retro mulligan] txCopy length after insert:', txCopy.length, 'insertAt:', insertAt);
+
     // 5. Deduct mulligan from team
     const newMulligans = { ...team.mulligans, [mulliganKey]: Math.max(0, (team.mulligans?.[mulliganKey] || 1) - 1) };
     const finalTeamsWithMulligan = finalTeams.map(t =>
@@ -532,6 +537,7 @@ export const AdminView = ({
     );
 
     // 7. Persist everything
+    console.log('[retro mulligan] about to call setTransactions with', txCopy.length, 'txs');
     updateTeams(finalTeamsWithEarnings);
     setTournaments(newTournaments);
     setTransactions(txCopy);
@@ -539,9 +545,16 @@ export const AdminView = ({
     await storage.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings);
     await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, txCopy);
+    console.log('[retro mulligan] local storage.set done');
     await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
     try { await sfglDataApi.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings); } catch(e) { console.error('sfgl teams sync failed:', e); }
-    try { await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, txCopy); } catch(e) { console.error('sfgl tx sync failed:', e); dialog.showToast('Warning: transaction saved locally but Supabase sync failed', 'error'); }
+    try {
+      await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, txCopy);
+      console.log('[retro mulligan] sfglDataApi.set transactions done');
+    } catch(e) {
+      console.error('sfgl tx sync failed:', e);
+      dialog.showToast('Warning: transaction saved locally but Supabase sync failed', 'error');
+    }
 
     dialog.showToast('Reprocessed ' + retMulTourney + ' with mulligan: ' + retMulOut + ' → ' + retMulIn + (earningsDelta !== 0 ? ' · earnings delta $' + earningsDelta.toLocaleString() : ''), 'success');
     setRetMulTeam(''); setRetMulTourney(''); setRetMulOut(''); setRetMulIn('');
