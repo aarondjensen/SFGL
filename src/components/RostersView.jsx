@@ -302,7 +302,12 @@ export const RostersView = ({
     const newTeams = teams.map(t => {
       if (t.id !== team.id) return t;
       const newLineup = isInLineup ? t.lineup.filter(p => p !== player.name) : [...t.lineup, player.name];
-      return { ...t, lineup: newLineup };
+      const newRoster = player.limited
+        ? t.roster.map(p => p.name === player.name
+            ? { ...p, starts: isInLineup ? Math.max(0, p.starts - 1) : p.starts + 1 }
+            : p)
+        : t.roster;
+      return { ...t, lineup: newLineup, roster: newRoster };
     });
     updateTeams(newTeams);
     storage.set(STORAGE_KEYS.TEAMS, newTeams);
@@ -509,14 +514,9 @@ export const RostersView = ({
           ...theme.cardHeader,
           flexDirection: 'column', alignItems: 'stretch', gap: 10,
         }}>
-          {activeTournament && (
+          {activeTournament && firstTeeTime && (
             <div style={{ overflow: 'hidden' }}>
-              <span style={{ fontFamily: fonts.serif, fontSize: 13, color: 'rgba(120,160,255,0.8)', fontWeight: 400 }}>
-                {activeTournament.name}
-              </span>
-              {firstTeeTime && (
-                <span style={{ ...theme.smallText, marginLeft: 8 }}>· {formatTeeTime(firstTeeTime)}</span>
-              )}
+              <span style={{ ...theme.smallText }}>· {formatTeeTime(firstTeeTime)}</span>
             </div>
           )}
 
