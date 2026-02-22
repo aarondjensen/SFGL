@@ -337,7 +337,7 @@ export const AddDropPlayerModal = ({
               background: colors.cardBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3,
               fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary,
             }}>
-              <span>Fee: <span style={{ color: '#f5c518' }}>${fee.toLocaleString()}</span> · <span style={{ color: accentColor(isWaiverMode) }}>{isWaiverMode ? 'Waiver (pending)' : 'Immediate'</span></span>
+              <span>Fee: <span style={{ color: '#f5c518' }}>${fee.toLocaleString()}</span> · <span style={{ color: accentColor(isWaiverMode) }}>{isWaiverMode ? 'Waiver (pending)' : 'Immediate'}</span></span>
               <ConfirmBtn compact />
             </div>
           )}
