@@ -3,8 +3,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
 import { theme, colors, fonts, cardLiftHandlers } from '../theme.js';
 
-const GOLD_BRIGHT = 'rgba(240,200,60,0.95)';
-const GOLD_DIM    = 'rgba(240,200,60,0.35)';
+const GOLD_BRIGHT = '#f5c518';
+const GOLD_DIM    = 'rgba(245,197,24,0.35)';
 const BLUE_BRIGHT = 'rgba(100,180,255,0.95)';
 const BLUE_DIM    = 'rgba(100,180,255,0.35)';
 
