@@ -418,7 +418,7 @@ export const AdminView = ({
 
     const ok = await dialog.showConfirm(
       'Recalculate Limited Player Starts',
-      'Rebuild each limited player's start count from completed tournament history. This is the source of truth — overrides any manual counts.',
+      'Rebuild each limited player start count from completed tournament history. This is the source of truth and overrides any manual counts.',
       { confirmText: 'Recalculate' }
     );
     if (!ok) return;
