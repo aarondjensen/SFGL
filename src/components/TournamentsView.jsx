@@ -151,10 +151,19 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 <td style={{ padding: '8px 12px' }}>
                   <select
                     value={t.segment || ''}
-                    onChange={e => updateLocal(realIndex, { segment: e.target.value })}
-                    style={{ ...theme.select, fontSize: 11, padding: '5px 8px' }}
+                    onChange={e => updateLocal(realIndex, { segment: e.target.value || null })}
+                    style={{
+                      ...theme.select,
+                      fontSize: 11,
+                      padding: '5px 8px',
+                      background: '#0d1b2e',
+                      color: colors.textPrimary,
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      minWidth: 120,
+                    }}
                   >
-                    <option value="">Auto</option>
+                    <option value="">— derived —</option>
                     {SWINGS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </td>
