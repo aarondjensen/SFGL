@@ -194,107 +194,109 @@ const FantasyGolfLeague = () => {
   return (
     <div className="min-h-screen pb-20 text-white" style={{ background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
-      {/* ── Header ── */}
-      <header style={{
-        background: 'rgba(8, 18, 40, 0.95)',
-        borderBottom: '1px solid rgba(180,160,100,0.15)',
-        backdropFilter: 'blur(12px)',
+      {/* ── Sticky shell: header + banner + nav ── */}
+      <div style={{
         position: 'sticky', top: 0, zIndex: 50,
+        background: 'rgba(8, 18, 40, 0.97)',
+        backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid rgba(180,160,100,0.15)',
       }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
 
-            {/* Logo */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              {/* Try image first; if it loads show it, otherwise the text fallback stays */}
-              <span style={{
-                fontFamily: "'Raleway', system-ui, sans-serif",
-                fontSize: 22, fontWeight: 600, letterSpacing: 5,
-                color: 'rgba(255,255,255,0.93)',
-                whiteSpace: 'nowrap', userSelect: 'none',
-              }}>SFGL</span>
-              <div style={{ width: 1, height: 22, background: 'rgba(180,160,100,0.25)' }} />
-              <span style={{
-                fontFamily: "'Raleway', system-ui, sans-serif",
-                fontSize: 16,
-                fontWeight: 300,
-                color: 'rgba(255,255,255,0.45)',
-                letterSpacing: 4,
-              }}>2026</span>
-            </div>
+        {/* ── Header ── */}
+        <header>
+          <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
 
-            {/* Right side: user + login/logout */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              {loggedInUser && (
+              {/* Logo */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span style={{
-                  fontSize: 11,
-                  color: 'rgba(180,160,100,0.7)',
-                  letterSpacing: 1,
-                  textTransform: 'uppercase',
                   fontFamily: "'Raleway', system-ui, sans-serif",
-                }}>
-                  {loggedInUser}
-                </span>
-              )}
-              {loggedInUser
-                ? (
-                  <button onClick={handleLogout} style={{
-                    fontFamily: "'Raleway', system-ui, sans-serif",
-                    fontSize: 10,
-                    letterSpacing: 1.5,
+                  fontSize: 22, fontWeight: 600, letterSpacing: 5,
+                  color: 'rgba(255,255,255,0.93)',
+                  whiteSpace: 'nowrap', userSelect: 'none',
+                }}>SFGL</span>
+                <div style={{ width: 1, height: 22, background: 'rgba(180,160,100,0.25)' }} />
+                <span style={{
+                  fontFamily: "'Raleway', system-ui, sans-serif",
+                  fontSize: 16,
+                  fontWeight: 300,
+                  color: 'rgba(255,255,255,0.45)',
+                  letterSpacing: 4,
+                }}>2026</span>
+              </div>
+
+              {/* Right side: user + login/logout */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {loggedInUser && (
+                  <span style={{
+                    fontSize: 11,
+                    color: 'rgba(180,160,100,0.7)',
+                    letterSpacing: 1,
                     textTransform: 'uppercase',
-                    padding: '5px 12px',
-                    background: 'rgba(180,60,60,0.12)',
-                    border: '1px solid rgba(180,60,60,0.3)',
-                    borderRadius: 1,
-                    color: 'rgba(220,120,120,0.8)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}>
-                    Sign Out
-                  </button>
-                ) : (
-                  <button onClick={() => setShowLoginModal(true)} style={{
                     fontFamily: "'Raleway', system-ui, sans-serif",
-                    fontSize: 10,
-                    letterSpacing: 1.5,
-                    textTransform: 'uppercase',
-                    padding: '5px 12px',
-                    background: 'rgba(40,120,80,0.15)',
-                    border: '1px solid rgba(80,195,120,0.35)',
-                    borderRadius: 1,
-                    color: 'rgba(80,195,120,0.9)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
                   }}>
-                    Sign In
-                  </button>
-                )
-              }
+                    {loggedInUser}
+                  </span>
+                )}
+                {loggedInUser
+                  ? (
+                    <button onClick={handleLogout} style={{
+                      fontFamily: "'Raleway', system-ui, sans-serif",
+                      fontSize: 10,
+                      letterSpacing: 1.5,
+                      textTransform: 'uppercase',
+                      padding: '5px 12px',
+                      background: 'rgba(180,60,60,0.12)',
+                      border: '1px solid rgba(180,60,60,0.3)',
+                      borderRadius: 1,
+                      color: 'rgba(220,120,120,0.8)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}>
+                      Sign Out
+                    </button>
+                  ) : (
+                    <button onClick={() => setShowLoginModal(true)} style={{
+                      fontFamily: "'Raleway', system-ui, sans-serif",
+                      fontSize: 10,
+                      letterSpacing: 1.5,
+                      textTransform: 'uppercase',
+                      padding: '5px 12px',
+                      background: 'rgba(40,120,80,0.15)',
+                      border: '1px solid rgba(80,195,120,0.35)',
+                      borderRadius: 1,
+                      color: 'rgba(80,195,120,0.9)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}>
+                      Sign In
+                    </button>
+                  )
+                }
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* ── Segment / active tournament banner ── */}
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px 4px", display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400 }}>
-          {getSegmentByDate()}
-        </div>
-        {currentTournament && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
-            <span>⛳</span> {currentTournament.name}
+        {/* ── Segment / active tournament banner ── */}
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400 }}>
+            {getSegmentByDate()}
           </div>
-        )}
-        {isSyncing && (
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="ml-auto animate-pulse">
-            Saving…
-          </span>
-        )}
-      </div>
+          {currentTournament && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+              <span>⛳</span> {currentTournament.name}
+            </div>
+          )}
+          {isSyncing && (
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="ml-auto animate-pulse">
+              Saving…
+            </span>
+          )}
+        </div>
 
-      {/* ── Navigation ── */}
-      <nav style={{ maxWidth: 1100, margin: "0 auto", padding: "0 16px", position: "relative", marginTop: 8 }}>
+        {/* ── Navigation ── */}
+        <nav style={{ maxWidth: 1100, margin: "0 auto", padding: "0 16px", position: "relative" }}>
         <div className="sfgl-nav-row" style={{ display: "flex", gap: 0, paddingBottom: 8, overflowX: "auto" }}>
           {TABS.map(tab => {
             const isActive = activeTab === tab.id;
@@ -396,7 +398,8 @@ const FantasyGolfLeague = () => {
             </button>
           </div>
         )}
-      </nav>
+        </nav>
+      </div>{/* end sticky shell */}
 
       {/* ── Main content ── */}
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 80px" }}>
