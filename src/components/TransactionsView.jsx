@@ -476,9 +476,37 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   <div style={{ ...theme.label, marginBottom: 4 }}>Tournament</div>
                   <select value={addTxTourney} onChange={e => setAddTxTourney(e.target.value)} style={{ ...theme.select, width: '100%' }}>
                     <option value="">Select tournament...</option>
-                    {tournaments.map((t, i) => (
-                      <option key={t.name} value={i}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>
-                    ))}
+                    {(() => {
+                      // Date-based: which week are we in for add/drop?
+                      const parseStart = (t) => {
+                        if (!t?.dates) return null;
+                        const m = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
+                        if (!m) return null;
+                        const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+                        const mo = months[m[1]];
+                        if (mo === undefined) return null;
+                        return new Date(2026, mo, parseInt(m[2]));
+                      };
+                      const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+                      const now = new Date(etStr);
+                      let dateWeekIdx = -1;
+                      tournaments.forEach((t, i) => {
+                        const start = parseStart(t);
+                        if (!start) return;
+                        const end = new Date(start); end.setDate(end.getDate() + 13);
+                        if (now >= start && now <= end) dateWeekIdx = i;
+                      });
+                      return tournaments.map((t, i) => {
+                        let hint = '';
+                        if (t.playing) hint = ' (active)';
+                        if (i === dateWeekIdx) hint = ' ← this week';
+                        return (
+                          <option key={t.name} value={i}>
+                            {t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}{hint}
+                          </option>
+                        );
+                      });
+                    })()}
                   </select>
                 </div>
 
@@ -487,7 +515,39 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   <div style={{ ...theme.label, marginBottom: 4 }}>Type</div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     {['mulligan', 'waiver', 'fa', 'drop'].map(type => (
-                      <button key={type} onClick={() => setAddTxType(type)} style={{
+                      <button key={type} onClick={() => {
+                        setAddTxType(type);
+                        // Always re-default tournament when type changes (commish can still override)
+                        {
+                          if (type === 'mulligan') {
+                            // Mulligan → current playing tournament
+                            const idx = tournaments.findIndex(t => t.playing);
+                            if (idx >= 0) setAddTxTourney(String(idx));
+                          } else {
+                            // FA/waiver/drop → date-based current tournament week
+                            const parseStart = (t) => {
+                              if (!t?.dates) return null;
+                              const m = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
+                              if (!m) return null;
+                              const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+                              const mo = months[m[1]];
+                              if (mo === undefined) return null;
+                              return new Date(2026, mo, parseInt(m[2]));
+                            };
+                            const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+                            const now = new Date(etStr);
+                            let found = -1;
+                            tournaments.forEach((t, i) => {
+                              const start = parseStart(t);
+                              if (!start) return;
+                              const end = new Date(start); end.setDate(end.getDate() + 13);
+                              if (now >= start && now <= end) found = i;
+                            });
+                            if (found < 0) found = tournaments.findIndex(t => !t.completed);
+                            if (found >= 0) setAddTxTourney(String(found));
+                          }
+                        }
+                      }} style={{
                         flex: 1, padding: '7px 4px', borderRadius: 2, fontSize: 11,
                         fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
                         background: addTxType === type ? colors.buttonNavy : 'transparent',
@@ -708,9 +768,20 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       )}
                     </div>
 
-                    {/* Date + segment + status */}
-                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>{tx.date}{tx.segment ? ' · ' + tx.segment : ''}</span>
+                    {/* Date + tournament + status */}
+                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span>{tx.date}</span>
+                      {(() => {
+                        const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
+                        const name = t?.name || tx.tournament || null;
+                        if (!name) return null;
+                        return (
+                          <span style={{ color: 'rgba(180,180,210,0.6)' }}>
+                            · {name}
+                          </span>
+                        );
+                      })()}
+                      {tx.segment && <span>· {tx.segment}</span>}
                       {tx.status && tx.status !== 'processed' && (
                         <span style={{ color: statusColor(tx.status), fontWeight: 600 }}>
                           {tx.status}{tx.failReason ? ' — ' + tx.failReason : ''}
