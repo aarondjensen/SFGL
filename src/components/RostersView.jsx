@@ -711,18 +711,20 @@ export const RostersView = ({
                             }}>
                               {player.name}
                             </span>
-
+                            {player.limited && (
+                              <span style={{
+                                fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
+                                color: isBenched ? dimColor : colors.textGoldDim,
+                              }}>
+                                {player.starts}/{MAX_LIMITED_STARTS}
+                              </span>
+                            )}
                             {player.unlimited && (
                               <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)' }}>♾️</span>
                             )}
                           </div>
                           <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.12)' : colors.textMuted }}>
-                            {player.limited && (
-                              <span style={{ color: isBenched ? 'rgba(255,255,255,0.12)' : colors.textGoldDim }}>
-                                {player.starts}/{MAX_LIMITED_STARTS} starts
-                              </span>
-                            )}
-                            {player.yearsOfService > 1 && <span style={{ marginLeft: 4 }}>(Yr {player.yearsOfService})</span>}
+                            {player.yearsOfService > 1 && <span>(Yr {player.yearsOfService})</span>}
                           </div>
                         </div>
                       </div>
