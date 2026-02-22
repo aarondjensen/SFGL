@@ -438,6 +438,7 @@ const FantasyGolfLeague = () => {
           {activeTab === 'transactions' && (
             <TransactionsView
               transactions={safeTransactions}
+              tournaments={safeTournaments}
               teams={resolvedTeams}
               allPlayers={allPlayers}
               setTransactions={updateTransactions}
