@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, X } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { slashGolfFetch, processTournamentData, makePlayer, resolvePlayerName } from '../utils';
+import { slashGolfFetch, processTournamentData, makePlayer, resolvePlayerName, getSegmentByDate } from '../utils';
 import { PGA_TOUR_IDS, FALLBACK_SCHEDULE_DATA, LIV_GOLF_ROSTER } from '../constants';
 import { storage } from '../api';
 import { ScheduleImportModal } from './ScheduleImportModal';
@@ -739,6 +739,65 @@ export const AdminView = ({
     dialog.showToast('Processed ' + processedCount + ' waiver' + (processedCount !== 1 ? 's' : '') + (failedCount > 0 ? ' - ' + failedCount + ' failed' : ''), processedCount > 0 ? 'success' : 'error');
   };
 
+
+  // ── Recalculate earnings from completed tournament results ────────────────
+  const handleRecalcEarnings = async () => {
+    const completedWithResults = tournaments.filter(t => t.completed && t.results?.teams);
+    if (completedWithResults.length === 0) {
+      dialog.showToast('No completed tournament results found', 'error'); return;
+    }
+    const ok = await dialog.showConfirm(
+      'Recalculate All Earnings',
+      'This will recompute every team\'s season earnings by summing all completed tournament results.\n\nAlso fixes the current tournament indicator.\n\nSafe to run.',
+      { confirmText: 'Recalculate' }
+    );
+    if (!ok) return;
+
+    // Sum totalEarnings across all completed tournaments for each team
+    const earningsByTeam = {};
+    completedWithResults.forEach(tourn => {
+      Object.entries(tourn.results.teams).forEach(([teamId, teamResult]) => {
+        earningsByTeam[teamId] = (earningsByTeam[teamId] || 0) + (teamResult.totalEarnings || 0);
+      });
+    });
+
+    const updatedTeams = teams.map(team => ({
+      ...team,
+      earnings: earningsByTeam[team.id] || 0,
+      // segmentEarnings: sum only tournaments in the current swing
+      segmentEarnings: (() => {
+        const currentSwing = typeof getSegmentByDate === 'function' ? getSegmentByDate() : null;
+        return completedWithResults
+          .filter(t => !currentSwing || t.segment === currentSwing)
+          .reduce((sum, t) => sum + ((t.results?.teams?.[team.id]?.totalEarnings) || 0), 0);
+      })(),
+    }));
+
+    // Fix playing flag: most recent completed tournament's next non-completed tournament should be playing
+    const updatedTournaments = tournaments.map((t, idx) => {
+      const isLastCompleted = t.completed &&
+        !tournaments.slice(idx + 1).some(nt => nt.completed);
+      return t;
+    });
+    // Find the first non-completed, non-alternate tournament after all completed ones
+    const lastCompletedIdx = [...tournaments].map((t,i)=>({t,i})).filter(({t})=>t.completed).pop()?.i ?? -1;
+    const nextPlayingIdx = tournaments.findIndex((t, idx) => idx > lastCompletedIdx && !t.completed && !t.isAlternate);
+    const fixedTournaments = tournaments.map((t, idx) => ({
+      ...t,
+      playing: idx === nextPlayingIdx,
+    }));
+
+    updateTeams(updatedTeams);
+    setTournaments(fixedTournaments);
+    await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+    await storage.set(STORAGE_KEYS.TOURNAMENTS, fixedTournaments);
+    dialog.showToast(
+      'Recalculated! ' + completedWithResults.length + ' tournaments · next up: ' +
+      (fixedTournaments[nextPlayingIdx]?.name || 'none'),
+      'success'
+    );
+  };
+
   return (
     <div className="space-y-6">
 
@@ -1059,8 +1118,11 @@ export const AdminView = ({
         <button onClick={handleRepairRosterFlags} className="w-full py-2 mb-2 bg-gray-700/50 hover:bg-gray-600/50 rounded-lg text-sm font-bold text-gray-300 transition-colors">
           🔧 Repair Roster Flags (Limited / Unlimited)
         </button>
-        <button onClick={handleSyncRostersFromTransactions} className="w-full py-2 bg-gray-700/50 hover:bg-gray-600/50 rounded-lg text-sm font-bold text-gray-300 transition-colors">
+        <button onClick={handleSyncRostersFromTransactions} className="w-full py-2 mb-2 bg-gray-700/50 hover:bg-gray-600/50 rounded-lg text-sm font-bold text-gray-300 transition-colors">
           🔄 Sync Rosters from Transactions (fix add/drop drift)
+        </button>
+        <button onClick={handleRecalcEarnings} className="w-full py-2 bg-amber-800/40 hover:bg-amber-700/50 border border-amber-600/40 rounded-lg text-sm font-bold text-amber-300 transition-colors">
+          📊 Recalculate Earnings from Results (fix standings)
         </button>
       </div>
 
