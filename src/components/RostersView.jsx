@@ -12,6 +12,7 @@ import {
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
+import { sfglDataApi } from '../api/supabase';
 import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers (Cloudinary PGA Tour CDN — no ESPN 400 errors) ─────────
@@ -305,6 +306,7 @@ export const RostersView = ({
     });
     updateTeams(newTeams);
     storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Lineup sync failed:', e.message));
   }, [team, teams, updateTeams, dialog]);
 
   const handleMulliganConfirm = useCallback(({ playerOut, playerIn, afterRound, isSignatureOrMajor }) => {
@@ -327,6 +329,7 @@ export const RostersView = ({
     updateTeams(newTeams);
     setTransactions(prev => [...prev, newTx]);
     storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Mulligan sync failed:', e.message));
     // transaction saved via setTransactions -> storage via parent
     dialog.showToast(`Mulligan used: ${playerOut} → ${playerIn}`, 'success');
   }, [team, teams, updateTeams, setTransactions, activeTournament, activeTournamentIndex, settings, dialog]);
@@ -348,6 +351,7 @@ export const RostersView = ({
     updateTeams(newTeams);
     setTransactions(prev => prev.filter(t => t !== tx));
     storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Undo mulligan sync failed:', e.message));
     // transactions saved via setTransactions -> storage via parent
     dialog.showToast('Mulligan successfully undone', 'success');
   };
