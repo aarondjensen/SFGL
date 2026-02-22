@@ -38,6 +38,24 @@ const playerBorderColor = (player) =>
   player.unlimited ? 'rgba(100,140,220,0.8)' :
   'rgba(255,255,255,0.35)';
 
+// ── Mobile display name helper ───────────────────────────────────────────────
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = React.useState(() => window.innerWidth < 640);
+  React.useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+};
+
+const displayName = (fullName, isMobile) => {
+  if (!isMobile || !fullName) return fullName;
+  const parts = fullName.trim().split(' ');
+  if (parts.length < 2) return fullName;
+  return parts[0][0] + '. ' + parts[parts.length - 1];
+};
+
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
 const TeamDropdown = ({ teams, value, onChange }) => {
   const [open, setOpen] = React.useState(false);
@@ -262,6 +280,7 @@ export const RostersView = ({
   settings, loggedInUser, isCommissioner, globalPlayerStats, headshots,
   firstTeeTime,
 }) => {
+  const isMobile            = useIsMobile();
   const [lineupMode,        setLineupMode]        = useState(false);
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
@@ -709,7 +728,7 @@ export const RostersView = ({
                               fontFamily: fonts.sans, fontSize: 12, fontWeight: 500,
                               color: isBenched ? dimColor : player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
                             }}>
-                              {player.name}
+                              {displayName(player.name, isMobile)}
                             </span>
                             {player.limited && (
                               <span style={{
