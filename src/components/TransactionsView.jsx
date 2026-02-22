@@ -754,10 +754,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
                     {/* Transaction detail */}
                     <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary }}>
-                      <span style={{ color: txTypeColor(tx.type), display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                        {tx.type === 'mulligan' && <Siren style={{ width: 10, height: 10, flexShrink: 0, color: colors.danger }} />}
-                        {tx.type}
-                      </span>
+                      <span style={{ color: txTypeColor(tx.type) }}>{tx.type}</span>
                       {': '}
                       <span style={{ color: colors.success }}>{tx.player}</span>
                       {tx.droppedPlayer && (
@@ -792,7 +789,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
                   {/* Fee + commish actions */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                    {tx.type !== 'mulligan' && (
+                    {tx.type === 'mulligan' ? (
+                      <Siren style={{ width: 14, height: 14, color: colors.danger, flexShrink: 0 }} />
+                    ) : (
                       <span style={{
                         ...theme.statNum, fontSize: 13, fontWeight: 600,
                         color: tx.fee > 0 ? colors.earningsGreen : colors.textMuted,
