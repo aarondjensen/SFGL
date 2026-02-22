@@ -26,6 +26,7 @@ export const AdminView = ({
   const [mgCredPass, setMgCredPass] = useState('');
   const [mgCredSaving, setMgCredSaving] = useState(false);
   const [showDraftModal, setShowDraftModal] = useState(false);
+  const [swingAwardSeg, setSwingAwardSeg]   = useState('');
   // Apply mulligan (live, inside Roster Management)
   const [mulliganMode, setMulliganMode]     = useState(false);
   const [mulliganOut,  setMulliganOut]      = useState('');
@@ -346,6 +347,70 @@ export const AdminView = ({
     setRetMulTeam(''); setRetMulTourney(''); setRetMulOut(''); setRetMulIn(''); setRetMulType('regular'); setRetMulRound('2');
   };
 
+  // ── Award Swing Winner ──────────────────────────────────────────────────
+  const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
+
+  const handleSwingWinner = async () => {
+    if (!swingAwardSeg) return;
+
+    // Sum all transaction fees for this swing
+    const pot = transactions
+      .filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0)
+      .reduce((sum, tx) => sum + (tx.fee || 0), 0);
+
+    if (pot === 0) {
+      dialog.showToast('No fees collected for ' + swingAwardSeg, 'error');
+      return;
+    }
+
+    // Find winner = highest segmentEarnings for this swing
+    // segmentEarnings is calculated from completed tournaments in this swing
+    const swingTournaments = tournaments.filter(t => t.completed && t.segment === swingAwardSeg && t.results?.teams);
+    if (!swingTournaments.length) {
+      dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
+      return;
+    }
+
+    const byTeam = {};
+    swingTournaments.forEach(t => {
+      Object.entries(t.results.teams).forEach(([id, tr]) => {
+        byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
+      });
+    });
+
+    const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+    if (!winnerEntry) { dialog.showToast('Could not determine winner', 'error'); return; }
+    const [winnerId, winnerEarnings] = winnerEntry;
+    const winnerTeam = teams.find(t => t.id === winnerId);
+    if (!winnerTeam) { dialog.showToast('Winner team not found', 'error'); return; }
+
+    const msg = swingAwardSeg + ' complete. Winner: ' + winnerTeam.name + ' (' + winnerTeam.owner + '). Swing: $' + winnerEarnings.toLocaleString() + '. Pot: $' + pot.toLocaleString() + '. Award pot?';
+    const ok = await dialog.showConfirm('Award Swing Winner', msg, { confirmText: 'Award $' + pot.toLocaleString() });
+    if (!ok) return;
+
+    const newTx = {
+      team: winnerTeam.name, type: 'swing_winner', player: winnerTeam.owner,
+      fee: 0, amount: pot, segment: swingAwardSeg,
+      date: new Date().toLocaleDateString(), status: 'completed',
+      note: swingAwardSeg + ' winner pot',
+    };
+
+    const newTeams = teams.map(t =>
+      t.id === winnerId
+        ? { ...t, earnings: (t.earnings || 0) + pot }
+        : t
+    );
+
+    updateTeams(newTeams);
+    setTransactions(prev => [...prev, newTx]);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+
+    dialog.showToast('🏆 ' + winnerTeam.name + ' awarded $' + pot.toLocaleString() + ' for ' + swingAwardSeg, 'success');
+    setSwingAwardSeg('');
+  };
+
   const pending = transactions.map((tx, idx) => ({ ...tx, _idx: idx })).filter(tx => tx.type === 'waiver' && tx.status === 'pending');
   const disabledBtn = (cond) => cond ? { opacity: 0.4, cursor: 'not-allowed' } : {};
 
@@ -643,6 +708,47 @@ export const AdminView = ({
         <div style={S.title}>☁️ Data & Sync</div>
         <button onClick={handlePush} style={{ ...S.btn, marginBottom: 8 }}>☁️ Push to Supabase (sync all devices)</button>
         <button onClick={handleRecalc} style={S.btnSec}>📊 Recalculate Earnings from Results</button>
+      </div>
+
+      {/* Swing Winner */}
+      <div style={S.section}>
+        <div style={S.title}>🏆 Award Swing Winner</div>
+        <div style={{ ...theme.smallText, marginBottom: 10 }}>
+          When a swing is complete, award the fee pot to the swing leader.
+        </div>
+        <label style={S.lbl}>Swing</label>
+        <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
+          <option value="">Select swing...</option>
+          {SWINGS.map(s => {
+            const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+            const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
+            return (
+              <option key={s} value={s} disabled={alreadyAwarded}>
+                {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
+              </option>
+            );
+          })}
+        </select>
+        {swingAwardSeg && (() => {
+          const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+          const swingTourneys = tournaments.filter(t => t.completed && t.segment === swingAwardSeg && t.results?.teams);
+          const byTeam = {};
+          swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
+          const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+          const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
+          return (
+            <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
+              {leader
+                ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} swing earnings · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
+                : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
+              }
+            </div>
+          );
+        })()}
+        <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
+          style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
+          🏆 Award Swing Winner
+        </button>
       </div>
 
       {/* Danger Zone */}
