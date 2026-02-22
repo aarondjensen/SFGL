@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Clock, ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
 import { theme, colors, fonts, cardLiftHandlers } from '../theme.js';
 
@@ -150,31 +150,21 @@ export const ResultsView = ({ teams, tournaments }) => {
               onMouseEnter={e => { e.currentTarget.style.background = 'rgba(40,120,80,0.1)'; }}
               onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'linear-gradient(90deg, rgba(40,120,80,0.12) 0%, transparent 100%)'; }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ position: 'relative', flexShrink: 0 }}>
-                  <Clock style={{ width: 15, height: 15, color: colors.success }} />
-                  <span style={{
-                    position: 'absolute', top: -2, right: -2,
-                    width: 7, height: 7, borderRadius: '50%',
-                    background: colors.success,
-                    animation: 'pulse 2s infinite',
-                  }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
+                  {tournament.isMajor
+                    ? <span style={{ ...theme.badge, ...theme.badgeGold, fontSize: 9 }}>M</span>
+                    : tournament.isSignature
+                      ? <span style={{ ...theme.badge, ...theme.badgeNavy, fontSize: 9 }}>S</span>
+                      : <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.success, display: 'inline-block', marginTop: 2 }} />
+                  }
                 </div>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <h3 style={{ ...theme.h3, color: colors.success }}>{tournament.name}</h3>
-                    <span style={{ ...theme.badge, background: 'rgba(80,180,120,0.15)', border: '1px solid rgba(80,180,120,0.3)', color: colors.success }}>
-                      In Progress
-                    </span>
-                    <TournamentBadges tournament={tournament} />
-                  </div>
-                  <p style={{ ...theme.smallText, marginTop: 2 }}>{tournament.dates} · {tournament.location}</p>
-                </div>
+                <h3 style={{ ...theme.h3, color: colors.success, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.name}</h3>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                {!isExpanded && teamsWithLineups.length > 0 && (
-                  <span style={{ ...theme.smallText, textAlign: 'right' }}>
-                    {teamsWithLineups.length} lineup{teamsWithLineups.length !== 1 ? 's' : ''} set
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {!isExpanded && (
+                  <span style={{ ...theme.badge, background: 'rgba(80,180,120,0.15)', border: '1px solid rgba(80,180,120,0.3)', color: colors.success }}>
+                    In Progress
                   </span>
                 )}
                 {isExpanded
@@ -247,19 +237,10 @@ export const ResultsView = ({ teams, tournaments }) => {
                   }
                 </div>
                 <div style={{ textAlign: 'left', minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <h3 style={{ ...theme.h3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.name}</h3>
-                  </div>
-                  <p style={{ ...theme.smallText, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.dates} · {tournament.location}</p>
+                  <h3 style={{ ...theme.h3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.name}</h3>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                {!isExpanded && rankedTeams.length > 0 && (
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={theme.smallText}>Winner</div>
-                    <div style={{ ...theme.h3, fontSize: 13, color: colors.textGold }}>{rankedTeams[0]?.name}</div>
-                  </div>
-                )}
+              <div style={{ display: 'flex', alignItems: 'center' }}>
                 {isExpanded
                   ? <ChevronDown style={{ width: 15, height: 15, color: colors.textSecondary }} />
                   : <ChevronRight style={{ width: 15, height: 15, color: colors.textSecondary }} />
