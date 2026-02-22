@@ -21,8 +21,8 @@ import { managerAuthApi, tournamentResultsApi, sfglDataApi } from './api/supabas
 // ── Tabs ────────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'standings',    label: 'Standings',    Icon: Trophy     },
-  { id: 'results',      label: 'Results',      Icon: Award      },
   { id: 'rosters',      label: 'Rosters',      Icon: Users      },
+  { id: 'results',      label: 'Results',      Icon: Award      },
   { id: 'transactions', label: 'Transactions', Icon: DollarSign },
   { id: 'tournaments',  label: 'Tournaments',  Icon: Calendar   },
   { id: 'admin',        label: 'Commish',      Icon: Settings   },
