@@ -82,11 +82,19 @@ export const AdminView = ({
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
       const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
       if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
-      updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
-      await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+      // Also apply sfglEarnings from resultsData.teams directly onto roster
+      const teamsWithSfgl = newTeams.map(team => {
+        const teamResult = resultsData?.teams?.[team.id];
+        if (!teamResult?.players) return team;
+        const earningsByName = {};
+        teamResult.players.forEach(p => { earningsByName[p.name || p] = (p.earnings || 0); });
+        return { ...team, roster: team.roster.map(p => earningsByName[p.name] !== undefined ? { ...p, sfglEarnings: (p.sfglEarnings || 0) + earningsByName[p.name] } : p) };
+      });
+      updateTeams(teamsWithSfgl); setGlobalPlayerStats(newStats); setTournaments(newT);
+      await storage.set(STORAGE_KEYS.TEAMS, teamsWithSfgl);
       await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-      sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.TEAMS, teamsWithSfgl).catch(() => {});
       dialog.showToast('Results processed for ' + t.name + '!', 'success');
     } catch (err) { dialog.showToast('API Error: ' + err.message, 'error'); }
   };
@@ -121,11 +129,19 @@ export const AdminView = ({
     const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
     const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
     if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
-    updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
-    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    // Also apply sfglEarnings from resultsData.teams directly onto roster
+    const teamsWithSfgl = newTeams.map(team => {
+      const teamResult = resultsData?.teams?.[team.id];
+      if (!teamResult?.players) return team;
+      const earningsByName = {};
+      teamResult.players.forEach(p => { earningsByName[p.name || p] = (p.earnings || 0); });
+      return { ...team, roster: team.roster.map(p => earningsByName[p.name] !== undefined ? { ...p, sfglEarnings: (p.sfglEarnings || 0) + earningsByName[p.name] } : p) };
+    });
+    updateTeams(teamsWithSfgl); setGlobalPlayerStats(newStats); setTournaments(newT);
+    await storage.set(STORAGE_KEYS.TEAMS, teamsWithSfgl);
     await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
     await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, teamsWithSfgl).catch(() => {});
     dialog.showToast('Results processed! ' + earningsMap.size + ' players with earnings', 'success');
     setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
   };
@@ -475,6 +491,79 @@ export const AdminView = ({
     dialog.showToast('Starts recalculated for ' + totalFixed + ' limited players across ' + completed.length + ' tournaments', 'success');
   };
 
+  // ── Recalculate All Player Stats from History ──────────────────────────
+  const handleRecalcAllStats = async () => {
+    const completed = tournaments.filter(t => t.completed && t.results?.teams);
+    if (!completed.length) { dialog.showToast('No completed tournaments found', 'error'); return; }
+
+    const ok = await dialog.showConfirm(
+      'Recalculate All Player Stats',
+      'Rebuild Events, Cuts, Tour$, SFGL$, and Starts for every rostered player from completed tournament history.',
+      { confirmText: 'Recalculate' }
+    );
+    if (!ok) return;
+
+    // --- globalPlayerStats: {playerName: {eventsPlayed, cutsMade, pgaTourEarnings}}
+    // sourced from results.earningsMap which has ALL players who made the cut
+    const newGlobalStats = {};
+
+    // --- per-roster sfglEarnings & starts: sourced from results.teams[id].players
+    // {teamId: {playerName: {sfglEarnings, starts}}}
+    const rosterStats = {};
+    teams.forEach(t => { rosterStats[t.id] = {}; });
+
+    completed.forEach(tourney => {
+      const earningsMap = tourney.results.earningsMap || {};
+
+      // PGA Tour stats from earningsMap (all players who earned money)
+      Object.entries(earningsMap).forEach(([playerName, pgaEarnings]) => {
+        if (!newGlobalStats[playerName]) {
+          newGlobalStats[playerName] = { eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0 };
+        }
+        newGlobalStats[playerName].eventsPlayed += 1;
+        if (pgaEarnings > 0) newGlobalStats[playerName].cutsMade += 1;
+        newGlobalStats[playerName].pgaTourEarnings += pgaEarnings;
+      });
+
+      // SFGL earnings & starts from each team result
+      Object.entries(tourney.results.teams).forEach(([teamId, teamResult]) => {
+        if (!rosterStats[teamId]) return;
+        const players = teamResult.players || [];
+        players.forEach(p => {
+          const name = p.name || p;
+          const sfgl = p.earnings || 0;
+          if (!rosterStats[teamId][name]) rosterStats[teamId][name] = { sfglEarnings: 0, starts: 0 };
+          rosterStats[teamId][name].sfglEarnings += sfgl;
+          rosterStats[teamId][name].starts += 1;
+        });
+      });
+    });
+
+    // Apply to teams — update roster sfglEarnings and starts
+    const newTeams = teams.map(team => {
+      const tStats = rosterStats[team.id] || {};
+      const newRoster = team.roster.map(p => {
+        const ps = tStats[p.name] || { sfglEarnings: 0, starts: 0 };
+        return {
+          ...p,
+          sfglEarnings: ps.sfglEarnings,
+          starts: p.limited ? ps.starts : p.starts,
+        };
+      });
+      return { ...team, roster: newRoster };
+    });
+
+    updateTeams(newTeams);
+    setGlobalPlayerStats(newGlobalStats);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newGlobalStats);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+    sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newGlobalStats).catch(() => {});
+
+    const playerCount = Object.keys(newGlobalStats).length;
+    dialog.showToast('Stats rebuilt from ' + completed.length + ' tournaments · ' + playerCount + ' players updated', 'success');
+  };
+
   const pending = transactions.map((tx, idx) => ({ ...tx, _idx: idx })).filter(tx => tx.type === 'waiver' && tx.status === 'pending');
   const disabledBtn = (cond) => cond ? { opacity: 0.4, cursor: 'not-allowed' } : {};
 
@@ -772,6 +861,7 @@ export const AdminView = ({
         <div style={S.title}>☁️ Data & Sync</div>
         <button onClick={handlePush} style={{ ...S.btn, marginBottom: 8 }}>☁️ Push to Supabase (sync all devices)</button>
         <button onClick={handleRecalc} style={{ ...S.btnSec, marginBottom: 8 }}>📊 Recalculate Earnings from Results</button>
+        <button onClick={handleRecalcAllStats} style={{ ...S.btnSec, marginBottom: 8 }}>📈 Recalculate All Player Stats (Events/Cuts/Tour$/SFGL$)</button>
         <button onClick={handleRecalcStarts} style={S.btnSec}>⭐ Recalculate Limited Player Starts</button>
       </div>
 
