@@ -302,12 +302,7 @@ export const RostersView = ({
     const newTeams = teams.map(t => {
       if (t.id !== team.id) return t;
       const newLineup = isInLineup ? t.lineup.filter(p => p !== player.name) : [...t.lineup, player.name];
-      const newRoster = player.limited
-        ? t.roster.map(p => p.name === player.name
-            ? { ...p, starts: isInLineup ? Math.max(0, p.starts - 1) : p.starts + 1 }
-            : p)
-        : t.roster;
-      return { ...t, lineup: newLineup, roster: newRoster };
+      return { ...t, lineup: newLineup };
     });
     updateTeams(newTeams);
     storage.set(STORAGE_KEYS.TEAMS, newTeams);

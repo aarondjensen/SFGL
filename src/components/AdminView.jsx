@@ -411,6 +411,62 @@ export const AdminView = ({
     setSwingAwardSeg('');
   };
 
+  // ── Recalculate Starts from History ────────────────────────────────────
+  const handleRecalcStarts = async () => {
+    const completed = tournaments.filter(t => t.completed && t.results?.teams);
+    if (!completed.length) { dialog.showToast('No completed tournaments to calculate from', 'error'); return; }
+
+    const ok = await dialog.showConfirm(
+      'Recalculate Limited Player Starts',
+      'Rebuild each limited player's start count from completed tournament history. This is the source of truth — overrides any manual counts.',
+      { confirmText: 'Recalculate' }
+    );
+    if (!ok) return;
+
+    // Build starts map: teamId → playerName → count
+    const startsMap = {};
+    teams.forEach(t => { startsMap[t.id] = {}; });
+
+    completed.forEach(tourney => {
+      Object.entries(tourney.results.teams).forEach(([teamId, teamResult]) => {
+        if (!startsMap[teamId]) return;
+        // results.teams[id].players contains the players who contributed to the score
+        const players = teamResult.players || [];
+        players.forEach(p => {
+          const name = p.name || p;
+          if (!startsMap[teamId][name]) startsMap[teamId][name] = 0;
+          startsMap[teamId][name] += 1;
+        });
+      });
+    });
+
+    // Apply mulligan corrections:
+    // A mulligan-OUT means that player was replaced mid-tournament —
+    // processTournamentData uses the post-mulligan lineup, so playerOut is NOT
+    // in results.players and doesn't need a deduction.
+    // A mulligan-IN means the replacement IS in results.players → already counted.
+    // So the results.players list IS already the post-mulligan truth. No correction needed.
+
+    const newTeams = teams.map(team => {
+      const tMap = startsMap[team.id] || {};
+      const newRoster = team.roster.map(p => {
+        if (!p.limited) return p;
+        const computedStarts = tMap[p.name] || 0;
+        return { ...p, starts: computedStarts };
+      });
+      return { ...team, roster: newRoster };
+    });
+
+    updateTeams(newTeams);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+
+    const totalFixed = teams.reduce((sum, team) => {
+      return sum + team.roster.filter(p => p.limited).length;
+    }, 0);
+    dialog.showToast('Starts recalculated for ' + totalFixed + ' limited players across ' + completed.length + ' tournaments', 'success');
+  };
+
   const pending = transactions.map((tx, idx) => ({ ...tx, _idx: idx })).filter(tx => tx.type === 'waiver' && tx.status === 'pending');
   const disabledBtn = (cond) => cond ? { opacity: 0.4, cursor: 'not-allowed' } : {};
 
@@ -707,7 +763,8 @@ export const AdminView = ({
       <div style={S.section}>
         <div style={S.title}>☁️ Data & Sync</div>
         <button onClick={handlePush} style={{ ...S.btn, marginBottom: 8 }}>☁️ Push to Supabase (sync all devices)</button>
-        <button onClick={handleRecalc} style={S.btnSec}>📊 Recalculate Earnings from Results</button>
+        <button onClick={handleRecalc} style={{ ...S.btnSec, marginBottom: 8 }}>📊 Recalculate Earnings from Results</button>
+        <button onClick={handleRecalcStarts} style={S.btnSec}>⭐ Recalculate Limited Player Starts</button>
       </div>
 
       {/* Swing Winner */}
