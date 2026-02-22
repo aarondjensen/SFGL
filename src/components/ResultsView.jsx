@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Calendar, Clock, ChevronDown, ChevronRight } from 'lucide-react';
+import { Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
 import { theme, colors, fonts, cardLiftHandlers } from '../theme.js';
 
@@ -80,7 +80,7 @@ const TournamentBadges = ({ tournament }) => (
 // ── Empty state ───────────────────────────────────────────────────────────────
 const EmptyState = () => (
   <div style={{ ...theme.card, ...theme.emptyState, padding: '52px 20px' }}>
-    <Calendar style={{ width: 48, height: 48, color: 'rgba(255,255,255,0.1)', margin: '0 auto 16px' }} />
+    <div style={{ fontSize: 40, margin: '0 auto 16px', textAlign: 'center' }}>🏌️</div>
     <h3 style={{ ...theme.h2, marginBottom: 8 }}>No Completed Tournaments Yet</h3>
     <p style={theme.bodyText}>Results will appear here after processing</p>
   </div>
@@ -236,14 +236,21 @@ export const ResultsView = ({ teams, tournaments }) => {
               onMouseEnter={e => { e.currentTarget.style.background = 'rgba(18,46,82,0.25)'; }}
               onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)'; }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Calendar style={{ width: 15, height: 15, color: colors.textGoldDim, flexShrink: 0 }} />
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <h3 style={theme.h3}>{tournament.name}</h3>
-                    <TournamentBadges tournament={tournament} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                {/* Badge column — Sig/Major or plain dot */}
+                <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
+                  {tournament.isMajor
+                    ? <span style={{ ...theme.badge, ...theme.badgeGold, fontSize: 9 }}>M</span>
+                    : tournament.isSignature
+                      ? <span style={{ ...theme.badge, ...theme.badgeNavy, fontSize: 9 }}>S</span>
+                      : <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.textMuted, display: 'inline-block', marginTop: 2 }} />
+                  }
+                </div>
+                <div style={{ textAlign: 'left', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <h3 style={{ ...theme.h3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.name}</h3>
                   </div>
-                  <p style={{ ...theme.smallText, marginTop: 2 }}>{tournament.dates} · {tournament.location}</p>
+                  <p style={{ ...theme.smallText, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.dates} · {tournament.location}</p>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

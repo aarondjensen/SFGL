@@ -107,6 +107,20 @@ export const StandingsView = ({ teams, tournaments = [] }) => {
     [selectedSwing, tournaments]
   );
 
+  // ── Most recent completed tournament (for Overall subtitle) ────────────
+  const mostRecentTournament = useMemo(() =>
+    [...tournaments].reverse().find(t => t.completed && t.results?.teams),
+    [tournaments]
+  );
+
+  // Total events in selected swing (completed or not, non-alternate) ────────
+  const swingTotalCount = useMemo(() =>
+    !selectedSwing ? 0 : tournaments.filter(t =>
+      getSegmentForTournament(t) === selectedSwing && !t.isAlternate
+    ).length,
+    [selectedSwing, tournaments]
+  );
+
   // ── Toggle ───────────────────────────────────────────────────────────────
   const [view, setView] = useState('overall');
   const showSwing    = view === 'swing';
@@ -137,44 +151,51 @@ export const StandingsView = ({ teams, tournaments = [] }) => {
     <div style={theme.card}>
 
       {/* Header */}
-      <div style={{ ...theme.cardHeader, justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Trophy style={{ width: 16, height: 16, color: colors.earningsGreen }} />
-          <h2 style={theme.h2}>Standings</h2>
-          {showSwing && swingEventCount > 0 && (
-            <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 600, letterSpacing: 0.8, textTransform: 'uppercase', color: colors.textMuted }}>
-              {swingEventCount} event{swingEventCount !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button onClick={() => setView('overall')} style={tabStyle(!showSwing, null)}>
-            Overall
-          </button>
-          <button
-            onClick={() => {
-              setView('swing');
-              if (!selectedSwing && swingsWithResults.length) setSelectedSwing(swingsWithResults[swingsWithResults.length - 1]);
-            }}
-            disabled={swingsWithResults.length === 0}
-            style={{ ...tabStyle(showSwing, showSwing ? accentColor : null), opacity: swingsWithResults.length === 0 ? 0.35 : 1, cursor: swingsWithResults.length === 0 ? 'default' : 'pointer' }}
-          >
-            Swing
-          </button>
-
-          {showSwing && swingsWithResults.length > 1 && (
-            <select
-              value={selectedSwing || ''}
-              onChange={e => setSelectedSwing(e.target.value)}
-              style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px', marginLeft: 4, color: accentColor, borderColor: accentColor.replace('0.85', '0.3'), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
+      <div style={{ ...theme.cardHeader, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+        {/* Top row: title + toggle buttons — always one line */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <Trophy style={{ width: 16, height: 16, color: colors.earningsGreen }} />
+            <h2 style={theme.h2}>Standings</h2>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <button onClick={() => setView('overall')} style={tabStyle(!showSwing, null)}>
+              Overall
+            </button>
+            <button
+              onClick={() => {
+                setView('swing');
+                if (!selectedSwing && swingsWithResults.length) setSelectedSwing(swingsWithResults[swingsWithResults.length - 1]);
+              }}
+              disabled={swingsWithResults.length === 0}
+              style={{ ...tabStyle(showSwing, showSwing ? accentColor : null), opacity: swingsWithResults.length === 0 ? 0.35 : 1, cursor: swingsWithResults.length === 0 ? 'default' : 'pointer' }}
             >
-              {swingsWithResults.map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          )}
+              Swing
+            </button>
+            {showSwing && swingsWithResults.length > 1 && (
+              <select
+                value={selectedSwing || ''}
+                onChange={e => setSelectedSwing(e.target.value)}
+                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '4px 8px', color: accentColor, borderColor: accentColor.replace('0.85', '0.3'), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
+              >
+                {swingsWithResults.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
+        {/* Subtitle row */}
+        {!showSwing && mostRecentTournament && (
+          <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, letterSpacing: '0.3px' }}>
+            through {mostRecentTournament.name}
+          </div>
+        )}
+        {showSwing && swingEventCount > 0 && (
+          <div style={{ fontFamily: fonts.sans, fontSize: 11, color: accentColor.replace('0.85', '0.7'), letterSpacing: '0.3px' }}>
+            {swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}
+          </div>
+        )}
       </div>
 
       {/* Empty state for swing */}
