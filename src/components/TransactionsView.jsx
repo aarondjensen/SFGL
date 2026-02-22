@@ -3,6 +3,7 @@ import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, makePlayer, getTeamAbbreviation } from '../utils/index.js';
 import { storage } from '../api';
+import { sfglDataApi } from '../api/supabase';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
 
@@ -263,9 +264,15 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
-export const TransactionsView = ({ transactions, teams, allPlayers = [], setTransactions, updateTeams, isCommissioner }) => {
+export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, isCommissioner }) => {
   const [filterTeam,   setFilterTeam]   = useState('all');
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
+  const [addTxOpen,    setAddTxOpen]    = useState(false);
+  const [addTxTeam,    setAddTxTeam]    = useState('');
+  const [addTxType,    setAddTxType]    = useState('mulligan');
+  const [addTxPlayer,  setAddTxPlayer]  = useState('');
+  const [addTxDrop,    setAddTxDrop]    = useState('');
+  const [addTxTourney, setAddTxTourney] = useState('');
   const dialog = useDialog();
 
   const teamFees = useMemo(() => {
@@ -281,9 +288,19 @@ export const TransactionsView = ({ transactions, teams, allPlayers = [], setTran
     return Object.values(fees).sort((a, b) => b.seasonTotal - a.seasonTotal);
   }, [teams, transactions]);
 
+  const TYPE_ORDER = { 'waiver': 0, 'fa': 0, 'free agent': 0, 'drop': 1, 'mulligan': 2 };
+  const sortedTransactions = [...transactions].sort((a, b) => {
+    const ai = a.tournamentIndex ?? 9999;
+    const bi = b.tournamentIndex ?? 9999;
+    if (ai !== bi) return ai - bi;
+    // Within same tournament: waivers/FA first, then drops, then mulligans
+    const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
+    const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
+    return ta - tb;
+  });
   const filteredTransactions = filterTeam === 'all'
-    ? transactions
-    : transactions.filter(tx => tx.team === filterTeam);
+    ? sortedTransactions
+    : sortedTransactions.filter(tx => tx.team === filterTeam);
 
   const undoTransaction = async (tx) => {
     const ok = await dialog.showConfirm(
@@ -309,6 +326,54 @@ export const TransactionsView = ({ transactions, teams, allPlayers = [], setTran
     await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, newTransactions);
     dialog.showToast('Undone: ' + tx.player + ' removed from ' + tx.team, 'success');
+  };
+
+  const handleAddTx = async () => {
+    if (!addTxTeam || !addTxType || !addTxTourney) return;
+    const team = teams.find(t => t.name === addTxTeam);
+    if (!team) return;
+
+    const ok = await dialog.showConfirm(
+      'Add Manual Transaction',
+      'Add ' + addTxType + ' for ' + addTxTeam + ' at ' + addTxTourney + (addTxPlayer ? ' — player: ' + addTxPlayer : '') + '?',
+      { confirmText: 'Add' }
+    );
+    if (!ok) return;
+
+    // Find tournamentIndex from name
+    const tournamentIndex = (typeof addTxTourney === 'string' && addTxTourney.startsWith('__idx__'))
+      ? parseInt(addTxTourney.replace('__idx__', ''))
+      : parseInt(addTxTourney);
+
+    const newTx = {
+      team: addTxTeam,
+      type: addTxType,
+      player: addTxPlayer || '—',
+      droppedPlayer: addTxDrop || undefined,
+      fee: 0,
+      segment: team.segment || '',
+      date: new Date().toLocaleDateString(),
+      tournamentIndex,
+      status: 'completed',
+      manualEntry: true,
+    };
+
+    // Insert in sorted position
+    const fresh = await storage.get(STORAGE_KEYS.TRANSACTIONS, []);
+    const base = Array.isArray(fresh) && fresh.length >= transactions.length ? fresh : transactions;
+    const copy = [...base];
+    const insertAt = copy.reduce((last, tx, i) =>
+      (tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex) ? i + 1 : last
+    , 0);
+    copy.splice(insertAt, 0, newTx);
+
+    setTransactions(copy);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, copy);
+    try { await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, copy); } catch(e) { console.error('sfgl tx sync failed:', e); }
+
+    dialog.showToast('Transaction added', 'success');
+    setAddTxOpen(false);
+    setAddTxTeam(''); setAddTxType('mulligan'); setAddTxPlayer(''); setAddTxDrop(''); setAddTxTourney('');
   };
 
   const txTypeColor = (type) => {
@@ -376,6 +441,105 @@ export const TransactionsView = ({ transactions, teams, allPlayers = [], setTran
             </div>
           </div>
         </div>
+
+        {/* ── Commissioner: Add Manual Transaction ── */}
+        {isCommissioner && (
+          <div style={theme.card}>
+            <div
+              style={{ ...theme.cardHeader, cursor: 'pointer', userSelect: 'none' }}
+              onClick={() => setAddTxOpen(!addTxOpen)}
+            >
+              <h2 style={theme.h2}>+ Add Transaction</h2>
+              <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>
+                {addTxOpen ? '▲' : '▼'}
+              </span>
+            </div>
+
+            {addTxOpen && (
+              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {/* Team */}
+                <div>
+                  <div style={{ ...theme.label, marginBottom: 4 }}>Team</div>
+                  <select value={addTxTeam} onChange={e => setAddTxTeam(e.target.value)} style={{ ...theme.select, width: '100%' }}>
+                    <option value="">Select team...</option>
+                    {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                  </select>
+                </div>
+
+                {/* Tournament */}
+                <div>
+                  <div style={{ ...theme.label, marginBottom: 4 }}>Tournament</div>
+                  <select value={addTxTourney} onChange={e => setAddTxTourney(e.target.value)} style={{ ...theme.select, width: '100%' }}>
+                    <option value="">Select tournament...</option>
+                    {tournaments.map((t, i) => (
+                      <option key={t.name} value={i}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Type */}
+                <div>
+                  <div style={{ ...theme.label, marginBottom: 4 }}>Type</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {['mulligan', 'waiver', 'fa', 'drop'].map(type => (
+                      <button key={type} onClick={() => setAddTxType(type)} style={{
+                        flex: 1, padding: '7px 4px', borderRadius: 2, fontSize: 11,
+                        fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
+                        background: addTxType === type ? colors.buttonNavy : 'transparent',
+                        border: '1px solid ' + (addTxType === type ? colors.border : colors.borderInput),
+                        color: addTxType === type ? colors.textGold : colors.textSecondary,
+                      }}>
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Player IN */}
+                {addTxType !== 'drop' && (
+                  <div>
+                    <div style={{ ...theme.label, marginBottom: 4 }}>
+                      {addTxType === 'mulligan' ? 'Player IN' : 'Player Added'}
+                    </div>
+                    <input
+                      value={addTxPlayer}
+                      onChange={e => setAddTxPlayer(e.target.value)}
+                      placeholder="Player name..."
+                      style={{ ...theme.input, width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                )}
+
+                {/* Player OUT (mulligan + waiver/fa with drop) */}
+                {(addTxType === 'mulligan' || addTxType === 'drop') && (
+                  <div>
+                    <div style={{ ...theme.label, marginBottom: 4 }}>
+                      {addTxType === 'mulligan' ? 'Player OUT' : 'Player Dropped'}
+                    </div>
+                    <input
+                      value={addTxDrop}
+                      onChange={e => setAddTxDrop(e.target.value)}
+                      placeholder="Player name..."
+                      style={{ ...theme.input, width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                )}
+
+                <button
+                  onClick={handleAddTx}
+                  disabled={!addTxTeam || !addTxTourney}
+                  style={{
+                    ...theme.btnPrimary, width: '100%', padding: '9px 16px',
+                    opacity: (!addTxTeam || !addTxTourney) ? 0.4 : 1,
+                    cursor: (!addTxTeam || !addTxTourney) ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Add Transaction
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Transaction history ── */}
         <div style={theme.card}>

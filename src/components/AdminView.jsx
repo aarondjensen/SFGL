@@ -35,12 +35,8 @@ export const AdminView = ({
   // Retroactive lineup + mulligan + reprocess
   const [retMulTeam, setRetMulTeam] = useState('');
   const [retMulTourney, setRetMulTourney] = useState('');
-  const [retMulOut, setRetMulOut] = useState('');
-  const [retMulIn, setRetMulIn] = useState('');
-  const [retMulType, setRetMulType] = useState('regular');
-  const [retMulRound, setRetMulRound] = useState('2');
+
   const [retLineupEdit, setRetLineupEdit] = useState([]);  // edited starting lineup
-  const [retApplyMulligan, setRetApplyMulligan] = useState(false); // optional mulligan step
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -412,154 +408,6 @@ export const AdminView = ({
     setRetMulOut(''); setRetMulIn(''); setRetApplyMulligan(false);
   };
 
-  // ── Retroactive Lineup + Mulligan + Reprocess ──────────────────────────
-  const handleRetroMulligan = async () => {
-    if (!retMulTeam || !retMulTourney || !retMulOut || !retMulIn) return;
-    const team = teams.find(t => t.id === retMulTeam);
-    const tournament = tournaments.find(t => t.name === retMulTourney);
-    const tournamentIndex = tournaments.findIndex(t => t.name === retMulTourney);
-    if (!team || !tournament || !tournament.results) return;
-
-    const mulliganKey = retMulType === 'sig' ? 'signatureMajor' : 'regular';
-
-    // The effective lineup: edited base lineup with mulligan swap applied
-    const baseLineup = retLineupEdit.length > 0 ? retLineupEdit : (tournament.results.fullLineups?.[team.id] || team.lineup);
-    const effectiveLineup = baseLineup.map(n => n === retMulOut ? retMulIn : n);
-
-    const ok = await dialog.showConfirm(
-      'Retroactive Lineup + Mulligan + Reprocess',
-      'Team: ' + team.name + ' at ' + retMulTourney +
-      '. Base lineup: ' + baseLineup.join(', ') +
-      '. Mulligan: ' + retMulOut + ' OUT / ' + retMulIn + ' IN after R' + retMulRound +
-      '. Effective lineup: ' + effectiveLineup.join(', ') +
-      '. This will reprocess earnings for this tournament and insert the mulligan into the transaction log.',
-      { confirmText: 'Reprocess' }
-    );
-    if (!ok) return;
-
-    // 1. Reprocess this tournament with the corrected effective lineup
-    //    We temporarily set the team lineup to effectiveLineup, call processTournamentData,
-    //    then restore. But processTournamentData reads from teams.lineup —
-    //    so we patch teams just for that call.
-    const teamsForReprocess = teams.map(t =>
-      t.id === team.id ? { ...t, lineup: effectiveLineup } : t
-    );
-    const earningsMap = tournament.results.earningsMap || {};
-    const reprocessData = {
-      name: retMulTourney, status: 'post', competitors: [],
-      roundLeaders: tournament.results.roundLeaders || {},
-      earningsMap: new Map(Object.entries(earningsMap)),
-      isManualEntry: true,
-    };
-    const names = teams.flatMap(t => t.roster.map(p => p.name));
-    const { newTeams: reprocessedTeams, newStats, resultsData } = processTournamentData(
-      tournament, reprocessData, teamsForReprocess, globalPlayerStats, names
-    );
-
-    // 2. Apply sfglEarnings delta: remove old results for this team, add new
-    const oldTeamResult = tournament.results.teams?.[team.id];
-    const newTeamResult = resultsData.teams?.[team.id];
-    const oldSfglByPlayer = {};
-    (oldTeamResult?.players || []).forEach(p => { oldSfglByPlayer[p.name || p] = p.earnings || 0; });
-    const newSfglByPlayer = {};
-    (newTeamResult?.players || []).forEach(p => { newSfglByPlayer[p.name || p] = p.earnings || 0; });
-
-    const finalTeams = reprocessedTeams.map(t => {
-      if (t.id !== team.id) return t;
-      // Adjust roster sfglEarnings: subtract old, add new
-      const newRoster = t.roster.map(p => {
-        const oldE = oldSfglByPlayer[p.name] || 0;
-        const newE = newSfglByPlayer[p.name] || 0;
-        const delta = newE - oldE;
-        if (delta === 0) return p;
-        return { ...p, sfglEarnings: Math.max(0, (p.sfglEarnings || 0) + delta) };
-      });
-      // Adjust starts for limited players: re-derive from new effective lineup
-      const rosterWithStarts = newRoster.map(p => {
-        if (!p.limited) return p;
-        const wasInOld = (oldTeamResult?.players || []).some(op => (op.name || op) === p.name);
-        const isInNew = effectiveLineup.includes(p.name);
-        if (wasInOld && !isInNew) return { ...p, starts: Math.max(0, p.starts - 1) };
-        if (!wasInOld && isInNew) return { ...p, starts: p.starts + 1 };
-        return p;
-      });
-      return { ...t, roster: rosterWithStarts };
-    });
-
-    // 3. Update tournament results with new data + store base lineup
-    const newTournamentResults = {
-      ...tournament.results,
-      teams: { ...tournament.results.teams, [team.id]: newTeamResult },
-      fullLineups: { ...(tournament.results.fullLineups || {}), [team.id]: baseLineup },
-    };
-    const newTournaments = tournaments.map((t, i) =>
-      i === tournamentIndex ? { ...t, results: newTournamentResults } : t
-    );
-
-    // 4. Insert mulligan transaction in chronological order by tournamentIndex
-    //    Read fresh from storage to avoid stale closure issues
-    const freshTx = await storage.get(STORAGE_KEYS.TRANSACTIONS, []);
-    const liveTx = Array.isArray(freshTx) && freshTx.length >= transactions.length ? freshTx : transactions;
-
-    console.log('[retro mulligan] transactions in closure:', transactions.length, 'from storage:', Array.isArray(freshTx) ? freshTx.length : 'not array', 'using:', liveTx.length);
-
-    const mulliganTx = {
-      team: team.name, type: 'mulligan', player: retMulIn, droppedPlayer: retMulOut,
-      fee: 0, segment: tournament.segment || '', date: new Date().toLocaleDateString(),
-      tournamentIndex, status: 'completed',
-      mulliganType: retMulType === 'sig' ? 'signature/major' : 'regular',
-      afterRound: parseInt(retMulRound),
-      tournament: retMulTourney,
-      retroactive: true,
-    };
-    // Insert after the last tx with tournamentIndex <= this one
-    const txCopy = [...liveTx];
-    const insertAt = txCopy.reduce((last, tx, i) =>
-      (tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex) ? i + 1 : last
-    , 0);
-    txCopy.splice(insertAt, 0, mulliganTx);
-
-    console.log('[retro mulligan] mulliganTx:', JSON.stringify(mulliganTx));
-    console.log('[retro mulligan] txCopy length after insert:', txCopy.length, 'insertAt:', insertAt);
-
-    // 5. Deduct mulligan from team
-    const newMulligans = { ...team.mulligans, [mulliganKey]: Math.max(0, (team.mulligans?.[mulliganKey] || 1) - 1) };
-    const finalTeamsWithMulligan = finalTeams.map(t =>
-      t.id === team.id ? { ...t, mulligans: newMulligans } : t
-    );
-
-    // 6. Also update team.earnings to reflect new totalEarnings for this tournament
-    const earningsDelta = (newTeamResult?.totalEarnings || 0) - (oldTeamResult?.totalEarnings || 0);
-    const finalTeamsWithEarnings = finalTeamsWithMulligan.map(t =>
-      t.id === team.id
-        ? { ...t, earnings: (t.earnings || 0) + earningsDelta, segmentEarnings: (t.segmentEarnings || 0) + earningsDelta }
-        : t
-    );
-
-    // 7. Persist everything
-    console.log('[retro mulligan] about to call setTransactions with', txCopy.length, 'txs');
-    updateTeams(finalTeamsWithEarnings);
-    setTournaments(newTournaments);
-    setTransactions(txCopy);
-    setGlobalPlayerStats(newStats);
-    await storage.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings);
-    await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, txCopy);
-    console.log('[retro mulligan] local storage.set done');
-    await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-    try { await sfglDataApi.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings); } catch(e) { console.error('sfgl teams sync failed:', e); }
-    try {
-      await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, txCopy);
-      console.log('[retro mulligan] sfglDataApi.set transactions done');
-    } catch(e) {
-      console.error('sfgl tx sync failed:', e);
-      dialog.showToast('Warning: transaction saved locally but Supabase sync failed', 'error');
-    }
-
-    dialog.showToast('Reprocessed ' + retMulTourney + ' with mulligan: ' + retMulOut + ' → ' + retMulIn + (earningsDelta !== 0 ? ' · earnings delta $' + earningsDelta.toLocaleString() : ''), 'success');
-    setRetMulTeam(''); setRetMulTourney(''); setRetMulOut(''); setRetMulIn('');
-    setRetMulType('regular'); setRetMulRound('2'); setRetLineupEdit([]);
-  };
 
   // ── Award Swing Winner ──────────────────────────────────────────────────
   const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
@@ -953,21 +801,21 @@ export const AdminView = ({
         </button>
       </div>
 
-      {/* One-Time Retroactive Lineup Fix */}
+      {/* One-Time: Fix Prior Lineup */}
       <div style={S.section}>
-        <div style={S.title}>🚨 One-Time: Fix Prior Lineup + Optional Mulligan</div>
+        <div style={S.title}>🚨 Fix Prior Lineup</div>
         <div style={{ ...theme.smallText, marginBottom: 12 }}>
-          Correct a submitted lineup for a completed tournament and reprocess earnings. Optionally apply a retroactive mulligan in the same operation.
+          Correct a submitted lineup for a completed tournament and reprocess earnings.
         </div>
 
         <label style={S.lbl}>Team</label>
-        <select value={retMulTeam} onChange={e => { setRetMulTeam(e.target.value); setRetMulOut(''); setRetMulIn(''); setRetLineupEdit([]); setRetApplyMulligan(false); }} style={S.select}>
+        <select value={retMulTeam} onChange={e => { setRetMulTeam(e.target.value); setRetLineupEdit([]); }} style={S.select}>
           <option value="">Select team...</option>
           {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
         </select>
 
         <label style={S.lbl}>Tournament</label>
-        <select value={retMulTourney} onChange={e => { setRetMulTourney(e.target.value); setRetMulOut(''); setRetMulIn(''); setRetLineupEdit([]); setRetApplyMulligan(false); }} style={S.select}>
+        <select value={retMulTourney} onChange={e => { setRetMulTourney(e.target.value); setRetLineupEdit([]); }} style={S.select}>
           <option value="">Select tournament...</option>
           {tournaments.filter(t => t.completed).map(t => (
             <option key={t.name} value={t.name}>✓ {t.name}</option>
@@ -980,13 +828,11 @@ export const AdminView = ({
           const savedLineup = tournament?.results?.fullLineups?.[retMulTeam] || [];
           const baseLineup = retLineupEdit.length > 0 ? retLineupEdit : (savedLineup.length > 0 ? savedLineup : []);
           const rosterPlayers = team?.roster?.map(p => p.name) || [];
-          const benchPlayers = rosterPlayers.filter(n => !baseLineup.includes(n));
 
           return (
             <div>
-              {/* Step 1: Edit lineup */}
               <label style={S.lbl}>
-                Step 1 — Starting Lineup
+                Lineup
                 <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>
                   {savedLineup.length > 0 ? '(loaded from saved results)' : '(not saved — build manually)'}
                 </span>
@@ -1009,85 +855,11 @@ export const AdminView = ({
                   {rosterPlayers.filter(n => !baseLineup.includes(n)).map(name => <option key={name} value={name}>{name}</option>)}
                 </select>
               )}
-
-              {/* Step 2: Optional mulligan */}
-              <button
-                onClick={() => { setRetApplyMulligan(!retApplyMulligan); setRetMulOut(''); setRetMulIn(''); }}
-                style={{
-                  width: '100%', marginBottom: retApplyMulligan ? 10 : 12,
-                  padding: '8px 12px', borderRadius: 2, fontSize: 11, fontFamily: fonts.sans,
-                  fontWeight: 600, letterSpacing: '0.5px', cursor: 'pointer', transition: 'all 0.15s',
-                  textAlign: 'left',
-                  background: retApplyMulligan ? 'rgba(220,200,80,0.1)' : 'transparent',
-                  border: '1px solid ' + (retApplyMulligan ? 'rgba(220,200,80,0.4)' : colors.borderInput),
-                  color: retApplyMulligan ? colors.textGold : colors.textSecondary,
-                }}
-              >
-                {retApplyMulligan ? '▼ Step 2 — Apply Mulligan (optional)' : '▶ Step 2 — Also apply a mulligan? (optional)'}
+              <button onClick={handleRetroLineupOnly}
+                disabled={baseLineup.length === 0}
+                style={{ ...S.btn, ...disabledBtn(baseLineup.length === 0) }}>
+                Reprocess Lineup
               </button>
-
-              {retApplyMulligan && (
-                <div style={{ padding: '10px 12px', background: 'rgba(220,200,80,0.05)', border: '1px solid rgba(220,200,80,0.2)', borderRadius: 3, marginBottom: 12 }}>
-                  <label style={S.lbl}>Player OUT <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>(was in lineup)</span></label>
-                  <select value={retMulOut} onChange={e => setRetMulOut(e.target.value)} style={S.select}>
-                    <option value="">Select player out...</option>
-                    {(baseLineup.length > 0 ? baseLineup : rosterPlayers).map(name => <option key={name} value={name}>{name}</option>)}
-                  </select>
-
-                  <label style={S.lbl}>Player IN <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>(was on bench)</span></label>
-                  <select value={retMulIn} onChange={e => setRetMulIn(e.target.value)} style={S.select}>
-                    <option value="">Select player in...</option>
-                    {(benchPlayers.length > 0 ? benchPlayers : rosterPlayers.filter(n => n !== retMulOut)).map(name => <option key={name} value={name}>{name}</option>)}
-                  </select>
-
-                  {retMulOut && retMulIn && (
-                    <div style={{ ...theme.smallText, marginBottom: 10, padding: '6px 10px', background: 'rgba(80,195,120,0.08)', borderRadius: 3, border: '1px solid rgba(80,195,120,0.2)' }}>
-                      Effective lineup: {baseLineup.map(n => n === retMulOut ? retMulIn : n).join(', ')}
-                    </div>
-                  )}
-
-                  <label style={S.lbl}>Mulligan Type</label>
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                    {[['regular', 'Regular'], ['sig', 'Signature / Major']].map(([val, label]) => (
-                      <button key={val} onClick={() => setRetMulType(val)}
-                        style={{ flex: 1, padding: '7px 10px', borderRadius: 2, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
-                          background: retMulType === val ? colors.buttonNavy : 'transparent',
-                          border: '1px solid ' + (retMulType === val ? colors.border : colors.borderInput),
-                          color: retMulType === val ? colors.textGold : colors.textSecondary }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <label style={S.lbl}>Takes effect after round</label>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {['1', '2', '3'].map(r => (
-                      <button key={r} onClick={() => setRetMulRound(r)}
-                        style={{ flex: 1, padding: '7px 10px', borderRadius: 2, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
-                          background: retMulRound === r ? colors.buttonNavy : 'transparent',
-                          border: '1px solid ' + (retMulRound === r ? colors.border : colors.borderInput),
-                          color: retMulRound === r ? colors.textGold : colors.textSecondary }}>
-                        R{r}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Submit */}
-              {!retApplyMulligan ? (
-                <button onClick={handleRetroLineupOnly}
-                  disabled={baseLineup.length === 0}
-                  style={{ ...S.btn, ...disabledBtn(baseLineup.length === 0) }}>
-                  Reprocess Lineup
-                </button>
-              ) : (
-                <button onClick={handleRetroMulligan}
-                  disabled={!retMulOut || !retMulIn}
-                  style={{ ...S.btn, ...disabledBtn(!retMulOut || !retMulIn) }}>
-                  Reprocess Lineup + Mulligan
-                </button>
-              )}
             </div>
           );
         })()}
