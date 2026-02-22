@@ -517,24 +517,31 @@ export const RostersView = ({
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
             {/* Lineup button */}
-            <button
-              onClick={() => { if (lineupMode && team.lineup.length === 0) return; setLineupMode(!lineupMode); }}
-              disabled={!canEditLineup || (lineupMode && team.lineup.length === 0)}
-              style={actionBtn(
-                canEditLineup,
-                lineupMode || team.lineup.length > 0
-                  ? colors.textGold
-                  : colors.success,
-              )}
-            >
-              {lineupMode ? '✓ Save' : '✏️ Lineup'}
-            </button>
+            {(() => {
+              const hasLineup = team.lineup.length > 0;
+              const needsSubmit = canEditLineup && !hasLineup && !lineupMode;
+              return (
+                <button
+                  onClick={() => { if (lineupMode && !hasLineup) return; setLineupMode(!lineupMode); }}
+                  disabled={!canEditLineup || (lineupMode && !hasLineup)}
+                  style={{
+                    ...actionBtn(canEditLineup, colors.success),
+                    border: canEditLineup ? `1px solid ${colors.success}` : `1px solid ${colors.borderSubtle}`,
+                    background: needsSubmit ? 'rgba(80,195,120,0.15)' : 'rgba(255,255,255,0.03)',
+                    boxShadow: needsSubmit ? '0 0 10px rgba(80,195,120,0.25)' : 'none',
+                    fontWeight: needsSubmit ? 700 : 500,
+                  }}
+                >
+                  {lineupMode ? '✓ Save' : hasLineup ? '✏ Edit Lineup' : '▶ Set Lineup'}
+                </button>
+              );
+            })()}
 
             {/* Free agent button */}
             <button
               onClick={() => { setIsWaiverMode(false); setShowAddDropModal(true); }}
               disabled={!isOwnTeam}
-              style={actionBtn(isOwnTeam, colors.success)}
+              style={actionBtn(isOwnTeam, 'rgba(220,200,80,0.8)')}
             >
               Free Agent
             </button>
