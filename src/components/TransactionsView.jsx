@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Edit2 } from 'lucide-react';
+import { X, Edit2, Siren } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, makePlayer, getTeamAbbreviation } from '../utils/index.js';
 import { storage } from '../api';
@@ -384,10 +384,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   };
 
   const txTypeColor = (type) => {
-    if (type === 'mulligan') return colors.textGoldDim;
-    if (type === 'waiver')   return 'rgba(220,200,80,0.8)';
-    if (type === 'drop')     return colors.danger;
-    return colors.success;
+    if (type === 'drop') return colors.danger;
+    return colors.textGold;  // mulligan, waiver, fa, free agent all gold
   };
 
   const statusColor = (status) => {
@@ -696,7 +694,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
                     {/* Transaction detail */}
                     <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary }}>
-                      <span style={{ color: txTypeColor(tx.type) }}>{tx.type}</span>
+                      <span style={{ color: txTypeColor(tx.type), display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        {tx.type === 'mulligan' && <Siren style={{ width: 10, height: 10, flexShrink: 0, color: colors.danger }} />}
+                        {tx.type}
+                      </span>
                       {': '}
                       <span style={{ color: colors.success }}>{tx.player}</span>
                       {tx.droppedPlayer && (
