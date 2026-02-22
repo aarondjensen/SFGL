@@ -285,8 +285,8 @@ export const AddDropPlayerModal = ({
                         <span style={{
                           fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
                           letterSpacing: 0.8, textTransform: 'uppercase',
-                          color: 'rgba(240,200,60,0.7)',
-                          border: '1px solid rgba(240,200,60,0.3)',
+                          color: 'rgba(245,197,24,0.75)',
+                          border: '1px solid rgba(245,197,24,0.3)',
                           borderRadius: 2, padding: '2px 5px',
                           flexShrink: 0,
                         }}>
@@ -300,7 +300,7 @@ export const AddDropPlayerModal = ({
                       )}
                       <span style={{
                         fontFamily: fonts.serif, fontSize: 13,
-                        color: isSelected ? colors.danger : (player.limited ? 'rgba(240,200,60,0.85)' : colors.textPrimary),
+                        color: isSelected ? colors.danger : (player.limited ? colors.textGold : colors.textPrimary),
                       }}>
                         {player.name}
                       </span>
@@ -337,7 +337,7 @@ export const AddDropPlayerModal = ({
               background: colors.cardBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3,
               fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary,
             }}>
-              <span>Fee: <span style={{ color: 'rgba(240,200,60,0.85)' }}>${fee.toLocaleString()}</span> · <span style={{ color: accentColor(isWaiverMode) }}>{isWaiverMode ? 'Waiver (pending)' : 'Immediate'}</span></span>
+              <span>Fee: <span style={{ color: '#f5c518' }}>${fee.toLocaleString()}</span> · <span style={{ color: accentColor(isWaiverMode) }}>{isWaiverMode ? 'Waiver (pending)' : 'Immediate'</span></span>
               <ConfirmBtn compact />
             </div>
           )}
@@ -427,7 +427,7 @@ export const AddDropPlayerModal = ({
             fontFamily: fonts.sans, fontSize: 11,
           }}>
             <span style={{ color: colors.textSecondary }}>
-              Fee: <span style={{ color: 'rgba(240,200,60,0.85)' }}>${fee.toLocaleString()}</span>
+              Fee: <span style={{ color: '#f5c518' }}>${fee.toLocaleString()}</span>
               {' · '}
               <span style={{ color: accentColor(isWaiverMode) }}>{isWaiverMode ? 'Waiver (pending)' : 'Immediate'}</span>
             </span>
