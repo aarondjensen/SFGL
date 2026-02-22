@@ -51,9 +51,15 @@ const FantasyGolfLeague = () => {
     updateGlobalStats, updateHeadshots, updateRankings,
   } = league;
 
-  const resolvedTeams     = teams.length      > 0 ? teams     : INITIAL_TEAMS;
-  const resolvedHeadshots = Object.keys(headshots).length > 0 ? headshots : PGA_TOUR_IDS;
-  const currentTournament = tournaments.find(t => t.playing);
+  // Guard against useLeague returning null/undefined when Supabase load fails
+  const safeTeams        = Array.isArray(teams)        ? teams        : [];
+  const safeTournaments  = Array.isArray(tournaments)  ? tournaments  : [];
+  const safeTransactions = Array.isArray(transactions) ? transactions : [];
+  const safeHeadshots    = headshots && typeof headshots === 'object' ? headshots : {};
+
+  const resolvedTeams     = safeTeams.length > 0 ? safeTeams : INITIAL_TEAMS;
+  const resolvedHeadshots = Object.keys(safeHeadshots).length > 0 ? safeHeadshots : PGA_TOUR_IDS;
+  const currentTournament = safeTournaments.find(t => t.playing);
 
   // ── Inject Google Fonts (Raleway only) once on mount ────────────────────────
   useEffect(() => {
@@ -406,10 +412,10 @@ const FantasyGolfLeague = () => {
 
         <ErrorBoundary>
           {activeTab === 'standings' && (
-            <StandingsView teams={resolvedTeams} tournaments={tournaments} />
+            <StandingsView teams={resolvedTeams} tournaments={safeTournaments} />
           )}
           {activeTab === 'results' && (
-            <ResultsView teams={resolvedTeams} tournaments={tournaments} />
+            <ResultsView teams={resolvedTeams} tournaments={safeTournaments} />
           )}
           {activeTab === 'rosters' && (
             <RostersView
@@ -417,9 +423,9 @@ const FantasyGolfLeague = () => {
               selectedTeam={selectedTeam}
               setSelectedTeam={setSelectedTeam}
               updateTeams={updateTeams}
-              tournaments={tournaments}
+              tournaments={safeTournaments}
               allPlayers={allPlayers}
-              transactions={transactions}
+              transactions={safeTransactions}
               setTransactions={updateTransactions}
               settings={settings}
               loggedInUser={loggedInUser}
@@ -431,7 +437,7 @@ const FantasyGolfLeague = () => {
           )}
           {activeTab === 'transactions' && (
             <TransactionsView
-              transactions={transactions}
+              transactions={safeTransactions}
               teams={resolvedTeams}
               allPlayers={allPlayers}
               setTransactions={updateTransactions}
@@ -441,7 +447,7 @@ const FantasyGolfLeague = () => {
           )}
           {activeTab === 'tournaments' && (
             <TournamentsView
-              tournaments={tournaments}
+              tournaments={safeTournaments}
               isCommissioner={isCommissioner}
               setTournaments={updateTournaments}
               firstTeeTime={firstTeeTime}
@@ -456,9 +462,9 @@ const FantasyGolfLeague = () => {
               setSettings={updateSettings}
               teams={resolvedTeams}
               updateTeams={updateTeams}
-              tournaments={tournaments}
+              tournaments={safeTournaments}
               setTournaments={updateTournaments}
-              transactions={transactions}
+              transactions={safeTransactions}
               setTransactions={updateTransactions}
               allPlayers={allPlayers}
               globalPlayerStats={globalPlayerStats}
