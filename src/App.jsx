@@ -374,7 +374,7 @@ const FantasyGolfLeague = () => {
               type="password"
               autoFocus
               autoComplete="current-password"
-              placeholder="Commissioner password…"
+              placeholder="Password"
               value={adminPassword}
               onChange={e => setAdminPassword(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleAdminLogin(); }}
@@ -382,8 +382,8 @@ const FantasyGolfLeague = () => {
                 background: 'rgba(255,255,255,0.05)',
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: 1,
-                padding: '7px 12px',
-                fontSize: 16,
+                padding: '7px 10px',
+                fontSize: 13,
                 width: 160,
                 color: 'white',
                 outline: 'none',
