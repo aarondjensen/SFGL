@@ -278,10 +278,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const dialog = useDialog();
 
   const teamFees = useMemo(() => {
-    // Determine which swing to show on team cards:
-    // Use the swing of the most recent completed tournament (not today's calendar date).
-    // This means after WCS ends and before Spring Swing starts, cards still show WCS fees.
-    const ALL_SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
     const getSegForTourney = (t) => {
       if (t.segment) return t.segment;
       if (t.dates) {
@@ -298,10 +294,24 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       }
       return null;
     };
-    // Find last completed tournament's swing
+
+    // Determine current swing for the fee counter:
+    // 1. Find the swing of the last completed tournament
+    // 2. If that swing has been awarded (swing_winner tx exists), advance to the
+    //    next swing — the one containing the next upcoming non-alternate tournament
+    // 3. This resets the counter to $0 as soon as the commish awards the pot
     const lastCompleted = [...(tournaments || [])].reverse().find(t => t.completed && t.results?.teams);
-    const currentSwing = lastCompleted ? getSegForTourney(lastCompleted) : getSegmentByDate();
-    const swingIsComplete = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === currentSwing);
+    const lastSeg = lastCompleted ? getSegForTourney(lastCompleted) : getSegmentByDate();
+    const lastSwingAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === lastSeg);
+
+    let currentSwing = lastSeg;
+    if (lastSwingAwarded) {
+      // Advance to next swing: find first non-alternate upcoming tournament
+      const nextTourney = (tournaments || []).find(t => !t.completed && !t.isAlternate);
+      currentSwing = nextTourney ? (getSegForTourney(nextTourney) || lastSeg) : lastSeg;
+    }
+
+    const swingIsComplete = false; // new swing just started — never "complete" yet
     const fees = {};
     teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, swingIsComplete, teamId: t.id, teamName: t.name }; });
     transactions.forEach(tx => {
