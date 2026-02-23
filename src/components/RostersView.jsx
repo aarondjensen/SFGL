@@ -445,16 +445,21 @@ export const RostersView = ({
   }, [team, transactions]);
 
   // Derive SFGL cuts per player per team from completed tournament results
+  // sfglCutsMap: { playerName: { cuts, starts } }
+  // Source: results.teams[teamId].players — each entry is a player who was in the
+  // starting lineup for that tournament, with the earnings they contributed.
+  // starts = appeared in lineup, cuts = appeared in lineup AND earned > $0
   const sfglCutsMap = useMemo(() => {
-    const map = {}; // teamId -> playerName -> cutsMade
+    const map = {};
     if (!team) return map;
     tournaments.forEach(t => {
       if (!t.completed || !t.results?.teams?.[team.id]) return;
       const players = t.results.teams[team.id].players || [];
       players.forEach(p => {
         const name = p.name || p;
-        if (!map[name]) map[name] = 0;
-        if ((p.earnings || 0) > 0) map[name] += 1;
+        if (!map[name]) map[name] = { cuts: 0, starts: 0 };
+        map[name].starts += 1;
+        if ((p.earnings || 0) > 0) map[name].cuts += 1;
       });
     });
     return map;
@@ -866,7 +871,7 @@ export const RostersView = ({
 
                     {/* Events / Starts */}
                     {(() => {
-                      const events = statsView === 'sfgl' ? (player.starts || 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
+                      const events = statsView === 'sfgl' ? (sfglCutsMap[player.name]?.starts ?? player.starts ?? 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
                       return (
                         <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
                           {events}
@@ -876,8 +881,9 @@ export const RostersView = ({
 
                     {/* Cuts Made (X/Y fraction) */}
                     {(() => {
-                      const cuts   = statsView === 'sfgl' ? (sfglCutsMap[player.name] || 0) : (globalPlayerStats[player.name]?.cutsMade || 0);
-                      const events = statsView === 'sfgl' ? (player.starts || 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
+                      const sfglEntry = sfglCutsMap[player.name] || { cuts: 0, starts: 0 };
+                      const cuts   = statsView === 'sfgl' ? sfglEntry.cuts : (globalPlayerStats[player.name]?.cutsMade || 0);
+                      const events = statsView === 'sfgl' ? sfglEntry.starts : (globalPlayerStats[player.name]?.eventsPlayed || 0);
                       return (
                         <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
                           {cuts}/{events}
