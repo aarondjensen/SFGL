@@ -245,25 +245,35 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
 
       {/* ── Completed tournaments + swing summaries (interleaved) ── */}
       {(() => {
-        // Build ordered list: for each completed tournament, then inject swing summary
-        // immediately after the LAST tournament of that swing (if awarded)
+        // For each swing summary, find the last completed tournament in that swing
+        // by highest original index in the tournaments array — this respects the
+        // swing designation set in TournamentsView, not inferred dates.
+        const swingLastTourneyName = {};
+        swingSummaries.forEach(s => {
+          const swingTourneys = tournaments
+            .map((t, i) => ({ t, i }))
+            .filter(({ t }) => t.completed && getTournamentSegment(t) === s.seg && t.results?.teams);
+          if (swingTourneys.length) {
+            // highest original index = last event of the swing in schedule order
+            swingLastTourneyName[s.seg] = swingTourneys[swingTourneys.length - 1].t.name;
+          }
+        });
+
+        // completedTournaments is already reversed (newest first = highest index first)
         const renderedSwings = new Set();
         const items = [];
-
         completedTournaments.forEach((tournament) => {
           items.push({ type: 'tournament', tournament });
-          // After this tournament, check if a swing summary should follow
           const seg = getTournamentSegment(tournament);
-          if (seg && !renderedSwings.has(seg)) {
-            const summary = swingSummaries.find(s => s.seg === seg && s.lastTourney?.name === tournament.name);
+          if (seg && !renderedSwings.has(seg) && swingLastTourneyName[seg] === tournament.name) {
+            const summary = swingSummaries.find(s => s.seg === seg);
             if (summary) {
               items.push({ type: 'swing', summary });
               renderedSwings.add(seg);
             }
           }
         });
-
-        // Also append any swing summaries whose lastTourney wasn't found (edge case)
+        // Fallback: any unplaced swing summaries go at the end
         swingSummaries.forEach(s => {
           if (!renderedSwings.has(s.seg)) {
             items.push({ type: 'swing', summary: s });
@@ -271,23 +281,20 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
           }
         });
 
+        // All swings are red — consistent identity regardless of swing name
+        const RED = { accent: 'rgba(220,70,70,0.9)', bg: 'rgba(220,70,70,0.07)', border: 'rgba(220,70,70,0.3)' };
+
         return items.map(item => {
           if (item.type === 'swing') {
             const { summary } = item;
             const isExpanded = expandedTournament === ('swing:' + summary.seg);
-            const swingColors = {
-              'West Coast Swing': { accent: 'rgba(220,80,80,0.8)',  bg: 'rgba(220,80,80,0.08)',  border: 'rgba(220,80,80,0.3)'  },
-              'Spring Swing':     { accent: 'rgba(80,180,120,0.8)', bg: 'rgba(80,180,120,0.08)', border: 'rgba(80,180,120,0.3)' },
-              'Summer Swing':     { accent: 'rgba(80,140,220,0.8)', bg: 'rgba(80,140,220,0.08)', border: 'rgba(80,140,220,0.3)' },
-              'Fall Finish':      { accent: 'rgba(220,140,60,0.8)', bg: 'rgba(220,140,60,0.08)', border: 'rgba(220,140,60,0.3)' },
-            };
-            const sc = swingColors[summary.seg] || swingColors['Fall Finish'];
+            const sc = RED;
             return (
               <div key={'swing:' + summary.seg} style={{
                 ...theme.cardLift,
                 border: `1px solid ${sc.border}`,
-                boxShadow: `0 4px 24px ${sc.bg}`,
               }} {...cardLiftHandlers()}>
+                {/* Header — same padding/height as tournament cards */}
                 <button
                   onClick={() => toggle('swing:' + summary.seg)}
                   aria-expanded={isExpanded}
@@ -302,19 +309,19 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = `linear-gradient(90deg, ${sc.bg} 0%, transparent 100%)`; }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                    <Trophy style={{ width: 14, height: 14, color: sc.accent, flexShrink: 0 }} />
+                    {/* Same badge-column width as tournament cards */}
+                    <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
+                      <Trophy style={{ width: 11, height: 11, color: sc.accent }} />
+                    </div>
                     <div style={{ textAlign: 'left', minWidth: 0 }}>
                       <h3 style={{ ...theme.h3, color: sc.accent, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {summary.seg}
                       </h3>
-                      <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 1 }}>
-                        {summary.tourneyCount} tournaments · pot ${summary.pot.toLocaleString()}
-                      </div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {!isExpanded && summary.ranked[0] && (
-                      <span style={{ ...theme.badge, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.accent, fontSize: 10 }}>
+                      <span style={{ ...theme.badge, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.accent }}>
                         🏆 {summary.ranked[0].team.name}
                       </span>
                     )}
@@ -325,38 +332,42 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   </div>
                 </button>
 
+                {/* Expanded rows — identical layout to tournament result rows */}
                 {isExpanded && (
                   <div>
                     {summary.ranked.map((entry, rank) => (
-                      <div key={entry.team.id} style={{
-                        padding: '12px 20px',
-                        borderBottom: `1px solid ${colors.borderSubtle}`,
-                        background: rank === 0 ? `${sc.bg}` : 'transparent',
-                        display: 'flex', alignItems: 'center', gap: 12,
-                        transition: 'background 0.15s',
-                      }}
-                        onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'rgba(255,255,255,0.03)'; }}
+                      <div key={entry.team.id}
+                        style={{
+                          padding: '10px 20px',
+                          borderBottom: `1px solid ${colors.borderSubtle}`,
+                          background: rank === 0 ? sc.bg : 'transparent',
+                          transition: 'background 0.15s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'rgba(255,255,255,0.04)'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'transparent'; }}
                       >
-                        <span style={{ fontFamily: fonts.serif, fontSize: 13, fontWeight: 700, width: 20, textAlign: 'center', color: rank === 0 ? sc.accent : colors.textMuted, flexShrink: 0 }}>
-                          {rank + 1}
-                        </span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ ...theme.h3, fontSize: 13 }}>{entry.team.name}</span>
-                            {rank === 0 && (
-                              <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, color: sc.accent, letterSpacing: '0.5px' }}>
-                                🏆 +${summary.pot.toLocaleString()}
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 2 }}>
-                            {entry.team.owner}
-                          </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 700, width: 20, textAlign: 'center',
+                            fontFamily: fonts.serif,
+                            color: rank === 0 ? sc.accent : colors.textMuted,
+                          }}>
+                            {rank + 1}
+                          </span>
+                          <span style={{ ...theme.h3, fontSize: 13 }}>{entry.team.name}</span>
+                          <span style={{
+                            ...theme.statNum, fontSize: 13, fontWeight: 600,
+                            color: entry.earnings > 0 ? colors.earningsGreen : colors.textMuted,
+                            marginLeft: 4,
+                          }}>
+                            ${entry.earnings.toLocaleString()}
+                          </span>
+                          {rank === 0 && (
+                            <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, color: sc.accent, marginLeft: 2 }}>
+                              +${summary.pot.toLocaleString()} pot
+                            </span>
+                          )}
                         </div>
-                        <span style={{ ...theme.statNum, fontSize: 14, fontWeight: 700, color: entry.earnings > 0 ? colors.earningsGreen : colors.textMuted, flexShrink: 0 }}>
-                          ${entry.earnings.toLocaleString()}
-                        </span>
                       </div>
                     ))}
                   </div>
