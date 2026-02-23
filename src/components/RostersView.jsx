@@ -877,16 +877,14 @@ export const RostersView = ({
                       );
                     })()}
 
-                    {/* Cuts Made (X/Y fraction) */}
-                    {(() => {
+                    {/* Cuts Made (X/Y fraction) — desktop only */}
+                    {!isMobile && (() => {
                       const cuts   = statsView === 'sfgl' ? (sfglCutsMap[player.name] || 0) : (globalPlayerStats[player.name]?.cutsMade || 0);
                       const events = statsView === 'sfgl' ? (player.starts || 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
                       return (
-                        {!isMobile && (
-                          <td style={{ padding: '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
-                            {cuts}/{events}
-                          </td>
-                        )}
+                        <td style={{ padding: '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
+                          {cuts}/{events}
+                        </td>
                       );
                     })()}
 
