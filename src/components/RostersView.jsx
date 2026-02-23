@@ -34,9 +34,9 @@ const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
 
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
-  player.limited   ? 'rgba(245,197,24,0.8)' :
-  player.unlimited ? 'rgba(100,140,220,0.8)' :
-  'rgba(255,255,255,0.35)';
+  player.limited   ? 'rgba(245,197,24,0.9)' :
+  player.unlimited ? 'rgba(100,140,220,0.9)' :
+  'rgba(255,255,255,0.85)';
 
 // ── Mobile display name helper ───────────────────────────────────────────────
 const useIsMobile = () => {
