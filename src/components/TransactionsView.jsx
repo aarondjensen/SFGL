@@ -804,7 +804,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       <span style={{ color: colors.success }}>{tx.player}</span>
                       {tx.droppedPlayer && (
                         <>
-                          <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ drop</span>
+                          <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ {tx.type === 'mulligan' ? 'out' : 'drop'}</span>
                           <span style={{ color: colors.danger }}>{tx.droppedPlayer}</span>
                         </>
                       )}
