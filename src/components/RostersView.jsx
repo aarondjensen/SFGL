@@ -698,15 +698,15 @@ export const RostersView = ({
 
         ) : (
           /* ── Roster table ── */
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
+          <table style={{ width: '100%', borderCollapse: 'collapse' }} role="table">
             <thead>
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: 56 }}>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: 80, whiteSpace: 'nowrap' }}>
                   {statsView === 'sfgl' ? 'Starts' : 'Events'}
                 </th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: 72 }}>Cuts Made</th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', width: 110, paddingRight: 12 }}>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: 90, whiteSpace: 'nowrap' }}>Cuts Made</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', width: 120, paddingRight: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                     <div style={{
                       position: 'relative', display: 'flex',
