@@ -303,7 +303,105 @@ export const AdminView = ({
     }
   };
 
-  const RoundLeaderSelect = ({ label, leaders, onChange }) => {
+  // ── Results: reprocess completed tournament ─────────────────────────────
+  const handleReprocess = async () => {
+    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const tournament = tournaments.find(t => t.name === selectedTourney);
+    if (!tournament?.completed) { dialog.showToast('Tournament is not yet completed', 'error'); return; }
+    const ti = tournaments.findIndex(t => t.name === selectedTourney);
+
+    const ok = await dialog.showConfirm(
+      'Reprocess Tournament',
+      'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.',
+      { confirmText: 'Reprocess' }
+    );
+    if (!ok) return;
+
+    try {
+      // Parse corrected earnings
+      const earningsMap = new Map();
+      manualEntry.playerEarnings.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        const m = trimmed.match(/^(.+?),\s*([\d,]+)$/);
+        if (m) {
+          const amt = parseInt(m[2].replace(/,/g, ''));
+          if (!isNaN(amt) && amt >= 0) earningsMap.set(m[1].trim(), amt);
+        }
+      });
+      if (!earningsMap.size) { dialog.showToast('No valid earnings lines found', 'error'); return; }
+
+      // Step 1: Reverse old results from all teams
+      const oldResults = tournament.results;
+      let reversedTeams = teams.map(team => {
+        const oldTeamResult = oldResults?.teams?.[team.id];
+        if (!oldTeamResult) return team;
+        // Reverse team earnings
+        const earningsDelta = -(oldTeamResult.totalEarnings || 0);
+        // Reverse per-player sfglEarnings and starts
+        const newRoster = team.roster.map(p => {
+          const oldPlayer = (oldTeamResult.players || []).find(op => (op.name || op) === p.name);
+          if (!oldPlayer) return p;
+          return {
+            ...p,
+            sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - (oldPlayer.earnings || 0)),
+            starts: Math.max(0, (p.starts || 0) - 1),
+          };
+        });
+        return {
+          ...team,
+          roster: newRoster,
+          earnings: Math.max(0, (team.earnings || 0) + earningsDelta),
+          segmentEarnings: Math.max(0, (team.segmentEarnings || 0) + earningsDelta),
+          lineup: oldResults.fullLineups?.[team.id] || [],
+        };
+      });
+
+      // Reverse global stats from old earningsMap
+      const oldEarningsMap = oldResults?.earningsMap || {};
+      const reversedStats = { ...globalPlayerStats };
+      Object.entries(oldEarningsMap).forEach(([playerName, earnings]) => {
+        if (!reversedStats[playerName]) return;
+        reversedStats[playerName] = {
+          ...reversedStats[playerName],
+          eventsPlayed: Math.max(0, (reversedStats[playerName].eventsPlayed || 0) - 1),
+          cutsMade: Math.max(0, (reversedStats[playerName].cutsMade || 0) - (earnings > 0 ? 1 : 0)),
+          pgaTourEarnings: Math.max(0, (reversedStats[playerName].pgaTourEarnings || 0) - earnings),
+        };
+      });
+
+      // Step 2: Apply corrected results
+      const manualData = {
+        name: selectedTourney, status: 'post', competitors: [],
+        roundLeaders: {
+          round1: manualEntry.round1Leaders.filter(l => l.trim()),
+          round2: manualEntry.round2Leaders.filter(l => l.trim()),
+          round3: manualEntry.round3Leaders.filter(l => l.trim()),
+        },
+        earningsMap, isManualEntry: true,
+      };
+      const names = teams.flatMap(t => t.roster.map(p => p.name));
+      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions);
+
+      // Mark tournament with new results (keep completed, don't change playing)
+      const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
+
+      updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
+      await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
+      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+      await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+      await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      await sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
+      dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
+      setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+    } catch (err) {
+      console.error('handleReprocess error:', err);
+      dialog.showToast('Error reprocessing: ' + err.message, 'error');
+    }
+  };
+
+    const RoundLeaderSelect = ({ label, leaders, onChange }) => {
     const players = teams.flatMap(team => (team.lineup || []).map(name => ({ name, team: team.name }))).sort((a, b) => a.name.localeCompare(b.name));
     return (
       <div style={{ flex: 1 }}>
@@ -810,7 +908,25 @@ export const AdminView = ({
       <div style={S.section}>
         <div style={S.title}>🏆 Tournament Results</div>
         <label style={S.lbl}>Tournament</label>
-        <select value={selectedTourney} onChange={e => setSelectedTourney(e.target.value)} style={S.select}>
+        <select value={selectedTourney} onChange={e => {
+          const name = e.target.value;
+          setSelectedTourney(name);
+          // Pre-fill earnings when selecting a completed tournament
+          const t = tournaments.find(t => t.name === name);
+          if (t?.completed && t.results?.earningsMap) {
+            const lines = Object.entries(t.results.earningsMap)
+              .sort((a, b) => b[1] - a[1])
+              .map(([player, amt]) => player + ', ' + amt)
+              .join('\n');
+            setManualEntry(prev => ({ ...prev, playerEarnings: lines,
+              round1Leaders: t.results.roundLeaders?.round1?.length ? t.results.roundLeaders.round1 : [''],
+              round2Leaders: t.results.roundLeaders?.round2?.length ? t.results.roundLeaders.round2 : [''],
+              round3Leaders: t.results.roundLeaders?.round3?.length ? t.results.roundLeaders.round3 : [''],
+            }));
+          } else {
+            setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+          }
+        }} style={S.select}>
           <option value="">Choose tournament...</option>
           {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
         </select>
@@ -827,10 +943,20 @@ export const AdminView = ({
           <textarea value={manualEntry.playerEarnings} onChange={e => setManualEntry({ ...manualEntry, playerEarnings: e.target.value })}
             placeholder={'Scottie Scheffler, 3600000\nRory McIlroy, 2160000'} rows={6}
             style={{ ...theme.input, fontFamily: fonts.mono, fontSize: 12, resize: 'vertical', marginBottom: 8 }} />
-          <button onClick={handleManualEntry} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
-            style={{ ...S.btn, ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
-            Process Manual Entry
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {!tournaments.find(t => t.name === selectedTourney)?.completed && (
+              <button onClick={handleManualEntry} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
+                style={{ ...S.btn, flex: 1, ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
+                Process Manual Entry
+              </button>
+            )}
+            {tournaments.find(t => t.name === selectedTourney)?.completed && (
+              <button onClick={handleReprocess} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
+                style={{ ...S.btn, flex: 1, background: 'rgba(220,150,50,0.12)', border: '1px solid rgba(220,150,50,0.4)', color: 'rgba(220,180,80,0.9)', ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
+                ✏️ Reprocess Tournament
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
