@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Edit2, Siren } from 'lucide-react';
+import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, makePlayer, getTeamAbbreviation } from '../utils/index.js';
 import { storage } from '../api';
@@ -835,7 +835,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   {/* Fee + commish actions */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                     {tx.type === 'mulligan' ? (
-                      <Siren style={{ width: 14, height: 14, color: colors.danger, flexShrink: 0 }} />
+                      <span style={{ fontSize: 14, lineHeight: 1 }}>🚨</span>
                     ) : tx.type === 'swing_winner' ? (
                       <span style={{ ...theme.statNum, fontSize: 13, fontWeight: 600, color: colors.textGold }}>
                         +${(tx.amount || 0).toLocaleString()}
