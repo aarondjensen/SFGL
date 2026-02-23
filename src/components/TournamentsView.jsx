@@ -5,6 +5,7 @@ import { useDialog } from './DialogContext';
 const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
+import { sfglDataApi } from '../api/supabase';
 import { STORAGE_KEYS } from '../constants';
 
 const ALTERNATE_KEYWORDS = ['Puerto Rico', 'Zurich', 'Corales', 'Myrtle Beach', 'ISCO', 'Barracuda'];
@@ -51,7 +52,19 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
   const saveChanges = async () => {
     setTournaments(localTournaments);
     setEditMode(false);
-    storage.set(STORAGE_KEYS.TOURNAMENTS, localTournaments);
+    // Await both writes so the data is in Supabase before the toast fires.
+    // storage.set handles localStorage + sfgl_data via the app's own fetch layer.
+    // sfglDataApi.set is belt-and-suspenders using the Supabase JS client.
+    try {
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, localTournaments);
+    } catch (e) {
+      console.error('storage.set tournaments failed:', e);
+    }
+    try {
+      await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, localTournaments);
+    } catch (e) {
+      console.error('sfglDataApi.set tournaments failed:', e);
+    }
     dialog.showToast('Schedule updated!', 'success');
   };
 
