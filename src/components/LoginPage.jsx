@@ -9,7 +9,7 @@ const styles = `
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'Raleway', sans-serif;
+    font-family: 'Raleway', system-ui, sans-serif;
   }
 
   .sfgl-login-card {
@@ -44,7 +44,7 @@ const styles = `
 
 
   .sfgl-login-subtitle {
-    font-family: 'Raleway', sans-serif;
+    font-family: 'Raleway', system-ui, sans-serif;
     font-size: 10px;
     font-weight: 500;
     color: rgba(255,255,255,0.3);
@@ -97,7 +97,7 @@ const styles = `
     border-bottom: 1px solid rgba(180,160,100,0.25);
     border-radius: 1px;
     padding: 12px 16px;
-    font-family: 'Raleway', sans-serif;
+    font-family: 'Raleway', system-ui, sans-serif;
     font-size: 14px;
     font-weight: 400;
     color: #ffffff;
@@ -169,7 +169,7 @@ const styles = `
     background: #1c3a5e;
     border: 1px solid rgba(180,160,100,0.25);
     border-radius: 1px;
-    font-family: 'Raleway', sans-serif;
+    font-family: 'Raleway', system-ui, sans-serif;
     font-size: 11px; font-weight: 600;
     letter-spacing: 2.5px; text-transform: uppercase;
     color: rgba(255,255,255,0.9);
@@ -265,7 +265,7 @@ export default function LoginPage({ onLogin }) {
       const result = await managerAuthApi.login(name.trim(), password.trim());
       if (onLogin) onLogin(result);
     } catch (err) {
-      setServerError(err.message || 'Login failed. Check your name and password.');
+      setServerError(err.message || 'Login failed — check your name and password.');
     } finally {
       setLoading(false);
     }
@@ -294,10 +294,10 @@ export default function LoginPage({ onLogin }) {
             {serverError && <div className="sfgl-server-error">⚠ {serverError}</div>}
 
             <div className="sfgl-field">
-              <label htmlFor="sfgl-name" className="sfgl-label">Last Name</label>
+              <label htmlFor="sfgl-name" className="sfgl-label">Name</label>
               <div className="sfgl-field-wrap">
                 <input id="sfgl-name" type="text" className="sfgl-input"
-                  placeholder="e.g. Jensen" value={name} autoFocus autoComplete="username"
+                  placeholder="Login name" value={name} autoFocus autoComplete="username"
                   onChange={e => { setName(e.target.value); setErrors(v => ({...v, name:''})); }}
                 />
               </div>
@@ -323,7 +323,7 @@ export default function LoginPage({ onLogin }) {
               </div>
               {errors.password
                 ? <p className="sfgl-field-error">⚠ {errors.password}</p>
-                : <p className="sfgl-hint">Default: your last name in lowercase</p>
+                : <p className="sfgl-hint">Enter the login name set by your commissioner</p>
               }
             </div>
 

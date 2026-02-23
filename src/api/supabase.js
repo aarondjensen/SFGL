@@ -452,107 +452,50 @@ export const draftStateApi = {
  * MANAGER AUTH API
  * ============================================================================
  */
+// ── Manager Auth ─────────────────────────────────────────────────────────────
+// Credentials are stored in sfgl_data under key 'manager_credentials' as:
+//   { [teamId]: { name: string, password: string } }
+// Sessions are stored only in localStorage (no Supabase table needed).
+const CREDS_KEY = 'manager_credentials';
+
 export const managerAuthApi = {
-  async login(email, password) {
-    const { data: team, error: teamError } = await supabase
-      .from('teams')
-      .select('*')
-      .eq('manager_email', email)
-      .single();
-    
-    if (teamError || !team) throw new Error('Invalid email or password');
-    if (team.manager_password_hash !== password) throw new Error('Invalid email or password');
-
-    const sessionToken = crypto.randomUUID();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 60);
-
-    const { data: session, error: sessionError } = await supabase
-      .from('manager_sessions')
-      .insert({
-        team_id: team.id,
-        session_token: sessionToken,
-        is_commissioner: false,
-        expires_at: expiresAt.toISOString(),
-      })
-      .select()
-      .single();
-
-    if (sessionError) throw sessionError;
-
-    localStorage.setItem('manager_session', sessionToken);
-    localStorage.setItem('manager_team_id', team.id);
-
-    return { team, sessionToken };
+  // Read all credentials from sfgl_data
+  async _getCreds() {
+    const creds = await sfglDataApi.get(CREDS_KEY);
+    return creds || {};
   },
 
-  async loginCommissioner(password) {
-    const { data } = await supabase
-      .from('league_settings')
-      .select('value')
-      .eq('key', 'commissioner_password')
-      .single();
-
-    if (!data || data.value !== password) throw new Error('Invalid commissioner password');
-
-    const sessionToken = crypto.randomUUID();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 60);
-
-    await supabase
-      .from('manager_sessions')
-      .insert({
-        team_id: null,
-        session_token: sessionToken,
-        is_commissioner: true,
-        expires_at: expiresAt.toISOString(),
-      });
-
-    localStorage.setItem('manager_session', sessionToken);
-    localStorage.setItem('is_commissioner', 'true');
-
-    return { isCommissioner: true, sessionToken };
+  // Set credentials for one team (called from AdminView → Manager Logins)
+  async setCredentials(teamId, name, password) {
+    const creds = await this._getCreds();
+    creds[teamId] = { name: name.trim(), password: password.trim() };
+    await sfglDataApi.set(CREDS_KEY, creds);
   },
 
+  // Login: match name (case-insensitive) + password against stored credentials
+  async login(name, password) {
+    const creds = await this._getCreds();
+    const entry = Object.entries(creds).find(([, c]) =>
+      c.name.toLowerCase() === name.trim().toLowerCase() &&
+      c.password === password.trim()
+    );
+    if (!entry) throw new Error('Invalid name or password');
+    const [teamId] = entry;
+    localStorage.setItem('manager_team_id', teamId);
+    localStorage.removeItem('is_commissioner');
+    return { teamId };
+  },
+
+  // Restore session from localStorage — returns teamId or null
   async getCurrentSession() {
-    const sessionToken = localStorage.getItem('manager_session');
-    if (!sessionToken) return null;
-
-    const { data, error } = await supabase
-      .from('manager_sessions')
-      .select('*, teams(*)')
-      .eq('session_token', sessionToken)
-      .gt('expires_at', new Date().toISOString())
-      .single();
-
-    if (error || !data) {
-      localStorage.removeItem('manager_session');
-      localStorage.removeItem('manager_team_id');
-      localStorage.removeItem('is_commissioner');
-      return null;
-    }
-
-    return data;
+    const teamId = localStorage.getItem('manager_team_id');
+    if (!teamId) return null;
+    return { teamId };
   },
 
   async logout() {
-    const sessionToken = localStorage.getItem('manager_session');
-    if (sessionToken) {
-      await supabase.from('manager_sessions').delete().eq('session_token', sessionToken);
-    }
-    localStorage.removeItem('manager_session');
     localStorage.removeItem('manager_team_id');
     localStorage.removeItem('is_commissioner');
-  },
-
-  async assignManagerToTeam(teamId, email, password) {
-    const { data, error } = await supabase
-      .from('teams')
-      .update({ manager_email: email, manager_password_hash: password })
-      .eq('id', teamId)
-      .select();
-    if (error) throw error;
-    return data;
   },
 };
 
