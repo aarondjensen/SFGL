@@ -270,8 +270,8 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
           }
         });
 
-        // All swings are red — consistent identity regardless of swing name
-        const RED = { accent: 'rgba(220,70,70,0.9)', bg: 'rgba(220,70,70,0.07)', border: 'rgba(220,70,70,0.3)' };
+        // All swing cards use gold
+        const RED = { accent: 'rgba(245,197,24,0.9)', bg: 'rgba(245,197,24,0.07)', border: 'rgba(245,197,24,0.3)' };
 
         return items.map(item => {
           if (item.type === 'swing') {

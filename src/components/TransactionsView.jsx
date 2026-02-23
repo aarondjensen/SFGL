@@ -292,9 +292,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
   const TYPE_ORDER = { 'waiver': 0, 'fa': 0, 'free agent': 0, 'drop': 1, 'mulligan': 2 };
   const sortedTransactions = [...transactions].sort((a, b) => {
+    // Most recent event first — highest tournamentIndex at top.
+    // Transactions without an index (e.g. swing_winner) sort to top.
     const ai = a.tournamentIndex ?? 9999;
     const bi = b.tournamentIndex ?? 9999;
-    if (ai !== bi) return ai - bi;
+    if (bi !== ai) return bi - ai;
     // Within same tournament: waivers/FA first, then drops, then mulligans
     const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
