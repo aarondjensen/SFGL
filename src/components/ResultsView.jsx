@@ -343,10 +343,12 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                           }}>
                             {rank + 1}
                           </span>
-                          <span style={{ ...theme.h3, fontSize: 13 }}>{entry.team.name}</span>
+                          <span style={{ ...theme.h3, fontSize: 13, color: rank === 0 ? colors.textPrimary : colors.textSecondary }}>{entry.team.name}</span>
                           <span style={{
-                            ...theme.statNum, fontSize: 13, fontWeight: 600,
-                            color: entry.earnings > 0 ? colors.earningsGreen : colors.textMuted,
+                            ...theme.statNum,
+                            fontSize: rank === 0 ? 14 : 12,
+                            fontWeight: rank === 0 ? 700 : 400,
+                            color: rank === 0 ? colors.earningsGreen : 'rgba(80,180,120,0.5)',
                             marginLeft: 4,
                           }}>
                             ${entry.earnings.toLocaleString()}

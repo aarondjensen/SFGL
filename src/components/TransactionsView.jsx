@@ -301,9 +301,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     // Find last completed tournament's swing
     const lastCompleted = [...(tournaments || [])].reverse().find(t => t.completed && t.results?.teams);
     const currentSwing = lastCompleted ? getSegForTourney(lastCompleted) : getSegmentByDate();
+    const swingIsComplete = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === currentSwing);
     const fees = {};
-    teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, teamId: t.id, teamName: t.name }; });
+    teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, swingIsComplete, teamId: t.id, teamName: t.name }; });
     transactions.forEach(tx => {
+      // swing_winner uses tx.amount not tx.fee — don't count it in season/swing fees
+      if (tx.type === 'swing_winner') return;
       if (fees[tx.team] && typeof tx.fee === 'number') {
         fees[tx.team].seasonTotal += tx.fee;
         if (tx.segment === currentSwing) fees[tx.team].swingTotal += tx.fee;
@@ -447,8 +450,20 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
         {/* ── Fee summary ── */}
         <div style={theme.card}>
-          <div style={theme.cardHeader}>
+          <div style={{ ...theme.cardHeader, justifyContent: 'space-between' }}>
             <h2 style={theme.h2}>Transaction Fees</h2>
+            {teamFees[0]?.currentSwing && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontFamily: fonts.sans, fontSize: 10, color: 'rgba(245,197,24,0.55)', letterSpacing: '0.3px' }}>
+                  {teamFees[0].currentSwing.replace(' Swing','').replace('Fall Finish','Fall')}
+                </span>
+                {teamFees[0].swingIsComplete && (
+                  <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(245,197,24,0.8)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 2, padding: '1px 4px' }}>
+                    Final
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <div style={{ padding: '12px 16px' }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
@@ -467,8 +482,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     <div style={{ ...theme.statNum, fontSize: 13, color: colors.earningsGreen, marginTop: 2 }}>
                       ${team.seasonTotal}
                     </div>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 1 }}>
-                      ${team.swingTotal} {team.currentSwing ? team.currentSwing.replace(' Swing','').replace('Fall Finish','Fall') : 'swing'}
+                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: team.swingIsComplete ? 'rgba(245,197,24,0.65)' : 'rgba(180,180,200,0.7)', marginTop: 1 }}>
+                      ${team.swingTotal} swing
                     </div>
                   </div>
                 );
