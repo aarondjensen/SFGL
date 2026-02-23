@@ -415,7 +415,7 @@ const FantasyGolfLeague = () => {
             <StandingsView teams={resolvedTeams} tournaments={safeTournaments} />
           )}
           {activeTab === 'results' && (
-            <ResultsView teams={resolvedTeams} tournaments={safeTournaments} />
+            <ResultsView teams={resolvedTeams} tournaments={safeTournaments} transactions={safeTransactions} />
           )}
           {activeTab === 'rosters' && (
             <RostersView
