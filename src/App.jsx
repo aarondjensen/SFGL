@@ -94,13 +94,13 @@ const FantasyGolfLeague = () => {
   useEffect(() => {
     managerAuthApi.getCurrentSession().then(session => {
       if (!session) return;
-      if (session.is_commissioner) {
-        setIsCommissioner(true);
-      } else if (session.managers) {
-        setLoggedInUser(session.managers.name);
+      const teamId = localStorage.getItem('manager_team_id');
+      if (teamId) {
+        const team = resolvedTeams.find(t => t.id === teamId);
+        if (team) setLoggedInUser(team.owner || team.name);
       }
     }).catch(() => {});
-  }, []);
+  }, [resolvedTeams]);
 
   // ── Primary Supabase boot hydration ──────────────────────────────────────
   // The app's storage layer reads/writes sfgl_data using STORAGE_KEYS as keys.
@@ -177,7 +177,9 @@ const FantasyGolfLeague = () => {
 
   // ── Manager login ──────────────────────────────────────────────────────────
   const handleManagerLogin = (result) => {
-    setLoggedInUser(result.manager.name);
+    // result = { teamId } — resolve display name from loaded teams
+    const team = resolvedTeams.find(t => t.id === result.teamId);
+    setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
     setShowLoginModal(false);
   };
 
