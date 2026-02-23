@@ -732,9 +732,9 @@ export const RostersView = ({
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
               <col />
-              <col style={{ width: isMobile ? 52 : 80 }} />
-              {!isMobile && <col style={{ width: 90 }} />}
-              <col style={{ width: isMobile ? 72 : 120 }} />
+              <col style={{ width: isMobile ? 48 : 80 }} />
+              <col style={{ width: isMobile ? 62 : 90 }} />
+              <col style={{ width: isMobile ? 68 : 120 }} />
             </colgroup>
             <thead>
               <tr>
@@ -742,9 +742,9 @@ export const RostersView = ({
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   {statsView === 'sfgl' ? 'Starts' : 'Events'}
                 </th>
-                {!isMobile && (
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>Cuts Made</th>
-                )}
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                  {isMobile ? 'Cuts' : 'Cuts Made'}
+                </th>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 10 : 8 }}>
                   {!isMobile && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
@@ -856,12 +856,7 @@ export const RostersView = ({
                             )}
                           </div>
                           <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.12)' : colors.textMuted }}>
-                            {player.yearsOfService > 1 && <span>(Yr {player.yearsOfService}) </span>}
-                            {isMobile && (() => {
-                              const cuts   = statsView === 'sfgl' ? (sfglCutsMap[player.name] || 0) : (globalPlayerStats[player.name]?.cutsMade || 0);
-                              const events = statsView === 'sfgl' ? (player.starts || 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
-                              return <span>{cuts}/{events} cuts</span>;
-                            })()}
+                            {player.yearsOfService > 1 && <span>(Yr {player.yearsOfService})</span>}
                           </div>
                         </div>
                       </div>
@@ -877,12 +872,12 @@ export const RostersView = ({
                       );
                     })()}
 
-                    {/* Cuts Made (X/Y fraction) — desktop only */}
-                    {!isMobile && (() => {
+                    {/* Cuts Made (X/Y fraction) */}
+                    {(() => {
                       const cuts   = statsView === 'sfgl' ? (sfglCutsMap[player.name] || 0) : (globalPlayerStats[player.name]?.cutsMade || 0);
                       const events = statsView === 'sfgl' ? (player.starts || 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
                       return (
-                        <td style={{ padding: '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
+                        <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
                           {cuts}/{events}
                         </td>
                       );
