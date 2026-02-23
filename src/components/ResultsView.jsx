@@ -69,10 +69,10 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
 const TournamentBadges = ({ tournament }) => (
   <>
     {tournament.isMajor && (
-      <span style={{ ...theme.badge, ...theme.badgeGold }}>M</span>
+      <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(245,197,24,0.18)', border: '1px solid rgba(245,197,24,0.6)', color: 'rgba(255,215,60,0.98)' }}>M</span>
     )}
     {tournament.isSignature && !tournament.isMajor && (
-      <span style={{ ...theme.badge, ...theme.badgeNavy }}>S</span>
+      <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(200,170,80,0.08)', border: '1px solid rgba(200,170,80,0.3)', color: 'rgba(200,170,80,0.7)' }}>S</span>
     )}
   </>
 );
@@ -195,10 +195,10 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
                 <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
                   {tournament.isMajor
-                    ? <span style={{ ...theme.badge, ...theme.badgeGold, fontSize: 9 }}>M</span>
+                    ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(245,197,24,0.18)', border: '1px solid rgba(245,197,24,0.6)', color: 'rgba(255,215,60,0.98)' }}>M</span>
                     : tournament.isSignature
-                      ? <span style={{ ...theme.badge, ...theme.badgeNavy, fontSize: 9 }}>S</span>
-                      : <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.success, display: 'inline-block', marginTop: 2 }} />
+                      ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(200,170,80,0.08)', border: '1px solid rgba(200,170,80,0.3)', color: 'rgba(200,170,80,0.7)' }}>S</span>
+                      : null
                   }
                 </div>
                 <h3 style={{ ...theme.h3, color: colors.success, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.name}</h3>
@@ -396,10 +396,10 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                 {/* Badge column — Sig/Major or plain dot */}
                 <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
                   {tournament.isMajor
-                    ? <span style={{ ...theme.badge, ...theme.badgeGold, fontSize: 9 }}>M</span>
+                    ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(245,197,24,0.18)', border: '1px solid rgba(245,197,24,0.6)', color: 'rgba(255,215,60,0.98)' }}>M</span>
                     : tournament.isSignature
-                      ? <span style={{ ...theme.badge, ...theme.badgeNavy, fontSize: 9 }}>S</span>
-                      : <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.textMuted, display: 'inline-block', marginTop: 2 }} />
+                      ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(200,170,80,0.08)', border: '1px solid rgba(200,170,80,0.3)', color: 'rgba(200,170,80,0.7)' }}>S</span>
+                      : null
                   }
                 </div>
                 <div style={{ textAlign: 'left', minWidth: 0 }}>
