@@ -424,7 +424,7 @@ export const AdminView = ({
     if (!done.length) { dialog.showToast('No completed results found', 'error'); return; }
     if (!await dialog.showConfirm('Recalculate Earnings', 'Recompute all team earnings from completed results and fix the current tournament indicator.', { confirmText: 'Recalculate' })) return;
     const byTeam = {}; done.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
-    const ut = teams.map(team => ({ ...team, earnings: byTeam[team.id] || 0, segmentEarnings: (() => { const sw = typeof getSegmentByDate === 'function' ? getSegmentByDate() : null; return done.filter(t => !sw || t.segment === sw).reduce((s, t) => s + (t.results?.teams?.[team.id]?.totalEarnings || 0), 0); })() }));
+    const ut = teams.map(team => ({ ...team, earnings: byTeam[team.id] || 0, segmentEarnings: (() => { const sw = typeof getSegmentByDate === 'function' ? getSegmentByDate() : null; return done.filter(t => !sw || getTournamentSegment(t) === sw).reduce((s, t) => s + (t.results?.teams?.[team.id]?.totalEarnings || 0), 0); })() }));
     const li = [...tournaments].map((t, i) => ({ t, i })).filter(({ t }) => t.completed).pop()?.i ?? -1;
     const nx = tournaments.findIndex((t, i) => i > li && !t.completed && !t.isAlternate);
     const ft = tournaments.map((t, i) => ({ ...t, playing: i === nx }));
@@ -568,6 +568,27 @@ export const AdminView = ({
   // ── Award Swing Winner ──────────────────────────────────────────────────
   const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 
+  // Get the swing a tournament belongs to, using t.segment if set,
+  // otherwise infer from the tournament's own dates field (not today's date)
+  const getTournamentSegment = (t) => {
+    if (t.segment) return t.segment;
+    // Parse month from dates: "Feb 9-15" → month=2
+    if (t.dates) {
+      const m = t.dates.match(/^([A-Za-z]+)/);
+      if (m) {
+        const months = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+        const mo = months[m[1]];
+        if (mo) {
+          if (mo >= 1 && mo <= 3) return 'West Coast Swing';
+          if (mo >= 4 && mo <= 6) return 'Spring Swing';
+          if (mo >= 7 && mo <= 9) return 'Summer Swing';
+          return 'Fall Finish';
+        }
+      }
+    }
+    return null;
+  };
+
   const handleSwingWinner = async () => {
     if (!swingAwardSeg) return;
 
@@ -583,7 +604,7 @@ export const AdminView = ({
 
     // Find winner = highest segmentEarnings for this swing
     // segmentEarnings is calculated from completed tournaments in this swing
-    const swingTournaments = tournaments.filter(t => t.completed && t.segment === swingAwardSeg && t.results?.teams);
+    const swingTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
     if (!swingTournaments.length) {
       dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
       return;
@@ -595,6 +616,11 @@ export const AdminView = ({
         byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
       });
     });
+
+    // Debug: log what we found so issues are visible in console
+    console.log('[SwingWinner] Swing:', swingAwardSeg);
+    console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
+    console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
 
     const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
     if (!winnerEntry) { dialog.showToast('Could not determine winner', 'error'); return; }
@@ -1057,7 +1083,7 @@ export const AdminView = ({
         </select>
         {swingAwardSeg && (() => {
           const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
-          const swingTourneys = tournaments.filter(t => t.completed && t.segment === swingAwardSeg && t.results?.teams);
+          const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
           const byTeam = {};
           swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
           const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
