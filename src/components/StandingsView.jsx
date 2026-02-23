@@ -245,10 +245,10 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
           <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: 8 }}>
             {swingIsComplete ? (
               <>
-                <span style={{ color: 'rgba(220,70,70,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', fontSize: 10 }}>Final</span>
+                <span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', fontSize: 10 }}>Final</span>
                 <span style={{ color: colors.textMuted }}>{swingEventCount} events</span>
                 {swingWinnerTx && (
-                  <span style={{ color: colors.textGold }}>· 🏆 {swingWinnerTx.team} +${(swingWinnerTx.amount || 0).toLocaleString()}</span>
+                  <span style={{ color: 'rgba(245,197,24,0.7)' }}>· 🏆 {swingWinnerTx.team} +${(swingWinnerTx.amount || 0).toLocaleString()}</span>
                 )}
               </>
             ) : (
@@ -288,19 +288,19 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
               const medal    = getMedalStyle(index);
               const isTop    = index === 0;
               const isSwingWinner = showSwing && swingIsComplete && isTop;
-              const rowBg = isSwingWinner ? 'rgba(220,70,70,0.07)' : isTop ? 'rgba(180,160,100,0.04)' : 'transparent';
+              const rowBg = isSwingWinner ? 'rgba(245,197,24,0.08)' : isTop ? 'rgba(180,160,100,0.04)' : 'transparent';
               return (
                 <tr key={team.id} className="sfgl-standings-row"
                   style={{ background: rowBg, transition: 'background 0.15s' }}
                   {...rowHoverHandlers(isTop)}
                 >
                   <td className="sfgl-standings-cell" style={theme.tableCell}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, background: isSwingWinner ? 'rgba(220,70,70,0.2)' : medal.bg, color: isSwingWinner ? 'rgba(220,70,70,0.95)' : medal.text, flexShrink: 0 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, background: isSwingWinner ? 'rgba(245,197,24,0.08)' : medal.bg, color: isSwingWinner ? 'rgba(245,197,24,0.9)' : medal.text, border: isSwingWinner ? '1px solid rgba(245,197,24,0.3)' : 'none', flexShrink: 0 }}>
                       {isSwingWinner ? '🏆' : team[posKey]}
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, overflow: 'hidden' }}>
-                    <div style={{ ...theme.h3, fontSize: 'clamp(13px,1.4vw,17px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isSwingWinner ? 'rgba(220,70,70,0.95)' : undefined }}>
+                    <div style={{ ...theme.h3, fontSize: 'clamp(13px,1.4vw,17px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isSwingWinner ? 'rgba(245,197,24,0.9)' : undefined }}>
                       {team.name}
                     </div>
                     <div className="sfgl-owner" style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
@@ -311,8 +311,8 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
-                    <div style={{ ...theme.statNum, fontSize: 13, color: behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
-                      {formatBehind(behind)}
+                    <div style={{ ...theme.statNum, fontSize: 13, color: isSwingWinner ? 'rgba(245,197,24,0.9)' : behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
+                      {isSwingWinner ? 'Winner' : formatBehind(behind)}
                     </div>
                   </td>
                 </tr>
