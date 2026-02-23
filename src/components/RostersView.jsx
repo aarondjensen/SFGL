@@ -777,7 +777,7 @@ export const RostersView = ({
                 const canAddToLineup = team.lineup.length < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
                 const hasLineup      = team.lineup.length > 0;
                 const isBenched      = hasLineup && !isInLineup && !lineupMode;
-                const dimColor       = 'rgba(255,255,255,0.18)';
+                const dimColor       = 'rgba(255,255,255,0.45)';
 
                 return (
                   <tr key={player.name}
@@ -800,7 +800,7 @@ export const RostersView = ({
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
-                              opacity: isBenched ? 0.3 : lineupMode && !isInLineup && !canAddToLineup ? 0.25 : lineupMode && !isInLineup ? 0.55 : 1,
+                              opacity: isBenched ? 0.5 : lineupMode && !isInLineup && !canAddToLineup ? 0.25 : lineupMode && !isInLineup ? 0.55 : 1,
                               border: lineupMode
                                 ? isInLineup
                                   ? `3px solid ${playerBorderColor(player)}`
@@ -811,12 +811,13 @@ export const RostersView = ({
                               transition: 'all 0.15s',
                             }}
                           />
-                          {lineupMode && isInLineup && (
+                          {isInLineup && (
                             <div style={{
                               position: 'absolute', top: -3, right: -3,
                               width: 14, height: 14, borderRadius: '50%',
-                              background: playerBorderColor(player),
+                              background: lineupMode ? playerBorderColor(player) : 'rgba(80,195,120,0.85)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              opacity: lineupMode ? 1 : 0.75,
                             }}>
                               <span style={{ color: '#111d2e', fontSize: 9, fontWeight: 900 }}>✓</span>
                             </div>
@@ -828,6 +829,7 @@ export const RostersView = ({
                               padding: '0px 3px', lineHeight: 1, zIndex: 5,
                               fontSize: 7, letterSpacing: 0.5,
                               pointerEvents: 'none',
+                              opacity: isBenched ? 0.35 : 1,
                             }}>
                               {'⭐'.repeat(player.stars || 1)}
                             </div>
@@ -855,7 +857,7 @@ export const RostersView = ({
                               <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)' }}>♾️</span>
                             )}
                           </div>
-                          <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.12)' : colors.textMuted }}>
+                          <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
                             {player.yearsOfService > 1 && <span>(Yr {player.yearsOfService})</span>}
                           </div>
                         </div>

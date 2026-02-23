@@ -241,6 +241,8 @@ export const AdminView = ({
       await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
       sfglDataApi.set(STORAGE_KEYS.TEAMS, teamsWithSfgl).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
       dialog.showToast('Results processed for ' + t.name + '!', 'success');
     } catch (err) { dialog.showToast('API Error: ' + err.message, 'error'); }
   };
@@ -292,6 +294,7 @@ export const AdminView = ({
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
       await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.error('sfgl teams sync:', e));
       await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(e => console.error('sfgl tourney sync:', e));
+      await sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(e => console.error('sfgl stats sync:', e));
       dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
     } catch (err) {
