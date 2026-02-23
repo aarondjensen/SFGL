@@ -278,17 +278,39 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const dialog = useDialog();
 
   const teamFees = useMemo(() => {
-    const currentSwing = getSegmentByDate();
+    // Determine which swing to show on team cards:
+    // Use the swing of the most recent completed tournament (not today's calendar date).
+    // This means after WCS ends and before Spring Swing starts, cards still show WCS fees.
+    const ALL_SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
+    const getSegForTourney = (t) => {
+      if (t.segment) return t.segment;
+      if (t.dates) {
+        const m = t.dates.match(/^([A-Za-z]+)/);
+        if (m) {
+          const mo = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12}[m[1]];
+          if (mo) {
+            if (mo <= 3) return 'West Coast Swing';
+            if (mo <= 6) return 'Spring Swing';
+            if (mo <= 9) return 'Summer Swing';
+            return 'Fall Finish';
+          }
+        }
+      }
+      return null;
+    };
+    // Find last completed tournament's swing
+    const lastCompleted = [...(tournaments || [])].reverse().find(t => t.completed && t.results?.teams);
+    const currentSwing = lastCompleted ? getSegForTourney(lastCompleted) : getSegmentByDate();
     const fees = {};
-    teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, teamId: t.id, teamName: t.name }; });
+    teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, teamId: t.id, teamName: t.name }; });
     transactions.forEach(tx => {
-      if (fees[tx.team]) {
+      if (fees[tx.team] && typeof tx.fee === 'number') {
         fees[tx.team].seasonTotal += tx.fee;
         if (tx.segment === currentSwing) fees[tx.team].swingTotal += tx.fee;
       }
     });
     return Object.values(fees).sort((a, b) => b.seasonTotal - a.seasonTotal);
-  }, [teams, transactions]);
+  }, [teams, transactions, tournaments]);
 
   const TYPE_ORDER = { 'waiver': 0, 'fa': 0, 'free agent': 0, 'drop': 1, 'mulligan': 2 };
   const sortedTransactions = [...transactions].sort((a, b) => {
@@ -387,7 +409,13 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
   const txTypeColor = (type) => {
     if (type === 'drop') return colors.danger;
-    return colors.textGold;  // mulligan, waiver, fa, free agent all gold
+    return colors.textGold;  // mulligan, waiver, fa, free agent, swing_winner all gold
+  };
+
+  // Human-readable label for transaction type
+  const txTypeLabel = (type) => {
+    if (type === 'swing_winner') return 'swing winner';
+    return type;
   };
 
   const statusColor = (status) => {
@@ -440,7 +468,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       ${team.seasonTotal}
                     </div>
                     <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 1 }}>
-                      ${team.swingTotal} swing
+                      ${team.swingTotal} {team.currentSwing ? team.currentSwing.replace(' Swing','').replace('Fall Finish','Fall') : 'swing'}
                     </div>
                   </div>
                 );
@@ -756,7 +784,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
                     {/* Transaction detail */}
                     <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary }}>
-                      <span style={{ color: txTypeColor(tx.type) }}>{tx.type}</span>
+                      <span style={{ color: txTypeColor(tx.type) }}>{txTypeLabel(tx.type)}</span>
                       {': '}
                       <span style={{ color: colors.success }}>{tx.player}</span>
                       {tx.droppedPlayer && (
@@ -793,6 +821,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                     {tx.type === 'mulligan' ? (
                       <Siren style={{ width: 14, height: 14, color: colors.danger, flexShrink: 0 }} />
+                    ) : tx.type === 'swing_winner' ? (
+                      <span style={{ ...theme.statNum, fontSize: 13, fontWeight: 600, color: colors.textGold }}>
+                        +${(tx.amount || 0).toLocaleString()}
+                      </span>
                     ) : (
                       <span style={{
                         ...theme.statNum, fontSize: 13, fontWeight: 600,
