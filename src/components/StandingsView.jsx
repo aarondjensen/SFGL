@@ -56,7 +56,7 @@ const getSegmentForTournament = (t) => {
   return 'Fall Finish';
 };
 
-export const StandingsView = ({ teams, tournaments = [] }) => {
+export const StandingsView = ({ teams, tournaments = [], transactions = [] }) => {
 
   // ── Overall ──────────────────────────────────────────────────────────────
   const sortedTeams = useMemo(() =>
@@ -120,6 +120,14 @@ export const StandingsView = ({ teams, tournaments = [] }) => {
     ).length,
     [selectedSwing, tournaments]
   );
+
+  // ── Swing completion ─────────────────────────────────────────────────────
+  const swingWinnerTx = useMemo(() =>
+    !selectedSwing ? null :
+    transactions.find(tx => tx.type === 'swing_winner' && tx.segment === selectedSwing) || null,
+    [selectedSwing, transactions]
+  );
+  const swingIsComplete = !!swingWinnerTx;
 
   // ── Toggle ───────────────────────────────────────────────────────────────
   const [view, setView] = useState('overall');
@@ -234,8 +242,20 @@ export const StandingsView = ({ teams, tournaments = [] }) => {
           </div>
         )}
         {showSwing && swingEventCount > 0 && (
-          <div style={{ fontFamily: fonts.sans, fontSize: 11, color: accentColor.replace('0.85', '0.7'), letterSpacing: '0.3px' }}>
-            {swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}
+          <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            {swingIsComplete ? (
+              <>
+                <span style={{ color: 'rgba(220,70,70,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', fontSize: 10 }}>Final</span>
+                <span style={{ color: colors.textMuted }}>{swingEventCount} events</span>
+                {swingWinnerTx && (
+                  <span style={{ color: colors.textGold }}>· 🏆 {swingWinnerTx.team} +${(swingWinnerTx.amount || 0).toLocaleString()}</span>
+                )}
+              </>
+            ) : (
+              <span style={{ color: accentColor.replace('0.85', '0.7') }}>
+                {swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -267,18 +287,20 @@ export const StandingsView = ({ teams, tournaments = [] }) => {
               const behind   = displayLeader - earnings;
               const medal    = getMedalStyle(index);
               const isTop    = index === 0;
+              const isSwingWinner = showSwing && swingIsComplete && isTop;
+              const rowBg = isSwingWinner ? 'rgba(220,70,70,0.07)' : isTop ? 'rgba(180,160,100,0.04)' : 'transparent';
               return (
                 <tr key={team.id} className="sfgl-standings-row"
-                  style={{ background: isTop ? 'rgba(180,160,100,0.04)' : 'transparent', transition: 'background 0.15s' }}
+                  style={{ background: rowBg, transition: 'background 0.15s' }}
                   {...rowHoverHandlers(isTop)}
                 >
                   <td className="sfgl-standings-cell" style={theme.tableCell}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, background: medal.bg, color: medal.text, flexShrink: 0 }}>
-                      {team[posKey]}
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, background: isSwingWinner ? 'rgba(220,70,70,0.2)' : medal.bg, color: isSwingWinner ? 'rgba(220,70,70,0.95)' : medal.text, flexShrink: 0 }}>
+                      {isSwingWinner ? '🏆' : team[posKey]}
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, overflow: 'hidden' }}>
-                    <div style={{ ...theme.h3, fontSize: 'clamp(13px,1.4vw,17px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ ...theme.h3, fontSize: 'clamp(13px,1.4vw,17px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isSwingWinner ? 'rgba(220,70,70,0.95)' : undefined }}>
                       {team.name}
                     </div>
                     <div className="sfgl-owner" style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
