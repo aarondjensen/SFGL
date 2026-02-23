@@ -327,11 +327,19 @@ export const RostersView = ({
   };
   const addDropTournamentIndex = getAddDropTournamentIndex();
 
+  // Switch to the logged-in manager's team whenever loggedInUser changes (e.g. after login)
+  const prevLoggedInUser = React.useRef(null);
   useEffect(() => {
-    if (!selectedTeam && teams.length > 0) {
-      const userTeam = loggedInUser ? teams.find(t => t.owner === loggedInUser) : null;
+    if (teams.length === 0) return;
+    const userTeam = loggedInUser ? teams.find(t => t.owner === loggedInUser) : null;
+    if (loggedInUser && loggedInUser !== prevLoggedInUser.current && userTeam) {
+      // User just logged in — jump to their team
+      setSelectedTeam(userTeam.id);
+    } else if (!selectedTeam) {
+      // No selection yet — default to user's team or first team
       setSelectedTeam(userTeam?.id ?? teams[0].id);
     }
+    prevLoggedInUser.current = loggedInUser;
   }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
 
   const team          = teams.find(t => t.id === selectedTeam);
@@ -702,10 +710,12 @@ export const RostersView = ({
             <thead>
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: 80, whiteSpace: 'nowrap' }}>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: isMobile ? 56 : 80, whiteSpace: 'nowrap' }}>
                   {statsView === 'sfgl' ? 'Starts' : 'Events'}
                 </th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: 90, whiteSpace: 'nowrap' }}>Cuts Made</th>
+                {!isMobile && (
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: 90, whiteSpace: 'nowrap' }}>Cuts Made</th>
+                )}
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', width: 120, paddingRight: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                     <div style={{
@@ -761,8 +771,8 @@ export const RostersView = ({
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                   >
                     {/* Player cell */}
-                    <td style={{ padding: '8px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <td style={{ padding: isMobile ? '7px 10px' : '8px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, minWidth: 0 }}>
                         {/* Headshot / lineup toggle */}
                         <button
                           onClick={() => lineupMode && isOwnTeam && (isInLineup || canAddToLineup) && togglePlayerInLineup(player)}
@@ -813,7 +823,7 @@ export const RostersView = ({
                         <div style={{ minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                             <span style={{
-                              fontFamily: fonts.sans, fontSize: 12, fontWeight: 500,
+                              fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, fontWeight: 500,
                               color: isBenched ? dimColor : player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
                             }}>
                               {displayName(player.name, isMobile)}
@@ -831,7 +841,12 @@ export const RostersView = ({
                             )}
                           </div>
                           <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.12)' : colors.textMuted }}>
-                            {player.yearsOfService > 1 && <span>(Yr {player.yearsOfService})</span>}
+                            {player.yearsOfService > 1 && <span>(Yr {player.yearsOfService}) </span>}
+                            {isMobile && (() => {
+                              const cuts   = statsView === 'sfgl' ? (sfglCutsMap[player.name] || 0) : (globalPlayerStats[player.name]?.cutsMade || 0);
+                              const events = statsView === 'sfgl' ? (player.starts || 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
+                              return <span>{cuts}/{events} cuts</span>;
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -841,7 +856,7 @@ export const RostersView = ({
                     {(() => {
                       const events = statsView === 'sfgl' ? (player.starts || 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
                       return (
-                        <td style={{ padding: '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
+                        <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
                           {events}
                         </td>
                       );
@@ -852,9 +867,11 @@ export const RostersView = ({
                       const cuts   = statsView === 'sfgl' ? (sfglCutsMap[player.name] || 0) : (globalPlayerStats[player.name]?.cutsMade || 0);
                       const events = statsView === 'sfgl' ? (player.starts || 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
                       return (
-                        <td style={{ padding: '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
-                          {cuts}/{events}
-                        </td>
+                        {!isMobile && (
+                          <td style={{ padding: '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 12, color: isBenched ? dimColor : colors.textSecondary }}>
+                            {cuts}/{events}
+                          </td>
+                        )}
                       );
                     })()}
 
@@ -863,7 +880,7 @@ export const RostersView = ({
                       const amount  = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0);
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
-                        <td style={{ padding: '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: 12, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>
+                        <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 12 : 12, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>
                           ${amount.toLocaleString()}
                         </td>
                       );
