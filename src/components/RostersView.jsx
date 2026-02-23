@@ -810,9 +810,9 @@ export const RostersView = ({
                                 ? isInLineup
                                   ? `3px solid ${playerBorderColor(player)}`
                                   : `2px solid ${colors.borderSubtle}`
-                                : isBenched
-                                  ? `1px solid ${colors.borderSubtle}`
-                                  : `2px solid ${playerBorderColor(player)}`,
+                                : isInLineup
+                                  ? `2px solid ${playerBorderColor(player)}`
+                                  : `1px solid ${colors.borderSubtle}`,
                               transition: 'all 0.15s',
                             }}
                           />
