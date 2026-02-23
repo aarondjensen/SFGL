@@ -19,7 +19,7 @@ const isAlternate = (t) => {
 const swingColor = (swing, dateStr) => {
   if (swing) {
     if (swing === 'West Coast Swing') return 'rgba(220,80,80,0.8)';
-    if (swing === 'Spring Swing')     return 'rgba(80,180,120,0.8)';
+    if (swing === 'Spring Swing')     return 'rgba(100,215,175,0.85)';
     if (swing === 'Summer Swing')     return 'rgba(80,140,220,0.8)';
     if (swing === 'Fall Finish')      return 'rgba(220,140,60,0.8)';
     return colors.textSecondary;
@@ -200,18 +200,22 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               <td style={{ padding: '10px 16px', width: 40 }}>
                 {t.isMajor && (
                   <div style={{
-                    ...theme.badge, ...theme.badgeGold,
                     width: 20, height: 20, borderRadius: 2,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: 0, fontSize: 9,
+                    padding: 0, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px',
+                    background: 'rgba(245,197,24,0.18)',
+                    border: '1px solid rgba(245,197,24,0.6)',
+                    color: 'rgba(255,215,60,0.98)',
                   }}>M</div>
                 )}
                 {t.isSignature && !t.isMajor && (
                   <div style={{
-                    ...theme.badge, ...theme.badgeNavy,
                     width: 20, height: 20, borderRadius: 2,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: 0, fontSize: 9,
+                    padding: 0, fontSize: 9, fontWeight: 500, letterSpacing: '0.3px',
+                    background: 'rgba(200,170,80,0.08)',
+                    border: '1px solid rgba(200,170,80,0.3)',
+                    color: 'rgba(200,170,80,0.7)',
                   }}>S</div>
                 )}
               </td>
