@@ -1,11 +1,159 @@
 import React, { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { slashGolfFetch, processTournamentData, getSegmentByDate } from '../utils';
+import { slashGolfFetch, getSegmentByDate } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi, tournamentResultsApi, sfglDataApi } from '../api/supabase';
 import { theme, colors, fonts } from '../theme.js';
+
+
+// ── Tournament processing helpers ────────────────────────────────────────────
+const BONUSES_REGULAR = { round1: 20000, round2: 40000, round3: 60000 };
+const BONUSES_MAJOR   = { round1: 40000, round2: 80000, round3: 120000 };
+
+const CHAR_MAP = {
+  'ø':'o','ö':'o','ó':'o','ô':'o','õ':'o',
+  'å':'a','ä':'a','á':'a','à':'a','â':'a','ã':'a',
+  'ü':'u','ú':'u','ù':'u','û':'u',
+  'é':'e','è':'e','ê':'e','ë':'e',
+  'í':'i','ì':'i','î':'i','ï':'i',
+  'ñ':'n','ç':'c','ß':'ss',
+};
+
+const normalizePlayerName = (name) => {
+  if (!name) return '';
+  let n = name.toLowerCase().trim();
+  Object.keys(CHAR_MAP).forEach(ch => { n = n.replace(new RegExp(ch, 'g'), CHAR_MAP[ch]); });
+  return n.replace(/[.-]/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+const matchPlayerName = (a, b) => {
+  const na = normalizePlayerName(a);
+  const nb = normalizePlayerName(b);
+  if (na === nb) return true;
+  const wa = na.split(' '); const wb = nb.split(' ');
+  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
+  return false;
+};
+
+const getRosterForTournament = (team, tournamentIndex, allTransactions) => {
+  let roster = [...team.roster];
+  allTransactions
+    .filter(tx => tx.team === team.name && tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex && tx.status !== 'pending')
+    .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
+    .forEach(tx => {
+      if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
+      if (tx.player && !roster.some(p => p.name === tx.player)) roster.push({ name: tx.player });
+    });
+  return roster;
+};
+
+/**
+ * Core tournament processing. Mirrors the original processTournamentResults logic.
+ * Returns { newTeams, newStats, resultsData }.
+ */
+const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = []) => {
+  const bonuses = tournament.isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
+
+  // Build earningsMap from the tournamentData
+  const earningsMap = {};
+  if (tournamentData.earningsMap instanceof Map) {
+    tournamentData.earningsMap.forEach((earnings, name) => { earningsMap[name] = earnings; });
+  } else if (tournamentData.earningsMap && typeof tournamentData.earningsMap === 'object') {
+    Object.assign(earningsMap, tournamentData.earningsMap);
+  } else if (Array.isArray(tournamentData.competitors)) {
+    tournamentData.competitors.forEach(p => {
+      const name = p.athlete?.displayName;
+      const earn = p.earnings || 0;
+      if (name && earn > 0) earningsMap[name] = earn;
+    });
+  }
+
+  // Update global stats
+  const newStats = { ...globalPlayerStats };
+  Object.entries(earningsMap).forEach(([playerName, earnings]) => {
+    if (!newStats[playerName]) newStats[playerName] = { eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0 };
+    newStats[playerName] = {
+      ...newStats[playerName],
+      eventsPlayed: newStats[playerName].eventsPlayed + 1,
+      cutsMade:     newStats[playerName].cutsMade + (earnings > 0 ? 1 : 0),
+      pgaTourEarnings: newStats[playerName].pgaTourEarnings + earnings,
+    };
+  });
+
+  const tournamentIndex = -1; // used only for getRosterForTournament; -1 = ignore tx filtering
+  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders: tournamentData.roundLeaders || {}, fullLineups: {} };
+
+  const newTeams = teams.map(team => {
+    if (!team.lineup || team.lineup.length === 0) return team;
+
+    resultsData.fullLineups[team.id] = [...team.lineup];
+
+    const starterResults = team.lineup.map(playerName => {
+      let earnings = earningsMap[playerName];
+      if (earnings === undefined) {
+        const mk = Object.keys(earningsMap).find(k => matchPlayerName(k, playerName));
+        earnings = mk !== undefined ? earningsMap[mk] : 0;
+      }
+      return { playerName, earnings: earnings || 0 };
+    });
+
+    const topStarters = [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5);
+    let totalEarnings = topStarters.reduce((s, p) => s + p.earnings, 0);
+    const bonusEarnings = { round1: 0, round2: 0, round3: 0 };
+    const playersWithBonuses = {};
+
+    if (tournamentData.roundLeaders) {
+      ['round1', 'round2', 'round3'].forEach(round => {
+        const leaders = Array.isArray(tournamentData.roundLeaders[round])
+          ? tournamentData.roundLeaders[round]
+          : (tournamentData.roundLeaders[round] ? [tournamentData.roundLeaders[round]] : []);
+        leaders.forEach(leaderName => {
+          if (!leaderName) return;
+          const actual = team.lineup.find(pn => normalizePlayerName(pn) === normalizePlayerName(leaderName));
+          if (actual) {
+            bonusEarnings[round] = bonuses[round];
+            totalEarnings += bonuses[round];
+            if (!playersWithBonuses[actual]) playersWithBonuses[actual] = { total: 0, rounds: [] };
+            playersWithBonuses[actual].total  += bonuses[round];
+            playersWithBonuses[actual].rounds.push({ round: round.replace('round', ''), bonus: bonuses[round] });
+          }
+        });
+      });
+    }
+
+    resultsData.teams[team.id] = {
+      totalEarnings,
+      bonuses: bonusEarnings,
+      players: topStarters.map(s => ({
+        name: s.playerName,
+        earnings: s.earnings,
+        limited: team.roster.find(p => p.name === s.playerName)?.limited || false,
+        bonus: playersWithBonuses[s.playerName]?.total || 0,
+        roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
+        wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
+      })),
+    };
+
+    const updatedRoster = team.roster.map(player => {
+      if (!team.lineup.includes(player.name)) return player;
+      let pe = earningsMap[player.name];
+      if (pe === undefined) { const mk = Object.keys(earningsMap).find(k => matchPlayerName(k, player.name)); if (mk) pe = earningsMap[mk]; }
+      return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + (pe || 0) };
+    });
+
+    return {
+      ...team,
+      roster: updatedRoster,
+      earnings: (team.earnings || 0) + totalEarnings,
+      segmentEarnings: (team.segmentEarnings || 0) + totalEarnings,
+      lineup: [],
+    };
+  });
+
+  return { newTeams, newStats, resultsData };
+};
 
 export const AdminView = ({
   isCommissioner, setIsCommissioner, setActiveTab,
@@ -99,49 +247,57 @@ export const AdminView = ({
 
   // ── Results: manual entry ────────────────────────────────────────────────
   const handleManualEntry = async () => {
-    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
-    const tournament = tournaments.find(t => t.name === selectedTourney);
-    if (!tournament) return;
-    if (tournament.completed) {
-      const ok = await dialog.showConfirm('Already Processed', 'Re-entering will ADD earnings again (doubling them). Continue?', { type: 'danger', confirmText: 'Re-enter Results' });
-      if (!ok) return;
+    try {
+      if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+      const tournament = tournaments.find(t => t.name === selectedTourney);
+      if (!tournament) { dialog.showToast('Tournament not found', 'error'); return; }
+      if (tournament.completed) {
+        const ok = await dialog.showConfirm('Already Processed', 'Re-entering will ADD earnings again (doubling them). Continue?', { type: 'danger', confirmText: 'Re-enter Results' });
+        if (!ok) return;
+      }
+      // Parse earnings lines: "Player Name, 123456" or "Player Name, 1,234,567"
+      const earningsMap = new Map();
+      manualEntry.playerEarnings.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        const m = trimmed.match(/^(.+?),\s*([\d,]+)$/);
+        if (m) {
+          const amt = parseInt(m[2].replace(/,/g, ''));
+          if (!isNaN(amt) && amt >= 0) earningsMap.set(m[1].trim(), amt);
+        }
+      });
+      if (!earningsMap.size) {
+        dialog.showToast('No valid earnings lines found. Format: "Player Name, 123456"', 'error');
+        return;
+      }
+      const ti = tournaments.findIndex(t => t.name === selectedTourney);
+      const manualData = {
+        name: selectedTourney, status: 'post', competitors: [],
+        roundLeaders: {
+          round1: manualEntry.round1Leaders.filter(l => l.trim()),
+          round2: manualEntry.round2Leaders.filter(l => l.trim()),
+          round3: manualEntry.round3Leaders.filter(l => l.trim()),
+        },
+        earningsMap, isManualEntry: true,
+      };
+      const names = teams.flatMap(t => t.roster.map(p => p.name));
+      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names, transactions);
+      // Mark tournament completed, advance playing to next non-alternate
+      const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
+      const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
+      if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
+      updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
+      await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
+      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+      await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.error('sfgl teams sync:', e));
+      await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(e => console.error('sfgl tourney sync:', e));
+      dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
+      setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+    } catch (err) {
+      console.error('handleManualEntry error:', err);
+      dialog.showToast('Error processing results: ' + err.message, 'error');
     }
-    const earningsMap = new Map();
-    manualEntry.playerEarnings.split('\n').forEach(line => {
-      const m = line.match(/^(.+?),\s*([\d,]+)$/);
-      if (m) { const amt = parseInt(m[2].replace(/,/g, '')); if (!isNaN(amt)) earningsMap.set(m[1].trim(), amt); }
-    });
-    if (!earningsMap.size) { dialog.showToast('No valid earnings lines. Format: "Player Name, 123456"', 'error'); return; }
-    const ti = tournaments.findIndex(t => t.name === selectedTourney);
-    const manualData = {
-      name: selectedTourney, status: 'post', competitors: [],
-      roundLeaders: {
-        round1: manualEntry.round1Leaders.filter(l => l.trim()),
-        round2: manualEntry.round2Leaders.filter(l => l.trim()),
-        round3: manualEntry.round3Leaders.filter(l => l.trim()),
-      },
-      earningsMap, isManualEntry: true,
-    };
-    const names = teams.flatMap(t => t.roster.map(p => p.name));
-    const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names);
-    const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
-    const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
-    if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
-    // Also apply sfglEarnings from resultsData.teams directly onto roster
-    const teamsWithSfgl = newTeams.map(team => {
-      const teamResult = resultsData?.teams?.[team.id];
-      if (!teamResult?.players) return team;
-      const earningsByName = {};
-      teamResult.players.forEach(p => { earningsByName[p.name || p] = (p.earnings || 0); });
-      return { ...team, roster: team.roster.map(p => earningsByName[p.name] !== undefined ? { ...p, sfglEarnings: (p.sfglEarnings || 0) + earningsByName[p.name] } : p) };
-    });
-    updateTeams(teamsWithSfgl); setGlobalPlayerStats(newStats); setTournaments(newT);
-    await storage.set(STORAGE_KEYS.TEAMS, teamsWithSfgl);
-    await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
-    await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, teamsWithSfgl).catch(() => {});
-    dialog.showToast('Results processed! ' + earningsMap.size + ' players with earnings', 'success');
-    setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
   };
 
   const RoundLeaderSelect = ({ label, leaders, onChange }) => {
