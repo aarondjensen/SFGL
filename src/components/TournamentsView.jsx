@@ -199,24 +199,10 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               {/* Badge column */}
               <td style={{ padding: '10px 16px', width: 40 }}>
                 {t.isMajor && (
-                  <div style={{
-                    width: 20, height: 20, borderRadius: 2,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: 0, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px',
-                    background: 'rgba(245,197,24,0.18)',
-                    border: '1px solid rgba(245,197,24,0.6)',
-                    color: 'rgba(255,215,60,0.98)',
-                  }}>M</div>
+                  <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(200,170,255,0.98)' }}>M</div>
                 )}
                 {t.isSignature && !t.isMajor && (
-                  <div style={{
-                    width: 20, height: 20, borderRadius: 2,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: 0, fontSize: 9, fontWeight: 500, letterSpacing: '0.3px',
-                    background: 'rgba(200,170,80,0.08)',
-                    border: '1px solid rgba(200,170,80,0.3)',
-                    color: 'rgba(200,170,80,0.7)',
-                  }}>S</div>
+                  <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(130,100,200,0.09)', border: '1px solid rgba(130,100,200,0.35)', color: 'rgba(170,145,230,0.72)' }}>S</div>
                 )}
               </td>
 
@@ -269,12 +255,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <h2 style={theme.h1}>2026 Season Schedule</h2>
-          {activeTournament && (
-            <p style={{ ...theme.bodyText, marginTop: 4 }}>
-              Current: <span style={{ color: colors.success, fontFamily: fonts.serif }}>{activeTournament.name}</span>
-              {firstTeeTime && <span style={{ color: colors.textMuted }}> · {formatTeeTime(firstTeeTime)}</span>}
-            </p>
-          )}
+
         </div>
         {isCommissioner && (
           <button

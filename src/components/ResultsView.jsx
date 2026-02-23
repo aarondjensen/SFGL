@@ -69,10 +69,10 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
 const TournamentBadges = ({ tournament }) => (
   <>
     {tournament.isMajor && (
-      <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(245,197,24,0.18)', border: '1px solid rgba(245,197,24,0.6)', color: 'rgba(255,215,60,0.98)' }}>M</span>
+      <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(200,170,255,0.98)' }}>M</span>
     )}
     {tournament.isSignature && !tournament.isMajor && (
-      <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(200,170,80,0.08)', border: '1px solid rgba(200,170,80,0.3)', color: 'rgba(200,170,80,0.7)' }}>S</span>
+      <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(130,100,200,0.09)', border: '1px solid rgba(130,100,200,0.35)', color: 'rgba(170,145,230,0.72)' }}>S</span>
     )}
   </>
 );
@@ -195,9 +195,9 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
                 <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
                   {tournament.isMajor
-                    ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(245,197,24,0.18)', border: '1px solid rgba(245,197,24,0.6)', color: 'rgba(255,215,60,0.98)' }}>M</span>
+                    ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(200,170,255,0.98)' }}>M</span>
                     : tournament.isSignature
-                      ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(200,170,80,0.08)', border: '1px solid rgba(200,170,80,0.3)', color: 'rgba(200,170,80,0.7)' }}>S</span>
+                      ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(130,100,200,0.09)', border: '1px solid rgba(130,100,200,0.35)', color: 'rgba(170,145,230,0.72)' }}>S</span>
                       : null
                   }
                 </div>
@@ -396,9 +396,9 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                 {/* Badge column — Sig/Major or plain dot */}
                 <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
                   {tournament.isMajor
-                    ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(245,197,24,0.18)', border: '1px solid rgba(245,197,24,0.6)', color: 'rgba(255,215,60,0.98)' }}>M</span>
+                    ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(200,170,255,0.98)' }}>M</span>
                     : tournament.isSignature
-                      ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(200,170,80,0.08)', border: '1px solid rgba(200,170,80,0.3)', color: 'rgba(200,170,80,0.7)' }}>S</span>
+                      ? <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(130,100,200,0.09)', border: '1px solid rgba(130,100,200,0.35)', color: 'rgba(170,145,230,0.72)' }}>S</span>
                       : null
                   }
                 </div>
