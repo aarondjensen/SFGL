@@ -1,942 +1,1249 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Search } from 'lucide-react';
+import React, { useState } from 'react';
+import { Settings } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { AddDropPlayerModal } from './AddDropPlayerModal';
-import { MulliganModal } from './MulliganModal';
-import { useRoster, useWindowStatus } from '../hooks';
-import {
-  getSortedRoster, shortName,
-  getTeamAbbreviation, getLineupStatus, getFreeAgentWindowStatus, getWaiverWindowStatus,
-  isPastRoundStart, getSegmentByDate, isTournamentLocked,
-} from '../utils';
-import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
-import { theme, colors, fonts } from '../theme.js';
+import { slashGolfFetch, getSegmentByDate } from '../utils';
 import { storage } from '../api';
-import { sfglDataApi } from '../api/supabase';
-import { STORAGE_KEYS } from '../constants';
+import { DraftModal } from './DraftModal';
+import { managerAuthApi, tournamentResultsApi, sfglDataApi } from '../api/supabase';
+import { theme, colors, fonts } from '../theme.js';
 
-// ── Headshot helpers (Cloudinary PGA Tour CDN — no ESPN 400 errors) ─────────
-const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
-  const pgaId = headshotMap[playerName];
-  if (pgaId) {
-    // Use Cloudinary PGA Tour CDN — reliable, no auth errors
-    return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${pgaId}`;
+
+// ── Tournament processing helpers ────────────────────────────────────────────
+const BONUSES_REGULAR = { round1: 20000, round2: 40000, round3: 60000 };
+const BONUSES_MAJOR   = { round1: 40000, round2: 80000, round3: 120000 };
+
+const CHAR_MAP = {
+  'ø':'o','ö':'o','ó':'o','ô':'o','õ':'o',
+  'å':'a','ä':'a','á':'a','à':'a','â':'a','ã':'a',
+  'ü':'u','ú':'u','ù':'u','û':'u',
+  'é':'e','è':'e','ê':'e','ë':'e',
+  'í':'i','ì':'i','î':'i','ï':'i',
+  'ñ':'n','ç':'c','ß':'ss',
+};
+
+const normalizePlayerName = (name) => {
+  if (!name) return '';
+  let n = name.toLowerCase().trim();
+  Object.keys(CHAR_MAP).forEach(ch => { n = n.replace(new RegExp(ch, 'g'), CHAR_MAP[ch]); });
+  return n.replace(/[.-]/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+const matchPlayerName = (a, b) => {
+  const na = normalizePlayerName(a);
+  const nb = normalizePlayerName(b);
+  if (na === nb) return true;
+  const wa = na.split(' '); const wb = nb.split(' ');
+  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
+  return false;
+};
+
+const getRosterForTournament = (team, tournamentIndex, allTransactions) => {
+  let roster = [...team.roster];
+  allTransactions
+    .filter(tx => tx.team === team.name && tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex && tx.status !== 'pending')
+    .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
+    .forEach(tx => {
+      if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
+      if (tx.player && !roster.some(p => p.name === tx.player)) roster.push({ name: tx.player });
+    });
+  return roster;
+};
+
+/**
+ * Core tournament processing. Mirrors the original processTournamentResults logic.
+ * Returns { newTeams, newStats, resultsData }.
+ */
+const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = []) => {
+  const bonuses = tournament.isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
+
+  // Build earningsMap from the tournamentData
+  const earningsMap = {};
+  if (tournamentData.earningsMap instanceof Map) {
+    tournamentData.earningsMap.forEach((earnings, name) => { earningsMap[name] = earnings; });
+  } else if (tournamentData.earningsMap && typeof tournamentData.earningsMap === 'object') {
+    Object.assign(earningsMap, tournamentData.earningsMap);
+  } else if (Array.isArray(tournamentData.competitors)) {
+    tournamentData.competitors.forEach(p => {
+      const name = p.athlete?.displayName;
+      const earn = p.earnings || 0;
+      if (name && earn > 0) earningsMap[name] = earn;
+    });
   }
-  // Fallback: initials avatar
-  const bg = isLimited ? '8B6914' : '1c3a5e';
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
-};
 
-const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
-  const bg = isLimited ? '8B6914' : '1c3a5e';
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
-};
-
-// ── Border color by player type ───────────────────────────────────────────────
-const playerBorderColor = (player) =>
-  player.limited   ? 'rgba(245,197,24,0.9)' :
-  player.unlimited ? 'rgba(100,140,220,0.9)' :
-  'rgba(255,255,255,0.85)';
-
-// ── Mobile display name helper ───────────────────────────────────────────────
-const useIsMobile = () => {
-  const [isMobile, setIsMobile] = React.useState(() => window.innerWidth < 640);
-  React.useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 640);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
-  return isMobile;
-};
-
-const displayName = (fullName, isMobile) => {
-  if (!isMobile || !fullName) return fullName;
-  const parts = fullName.trim().split(' ');
-  if (parts.length < 2) return fullName;
-  return parts[0][0] + '. ' + parts[parts.length - 1];
-};
-
-// ── Custom team dropdown — stays dark on all browsers ─────────────────────────
-const TeamDropdown = ({ teams, value, onChange }) => {
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef(null);
-  const selected = teams.find(t => t.id === value);
-
-  React.useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  return (
-    <div ref={ref} style={{ position: 'relative', maxWidth: 200 }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-          padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
-          background: '#0f1d35', border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
-          fontFamily: fonts.serif, fontSize: 14, fontWeight: 700,
-          color: 'rgba(255,255,255,0.9)', textAlign: 'left',
-          transition: 'border-color 0.15s',
-        }}
-      >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {selected?.name ?? '—'}
-        </span>
-        <span style={{ fontSize: 9, opacity: 0.6, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: 2,
-          background: '#0f1d35', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 2,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
-        }}>
-          {teams.map(t => (
-            <button key={t.id} onClick={() => { onChange(t.id); setOpen(false); }}
-              style={{
-                display: 'block', width: '100%', padding: '9px 12px', textAlign: 'left', cursor: 'pointer',
-                background: t.id === value ? 'rgba(245,197,24,0.12)' : 'transparent',
-                border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)',
-                fontFamily: fonts.serif, fontSize: 13, fontWeight: t.id === value ? 700 : 400,
-                color: t.id === value ? colors.textGold : 'rgba(255,255,255,0.85)',
-                transition: 'background 0.1s',
-              }}
-              onMouseEnter={e => { if (t.id !== value) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
-              onMouseLeave={e => { if (t.id !== value) e.currentTarget.style.background = 'transparent'; }}
-            >
-              {t.name}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ── Waiver Priority Manager ───────────────────────────────────────────────────
-const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam }) => {
-  const dialog = useDialog();
-
-  const persistTransactions = (newTx) => {
-    setTransactions(newTx);
-    storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
-  };
-
-  const swapPriority = (fromIdx, toIdx) => {
-    if (toIdx < 0 || toIdx >= pendingWaivers.length) return;
-    const updated   = [...transactions];
-    const fromTxIdx = pendingWaivers[fromIdx]._txIdx;
-    const toTxIdx   = pendingWaivers[toIdx]._txIdx;
-    const fromPri   = pendingWaivers[fromIdx].priority || fromIdx + 1;
-    const toPri     = pendingWaivers[toIdx].priority   || toIdx + 1;
-    updated[fromTxIdx] = { ...updated[fromTxIdx], priority: toPri };
-    updated[toTxIdx]   = { ...updated[toTxIdx],   priority: fromPri };
-    persistTransactions(updated);
-  };
-
-  if (pendingWaivers.length === 0) return null;
-
-  return (
-    <div style={{
-      background: 'rgba(180,160,60,0.08)',
-      border: '1px solid rgba(180,160,60,0.3)',
-      borderRadius: 3, padding: 12,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: 11 }}>
-          ⏰ Pending Waiver Claims ({pendingWaivers.length})
-        </h3>
-        <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>Processed Tue 8pm ET</span>
-      </div>
-      {pendingWaivers.length > 1 && isOwnTeam && (
-        <p style={{ ...theme.smallText, marginBottom: 8 }}>↕ Use arrows to set priority — #1 processes first</p>
-      )}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {pendingWaivers.map((waiver, index) => (
-          <div key={waiver._txIdx} style={{
-            background: 'rgba(255,255,255,0.04)',
-            borderRadius: 2, padding: '8px 10px',
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            {isOwnTeam && pendingWaivers.length > 1 && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <button onClick={() => swapPriority(index, index - 1)} disabled={index === 0}
-                  style={{ background: 'none', border: 'none', cursor: index === 0 ? 'not-allowed' : 'pointer',
-                    color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 11, padding: '0 2px' }}>▲</button>
-                <span style={{ fontSize: 10, color: 'rgba(220,200,80,0.8)', fontWeight: 700 }}>{index + 1}</span>
-                <button onClick={() => swapPriority(index, index + 1)} disabled={index === pendingWaivers.length - 1}
-                  style={{ background: 'none', border: 'none', cursor: index === pendingWaivers.length - 1 ? 'not-allowed' : 'pointer',
-                    color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 11, padding: '0 2px' }}>▼</button>
-              </div>
-            )}
-            <div style={{ flex: 1 }}>
-              <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: 12, fontWeight: 500 }}>Add: {waiver.player}</span>
-              {waiver.droppedPlayer && (
-                <>
-                  <span style={{ color: colors.textMuted, margin: '0 4px' }}>→</span>
-                  <span style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 12 }}>Drop: {waiver.droppedPlayer}</span>
-                </>
-              )}
-              <div style={{ ...theme.smallText, marginTop: 2 }}>${waiver.fee} fee · {waiver.segment || 'Current Swing'}</div>
-            </div>
-            {isOwnTeam && (
-              <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={() => {
-                  const newTx = transactions.filter((_, i) => i !== waiver._txIdx);
-                  const newTeams = teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t);
-                  persistTransactions(newTx);
-                  updateTeams(newTeams);
-                }} style={{ ...theme.btnSecondary, padding: '4px 8px', fontSize: 10 }}>✏️</button>
-                <button onClick={async () => {
-                  const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
-                  if (!ok) return;
-                  const newTx = transactions.filter((_, i) => i !== waiver._txIdx);
-                  const newTeams = teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t);
-                  persistTransactions(newTx);
-                  updateTeams(newTeams);
-                }} style={{ ...theme.btnDanger, padding: '4px 8px', fontSize: 10 }}>✕</button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// ── Main RostersView ──────────────────────────────────────────────────────────
-// ── LineupHeadshot — shows ×-remove button on hover when editable ─────────────
-const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, onRemove }) => {
-  const [hovered, setHovered] = React.useState(false);
-  return (
-    <div
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56 }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <div style={{ position: 'relative', width: 44, height: 44 }}>
-        <img
-          src={getPlayerHeadshot(player.name, player.limited, headshots)}
-          onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
-          alt=""
-          style={{
-            width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
-            border: `2px solid ${playerBorderColor(player)}`,
-            transition: 'opacity 0.15s',
-            opacity: canEdit && hovered ? 0.55 : 1,
-          }}
-        />
-        {canEdit && hovered && (
-          <button
-            onClick={e => { e.stopPropagation(); onRemove(); }}
-            style={{
-              position: 'absolute', top: -3, right: -3,
-              width: 18, height: 18, borderRadius: '50%',
-              background: 'rgba(220,60,60,0.92)',
-              border: '1.5px solid rgba(255,255,255,0.25)',
-              color: '#fff',
-              fontSize: 11, fontWeight: 700, lineHeight: 1,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
-              padding: 0,
-              zIndex: 10,
-              transition: 'transform 0.1s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.15)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-            title={'Remove ' + player.name + ' from lineup'}
-          >
-            {'\u00D7'}
-          </button>
-        )}
-        {player.limited && (player.stars || 1) > 0 && (
-          <div style={{
-            position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(15,25,45,0.88)', borderRadius: 6,
-            padding: '0px 3px', lineHeight: 1, zIndex: 5,
-            fontSize: 8, letterSpacing: 1,
-          }}>
-            {'⭐'.repeat(player.stars || 1)}
-          </div>
-        )}
-      </div>
-      <div style={{
-        fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 3,
-        textAlign: 'center', width: '100%',
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        color: player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
-      }}>
-        {lastName}
-      </div>
-    </div>
-  );
-};
-
-export const RostersView = ({
-  teams, selectedTeam, setSelectedTeam, updateTeams,
-  tournaments, allPlayers, transactions, setTransactions,
-  settings, loggedInUser, isCommissioner, globalPlayerStats, headshots,
-  firstTeeTime,
-}) => {
-  const isMobile            = useIsMobile();
-  const [statsView,         setStatsView]         = useState('sfgl');
-  const [lineupMode,        setLineupMode]        = useState(false);
-  const [showAddDropModal,  setShowAddDropModal]  = useState(false);
-  const [isWaiverMode,      setIsWaiverMode]      = useState(false);
-  const [editingWaiverData, setEditingWaiverData] = useState(null);
-  const [showMulliganModal, setShowMulliganModal] = useState(false);
-  const [globalSearch,      setGlobalSearch]      = useState('');
-  const dialog = useDialog();
-
-  const activeTournament      = tournaments.find(t => t.playing);
-  const activeTournamentIndex = activeTournament ? tournaments.findIndex(t => t.name === activeTournament.name) : -1;
-  // ── Date-based tournament week resolution ────────────────────────────────
-  // Add/drop/waiver belong to whichever tournament's week we're currently in,
-  // based on calendar date — regardless of whether that tournament is "playing" yet.
-  // Tournament dates format: "Feb 9-15" → startDate = Feb 9 (Mon of that week)
-  // The add/drop window is Mon–Wed of that week (before Thursday tee time).
-  // We search by date so late result processing by the commish doesn't shift the tag.
-  const getAddDropTournamentIndex = () => {
-    const parseStart = (t) => {
-      if (!t?.dates) return null;
-      const m = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
-      if (!m) return null;
-      const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
-      const mo = months[m[1]];
-      if (mo === undefined) return null;
-      return new Date(2026, mo, parseInt(m[2]));
+  // Update global stats
+  const newStats = { ...globalPlayerStats };
+  Object.entries(earningsMap).forEach(([playerName, earnings]) => {
+    if (!newStats[playerName]) newStats[playerName] = { eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0 };
+    newStats[playerName] = {
+      ...newStats[playerName],
+      eventsPlayed: newStats[playerName].eventsPlayed + 1,
+      cutsMade:     newStats[playerName].cutsMade + (earnings > 0 ? 1 : 0),
+      pgaTourEarnings: newStats[playerName].pgaTourEarnings + earnings,
     };
-    // ET now
-    const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-    const now   = new Date(etStr);
-    // Find the tournament whose window contains today.
-    // Window = [startDate, startDate + 13] (full 2-week buffer so late processing is safe)
-    let best = -1;
-    tournaments.forEach((t, i) => {
-      const start = parseStart(t);
-      if (!start) return;
-      const end = new Date(start); end.setDate(end.getDate() + 13);
-      if (now >= start && now <= end) best = i;
-    });
-    if (best >= 0) return best;
-    // Fallback: first upcoming non-completed tournament
-    const upcoming = tournaments.findIndex(t => !t.completed);
-    return upcoming >= 0 ? upcoming : Math.max(0, tournaments.length - 1);
-  };
-  const addDropTournamentIndex = getAddDropTournamentIndex();
-
-  // Switch to the logged-in manager's team whenever loggedInUser changes (e.g. after login)
-  const prevLoggedInUser = React.useRef(null);
-  useEffect(() => {
-    if (teams.length === 0) return;
-    const userTeam = loggedInUser ? teams.find(t => t.owner === loggedInUser) : null;
-    if (loggedInUser && loggedInUser !== prevLoggedInUser.current && userTeam) {
-      // User just logged in — jump to their team
-      setSelectedTeam(userTeam.id);
-    } else if (!selectedTeam) {
-      // No selection yet — default to user's team or first team
-      setSelectedTeam(userTeam?.id ?? teams[0].id);
-    }
-    prevLoggedInUser.current = loggedInUser;
-  }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
-
-  const team          = teams.find(t => t.id === selectedTeam);
-  const currentRoster = useRoster(team, transactions, activeTournamentIndex);
-  const windowStatus  = useWindowStatus(activeTournament);
-  const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
-
-  const searchResults = useMemo(() => {
-    if (!globalSearch.trim()) return [];
-    const term = globalSearch.toLowerCase();
-    const allPlayerMap = new Map(allPlayers.map(p => [p.name, { ...p, owner: 'Free Agent' }]));
-    teams.forEach(t => {
-      t.roster.forEach(rp => {
-        if (allPlayerMap.has(rp.name)) allPlayerMap.get(rp.name).owner = t.name;
-        else allPlayerMap.set(rp.name, { name: rp.name, worldRank: 999, owner: t.name });
-      });
-    });
-    return [...allPlayerMap.values()]
-      .filter(p => p.name.toLowerCase().includes(term))
-      .sort((a, b) => a.worldRank - b.worldRank);
-  }, [globalSearch, allPlayers, teams]);
-
-  const togglePlayerInLineup = useCallback(async (player) => {
-    if (!team) return;
-    const isInLineup = team.lineup.includes(player.name);
-    if (!isInLineup && team.lineup.length >= LINEUP_SIZE) {
-      dialog.showToast(`You can only have ${LINEUP_SIZE} starters`, 'error'); return;
-    }
-    if (!isInLineup && player.limited && player.starts >= MAX_LIMITED_STARTS) {
-      dialog.showToast('This player has reached their 12-start limit', 'error'); return;
-    }
-    const newTeams = teams.map(t => {
-      if (t.id !== team.id) return t;
-      const newLineup = isInLineup ? t.lineup.filter(p => p !== player.name) : [...t.lineup, player.name];
-      return { ...t, lineup: newLineup };
-    });
-    updateTeams(newTeams);
-    storage.set(STORAGE_KEYS.TEAMS, newTeams);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Lineup sync failed:', e.message));
-  }, [team, teams, updateTeams, dialog]);
-
-  const handleMulliganConfirm = useCallback(({ playerOut, playerIn, afterRound, isSignatureOrMajor }) => {
-    const mulliganKey   = isSignatureOrMajor ? 'signatureMajor' : 'regular';
-    const newLineup     = team.lineup.map(p => p === playerOut ? playerIn : p);
-    const updatedRoster = team.roster.map(p => {
-      if (p.name === playerOut && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
-      if (p.name === playerIn  && p.limited) return { ...p, starts: p.starts + 1 };
-      return p;
-    });
-    const newMulligans = { ...team.mulligans, [mulliganKey]: (team.mulligans?.[mulliganKey] || 1) - 1 };
-    const newTeams = teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
-    const newTx = {
-      team: team.name, type: 'mulligan', player: playerIn, droppedPlayer: playerOut,
-      fee: 0, segment: settings.currentSegment || '', date: new Date().toLocaleDateString(),
-      tournamentIndex: activeTournamentIndex, status: 'completed',
-      mulliganType: isSignatureOrMajor ? 'signature/major' : 'regular',
-      afterRound, tournament: activeTournament.name,
-    };
-    updateTeams(newTeams);
-    setTransactions(prev => [...prev, newTx]);
-    storage.set(STORAGE_KEYS.TEAMS, newTeams);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Mulligan sync failed:', e.message));
-    // transaction saved via setTransactions -> storage via parent
-    dialog.showToast(`Mulligan used: ${playerOut} → ${playerIn}`, 'success');
-  }, [team, teams, updateTeams, setTransactions, activeTournament, activeTournamentIndex, settings, dialog]);
-
-  const handleUndoMulligan = async (tx) => {
-    const ok = await dialog.showConfirm('Undo Mulligan',
-      `Undo mulligan?\n\nThis will restore ${tx.droppedPlayer} to your lineup and return ${tx.player} to the bench. Your mulligan will be restored.`,
-      { confirmText: 'Undo Mulligan' });
-    if (!ok) return;
-    const newLineup     = team.lineup.map(p => p === tx.player ? tx.droppedPlayer : p);
-    const updatedRoster = team.roster.map(p => {
-      if (p.name === tx.player        && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
-      if (p.name === tx.droppedPlayer && p.limited) return { ...p, starts: p.starts + 1 };
-      return p;
-    });
-    const mulliganKey  = tx.mulliganType === 'signature/major' ? 'signatureMajor' : 'regular';
-    const newMulligans = { ...team.mulligans, [mulliganKey]: (team.mulligans?.[mulliganKey] || 0) + 1 };
-    const newTeams = teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
-    updateTeams(newTeams);
-    setTransactions(prev => prev.filter(t => t !== tx));
-    storage.set(STORAGE_KEYS.TEAMS, newTeams);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Undo mulligan sync failed:', e.message));
-    // transactions saved via setTransactions -> storage via parent
-    dialog.showToast('Mulligan successfully undone', 'success');
-  };
-
-  const isSignatureOrMajor = activeTournament?.isSignature || activeTournament?.isMajor;
-  const mulliganKey        = isSignatureOrMajor ? 'signatureMajor' : 'regular';
-  const mulliganRemaining  = team?.mulligans?.[mulliganKey] ?? 0;
-  const activeMulliganTx   = activeTournamentIndex >= 0
-    ? transactions.find(tx => tx.type === 'mulligan' && tx.team === team?.name && tx.tournamentIndex === activeTournamentIndex)
-    : null;
-  const canUndoMulligan = activeMulliganTx && !isPastRoundStart(activeTournament, activeMulliganTx.afterRound + 1);
-
-  const pendingWaivers = useMemo(() => {
-    if (!team) return [];
-    return transactions
-      .map((t, idx) => ({ ...t, _txIdx: idx }))
-      .filter(t => t.team === team.name && t.type === 'waiver' && t.status === 'pending')
-      .sort((a, b) => (a.priority || 999) - (b.priority || 999));
-  }, [team, transactions]);
-
-  // Derive SFGL cuts per player per team from completed tournament results
-  // sfglCutsMap: { playerName: { cuts, starts } }
-  // Source: results.teams[teamId].players — each entry is a player who was in the
-  // starting lineup for that tournament, with the earnings they contributed.
-  // starts = appeared in lineup, cuts = appeared in lineup AND earned > $0
-  const sfglCutsMap = useMemo(() => {
-    const map = {};
-    if (!team) return map;
-    tournaments.forEach(t => {
-      if (!t.completed || !t.results?.teams?.[team.id]) return;
-      const players = t.results.teams[team.id].players || [];
-      players.forEach(p => {
-        const name = p.name || p;
-        if (!map[name]) map[name] = { cuts: 0, starts: 0 };
-        map[name].starts += 1;
-        if ((p.earnings || 0) > 0) map[name].cuts += 1;
-      });
-    });
-    return map;
-  }, [team, tournaments]);
-
-  if (!team) return null;
-
-  const lineupOpen    = windowStatus.lineupOpen;
-  const canEditLineup = isOwnTeam && (lineupOpen || isCommissioner);
-  const faStatus      = getFreeAgentWindowStatus(activeTournament);
-  const waiverStatus  = getWaiverWindowStatus();
-  const lineupPlayers = currentRoster.filter(p => team.lineup.includes(p.name));
-  const benchPlayers  = currentRoster.filter(p => !team.lineup.includes(p.name));
-
-  const formatTeeTime = (date) => {
-    if (!date) return '';
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const hours = date.getHours(); const minutes = date.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    return `${days[date.getDay()]} ${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${ampm} ET`;
-  };
-
-  // ── Action button styles ──
-  const actionBtn = (active, activeColor) => ({
-    width: '100%', height: 56,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: '0 4px', borderRadius: 2,
-    fontFamily: fonts.sans, fontSize: 11, fontWeight: 500,
-    textAlign: 'center', cursor: active ? 'pointer' : 'not-allowed',
-    transition: 'all 0.15s',
-    background: 'rgba(255,255,255,0.03)',
-    border: active
-      ? `1px solid ${activeColor}`
-      : `1px solid ${colors.borderSubtle}`,
-    color: active ? activeColor : colors.textMuted,
   });
 
-  const renderMulliganButton = () => {
-    const etDay = new Date().getDay();
-    const isMulliganDay = etDay >= 4 && etDay <= 6;
-    let btnLabel, btnAction, isDisabled, activeColor;
+  const tournamentIndex = -1; // used only for getRosterForTournament; -1 = ignore tx filtering
+  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders: tournamentData.roundLeaders || {}, fullLineups: {} };
 
-    if (activeMulliganTx) {
-      btnLabel = 'Undo Mull.'; activeColor = 'rgba(100,150,255,0.8)';
-      if (canUndoMulligan) { btnAction = () => handleUndoMulligan(activeMulliganTx); isDisabled = false; }
-      else { isDisabled = true; }
-    } else {
-      btnLabel = 'Mulligan'; activeColor = colors.textGoldDim; btnAction = () => setShowMulliganModal(true);
-      isDisabled = mulliganRemaining === 0 || !isMulliganDay || !isOwnTeam || !activeTournament || team.lineup.length === 0;
+  const newTeams = teams.map(team => {
+    if (!team.lineup || team.lineup.length === 0) return team;
+
+    resultsData.fullLineups[team.id] = [...team.lineup];
+
+    const starterResults = team.lineup.map(playerName => {
+      let earnings = earningsMap[playerName];
+      if (earnings === undefined) {
+        const mk = Object.keys(earningsMap).find(k => matchPlayerName(k, playerName));
+        earnings = mk !== undefined ? earningsMap[mk] : 0;
+      }
+      return { playerName, earnings: earnings || 0 };
+    });
+
+    const topStarters = [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5);
+    let totalEarnings = topStarters.reduce((s, p) => s + p.earnings, 0);
+    const bonusEarnings = { round1: 0, round2: 0, round3: 0 };
+    const playersWithBonuses = {};
+
+    if (tournamentData.roundLeaders) {
+      ['round1', 'round2', 'round3'].forEach(round => {
+        const leaders = Array.isArray(tournamentData.roundLeaders[round])
+          ? tournamentData.roundLeaders[round]
+          : (tournamentData.roundLeaders[round] ? [tournamentData.roundLeaders[round]] : []);
+        leaders.forEach(leaderName => {
+          if (!leaderName) return;
+          const actual = team.lineup.find(pn => normalizePlayerName(pn) === normalizePlayerName(leaderName));
+          if (actual) {
+            bonusEarnings[round] = bonuses[round];
+            totalEarnings += bonuses[round];
+            if (!playersWithBonuses[actual]) playersWithBonuses[actual] = { total: 0, rounds: [] };
+            playersWithBonuses[actual].total  += bonuses[round];
+            playersWithBonuses[actual].rounds.push({ round: round.replace('round', ''), bonus: bonuses[round] });
+          }
+        });
+      });
     }
 
+    resultsData.teams[team.id] = {
+      totalEarnings,
+      bonuses: bonusEarnings,
+      players: topStarters.map(s => ({
+        name: s.playerName,
+        earnings: s.earnings,
+        limited: team.roster.find(p => p.name === s.playerName)?.limited || false,
+        bonus: playersWithBonuses[s.playerName]?.total || 0,
+        roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
+        wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
+      })),
+    };
+
+    const updatedRoster = team.roster.map(player => {
+      if (!team.lineup.includes(player.name)) return player;
+      let pe = earningsMap[player.name];
+      if (pe === undefined) { const mk = Object.keys(earningsMap).find(k => matchPlayerName(k, player.name)); if (mk) pe = earningsMap[mk]; }
+      return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + (pe || 0) };
+    });
+
+    return {
+      ...team,
+      roster: updatedRoster,
+      earnings: (team.earnings || 0) + totalEarnings,
+      segmentEarnings: (team.segmentEarnings || 0) + totalEarnings,
+      lineup: [],
+    };
+  });
+
+  return { newTeams, newStats, resultsData };
+};
+
+export const AdminView = ({
+  isCommissioner, setIsCommissioner, setActiveTab,
+  settings, setSettings,
+  teams, updateTeams,
+  tournaments, setTournaments,
+  transactions, setTransactions,
+  allPlayers, globalPlayerStats, setGlobalPlayerStats,
+  headshots,
+  STORAGE_KEYS,
+}) => {
+  const [selectedTourney, setSelectedTourney] = useState('');
+  const [manualEntry, setManualEntry] = useState({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+  const [rosterMgmtTeam, setRosterMgmtTeam] = useState('');
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [mgCredTeam, setMgCredTeam] = useState('');
+  const [mgCredName, setMgCredName] = useState('');
+  const [mgCredPass, setMgCredPass] = useState('');
+  const [mgCredSaving, setMgCredSaving] = useState(false);
+  const [showDraftModal, setShowDraftModal] = useState(false);
+  const [swingAwardSeg, setSwingAwardSeg]   = useState('');
+  // Apply mulligan (live, inside Roster Management)
+  const [mulliganMode, setMulliganMode]     = useState(false);
+  const [mulliganOut,  setMulliganOut]      = useState('');
+  const [mulliganIn,   setMulliganIn]       = useState('');
+  const [mulliganRound, setMulliganRound]   = useState('2');
+  // Retroactive lineup + mulligan + reprocess
+  const [retMulTeam, setRetMulTeam] = useState('');
+  const [retMulTourney, setRetMulTourney] = useState('');
+
+  const [retLineupEdit, setRetLineupEdit] = useState([]);  // edited starting lineup
+  const dialog = useDialog();
+
+  React.useEffect(() => {
+    const active = tournaments.find(t => t.playing);
+    if (active && !selectedTourney) setSelectedTourney(active.name);
+  }, [tournaments, selectedTourney]);
+
+  const S = {
+    section: { background: colors.cardBg, border: `1px solid ${colors.border}`, borderRadius: 4, padding: '16px 18px', marginBottom: 12 },
+    title: { fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '1.8px', textTransform: 'uppercase', color: colors.sectionHeaderBlue, marginBottom: 12 },
+    btn: { ...theme.btnPrimary, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
+    btnSec: { ...theme.btnSecondary, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
+    btnDgr: { ...theme.btnDanger, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
+    input: { ...theme.input, marginBottom: 8 },
+    select: { ...theme.select, marginBottom: 8, color: colors.textPrimary, backgroundColor: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' },
+    lbl: { ...theme.label, display: 'block', marginBottom: 6 },
+  };
+
+  // ── Results: API fetch ───────────────────────────────────────────────────
+  const handleFetchApiResults = async () => {
+    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const ti = tournaments.findIndex(t => t.name === selectedTourney);
+    const t = tournaments[ti];
+    if (!t?.slashGolfId) { dialog.showToast('No API ID for this tournament', 'error'); return; }
+    if (t.completed) {
+      const ok = await dialog.showConfirm('Already Processed', 'Re-fetching will ADD earnings again (doubling them). Continue?', { type: 'danger', confirmText: 'Force Re-Fetch' });
+      if (!ok) return;
+    }
+    try {
+      dialog.showToast('Fetching ' + t.name + '...', 'info');
+      let data = await slashGolfFetch('leaderboard', { tournId: t.slashGolfId, year: '2026' });
+      let ap = data.leaderboardRows || data.leaderboard || data.results || [];
+      if (!ap.length) { dialog.showToast('No results found in API yet.', 'error'); return; }
+      try {
+        const ed = await slashGolfFetch('earnings', { tournId: t.slashGolfId, year: '2026' });
+        const ep = ed.leaderboard || ed.earnings || ed.results || [];
+        if (ep.length) ap = ap.map(lp => ({ ...lp, earnings: ep.find(e => e.playerId === lp.playerId)?.earnings || 0 }));
+      } catch (_) {}
+      const names = teams.flatMap(t => t.roster.map(p => p.name));
+      const { newTeams, newStats, resultsData } = processTournamentData(t, ap, teams, globalPlayerStats, names);
+      const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
+      const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
+      if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
+      // Also apply sfglEarnings from resultsData.teams directly onto roster
+      const teamsWithSfgl = newTeams.map(team => {
+        const teamResult = resultsData?.teams?.[team.id];
+        if (!teamResult?.players) return team;
+        const earningsByName = {};
+        teamResult.players.forEach(p => { earningsByName[p.name || p] = (p.earnings || 0); });
+        return { ...team, roster: team.roster.map(p => earningsByName[p.name] !== undefined ? { ...p, sfglEarnings: (p.sfglEarnings || 0) + earningsByName[p.name] } : p) };
+      });
+      updateTeams(teamsWithSfgl); setGlobalPlayerStats(newStats); setTournaments(newT);
+      await storage.set(STORAGE_KEYS.TEAMS, teamsWithSfgl);
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
+      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+      sfglDataApi.set(STORAGE_KEYS.TEAMS, teamsWithSfgl).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
+      dialog.showToast('Results processed for ' + t.name + '!', 'success');
+    } catch (err) { dialog.showToast('API Error: ' + err.message, 'error'); }
+  };
+
+  // ── Results: manual entry ────────────────────────────────────────────────
+  const handleManualEntry = async () => {
+    try {
+      if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+      const tournament = tournaments.find(t => t.name === selectedTourney);
+      if (!tournament) { dialog.showToast('Tournament not found', 'error'); return; }
+      if (tournament.completed) {
+        const ok = await dialog.showConfirm('Already Processed', 'Re-entering will ADD earnings again (doubling them). Continue?', { type: 'danger', confirmText: 'Re-enter Results' });
+        if (!ok) return;
+      }
+      // Parse earnings lines: "Player Name, 123456" or "Player Name, 1,234,567"
+      const earningsMap = new Map();
+      manualEntry.playerEarnings.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        const m = trimmed.match(/^(.+?),\s*([\d,]+)$/);
+        if (m) {
+          const amt = parseInt(m[2].replace(/,/g, ''));
+          if (!isNaN(amt) && amt >= 0) earningsMap.set(m[1].trim(), amt);
+        }
+      });
+      if (!earningsMap.size) {
+        dialog.showToast('No valid earnings lines found. Format: "Player Name, 123456"', 'error');
+        return;
+      }
+      const ti = tournaments.findIndex(t => t.name === selectedTourney);
+      const manualData = {
+        name: selectedTourney, status: 'post', competitors: [],
+        roundLeaders: {
+          round1: manualEntry.round1Leaders.filter(l => l.trim()),
+          round2: manualEntry.round2Leaders.filter(l => l.trim()),
+          round3: manualEntry.round3Leaders.filter(l => l.trim()),
+        },
+        earningsMap, isManualEntry: true,
+      };
+      const names = teams.flatMap(t => t.roster.map(p => p.name));
+      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names, transactions);
+      // Mark tournament completed, advance playing to next non-alternate
+      const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
+      const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
+      if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
+      updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
+      await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
+      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+      await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.error('sfgl teams sync:', e));
+      await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(e => console.error('sfgl tourney sync:', e));
+      await sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(e => console.error('sfgl stats sync:', e));
+      dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
+      setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+    } catch (err) {
+      console.error('handleManualEntry error:', err);
+      dialog.showToast('Error processing results: ' + err.message, 'error');
+    }
+  };
+
+  // ── Results: reprocess completed tournament ─────────────────────────────
+  const handleReprocess = async () => {
+    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const tournament = tournaments.find(t => t.name === selectedTourney);
+    if (!tournament?.completed) { dialog.showToast('Tournament is not yet completed', 'error'); return; }
+    const ti = tournaments.findIndex(t => t.name === selectedTourney);
+
+    const ok = await dialog.showConfirm(
+      'Reprocess Tournament',
+      'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.',
+      { confirmText: 'Reprocess' }
+    );
+    if (!ok) return;
+
+    try {
+      // Parse corrected earnings
+      const earningsMap = new Map();
+      manualEntry.playerEarnings.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        const m = trimmed.match(/^(.+?),\s*([\d,]+)$/);
+        if (m) {
+          const amt = parseInt(m[2].replace(/,/g, ''));
+          if (!isNaN(amt) && amt >= 0) earningsMap.set(m[1].trim(), amt);
+        }
+      });
+      if (!earningsMap.size) { dialog.showToast('No valid earnings lines found', 'error'); return; }
+
+      // Step 1: Reverse old results from all teams
+      const oldResults = tournament.results;
+      let reversedTeams = teams.map(team => {
+        const oldTeamResult = oldResults?.teams?.[team.id];
+        if (!oldTeamResult) return team;
+        // Reverse team earnings
+        const earningsDelta = -(oldTeamResult.totalEarnings || 0);
+        // Reverse per-player sfglEarnings and starts
+        const newRoster = team.roster.map(p => {
+          const oldPlayer = (oldTeamResult.players || []).find(op => (op.name || op) === p.name);
+          if (!oldPlayer) return p;
+          return {
+            ...p,
+            sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - (oldPlayer.earnings || 0)),
+            starts: Math.max(0, (p.starts || 0) - 1),
+          };
+        });
+        return {
+          ...team,
+          roster: newRoster,
+          earnings: Math.max(0, (team.earnings || 0) + earningsDelta),
+          segmentEarnings: Math.max(0, (team.segmentEarnings || 0) + earningsDelta),
+          lineup: oldResults.fullLineups?.[team.id] || [],
+        };
+      });
+
+      // Reverse global stats from old earningsMap
+      const oldEarningsMap = oldResults?.earningsMap || {};
+      const reversedStats = { ...globalPlayerStats };
+      Object.entries(oldEarningsMap).forEach(([playerName, earnings]) => {
+        if (!reversedStats[playerName]) return;
+        reversedStats[playerName] = {
+          ...reversedStats[playerName],
+          eventsPlayed: Math.max(0, (reversedStats[playerName].eventsPlayed || 0) - 1),
+          cutsMade: Math.max(0, (reversedStats[playerName].cutsMade || 0) - (earnings > 0 ? 1 : 0)),
+          pgaTourEarnings: Math.max(0, (reversedStats[playerName].pgaTourEarnings || 0) - earnings),
+        };
+      });
+
+      // Step 2: Apply corrected results
+      const manualData = {
+        name: selectedTourney, status: 'post', competitors: [],
+        roundLeaders: {
+          round1: manualEntry.round1Leaders.filter(l => l.trim()),
+          round2: manualEntry.round2Leaders.filter(l => l.trim()),
+          round3: manualEntry.round3Leaders.filter(l => l.trim()),
+        },
+        earningsMap, isManualEntry: true,
+      };
+      const names = teams.flatMap(t => t.roster.map(p => p.name));
+      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions);
+
+      // Mark tournament with new results (keep completed, don't change playing)
+      const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
+
+      updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
+      await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
+      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+      await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+      await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      await sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
+      dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
+      setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+    } catch (err) {
+      console.error('handleReprocess error:', err);
+      dialog.showToast('Error reprocessing: ' + err.message, 'error');
+    }
+  };
+
+    const RoundLeaderSelect = ({ label, leaders, onChange }) => {
+    const players = teams.flatMap(team => (team.lineup || []).map(name => ({ name, team: team.name }))).sort((a, b) => a.name.localeCompare(b.name));
     return (
-      <button onClick={isDisabled ? undefined : btnAction} disabled={isDisabled}
-        style={actionBtn(!isDisabled, activeColor)}>
-        {btnLabel}
-      </button>
+      <div style={{ flex: 1 }}>
+        <div style={S.lbl}>{label}</div>
+        {leaders.map((leader, idx) => (
+          <div key={idx} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+            <select value={leader} onChange={e => { const n = [...leaders]; n[idx] = e.target.value; onChange(n); }}
+              style={{ ...theme.select, flex: 1, marginBottom: 0, fontSize: 12, padding: '7px 8px' }}>
+              <option value="">(none)</option>
+              {players.map(p => <option key={p.name + p.team} value={p.name}>{p.name} — {p.team}</option>)}
+            </select>
+            {idx > 0 && <button onClick={() => onChange(leaders.filter((_, i) => i !== idx))}
+              style={{ background: 'none', border: `1px solid ${colors.dangerBorder}`, color: colors.danger, borderRadius: 2, padding: '4px 7px', cursor: 'pointer', fontSize: 11 }}>✕</button>}
+          </div>
+        ))}
+        <button onClick={() => onChange([...leaders, ''])}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: colors.textGoldDim, padding: 0 }}>+ co-leader</button>
+      </div>
     );
   };
 
+  // ── Roster Management ────────────────────────────────────────────────────
+  const handleAddPlayer = (teamId, name) => {
+    updateTeams(teams.map(t => t.id === teamId ? { ...t, roster: [...t.roster, { name, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' }] } : t));
+    dialog.showToast('Added ' + name, 'success');
+  };
+  const handleDropPlayer = async (teamId, name) => {
+    const team = teams.find(t => t.id === teamId);
+    if (!await dialog.showConfirm('Drop Player', 'Remove ' + name + ' from ' + team.name + '?', { type: 'danger', confirmText: 'Drop' })) return;
+    updateTeams(teams.map(t => t.id === teamId ? { ...t, roster: t.roster.filter(p => p.name !== name) } : t));
+    dialog.showToast('Dropped ' + name, 'success');
+  };
+  const resetMulligan = (teamId, type) => {
+    const team = teams.find(t => t.id === teamId);
+    updateTeams(teams.map(t => t.id === teamId ? { ...t, mulligans: { ...t.mulligans, [type === 'sig' ? 'signatureMajor' : 'regular']: 1 } } : t));
+    dialog.showToast('Reset ' + type + ' mulligan for ' + team.name, 'success');
+  };
+
+  // ── Waivers ──────────────────────────────────────────────────────────────
+  const buildRoster = (team) => {
+    let r = team.roster.map(p => p.name);
+    transactions.filter(tx => tx.team === team.name && tx.status === 'processed' && tx.type !== 'mulligan').forEach(tx => {
+      if (tx.droppedPlayer) r = r.filter(n => n !== tx.droppedPlayer);
+      if (!r.includes(tx.player)) r.push(tx.player);
+    });
+    return new Set(r);
+  };
+  const applyWaiver = (t, w) => {
+    if (t.name !== w.team) return t;
+    let r = [...t.roster];
+    if (w.droppedPlayer) r = r.filter(p => p.name !== w.droppedPlayer);
+    if (!r.some(p => p.name === w.player)) r.push({ name: w.player, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' });
+    return { ...t, roster: r };
+  };
+  const handleProcessSingle = async (w) => {
+    const allRostered = new Set(); teams.forEach(t => buildRoster(t).forEach(n => allRostered.add(n)));
+    if (allRostered.has(w.player)) { dialog.showToast(w.player + ' already rostered', 'error'); return; }
+    if (w.droppedPlayer && !buildRoster(teams.find(t => t.name === w.team) || {}).has(w.droppedPlayer)) {
+      const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'failed', failReason: w.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() } : tx);
+      setTransactions(tx2); await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
+      dialog.showToast(w.droppedPlayer + ' already dropped', 'error'); return;
+    }
+    const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'processed', processedDate: new Date().toLocaleDateString() } : tx);
+    const t2 = teams.map(t => applyWaiver(t, w));
+    setTransactions(tx2); updateTeams(t2);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
+    dialog.showToast(w.team + ' adds ' + w.player + (w.droppedPlayer ? ' / drops ' + w.droppedPlayer : ''), 'success');
+  };
+  const handleProcessAll = async (pending) => {
+    if (!pending.length) return;
+    if (!await dialog.showConfirm('Process All Waivers', 'Process ' + pending.length + ' pending claim' + (pending.length !== 1 ? 's' : '') + '?\n\nTie-breaker: reverse standings (lowest earnings = highest priority).', { confirmText: 'Process All' })) return;
+    const pm = {}; [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
+    const byTeam = {}; pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
+    Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
+    const allR = new Set(); teams.forEach(t => buildRoster(t).forEach(n => allR.add(n)));
+    const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
+    const tx2 = [...transactions]; let p = 0, f = 0, more = true;
+    while (more) {
+      more = false;
+      const round = []; Object.entries(byTeam).forEach(([tn, claims]) => { const top = claims.find(c => !done.has(c._idx) && !failed.has(c._idx)); if (top) round.push({ tn, claim: top, o: pm[tn] ?? 999 }); });
+      if (!round.length) break;
+      const byP = {}; round.forEach(rc => { if (!byP[rc.claim.player]) byP[rc.claim.player] = []; byP[rc.claim.player].push(rc); });
+      Object.entries(byP).forEach(([player, cs]) => {
+        cs.sort((a, b) => a.o - b.o); const w = cs[0];
+        if (allR.has(player)) { cs.forEach(c => { failed.add(c.claim._idx); tx2[c.claim._idx] = { ...tx2[c.claim._idx], status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() }; f++; }); more = true; return; }
+        if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allR.has(w.claim.droppedPlayer))) { failed.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }; f++; more = true; return; }
+        if (w.claim.droppedPlayer) { allR.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
+        allR.add(player); done.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() }; applied.push(w.claim); p++;
+        cs.slice(1).forEach(l => { failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: 'Lost tiebreaker to ' + w.tn, processedDate: new Date().toLocaleDateString() }; f++; }); more = true;
+      });
+    }
+    let t2 = [...teams]; applied.forEach(w => { t2 = t2.map(t => applyWaiver(t, w)); });
+    setTransactions(tx2); updateTeams(t2);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
+    dialog.showToast('Processed ' + p + (f ? ' · ' + f + ' failed' : ''), p > 0 ? 'success' : 'error');
+  };
+
+  // ── Manager Login ────────────────────────────────────────────────────────
+  const handleSetLogin = async () => {
+    if (!mgCredTeam || !mgCredName || !mgCredPass) return;
+    setMgCredSaving(true);
+    try { await managerAuthApi.setCredentials(mgCredTeam, mgCredName, mgCredPass); dialog.showToast('Login set for ' + mgCredName, 'success'); setMgCredTeam(''); setMgCredName(''); setMgCredPass(''); }
+    catch (e) { dialog.showToast('Failed: ' + e.message, 'error'); }
+    setMgCredSaving(false);
+  };
+
+  // ── Push to Supabase ─────────────────────────────────────────────────────
+  const handlePush = async () => {
+    if (!await dialog.showConfirm('Push to Supabase', 'Overwrite the shared database with data from this device. All other devices update on next refresh.', { confirmText: 'Push' })) return;
+    dialog.showToast('Pushing...', 'info');
+    try {
+      await Promise.all([sfglDataApi.set(STORAGE_KEYS.TEAMS, teams), sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, tournaments), sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, transactions), sfglDataApi.set(STORAGE_KEYS.SETTINGS, settings), sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, globalPlayerStats)]);
+      await Promise.all(tournaments.filter(t => t.completed && t.results).map(t => tournamentResultsApi.save({ tournamentName: t.name, teamResults: t.results.teams || {}, earningsMap: t.results.earningsMap || {}, roundLeaders: t.results.roundLeaders || {}, fullLineups: t.results.fullLineups || {} }).catch(() => {})));
+      dialog.showToast('Pushed! Refresh mobile to sync.', 'success');
+    } catch (e) { dialog.showToast('Push failed: ' + e.message, 'error'); }
+  };
+
+  // ── Recalculate Earnings ─────────────────────────────────────────────────
+  const handleRecalc = async () => {
+    const done = tournaments.filter(t => t.completed && t.results?.teams);
+    if (!done.length) { dialog.showToast('No completed results found', 'error'); return; }
+    if (!await dialog.showConfirm('Recalculate Earnings', 'Recompute all team earnings from completed results and fix the current tournament indicator.', { confirmText: 'Recalculate' })) return;
+    const byTeam = {}; done.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
+    const ut = teams.map(team => ({ ...team, earnings: byTeam[team.id] || 0, segmentEarnings: (() => { const sw = typeof getSegmentByDate === 'function' ? getSegmentByDate() : null; return done.filter(t => !sw || getTournamentSegment(t) === sw).reduce((s, t) => s + (t.results?.teams?.[team.id]?.totalEarnings || 0), 0); })() }));
+    const li = [...tournaments].map((t, i) => ({ t, i })).filter(({ t }) => t.completed).pop()?.i ?? -1;
+    const nx = tournaments.findIndex((t, i) => i > li && !t.completed && !t.isAlternate);
+    const ft = tournaments.map((t, i) => ({ ...t, playing: i === nx }));
+    updateTeams(ut); setTournaments(ft);
+    await storage.set(STORAGE_KEYS.TEAMS, ut); await storage.set(STORAGE_KEYS.TOURNAMENTS, ft);
+    dialog.showToast('Recalculated · next up: ' + (ft[nx]?.name || 'none'), 'success');
+  };
+
+  // ── Season Reset ─────────────────────────────────────────────────────────
+  const handleReset = async () => {
+    if (!await dialog.showConfirm('Reset Entire Season', 'DELETE all results, transactions, rosters, lineups, and stats. Cannot be undone.', { type: 'danger', confirmText: 'Continue' })) return;
+    if (!await dialog.showConfirm('Final Warning', 'Are you absolutely sure? This wipes everything.', { type: 'danger', confirmText: 'Yes, Reset Everything' })) return;
+    updateTeams(teams.map(t => ({ ...t, earnings: 0, segmentEarnings: 0, lineup: [], roster: [], mulligans: { signatureMajor: 1, regular: 1 } })));
+    setTournaments(tournaments.map((t, i) => ({ ...t, completed: false, playing: i === 0, results: null })));
+    setTransactions([]); setGlobalPlayerStats({});
+    dialog.showToast('Season reset complete.', 'success');
+  };
+
+  // ── Apply Mulligan (live, from Roster Management) ───────────────────────
+  const handleApplyMulligan = async (teamId) => {
+    if (!mulliganOut || !mulliganIn) return;
+    const team = teams.find(t => t.id === teamId);
+    const activeTournament = tournaments.find(t => t.playing);
+    if (!team || !activeTournament) { dialog.showToast('No active tournament', 'error'); return; }
+
+    const isSignatureOrMajor = activeTournament.isSignature || activeTournament.isMajor;
+    const mulliganKey = isSignatureOrMajor ? 'signatureMajor' : 'regular';
+    const remaining = team.mulligans?.[mulliganKey] ?? 0;
+    if (remaining < 1) { dialog.showToast('No ' + (isSignatureOrMajor ? 'signature/major' : 'regular') + ' mulligans remaining', 'error'); return; }
+
+    const ok = await dialog.showConfirm('Apply Mulligan',
+      team.name + ': swap ' + mulliganOut + ' OUT → ' + mulliganIn + ' IN (after Round ' + mulliganRound + ')?\n\nDeducts one ' + (isSignatureOrMajor ? 'signature/major' : 'regular') + ' mulligan.',
+      { confirmText: 'Apply Mulligan' });
+    if (!ok) return;
+
+    const newLineup = team.lineup.map(p => p === mulliganOut ? mulliganIn : p);
+    const updatedRoster = team.roster.map(p => {
+      if (p.name === mulliganOut && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
+      if (p.name === mulliganIn  && p.limited) return { ...p, starts: p.starts + 1 };
+      return p;
+    });
+    const newMulligans = { ...team.mulligans, [mulliganKey]: remaining - 1 };
+    const tournamentIndex = tournaments.findIndex(t => t.playing);
+    const newTx = {
+      team: team.name, type: 'mulligan', player: mulliganIn, droppedPlayer: mulliganOut,
+      fee: 0, segment: activeTournament.segment || '', date: new Date().toLocaleDateString(),
+      tournamentIndex, status: 'completed',
+      mulliganType: isSignatureOrMajor ? 'signature/major' : 'regular',
+      afterRound: parseInt(mulliganRound), tournament: activeTournament.name,
+    };
+    const newTeams = teams.map(t => t.id === teamId ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
+    updateTeams(newTeams);
+    setTransactions(prev => [...prev, newTx]);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(() => {});
+
+    dialog.showToast('Mulligan applied: ' + mulliganOut + ' → ' + mulliganIn, 'success');
+    setMulliganMode(false); setMulliganOut(''); setMulliganIn(''); setMulliganRound('2');
+  };
+
+  // ── Retroactive Lineup Only (no mulligan) ─────────────────────────────
+  const handleRetroLineupOnly = async () => {
+    if (!retMulTeam || !retMulTourney) return;
+    const team = teams.find(t => t.id === retMulTeam);
+    const tournament = tournaments.find(t => t.name === retMulTourney);
+    const tournamentIndex = tournaments.findIndex(t => t.name === retMulTourney);
+    if (!team || !tournament || !tournament.results) return;
+
+    const savedLineup = tournament.results.fullLineups?.[team.id] || [];
+    const baseLineup = retLineupEdit.length > 0 ? retLineupEdit : savedLineup;
+    if (baseLineup.length === 0) { dialog.showToast('No lineup to reprocess', 'error'); return; }
+
+    const ok = await dialog.showConfirm(
+      'Reprocess Lineup (No Mulligan)',
+      'Reprocess ' + retMulTourney + ' for ' + team.name + ' with lineup: ' + baseLineup.join(', ') + '. No mulligan will be applied.',
+      { confirmText: 'Reprocess' }
+    );
+    if (!ok) return;
+
+    const teamsForReprocess = teams.map(t => t.id === team.id ? { ...t, lineup: baseLineup } : t);
+    const earningsMap = tournament.results.earningsMap || {};
+    const reprocessData = {
+      name: retMulTourney, status: 'post', competitors: [],
+      roundLeaders: tournament.results.roundLeaders || {},
+      earningsMap: new Map(Object.entries(earningsMap)),
+      isManualEntry: true,
+    };
+    const names = teams.flatMap(t => t.roster.map(p => p.name));
+    const { newTeams: reprocessedTeams, newStats, resultsData } = processTournamentData(
+      tournament, reprocessData, teamsForReprocess, globalPlayerStats, names
+    );
+
+    const oldTeamResult = tournament.results.teams?.[team.id];
+    const newTeamResult = resultsData.teams?.[team.id];
+    const oldSfglByPlayer = {};
+    (oldTeamResult?.players || []).forEach(p => { oldSfglByPlayer[p.name || p] = p.earnings || 0; });
+    const newSfglByPlayer = {};
+    (newTeamResult?.players || []).forEach(p => { newSfglByPlayer[p.name || p] = p.earnings || 0; });
+
+    const finalTeams = reprocessedTeams.map(t => {
+      if (t.id !== team.id) return t;
+      const newRoster = t.roster.map(p => {
+        const delta = (newSfglByPlayer[p.name] || 0) - (oldSfglByPlayer[p.name] || 0);
+        if (delta === 0) return p;
+        return { ...p, sfglEarnings: Math.max(0, (p.sfglEarnings || 0) + delta) };
+      });
+      return { ...t, roster: newRoster };
+    });
+
+    const earningsDelta = (newTeamResult?.totalEarnings || 0) - (oldTeamResult?.totalEarnings || 0);
+    const finalTeamsWithEarnings = finalTeams.map(t =>
+      t.id === team.id
+        ? { ...t, earnings: (t.earnings || 0) + earningsDelta, segmentEarnings: (t.segmentEarnings || 0) + earningsDelta }
+        : t
+    );
+
+    const newTournamentResults = {
+      ...tournament.results,
+      teams: { ...tournament.results.teams, [team.id]: newTeamResult },
+      fullLineups: { ...(tournament.results.fullLineups || {}), [team.id]: baseLineup },
+    };
+    const newTournaments = tournaments.map((t, i) =>
+      i === tournamentIndex ? { ...t, results: newTournamentResults } : t
+    );
+
+    updateTeams(finalTeamsWithEarnings);
+    setTournaments(newTournaments);
+    setGlobalPlayerStats(newStats);
+    await storage.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings);
+    await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
+    await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings).catch(() => {});
+
+    dialog.showToast('Reprocessed ' + retMulTourney + ' for ' + team.name + (earningsDelta !== 0 ? ' · earnings delta $' + earningsDelta.toLocaleString() : ' · no earnings change'), 'success');
+    setRetMulTeam(''); setRetMulTourney(''); setRetLineupEdit([]);
+    setRetMulOut(''); setRetMulIn(''); setRetApplyMulligan(false);
+  };
+
+
+  // ── Award Swing Winner ──────────────────────────────────────────────────
+  const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
+
+  // Get the swing a tournament belongs to, using t.segment if set,
+  // otherwise infer from the tournament's own dates field (not today's date)
+  const getTournamentSegment = (t) => {
+    if (t.segment) return t.segment;
+    // Parse month from dates: "Feb 9-15" → month=2
+    if (t.dates) {
+      const m = t.dates.match(/^([A-Za-z]+)/);
+      if (m) {
+        const months = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+        const mo = months[m[1]];
+        if (mo) {
+          if (mo >= 1 && mo <= 3) return 'West Coast Swing';
+          if (mo >= 4 && mo <= 6) return 'Spring Swing';
+          if (mo >= 7 && mo <= 9) return 'Summer Swing';
+          return 'Fall Finish';
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleSwingWinner = async () => {
+    if (!swingAwardSeg) return;
+
+    // Sum all transaction fees for this swing
+    const pot = transactions
+      .filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0)
+      .reduce((sum, tx) => sum + (tx.fee || 0), 0);
+
+    if (pot === 0) {
+      dialog.showToast('No fees collected for ' + swingAwardSeg, 'error');
+      return;
+    }
+
+    // Find winner = highest segmentEarnings for this swing
+    // segmentEarnings is calculated from completed tournaments in this swing
+    const swingTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
+    if (!swingTournaments.length) {
+      dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
+      return;
+    }
+
+    const byTeam = {};
+    swingTournaments.forEach(t => {
+      Object.entries(t.results.teams).forEach(([id, tr]) => {
+        byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
+      });
+    });
+
+    // Debug: log what we found so issues are visible in console
+    console.log('[SwingWinner] Swing:', swingAwardSeg);
+    console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
+    console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
+
+    const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+    if (!winnerEntry) { dialog.showToast('Could not determine winner', 'error'); return; }
+    const [winnerId, winnerEarnings] = winnerEntry;
+    const winnerTeam = teams.find(t => t.id === winnerId);
+    if (!winnerTeam) { dialog.showToast('Winner team not found', 'error'); return; }
+
+    const msg = swingAwardSeg + ' complete. Winner: ' + winnerTeam.name + ' (' + winnerTeam.owner + '). Swing: $' + winnerEarnings.toLocaleString() + '. Pot: $' + pot.toLocaleString() + '. Award pot?';
+    const ok = await dialog.showConfirm('Award Swing Winner', msg, { confirmText: 'Award $' + pot.toLocaleString() });
+    if (!ok) return;
+
+    const newTx = {
+      team: winnerTeam.name, type: 'swing_winner', player: winnerTeam.owner,
+      fee: 0, amount: pot, segment: swingAwardSeg,
+      date: new Date().toLocaleDateString(), status: 'completed',
+      note: swingAwardSeg + ' winner pot',
+    };
+
+    const newTeams = teams.map(t =>
+      t.id === winnerId
+        ? { ...t, earnings: (t.earnings || 0) + pot }
+        : t
+    );
+
+    updateTeams(newTeams);
+    setTransactions(prev => [...prev, newTx]);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
+    await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.error('sfgl teams:', e));
+    await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(e => console.error('sfgl tx:', e));
+
+    dialog.showToast('🏆 ' + winnerTeam.name + ' awarded $' + pot.toLocaleString() + ' for ' + swingAwardSeg, 'success');
+    setSwingAwardSeg('');
+  };
+
+  // ── Recalculate Starts from History ────────────────────────────────────
+  const handleRecalcStarts = async () => {
+    const completed = tournaments.filter(t => t.completed && t.results?.teams);
+    if (!completed.length) { dialog.showToast('No completed tournaments to calculate from', 'error'); return; }
+
+    const ok = await dialog.showConfirm(
+      'Recalculate Limited Player Starts',
+      'Rebuild each limited player start count from completed tournament history. This is the source of truth and overrides any manual counts.',
+      { confirmText: 'Recalculate' }
+    );
+    if (!ok) return;
+
+    // Build starts map: teamId → playerName → count
+    const startsMap = {};
+    teams.forEach(t => { startsMap[t.id] = {}; });
+
+    completed.forEach(tourney => {
+      Object.entries(tourney.results.teams).forEach(([teamId, teamResult]) => {
+        if (!startsMap[teamId]) return;
+        // results.teams[id].players contains the players who contributed to the score
+        const players = teamResult.players || [];
+        players.forEach(p => {
+          const name = p.name || p;
+          if (!startsMap[teamId][name]) startsMap[teamId][name] = 0;
+          startsMap[teamId][name] += 1;
+        });
+      });
+    });
+
+    // Apply mulligan corrections:
+    // A mulligan-OUT means that player was replaced mid-tournament —
+    // processTournamentData uses the post-mulligan lineup, so playerOut is NOT
+    // in results.players and doesn't need a deduction.
+    // A mulligan-IN means the replacement IS in results.players → already counted.
+    // So the results.players list IS already the post-mulligan truth. No correction needed.
+
+    const newTeams = teams.map(team => {
+      const tMap = startsMap[team.id] || {};
+      const newRoster = team.roster.map(p => {
+        if (!p.limited) return p;
+        const computedStarts = tMap[p.name] || 0;
+        return { ...p, starts: computedStarts };
+      });
+      return { ...team, roster: newRoster };
+    });
+
+    updateTeams(newTeams);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+
+    const totalFixed = teams.reduce((sum, team) => {
+      return sum + team.roster.filter(p => p.limited).length;
+    }, 0);
+    dialog.showToast('Starts recalculated for ' + totalFixed + ' limited players across ' + completed.length + ' tournaments', 'success');
+  };
+
+  // ── Recalculate All Player Stats from History ──────────────────────────
+  const handleRecalcAllStats = async () => {
+    const completed = tournaments.filter(t => t.completed && t.results?.teams);
+    if (!completed.length) { dialog.showToast('No completed tournaments found', 'error'); return; }
+
+    const ok = await dialog.showConfirm(
+      'Recalculate All Player Stats',
+      'Rebuild Events, Cuts, Tour$, SFGL$, and Starts for every rostered player from completed tournament history.',
+      { confirmText: 'Recalculate' }
+    );
+    if (!ok) return;
+
+    // --- globalPlayerStats: {playerName: {eventsPlayed, cutsMade, pgaTourEarnings}}
+    // sourced from results.earningsMap which has ALL players who made the cut
+    const newGlobalStats = {};
+
+    // --- per-roster sfglEarnings & starts: sourced from results.teams[id].players
+    // {teamId: {playerName: {sfglEarnings, starts}}}
+    const rosterStats = {};
+    teams.forEach(t => { rosterStats[t.id] = {}; });
+
+    completed.forEach(tourney => {
+      const earningsMap = tourney.results.earningsMap || {};
+
+      // PGA Tour stats from earningsMap (all players who earned money)
+      Object.entries(earningsMap).forEach(([playerName, pgaEarnings]) => {
+        if (!newGlobalStats[playerName]) {
+          newGlobalStats[playerName] = { eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0 };
+        }
+        newGlobalStats[playerName].eventsPlayed += 1;
+        if (pgaEarnings > 0) newGlobalStats[playerName].cutsMade += 1;
+        newGlobalStats[playerName].pgaTourEarnings += pgaEarnings;
+      });
+
+      // SFGL earnings & starts from each team result
+      Object.entries(tourney.results.teams).forEach(([teamId, teamResult]) => {
+        if (!rosterStats[teamId]) return;
+        const players = teamResult.players || [];
+        players.forEach(p => {
+          const name = p.name || p;
+          const sfgl = p.earnings || 0;
+          if (!rosterStats[teamId][name]) rosterStats[teamId][name] = { sfglEarnings: 0, starts: 0 };
+          rosterStats[teamId][name].sfglEarnings += sfgl;
+          rosterStats[teamId][name].starts += 1;
+        });
+      });
+    });
+
+    // Apply to teams — update roster sfglEarnings and starts
+    const newTeams = teams.map(team => {
+      const tStats = rosterStats[team.id] || {};
+      const newRoster = team.roster.map(p => {
+        const ps = tStats[p.name] || { sfglEarnings: 0, starts: 0 };
+        return {
+          ...p,
+          sfglEarnings: ps.sfglEarnings,
+          starts: p.limited ? ps.starts : p.starts,
+        };
+      });
+      return { ...team, roster: newRoster };
+    });
+
+    updateTeams(newTeams);
+    setGlobalPlayerStats(newGlobalStats);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newGlobalStats);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+    sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newGlobalStats).catch(() => {});
+
+    const playerCount = Object.keys(newGlobalStats).length;
+    dialog.showToast('Stats rebuilt from ' + completed.length + ' tournaments · ' + playerCount + ' players updated', 'success');
+  };
+
+  const pending = transactions.map((tx, idx) => ({ ...tx, _idx: idx })).filter(tx => tx.type === 'waiver' && tx.status === 'pending');
+  const disabledBtn = (cond) => cond ? { opacity: 0.4, cursor: 'not-allowed' } : {};
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'hidden' }}>
-      {/* ── Team selector + lineup headshots ── */}
-      <div style={{
-        ...theme.card,
-        padding: 12,
-        background: 'linear-gradient(135deg, rgba(18,46,82,0.4) 0%, rgba(255,255,255,0.02) 100%)',
-        overflow: 'visible',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, overflow: 'visible' }}>
-          {/* Team selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-            <TeamDropdown
-              teams={teams}
-              value={selectedTeam || ''}
-              onChange={id => { setSelectedTeam(id); setLineupMode(false); }}
-            />
-            {loggedInUser && !isOwnTeam && (
-              <span style={{ ...theme.badge, ...theme.badgeNavy }}>View Only</span>
-            )}
-            {isCommissioner && team && (
-              <span style={{ ...theme.badge, background: 'rgba(80,195,120,0.1)', border: '1px solid rgba(80,195,120,0.3)', color: colors.success, fontSize: 10 }}>
-                Acting as Commish
-              </span>
-            )}
-          </div>
+    <div style={{ paddingBottom: 40 }}>
 
-          {/* Global search */}
-          <div style={{ position: 'relative', flexShrink: 0, width: 160 }}>
-            <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary }} />
-            <input
-              type="text" placeholder="Search player…"
-              value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
-              style={{ ...theme.input, paddingLeft: 28, fontSize: 12, padding: '7px 10px 7px 28px' }}
-              onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
-              onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
-            />
-          </div>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', background: colors.cardBg, border: `1px solid ${colors.border}`, borderRadius: 4, marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Settings size={14} style={{ color: colors.textGoldDim }} />
+          <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: colors.textGold }}>Commissioner</span>
         </div>
+        <button onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }} style={{ ...theme.btnDanger, padding: '6px 14px', fontSize: 11 }}>Logout</button>
+      </div>
 
-        {/* Lineup headshots */}
-        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, minHeight: 72, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {team.lineup.length > 0 ? (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, width: '100%' }}>
-              {getSortedRoster(currentRoster)
-                .filter(p => team.lineup.includes(p.name))
-                .map(player => {
-                  const lastName  = player.name.split(' ').pop();
-                  const nameFontSize = lastName.length > 9 ? 9 : lastName.length > 7 ? 10 : 11;
-                  return (
-                    <LineupHeadshot
-                      key={player.name}
-                      player={player}
-                      lastName={lastName}
-                      nameFontSize={nameFontSize}
-                      headshots={headshots}
-                      canEdit={canEditLineup}
-                      onRemove={() => { if (!lineupMode) setLineupMode(true); togglePlayerInLineup(player); }}
-                    />
-                  );
-                })}
-            </div>
-          ) : (
-            <div style={{ ...theme.smallText, textAlign: 'center', width: '100%' }}>No lineup set</div>
-          )}
+      {/* Tournament Results */}
+      <div style={S.section}>
+        <div style={S.title}>🏆 Tournament Results</div>
+        <label style={S.lbl}>Tournament</label>
+        <select value={selectedTourney} onChange={e => {
+          const name = e.target.value;
+          setSelectedTourney(name);
+          // Pre-fill earnings when selecting a completed tournament
+          const t = tournaments.find(t => t.name === name);
+          if (t?.completed && t.results?.earningsMap) {
+            const lines = Object.entries(t.results.earningsMap)
+              .sort((a, b) => b[1] - a[1])
+              .map(([player, amt]) => player + ', ' + amt)
+              .join('\n');
+            setManualEntry(prev => ({ ...prev, playerEarnings: lines,
+              round1Leaders: t.results.roundLeaders?.round1?.length ? t.results.roundLeaders.round1 : [''],
+              round2Leaders: t.results.roundLeaders?.round2?.length ? t.results.roundLeaders.round2 : [''],
+              round3Leaders: t.results.roundLeaders?.round3?.length ? t.results.roundLeaders.round3 : [''],
+            }));
+          } else {
+            setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+          }
+        }} style={S.select}>
+          <option value="">Choose tournament...</option>
+          {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
+        </select>
+        <button onClick={handleFetchApiResults} style={{ ...S.btn, marginBottom: 10 }}>⚡ Fetch from API</button>
+
+        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
+          <div style={{ ...S.lbl, color: colors.textMuted, textAlign: 'center', marginBottom: 10 }}>— or enter manually —</div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <RoundLeaderSelect label="R1 Leader" leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
+            <RoundLeaderSelect label="R2 Leader" leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
+            <RoundLeaderSelect label="R3 Leader" leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
+          </div>
+          <label style={S.lbl}>Player Earnings <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>— one per line: Player Name, 123456</span></label>
+          <textarea value={manualEntry.playerEarnings} onChange={e => setManualEntry({ ...manualEntry, playerEarnings: e.target.value })}
+            placeholder={'Scottie Scheffler, 3600000\nRory McIlroy, 2160000'} rows={6}
+            style={{ ...theme.input, fontFamily: fonts.mono, fontSize: 12, resize: 'vertical', marginBottom: 8 }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            {!tournaments.find(t => t.name === selectedTourney)?.completed && (
+              <button onClick={handleManualEntry} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
+                style={{ ...S.btn, flex: 1, ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
+                Process Manual Entry
+              </button>
+            )}
+            {tournaments.find(t => t.name === selectedTourney)?.completed && (
+              <button onClick={handleReprocess} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
+                style={{ ...S.btn, flex: 1, background: 'rgba(220,150,50,0.12)', border: '1px solid rgba(220,150,50,0.4)', color: 'rgba(220,180,80,0.9)', ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
+                ✏️ Reprocess Tournament
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Waiver queue ── */}
-      <WaiverQueue
-        team={team} pendingWaivers={pendingWaivers} transactions={transactions}
-        setTransactions={setTransactions} updateTeams={updateTeams} teams={teams}
-        isOwnTeam={isOwnTeam}
-      />
-
-      {/* ── Action buttons + roster table ── */}
-      <div style={{ ...theme.card, overflow: 'hidden' }}>
-
-        {/* Action header */}
-        <div style={{
-          ...theme.cardHeader,
-          flexDirection: 'column', alignItems: 'stretch', gap: 10,
-        }}>
-          {activeTournament && firstTeeTime && (
-            <div style={{ overflow: 'hidden' }}>
-              <span style={{ ...theme.smallText }}>· {formatTeeTime(firstTeeTime)}</span>
-            </div>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, minWidth: 0 }}>
-            {/* Lineup button */}
-            {(() => {
-              const hasLineup = team.lineup.length > 0;
-              const needsSubmit = canEditLineup && !hasLineup && !lineupMode;
-              return (
-                <button
-                  onClick={() => { if (lineupMode && !hasLineup) return; setLineupMode(!lineupMode); }}
-                  disabled={!canEditLineup || (lineupMode && !hasLineup)}
-                  style={{
-                    ...actionBtn(canEditLineup, colors.success),
-                    border: canEditLineup ? `1px solid ${colors.success}` : `1px solid ${colors.borderSubtle}`,
-                    background: needsSubmit ? 'rgba(80,195,120,0.15)' : 'rgba(255,255,255,0.03)',
-                    boxShadow: needsSubmit ? '0 0 10px rgba(80,195,120,0.25)' : 'none',
-                    fontWeight: needsSubmit ? 700 : 500,
-                  }}
-                >
-                  {lineupMode ? '✓ Save' : hasLineup ? '✏ Edit Lineup' : '▶ Set Lineup'}
-                </button>
-              );
-            })()}
-
-            {/* Free agent button */}
-            <button
-              onClick={() => { setIsWaiverMode(false); setShowAddDropModal(true); }}
-              disabled={!isOwnTeam}
-              style={actionBtn(isOwnTeam, 'rgba(220,200,80,0.8)')}
-            >
-              Free Agent
-            </button>
-
-            {/* Waiver button */}
-            <button
-              onClick={() => { setIsWaiverMode(true); setShowAddDropModal(true); }}
-              disabled={!isOwnTeam}
-              style={actionBtn(isOwnTeam, 'rgba(220,200,80,0.8)')}
-            >
-              Waiver
-            </button>
-          </div>
+      {/* Waivers */}
+      <div style={S.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={S.title}>⏰ Process Waivers</div>
+          {pending.length > 0 && <span style={{ ...theme.badge, ...theme.badgeWarning }}>{pending.length} pending</span>}
         </div>
-
-        {/* ── Player table — global search ── */}
-        {globalSearch.trim().length > 0 ? (
-          <div>
-            <div style={{
-              ...theme.tableHeaderCell,
-              padding: '8px 16px',
-              borderBottom: `1px solid ${colors.borderSubtle}`,
-              color: colors.textSecondary,
-              fontSize: 11,
-            }}>
-              Search Results ({searchResults.length})
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }} role="table">
-              <thead>
-                <tr>
-                  {['Player', 'Events', 'Cuts', 'Status'].map((h, i) => (
-                    <th key={h} scope="col" style={{
-                      ...theme.tableHeaderCell,
-                      textAlign: i === 0 ? 'left' : i === 3 ? 'right' : 'center',
-                    }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {searchResults.slice(0, 50).map(player => (
-                  <tr key={player.name}
-                    style={{ borderBottom: `1px solid ${colors.borderSubtle}`, transition: 'background 0.15s' }}
-                    onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <td style={{ padding: '8px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <img
-                          src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                          onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
-                          alt="" style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}` }}
-                        />
-                        <div>
-                          <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{player.name}</div>
-                          <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.eventsPlayed || 0}</td>
-                    <td style={{ padding: '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.cutsMade || 0}</td>
-                    <td style={{ padding: '8px 16px', textAlign: 'right' }}>
-                      {player.owner === 'Free Agent'
-                        ? <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: 12, fontWeight: 500 }}>Free Agent</span>
-                        : <span style={{ ...theme.bodyText, fontWeight: 500 }}>{getTeamAbbreviation(player.owner)}</span>}
-                    </td>
-                  </tr>
-                ))}
-                {searchResults.length === 0 && (
-                  <tr><td colSpan="4" style={theme.emptyState}>No matching players found</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
+        {pending.length === 0 ? (
+          <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.success }}>✓ No pending waiver claims</div>
         ) : (
-          /* ── Roster table ── */
           <>
-          {/* On mobile: slider sits above table as its own row */}
-          {isMobile && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 10px 2px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-              <div style={{
-                position: 'relative', display: 'flex',
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(180,160,100,0.2)',
-                borderRadius: 4, padding: 2, width: 88,
-              }}>
-                <div style={{
-                  position: 'absolute', top: 2, bottom: 2,
-                  left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2,
-                  width: 'calc(50% - 3px)', borderRadius: 2,
-                  background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)',
-                  border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`,
-                  transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none',
-                }} />
-                <button onClick={() => setStatsView('sfgl')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'sfgl' ? colors.textGold : colors.textMuted, cursor: 'pointer' }}>SFGL</button>
-                <button onClick={() => setStatsView('pgat')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted, cursor: 'pointer' }}>PGAT</button>
-              </div>
-            </div>
-          )}
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
-            <colgroup>
-              <col />
-              <col style={{ width: isMobile ? 48 : 80 }} />
-              <col style={{ width: isMobile ? 62 : 90 }} />
-              <col style={{ width: isMobile ? 68 : 120 }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  {statsView === 'sfgl' ? 'Starts' : 'Events'}
-                </th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  {isMobile ? 'Cuts' : 'Cuts Made'}
-                </th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 10 : 8 }}>
-                  {!isMobile && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      <div style={{
-                        position: 'relative', display: 'flex',
-                        background: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(180,160,100,0.2)',
-                        borderRadius: 4, padding: 2, width: 96, flexShrink: 0,
-                      }}>
-                        <div style={{
-                          position: 'absolute', top: 2, bottom: 2,
-                          left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2,
-                          width: 'calc(50% - 3px)', borderRadius: 2,
-                          background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)',
-                          border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`,
-                          transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none',
-                        }} />
-                        <button onClick={() => setStatsView('sfgl')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'sfgl' ? colors.textGold : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>SFGL</button>
-                        <button onClick={() => setStatsView('pgat')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>PGAT</button>
-                      </div>
+            <button onClick={() => handleProcessAll(pending)} style={{ ...S.btn, marginBottom: 8 }}>⚡ Process All ({pending.length})</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {pending.map(w => (
+                <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
+                  <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
+                    <div style={{ fontSize: 11 }}>
+                      <span style={{ color: colors.earningsGreen }}>+{w.player}</span>
+                      {w.droppedPlayer && <span style={{ color: colors.danger }}> / -{w.droppedPlayer}</span>}
                     </div>
-                  )}
-                  {isMobile && <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>$</span>}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {getSortedRoster(currentRoster).map(player => {
-                const isInLineup     = team.lineup.includes(player.name);
-                const canAddToLineup = team.lineup.length < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
-                const hasLineup      = team.lineup.length > 0;
-                const isBenched      = hasLineup && !isInLineup && !lineupMode;
-                const dimColor       = 'rgba(255,255,255,0.45)';
-
-                return (
-                  <tr key={player.name}
-                    style={{ borderBottom: `1px solid ${colors.borderSubtle}`, background: 'transparent', transition: 'background 0.15s' }}
-                    onMouseEnter={e => { if (!isBenched) e.currentTarget.style.background = colors.rowHover; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    {/* Player cell */}
-                    <td style={{ padding: isMobile ? '7px 10px' : '8px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, minWidth: 0 }}>
-                        {/* Headshot / lineup toggle */}
-                        <button
-                          onClick={() => lineupMode && isOwnTeam && (isInLineup || canAddToLineup) && togglePlayerInLineup(player)}
-                          disabled={!lineupMode || !isOwnTeam || (!isInLineup && !canAddToLineup)}
-                          style={{ position: 'relative', background: 'none', border: 'none', cursor: lineupMode && isOwnTeam && (isInLineup || canAddToLineup) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <img
-                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                            onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
-                            alt=""
-                            style={{
-                              width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
-                              opacity: isBenched ? 0.5 : lineupMode && !isInLineup && !canAddToLineup ? 0.25 : lineupMode && !isInLineup ? 0.55 : 1,
-                              border: lineupMode
-                                ? isInLineup
-                                  ? `3px solid ${playerBorderColor(player)}`
-                                  : `2px solid ${colors.borderSubtle}`
-                                : isInLineup
-                                  ? `2px solid ${playerBorderColor(player)}`
-                                  : `1px solid ${colors.borderSubtle}`,
-                              transition: 'all 0.15s',
-                            }}
-                          />
-                          {isInLineup && (
-                            <div style={{
-                              position: 'absolute', top: -3, right: -3,
-                              width: 14, height: 14, borderRadius: '50%',
-                              background: lineupMode ? playerBorderColor(player) : 'rgba(80,195,120,0.85)',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              opacity: lineupMode ? 1 : 0.75,
-                            }}>
-                              <span style={{ color: '#111d2e', fontSize: 9, fontWeight: 900 }}>✓</span>
-                            </div>
-                          )}
-                          {player.limited && (player.stars || 1) > 0 && (
-                            <div style={{
-                              position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
-                              background: 'rgba(15,25,45,0.88)', borderRadius: 6,
-                              padding: '0px 3px', lineHeight: 1, zIndex: 5,
-                              fontSize: 7, letterSpacing: 0.5,
-                              pointerEvents: 'none',
-                              opacity: isBenched ? 0.35 : 1,
-                            }}>
-                              {'⭐'.repeat(player.stars || 1)}
-                            </div>
-                          )}
-                        </button>
-
-                        {/* Name + metadata */}
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                            <span style={{
-                              fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, fontWeight: 500,
-                              color: isBenched ? dimColor : player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
-                            }}>
-                              {displayName(player.name, isMobile)}
-                            </span>
-                            {player.limited && (
-                              <span style={{
-                                fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
-                                color: isBenched ? dimColor : colors.textGoldDim,
-                              }}>
-                                {player.starts}/{MAX_LIMITED_STARTS}
-                              </span>
-                            )}
-                            {player.unlimited && (
-                              <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)' }}>♾️</span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
-                            {player.yearsOfService > 1 && <span>(Yr {player.yearsOfService})</span>}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Events / Starts */}
-                    {(() => {
-                      const events = statsView === 'sfgl' ? (sfglCutsMap[player.name]?.starts ?? player.starts ?? 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
-                      return (
-                        <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
-                          {events}
-                        </td>
-                      );
-                    })()}
-
-                    {/* Cuts Made (X/Y fraction) */}
-                    {(() => {
-                      const sfglEntry = sfglCutsMap[player.name] || { cuts: 0, starts: 0 };
-                      const cuts   = statsView === 'sfgl' ? sfglEntry.cuts : (globalPlayerStats[player.name]?.cutsMade || 0);
-                      const events = statsView === 'sfgl' ? sfglEntry.starts : (globalPlayerStats[player.name]?.eventsPlayed || 0);
-                      return (
-                        <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
-                          {cuts}/{events}
-                        </td>
-                      );
-                    })()}
-
-                    {/* $ — SFGL earnings or PGA Tour earnings depending on mode */}
-                    {(() => {
-                      const amount  = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0);
-                      const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
-                      return (
-                        <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 12 : 12, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>
-                          ${amount.toLocaleString()}
-                        </td>
-                      );
-                    })()}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                  </div>
+                  <button onClick={() => handleProcessSingle(w)} style={{ ...theme.btnSecondary, padding: '5px 10px', fontSize: 11, flexShrink: 0 }}>Process</button>
+                </div>
+              ))}
+            </div>
           </>
         )}
       </div>
 
-      {/* ── Modals ── */}
-      <MulliganModal
-        isOpen={showMulliganModal}
-        onClose={() => setShowMulliganModal(false)}
-        team={team}
-        activeTournament={activeTournament}
-        isSignatureOrMajor={isSignatureOrMajor}
-        lineupPlayers={lineupPlayers}
-        benchPlayers={benchPlayers}
-        onConfirm={handleMulliganConfirm}
-      />
+      {/* Roster Management */}
+      <div style={S.section}>
+        <div style={S.title}>👥 Roster Management</div>
+        <label style={S.lbl}>Team</label>
+        <select value={rosterMgmtTeam} onChange={e => { setRosterMgmtTeam(e.target.value); setPlayerSearch(''); }} style={S.select}>
+          <option value="">Choose team...</option>
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        {rosterMgmtTeam && (() => {
+          const team = teams.find(t => t.id === rosterMgmtTeam);
+          const results = playerSearch.trim() ? allPlayers.filter(p => p.name.toLowerCase().includes(playerSearch.toLowerCase()) && !team.roster.some(r => r.name === p.name)).slice(0, 15) : [];
+          return (
+            <div>
+              <div style={{ background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '10px 12px', marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={S.lbl}>Mulligans</span>
+                  <span style={{ ...theme.smallText }}>Sig: {team.mulligans?.signatureMajor ?? 0} · Reg: {team.mulligans?.regular ?? 0}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <button onClick={() => resetMulligan(team.id, 'sig')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Sig</button>
+                  <button onClick={() => resetMulligan(team.id, 'reg')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Reg</button>
+                </div>
+                {/* Apply Mulligan */}
+                {(() => {
+                  const activeTournament = tournaments.find(t => t.playing);
+                  if (!activeTournament) return (
+                    <div style={{ ...theme.smallText, color: colors.textMuted, textAlign: 'center', paddingTop: 4 }}>No active tournament — can't apply mulligan</div>
+                  );
+                  const isSignatureOrMajor = activeTournament.isSignature || activeTournament.isMajor;
+                  const mulliganKey = isSignatureOrMajor ? 'signatureMajor' : 'regular';
+                  const remaining = team.mulligans?.[mulliganKey] ?? 0;
+                  const lineupPlayers = team.lineup || [];
+                  const benchPlayers = (team.roster || []).map(p => p.name).filter(n => !lineupPlayers.includes(n));
+                  return (
+                    <div>
+                      <button
+                        onClick={() => { setMulliganMode(!mulliganMode); setMulliganOut(''); setMulliganIn(''); setMulliganRound('2'); }}
+                        style={{ ...theme.btnSecondary, width: '100%', padding: '7px 10px', fontSize: 11, marginBottom: mulliganMode ? 8 : 0,
+                          borderColor: mulliganMode ? colors.border : colors.borderInput,
+                          color: mulliganMode ? colors.textGold : colors.textSecondary }}>
+                        🚨 {mulliganMode ? 'Cancel Mulligan' : 'Apply Mulligan'} ({remaining} {isSignatureOrMajor ? 'sig' : 'reg'} left)
+                      </button>
+                      {mulliganMode && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <select value={mulliganOut} onChange={e => setMulliganOut(e.target.value)} style={{ ...S.select, marginBottom: 0 }}>
+                            <option value="">Player OUT (from lineup)...</option>
+                            {lineupPlayers.map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                          <select value={mulliganIn} onChange={e => setMulliganIn(e.target.value)} style={{ ...S.select, marginBottom: 0 }}>
+                            <option value="">Player IN (from bench)...</option>
+                            {benchPlayers.map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {['1','2','3'].map(r => (
+                              <button key={r} onClick={() => setMulliganRound(r)}
+                                style={{ flex: 1, padding: '6px 0', borderRadius: 2, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
+                                  background: mulliganRound === r ? colors.buttonNavy : 'transparent',
+                                  border: `1px solid ${mulliganRound === r ? colors.border : colors.borderInput}`,
+                                  color: mulliganRound === r ? colors.textGold : colors.textSecondary }}>
+                                R{r}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            onClick={() => handleApplyMulligan(team.id)}
+                            disabled={!mulliganOut || !mulliganIn || remaining < 1}
+                            style={{ ...theme.btnPrimary, padding: '8px 10px', fontSize: 11,
+                              opacity: (!mulliganOut || !mulliganIn || remaining < 1) ? 0.4 : 1,
+                              cursor: (!mulliganOut || !mulliganIn || remaining < 1) ? 'not-allowed' : 'pointer' }}>
+                            Confirm Mulligan
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+              <div style={{ maxHeight: 200, overflowY: 'auto', border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, marginBottom: 8 }}>
+                {!team.roster.length
+                  ? <div style={theme.emptyState}>No players on roster</div>
+                  : team.roster.map(p => (
+                    <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                      <img src={'https://pga-tour-res.cloudflare.com/resources/photoplayer/' + (headshots[p.name] || 'default') + '.jpg'}
+                        onError={e => { e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(p.name) + '&background=111d2e&color=9ca3af&size=28'; }}
+                        alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }} />
+                      <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                      <button onClick={() => handleDropPlayer(team.id, p.name)} style={{ ...theme.btnDanger, padding: '4px 10px', fontSize: 11 }}>Drop</button>
+                    </div>
+                  ))
+                }
+              </div>
+              <input type="text" placeholder="Search to add player..." value={playerSearch} onChange={e => setPlayerSearch(e.target.value)} style={S.input} />
+              {results.length > 0 && (
+                <div style={{ border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, maxHeight: 160, overflowY: 'auto' }}>
+                  {results.map(p => (
+                    <button key={p.name} onClick={() => { handleAddPlayer(team.id, p.name); setPlayerSearch(''); }}
+                      style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'none', border: 'none', borderBottom: `1px solid ${colors.borderSubtle}`, cursor: 'pointer', textAlign: 'left' }}
+                      onMouseEnter={e => e.currentTarget.style.background = colors.rowHover}
+                      onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                      <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary }}>{p.name}</span>
+                      <span style={{ fontSize: 11, color: colors.earningsGreen, fontWeight: 700 }}>Add</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
 
-      <AddDropPlayerModal
-        isOpen={showAddDropModal}
-        onClose={() => { setShowAddDropModal(false); setEditingWaiverData(null); }}
-        team={team}
-        currentRoster={currentRoster}
-        allPlayers={allPlayers}
-        teams={teams}
-        updateTeams={updateTeams}
-        transactions={transactions}
-        setTransactions={setTransactions}
-        isWaiverMode={isWaiverMode}
-        activeTournamentIndex={activeTournamentIndex}
-        nextTournamentIndex={addDropTournamentIndex}
-        editingWaiverData={editingWaiverData}
-      />
+      {/* Manager Login */}
+      <div style={S.section}>
+        <div style={S.title}>🔑 Manager Login</div>
+        <label style={S.lbl}>Team</label>
+        <select value={mgCredTeam} onChange={e => { setMgCredTeam(e.target.value); setMgCredName(teams.find(x => x.id === e.target.value)?.owner || ''); }} style={S.select}>
+          <option value="">Select team...</option>
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
+        </select>
+        <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
+        <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
+        <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
+          style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
+          {mgCredSaving ? 'Saving...' : 'Set Login'}
+        </button>
+      </div>
+
+      {/* One-Time: Fix Prior Lineup */}
+      <div style={S.section}>
+        <div style={S.title}>🚨 Fix Prior Lineup</div>
+        <div style={{ ...theme.smallText, marginBottom: 12 }}>
+          Correct a submitted lineup for a completed tournament and reprocess earnings.
+        </div>
+
+        <label style={S.lbl}>Team</label>
+        <select value={retMulTeam} onChange={e => { setRetMulTeam(e.target.value); setRetLineupEdit([]); }} style={S.select}>
+          <option value="">Select team...</option>
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
+        </select>
+
+        <label style={S.lbl}>Tournament</label>
+        <select value={retMulTourney} onChange={e => { setRetMulTourney(e.target.value); setRetLineupEdit([]); }} style={S.select}>
+          <option value="">Select tournament...</option>
+          {tournaments.filter(t => t.completed).map(t => (
+            <option key={t.name} value={t.name}>✓ {t.name}</option>
+          ))}
+        </select>
+
+        {retMulTeam && retMulTourney && (() => {
+          const team = teams.find(t => t.id === retMulTeam);
+          const tournament = tournaments.find(t => t.name === retMulTourney);
+          const savedLineup = tournament?.results?.fullLineups?.[retMulTeam] || [];
+          const baseLineup = retLineupEdit.length > 0 ? retLineupEdit : (savedLineup.length > 0 ? savedLineup : []);
+          const rosterPlayers = team?.roster?.map(p => p.name) || [];
+
+          return (
+            <div>
+              <label style={S.lbl}>
+                Lineup
+                <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>
+                  {savedLineup.length > 0 ? '(loaded from saved results)' : '(not saved — build manually)'}
+                </span>
+              </label>
+              <div style={{ marginBottom: 8, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: '1px solid ' + colors.borderSubtle, fontSize: 11, fontFamily: fonts.sans }}>
+                {baseLineup.length > 0
+                  ? baseLineup.map(name => (
+                    <span key={name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 8, marginBottom: 4 }}>
+                      <span style={{ color: colors.textGold }}>{name}</span>
+                      <button onClick={() => setRetLineupEdit(baseLineup.filter(n => n !== name))}
+                        style={{ background: 'none', border: 'none', color: colors.danger, cursor: 'pointer', fontSize: 11, padding: '0 2px' }}>✕</button>
+                    </span>
+                  ))
+                  : <span style={{ color: colors.textMuted }}>No lineup — add players below</span>
+                }
+              </div>
+              {baseLineup.length < 5 && (
+                <select onChange={e => { if (e.target.value) setRetLineupEdit([...baseLineup, e.target.value]); e.target.value = ''; }} style={{ ...S.select, marginBottom: 12 }}>
+                  <option value="">+ Add player to lineup...</option>
+                  {rosterPlayers.filter(n => !baseLineup.includes(n)).map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+              )}
+              <button onClick={handleRetroLineupOnly}
+                disabled={baseLineup.length === 0}
+                style={{ ...S.btn, ...disabledBtn(baseLineup.length === 0) }}>
+                Reprocess Lineup
+              </button>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* Draft */}
+      <div style={S.section}>
+        <div style={S.title}>🎯 Draft</div>
+        <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
+      </div>
+
+      {/* Data & Sync */}
+      <div style={S.section}>
+        <div style={S.title}>☁️ Data & Sync</div>
+        <button onClick={handlePush} style={{ ...S.btn, marginBottom: 8 }}>☁️ Push to Supabase (sync all devices)</button>
+        <button onClick={handleRecalc} style={{ ...S.btnSec, marginBottom: 8 }}>📊 Recalculate Earnings from Results</button>
+        <button onClick={handleRecalcAllStats} style={{ ...S.btnSec, marginBottom: 8 }}>📈 Recalculate All Player Stats (Events/Cuts/Tour$/SFGL$)</button>
+        <button onClick={handleRecalcStarts} style={S.btnSec}>⭐ Recalculate Limited Player Starts</button>
+      </div>
+
+      {/* Swing Winner */}
+      <div style={S.section}>
+        <div style={S.title}>🏆 Award Swing Winner</div>
+        <div style={{ ...theme.smallText, marginBottom: 10 }}>
+          When a swing is complete, award the fee pot to the swing leader.
+        </div>
+        <label style={S.lbl}>Swing</label>
+        <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
+          <option value="">Select swing...</option>
+          {SWINGS.map(s => {
+            const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+            const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
+            return (
+              <option key={s} value={s} disabled={alreadyAwarded}>
+                {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
+              </option>
+            );
+          })}
+        </select>
+        {swingAwardSeg && (() => {
+          const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+          const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
+          const byTeam = {};
+          swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
+          const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+          const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
+          return (
+            <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
+              {leader
+                ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} swing earnings · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
+                : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
+              }
+            </div>
+          );
+        })()}
+        <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
+          style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
+          🏆 Award Swing Winner
+        </button>
+      </div>
+
+      {/* Danger Zone */}
+      <div style={{ ...S.section, borderColor: colors.dangerBorder, background: colors.dangerBg }}>
+        <div style={{ ...S.title, color: colors.danger }}>⚠ Danger Zone</div>
+        <div style={{ ...theme.smallText, marginBottom: 12 }}>Permanently deletes all results, rosters, transactions, and stats.</div>
+        <button onClick={handleReset} style={S.btnDgr}>🔥 Reset Entire Season</button>
+      </div>
+
+      {showDraftModal && <DraftModal teams={teams} allPlayers={allPlayers} updateTeams={updateTeams} onClose={() => setShowDraftModal(false)} headshots={headshots} />}
     </div>
   );
 };
