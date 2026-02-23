@@ -108,7 +108,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
   const [expandedTournament, setExpandedTournament] = useState(null);
 
   const completedTournaments = useMemo(() =>
-    tournaments.filter(t => t.completed),
+    [...tournaments.filter(t => t.completed)].reverse(),
     [tournaments],
   );
 
@@ -245,33 +245,22 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
 
       {/* ── Completed tournaments + swing summaries (interleaved) ── */}
       {(() => {
-        // For each swing summary, find the last completed tournament in that swing
-        // by highest original index in the tournaments array — this respects the
-        // swing designation set in TournamentsView, not inferred dates.
-        const swingLastTourneyName = {};
-        swingSummaries.forEach(s => {
-          const swingTourneys = tournaments
-            .map((t, i) => ({ t, i }))
-            .filter(({ t }) => t.completed && getTournamentSegment(t) === s.seg && t.results?.teams);
-          if (swingTourneys.length) {
-            // highest original index = last event of the swing in schedule order
-            swingLastTourneyName[s.seg] = swingTourneys[swingTourneys.length - 1].t.name;
-          }
-        });
-
-        // completedTournaments is in schedule order (chronological, oldest first)
+        // completedTournaments is reverse-chrono (newest first).
+        // Swing card goes at the TOP of its swing group — before the first
+        // tournament of that swing we encounter while iterating.
         const renderedSwings = new Set();
         const items = [];
         completedTournaments.forEach((tournament) => {
-          items.push({ type: 'tournament', tournament });
           const seg = getTournamentSegment(tournament);
-          if (seg && !renderedSwings.has(seg) && swingLastTourneyName[seg] === tournament.name) {
+          // If this is the first time we see this swing, prepend the swing card
+          if (seg && !renderedSwings.has(seg)) {
             const summary = swingSummaries.find(s => s.seg === seg);
             if (summary) {
               items.push({ type: 'swing', summary });
               renderedSwings.add(seg);
             }
           }
+          items.push({ type: 'tournament', tournament });
         });
         // Fallback: any unplaced swing summaries go at the end
         swingSummaries.forEach(s => {
