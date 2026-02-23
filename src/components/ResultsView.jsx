@@ -108,7 +108,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
   const [expandedTournament, setExpandedTournament] = useState(null);
 
   const completedTournaments = useMemo(() =>
-    [...tournaments.filter(t => t.completed)].reverse(),
+    tournaments.filter(t => t.completed),
     [tournaments],
   );
 
@@ -259,7 +259,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
           }
         });
 
-        // completedTournaments is already reversed (newest first = highest index first)
+        // completedTournaments is in schedule order (chronological, oldest first)
         const renderedSwings = new Set();
         const items = [];
         completedTournaments.forEach((tournament) => {
