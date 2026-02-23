@@ -507,7 +507,7 @@ export const RostersView = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'hidden' }}>
       {/* ── Team selector + lineup headshots ── */}
       <div style={{
         ...theme.card,
@@ -582,7 +582,7 @@ export const RostersView = ({
       />
 
       {/* ── Action buttons + roster table ── */}
-      <div style={theme.card}>
+      <div style={{ ...theme.card, overflow: 'hidden' }}>
 
         {/* Action header */}
         <div style={{
@@ -595,7 +595,7 @@ export const RostersView = ({
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, minWidth: 0 }}>
             {/* Lineup button */}
             {(() => {
               const hasLineup = team.lineup.length > 0;
@@ -698,21 +698,22 @@ export const RostersView = ({
 
         ) : (
           /* ── Roster table ── */
-          <table style={{ width: '100%', borderCollapse: 'collapse' }} role="table">
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <thead>
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center' }}>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: 56 }}>
                   {statsView === 'sfgl' ? 'Starts' : 'Events'}
                 </th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center' }}>Cuts Made</th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right' }}>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: 72 }}>Cuts Made</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', width: 110, paddingRight: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                     <div style={{
                       position: 'relative', display: 'flex',
                       background: 'rgba(255,255,255,0.04)',
                       border: '1px solid rgba(180,160,100,0.2)',
-                      borderRadius: 4, padding: 2, width: 100,
+                      borderRadius: 4, padding: 2, width: 96,
+                      flexShrink: 0,
                     }}>
                       <div style={{
                         position: 'absolute', top: 2, bottom: 2,
