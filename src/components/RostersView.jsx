@@ -706,53 +706,68 @@ export const RostersView = ({
 
         ) : (
           /* ── Roster table ── */
-          <table style={{ width: '100%', borderCollapse: 'collapse' }} role="table">
+          <>
+          {/* On mobile: slider sits above table as its own row */}
+          {isMobile && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 10px 2px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+              <div style={{
+                position: 'relative', display: 'flex',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(180,160,100,0.2)',
+                borderRadius: 4, padding: 2, width: 88,
+              }}>
+                <div style={{
+                  position: 'absolute', top: 2, bottom: 2,
+                  left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2,
+                  width: 'calc(50% - 3px)', borderRadius: 2,
+                  background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)',
+                  border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`,
+                  transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none',
+                }} />
+                <button onClick={() => setStatsView('sfgl')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'sfgl' ? colors.textGold : colors.textMuted, cursor: 'pointer' }}>SFGL</button>
+                <button onClick={() => setStatsView('pgat')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted, cursor: 'pointer' }}>PGAT</button>
+              </div>
+            </div>
+          )}
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
+            <colgroup>
+              <col />
+              <col style={{ width: isMobile ? 52 : 80 }} />
+              {!isMobile && <col style={{ width: 90 }} />}
+              <col style={{ width: isMobile ? 72 : 120 }} />
+            </colgroup>
             <thead>
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: isMobile ? 56 : 80, whiteSpace: 'nowrap' }}>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   {statsView === 'sfgl' ? 'Starts' : 'Events'}
                 </th>
                 {!isMobile && (
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', width: 90, whiteSpace: 'nowrap' }}>Cuts Made</th>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>Cuts Made</th>
                 )}
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', width: 120, paddingRight: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                    <div style={{
-                      position: 'relative', display: 'flex',
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid rgba(180,160,100,0.2)',
-                      borderRadius: 4, padding: 2, width: 96,
-                      flexShrink: 0,
-                    }}>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 10 : 8 }}>
+                  {!isMobile && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                       <div style={{
-                        position: 'absolute', top: 2, bottom: 2,
-                        left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2,
-                        width: 'calc(50% - 3px)',
-                        borderRadius: 2,
-                        background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)',
-                        border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`,
-                        transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
-                        pointerEvents: 'none',
-                      }} />
-                      <button onClick={() => setStatsView('sfgl')} style={{
-                        flex: 1, position: 'relative', zIndex: 1,
-                        padding: '3px 0', background: 'none', border: 'none',
-                        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
-                        letterSpacing: '0.8px', textTransform: 'uppercase',
-                        color: statsView === 'sfgl' ? colors.textGold : colors.textMuted,
-                        cursor: 'pointer', transition: 'color 0.18s',
-                      }}>SFGL</button>
-                      <button onClick={() => setStatsView('pgat')} style={{
-                        flex: 1, position: 'relative', zIndex: 1,
-                        padding: '3px 0', background: 'none', border: 'none',
-                        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
-                        letterSpacing: '0.8px', textTransform: 'uppercase',
-                        color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted,
-                        cursor: 'pointer', transition: 'color 0.18s',
-                      }}>PGAT</button>
+                        position: 'relative', display: 'flex',
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(180,160,100,0.2)',
+                        borderRadius: 4, padding: 2, width: 96, flexShrink: 0,
+                      }}>
+                        <div style={{
+                          position: 'absolute', top: 2, bottom: 2,
+                          left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2,
+                          width: 'calc(50% - 3px)', borderRadius: 2,
+                          background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)',
+                          border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`,
+                          transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none',
+                        }} />
+                        <button onClick={() => setStatsView('sfgl')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'sfgl' ? colors.textGold : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>SFGL</button>
+                        <button onClick={() => setStatsView('pgat')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>PGAT</button>
+                      </div>
                     </div>
-                  </div>
+                  )}
+                  {isMobile && <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>$</span>}
                 </th>
               </tr>
             </thead>
@@ -890,6 +905,7 @@ export const RostersView = ({
               })}
             </tbody>
           </table>
+          </>
         )}
       </div>
 
