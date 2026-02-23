@@ -360,13 +360,14 @@ export const AdminView = ({
     if (allRostered.has(w.player)) { dialog.showToast(w.player + ' already rostered', 'error'); return; }
     if (w.droppedPlayer && !buildRoster(teams.find(t => t.name === w.team) || {}).has(w.droppedPlayer)) {
       const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'failed', failReason: w.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() } : tx);
-      setTransactions(tx2); await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2);
+      setTransactions(tx2); await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
       dialog.showToast(w.droppedPlayer + ' already dropped', 'error'); return;
     }
     const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'processed', processedDate: new Date().toLocaleDateString() } : tx);
     const t2 = teams.map(t => applyWaiver(t, w));
     setTransactions(tx2); updateTeams(t2);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
     dialog.showToast(w.team + ' adds ' + w.player + (w.droppedPlayer ? ' / drops ' + w.droppedPlayer : ''), 'success');
   };
   const handleProcessAll = async (pending) => {
@@ -395,6 +396,7 @@ export const AdminView = ({
     let t2 = [...teams]; applied.forEach(w => { t2 = t2.map(t => applyWaiver(t, w)); });
     setTransactions(tx2); updateTeams(t2);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
     dialog.showToast('Processed ' + p + (f ? ' · ' + f + ' failed' : ''), p > 0 ? 'success' : 'error');
   };
 
@@ -481,6 +483,7 @@ export const AdminView = ({
     await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
     await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(() => {});
 
     dialog.showToast('Mulligan applied: ' + mulliganOut + ' → ' + mulliganIn, 'success');
     setMulliganMode(false); setMulliganOut(''); setMulliganIn(''); setMulliganRound('2');
@@ -649,7 +652,8 @@ export const AdminView = ({
     setTransactions(prev => [...prev, newTx]);
     await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+    await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.error('sfgl teams:', e));
+    await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(e => console.error('sfgl tx:', e));
 
     dialog.showToast('🏆 ' + winnerTeam.name + ' awarded $' + pot.toLocaleString() + ' for ' + swingAwardSeg, 'success');
     setSwingAwardSeg('');
