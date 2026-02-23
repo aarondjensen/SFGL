@@ -803,15 +803,15 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 >
                   <div style={{ minWidth: 0, flex: 1 }}>
                     {/* Team name */}
-                    <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, marginBottom: 2 }}>
+                    <div style={{ fontFamily: fonts.serif, fontSize: 'clamp(13px, 1.1vw, 15px)', color: colors.textPrimary, marginBottom: 2 }}>
                       {tx.team}
                     </div>
 
                     {/* Transaction detail */}
-                    <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(11px, 0.9vw, 13px)', color: colors.textSecondary }}>
                       <span style={{ color: txTypeColor(tx.type) }}>{txTypeLabel(tx.type)}</span>
                       {': '}
-                      <span style={{ color: colors.success }}>{tx.player}</span>
+                      <span style={{ color: colors.success }}>{tx.type === 'swing_winner' ? tx.team : tx.player}</span>
                       {tx.droppedPlayer && (
                         <>
                           <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ {tx.type === 'mulligan' ? 'out' : 'drop'}</span>
@@ -821,7 +821,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     </div>
 
                     {/* Date + tournament + status */}
-                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: colors.textMuted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <span>{tx.date}</span>
                       {(() => {
                         const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
