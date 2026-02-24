@@ -167,19 +167,25 @@ export const AddDropPlayerModal = ({
     </button>
   );
 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
   return (
     <div style={{
       position: 'fixed', inset: 0,
       background: 'rgba(5,10,25,0.85)', backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 16, zIndex: 50,
+      display: 'flex',
+      alignItems: isMobile ? 'flex-end' : 'center',
+      justifyContent: 'center',
+      padding: isMobile ? 0 : 16,
+      zIndex: 50,
     }}>
       <div style={{
         background: '#0f1d35',
         border: `2px solid ${isWaiverMode ? colors.warning : colors.success}`,
-        borderRadius: 4,
-        width: '100%', maxWidth: 480,
-        maxHeight: '82vh',
+        borderRadius: isMobile ? '12px 12px 0 0' : 4,
+        width: '100%', maxWidth: isMobile ? '100%' : 480,
+        height: isMobile ? '80vh' : 'auto',
+        maxHeight: isMobile ? '80vh' : '82vh',
         display: 'flex', flexDirection: 'column',
       }}>
 
@@ -346,7 +352,7 @@ export const AddDropPlayerModal = ({
           {/* ── Browse list ── */}
           <input
             type="text"
-            placeholder="Search free agents…"
+            placeholder="Search by name…"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             autoFocus={!selectedPlayerToAdd}
@@ -370,8 +376,9 @@ export const AddDropPlayerModal = ({
                     border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
                     transition: 'all 0.15s',
                   }}
-                  onMouseEnter={e => { if (!isCurrentlySelected) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
-                  onMouseLeave={e => { if (!isCurrentlySelected) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
+                  onClick={() => selectPlayerToAdd(player)}
+                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
+                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{

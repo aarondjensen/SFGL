@@ -595,7 +595,7 @@ export const RostersView = ({
       />
 
       {/* ── Action buttons + roster table ── */}
-      <div style={{ ...theme.card, overflow: 'hidden' }}>
+      <div style={{ ...theme.card }}>
 
         {/* Action header */}
         <div style={{
@@ -662,15 +662,19 @@ export const RostersView = ({
             }}>
               Search Results ({searchResults.length})
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }} role="table">
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
+              <colgroup>
+                <col />
+                <col style={{ width: isMobile ? 60 : 70 }} />
+                <col style={{ width: isMobile ? 60 : 70 }} />
+                <col style={{ width: isMobile ? 80 : 100 }} />
+              </colgroup>
               <thead>
                 <tr>
-                  {['Player', 'Events', 'Cuts', 'Status'].map((h, i) => (
-                    <th key={h} scope="col" style={{
-                      ...theme.tableHeaderCell,
-                      textAlign: i === 0 ? 'left' : i === 3 ? 'right' : 'center',
-                    }}>{h}</th>
-                  ))}
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center' }}>Events</th>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center' }}>Cuts</th>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right' }}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -680,25 +684,25 @@ export const RostersView = ({
                     onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                   >
-                    <td style={{ padding: '8px 16px' }}>
+                    <td style={{ padding: isMobile ? '8px 10px' : '8px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <img
                           src={getPlayerHeadshot(player.name, player.limited, headshots)}
                           onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
-                          alt="" style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}` }}
+                          alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
                         />
-                        <div>
-                          <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{player.name}</div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: colors.textPrimary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name}</div>
                           <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding: '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.eventsPlayed || 0}</td>
-                    <td style={{ padding: '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.cutsMade || 0}</td>
-                    <td style={{ padding: '8px 16px', textAlign: 'right' }}>
+                    <td style={{ padding: isMobile ? '8px 4px' : '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.eventsPlayed || 0}</td>
+                    <td style={{ padding: isMobile ? '8px 4px' : '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.cutsMade || 0}</td>
+                    <td style={{ padding: isMobile ? '8px 10px 8px 4px' : '8px 16px', textAlign: 'right' }}>
                       {player.owner === 'Free Agent'
-                        ? <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: 12, fontWeight: 500 }}>Free Agent</span>
-                        : <span style={{ ...theme.bodyText, fontWeight: 500 }}>{getTeamAbbreviation(player.owner)}</span>}
+                        ? <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: isMobile ? 11 : 12, fontWeight: 500 }}>FA</span>
+                        : <span style={{ ...theme.bodyText, fontWeight: 500, fontSize: isMobile ? 11 : 12 }}>{getTeamAbbreviation(player.owner)}</span>}
                     </td>
                   </tr>
                 ))}
