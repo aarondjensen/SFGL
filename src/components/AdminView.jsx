@@ -163,6 +163,7 @@ export const AdminView = ({
   transactions, setTransactions,
   allPlayers, globalPlayerStats, setGlobalPlayerStats,
   headshots, setHeadshots,
+  updateRankings, rankingsLastUpdated,
   STORAGE_KEYS,
 }) => {
   const [selectedTourney, setSelectedTourney] = useState('');
@@ -917,6 +918,67 @@ export const AdminView = ({
   const pending = transactions.map((tx, idx) => ({ ...tx, _idx: idx })).filter(tx => tx.type === 'waiver' && tx.status === 'pending');
   const disabledBtn = (cond) => cond ? { opacity: 0.4, cursor: 'not-allowed' } : {};
 
+  // ── OWGR CSV handler ──────────────────────────────────────────────────────
+  const [owgrStatus, setOwgrStatus] = useState(null); // null | 'parsing' | 'done' | 'error'
+  const [owgrSummary, setOwgrSummary] = useState('');
+
+  const handleOwgrUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setOwgrStatus('parsing');
+    setOwgrSummary('');
+    e.target.value = ''; // reset input so same file can be re-uploaded
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) throw new Error('CSV appears empty');
+
+      // Detect header row — find rank/name columns case-insensitively
+      const header = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+      const rankCol = header.findIndex(h => h.includes('rank'));
+      const nameCol = header.findIndex(h => h.includes('name') || h.includes('player'));
+      if (nameCol === -1) throw new Error('Could not find a "name" or "player" column in CSV');
+
+      const parsed = [];
+      for (let i = 1; i < lines.length; i++) {
+        // Handle quoted fields
+        const cols = lines[i].match(/(".*?"|[^,]+)(?=,|$)/g)?.map(c => c.replace(/^"|"$/g, '').trim()) || lines[i].split(',').map(c => c.trim());
+        const name = cols[nameCol];
+        const rank = rankCol >= 0 ? parseInt(cols[rankCol], 10) : i;
+        if (!name || name.toLowerCase() === 'name' || name.toLowerCase() === 'player') continue;
+        parsed.push({ name, worldRank: isNaN(rank) ? i : rank });
+      }
+
+      if (parsed.length === 0) throw new Error('No players found in CSV');
+
+      // Merge with existing allPlayers — update worldRank for matches, add new entries
+      const updatedPlayers = [...allPlayers];
+      let updated = 0, added = 0;
+
+      parsed.forEach(({ name, worldRank }) => {
+        const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+        if (idx >= 0) {
+          updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank };
+          updated++;
+        } else {
+          updatedPlayers.push({ name, worldRank });
+          added++;
+        }
+      });
+
+      // Sort by rank
+      updatedPlayers.sort((a, b) => (a.worldRank || 9999) - (b.worldRank || 9999));
+
+      await updateRankings(updatedPlayers);
+      setOwgrStatus('done');
+      setOwgrSummary(`✓ ${parsed.length} players loaded · ${updated} updated · ${added} new`);
+    } catch (err) {
+      setOwgrStatus('error');
+      setOwgrSummary(err.message || 'Failed to parse CSV');
+    }
+  };
+
   return (
     <div style={{ paddingBottom: 40 }}>
 
@@ -1447,6 +1509,44 @@ export const AdminView = ({
             </div>
           );
         })()}
+      </div>
+
+      {/* OWGR Rankings */}
+      <div style={S.section}>
+        <div style={S.title}>🌍 Update OWGR Top 250</div>
+        <div style={{ ...theme.smallText, marginBottom: 12 }}>
+          Upload a CSV from the Official World Golf Rankings (owgr.com). Must include a <strong style={{ color: colors.textSecondary }}>name</strong> and <strong style={{ color: colors.textSecondary }}>rank</strong> column. Updates world rank for all matched players.
+          {rankingsLastUpdated && (
+            <span style={{ display: 'block', marginTop: 4, color: colors.textGoldDim }}>
+              Last updated: {new Date(Number(rankingsLastUpdated)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+
+        <label style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          ...S.btn,
+          cursor: owgrStatus === 'parsing' ? 'wait' : 'pointer',
+          opacity: owgrStatus === 'parsing' ? 0.6 : 1,
+        }}>
+          {owgrStatus === 'parsing' ? '⏳ Parsing…' : '📂 Choose CSV File'}
+          <input
+            type="file" accept=".csv,text/csv" onChange={handleOwgrUpload}
+            style={{ display: 'none' }} disabled={owgrStatus === 'parsing'}
+          />
+        </label>
+
+        {owgrSummary && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12,
+            fontFamily: fonts.sans,
+            background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+            color: owgrStatus === 'error' ? colors.danger : colors.success,
+          }}>
+            {owgrSummary}
+          </div>
+        )}
       </div>
 
       {/* Danger Zone */}
