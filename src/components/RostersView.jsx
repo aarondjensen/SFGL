@@ -560,7 +560,7 @@ export const RostersView = ({
               value={selectedTeam || ''}
               onChange={id => { setSelectedTeam(id); setLineupMode(false); }}
             />
-            {loggedInUser && !isOwnTeam && (
+            {!loggedInUser && !isOwnTeam && (
               <span style={{ ...theme.badge, ...theme.badgeNavy }}>View Only</span>
             )}
             {isCommissioner && team && (
