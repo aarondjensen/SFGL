@@ -199,10 +199,10 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               {/* Badge column */}
               <td style={{ padding: '10px 16px', width: 40 }}>
                 {t.isMajor && (
-                  <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(200,170,255,0.98)' }}>M</div>
+                  <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 800, letterSpacing: 0, background: 'rgba(220,170,50,0.15)', border: '1px solid rgba(220,170,50,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</div>
                 )}
                 {t.isSignature && !t.isMajor && (
-                  <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 600, letterSpacing: '0.3px', background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</div>
+                  <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 600, letterSpacing: 0, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</div>
                 )}
               </td>
 
