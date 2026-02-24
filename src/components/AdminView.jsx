@@ -1132,145 +1132,214 @@ export const AdminView = ({
         );
       })()}
 
-      {/* Waivers */}
-      <div style={S.section}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div style={S.title}>⏰ Process Waivers</div>
-          {pending.length > 0 && <span style={{ ...theme.badge, ...theme.badgeWarning }}>{pending.length} pending</span>}
-        </div>
-        {pending.length === 0 ? (
-          <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.success }}>✓ No pending waiver claims</div>
-        ) : (
-          <>
-            <button onClick={() => handleProcessAll(pending)} style={{ ...S.btn, marginBottom: 8 }}>⚡ Process All ({pending.length})</button>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {pending.map(w => (
-                <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
-                  <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
-                    <div style={{ fontSize: 11 }}>
-                      <span style={{ color: colors.earningsGreen }}>+{w.player}</span>
-                      {w.droppedPlayer && <span style={{ color: colors.danger }}> / -{w.droppedPlayer}</span>}
-                    </div>
-                  </div>
-                  <button onClick={() => handleProcessSingle(w)} style={{ ...theme.btnSecondary, padding: '5px 10px', fontSize: 11, flexShrink: 0 }}>Process</button>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+      {/* ── Waivers + Roster Management + Fix Prior Lineup (side by side) ── */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
 
-      {/* Roster Management */}
-      <div style={S.section}>
-        <div style={S.title}>👥 Roster Management</div>
-        <label style={S.lbl}>Team</label>
-        <select value={rosterMgmtTeam} onChange={e => { setRosterMgmtTeam(e.target.value); setPlayerSearch(''); }} style={S.select}>
-          <option value="">Choose team...</option>
-          {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-        {rosterMgmtTeam && (() => {
-          const team = teams.find(t => t.id === rosterMgmtTeam);
-          const results = playerSearch.trim() ? allPlayers.filter(p => p.name.toLowerCase().includes(playerSearch.toLowerCase()) && !team.roster.some(r => r.name === p.name)).slice(0, 15) : [];
-          return (
-            <div>
-              <div style={{ background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '10px 12px', marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span style={S.lbl}>Mulligans</span>
-                  <span style={{ ...theme.smallText }}>Sig: {team.mulligans?.signatureMajor ?? 0} · Reg: {team.mulligans?.regular ?? 0}</span>
-                </div>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                  <button onClick={() => resetMulligan(team.id, 'sig')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Sig</button>
-                  <button onClick={() => resetMulligan(team.id, 'reg')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Reg</button>
-                </div>
-                {/* Apply Mulligan */}
-                {(() => {
-                  const activeTournament = tournaments.find(t => t.playing);
-                  if (!activeTournament) return (
-                    <div style={{ ...theme.smallText, color: colors.textMuted, textAlign: 'center', paddingTop: 4 }}>No active tournament — can't apply mulligan</div>
-                  );
-                  const isSignatureOrMajor = activeTournament.isSignature || activeTournament.isMajor;
-                  const mulliganKey = isSignatureOrMajor ? 'signatureMajor' : 'regular';
-                  const remaining = team.mulligans?.[mulliganKey] ?? 0;
-                  const lineupPlayers = team.lineup || [];
-                  const benchPlayers = (team.roster || []).map(p => p.name).filter(n => !lineupPlayers.includes(n));
-                  return (
-                    <div>
-                      <button
-                        onClick={() => { setMulliganMode(!mulliganMode); setMulliganOut(''); setMulliganIn(''); setMulliganRound('2'); }}
-                        style={{ ...theme.btnSecondary, width: '100%', padding: '7px 10px', fontSize: 11, marginBottom: mulliganMode ? 8 : 0,
-                          borderColor: mulliganMode ? colors.border : colors.borderInput,
-                          color: mulliganMode ? colors.textGold : colors.textSecondary }}>
-                        🚨 {mulliganMode ? 'Cancel Mulligan' : 'Apply Mulligan'} ({remaining} {isSignatureOrMajor ? 'sig' : 'reg'} left)
-                      </button>
-                      {mulliganMode && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          <select value={mulliganOut} onChange={e => setMulliganOut(e.target.value)} style={{ ...S.select, marginBottom: 0 }}>
-                            <option value="">Player OUT (from lineup)...</option>
-                            {lineupPlayers.map(n => <option key={n} value={n}>{n}</option>)}
-                          </select>
-                          <select value={mulliganIn} onChange={e => setMulliganIn(e.target.value)} style={{ ...S.select, marginBottom: 0 }}>
-                            <option value="">Player IN (from bench)...</option>
-                            {benchPlayers.map(n => <option key={n} value={n}>{n}</option>)}
-                          </select>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            {['1','2','3'].map(r => (
-                              <button key={r} onClick={() => setMulliganRound(r)}
-                                style={{ flex: 1, padding: '6px 0', borderRadius: 2, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
-                                  background: mulliganRound === r ? colors.buttonNavy : 'transparent',
-                                  border: `1px solid ${mulliganRound === r ? colors.border : colors.borderInput}`,
-                                  color: mulliganRound === r ? colors.textGold : colors.textSecondary }}>
-                                R{r}
-                              </button>
-                            ))}
+        {/* Waivers */}
+        <div style={{ ...S.section, flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={S.title}>⏰ Process Waivers</div>
+            {pending.length > 0 && <span style={{ ...theme.badge, ...theme.badgeWarning }}>{pending.length} pending</span>}
+          </div>
+          {pending.length === 0 ? (
+            <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.success }}>✓ No pending waiver claims</div>
+          ) : (
+            <>
+              <button onClick={() => handleProcessAll(pending)} style={{ ...S.btn, marginBottom: 8 }}>⚡ Process All ({pending.length})</button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {pending.map(w => (
+                  <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
+                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
+                      <div style={{ fontSize: 11 }}>
+                        <span style={{ color: colors.earningsGreen }}>+{w.player}</span>
+                        {w.droppedPlayer && <span style={{ color: colors.danger }}> / -{w.droppedPlayer}</span>}
+                      </div>
+                    </div>
+                    <button onClick={() => handleProcessSingle(w)} style={{ ...theme.btnSecondary, padding: '5px 10px', fontSize: 11, flexShrink: 0 }}>Process</button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Roster Management */}
+        <div style={{ ...S.section, flex: 1, minWidth: 0 }}>
+          <div style={S.title}>👥 Roster Management</div>
+          <label style={S.lbl}>Team</label>
+          <select value={rosterMgmtTeam} onChange={e => { setRosterMgmtTeam(e.target.value); setPlayerSearch(''); }} style={S.select}>
+            <option value="">Choose team...</option>
+            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          {rosterMgmtTeam && (() => {
+            const team = teams.find(t => t.id === rosterMgmtTeam);
+            const results = playerSearch.trim() ? allPlayers.filter(p => p.name.toLowerCase().includes(playerSearch.toLowerCase()) && !team.roster.some(r => r.name === p.name)).slice(0, 15) : [];
+            return (
+              <div>
+                <div style={{ background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '10px 12px', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={S.lbl}>Mulligans</span>
+                    <span style={{ ...theme.smallText }}>Sig: {team.mulligans?.signatureMajor ?? 0} · Reg: {team.mulligans?.regular ?? 0}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                    <button onClick={() => resetMulligan(team.id, 'sig')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Sig</button>
+                    <button onClick={() => resetMulligan(team.id, 'reg')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Reg</button>
+                  </div>
+                  {/* Apply Mulligan */}
+                  {(() => {
+                    const activeTournament = tournaments.find(t => t.playing);
+                    if (!activeTournament) return (
+                      <div style={{ ...theme.smallText, color: colors.textMuted, textAlign: 'center', paddingTop: 4 }}>No active tournament — can't apply mulligan</div>
+                    );
+                    const isSignatureOrMajor = activeTournament.isSignature || activeTournament.isMajor;
+                    const mulliganKey = isSignatureOrMajor ? 'signatureMajor' : 'regular';
+                    const remaining = team.mulligans?.[mulliganKey] ?? 0;
+                    const lineupPlayers = team.lineup || [];
+                    const benchPlayers = (team.roster || []).map(p => p.name).filter(n => !lineupPlayers.includes(n));
+                    return (
+                      <div>
+                        <button
+                          onClick={() => { setMulliganMode(!mulliganMode); setMulliganOut(''); setMulliganIn(''); setMulliganRound('2'); }}
+                          style={{ ...theme.btnSecondary, width: '100%', padding: '7px 10px', fontSize: 11, marginBottom: mulliganMode ? 8 : 0,
+                            borderColor: mulliganMode ? colors.border : colors.borderInput,
+                            color: mulliganMode ? colors.textGold : colors.textSecondary }}>
+                          🚨 {mulliganMode ? 'Cancel Mulligan' : 'Apply Mulligan'} ({remaining} {isSignatureOrMajor ? 'sig' : 'reg'} left)
+                        </button>
+                        {mulliganMode && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <select value={mulliganOut} onChange={e => setMulliganOut(e.target.value)} style={{ ...S.select, marginBottom: 0 }}>
+                              <option value="">Player OUT (from lineup)...</option>
+                              {lineupPlayers.map(n => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                            <select value={mulliganIn} onChange={e => setMulliganIn(e.target.value)} style={{ ...S.select, marginBottom: 0 }}>
+                              <option value="">Player IN (from bench)...</option>
+                              {benchPlayers.map(n => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              {['1','2','3'].map(r => (
+                                <button key={r} onClick={() => setMulliganRound(r)}
+                                  style={{ flex: 1, padding: '6px 0', borderRadius: 2, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
+                                    background: mulliganRound === r ? colors.buttonNavy : 'transparent',
+                                    border: `1px solid ${mulliganRound === r ? colors.border : colors.borderInput}`,
+                                    color: mulliganRound === r ? colors.textGold : colors.textSecondary }}>
+                                  R{r}
+                                </button>
+                              ))}
+                            </div>
+                            <button
+                              onClick={() => handleApplyMulligan(team.id)}
+                              disabled={!mulliganOut || !mulliganIn || remaining < 1}
+                              style={{ ...theme.btnPrimary, padding: '8px 10px', fontSize: 11,
+                                opacity: (!mulliganOut || !mulliganIn || remaining < 1) ? 0.4 : 1,
+                                cursor: (!mulliganOut || !mulliganIn || remaining < 1) ? 'not-allowed' : 'pointer' }}>
+                              Confirm Mulligan
+                            </button>
                           </div>
-                          <button
-                            onClick={() => handleApplyMulligan(team.id)}
-                            disabled={!mulliganOut || !mulliganIn || remaining < 1}
-                            style={{ ...theme.btnPrimary, padding: '8px 10px', fontSize: 11,
-                              opacity: (!mulliganOut || !mulliganIn || remaining < 1) ? 0.4 : 1,
-                              cursor: (!mulliganOut || !mulliganIn || remaining < 1) ? 'not-allowed' : 'pointer' }}>
-                            Confirm Mulligan
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-              <div style={{ maxHeight: 200, overflowY: 'auto', border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, marginBottom: 8 }}>
-                {!team.roster.length
-                  ? <div style={theme.emptyState}>No players on roster</div>
-                  : team.roster.map(p => (
-                    <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                      <img src={'https://pga-tour-res.cloudflare.com/resources/photoplayer/' + (headshots[p.name] || 'default') + '.jpg'}
-                        onError={e => { e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(p.name) + '&background=111d2e&color=9ca3af&size=28'; }}
-                        alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }} />
-                      <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                      <button onClick={() => handleDropPlayer(team.id, p.name)} style={{ ...theme.btnDanger, padding: '4px 10px', fontSize: 11 }}>Drop</button>
-                    </div>
-                  ))
-                }
-              </div>
-              <input type="text" placeholder="Search to add player..." value={playerSearch} onChange={e => setPlayerSearch(e.target.value)} style={S.input} />
-              {results.length > 0 && (
-                <div style={{ border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, maxHeight: 160, overflowY: 'auto' }}>
-                  {results.map(p => (
-                    <button key={p.name} onClick={() => { handleAddPlayer(team.id, p.name); setPlayerSearch(''); }}
-                      style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'none', border: 'none', borderBottom: `1px solid ${colors.borderSubtle}`, cursor: 'pointer', textAlign: 'left' }}
-                      onMouseEnter={e => e.currentTarget.style.background = colors.rowHover}
-                      onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                      <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary }}>{p.name}</span>
-                      <span style={{ fontSize: 11, color: colors.earningsGreen, fontWeight: 700 }}>Add</span>
-                    </button>
-                  ))}
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
-              )}
-            </div>
-          );
-        })()}
-      </div>
+                <div style={{ maxHeight: 200, overflowY: 'auto', border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, marginBottom: 8 }}>
+                  {!team.roster.length
+                    ? <div style={theme.emptyState}>No players on roster</div>
+                    : team.roster.map(p => (
+                      <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                        <img src={'https://pga-tour-res.cloudflare.com/resources/photoplayer/' + (headshots[p.name] || 'default') + '.jpg'}
+                          onError={e => { e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(p.name) + '&background=111d2e&color=9ca3af&size=28'; }}
+                          alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }} />
+                        <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                        <button onClick={() => handleDropPlayer(team.id, p.name)} style={{ ...theme.btnDanger, padding: '4px 10px', fontSize: 11 }}>Drop</button>
+                      </div>
+                    ))
+                  }
+                </div>
+                <input type="text" placeholder="Search to add player..." value={playerSearch} onChange={e => setPlayerSearch(e.target.value)} style={S.input} />
+                {results.length > 0 && (
+                  <div style={{ border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, maxHeight: 160, overflowY: 'auto' }}>
+                    {results.map(p => (
+                      <button key={p.name} onClick={() => { handleAddPlayer(team.id, p.name); setPlayerSearch(''); }}
+                        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'none', border: 'none', borderBottom: `1px solid ${colors.borderSubtle}`, cursor: 'pointer', textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background = colors.rowHover}
+                        onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                        <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary }}>{p.name}</span>
+                        <span style={{ fontSize: 11, color: colors.earningsGreen, fontWeight: 700 }}>Add</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Fix Prior Lineup */}
+        <div style={{ ...S.section, flex: 1, minWidth: 0 }}>
+          <div style={S.title}>🚨 Fix Prior Lineup</div>
+          <div style={{ ...theme.smallText, marginBottom: 12 }}>
+            Correct a submitted lineup for a completed tournament and reprocess earnings.
+          </div>
+
+          <label style={S.lbl}>Team</label>
+          <select value={retMulTeam} onChange={e => { setRetMulTeam(e.target.value); setRetLineupEdit([]); }} style={S.select}>
+            <option value="">Select team...</option>
+            {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
+          </select>
+
+          <label style={S.lbl}>Tournament</label>
+          <select value={retMulTourney} onChange={e => { setRetMulTourney(e.target.value); setRetLineupEdit([]); }} style={S.select}>
+            <option value="">Select tournament...</option>
+            {tournaments.filter(t => t.completed).map(t => (
+              <option key={t.name} value={t.name}>✓ {t.name}</option>
+            ))}
+          </select>
+
+          {retMulTeam && retMulTourney && (() => {
+            const team = teams.find(t => t.id === retMulTeam);
+            const tournament = tournaments.find(t => t.name === retMulTourney);
+            const savedLineup = tournament?.results?.fullLineups?.[retMulTeam] || [];
+            const baseLineup = retLineupEdit.length > 0 ? retLineupEdit : (savedLineup.length > 0 ? savedLineup : []);
+            const rosterPlayers = team?.roster?.map(p => p.name) || [];
+
+            return (
+              <div>
+                <label style={S.lbl}>
+                  Lineup
+                  <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>
+                    {savedLineup.length > 0 ? '(loaded from saved results)' : '(not saved — build manually)'}
+                  </span>
+                </label>
+                <div style={{ marginBottom: 8, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: '1px solid ' + colors.borderSubtle, fontSize: 11, fontFamily: fonts.sans }}>
+                  {baseLineup.length > 0
+                    ? baseLineup.map(name => (
+                      <span key={name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 8, marginBottom: 4 }}>
+                        <span style={{ color: colors.textGold }}>{name}</span>
+                        <button onClick={() => setRetLineupEdit(baseLineup.filter(n => n !== name))}
+                          style={{ background: 'none', border: 'none', color: colors.danger, cursor: 'pointer', fontSize: 11, padding: '0 2px' }}>✕</button>
+                      </span>
+                    ))
+                    : <span style={{ color: colors.textMuted }}>No lineup — add players below</span>
+                  }
+                </div>
+                {baseLineup.length < 5 && (
+                  <select onChange={e => { if (e.target.value) setRetLineupEdit([...baseLineup, e.target.value]); e.target.value = ''; }} style={{ ...S.select, marginBottom: 12 }}>
+                    <option value="">+ Add player to lineup...</option>
+                    {rosterPlayers.filter(n => !baseLineup.includes(n)).map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                )}
+                <button onClick={handleRetroLineupOnly}
+                  disabled={baseLineup.length === 0}
+                  style={{ ...S.btn, ...disabledBtn(baseLineup.length === 0) }}>
+                  Reprocess Lineup
+                </button>
+              </div>
+            );
+          })()}
+        </div>
+
+      </div>{/* end Waivers+Roster+Lineup row */}
 
       {/* Manager Login */}
       <div style={S.section}>
@@ -1286,76 +1355,6 @@ export const AdminView = ({
           style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
           {mgCredSaving ? 'Saving...' : 'Set Login'}
         </button>
-      </div>
-
-      {/* One-Time: Fix Prior Lineup */}
-      <div style={S.section}>
-        <div style={S.title}>🚨 Fix Prior Lineup</div>
-        <div style={{ ...theme.smallText, marginBottom: 12 }}>
-          Correct a submitted lineup for a completed tournament and reprocess earnings.
-        </div>
-
-        <label style={S.lbl}>Team</label>
-        <select value={retMulTeam} onChange={e => { setRetMulTeam(e.target.value); setRetLineupEdit([]); }} style={S.select}>
-          <option value="">Select team...</option>
-          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
-        </select>
-
-        <label style={S.lbl}>Tournament</label>
-        <select value={retMulTourney} onChange={e => { setRetMulTourney(e.target.value); setRetLineupEdit([]); }} style={S.select}>
-          <option value="">Select tournament...</option>
-          {tournaments.filter(t => t.completed).map(t => (
-            <option key={t.name} value={t.name}>✓ {t.name}</option>
-          ))}
-        </select>
-
-        {retMulTeam && retMulTourney && (() => {
-          const team = teams.find(t => t.id === retMulTeam);
-          const tournament = tournaments.find(t => t.name === retMulTourney);
-          const savedLineup = tournament?.results?.fullLineups?.[retMulTeam] || [];
-          const baseLineup = retLineupEdit.length > 0 ? retLineupEdit : (savedLineup.length > 0 ? savedLineup : []);
-          const rosterPlayers = team?.roster?.map(p => p.name) || [];
-
-          return (
-            <div>
-              <label style={S.lbl}>
-                Lineup
-                <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>
-                  {savedLineup.length > 0 ? '(loaded from saved results)' : '(not saved — build manually)'}
-                </span>
-              </label>
-              <div style={{ marginBottom: 8, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: '1px solid ' + colors.borderSubtle, fontSize: 11, fontFamily: fonts.sans }}>
-                {baseLineup.length > 0
-                  ? baseLineup.map(name => (
-                    <span key={name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 8, marginBottom: 4 }}>
-                      <span style={{ color: colors.textGold }}>{name}</span>
-                      <button onClick={() => setRetLineupEdit(baseLineup.filter(n => n !== name))}
-                        style={{ background: 'none', border: 'none', color: colors.danger, cursor: 'pointer', fontSize: 11, padding: '0 2px' }}>✕</button>
-                    </span>
-                  ))
-                  : <span style={{ color: colors.textMuted }}>No lineup — add players below</span>
-                }
-              </div>
-              {baseLineup.length < 5 && (
-                <select onChange={e => { if (e.target.value) setRetLineupEdit([...baseLineup, e.target.value]); e.target.value = ''; }} style={{ ...S.select, marginBottom: 12 }}>
-                  <option value="">+ Add player to lineup...</option>
-                  {rosterPlayers.filter(n => !baseLineup.includes(n)).map(name => <option key={name} value={name}>{name}</option>)}
-                </select>
-              )}
-              <button onClick={handleRetroLineupOnly}
-                disabled={baseLineup.length === 0}
-                style={{ ...S.btn, ...disabledBtn(baseLineup.length === 0) }}>
-                Reprocess Lineup
-              </button>
-            </div>
-          );
-        })()}
-      </div>
-
-      {/* Draft */}
-      <div style={S.section}>
-        <div style={S.title}>🎯 Draft</div>
-        <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
       </div>
 
       {/* Data & Sync */}
@@ -1408,145 +1407,136 @@ export const AdminView = ({
         </button>
       </div>
 
-      {/* Headshot Manager */}
-      <div style={S.section}>
-        <div style={S.title}>🖼 Headshot Manager</div>
-        <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
-          Map rostered players to their PGA Tour ID to enable headshots. Find the ID in the player's pgatour.com URL: /player/<strong style={{ color: colors.textPrimary }}>28237</strong>/rory-mcilroy
-        </div>
+      {/* ── OWGR + Headshot Manager (side by side) ── */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
 
-        {/* Search */}
-        <input
-          type="text" placeholder="Filter players…"
-          value={hsSearch} onChange={e => setHsSearch(e.target.value)}
-          style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
-        />
-
-        {/* Player list */}
-        {(() => {
-          const rosteredNames = [...new Set(teams.flatMap(t => t.roster.map(p => p.name)))].sort();
-          const missing = rosteredNames.filter(n => !headshots[n]);
-          const filtered = hsSearch.trim()
-            ? rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase()))
-            : missing;
-          const showingAll = hsSearch.trim().length > 0;
-
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {/* Header count */}
-              <div style={{ ...theme.smallText, marginBottom: 6, color: colors.textMuted }}>
-                {showingAll
-                  ? `Showing ${filtered.length} of ${rosteredNames.length} players`
-                  : missing.length === 0
-                    ? <span style={{ color: colors.success }}>✓ All rostered players have headshot IDs</span>
-                    : `${missing.length} player${missing.length !== 1 ? 's' : ''} missing IDs`
-                }
-              </div>
-              {filtered.map(name => {
-                const currentId = headshots[name] || '';
-                const hasSrc    = !!currentId;
-                const saving    = hsSaving[name];
-                return (
-                  <div key={name} style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    background: colors.inputBg, border: `1px solid ${hasSrc ? colors.borderSubtle : 'rgba(220,100,80,0.25)'}`,
-                    borderRadius: 3, padding: '6px 10px',
-                  }}>
-                    {/* Headshot preview */}
-                    <img
-                      src={hasSrc
-                        ? (currentId.startsWith('http') ? currentId : `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${currentId}`)
-                        : `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`
-                      }
-                      onError={e => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`; }}
-                      alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
-                    />
-
-                    {/* Name */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{name}</div>
-                      {!hasSrc && <div style={{ fontFamily: fonts.sans, fontSize: 10, color: 'rgba(220,100,80,0.8)' }}>No ID set</div>}
-                    </div>
-
-                    {/* ID input */}
-                    <input
-                      type="text"
-                      defaultValue={currentId}
-                      placeholder="PGA Tour ID"
-                      onBlur={async e => {
-                        const val = e.target.value.trim();
-                        if (val === currentId) return;
-                        setHsSaving(prev => ({ ...prev, [name]: true }));
-                        try {
-                          await playersApi.update(name, { pgaTourId: val ? parseInt(val) || val : null });
-                          setHeadshots({ ...headshots, [name]: val });
-                          dialog.showToast('✓ Updated ' + name, 'success');
-                        } catch(err) {
-                          if (err.message?.includes('players_pga_tour_id_key')) {
-                            // Find which player already has this ID
-                            const existing = Object.entries(headshots).find(([n, id]) => String(id) === String(val) && n !== name);
-                            const who = existing ? ` — already assigned to "${existing[0]}"` : ' — already assigned to another player';
-                            dialog.showToast(`ID ${val} is a duplicate${who}`, 'error');
-                            e.target.value = currentId; // revert input
-                          } else {
-                            dialog.showToast('Error: ' + err.message, 'error');
-                          }
-                        } finally {
-                          setHsSaving(prev => ({ ...prev, [name]: false }));
-                        }
-                      }}
-                      style={{ ...theme.input, width: 100, fontSize: 12, padding: '5px 8px', marginBottom: 0,
-                        textAlign: 'center', fontFamily: fonts.mono,
-                        opacity: saving ? 0.5 : 1,
-                      }}
-                    />
-                  </div>
-                );
-              })}
-              {filtered.length === 0 && (
-                <div style={{ ...theme.smallText, textAlign: 'center', padding: '12px 0' }}>No players found</div>
-              )}
+        {/* OWGR Rankings */}
+        <div style={{ ...S.section, flex: 1, minWidth: 0 }}>
+          <div style={S.title}>🌍 Update OWGR Top 250</div>
+          <div style={{ ...theme.smallText, marginBottom: 12 }}>
+            Upload a CSV from owgr.com. Must include a <strong style={{ color: colors.textSecondary }}>name</strong> and <strong style={{ color: colors.textSecondary }}>rank</strong> column.
+            {rankingsLastUpdated && (
+              <span style={{ display: 'block', marginTop: 4, color: colors.textGoldDim }}>
+                Last updated: {new Date(Number(rankingsLastUpdated)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </div>
+          <label style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            ...S.btn,
+            cursor: owgrStatus === 'parsing' ? 'wait' : 'pointer',
+            opacity: owgrStatus === 'parsing' ? 0.6 : 1,
+          }}>
+            {owgrStatus === 'parsing' ? '⏳ Parsing…' : '📂 Choose CSV File'}
+            <input type="file" accept=".csv,text/csv" onChange={handleOwgrUpload}
+              style={{ display: 'none' }} disabled={owgrStatus === 'parsing'} />
+          </label>
+          {owgrSummary && (
+            <div style={{
+              marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+              background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+              border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+              color: owgrStatus === 'error' ? colors.danger : colors.success,
+            }}>
+              {owgrSummary}
             </div>
-          );
-        })()}
-      </div>
-
-      {/* OWGR Rankings */}
-      <div style={S.section}>
-        <div style={S.title}>🌍 Update OWGR Top 250</div>
-        <div style={{ ...theme.smallText, marginBottom: 12 }}>
-          Upload a CSV from the Official World Golf Rankings (owgr.com). Must include a <strong style={{ color: colors.textSecondary }}>name</strong> and <strong style={{ color: colors.textSecondary }}>rank</strong> column. Updates world rank for all matched players.
-          {rankingsLastUpdated && (
-            <span style={{ display: 'block', marginTop: 4, color: colors.textGoldDim }}>
-              Last updated: {new Date(Number(rankingsLastUpdated)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            </span>
           )}
         </div>
 
-        <label style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          ...S.btn,
-          cursor: owgrStatus === 'parsing' ? 'wait' : 'pointer',
-          opacity: owgrStatus === 'parsing' ? 0.6 : 1,
-        }}>
-          {owgrStatus === 'parsing' ? '⏳ Parsing…' : '📂 Choose CSV File'}
-          <input
-            type="file" accept=".csv,text/csv" onChange={handleOwgrUpload}
-            style={{ display: 'none' }} disabled={owgrStatus === 'parsing'}
-          />
-        </label>
-
-        {owgrSummary && (
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12,
-            fontFamily: fonts.sans,
-            background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-            border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-            color: owgrStatus === 'error' ? colors.danger : colors.success,
-          }}>
-            {owgrSummary}
+        {/* Headshot Manager */}
+        <div style={{ ...S.section, flex: 1, minWidth: 0 }}>
+          <div style={S.title}>🖼 Headshot Manager</div>
+          <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
+            Map rostered players to their PGA Tour ID. Find the ID in the pgatour.com URL: /player/<strong style={{ color: colors.textPrimary }}>28237</strong>/rory-mcilroy
           </div>
-        )}
+          <input type="text" placeholder="Filter players…"
+            value={hsSearch} onChange={e => setHsSearch(e.target.value)}
+            style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
+          />
+          {(() => {
+            const rosteredNames = [...new Set(teams.flatMap(t => t.roster.map(p => p.name)))].sort();
+            const missing = rosteredNames.filter(n => !headshots[n]);
+            const filtered = hsSearch.trim()
+              ? rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase()))
+              : missing;
+            const showingAll = hsSearch.trim().length > 0;
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ ...theme.smallText, marginBottom: 6, color: colors.textMuted }}>
+                  {showingAll
+                    ? `Showing ${filtered.length} of ${rosteredNames.length} players`
+                    : missing.length === 0
+                      ? <span style={{ color: colors.success }}>✓ All rostered players have headshot IDs</span>
+                      : `${missing.length} player${missing.length !== 1 ? 's' : ''} missing IDs`
+                  }
+                </div>
+                {filtered.map(name => {
+                  const currentId = headshots[name] || '';
+                  const hasSrc    = !!currentId;
+                  const saving    = hsSaving[name];
+                  return (
+                    <div key={name} style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      background: colors.inputBg, border: `1px solid ${hasSrc ? colors.borderSubtle : 'rgba(220,100,80,0.25)'}`,
+                      borderRadius: 3, padding: '6px 10px',
+                    }}>
+                      <img
+                        src={hasSrc
+                          ? (currentId.startsWith('http') ? currentId : `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${currentId}`)
+                          : `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`
+                        }
+                        onError={e => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`; }}
+                        alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{name}</div>
+                        {!hasSrc && <div style={{ fontFamily: fonts.sans, fontSize: 10, color: 'rgba(220,100,80,0.8)' }}>No ID set</div>}
+                      </div>
+                      <input
+                        type="text"
+                        defaultValue={currentId}
+                        placeholder="PGA Tour ID"
+                        onBlur={async e => {
+                          const val = e.target.value.trim();
+                          if (val === currentId) return;
+                          setHsSaving(prev => ({ ...prev, [name]: true }));
+                          try {
+                            await playersApi.update(name, { pgaTourId: val ? parseInt(val) || val : null });
+                            setHeadshots({ ...headshots, [name]: val });
+                            dialog.showToast('✓ Updated ' + name, 'success');
+                          } catch(err) {
+                            if (err.message?.includes('players_pga_tour_id_key')) {
+                              const existing = Object.entries(headshots).find(([n, id]) => String(id) === String(val) && n !== name);
+                              const who = existing ? ` — already assigned to "${existing[0]}"` : ' — already assigned to another player';
+                              dialog.showToast(`ID ${val} is a duplicate${who}`, 'error');
+                              e.target.value = currentId;
+                            } else {
+                              dialog.showToast('Error: ' + err.message, 'error');
+                            }
+                          } finally {
+                            setHsSaving(prev => ({ ...prev, [name]: false }));
+                          }
+                        }}
+                        style={{ ...theme.input, width: 100, fontSize: 12, padding: '5px 8px', marginBottom: 0,
+                          textAlign: 'center', fontFamily: fonts.mono, opacity: saving ? 0.5 : 1 }}
+                      />
+                    </div>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <div style={{ ...theme.smallText, textAlign: 'center', padding: '12px 0' }}>No players found</div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
+      </div>{/* end OWGR+Headshots row */}
+
+      {/* Draft */}
+      <div style={S.section}>
+        <div style={S.title}>🎯 Draft</div>
+        <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
       </div>
 
       {/* Danger Zone */}
