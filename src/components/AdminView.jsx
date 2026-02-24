@@ -4,7 +4,7 @@ import { useDialog } from './DialogContext';
 import { slashGolfFetch, getSegmentByDate } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi, tournamentResultsApi, sfglDataApi } from '../api/supabase';
+import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi } from '../api/supabase';
 import { theme, colors, fonts } from '../theme.js';
 
 
@@ -162,7 +162,7 @@ export const AdminView = ({
   tournaments, setTournaments,
   transactions, setTransactions,
   allPlayers, globalPlayerStats, setGlobalPlayerStats,
-  headshots,
+  headshots, setHeadshots,
   STORAGE_KEYS,
 }) => {
   const [selectedTourney, setSelectedTourney] = useState('');
@@ -170,6 +170,8 @@ export const AdminView = ({
   const [rosterMgmtTeam, setRosterMgmtTeam] = useState('');
   const [playerSearch, setPlayerSearch] = useState('');
   const [mgCredTeam, setMgCredTeam] = useState('');
+  const [hsSearch,   setHsSearch]   = useState('');
+  const [hsSaving,   setHsSaving]   = useState({});
   const [mgCredName, setMgCredName] = useState('');
   const [mgCredPass, setMgCredPass] = useState('');
   const [mgCredSaving, setMgCredSaving] = useState(false);
@@ -1292,6 +1294,90 @@ export const AdminView = ({
           style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
           🏆 Award Swing Winner
         </button>
+      </div>
+
+      {/* Headshot Manager */}
+      <div style={S.section}>
+        <div style={S.title}>🖼 Headshot Manager</div>
+        <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
+          Map rostered players to their PGA Tour ID to enable headshots. Find the ID in the player's pgatour.com URL: /player/<strong style={{ color: colors.textPrimary }}>28237</strong>/rory-mcilroy
+        </div>
+
+        {/* Search */}
+        <input
+          type="text" placeholder="Filter players…"
+          value={hsSearch} onChange={e => setHsSearch(e.target.value)}
+          style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
+        />
+
+        {/* Player list — all rostered players */}
+        {(() => {
+          const rosteredNames = [...new Set(teams.flatMap(t => t.roster.map(p => p.name)))].sort();
+          const filtered = hsSearch.trim()
+            ? rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase()))
+            : rosteredNames;
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {filtered.map(name => {
+                const currentId = headshots[name] || '';
+                const hasSrc    = !!currentId;
+                const saving    = hsSaving[name];
+                return (
+                  <div key={name} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: colors.inputBg, border: `1px solid ${hasSrc ? colors.borderSubtle : 'rgba(220,100,80,0.25)'}`,
+                    borderRadius: 3, padding: '6px 10px',
+                  }}>
+                    {/* Headshot preview */}
+                    <img
+                      src={hasSrc
+                        ? (currentId.startsWith('http') ? currentId : `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${currentId}`)
+                        : `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`
+                      }
+                      onError={e => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`; }}
+                      alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
+                    />
+
+                    {/* Name */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{name}</div>
+                      {!hasSrc && <div style={{ fontFamily: fonts.sans, fontSize: 10, color: 'rgba(220,100,80,0.8)' }}>No ID set</div>}
+                    </div>
+
+                    {/* ID input */}
+                    <input
+                      type="text"
+                      defaultValue={currentId}
+                      placeholder="PGA Tour ID"
+                      onBlur={async e => {
+                        const val = e.target.value.trim();
+                        if (val === currentId) return;
+                        setHsSaving(prev => ({ ...prev, [name]: true }));
+                        try {
+                          await playersApi.update(name, { pgaTourId: val ? parseInt(val) || val : null });
+                          setHeadshots({ ...headshots, [name]: val });
+                          dialog.showToast('✓ Updated ' + name, 'success');
+                        } catch(err) {
+                          dialog.showToast('Error: ' + err.message, 'error');
+                        } finally {
+                          setHsSaving(prev => ({ ...prev, [name]: false }));
+                        }
+                      }}
+                      style={{ ...theme.input, width: 100, fontSize: 12, padding: '5px 8px', marginBottom: 0,
+                        textAlign: 'center', fontFamily: fonts.mono,
+                        opacity: saving ? 0.5 : 1,
+                      }}
+                    />
+                  </div>
+                );
+              })}
+              {filtered.length === 0 && (
+                <div style={{ ...theme.smallText, textAlign: 'center', padding: '12px 0' }}>No players found</div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Danger Zone */}
