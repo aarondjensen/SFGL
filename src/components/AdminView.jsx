@@ -1370,7 +1370,15 @@ export const AdminView = ({
                           setHeadshots({ ...headshots, [name]: val });
                           dialog.showToast('✓ Updated ' + name, 'success');
                         } catch(err) {
-                          dialog.showToast('Error: ' + err.message, 'error');
+                          if (err.message?.includes('players_pga_tour_id_key')) {
+                            // Find which player already has this ID
+                            const existing = Object.entries(headshots).find(([n, id]) => String(id) === String(val) && n !== name);
+                            const who = existing ? ` — already assigned to "${existing[0]}"` : ' — already assigned to another player';
+                            dialog.showToast(`ID ${val} is a duplicate${who}`, 'error');
+                            e.target.value = currentId; // revert input
+                          } else {
+                            dialog.showToast('Error: ' + err.message, 'error');
+                          }
                         } finally {
                           setHsSaving(prev => ({ ...prev, [name]: false }));
                         }
