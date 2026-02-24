@@ -202,24 +202,19 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                   <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(200,170,255,0.98)' }}>M</div>
                 )}
                 {t.isSignature && !t.isMajor && (
-                  <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(130,100,200,0.09)', border: '1px solid rgba(130,100,200,0.35)', color: 'rgba(170,145,230,0.72)' }}>S</div>
+                  <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 600, letterSpacing: '0.3px', background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</div>
                 )}
               </td>
 
               {/* Tournament name */}
               <td style={{ padding: '10px 16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontFamily: fonts.serif, fontSize: 13, color: alt ? colors.textMuted : colors.textPrimary }}>
+                  <span style={{ fontFamily: fonts.serif, fontSize: 13, color: alt ? colors.textMuted : (t.playing && !t.completed) ? colors.textGold : colors.textPrimary }}>
                     {t.name}
                   </span>
                   {t.completed && (
                     <span style={{ ...theme.badge, background: 'rgba(255,255,255,0.05)', border: `1px solid ${colors.borderSubtle}`, color: colors.textSecondary }}>
                       Final
-                    </span>
-                  )}
-                  {t.playing && !t.completed && (
-                    <span style={{ ...theme.badge, background: 'rgba(80,180,120,0.1)', border: '1px solid rgba(80,180,120,0.3)', color: colors.success }}>
-                      Active
                     </span>
                   )}
                 </div>
