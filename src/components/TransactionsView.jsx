@@ -264,6 +264,27 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
+const SWING_ABBR = {
+  'West Coast Swing': { label: 'WC',  color: 'rgba(220,80,80,0.85)',   bg: 'rgba(220,80,80,0.12)',   border: 'rgba(220,80,80,0.35)'   },
+  'Spring Swing':     { label: 'SPR', color: 'rgba(100,215,175,0.9)',  bg: 'rgba(100,215,175,0.10)', border: 'rgba(100,215,175,0.35)' },
+  'Summer Swing':     { label: 'SUM', color: 'rgba(80,140,220,0.85)',  bg: 'rgba(80,140,220,0.12)',  border: 'rgba(80,140,220,0.35)'  },
+  'Fall Finish':      { label: 'FF',  color: 'rgba(220,140,60,0.85)',  bg: 'rgba(220,140,60,0.12)',  border: 'rgba(220,140,60,0.35)'  },
+};
+
+const SwingBadge = ({ segment }) => {
+  const s = SWING_ABBR[segment];
+  if (!s) return <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>{segment}</span>;
+  return (
+    <span style={{
+      fontFamily: "'Raleway', system-ui, sans-serif",
+      fontSize: 9, fontWeight: 700, letterSpacing: '0.5px',
+      padding: '2px 5px', borderRadius: 2,
+      background: s.bg, border: `1px solid ${s.border}`, color: s.color,
+      whiteSpace: 'nowrap',
+    }}>{s.label}</span>
+  );
+};
+
 export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, isCommissioner }) => {
   const [filterTeam,   setFilterTeam]   = useState('all');
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
@@ -810,9 +831,21 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    {/* Team name */}
-                    <div style={{ fontFamily: fonts.serif, fontSize: 'clamp(13px, 1.1vw, 15px)', color: colors.textPrimary, marginBottom: 2 }}>
-                      {tx.team}
+                    {/* Team name + event name */}
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
+                      <span style={{ fontFamily: fonts.serif, fontSize: 'clamp(13px, 1.1vw, 15px)', color: colors.textPrimary }}>
+                        {tx.team}
+                      </span>
+                      {(() => {
+                        const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
+                        const name = t?.name || tx.tournament || null;
+                        if (!name) return null;
+                        return (
+                          <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: colors.textMuted }}>
+                            {name}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Transaction detail */}
@@ -828,26 +861,17 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       )}
                     </div>
 
-                    {/* Date + tournament + status */}
-                    <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: colors.textMuted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span>{tx.date}</span>
-                      {(() => {
-                        const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
-                        const name = t?.name || tx.tournament || null;
-                        if (!name) return null;
-                        return (
-                          <span style={{ color: 'rgba(180,180,210,0.6)' }}>
-                            · {name}
+                    {/* Segment + status */}
+                    {(tx.segment || (tx.status && tx.status !== 'processed')) && (
+                      <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: colors.textMuted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {tx.segment && <SwingBadge segment={tx.segment} />}
+                        {tx.status && tx.status !== 'processed' && (
+                          <span style={{ color: statusColor(tx.status), fontWeight: 600 }}>
+                            {tx.status}{tx.failReason ? ' — ' + tx.failReason : ''}
                           </span>
-                        );
-                      })()}
-                      {tx.segment && <span>· {tx.segment}</span>}
-                      {tx.status && tx.status !== 'processed' && (
-                        <span style={{ color: statusColor(tx.status), fontWeight: 600 }}>
-                          {tx.status}{tx.failReason ? ' — ' + tx.failReason : ''}
-                        </span>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Fee + commish actions */}
