@@ -594,6 +594,7 @@ export const AdminView = ({
     const newTx = {
       team: team.name, type: 'mulligan', player: mulliganIn, droppedPlayer: mulliganOut,
       fee: 0, segment: activeTournament.segment || '', date: new Date().toLocaleDateString(),
+      timestamp: Date.now(),
       tournamentIndex, status: 'completed',
       mulliganType: isSignatureOrMajor ? 'signature/major' : 'regular',
       afterRound: parseInt(mulliganRound), tournament: activeTournament.name,
@@ -1037,6 +1038,37 @@ export const AdminView = ({
           </div>
         </div>
       </div>
+
+      {/* Waiver reminder banner */}
+      {(() => {
+        const now = new Date();
+        // Convert to ET (UTC-5 standard, UTC-4 daylight)
+        const etOffset = -4; // adjust to -5 in November
+        const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
+        const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay(); // 0=Sun,2=Tue
+        const isReadyToProcess = etDay === 2 && etHour >= 20 && pending.length > 0;
+        if (!isReadyToProcess) return null;
+        return (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '12px 16px', marginBottom: 12, borderRadius: 4,
+            background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.45)',
+          }}>
+            <span style={{ fontSize: 18 }}>⏰</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 700, color: 'rgba(220,190,80,0.95)', marginBottom: 2 }}>
+                Waivers ready to process
+              </div>
+              <div style={{ fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,190,80,0.65)' }}>
+                It's past 8pm ET Tuesday — {pending.length} pending claim{pending.length !== 1 ? 's' : ''} waiting
+              </div>
+            </div>
+            <button onClick={() => handleProcessAll(pending)} style={{ ...S.btn, padding: '7px 14px', fontSize: 12, flexShrink: 0 }}>
+              Process Now
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Waivers */}
       <div style={S.section}>
