@@ -778,7 +778,7 @@ export const RostersView = ({
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   {isMobile ? 'Cuts' : 'Cuts Made'}
                 </th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 10 : 8 }}>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: isMobile ? 'center' : 'right', paddingRight: isMobile ? 10 : 8 }}>
                   {!isMobile && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                       <div style={{
@@ -800,7 +800,7 @@ export const RostersView = ({
                       </div>
                     </div>
                   )}
-                  {isMobile && <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>$</span>}
+                  {isMobile && <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', display: 'block', textAlign: 'center' }}>$</span>}
                 </th>
               </tr>
             </thead>
