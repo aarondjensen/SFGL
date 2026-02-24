@@ -332,11 +332,15 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const ai = a.tournamentIndex ?? 9999;
     const bi = b.tournamentIndex ?? 9999;
     if (bi !== ai) return bi - ai;
-    // Within same tournament: most recent timestamp first
-    const at = a.timestamp ?? 0;
-    const bt = b.timestamp ?? 0;
+    // Within same tournament: most recent first.
+    // Use timestamp if available, otherwise parse date string (e.g. "2/24/2026")
+    const toMs = tx => tx.timestamp
+      ? tx.timestamp
+      : tx.date ? new Date(tx.date).getTime() : 0;
+    const at = toMs(a);
+    const bt = toMs(b);
     if (bt !== at) return bt - at;
-    // Final tiebreak: waivers/FA first, then drops, then mulligans
+    // Final tiebreak: type order
     const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
     return ta - tb;
