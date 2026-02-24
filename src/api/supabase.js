@@ -116,8 +116,8 @@ export const playersApi = {
       if (p.headshot_url) {
         map[p.name] = p.headshot_url;
       } else if (p.pga_tour_id) {
-        // Try ESPN CDN URL format
-        map[p.name] = `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${p.pga_tour_id}.png&w=96&h=96`;
+        // Store numeric ID — RostersView constructs the CDN URL
+        map[p.name] = String(p.pga_tour_id);
       }
     });
     return map;
