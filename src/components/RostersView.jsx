@@ -22,7 +22,7 @@ const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
   // Numeric ID — try both CDN formats
   return [
-    `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${val}`,
+    `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${val}`,
     `https://res.cloudinary.com/pgatour-prod/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${val}.png`,
     `https://media.pgatour.com/headshots/${val}.png`,
   ];

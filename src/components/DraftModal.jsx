@@ -319,7 +319,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     if (!id) { const p = allPlayers.find(p => p.name === playerName); id = p?.pgaTourId; }
     if (id) {
       if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('/'))) return id;
-      return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,d_stub:default_avatar_light.webp/headshots_${id}`;
+      return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${id}`;
     }
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=0f1d35&color=6b7280&size=128`;
   };
