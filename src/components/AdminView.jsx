@@ -188,6 +188,7 @@ export const AdminView = ({
   const [retMulTourney, setRetMulTourney] = useState('');
 
   const [retLineupEdit, setRetLineupEdit] = useState([]);  // edited starting lineup
+  const [mgrLoginOpen, setMgrLoginOpen]   = useState(false);
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -991,152 +992,132 @@ export const AdminView = ({
         <button onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }} style={{ ...theme.btnDanger, padding: '6px 14px', fontSize: 11 }}>Logout</button>
       </div>
 
-      {/* Tournament Results */}
-      <div style={S.section}>
-        <div style={S.title}>🏆 Tournament Results</div>
-        <label style={S.lbl}>Tournament</label>
-        <select value={selectedTourney} onChange={e => {
-          const name = e.target.value;
-          setSelectedTourney(name);
-          // Pre-fill earnings when selecting a completed tournament
-          const t = tournaments.find(t => t.name === name);
-          if (t?.completed && t.results?.earningsMap) {
-            const lines = Object.entries(t.results.earningsMap)
-              .sort((a, b) => b[1] - a[1])
-              .map(([player, amt]) => player + ', ' + amt)
-              .join('\n');
-            const teamLineups = {};
-            if (t.results.fullLineups) {
-              Object.entries(t.results.fullLineups).forEach(([teamId, lineup]) => {
-                teamLineups[teamId] = [...lineup];
-              });
+      {/* ── Row 1: Tournament Results · Waivers · Swing Winner (side by side) ── */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+
+        {/* Tournament Results */}
+        <div style={{ ...S.section, flex: 2, minWidth: 0 }}>
+          <div style={S.title}>🏆 Tournament Results</div>
+          <label style={S.lbl}>Tournament</label>
+          <select value={selectedTourney} onChange={e => {
+            const name = e.target.value;
+            setSelectedTourney(name);
+            const t = tournaments.find(t => t.name === name);
+            if (t?.completed && t.results?.earningsMap) {
+              const lines = Object.entries(t.results.earningsMap)
+                .sort((a, b) => b[1] - a[1])
+                .map(([player, amt]) => player + ', ' + amt)
+                .join('\n');
+              const teamLineups = {};
+              if (t.results.fullLineups) {
+                Object.entries(t.results.fullLineups).forEach(([teamId, lineup]) => {
+                  teamLineups[teamId] = [...lineup];
+                });
+              }
+              setManualEntry(prev => ({ ...prev, playerEarnings: lines,
+                round1Leaders: t.results.roundLeaders?.round1?.length ? t.results.roundLeaders.round1 : [''],
+                round2Leaders: t.results.roundLeaders?.round2?.length ? t.results.roundLeaders.round2 : [''],
+                round3Leaders: t.results.roundLeaders?.round3?.length ? t.results.roundLeaders.round3 : [''],
+                teamLineups,
+              }));
+            } else {
+              setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
             }
-            setManualEntry(prev => ({ ...prev, playerEarnings: lines,
-              round1Leaders: t.results.roundLeaders?.round1?.length ? t.results.roundLeaders.round1 : [''],
-              round2Leaders: t.results.roundLeaders?.round2?.length ? t.results.roundLeaders.round2 : [''],
-              round3Leaders: t.results.roundLeaders?.round3?.length ? t.results.roundLeaders.round3 : [''],
-              teamLineups,
-            }));
-          } else {
-            setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
-          }
-        }} style={S.select}>
-          <option value="">Choose tournament...</option>
-          {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
-        </select>
-        <button onClick={handleFetchApiResults} style={{ ...S.btn, marginBottom: 10 }}>⚡ Fetch from API</button>
+          }} style={S.select}>
+            <option value="">Choose tournament...</option>
+            {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
+          </select>
+          <button onClick={handleFetchApiResults} style={{ ...S.btn, marginBottom: 10 }}>⚡ Fetch from API</button>
 
-        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
-          <div style={{ ...S.lbl, color: colors.textMuted, textAlign: 'center', marginBottom: 10 }}>— or enter manually —</div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <RoundLeaderSelect label="R1 Leader" leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
-            <RoundLeaderSelect label="R2 Leader" leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
-            <RoundLeaderSelect label="R3 Leader" leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
-          </div>
-          {/* ── Lineup overrides — only for reprocessing completed tournaments ── */}
-          {tournaments.find(t => t.name === selectedTourney)?.completed && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ ...S.lbl, marginBottom: 6 }}>
-                Starting Lineups
-                <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>— correct if roster was edited</span>
-              </div>
-              {teams.map(team => {
-                const currentLineup = manualEntry.teamLineups[team.id] || [];
-                return (
-                  <div key={team.id} style={{ marginBottom: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, color: colors.textGold, marginBottom: 6, letterSpacing: '0.5px' }}>
-                      {team.name}
-                      <span style={{ color: colors.textMuted, fontWeight: 400, marginLeft: 8 }}>
-                        {currentLineup.length}/5 starters
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                      {team.roster.map(p => {
-                        const inLineup = currentLineup.includes(p.name);
-                        return (
-                          <label key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none' }}>
-                            <input
-                              type="checkbox"
-                              checked={inLineup}
-                              onChange={e => {
-                                const updated = e.target.checked
-                                  ? [...currentLineup, p.name]
-                                  : currentLineup.filter(n => n !== p.name);
-                                setManualEntry(prev => ({ ...prev, teamLineups: { ...prev.teamLineups, [team.id]: updated } }));
-                              }}
-                              style={{ accentColor: colors.textGold, width: 13, height: 13 }}
-                            />
-                            <span style={{ fontFamily: fonts.sans, fontSize: 11, color: inLineup ? colors.textPrimary : colors.textMuted }}>
-                              {p.name}
-                              {p.limited && <span style={{ color: colors.textGoldDim, marginLeft: 3 }}>★</span>}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+          <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
+            <div style={{ ...S.lbl, color: colors.textMuted, textAlign: 'center', marginBottom: 10 }}>— or enter manually —</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <RoundLeaderSelect label="R1 Leader" leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
+              <RoundLeaderSelect label="R2 Leader" leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
+              <RoundLeaderSelect label="R3 Leader" leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
             </div>
-          )}
-
-          <label style={S.lbl}>Player Earnings <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>— one per line: Player Name, 123456</span></label>
-          <textarea value={manualEntry.playerEarnings} onChange={e => setManualEntry({ ...manualEntry, playerEarnings: e.target.value })}
-            placeholder={'Scottie Scheffler, 3600000\nRory McIlroy, 2160000'} rows={6}
-            style={{ ...theme.input, fontFamily: fonts.mono, fontSize: 12, resize: 'vertical', marginBottom: 8 }} />
-          <div style={{ display: 'flex', gap: 8 }}>
-            {!tournaments.find(t => t.name === selectedTourney)?.completed && (
-              <button onClick={handleManualEntry} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
-                style={{ ...S.btn, flex: 1, ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
-                Process Manual Entry
-              </button>
-            )}
+            {/* ── Lineup overrides ── */}
             {tournaments.find(t => t.name === selectedTourney)?.completed && (
-              <button onClick={handleReprocess} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
-                style={{ ...S.btn, flex: 1, background: 'rgba(220,150,50,0.12)', border: '1px solid rgba(220,150,50,0.4)', color: 'rgba(220,180,80,0.9)', ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
-                ✏️ Reprocess Tournament
-              </button>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ ...S.lbl, marginBottom: 6 }}>
+                  Starting Lineups
+                  <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>— correct if roster was edited</span>
+                </div>
+                {teams.map(team => {
+                  const currentLineup = manualEntry.teamLineups[team.id] || [];
+                  return (
+                    <div key={team.id} style={{ marginBottom: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
+                      <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, color: colors.textGold, marginBottom: 6, letterSpacing: '0.5px' }}>
+                        {team.name}
+                        <span style={{ color: colors.textMuted, fontWeight: 400, marginLeft: 8 }}>{currentLineup.length}/5 starters</span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                        {team.roster.map(p => {
+                          const inLineup = currentLineup.includes(p.name);
+                          return (
+                            <label key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none' }}>
+                              <input type="checkbox" checked={inLineup}
+                                onChange={e => {
+                                  const updated = e.target.checked ? [...currentLineup, p.name] : currentLineup.filter(n => n !== p.name);
+                                  setManualEntry(prev => ({ ...prev, teamLineups: { ...prev.teamLineups, [team.id]: updated } }));
+                                }}
+                                style={{ accentColor: colors.textGold, width: 13, height: 13 }}
+                              />
+                              <span style={{ fontFamily: fonts.sans, fontSize: 11, color: inLineup ? colors.textPrimary : colors.textMuted }}>
+                                {p.name}{p.limited && <span style={{ color: colors.textGoldDim, marginLeft: 3 }}>★</span>}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
+            <label style={S.lbl}>Player Earnings <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>— one per line: Player Name, 123456</span></label>
+            <textarea value={manualEntry.playerEarnings} onChange={e => setManualEntry({ ...manualEntry, playerEarnings: e.target.value })}
+              placeholder={'Scottie Scheffler, 3600000\nRory McIlroy, 2160000'} rows={6}
+              style={{ ...theme.input, fontFamily: fonts.mono, fontSize: 12, resize: 'vertical', marginBottom: 8 }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              {!tournaments.find(t => t.name === selectedTourney)?.completed && (
+                <button onClick={handleManualEntry} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
+                  style={{ ...S.btn, flex: 1, ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
+                  Process Manual Entry
+                </button>
+              )}
+              {tournaments.find(t => t.name === selectedTourney)?.completed && (
+                <button onClick={handleReprocess} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
+                  style={{ ...S.btn, flex: 1, background: 'rgba(220,150,50,0.12)', border: '1px solid rgba(220,150,50,0.4)', color: 'rgba(220,180,80,0.9)', ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
+                  ✏️ Reprocess Tournament
+                </button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-
-      {/* Waiver reminder banner */}
-      {(() => {
-        const now = new Date();
-        // Convert to ET (UTC-5 standard, UTC-4 daylight)
-        const etOffset = -4; // adjust to -5 in November
-        const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
-        const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay(); // 0=Sun,2=Tue
-        const isReadyToProcess = etDay === 2 && etHour >= 20 && pending.length > 0;
-        if (!isReadyToProcess) return null;
-        return (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '12px 16px', marginBottom: 12, borderRadius: 4,
-            background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.45)',
-          }}>
-            <span style={{ fontSize: 18 }}>⏰</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 700, color: 'rgba(220,190,80,0.95)', marginBottom: 2 }}>
-                Waivers ready to process
-              </div>
-              <div style={{ fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,190,80,0.65)' }}>
-                It's past 8pm ET Tuesday — {pending.length} pending claim{pending.length !== 1 ? 's' : ''} waiting
-              </div>
-            </div>
-            <button onClick={() => handleProcessAll(pending)} style={{ ...S.btn, padding: '7px 14px', fontSize: 12, flexShrink: 0 }}>
-              Process Now
-            </button>
-          </div>
-        );
-      })()}
-
-      {/* ── Waivers + Roster Management + Fix Prior Lineup (side by side) ── */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
 
         {/* Waivers */}
         <div style={{ ...S.section, flex: 1, minWidth: 0 }}>
+          {/* Reminder banner inside card */}
+          {(() => {
+            const now = new Date();
+            const etOffset = -4;
+            const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
+            const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay();
+            const isReadyToProcess = etDay === 2 && etHour >= 20 && pending.length > 0;
+            if (!isReadyToProcess) return null;
+            return (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 10, borderRadius: 3,
+                background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.45)',
+              }}>
+                <span style={{ fontSize: 14 }}>⏰</span>
+                <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,190,80,0.9)', fontWeight: 600 }}>
+                  Past 8pm ET Tuesday — process now!
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div style={S.title}>⏰ Process Waivers</div>
             {pending.length > 0 && <span style={{ ...theme.badge, ...theme.badgeWarning }}>{pending.length} pending</span>}
@@ -1165,6 +1146,52 @@ export const AdminView = ({
           )}
         </div>
 
+        {/* Swing Winner */}
+        <div style={{ ...S.section, flex: 1, minWidth: 0 }}>
+          <div style={S.title}>🏆 Award Swing Winner</div>
+          <div style={{ ...theme.smallText, marginBottom: 10 }}>
+            When a swing is complete, award the fee pot to the swing leader.
+          </div>
+          <label style={S.lbl}>Swing</label>
+          <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
+            <option value="">Select swing...</option>
+            {SWINGS.map(s => {
+              const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+              const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
+              return (
+                <option key={s} value={s} disabled={alreadyAwarded}>
+                  {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
+                </option>
+              );
+            })}
+          </select>
+          {swingAwardSeg && (() => {
+            const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+            const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
+            const byTeam = {};
+            swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
+            const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+            const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
+            return (
+              <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
+                {leader
+                  ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
+                  : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
+                }
+              </div>
+            );
+          })()}
+          <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
+            style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
+            🏆 Award Swing Winner
+          </button>
+        </div>
+
+      </div>{/* end Row 1 */}
+
+      {/* ── Row 2: Roster Management · Fix Prior Lineup (side by side) ── */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+
         {/* Roster Management */}
         <div style={{ ...S.section, flex: 1, minWidth: 0 }}>
           <div style={S.title}>👥 Roster Management</div>
@@ -1187,7 +1214,6 @@ export const AdminView = ({
                     <button onClick={() => resetMulligan(team.id, 'sig')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Sig</button>
                     <button onClick={() => resetMulligan(team.id, 'reg')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Reg</button>
                   </div>
-                  {/* Apply Mulligan */}
                   {(() => {
                     const activeTournament = tournaments.find(t => t.playing);
                     if (!activeTournament) return (
@@ -1228,8 +1254,7 @@ export const AdminView = ({
                                 </button>
                               ))}
                             </div>
-                            <button
-                              onClick={() => handleApplyMulligan(team.id)}
+                            <button onClick={() => handleApplyMulligan(team.id)}
                               disabled={!mulliganOut || !mulliganIn || remaining < 1}
                               style={{ ...theme.btnPrimary, padding: '8px 10px', fontSize: 11,
                                 opacity: (!mulliganOut || !mulliganIn || remaining < 1) ? 0.4 : 1,
@@ -1281,13 +1306,11 @@ export const AdminView = ({
           <div style={{ ...theme.smallText, marginBottom: 12 }}>
             Correct a submitted lineup for a completed tournament and reprocess earnings.
           </div>
-
           <label style={S.lbl}>Team</label>
           <select value={retMulTeam} onChange={e => { setRetMulTeam(e.target.value); setRetLineupEdit([]); }} style={S.select}>
             <option value="">Select team...</option>
             {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
           </select>
-
           <label style={S.lbl}>Tournament</label>
           <select value={retMulTourney} onChange={e => { setRetMulTourney(e.target.value); setRetLineupEdit([]); }} style={S.select}>
             <option value="">Select tournament...</option>
@@ -1295,14 +1318,12 @@ export const AdminView = ({
               <option key={t.name} value={t.name}>✓ {t.name}</option>
             ))}
           </select>
-
           {retMulTeam && retMulTourney && (() => {
             const team = teams.find(t => t.id === retMulTeam);
             const tournament = tournaments.find(t => t.name === retMulTourney);
             const savedLineup = tournament?.results?.fullLineups?.[retMulTeam] || [];
             const baseLineup = retLineupEdit.length > 0 ? retLineupEdit : (savedLineup.length > 0 ? savedLineup : []);
             const rosterPlayers = team?.roster?.map(p => p.name) || [];
-
             return (
               <div>
                 <label style={S.lbl}>
@@ -1329,8 +1350,7 @@ export const AdminView = ({
                     {rosterPlayers.filter(n => !baseLineup.includes(n)).map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
                 )}
-                <button onClick={handleRetroLineupOnly}
-                  disabled={baseLineup.length === 0}
+                <button onClick={handleRetroLineupOnly} disabled={baseLineup.length === 0}
                   style={{ ...S.btn, ...disabledBtn(baseLineup.length === 0) }}>
                   Reprocess Lineup
                 </button>
@@ -1339,75 +1359,9 @@ export const AdminView = ({
           })()}
         </div>
 
-      </div>{/* end Waivers+Roster+Lineup row */}
+      </div>{/* end Row 2 */}
 
-      {/* Manager Login */}
-      <div style={S.section}>
-        <div style={S.title}>🔑 Manager Login</div>
-        <label style={S.lbl}>Team</label>
-        <select value={mgCredTeam} onChange={e => { setMgCredTeam(e.target.value); setMgCredName(teams.find(x => x.id === e.target.value)?.owner || ''); }} style={S.select}>
-          <option value="">Select team...</option>
-          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
-        </select>
-        <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
-        <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
-        <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
-          style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
-          {mgCredSaving ? 'Saving...' : 'Set Login'}
-        </button>
-      </div>
-
-      {/* Data & Sync */}
-      <div style={S.section}>
-        <div style={S.title}>☁️ Data & Sync</div>
-        <button onClick={handlePush} style={{ ...S.btn, marginBottom: 8 }}>☁️ Push to Supabase (sync all devices)</button>
-        <button onClick={handleRecalc} style={{ ...S.btnSec, marginBottom: 8 }}>📊 Recalculate Earnings from Results</button>
-        <button onClick={handleRecalcAllStats} style={{ ...S.btnSec, marginBottom: 8 }}>📈 Recalculate All Player Stats (Events/Cuts/Tour$/SFGL$)</button>
-        <button onClick={handleRecalcStarts} style={S.btnSec}>⭐ Recalculate Limited Player Starts</button>
-      </div>
-
-      {/* Swing Winner */}
-      <div style={S.section}>
-        <div style={S.title}>🏆 Award Swing Winner</div>
-        <div style={{ ...theme.smallText, marginBottom: 10 }}>
-          When a swing is complete, award the fee pot to the swing leader.
-        </div>
-        <label style={S.lbl}>Swing</label>
-        <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
-          <option value="">Select swing...</option>
-          {SWINGS.map(s => {
-            const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
-            const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
-            return (
-              <option key={s} value={s} disabled={alreadyAwarded}>
-                {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
-              </option>
-            );
-          })}
-        </select>
-        {swingAwardSeg && (() => {
-          const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
-          const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
-          const byTeam = {};
-          swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
-          const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
-          const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
-          return (
-            <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
-              {leader
-                ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} swing earnings · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
-                : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
-              }
-            </div>
-          );
-        })()}
-        <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
-          style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
-          🏆 Award Swing Winner
-        </button>
-      </div>
-
-      {/* ── OWGR + Headshot Manager (side by side) ── */}
+      {/* ── Row 3: OWGR · Headshot Manager (side by side) ── */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
 
         {/* OWGR Rankings */}
@@ -1493,9 +1447,7 @@ export const AdminView = ({
                         {!hasSrc && <div style={{ fontFamily: fonts.sans, fontSize: 10, color: 'rgba(220,100,80,0.8)' }}>No ID set</div>}
                       </div>
                       <input
-                        type="text"
-                        defaultValue={currentId}
-                        placeholder="PGA Tour ID"
+                        type="text" defaultValue={currentId} placeholder="PGA Tour ID"
                         onBlur={async e => {
                           const val = e.target.value.trim();
                           if (val === currentId) return;
@@ -1531,7 +1483,44 @@ export const AdminView = ({
           })()}
         </div>
 
-      </div>{/* end OWGR+Headshots row */}
+      </div>{/* end Row 3 */}
+
+      {/* ── Data & Sync (with Manager Login as expandable subsection) ── */}
+      <div style={S.section}>
+        <div style={S.title}>☁️ Data & Sync</div>
+        <button onClick={handlePush} style={{ ...S.btn, marginBottom: 8 }}>☁️ Push to Supabase (sync all devices)</button>
+        <button onClick={handleRecalc} style={{ ...S.btnSec, marginBottom: 8 }}>📊 Recalculate Earnings from Results</button>
+        <button onClick={handleRecalcAllStats} style={{ ...S.btnSec, marginBottom: 8 }}>📈 Recalculate All Player Stats (Events/Cuts/Tour$/SFGL$)</button>
+        <button onClick={handleRecalcStarts} style={{ ...S.btnSec, marginBottom: 16 }}>⭐ Recalculate Limited Player Starts</button>
+
+        {/* Manager Login — expandable */}
+        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
+          <button
+            onClick={() => setMgrLoginOpen(v => !v)}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: mgrLoginOpen ? 12 : 0 }}>
+            <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textSecondary, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+              🔑 Manager Login Credentials
+            </span>
+            <span style={{ fontSize: 11, color: colors.textMuted, transition: 'transform 0.15s', display: 'inline-block', transform: mgrLoginOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+          </button>
+          {mgrLoginOpen && (
+            <div>
+              <label style={S.lbl}>Team</label>
+              <select value={mgCredTeam} onChange={e => { setMgCredTeam(e.target.value); setMgCredName(teams.find(x => x.id === e.target.value)?.owner || ''); }} style={S.select}>
+                <option value="">Select team...</option>
+                {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
+              </select>
+              <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
+              <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
+              <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
+                style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
+                {mgCredSaving ? 'Saving...' : 'Set Login'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Draft */}
       <div style={S.section}>
