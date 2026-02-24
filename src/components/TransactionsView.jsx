@@ -332,7 +332,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const ai = a.tournamentIndex ?? 9999;
     const bi = b.tournamentIndex ?? 9999;
     if (bi !== ai) return bi - ai;
-    // Within same tournament: waivers/FA first, then drops, then mulligans
+    // Within same tournament: most recent timestamp first
+    const at = a.timestamp ?? 0;
+    const bt = b.timestamp ?? 0;
+    if (bt !== at) return bt - at;
+    // Final tiebreak: waivers/FA first, then drops, then mulligans
     const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
     return ta - tb;
