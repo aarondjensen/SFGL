@@ -166,7 +166,7 @@ export const AdminView = ({
   STORAGE_KEYS,
 }) => {
   const [selectedTourney, setSelectedTourney] = useState('');
-  const [manualEntry, setManualEntry] = useState({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+  const [manualEntry, setManualEntry] = useState({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
   const [rosterMgmtTeam, setRosterMgmtTeam] = useState('');
   const [playerSearch, setPlayerSearch] = useState('');
   const [mgCredTeam, setMgCredTeam] = useState('');
@@ -296,7 +296,7 @@ export const AdminView = ({
       await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(e => console.error('sfgl tourney sync:', e));
       await sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(e => console.error('sfgl stats sync:', e));
       dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
-      setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+      setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
       console.error('handleManualEntry error:', err);
       dialog.showToast('Error processing results: ' + err.message, 'error');
@@ -339,12 +339,16 @@ export const AdminView = ({
         // Reverse team earnings
         const earningsDelta = -(oldTeamResult.totalEarnings || 0);
         // Reverse per-player sfglEarnings and starts
+        // Use fullLineups for start reversal (all starters), players list for earnings
+        const oldLineup = new Set(oldResults.fullLineups?.[team.id] || (oldTeamResult.players || []).map(p => p.name || p));
+        const oldEarningsByPlayer = {};
+        (oldTeamResult.players || []).forEach(p => { oldEarningsByPlayer[p.name || p] = p.earnings || 0; });
         const newRoster = team.roster.map(p => {
-          const oldPlayer = (oldTeamResult.players || []).find(op => (op.name || op) === p.name);
-          if (!oldPlayer) return p;
+          const wasInLineup = oldLineup.has(p.name);
+          if (!wasInLineup) return p;
           return {
             ...p,
-            sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - (oldPlayer.earnings || 0)),
+            sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - (oldEarningsByPlayer[p.name] || 0)),
             starts: Math.max(0, (p.starts || 0) - 1),
           };
         });
@@ -353,7 +357,7 @@ export const AdminView = ({
           roster: newRoster,
           earnings: Math.max(0, (team.earnings || 0) + earningsDelta),
           segmentEarnings: Math.max(0, (team.segmentEarnings || 0) + earningsDelta),
-          lineup: oldResults.fullLineups?.[team.id] || [],
+          lineup: (manualEntry.teamLineups[team.id] || oldResults.fullLineups?.[team.id] || []),
         };
       });
 
@@ -394,7 +398,7 @@ export const AdminView = ({
       await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       await sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
       dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
-      setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+      setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
       console.error('handleReprocess error:', err);
       dialog.showToast('Error reprocessing: ' + err.message, 'error');
@@ -918,13 +922,20 @@ export const AdminView = ({
               .sort((a, b) => b[1] - a[1])
               .map(([player, amt]) => player + ', ' + amt)
               .join('\n');
+            const teamLineups = {};
+            if (t.results.fullLineups) {
+              Object.entries(t.results.fullLineups).forEach(([teamId, lineup]) => {
+                teamLineups[teamId] = [...lineup];
+              });
+            }
             setManualEntry(prev => ({ ...prev, playerEarnings: lines,
               round1Leaders: t.results.roundLeaders?.round1?.length ? t.results.roundLeaders.round1 : [''],
               round2Leaders: t.results.roundLeaders?.round2?.length ? t.results.roundLeaders.round2 : [''],
               round3Leaders: t.results.roundLeaders?.round3?.length ? t.results.roundLeaders.round3 : [''],
+              teamLineups,
             }));
           } else {
-            setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '' });
+            setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
           }
         }} style={S.select}>
           <option value="">Choose tournament...</option>
@@ -939,6 +950,53 @@ export const AdminView = ({
             <RoundLeaderSelect label="R2 Leader" leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
             <RoundLeaderSelect label="R3 Leader" leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
           </div>
+          {/* ── Lineup overrides — only for reprocessing completed tournaments ── */}
+          {tournaments.find(t => t.name === selectedTourney)?.completed && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ ...S.lbl, marginBottom: 6 }}>
+                Starting Lineups
+                <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>— correct if roster was edited</span>
+              </div>
+              {teams.map(team => {
+                const currentLineup = manualEntry.teamLineups[team.id] || [];
+                return (
+                  <div key={team.id} style={{ marginBottom: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, color: colors.textGold, marginBottom: 6, letterSpacing: '0.5px' }}>
+                      {team.name}
+                      <span style={{ color: colors.textMuted, fontWeight: 400, marginLeft: 8 }}>
+                        {currentLineup.length}/5 starters
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                      {team.roster.map(p => {
+                        const inLineup = currentLineup.includes(p.name);
+                        return (
+                          <label key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={inLineup}
+                              onChange={e => {
+                                const updated = e.target.checked
+                                  ? [...currentLineup, p.name]
+                                  : currentLineup.filter(n => n !== p.name);
+                                setManualEntry(prev => ({ ...prev, teamLineups: { ...prev.teamLineups, [team.id]: updated } }));
+                              }}
+                              style={{ accentColor: colors.textGold, width: 13, height: 13 }}
+                            />
+                            <span style={{ fontFamily: fonts.sans, fontSize: 11, color: inLineup ? colors.textPrimary : colors.textMuted }}>
+                              {p.name}
+                              {p.limited && <span style={{ color: colors.textGoldDim, marginLeft: 3 }}>★</span>}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <label style={S.lbl}>Player Earnings <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>— one per line: Player Name, 123456</span></label>
           <textarea value={manualEntry.playerEarnings} onChange={e => setManualEntry({ ...manualEntry, playerEarnings: e.target.value })}
             placeholder={'Scottie Scheffler, 3600000\nRory McIlroy, 2160000'} rows={6}
