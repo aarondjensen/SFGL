@@ -16,16 +16,39 @@ import { sfglDataApi } from '../api/supabase';
 import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers (Cloudinary PGA Tour CDN — no ESPN 400 errors) ─────────
-const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
+const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
   const val = headshotMap[playerName];
-  if (val) {
-    // If already a full URL, use directly; otherwise treat as PGA numeric ID
-    if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return val;
-    return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,d_stub:default_avatar_light.webp/headshots_${val}`;
-  }
-  // Fallback: initials avatar
+  if (!val) return [];
+  if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
+  // Numeric ID — try both CDN formats
+  return [
+    `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${val}`,
+    `https://res.cloudinary.com/pgatour-prod/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${val}.png`,
+    `https://media.pgatour.com/headshots/${val}.png`,
+  ];
+};
+
+const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  if (urls.length > 0) return urls[0];
   const bg = isLimited ? '8B6914' : '1c3a5e';
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
+};
+
+const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  let attempt = 0;
+  return function handler(e) {
+    attempt++;
+    if (attempt < urls.length) {
+      e.target.src = urls[attempt];
+      e.target.onerror = handler;
+    } else {
+      e.target.onerror = null;
+      const bg = isLimited ? '8B6914' : '1c3a5e';
+      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
+    }
+  };
 };
 
 const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
@@ -219,7 +242,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
       <div style={{ position: 'relative', width: 44, height: 44 }}>
         <img
           src={getPlayerHeadshot(player.name, player.limited, headshots)}
-          onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
+          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
           alt=""
           style={{
             width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
@@ -689,7 +712,7 @@ export const RostersView = ({
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <img
                           src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                          onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
+                          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
                           alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
                         />
                         <div style={{ minWidth: 0 }}>
@@ -806,7 +829,7 @@ export const RostersView = ({
                         >
                           <img
                             src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                            onError={e => { e.target.onerror = null; e.target.src = getPlayerHeadshotFallback(player.name, player.limited); }}
+                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
