@@ -264,29 +264,9 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
-const SWING_ABBR = {
-  'West Coast Swing': { label: 'WC',  color: 'rgba(220,80,80,0.85)',   bg: 'rgba(220,80,80,0.12)',   border: 'rgba(220,80,80,0.35)'   },
-  'Spring Swing':     { label: 'SPR', color: 'rgba(100,215,175,0.9)',  bg: 'rgba(100,215,175,0.10)', border: 'rgba(100,215,175,0.35)' },
-  'Summer Swing':     { label: 'SUM', color: 'rgba(80,140,220,0.85)',  bg: 'rgba(80,140,220,0.12)',  border: 'rgba(80,140,220,0.35)'  },
-  'Fall Finish':      { label: 'FF',  color: 'rgba(220,140,60,0.85)',  bg: 'rgba(220,140,60,0.12)',  border: 'rgba(220,140,60,0.35)'  },
-};
-
-const SwingBadge = ({ segment }) => {
-  const s = SWING_ABBR[segment];
-  if (!s) return <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>{segment}</span>;
-  return (
-    <span style={{
-      fontFamily: "'Raleway', system-ui, sans-serif",
-      fontSize: 9, fontWeight: 700, letterSpacing: '0.5px',
-      padding: '2px 5px', borderRadius: 2,
-      background: s.bg, border: `1px solid ${s.border}`, color: s.color,
-      whiteSpace: 'nowrap',
-    }}>{s.label}</span>
-  );
-};
-
 export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, isCommissioner }) => {
   const [filterTeam,   setFilterTeam]   = useState('all');
+  const [filterSwing,  setFilterSwing]  = useState('all');
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
   const [addTxOpen,        setAddTxOpen]        = useState(false);
   const [addTxTeam,        setAddTxTeam]        = useState('');
@@ -366,9 +346,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
     return ta - tb;
   });
-  const filteredTransactions = filterTeam === 'all'
-    ? sortedTransactions
-    : sortedTransactions.filter(tx => tx.team === filterTeam);
+  const filteredTransactions = sortedTransactions
+    .filter(tx => filterTeam === 'all' || tx.team === filterTeam)
+    .filter(tx => {
+      if (filterSwing === 'all') return true;
+      return tx.segment === filterSwing;
+    });
 
   const undoTransaction = async (tx) => {
     const ok = await dialog.showConfirm(
@@ -800,18 +783,33 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
         {/* ── Transaction history ── */}
         <div style={theme.card}>
-          <div style={{ ...theme.cardHeader, justifyContent: 'space-between' }}>
+          <div style={{ ...theme.cardHeader, justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <h2 style={theme.h2}>Transaction History</h2>
-            <select
-              value={filterTeam}
-              onChange={e => setFilterTeam(e.target.value)}
-              style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
-              onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
-              onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
-            >
-              <option value="all">All Teams</option>
-              {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-            </select>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <select
+                value={filterSwing}
+                onChange={e => setFilterSwing(e.target.value)}
+                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
+                onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
+                onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
+              >
+                <option value="all">All Swings</option>
+                <option value="West Coast Swing">West Coast Swing</option>
+                <option value="Spring Swing">Spring Swing</option>
+                <option value="Summer Swing">Summer Swing</option>
+                <option value="Fall Finish">Fall Finish</option>
+              </select>
+              <select
+                value={filterTeam}
+                onChange={e => setFilterTeam(e.target.value)}
+                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
+                onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
+                onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
+              >
+                <option value="all">All Teams</option>
+                {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+              </select>
+            </div>
           </div>
 
           <div style={{ padding: '0 4px' }}>
@@ -864,7 +862,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     {/* Segment + status */}
                     {(tx.segment || (tx.status && tx.status !== 'processed')) && (
                       <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: colors.textMuted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        {tx.segment && <SwingBadge segment={tx.segment} />}
+                        {tx.segment && <span>{tx.segment}</span>}
                         {tx.status && tx.status !== 'processed' && (
                           <span style={{ color: statusColor(tx.status), fontWeight: 600 }}>
                             {tx.status}{tx.failReason ? ' — ' + tx.failReason : ''}
