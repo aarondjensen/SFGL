@@ -58,12 +58,25 @@ const getSegmentForTournament = (t) => {
 
 export const StandingsView = ({ teams, tournaments = [], transactions = [] }) => {
 
-  // ── Overall ──────────────────────────────────────────────────────────────
+  // ── Overall — compute live from tournament results (source of truth) ────
+  const seasonTotals = useMemo(() => {
+    const totals = {};
+    teams.forEach(t => { totals[t.id] = 0; });
+    tournaments.forEach(t => {
+      if (!t.completed || !t.results?.teams) return;
+      Object.entries(t.results.teams).forEach(([teamId, result]) => {
+        if (totals[teamId] !== undefined) totals[teamId] += (result.totalEarnings || 0);
+      });
+    });
+    return totals;
+  }, [teams, tournaments]);
+
   const sortedTeams = useMemo(() =>
     [...teams]
-      .sort((a, b) => (b.earnings || 0) - (a.earnings || 0))
+      .map(t => ({ ...t, earnings: seasonTotals[t.id] || 0 }))
+      .sort((a, b) => b.earnings - a.earnings)
       .map((t, i) => ({ ...t, position: i + 1 })),
-    [teams],
+    [teams, seasonTotals],
   );
   const leader = sortedTeams[0]?.earnings || 0;
 
