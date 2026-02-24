@@ -317,7 +317,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const getPlayerHeadshot = (playerName) => {
     let id = headshots[playerName];
     if (!id) { const p = allPlayers.find(p => p.name === playerName); id = p?.pgaTourId; }
-    if (id) return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${id}`;
+    if (id) return `https://res.cloudinary.com/pgatour-prod/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${id}.png`;
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=0f1d35&color=6b7280&size=128`;
   };
 
