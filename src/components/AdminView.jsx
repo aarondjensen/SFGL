@@ -569,6 +569,20 @@ export const AdminView = ({
       { confirmText: 'Apply Mulligan' });
     if (!ok) return;
 
+    // Update stored tournament results to swap mulliganed players so live starts count is correct
+    const applyMulliganToResults = (tourns, teamId, outPlayer, inPlayer) =>
+      tourns.map(t => {
+        if (!t.playing || !t.results?.teams?.[teamId]) return t;
+        const teamResult = t.results.teams[teamId];
+        const updatedPlayers = (teamResult.players || []).map(p => {
+          const name = p.name || p;
+          if (name !== outPlayer) return p;
+          // Replace out player with in player, preserve earnings structure
+          return typeof p === 'string' ? inPlayer : { ...p, name: inPlayer, earnings: 0 };
+        });
+        return { ...t, results: { ...t.results, teams: { ...t.results.teams, [teamId]: { ...teamResult, players: updatedPlayers } } } };
+      });
+
     const newLineup = team.lineup.map(p => p === mulliganOut ? mulliganIn : p);
     const updatedRoster = team.roster.map(p => {
       if (p.name === mulliganOut && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
@@ -585,10 +599,14 @@ export const AdminView = ({
       afterRound: parseInt(mulliganRound), tournament: activeTournament.name,
     };
     const newTeams = teams.map(t => t.id === teamId ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
+    const newTournaments = applyMulliganToResults(tournaments, teamId, mulliganOut, mulliganIn);
     updateTeams(newTeams);
+    setTournaments(newTournaments);
     setTransactions(prev => [...prev, newTx]);
     await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
     sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+    sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newTournaments).catch(() => {});
     await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
     sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(() => {});
 

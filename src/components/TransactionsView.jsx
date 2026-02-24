@@ -264,7 +264,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
-export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, isCommissioner }) => {
+export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner, STORAGE_KEYS }) => {
   const [filterTeam,   setFilterTeam]   = useState('all');
   const [filterSwing,  setFilterSwing]  = useState('all');
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
@@ -419,6 +419,47 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       (tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex) ? i + 1 : last
     , 0);
     copy.splice(insertAt, 0, newTx);
+
+    // For mulligans: adjust starts on limited players AND update stored tournament results
+    let updatedTeams = teams;
+    let updatedTournaments = tournaments;
+    if (addTxType === 'mulligan' && (playerInName || playerOutName)) {
+      const mulliganTeam = teams.find(t => t.name === addTxTeam);
+      updatedTeams = teams.map(t => {
+        if (t.name !== addTxTeam) return t;
+        return {
+          ...t,
+          roster: t.roster.map(p => {
+            if (p.name === playerOutName && p.limited)
+              return { ...p, starts: Math.max(0, (p.starts || 0) - 1) };
+            if (p.name === playerInName && p.limited)
+              return { ...p, starts: (p.starts || 0) + 1 };
+            return p;
+          }),
+        };
+      });
+
+      // Swap player in stored tournament results so live starts count reflects the mulligan
+      if (mulliganTeam && playerOutName && playerInName) {
+        updatedTournaments = tournaments.map((t, i) => {
+          if (i !== tournamentIndex || !t.results?.teams?.[mulliganTeam.id]) return t;
+          const teamResult = t.results.teams[mulliganTeam.id];
+          const updatedPlayers = (teamResult.players || []).map(p => {
+            const name = p.name || p;
+            if (name !== playerOutName) return p;
+            return typeof p === 'string' ? playerInName : { ...p, name: playerInName, earnings: 0 };
+          });
+          return { ...t, results: { ...t.results, teams: { ...t.results.teams, [mulliganTeam.id]: { ...teamResult, players: updatedPlayers } } } };
+        });
+        setTournaments(updatedTournaments);
+        await storage.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments);
+        try { await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments); } catch(e) { console.error('sfgl tournaments sync failed:', e); }
+      }
+
+      updateTeams(updatedTeams);
+      await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+      try { await sfglDataApi.set(STORAGE_KEYS.TEAMS, updatedTeams); } catch(e) { console.error('sfgl teams sync failed:', e); }
+    }
 
     setTransactions(copy);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, copy);
