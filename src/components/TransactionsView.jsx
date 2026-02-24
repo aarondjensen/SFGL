@@ -829,17 +829,23 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    {/* Team name + event name */}
+                    {/* Team name + tournament or swing name */}
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
                       <span style={{ fontFamily: fonts.serif, fontSize: 'clamp(13px, 1.1vw, 15px)', color: colors.textPrimary }}>
                         {tx.team}
                       </span>
                       {(() => {
+                        // swing_winner: show swing name; others: show tournament name
+                        if (tx.type === 'swing_winner') {
+                          return tx.segment
+                            ? <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>{tx.segment}</span>
+                            : null;
+                        }
                         const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
                         const name = t?.name || tx.tournament || null;
                         if (!name) return null;
                         return (
-                          <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: colors.textMuted }}>
+                          <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>
                             {name}
                           </span>
                         );
@@ -858,18 +864,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         </>
                       )}
                     </div>
-
-                    {/* Segment + status */}
-                    {(tx.segment || (tx.status && tx.status !== 'processed')) && (
-                      <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: colors.textMuted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        {tx.segment && <span>{tx.segment}</span>}
-                        {tx.status && tx.status !== 'processed' && (
-                          <span style={{ color: statusColor(tx.status), fontWeight: 600 }}>
-                            {tx.status}{tx.failReason ? ' — ' + tx.failReason : ''}
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </div>
 
                   {/* Fee + commish actions */}
