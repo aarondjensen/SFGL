@@ -93,7 +93,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
   }, []);
 
   return (
-    <div ref={ref} style={{ position: 'relative', maxWidth: 200 }}>
+    <div ref={ref} style={{ position: 'relative', minWidth: 160 }}>
       <button
         onClick={() => setOpen(o => !o)}
         style={{
@@ -102,7 +102,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
           background: '#0f1d35', border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
           fontFamily: fonts.serif, fontSize: 14, fontWeight: 700,
           color: 'rgba(255,255,255,0.9)', textAlign: 'left',
-          transition: 'border-color 0.15s',
+          transition: 'border-color 0.15s', whiteSpace: 'nowrap',
         }}
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -112,7 +112,8 @@ const TeamDropdown = ({ teams, value, onChange }) => {
       </button>
       {open && (
         <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: 2,
+          position: 'absolute', top: '100%', left: 0, zIndex: 100, marginTop: 2,
+          minWidth: '100%', width: 'max-content',
           background: '#0f1d35', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 2,
           boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
         }}>
@@ -120,6 +121,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
             <button key={t.id} onClick={() => { onChange(t.id); setOpen(false); }}
               style={{
                 display: 'block', width: '100%', padding: '9px 12px', textAlign: 'left', cursor: 'pointer',
+                whiteSpace: 'nowrap',
                 background: t.id === value ? 'rgba(245,197,24,0.12)' : 'transparent',
                 border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)',
                 fontFamily: fonts.serif, fontSize: 13, fontWeight: t.id === value ? 700 : 400,
