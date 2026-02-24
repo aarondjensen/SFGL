@@ -69,10 +69,10 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
 const TournamentBadges = ({ tournament }) => (
   <>
     {tournament.isMajor && (
-      <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px', background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(200,170,255,0.98)' }}>M</span>
+      <span style={{ width: 20, height: 20, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 800, letterSpacing: 0, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</span>
     )}
     {tournament.isSignature && !tournament.isMajor && (
-      <span style={{ width: 18, height: 18, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 9, fontWeight: 500, letterSpacing: '0.3px', background: 'rgba(130,100,200,0.09)', border: '1px solid rgba(130,100,200,0.35)', color: 'rgba(170,145,230,0.72)' }}>S</span>
+      <span style={{ width: 20, height: 20, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 600, letterSpacing: 0, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</span>
     )}
   </>
 );
