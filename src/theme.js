@@ -234,6 +234,7 @@ export const theme = {
     color: colors.textPrimary,
     outline: 'none',
     cursor: 'pointer',
+    colorScheme: 'dark',
   },
 
   // ── Buttons ──

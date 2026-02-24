@@ -88,6 +88,23 @@ const FantasyGolfLeague = () => {
       `;
       document.head.appendChild(style);
     }
+    // Force dark background on all select dropdowns — browser default is white
+    if (!document.getElementById('sfgl-select-styles')) {
+      const selStyle = document.createElement('style');
+      selStyle.id = 'sfgl-select-styles';
+      selStyle.textContent = `
+        select { color-scheme: dark; }
+        select option {
+          background: #1a2744;
+          color: rgba(255,255,255,0.88);
+        }
+        select option:checked,
+        select option:hover {
+          background: #243660;
+        }
+      `;
+      document.head.appendChild(selStyle);
+    }
   }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
@@ -445,7 +462,9 @@ const FantasyGolfLeague = () => {
               allPlayers={allPlayers}
               setTransactions={updateTransactions}
               updateTeams={updateTeams}
+              setTournaments={updateTournaments}
               isCommissioner={isCommissioner}
+              STORAGE_KEYS={STORAGE_KEYS}
             />
           )}
           {activeTab === 'tournaments' && (
