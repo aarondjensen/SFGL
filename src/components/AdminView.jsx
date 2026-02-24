@@ -1310,15 +1310,26 @@ export const AdminView = ({
           style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
         />
 
-        {/* Player list — all rostered players */}
+        {/* Player list */}
         {(() => {
           const rosteredNames = [...new Set(teams.flatMap(t => t.roster.map(p => p.name)))].sort();
+          const missing = rosteredNames.filter(n => !headshots[n]);
           const filtered = hsSearch.trim()
             ? rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase()))
-            : rosteredNames;
+            : missing;
+          const showingAll = hsSearch.trim().length > 0;
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {/* Header count */}
+              <div style={{ ...theme.smallText, marginBottom: 6, color: colors.textMuted }}>
+                {showingAll
+                  ? `Showing ${filtered.length} of ${rosteredNames.length} players`
+                  : missing.length === 0
+                    ? <span style={{ color: colors.success }}>✓ All rostered players have headshot IDs</span>
+                    : `${missing.length} player${missing.length !== 1 ? 's' : ''} missing IDs`
+                }
+              </div>
               {filtered.map(name => {
                 const currentId = headshots[name] || '';
                 const hasSrc    = !!currentId;
@@ -1332,7 +1343,7 @@ export const AdminView = ({
                     {/* Headshot preview */}
                     <img
                       src={hasSrc
-                        ? (currentId.startsWith('http') ? currentId : `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${currentId}`)
+                        ? (currentId.startsWith('http') ? currentId : `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${currentId}`)
                         : `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`
                       }
                       onError={e => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`; }}
