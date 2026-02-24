@@ -151,7 +151,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   const displayLeader = showSwing ? swingLeader : leader;
   const earningsKey   = showSwing ? 'swingEarnings' : 'earnings';
   const posKey        = showSwing ? 'swingPos' : 'position';
-  const earningsLabel = showSwing ? 'Swing $' : 'Season $';
+  const earningsLabel = showSwing ? 'Swing' : 'Season';
 
   // slider toggle — no tabStyle needed
 
@@ -289,7 +289,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
           </colgroup>
           <thead>
             <tr>
-              {['Pos', 'Team', earningsLabel, '$ Behind'].map((h, i) => (
+              {['Pos', 'Team', earningsLabel, 'Behind'].map((h, i) => (
                 <th key={h} style={{ ...theme.tableHeaderCell, textAlign: i >= 2 ? 'right' : 'left' }}>{h}</th>
               ))}
             </tr>
