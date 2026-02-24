@@ -20,7 +20,7 @@ const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
   const pgaId = headshotMap[playerName];
   if (pgaId) {
     // Use Cloudinary PGA Tour CDN — reliable, no auth errors
-    return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${pgaId}`;
+    return `https://res.cloudinary.com/pgatour-prod/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${pgaId}.png`;
   }
   // Fallback: initials avatar
   const bg = isLimited ? '8B6914' : '1c3a5e';
