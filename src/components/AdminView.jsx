@@ -189,6 +189,7 @@ export const AdminView = ({
 
   const [retLineupEdit, setRetLineupEdit] = useState([]);  // edited starting lineup
   const [mgrLoginOpen, setMgrLoginOpen]   = useState(false);
+  const [inspectTeamId, setInspectTeamId] = useState('');
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -1575,6 +1576,78 @@ export const AdminView = ({
         <button onClick={handleRecalc} style={{ ...S.btnSec, marginBottom: 8 }}>📊 Recalculate Earnings from Results</button>
         <button onClick={handleRecalcAllStats} style={{ ...S.btnSec, marginBottom: 8 }}>📈 Recalculate All Player Stats (Events/Cuts/Tour$/SFGL$)</button>
         <button onClick={handleRecalcStarts} style={{ ...S.btnSec, marginBottom: 16 }}>⭐ Recalculate Limited Player Starts</button>
+
+        {/* ── Raw Roster Inspector / Direct Fix ── */}
+        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12, marginBottom: 12 }}>
+          <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, color: colors.warning, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 8 }}>
+            🔧 Raw Roster Inspector
+          </div>
+          <select value={inspectTeamId} onChange={e => setInspectTeamId(e.target.value)} style={{ ...S.select, marginBottom: 8 }}>
+            <option value="">Select team to inspect...</option>
+            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          {inspectTeamId && (() => {
+            const team = teams.find(t => t.id === inspectTeamId);
+            if (!team) return null;
+            const teamTx = transactions.map((tx, i) => ({ ...tx, _i: i })).filter(tx => tx.team === team.name && (tx.type === 'waiver' || tx.type === 'free agent'));
+            return (
+              <div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary, marginBottom: 4 }}>
+                  <strong>team.roster</strong> — {team.roster.length} players (what AdminView reads):
+                </div>
+                <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 3, padding: '8px 10px', marginBottom: 10, fontFamily: fonts.mono, fontSize: 11 }}>
+                  {team.roster.length === 0
+                    ? <span style={{ color: colors.textMuted }}>empty</span>
+                    : team.roster.map((p, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                        <span style={{ color: colors.textPrimary }}>{i + 1}. {p.name || <em style={{ color: colors.danger }}>UNNAMED</em>}</span>
+                        <button onClick={async () => {
+                          if (!window.confirm(`Directly remove "${p.name || 'entry #' + (i+1)}" from team.roster? This bypasses all logic.`)) return;
+                          const newRoster = team.roster.filter((_, ri) => ri !== i);
+                          const newTeams = teams.map(t => t.id === team.id ? { ...t, roster: newRoster } : t);
+                          updateTeams(newTeams);
+                          await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+                          await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams);
+                          dialog.showToast('Removed from roster', 'success');
+                        }} style={{ fontFamily: fonts.sans, fontSize: 10, padding: '1px 6px', background: 'rgba(180,60,60,0.2)', border: '1px solid rgba(180,60,60,0.4)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}>
+                          ✕ Remove
+                        </button>
+                      </div>
+                    ))
+                  }
+                </div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary, marginBottom: 4 }}>
+                  <strong>Waiver/FA transactions</strong> — what useRoster replays:
+                </div>
+                <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 3, padding: '8px 10px', fontFamily: fonts.mono, fontSize: 10, maxHeight: 200, overflowY: 'auto' }}>
+                  {teamTx.length === 0
+                    ? <span style={{ color: colors.textMuted }}>none</span>
+                    : teamTx.map((tx, i) => (
+                      <div key={i} style={{ padding: '3px 0', borderBottom: `1px solid ${colors.borderSubtle}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                        <span style={{ color: tx.status === 'processed' ? colors.success : tx.status === 'failed' ? colors.danger : colors.warning }}>
+                          [{tx.status}] +{tx.player}{tx.droppedPlayer ? ' / -' + tx.droppedPlayer : ''}
+                          {tx.failReason ? <span style={{ color: colors.textMuted }}> ({tx.failReason})</span> : null}
+                        </span>
+                        {tx.status === 'processed' && (
+                          <button onClick={async () => {
+                            if (!window.confirm(`Mark this transaction as FAILED to stop useRoster from replaying it?\n\n+${tx.player}${tx.droppedPlayer ? ' / -' + tx.droppedPlayer : ''}`)) return;
+                            const newTx = transactions.map((t, i) => i === tx._i ? { ...t, status: 'failed', failReason: 'Manually voided by commissioner' } : t);
+                            setTransactions(newTx);
+                            await storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
+                            await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx);
+                            dialog.showToast('Transaction voided', 'success');
+                          }} style={{ fontFamily: fonts.sans, fontSize: 10, padding: '1px 6px', background: 'rgba(180,60,60,0.2)', border: '1px solid rgba(180,60,60,0.4)', color: colors.danger, borderRadius: 2, cursor: 'pointer', flexShrink: 0 }}>
+                            Void
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
+            );
+          })()}
+        </div>
 
         {/* Manager Login — expandable */}
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
