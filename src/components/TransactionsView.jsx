@@ -457,18 +457,20 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     if (!ok) return;
 
     const tournamentIndex = parseInt(addTxTourney);
+    const isBlocked = addTxType === 'waiver blocked';
     const newTx = {
       team: addTxTeam,
-      type: addTxType,
+      type: isBlocked ? 'waiver' : addTxType,
       player: playerInName  || playerOutName || '—',
       droppedPlayer: addTxType === 'mulligan' ? playerOutName || undefined
                    : addTxType === 'drop'     ? undefined
-                   : undefined,
-      fee: 0,
+                   : playerOutName || undefined,
+      fee: isBlocked ? 0 : 0,
       segment: tournaments[tournamentIndex]?.segment || '',
       date: new Date().toLocaleDateString(),
       tournamentIndex,
-      status: 'completed',
+      status: isBlocked ? 'failed' : 'completed',
+      ...(isBlocked ? { failReason: 'Manually voided by commissioner' } : {}),
       manualEntry: true,
     };
 
@@ -575,24 +577,32 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         <div style={theme.card}>
           <div style={{ ...theme.cardHeader, justifyContent: 'space-between' }}>
             <h2 style={theme.h2}>Transaction Fees</h2>
-            {teamFees[0]?.currentSwing && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.3px', color:
-                  teamFees[0].currentSwing === 'West Coast Swing' ? 'rgba(220,80,80,0.85)' :
-                  teamFees[0].currentSwing === 'Spring Swing'     ? 'rgba(100,215,175,0.9)' :
-                  teamFees[0].currentSwing === 'Summer Swing'     ? 'rgba(80,140,220,0.85)' :
-                  teamFees[0].currentSwing === 'Fall Finish'      ? 'rgba(220,140,60,0.85)' :
-                  'rgba(245,197,24,0.55)'
-                }}>
-                  {teamFees[0].currentSwing}
-                </span>
-                {teamFees[0].swingIsComplete && (
-                  <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(245,197,24,0.8)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 2, padding: '1px 4px' }}>
-                    Final
+            {teamFees[0]?.currentSwing && (() => {
+              const swingColor =
+                teamFees[0].currentSwing === 'West Coast Swing' ? 'rgba(220,80,80,0.85)' :
+                teamFees[0].currentSwing === 'Spring Swing'     ? 'rgba(100,215,175,0.9)' :
+                teamFees[0].currentSwing === 'Summer Swing'     ? 'rgba(80,140,220,0.85)' :
+                teamFees[0].currentSwing === 'Fall Finish'      ? 'rgba(220,140,60,0.85)' :
+                'rgba(245,197,24,0.55)';
+              const swingPot = teamFees.reduce((sum, t) => sum + (t.swingTotal || 0), 0);
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.3px', color: swingColor }}>
+                    {teamFees[0].currentSwing}
                   </span>
-                )}
-              </div>
-            )}
+                  {swingPot > 0 && (
+                    <span style={{ fontFamily: fonts.mono, fontSize: 12, fontWeight: 700, color: swingColor }}>
+                      ${swingPot}
+                    </span>
+                  )}
+                  {teamFees[0].swingIsComplete && (
+                    <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(245,197,24,0.8)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 2, padding: '1px 4px' }}>
+                      Final
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           <div style={{ padding: '12px 16px' }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
@@ -687,8 +697,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 {/* Type */}
                 <div>
                   <div style={{ ...theme.label, marginBottom: 4 }}>Type</div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {['mulligan', 'waiver', 'fa', 'drop'].map(type => (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {['mulligan', 'waiver', 'fa', 'drop', 'waiver blocked'].map(type => (
                       <button key={type} onClick={() => {
                         setAddTxType(type);
                         // Always re-default tournament when type changes (commish can still override)
@@ -735,13 +745,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 </div>
 
                 {/* Player IN search */}
-                {addTxType !== 'drop' && (() => {
+                {(addTxType !== 'drop') && (() => {
                   const teamObj  = teams.find(t => t.name === addTxTeam);
-                  const rostered = new Set(teamObj?.roster?.map(p => p.name) || []);
-                  // For mulligan IN: search from the team's roster (bench players)
-                  // For waiver/fa: search from allPlayers not on any roster
                   const pool = addTxType === 'mulligan'
-                    ? (teamObj?.roster || [])  // whole roster — any player could be the swap-in
+                    ? (teamObj?.roster || [])
+                    : addTxType === 'waiver blocked'
+                    ? allPlayers  // blocked waiver: show all players (player was claimed but lost tiebreaker)
                     : allPlayers.filter(p => {
                         const allRostered = new Set(teams.flatMap(t => t.roster.map(r => r.name)));
                         return !allRostered.has(p.name);
@@ -749,7 +758,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   const filtered = pool.filter(p =>
                     (p.name || p).toLowerCase().includes(addTxSearchIn.toLowerCase())
                   );
-                  const label = addTxType === 'mulligan' ? 'Player IN (from roster)' : 'Player Added';
+                  const label = addTxType === 'mulligan' ? 'Player IN (from roster)'
+                              : addTxType === 'waiver blocked' ? 'Player Claimed (blocked)'
+                              : 'Player Added';
                   return (
                     <div>
                       <div style={{ ...theme.label, marginBottom: 4 }}>{label}</div>
