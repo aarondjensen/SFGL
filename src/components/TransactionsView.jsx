@@ -326,7 +326,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     return Object.values(fees).sort((a, b) => b.seasonTotal - a.seasonTotal);
   }, [teams, transactions, tournaments]);
 
-  const TYPE_ORDER = { 'waiver': 0, 'fa': 0, 'free agent': 0, 'drop': 1, 'mulligan': 2 };
+  const TYPE_ORDER = { 'waiver': 0, 'fa': 0, 'free agent': 0, 'drop': 1, 'mulligan': 2, 'swing_winner': 99 };
   // Build a map of segment → last tournamentIndex for sorting swing_winner records
   // that predate the tournamentIndex field being added.
   const swingLastIndex = {};
