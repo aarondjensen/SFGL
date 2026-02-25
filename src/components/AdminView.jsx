@@ -763,21 +763,28 @@ export const AdminView = ({
   const handleSwingWinner = async () => {
     if (!swingAwardSeg) return;
 
-    // Sum all transaction fees for this swing
-    const pot = transactions
-      .filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0)
-      .reduce((sum, tx) => sum + (tx.fee || 0), 0);
-
-    if (pot === 0) {
-      dialog.showToast('No fees collected for ' + swingAwardSeg, 'error');
-      return;
-    }
-
-    // Find winner = highest segmentEarnings for this swing
-    // segmentEarnings is calculated from completed tournaments in this swing
+    // Sum all transaction fees for this swing using tournamentIndex range,
+    // matching the same logic as TransactionsView's fee counter.
     const swingTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
     if (!swingTournaments.length) {
       dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
+      return;
+    }
+    const swingIndexes = new Set(swingTournaments.map(t => tournaments.indexOf(t)));
+    const pot = transactions
+      .filter(tx => {
+        if ((tx.fee || 0) <= 0) return false;
+        if (tx.status === 'failed') return false;
+        if (tx.type === 'swing_winner') return false;
+        // Match by tournamentIndex if available, fall back to segment string
+        return tx.tournamentIndex !== undefined
+          ? swingIndexes.has(tx.tournamentIndex)
+          : tx.segment === swingAwardSeg;
+      })
+      .reduce((sum, tx) => sum + tx.fee, 0);
+
+    if (pot === 0) {
+      dialog.showToast('No fees collected for ' + swingAwardSeg, 'error');
       return;
     }
 
