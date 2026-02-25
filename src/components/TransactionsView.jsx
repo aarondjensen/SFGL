@@ -575,32 +575,24 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         <div style={theme.card}>
           <div style={{ ...theme.cardHeader, justifyContent: 'space-between' }}>
             <h2 style={theme.h2}>Transaction Fees</h2>
-            {teamFees[0]?.currentSwing && (() => {
-              const swingColor =
-                teamFees[0].currentSwing === 'West Coast Swing' ? 'rgba(220,80,80,0.85)' :
-                teamFees[0].currentSwing === 'Spring Swing'     ? 'rgba(100,215,175,0.9)' :
-                teamFees[0].currentSwing === 'Summer Swing'     ? 'rgba(80,140,220,0.85)' :
-                teamFees[0].currentSwing === 'Fall Finish'      ? 'rgba(220,140,60,0.85)' :
-                'rgba(245,197,24,0.55)';
-              const swingPot = teamFees.reduce((sum, t) => sum + (t.swingTotal || 0), 0);
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.3px', color: swingColor }}>
-                    {teamFees[0].currentSwing}
+            {teamFees[0]?.currentSwing && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.3px', color:
+                  teamFees[0].currentSwing === 'West Coast Swing' ? 'rgba(220,80,80,0.85)' :
+                  teamFees[0].currentSwing === 'Spring Swing'     ? 'rgba(100,215,175,0.9)' :
+                  teamFees[0].currentSwing === 'Summer Swing'     ? 'rgba(80,140,220,0.85)' :
+                  teamFees[0].currentSwing === 'Fall Finish'      ? 'rgba(220,140,60,0.85)' :
+                  'rgba(245,197,24,0.55)'
+                }}>
+                  {teamFees[0].currentSwing}
+                </span>
+                {teamFees[0].swingIsComplete && (
+                  <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(245,197,24,0.8)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 2, padding: '1px 4px' }}>
+                    Final
                   </span>
-                  {swingPot > 0 && (
-                    <span style={{ fontFamily: fonts.mono, fontSize: 12, fontWeight: 700, color: swingColor }}>
-                      ${swingPot}
-                    </span>
-                  )}
-                  {teamFees[0].swingIsComplete && (
-                    <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(245,197,24,0.8)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 2, padding: '1px 4px' }}>
-                      Final
-                    </span>
-                  )}
-                </div>
-              );
-            })()}
+                )}
+              </div>
+            )}
           </div>
           <div style={{ padding: '12px 16px' }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
