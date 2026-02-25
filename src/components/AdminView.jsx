@@ -465,19 +465,47 @@ export const AdminView = ({
     return { ...t, roster: r };
   };
   const handleProcessSingle = async (w) => {
-    const allRostered = new Set(); teams.forEach(t => buildRoster(t).forEach(n => allRostered.add(n)));
-    if (allRostered.has(w.player)) { dialog.showToast(w.player + ' already rostered', 'error'); return; }
-    if (w.droppedPlayer && !buildRoster(teams.find(t => t.name === w.team) || {}).has(w.droppedPlayer)) {
+    const allRostered = new Set(); teams.forEach(t => t.roster.forEach(p => allRostered.add(p.name)));
+    if (allRostered.has(w.player)) {
+      const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() } : tx);
+      setTransactions(tx2); await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
+      dialog.showToast(w.player + ' already rostered', 'error'); return;
+    }
+    if (w.droppedPlayer && !teams.find(t => t.name === w.team)?.roster.some(p => p.name === w.droppedPlayer)) {
       const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'failed', failReason: w.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() } : tx);
       setTransactions(tx2); await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
       dialog.showToast(w.droppedPlayer + ' already dropped', 'error'); return;
     }
-    const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'processed', processedDate: new Date().toLocaleDateString() } : tx);
-    const t2 = teams.map(t => applyWaiver(t, w));
+
+    // Check for competing pending claims from other teams on the same player
+    const competing = transactions
+      .map((tx, i) => ({ ...tx, _idx: i }))
+      .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.player === w.player && tx.team !== w.team);
+
+    // Determine tiebreaker: lowest earnings wins
+    const earningsMap = {}; teams.forEach(t => { earningsMap[t.name] = t.earnings || 0; });
+    const allClaims = [w, ...competing].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
+    const winner = allClaims[0];
+    const losers = allClaims.slice(1);
+
+    let tx2 = [...transactions];
+    // Mark winner as processed
+    tx2[winner._idx] = { ...tx2[winner._idx], status: 'processed', processedDate: new Date().toLocaleDateString() };
+    // Mark losers as blocked
+    losers.forEach(l => {
+      tx2[l._idx] = { ...tx2[l._idx], status: 'failed', failReason: 'Waiver blocked — lost tiebreaker to ' + winner.team, processedDate: new Date().toLocaleDateString() };
+    });
+
+    // Only apply the winner's roster change
+    const t2 = teams.map(t => applyWaiver(t, winner));
     setTransactions(tx2); updateTeams(t2);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
     sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
-    dialog.showToast(w.team + ' adds ' + w.player + (w.droppedPlayer ? ' / drops ' + w.droppedPlayer : ''), 'success');
+    if (losers.length) {
+      dialog.showToast(winner.team + ' wins claim · ' + losers.map(l => l.team).join(', ') + ' blocked', 'success');
+    } else {
+      dialog.showToast(winner.team + ' adds ' + winner.player + (winner.droppedPlayer ? ' / drops ' + winner.droppedPlayer : ''), 'success');
+    }
   };
   const handleProcessAll = async (pending) => {
     if (!pending.length) return;
@@ -499,7 +527,7 @@ export const AdminView = ({
         if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allR.has(w.claim.droppedPlayer))) { failed.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }; f++; more = true; return; }
         if (w.claim.droppedPlayer) { allR.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
         allR.add(player); done.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() }; applied.push(w.claim); p++;
-        cs.slice(1).forEach(l => { failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: 'Lost tiebreaker to ' + w.tn, processedDate: new Date().toLocaleDateString() }; f++; }); more = true;
+        cs.slice(1).forEach(l => { failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: 'Waiver blocked — lost tiebreaker to ' + w.tn, processedDate: new Date().toLocaleDateString() }; f++; }); more = true;
       });
     }
     let t2 = [...teams]; applied.forEach(w => { t2 = t2.map(t => applyWaiver(t, w)); });
