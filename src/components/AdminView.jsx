@@ -1495,7 +1495,18 @@ export const AdminView = ({
             style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
           />
           {(() => {
-            const rosteredNames = [...new Set(teams.flatMap(t => t.roster.map(p => p.name)))].sort();
+            // Build effective roster for all teams (same as useRoster) so
+            // transaction-added players aren't missed.
+            const rosteredNames = [...new Set(teams.flatMap(t => {
+              const rosterSet = new Set(t.roster.map(p => p.name));
+              transactions
+                .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && tx.status === 'processed')
+                .forEach(tx => {
+                  if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
+                  if (tx.player) rosterSet.add(tx.player);
+                });
+              return [...rosterSet];
+            }))].filter(Boolean).sort();
             const missing = rosteredNames.filter(n => !headshots[n]);
             const filtered = hsSearch.trim()
               ? rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase()))
