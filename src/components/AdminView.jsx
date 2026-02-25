@@ -1535,6 +1535,7 @@ export const AdminView = ({
                       </div>
                       <input
                         type="text" defaultValue={currentId} placeholder="PGA Tour ID"
+                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
                         onBlur={async e => {
                           const val = e.target.value.trim();
                           if (val === currentId) return;
