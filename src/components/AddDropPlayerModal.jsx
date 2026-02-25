@@ -14,7 +14,7 @@ const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,18
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, allPlayers, teams,
   updateTeams, transactions, setTransactions,
-  isWaiverMode, activeTournamentIndex, nextTournamentIndex, editingWaiverData,
+  isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
 }) => {
   const [searchTerm,           setSearchTerm]           = useState('');
   const [selectedPlayerToAdd,  setSelectedPlayerToAdd]  = useState(null);
@@ -89,7 +89,7 @@ export const AddDropPlayerModal = ({
       player:          selectedPlayerToAdd.name,
       droppedPlayer:   selectedPlayerToDrop?.name || null,
       fee,
-      segment:         getSegmentByDate(),
+      segment:         txSegment || getSegmentByDate(),
       date:            new Date().toLocaleDateString(),
       // fa/waiver tag the NEXT upcoming event (the one players will play in)
       tournamentIndex: nextTournamentIndex ?? activeTournamentIndex,

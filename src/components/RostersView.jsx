@@ -969,6 +969,7 @@ export const RostersView = ({
         isWaiverMode={isWaiverMode}
         activeTournamentIndex={activeTournamentIndex}
         nextTournamentIndex={addDropTournamentIndex}
+        txSegment={tournaments[addDropTournamentIndex]?.segment || getSegmentByDate()}
         editingWaiverData={editingWaiverData}
       />
     </div>

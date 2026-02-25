@@ -312,15 +312,28 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       currentSwing = nextTourney ? (getSegForTourney(nextTourney) || lastSeg) : lastSeg;
     }
 
-    const swingIsComplete = false; // new swing just started — never "complete" yet
     const fees = {};
     teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, swingIsComplete, teamId: t.id, teamName: t.name }; });
+
+    // Build the set of tournamentIndexes that belong to the current swing
+    const currentSwingIndexes = new Set(
+      (tournaments || [])
+        .map((t, i) => ({ t, i }))
+        .filter(({ t }) => getSegForTourney(t) === currentSwing)
+        .map(({ i }) => i)
+    );
+
     transactions.forEach(tx => {
       // swing_winner uses tx.amount not tx.fee — don't count it in season/swing fees
       if (tx.type === 'swing_winner') return;
-      if (fees[tx.team] && typeof tx.fee === 'number') {
+      if (tx.status === 'failed') return; // blocked waivers have no fee
+      if (fees[tx.team] && typeof tx.fee === 'number' && tx.fee > 0) {
         fees[tx.team].seasonTotal += tx.fee;
-        if (tx.segment === currentSwing) fees[tx.team].swingTotal += tx.fee;
+        // Count toward current swing if the transaction's tournament is in this swing
+        const inCurrentSwing = tx.tournamentIndex !== undefined
+          ? currentSwingIndexes.has(tx.tournamentIndex)
+          : tx.segment === currentSwing; // fallback for old transactions without tournamentIndex
+        if (inCurrentSwing) fees[tx.team].swingTotal += tx.fee;
       }
     });
     return Object.values(fees).sort((a, b) => b.seasonTotal - a.seasonTotal);
