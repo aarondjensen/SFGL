@@ -327,20 +327,31 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   }, [teams, transactions, tournaments]);
 
   const TYPE_ORDER = { 'waiver': 0, 'fa': 0, 'free agent': 0, 'drop': 1, 'mulligan': 2 };
+  // Build a map of segment → last tournamentIndex for sorting swing_winner records
+  // that predate the tournamentIndex field being added.
+  const swingLastIndex = {};
+  tournaments.forEach((t, i) => {
+    const seg = t.segment || '';
+    if (seg && t.completed) swingLastIndex[seg] = Math.max(swingLastIndex[seg] ?? -1, i);
+  });
+
   const sortedTransactions = [...transactions].sort((a, b) => {
-    // Use timestamp or date as primary sort — most recent first.
+    // Resolve tournamentIndex — for swing_winner, fall back to last tournament of that segment.
+    const resolveIndex = tx => {
+      if (tx.tournamentIndex !== undefined) return tx.tournamentIndex;
+      if (tx.type === 'swing_winner' && tx.segment) return swingLastIndex[tx.segment] ?? -1;
+      return -1;
+    };
+    const ai = resolveIndex(a);
+    const bi = resolveIndex(b);
+    if (bi !== ai) return bi - ai;
+    // Same index: sort by timestamp/date, most recent first.
     const toMs = tx => {
       if (tx.timestamp) return typeof tx.timestamp === 'number' ? tx.timestamp : new Date(tx.timestamp).getTime();
       if (tx.date) return new Date(tx.date).getTime();
       return 0;
     };
-    const at = toMs(a);
-    const bt = toMs(b);
-    if (bt !== at) return bt - at;
-    // Same timestamp: fall back to tournamentIndex (higher = more recent)
-    const ai = a.tournamentIndex ?? -1;
-    const bi = b.tournamentIndex ?? -1;
-    if (bi !== ai) return bi - ai;
+    if (toMs(b) !== toMs(a)) return toMs(b) - toMs(a);
     // Final tiebreak: type order
     const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
