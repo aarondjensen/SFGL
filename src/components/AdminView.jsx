@@ -1589,7 +1589,34 @@ export const AdminView = ({
         }} style={{ ...S.btnSec, marginBottom: 8 }}>⬇️ Pull from Supabase (refresh this device)</button>
         <button onClick={handleRecalc} style={{ ...S.btnSec, marginBottom: 8 }}>📊 Recalculate Earnings from Results</button>
         <button onClick={handleRecalcAllStats} style={{ ...S.btnSec, marginBottom: 8 }}>📈 Recalculate All Player Stats (Events/Cuts/Tour$/SFGL$)</button>
-        <button onClick={handleRecalcStarts} style={{ ...S.btnSec, marginBottom: 16 }}>⭐ Recalculate Limited Player Starts</button>
+        <button onClick={handleRecalcStarts} style={{ ...S.btnSec, marginBottom: 8 }}>⭐ Recalculate Limited Player Starts</button>
+        <button onClick={async () => {
+          // Read transactions from localStorage and merge any missing into current state
+          try {
+            const local = await storage.get(STORAGE_KEYS.TRANSACTIONS, []);
+            if (!Array.isArray(local) || local.length === 0) {
+              dialog.showToast('No transactions found in localStorage', 'error'); return;
+            }
+            const currentIds = new Set(transactions.map(tx => tx.timestamp || JSON.stringify(tx)));
+            const missing = local.filter(tx => !currentIds.has(tx.timestamp || JSON.stringify(tx)));
+            if (missing.length === 0) {
+              dialog.showToast('No missing transactions found — localStorage matches Supabase', 'success'); return;
+            }
+            const ok = await dialog.showConfirm(
+              'Recover Transactions',
+              `Found ${missing.length} transaction(s) in localStorage not in Supabase:\n\n` +
+              missing.slice(0, 5).map(tx => `• ${tx.team}: ${tx.type} ${tx.player || ''}`).join('\n') +
+              (missing.length > 5 ? `\n...and ${missing.length - 5} more` : '') +
+              '\n\nMerge these into transaction history?',
+              { confirmText: `Recover ${missing.length}` }
+            );
+            if (!ok) return;
+            const merged = [...missing, ...transactions];
+            setTransactions(merged);
+            await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, merged);
+            dialog.showToast(`✓ Recovered ${missing.length} transaction(s)`, 'success');
+          } catch(e) { dialog.showToast('Recovery failed: ' + e.message, 'error'); }
+        }} style={{ ...S.btnSec, marginBottom: 16 }}>🔄 Recover Transactions from localStorage</button>
 
         {/* ── Raw Roster Inspector / Direct Fix ── */}
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12, marginBottom: 12 }}>

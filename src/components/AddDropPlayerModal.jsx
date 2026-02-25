@@ -11,7 +11,7 @@ const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,18
 
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, allPlayers, teams,
-  updateTeams, transactions, setTransactions,
+  updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
 }) => {
   const [searchTerm,           setSearchTerm]           = useState('');
@@ -64,17 +64,24 @@ export const AddDropPlayerModal = ({
     })
   );
 
-  // Players dropped this week (FA/waiver at the current tournament index) are in
-  // limbo until that tournament is processed — they can't be claimed by anyone yet.
-  const currentTournamentIndex = nextTournamentIndex ?? activeTournamentIndex;
+  // Players dropped via a processed FA/waiver whose tournament hasn't been completed yet
+  // are "on waivers" — unavailable until that tournament is processed.
+  // We consider a drop "in limbo" if its tournamentIndex maps to an incomplete tournament,
+  // OR if it has no tournamentIndex but happened recently (this week).
   const limboPlayers = new Set(
     transactions
-      .filter(tx =>
-        tx.status === 'processed' &&
-        tx.type !== 'mulligan' &&
-        tx.droppedPlayer &&
-        tx.tournamentIndex === currentTournamentIndex
-      )
+      .filter(tx => {
+        if (tx.status !== 'processed') return false;
+        if (tx.type === 'mulligan') return false;
+        if (!tx.droppedPlayer) return false;
+        // If we have a tournamentIndex, check if that tournament is completed
+        if (tx.tournamentIndex !== undefined) {
+          const t = tournaments?.[tx.tournamentIndex];
+          return t && !t.completed; // limbo = tournament not yet completed
+        }
+        // No tournamentIndex: treat as current week (in limbo)
+        return true;
+      })
       .map(tx => tx.droppedPlayer)
   );
 
