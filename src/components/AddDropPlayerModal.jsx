@@ -4,8 +4,6 @@ import { useDialog } from './DialogContext';
 import { getSegmentByDate } from '../utils/index.js';
 import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
-import { storage } from '../api';
-import { STORAGE_KEYS } from '../constants/index.js';
 
 const accentColor   = (waiver) => waiver ? colors.warning         : colors.success;
 const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.12)' : 'rgba(80,180,120,0.12)';
@@ -160,9 +158,7 @@ export const AddDropPlayerModal = ({
 
     const newTransactions = [newTx, ...transactions];
     updateTeams(updatedTeams);
-    setTransactions(newTransactions);
-    await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, newTransactions);
+    setTransactions(newTransactions); // setTransactions IS updateTransactions — persists to Supabase + localStorage
 
     setSaving(false);
     dialog.showToast(
