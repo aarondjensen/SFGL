@@ -436,11 +436,13 @@ export const AddDropPlayerModal = ({
                   {isLimbo ? (
                     <span style={{
                       fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
-                      padding: '5px 14px', borderRadius: 3,
+                      padding: '5px 0', borderRadius: 3,
+                      width: 90, textAlign: 'center', flexShrink: 0,
                       background: 'rgba(245,197,24,0.1)',
                       border: '1px solid rgba(245,197,24,0.35)',
                       color: colors.textGold,
                       letterSpacing: '0.3px',
+                      display: 'inline-block',
                     }}>
                       On Waivers
                     </span>
@@ -449,7 +451,8 @@ export const AddDropPlayerModal = ({
                       onClick={e => { e.stopPropagation(); selectPlayerToAdd(player); }}
                       style={{
                         fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
-                        padding: '5px 14px', borderRadius: 3, cursor: 'pointer',
+                        padding: '5px 0', borderRadius: 3, cursor: 'pointer',
+                        width: 90, textAlign: 'center', flexShrink: 0,
                         transition: 'all 0.15s',
                         background: isCurrentlySelected ? 'rgba(80,180,120,0.2)' : 'rgba(80,180,120,0.1)',
                         border: `1px solid ${isCurrentlySelected ? 'rgba(80,180,120,0.6)' : 'rgba(80,180,120,0.3)'}`,
