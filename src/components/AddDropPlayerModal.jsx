@@ -45,37 +45,20 @@ export const AddDropPlayerModal = ({
   if (!isOpen || !team) return null;
 
   // ── Available players ──────────────────────────────────────────────────────
-  const rosteredPlayers = new Set();
-  teams.forEach(t => {
-    let effective = t.roster.map(p => p.name);
-    // Only apply *processed* (non-pending) transactions to determine roster state
-    transactions.filter(tx => tx.status !== 'pending').forEach(tx => {
-      if (tx.droppedPlayer) effective = effective.filter(n => n !== tx.droppedPlayer);
-      if (tx.player && !effective.includes(tx.player)) effective.push(tx.player);
-    });
-    effective.forEach(name => rosteredPlayers.add(name));
-  });
-  // Pending waivers from OTHER teams do NOT hide a player — multiple teams can
-  // claim the same player; priority/earnings determines who wins at processing time.
-  // Only hide a player from THIS team's search if they already have a pending claim for them.
+  // Use each team's actual roster as the source of truth for who is rostered.
+  const rosteredPlayers = new Set(teams.flatMap(t => t.roster.map(p => p.name)));
+
+  // Hide players this team already has a pending waiver claim for
   const thisTeamPendingClaims = new Set(
     transactions
       .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.team === team.name && tx.player)
       .map(tx => tx.player)
   );
 
-  // Track which players have pending claims from other teams (for display only)
-  const otherTeamClaims = new Map(); // playerName -> count of other-team claims
-  transactions
-    .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.team !== team.name && tx.player)
-    .forEach(tx => otherTeamClaims.set(tx.player, (otherTeamClaims.get(tx.player) || 0) + 1));
-
   const availablePlayers = allPlayers.filter(p => {
     if (!p.name || typeof p.name !== 'string') return false;
     if (/^\d+$/.test(p.name.trim())) return false;
-    // Hide if already on any team's roster (based on processed transactions)
     if (rosteredPlayers.has(p.name)) return false;
-    // Hide if THIS team already has a pending waiver claim for this player
     if (thisTeamPendingClaims.has(p.name)) return false;
     return true;
   });
@@ -386,7 +369,6 @@ export const AddDropPlayerModal = ({
           ) : (
             filteredPlayers.slice(0, 50).map(player => {
               const isCurrentlySelected = selectedPlayerToAdd?.name === player.name;
-              const claimCount = otherTeamClaims.get(player.name) || 0;
               return (
                 <div
                   key={player.name}
@@ -410,16 +392,9 @@ export const AddDropPlayerModal = ({
                     }}>
                       {player.worldRank === 999 ? 'NR' : `#${player.worldRank}`}
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
-                        {player.name}
-                      </span>
-                      {isWaiverMode && claimCount > 0 && (
-                        <div style={{ fontFamily: fonts.sans, fontSize: 10, color: 'rgba(220,140,60,0.75)', marginTop: 1 }}>
-                          {claimCount} other claim{claimCount > 1 ? 's' : ''} pending
-                        </div>
-                      )}
-                    </div>
+                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
+                      {player.name}
+                    </span>
                   </div>
                   <button
                     onClick={() => selectPlayerToAdd(player)}
@@ -427,9 +402,9 @@ export const AddDropPlayerModal = ({
                       fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
                       padding: '5px 14px', borderRadius: 3, cursor: 'pointer',
                       transition: 'all 0.15s',
-                      background: isCurrentlySelected ? accentBg(isWaiverMode) : (isWaiverMode ? 'rgba(220,170,60,0.1)' : 'rgba(80,180,120,0.1)'),
-                      border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : (isWaiverMode ? 'rgba(220,170,60,0.3)' : 'rgba(80,180,120,0.3)')}`,
-                      color: isCurrentlySelected ? accentColor(isWaiverMode) : (isWaiverMode ? colors.warning : colors.success),
+                      background: isCurrentlySelected ? 'rgba(80,180,120,0.2)' : 'rgba(80,180,120,0.1)',
+                      border: `1px solid ${isCurrentlySelected ? 'rgba(80,180,120,0.6)' : 'rgba(80,180,120,0.3)'}`,
+                      color: colors.success,
                     }}
                   >
                     {isCurrentlySelected ? '✓ Selected' : 'Select'}
