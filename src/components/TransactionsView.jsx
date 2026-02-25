@@ -354,6 +354,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     });
 
   const undoTransaction = async (tx) => {
+    if (tx.status !== 'processed') return; // only reverse completed transactions
     const ok = await dialog.showConfirm(
       'Undo Transaction',
       'Undo ' + tx.type + ': ' + tx.team + ' added ' + tx.player + (tx.droppedPlayer ? ' / dropped ' + tx.droppedPlayer : '') + '?\n\nThis will reverse the roster change and refund the $' + tx.fee + ' fee.',
@@ -363,19 +364,48 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const team = teams.find(t => t.name === tx.team);
     if (!team) return;
 
+    // Remove the added player from the roster
     let newRoster = team.roster.filter(p => p.name !== tx.player);
-    if (tx.droppedPlayer) newRoster.push(makePlayer(tx.droppedPlayer));
+
+    // Restore the dropped player — use allPlayers data if available, else makePlayer
+    if (tx.droppedPlayer) {
+      const playerData = allPlayers?.find(p => p.name === tx.droppedPlayer);
+      newRoster.push(playerData
+        ? { name: playerData.name, limited: playerData.limited || false, unlimited: playerData.unlimited || false, stars: playerData.stars || 0, starts: playerData.starts || 0, eventsPlayed: playerData.eventsPlayed || 0, cutsMade: playerData.cutsMade || 0, pgaTourEarnings: playerData.pgaTourEarnings || 0, sfglEarnings: playerData.sfglEarnings || 0 }
+        : makePlayer(tx.droppedPlayer)
+      );
+    }
+
     const newTeams = teams.map(t =>
       t.id === team.id
-        ? { ...t, roster: newRoster, transactionFees: Math.max(0, (t.transactionFees || 0) - tx.fee) }
+        ? { ...t, roster: newRoster, transactionFees: Math.max(0, (t.transactionFees || 0) - (tx.fee || 0)) }
         : t,
     );
-    const newTransactions = transactions.filter(t => t !== tx);
+
+    // Remove this transaction; also restore any blocked losers back to pending
+    // so the commissioner can re-process the waiver round fairly
+    const newTransactions = transactions
+      .filter(t => t !== tx)
+      .map(t => {
+        if (
+          t.status === 'failed' &&
+          t.type === 'waiver' &&
+          t.player === tx.player &&
+          t.failReason?.includes('lost tiebreaker')
+        ) {
+          // Re-queue the blocked claim so it can be processed again
+          const { failReason, processedDate, ...rest } = t;
+          return { ...rest, status: 'pending' };
+        }
+        return t;
+      });
 
     updateTeams(newTeams);
     setTransactions(newTransactions);
     await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, newTransactions);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTransactions).catch(() => {});
     dialog.showToast('Undone: ' + tx.player + ' removed from ' + tx.team, 'success');
   };
 
@@ -954,21 +984,43 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           <Edit2 style={{ width: 13, height: 13 }} />
                         </button>
 
-                        {/* Undo button */}
-                        <button
-                          onClick={() => undoTransaction(tx)}
-                          title="Undo transaction"
-                          style={{
-                            background: 'none', border: 'none', cursor: 'pointer',
-                            fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
-                            letterSpacing: '0.5px', color: colors.danger,
-                            padding: '2px 0', transition: 'opacity 0.15s',
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
-                          onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-                        >
-                          Undo
-                        </button>
+                        {/* Undo / Dismiss button — behavior depends on status */}
+                        {tx.status === 'processed' ? (
+                          <button
+                            onClick={() => undoTransaction(tx)}
+                            title="Undo transaction — reverses roster change"
+                            style={{
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
+                              letterSpacing: '0.5px', color: colors.danger,
+                              padding: '2px 0', transition: 'opacity 0.15s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+                          >
+                            Undo
+                          </button>
+                        ) : tx.status === 'failed' ? (
+                          <button
+                            onClick={async () => {
+                              const newTx = transactions.filter(t => t !== tx);
+                              setTransactions(newTx);
+                              await storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
+                              sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx).catch(() => {});
+                            }}
+                            title="Dismiss — removes this record, no roster change"
+                            style={{
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
+                              letterSpacing: '0.5px', color: colors.textMuted,
+                              padding: '2px 0', transition: 'opacity 0.15s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+                          >
+                            Dismiss
+                          </button>
+                        ) : null}
                       </>
                     )}
                   </div>
