@@ -376,7 +376,11 @@ export const RostersView = ({
   const searchResults = useMemo(() => {
     if (!globalSearch.trim()) return [];
     const term = globalSearch.toLowerCase();
-    const allPlayerMap = new Map(allPlayers.map(p => [p.name, { ...p, owner: 'Free Agent' }]));
+    const allPlayerMap = new Map(
+      allPlayers
+        .filter(p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim()))
+        .map(p => [p.name, { ...p, owner: 'Free Agent' }])
+    );
     teams.forEach(t => {
       t.roster.forEach(rp => {
         if (allPlayerMap.has(rp.name)) allPlayerMap.get(rp.name).owner = t.name;
@@ -578,7 +582,7 @@ export const RostersView = ({
             <input
               type="text" placeholder="Search player…"
               value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
-              style={{ ...theme.input, paddingLeft: 28, fontSize: 12, padding: '7px 10px 7px 28px' }}
+              style={{ ...theme.input, paddingLeft: 28, fontSize: 16, padding: '7px 10px 7px 28px' }}
               onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
               onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
             />

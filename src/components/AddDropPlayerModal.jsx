@@ -58,7 +58,12 @@ export const AddDropPlayerModal = ({
     .filter(tx => tx.status === 'pending' && tx.player)
     .forEach(tx => rosteredPlayers.add(tx.player));
 
-  const availablePlayers = allPlayers.filter(p => !rosteredPlayers.has(p.name));
+  const availablePlayers = allPlayers.filter(p => {
+    if (!p.name || typeof p.name !== 'string') return false;
+    // Exclude entries where name is a numeric ID (pgaTourId leaked as name)
+    if (/^\d+$/.test(p.name.trim())) return false;
+    return !rosteredPlayers.has(p.name);
+  });
   const filteredPlayers  = availablePlayers.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
@@ -356,7 +361,7 @@ export const AddDropPlayerModal = ({
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             autoFocus={!selectedPlayerToAdd}
-            style={{ ...theme.input, marginBottom: 12 }}
+            style={{ ...theme.input, marginBottom: 12, fontSize: 16 }}
             onFocus={e => { e.target.style.borderColor = colors.borderFocus; e.target.style.background = colors.inputBgFocus; }}
             onBlur={e => { e.target.style.borderColor = colors.borderInput; e.target.style.background = colors.inputBg; }}
           />
