@@ -327,8 +327,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   }, [teams, transactions, tournaments]);
 
   const TYPE_ORDER = { 'waiver': 0, 'fa': 0, 'free agent': 0, 'drop': 1, 'mulligan': 2, 'swing_winner': 99 };
-  // Build a map of segment → last tournamentIndex for sorting swing_winner records
-  // that predate the tournamentIndex field being added.
+  // Build a map of segment → last tournamentIndex for sorting swing_winner records.
   const swingLastIndex = {};
   tournaments.forEach((t, i) => {
     const seg = t.segment || '';
@@ -336,23 +335,29 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   });
 
   const sortedTransactions = [...transactions].sort((a, b) => {
-    // Resolve tournamentIndex — for swing_winner, fall back to last tournament of that segment.
-    const resolveIndex = tx => {
-      if (tx.tournamentIndex !== undefined) return tx.tournamentIndex;
-      if (tx.type === 'swing_winner' && tx.segment) return swingLastIndex[tx.segment] ?? -1;
-      return -1;
+    // Resolve a float sort key:
+    // - Normal transactions: their tournamentIndex (integer)
+    // - swing_winner: last tournament of that swing + 0.5, so it sorts
+    //   AFTER all transactions from that final event but BEFORE any
+    //   transactions from the next swing's tournaments (higher index).
+    const resolveKey = tx => {
+      if (tx.type === 'swing_winner') {
+        const lastIdx = tx.tournamentIndex ?? (tx.segment ? swingLastIndex[tx.segment] : undefined);
+        return lastIdx !== undefined ? lastIdx + 0.5 : -1;
+      }
+      return tx.tournamentIndex ?? -1;
     };
-    const ai = resolveIndex(a);
-    const bi = resolveIndex(b);
-    if (bi !== ai) return bi - ai;
-    // Same index: sort by timestamp/date, most recent first.
+    const ak = resolveKey(a);
+    const bk = resolveKey(b);
+    if (bk !== ak) return bk - ak;
+    // Same key: sort by timestamp/date, most recent first.
     const toMs = tx => {
       if (tx.timestamp) return typeof tx.timestamp === 'number' ? tx.timestamp : new Date(tx.timestamp).getTime();
       if (tx.date) return new Date(tx.date).getTime();
       return 0;
     };
     if (toMs(b) !== toMs(a)) return toMs(b) - toMs(a);
-    // Final tiebreak: type order
+    // Final tiebreak: type order (swing_winner last within same key)
     const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
     return ta - tb;
