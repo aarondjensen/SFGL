@@ -966,6 +966,7 @@ export const RostersView = ({
         updateTeams={updateTeams}
         transactions={transactions}
         setTransactions={setTransactions}
+        tournaments={tournaments}
         isWaiverMode={isWaiverMode}
         activeTournamentIndex={activeTournamentIndex}
         nextTournamentIndex={addDropTournamentIndex}
