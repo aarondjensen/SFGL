@@ -66,6 +66,20 @@ export const AddDropPlayerModal = ({
     })
   );
 
+  // Players dropped this week (FA/waiver at the current tournament index) are in
+  // limbo until that tournament is processed — they can't be claimed by anyone yet.
+  const currentTournamentIndex = nextTournamentIndex ?? activeTournamentIndex;
+  const limboPlayers = new Set(
+    transactions
+      .filter(tx =>
+        tx.status === 'processed' &&
+        tx.type !== 'mulligan' &&
+        tx.droppedPlayer &&
+        tx.tournamentIndex === currentTournamentIndex
+      )
+      .map(tx => tx.droppedPlayer)
+  );
+
   // Hide players this team already has a pending waiver claim for
   const thisTeamPendingClaims = new Set(
     transactions
@@ -77,9 +91,18 @@ export const AddDropPlayerModal = ({
     if (!p.name || typeof p.name !== 'string') return false;
     if (/^\d+$/.test(p.name.trim())) return false;
     if (rosteredPlayers.has(p.name)) return false;
+    if (limboPlayers.has(p.name)) return false;
     if (thisTeamPendingClaims.has(p.name)) return false;
     return true;
   });
+  // Limbo players matching the search — shown grayed out with "On Waivers" label
+  const limboFiltered = searchTerm.length > 0
+    ? allPlayers.filter(p =>
+        p.name &&
+        limboPlayers.has(p.name) &&
+        p.name.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : [];
   const filteredPlayers  = availablePlayers.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
@@ -431,6 +454,34 @@ export const AddDropPlayerModal = ({
               );
             })
           )}
+
+          {/* Limbo players — dropped this week, not yet claimable */}
+          {limboFiltered.map(player => (
+            <div key={player.name} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '9px 12px', marginBottom: 6, borderRadius: 3,
+              background: 'rgba(255,255,255,0.02)',
+              border: `1px solid ${colors.borderSubtle}`,
+              opacity: 0.5,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  background: colors.buttonNavy, border: `1px solid ${colors.borderSubtle}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: fonts.sans, fontSize: 10, color: colors.textSecondary, flexShrink: 0,
+                }}>
+                  {player.worldRank === 999 ? 'NR' : `#${player.worldRank}`}
+                </div>
+                <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textMuted }}>
+                  {player.name}
+                </span>
+              </div>
+              <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 600, letterSpacing: '0.4px', color: colors.textMuted, textTransform: 'uppercase' }}>
+                On Waivers
+              </span>
+            </div>
+          ))}
         </div>
 
         {/* ── Footer — only when drop needed and not yet selected ── */}
