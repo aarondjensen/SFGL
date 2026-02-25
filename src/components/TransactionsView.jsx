@@ -328,19 +328,19 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
   const TYPE_ORDER = { 'waiver': 0, 'fa': 0, 'free agent': 0, 'drop': 1, 'mulligan': 2 };
   const sortedTransactions = [...transactions].sort((a, b) => {
-    // Most recent event first — highest tournamentIndex at top.
-    // Transactions without an index (e.g. swing_winner) sort to top.
-    const ai = a.tournamentIndex ?? 9999;
-    const bi = b.tournamentIndex ?? 9999;
-    if (bi !== ai) return bi - ai;
-    // Within same tournament: most recent first.
-    // Use timestamp if available, otherwise parse date string (e.g. "2/24/2026")
-    const toMs = tx => tx.timestamp
-      ? tx.timestamp
-      : tx.date ? new Date(tx.date).getTime() : 0;
+    // Use timestamp or date as primary sort — most recent first.
+    const toMs = tx => {
+      if (tx.timestamp) return typeof tx.timestamp === 'number' ? tx.timestamp : new Date(tx.timestamp).getTime();
+      if (tx.date) return new Date(tx.date).getTime();
+      return 0;
+    };
     const at = toMs(a);
     const bt = toMs(b);
     if (bt !== at) return bt - at;
+    // Same timestamp: fall back to tournamentIndex (higher = more recent)
+    const ai = a.tournamentIndex ?? -1;
+    const bi = b.tournamentIndex ?? -1;
+    if (bi !== ai) return bi - ai;
     // Final tiebreak: type order
     const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
@@ -933,7 +933,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(11px, 0.9vw, 13px)', color: colors.textSecondary }}>
                       <span style={{ color: txTypeColor(tx.type) }}>{txTypeLabel(tx.type)}</span>
                       {tx.status === 'failed' && tx.type === 'waiver' && (
-                        <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: 'rgba(220,200,80,0.8)', marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
+                        <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
                       )}
                       {': '}
                       <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : tx.player}</span>
