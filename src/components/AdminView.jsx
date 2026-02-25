@@ -432,15 +432,26 @@ export const AdminView = ({
   };
 
   // ── Roster Management ────────────────────────────────────────────────────
-  const handleAddPlayer = (teamId, name) => {
-    updateTeams(teams.map(t => t.id === teamId ? { ...t, roster: [...t.roster, { name, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' }] } : t));
+  const handleAddPlayer = async (teamId, name) => {
+    const newTeams = teams.map(t => t.id === teamId ? { ...t, roster: [...t.roster, { name, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' }] } : t);
+    updateTeams(newTeams);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
     dialog.showToast('Added ' + name, 'success');
   };
-  const handleDropPlayer = async (teamId, name) => {
+  const handleDropPlayer = async (teamId, name, idx) => {
     const team = teams.find(t => t.id === teamId);
-    if (!await dialog.showConfirm('Drop Player', 'Remove ' + name + ' from ' + team.name + '?', { type: 'danger', confirmText: 'Drop' })) return;
-    updateTeams(teams.map(t => t.id === teamId ? { ...t, roster: t.roster.filter(p => p.name !== name) } : t));
-    dialog.showToast('Dropped ' + name, 'success');
+    const label = name || `roster entry #${idx + 1}`;
+    if (!await dialog.showConfirm('Drop Player', 'Remove ' + label + ' from ' + team.name + '?', { type: 'danger', confirmText: 'Drop' })) return;
+    // Drop by index if name is missing/ambiguous, otherwise by name
+    const newRoster = idx !== undefined
+      ? team.roster.filter((_, i) => i !== idx)
+      : team.roster.filter(p => p.name !== name);
+    const newTeams = teams.map(t => t.id === teamId ? { ...t, roster: newRoster } : t);
+    updateTeams(newTeams);
+    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+    dialog.showToast('Dropped ' + label, 'success');
   };
   const resetMulligan = (teamId, type) => {
     const team = teams.find(t => t.id === teamId);
@@ -1295,16 +1306,19 @@ export const AdminView = ({
                     );
                   })()}
                 </div>
-                <div style={{ maxHeight: 200, overflowY: 'auto', border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, marginBottom: 8 }}>
+                <div style={{ border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, marginBottom: 8 }}>
                   {!team.roster.length
                     ? <div style={theme.emptyState}>No players on roster</div>
-                    : team.roster.map(p => (
-                      <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                    : team.roster.map((p, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                        <span style={{ fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted, flexShrink: 0, width: 18 }}>{idx + 1}</span>
                         <img src={'https://pga-tour-res.cloudflare.com/resources/photoplayer/' + (headshots[p.name] || 'default') + '.jpg'}
-                          onError={e => { e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(p.name) + '&background=111d2e&color=9ca3af&size=28'; }}
+                          onError={e => { e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(p.name || '?') + '&background=111d2e&color=9ca3af&size=28'; }}
                           alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }} />
-                        <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                        <button onClick={() => handleDropPlayer(team.id, p.name)} style={{ ...theme.btnDanger, padding: '4px 10px', fontSize: 11 }}>Drop</button>
+                        <span style={{ fontFamily: fonts.sans, fontSize: 13, color: p.name ? colors.textPrimary : colors.danger, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {p.name || <em>unnamed entry</em>}
+                        </span>
+                        <button onClick={() => handleDropPlayer(team.id, p.name, idx)} style={{ ...theme.btnDanger, padding: '4px 10px', fontSize: 11 }}>Drop</button>
                       </div>
                     ))
                   }
