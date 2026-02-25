@@ -135,7 +135,6 @@ export const useLeague = (STORAGE_KEYS) => {
           }
 
           if (supabaseRankings.length > 0) {
-            // playerRankingsApi.getAll() already returns the correct format
             setAllPlayers(supabaseRankings);
             const lastUpdated = await playerRankingsApi.getLastUpdated();
             setRankingsLastUpdated(lastUpdated);
@@ -190,14 +189,11 @@ export const useLeague = (STORAGE_KEYS) => {
     setTeams(resolved);
     try {
       setIsSyncing(true);
-      // Save to Supabase (primary)
       const { teamsApi } = await import('../api/supabase');
       await teamsApi.setAll(resolved);
-      // Backup to localStorage
       await storage.set(STORAGE_KEYS.TEAMS, resolved);
     } catch (e) {
       console.error('[useLeague] teams write failed:', e);
-      // Try localStorage as fallback
       try { await storage.set(STORAGE_KEYS.TEAMS, resolved); } catch {}
     } finally {
       setIsSyncing(false);
@@ -279,16 +275,12 @@ export const useLeague = (STORAGE_KEYS) => {
     setRankingsLastUpdated(timestamp);
     
     try {
-      // Save to Supabase (primary storage)
       await playerRankingsApi.updateAll(players);
       console.log(`Saved ${players.length} players to Supabase`);
-      
-      // Also save to localStorage as backup
       const payload = { players, lastUpdated: timestamp };
       await storage.set(STORAGE_KEYS.PLAYER_RANKINGS, payload);
     } catch (e) {
       console.error('[useLeague] rankings write failed:', e);
-      // If Supabase fails, at least save to localStorage
       try {
         const payload = { players, lastUpdated: timestamp };
         await storage.set(STORAGE_KEYS.PLAYER_RANKINGS, payload);
@@ -327,7 +319,7 @@ export const useRoster = (team, transactions, activeTournamentIndex) => {
         tx.type !== 'mulligan' &&
         tx.tournamentIndex !== undefined &&
         tx.tournamentIndex <= activeTournamentIndex &&
-        tx.status !== 'pending',
+        tx.status === 'processed', // ← FIX: was '!== pending', which included failed transactions
       )
       .sort((a, b) => a.tournamentIndex - b.tournamentIndex);
 
