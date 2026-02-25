@@ -312,6 +312,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       currentSwing = nextTourney ? (getSegForTourney(nextTourney) || lastSeg) : lastSeg;
     }
 
+    const swingIsComplete = false; // new swing just started — never "complete" yet
     const fees = {};
     teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, swingIsComplete, teamId: t.id, teamName: t.name }; });
 
