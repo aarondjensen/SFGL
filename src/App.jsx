@@ -303,7 +303,20 @@ const FantasyGolfLeague = () => {
           </div>
         </header>
 
-        {/* ── Segment / active tournament banner ── */}
+        {/* ── Commissioner banner ── */}
+        {isCommissioner && (
+          <div style={{
+            background: 'repeating-linear-gradient(90deg, rgba(245,197,24,0.12) 0px, rgba(245,197,24,0.12) 12px, rgba(245,197,24,0.06) 12px, rgba(245,197,24,0.06) 24px)',
+            borderTop: '1px solid rgba(245,197,24,0.35)',
+            borderBottom: '1px solid rgba(245,197,24,0.35)',
+            padding: '4px 16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}>
+            <span style={{ fontSize: 11, letterSpacing: '0.15em', fontWeight: 700, fontFamily: "'Raleway', system-ui, sans-serif", color: 'rgba(245,197,24,0.9)', textTransform: 'uppercase' }}>
+              ⚙ Commissioner Mode
+            </span>
+          </div>
+        )}
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400 }}>
             {getSegmentByDate()}
