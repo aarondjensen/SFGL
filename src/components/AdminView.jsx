@@ -1241,7 +1241,28 @@ export const AdminView = ({
           </select>
           {rosterMgmtTeam && (() => {
             const team = teams.find(t => t.id === rosterMgmtTeam);
-            const results = playerSearch.trim() ? allPlayers.filter(p => p.name.toLowerCase().includes(playerSearch.toLowerCase()) && !team.roster.some(r => r.name === p.name)).slice(0, 15) : [];
+
+            // Compute effective roster the same way RostersView does —
+            // start from team.roster and replay all processed transactions.
+            // This is what the manager sees, and what we must edit.
+            let effectiveRoster = [...team.roster];
+            transactions
+              .filter(tx => tx.team === team.name && tx.status === 'processed' && tx.type !== 'mulligan')
+              .forEach(tx => {
+                if (tx.droppedPlayer) effectiveRoster = effectiveRoster.filter(p => p.name !== tx.droppedPlayer);
+                if (tx.player && !effectiveRoster.some(p => p.name === tx.player)) {
+                  // Preserve full player object if already on roster, else create stub
+                  const existing = team.roster.find(p => p.name === tx.player);
+                  effectiveRoster.push(existing || { name: tx.player, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0 });
+                }
+              });
+
+            const effectiveNames = new Set(effectiveRoster.map(p => p.name));
+            const results = playerSearch.trim() ? allPlayers.filter(p =>
+              p.name && !/^\d+$/.test(p.name) &&
+              p.name.toLowerCase().includes(playerSearch.toLowerCase()) &&
+              !effectiveNames.has(p.name)
+            ).slice(0, 15) : [];
             return (
               <div>
                 <div style={{ background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '10px 12px', marginBottom: 10 }}>
@@ -1307,9 +1328,9 @@ export const AdminView = ({
                   })()}
                 </div>
                 <div style={{ border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, marginBottom: 8 }}>
-                  {!team.roster.length
+                  {!effectiveRoster.length
                     ? <div style={theme.emptyState}>No players on roster</div>
-                    : team.roster.map((p, idx) => (
+                    : effectiveRoster.map((p, idx) => (
                       <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
                         <span style={{ fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted, flexShrink: 0, width: 18 }}>{idx + 1}</span>
                         <img src={'https://pga-tour-res.cloudflare.com/resources/photoplayer/' + (headshots[p.name] || 'default') + '.jpg'}
@@ -1318,7 +1339,17 @@ export const AdminView = ({
                         <span style={{ fontFamily: fonts.sans, fontSize: 13, color: p.name ? colors.textPrimary : colors.danger, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {p.name || <em>unnamed entry</em>}
                         </span>
-                        <button onClick={() => handleDropPlayer(team.id, p.name, idx)} style={{ ...theme.btnDanger, padding: '4px 10px', fontSize: 11 }}>Drop</button>
+                        <button onClick={async () => {
+                          const label = p.name || `entry #${idx + 1}`;
+                          if (!await dialog.showConfirm('Drop Player', `Remove ${label} from ${team.name}?`, { type: 'danger', confirmText: 'Drop' })) return;
+                          // Write the effective roster minus this player back to team.roster
+                          const newRoster = effectiveRoster.filter((_, i) => i !== idx);
+                          const newTeams = teams.map(t => t.id === team.id ? { ...t, roster: newRoster } : t);
+                          updateTeams(newTeams);
+                          await storage.set(STORAGE_KEYS.TEAMS, newTeams);
+                          sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
+                          dialog.showToast('Dropped ' + label, 'success');
+                        }} style={{ ...theme.btnDanger, padding: '4px 10px', fontSize: 11 }}>Drop</button>
                       </div>
                     ))
                   }
