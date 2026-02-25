@@ -96,18 +96,9 @@ export const AddDropPlayerModal = ({
     if (!p.name || typeof p.name !== 'string') return false;
     if (/^\d+$/.test(p.name.trim())) return false;
     if (rosteredPlayers.has(p.name)) return false;
-    if (limboPlayers.has(p.name)) return false;
     if (thisTeamPendingClaims.has(p.name)) return false;
     return true;
   });
-  // Limbo players matching the search — shown grayed out with "On Waivers" label
-  const limboFiltered = searchTerm.length > 0
-    ? allPlayers.filter(p =>
-        p.name &&
-        limboPlayers.has(p.name) &&
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    : [];
   const filteredPlayers  = availablePlayers.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
@@ -413,6 +404,7 @@ export const AddDropPlayerModal = ({
           ) : (
             filteredPlayers.slice(0, 50).map(player => {
               const isCurrentlySelected = selectedPlayerToAdd?.name === player.name;
+              const isLimbo = limboPlayers.has(player.name);
               return (
                 <div
                   key={player.name}
@@ -422,10 +414,11 @@ export const AddDropPlayerModal = ({
                     background: isCurrentlySelected ? accentBg(isWaiverMode) : colors.cardBg,
                     border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
                     transition: 'all 0.15s',
+                    cursor: isLimbo ? 'default' : 'pointer',
                   }}
-                  onClick={() => selectPlayerToAdd(player)}
-                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
-                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
+                  onClick={() => { if (!isLimbo) selectPlayerToAdd(player); }}
+                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
+                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{
@@ -440,51 +433,36 @@ export const AddDropPlayerModal = ({
                       {player.name}
                     </span>
                   </div>
-                  <button
-                    onClick={() => selectPlayerToAdd(player)}
-                    style={{
+                  {isLimbo ? (
+                    <span style={{
                       fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
-                      padding: '5px 14px', borderRadius: 3, cursor: 'pointer',
-                      transition: 'all 0.15s',
-                      background: isCurrentlySelected ? 'rgba(80,180,120,0.2)' : 'rgba(80,180,120,0.1)',
-                      border: `1px solid ${isCurrentlySelected ? 'rgba(80,180,120,0.6)' : 'rgba(80,180,120,0.3)'}`,
-                      color: colors.success,
-                    }}
-                  >
-                    {isCurrentlySelected ? '✓ Selected' : 'Select'}
-                  </button>
+                      padding: '5px 14px', borderRadius: 3,
+                      background: 'rgba(245,197,24,0.1)',
+                      border: '1px solid rgba(245,197,24,0.35)',
+                      color: colors.textGold,
+                      letterSpacing: '0.3px',
+                    }}>
+                      On Waivers
+                    </span>
+                  ) : (
+                    <button
+                      onClick={e => { e.stopPropagation(); selectPlayerToAdd(player); }}
+                      style={{
+                        fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                        padding: '5px 14px', borderRadius: 3, cursor: 'pointer',
+                        transition: 'all 0.15s',
+                        background: isCurrentlySelected ? 'rgba(80,180,120,0.2)' : 'rgba(80,180,120,0.1)',
+                        border: `1px solid ${isCurrentlySelected ? 'rgba(80,180,120,0.6)' : 'rgba(80,180,120,0.3)'}`,
+                        color: colors.success,
+                      }}
+                    >
+                      {isCurrentlySelected ? '✓ Selected' : 'Select'}
+                    </button>
+                  )}
                 </div>
-              );
+                );
             })
           )}
-
-          {/* Limbo players — dropped this week, not yet claimable */}
-          {limboFiltered.map(player => (
-            <div key={player.name} style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '9px 12px', marginBottom: 6, borderRadius: 3,
-              background: 'rgba(255,255,255,0.02)',
-              border: `1px solid ${colors.borderSubtle}`,
-              opacity: 0.5,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: '50%',
-                  background: colors.buttonNavy, border: `1px solid ${colors.borderSubtle}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontFamily: fonts.sans, fontSize: 10, color: colors.textSecondary, flexShrink: 0,
-                }}>
-                  {player.worldRank === 999 ? 'NR' : `#${player.worldRank}`}
-                </div>
-                <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textMuted }}>
-                  {player.name}
-                </span>
-              </div>
-              <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 600, letterSpacing: '0.4px', color: colors.textMuted, textTransform: 'uppercase' }}>
-                On Waivers
-              </span>
-            </div>
-          ))}
         </div>
 
         {/* ── Footer — only when drop needed and not yet selected ── */}
