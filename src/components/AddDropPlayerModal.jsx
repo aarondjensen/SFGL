@@ -45,8 +45,26 @@ export const AddDropPlayerModal = ({
   if (!isOpen || !team) return null;
 
   // ── Available players ──────────────────────────────────────────────────────
-  // Use each team's actual roster as the source of truth for who is rostered.
-  const rosteredPlayers = new Set(teams.flatMap(t => t.roster.map(p => p.name)));
+  // Build the effective roster for EVERY team by replaying processed transactions,
+  // matching the same logic as useRoster. This prevents players added via FA/waiver
+  // (who live in transactions but not in team.roster) from appearing as available.
+  const rosteredPlayers = new Set(
+    teams.flatMap(t => {
+      let roster = t.roster.map(p => p.name);
+      const rosterSet = new Set(roster);
+      transactions
+        .filter(tx =>
+          tx.team === t.name &&
+          tx.type !== 'mulligan' &&
+          tx.status === 'processed'
+        )
+        .forEach(tx => {
+          if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
+          if (tx.player) rosterSet.add(tx.player);
+        });
+      return [...rosterSet];
+    })
+  );
 
   // Hide players this team already has a pending waiver claim for
   const thisTeamPendingClaims = new Set(
