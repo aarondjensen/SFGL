@@ -903,12 +903,17 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(11px, 0.9vw, 13px)', color: colors.textSecondary }}>
                       <span style={{ color: txTypeColor(tx.type) }}>{txTypeLabel(tx.type)}</span>
                       {': '}
-                      <span style={{ color: colors.success }}>{tx.type === 'swing_winner' ? tx.team : tx.player}</span>
+                      <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : tx.player}</span>
                       {tx.droppedPlayer && (
                         <>
                           <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ {tx.type === 'mulligan' ? 'out' : 'drop'}</span>
                           <span style={{ color: colors.danger }}>{tx.droppedPlayer}</span>
                         </>
+                      )}
+                      {tx.status === 'failed' && tx.failReason && (
+                        <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.75vw, 11px)', color: colors.danger, marginTop: 2, opacity: 0.8 }}>
+                          {tx.failReason}
+                        </div>
                       )}
                     </div>
                   </div>
