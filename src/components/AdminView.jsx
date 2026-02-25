@@ -1509,14 +1509,21 @@ export const AdminView = ({
             }))].filter(Boolean).sort();
             const missing = rosteredNames.filter(n => !headshots[n]);
             const filtered = hsSearch.trim()
-              ? rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase()))
+              ? [...new Set([
+                  // Rostered players matching search
+                  ...rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase())),
+                  // All ranked players matching search (catches non-rostered players)
+                  ...allPlayers
+                    .filter(p => p.name && p.name.toLowerCase().includes(hsSearch.toLowerCase()))
+                    .map(p => p.name),
+                ])]
               : missing;
             const showingAll = hsSearch.trim().length > 0;
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ ...theme.smallText, marginBottom: 6, color: colors.textMuted }}>
                   {showingAll
-                    ? `Showing ${filtered.length} of ${rosteredNames.length} players`
+                    ? `Showing ${filtered.length} result${filtered.length !== 1 ? 's' : ''} (all ranked players)`
                     : missing.length === 0
                       ? <span style={{ color: colors.success }}>✓ All rostered players have headshot IDs</span>
                       : `${missing.length} player${missing.length !== 1 ? 's' : ''} missing IDs`
