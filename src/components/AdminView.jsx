@@ -803,10 +803,16 @@ export const AdminView = ({
     const ok = await dialog.showConfirm('Award Swing Winner', msg, { confirmText: 'Award $' + pot.toLocaleString() });
     if (!ok) return;
 
+    const lastSwingTournament = swingTournaments.reduce((last, t) => {
+      const idx = tournaments.indexOf(t);
+      return idx > (last?.idx ?? -1) ? { t, idx } : last;
+    }, null);
+
     const newTx = {
       team: winnerTeam.name, type: 'swing_winner', player: winnerTeam.owner,
       fee: 0, amount: pot, segment: swingAwardSeg,
       date: new Date().toLocaleDateString(), status: 'completed',
+      tournamentIndex: lastSwingTournament?.idx ?? undefined,
       note: swingAwardSeg + ' winner pot',
     };
 
@@ -1640,6 +1646,16 @@ export const AdminView = ({
                             Void
                           </button>
                         )}
+                        <button onClick={async () => {
+                          if (!window.confirm(`DELETE this transaction record entirely?\n\n[${tx.status}] +${tx.player}${tx.droppedPlayer ? ' / -' + tx.droppedPlayer : ''}`)) return;
+                          const newTx = transactions.filter((_, i) => i !== tx._i);
+                          setTransactions(newTx);
+                          await storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
+                          await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx);
+                          dialog.showToast('Transaction deleted', 'success');
+                        }} style={{ fontFamily: fonts.sans, fontSize: 10, padding: '1px 6px', background: 'rgba(100,100,100,0.2)', border: '1px solid rgba(100,100,100,0.4)', color: colors.textMuted, borderRadius: 2, cursor: 'pointer', flexShrink: 0 }}>
+                          Delete
+                        </button>
                       </div>
                     ))
                   }
