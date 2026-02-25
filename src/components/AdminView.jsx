@@ -1531,6 +1531,16 @@ export const AdminView = ({
       <div style={S.section}>
         <div style={S.title}>☁️ Data & Sync</div>
         <button onClick={handlePush} style={{ ...S.btn, marginBottom: 8 }}>☁️ Push to Supabase (sync all devices)</button>
+        <button onClick={async () => {
+          dialog.showToast('Pulling from Supabase...', 'info');
+          try {
+            const rows = await sfglDataApi.getMany([STORAGE_KEYS.TEAMS, STORAGE_KEYS.TOURNAMENTS, STORAGE_KEYS.TRANSACTIONS]);
+            if (rows[STORAGE_KEYS.TEAMS]?.length > 0) updateTeams(rows[STORAGE_KEYS.TEAMS]);
+            if (rows[STORAGE_KEYS.TOURNAMENTS]?.length > 0) setTournaments(rows[STORAGE_KEYS.TOURNAMENTS]);
+            if (rows[STORAGE_KEYS.TRANSACTIONS]?.length > 0) setTransactions(rows[STORAGE_KEYS.TRANSACTIONS]);
+            dialog.showToast('✓ Pulled latest data from Supabase', 'success');
+          } catch (e) { dialog.showToast('Pull failed: ' + e.message, 'error'); }
+        }} style={{ ...S.btnSec, marginBottom: 8 }}>⬇️ Pull from Supabase (refresh this device)</button>
         <button onClick={handleRecalc} style={{ ...S.btnSec, marginBottom: 8 }}>📊 Recalculate Earnings from Results</button>
         <button onClick={handleRecalcAllStats} style={{ ...S.btnSec, marginBottom: 8 }}>📈 Recalculate All Player Stats (Events/Cuts/Tour$/SFGL$)</button>
         <button onClick={handleRecalcStarts} style={{ ...S.btnSec, marginBottom: 16 }}>⭐ Recalculate Limited Player Starts</button>
