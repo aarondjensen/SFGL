@@ -932,6 +932,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     {/* Transaction detail */}
                     <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(11px, 0.9vw, 13px)', color: colors.textSecondary }}>
                       <span style={{ color: txTypeColor(tx.type) }}>{txTypeLabel(tx.type)}</span>
+                      {tx.status === 'failed' && tx.type === 'waiver' && (
+                        <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: 'rgba(220,200,80,0.8)', marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
+                      )}
                       {': '}
                       <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : tx.player}</span>
                       {tx.droppedPlayer && (
@@ -939,11 +942,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ {tx.type === 'mulligan' ? 'out' : 'drop'}</span>
                           <span style={{ color: colors.danger }}>{tx.droppedPlayer}</span>
                         </>
-                      )}
-                      {tx.status === 'failed' && tx.failReason && (
-                        <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.75vw, 11px)', color: colors.danger, marginTop: 2, opacity: 0.8 }}>
-                          {tx.failReason}
-                        </div>
                       )}
                     </div>
                   </div>
@@ -959,9 +957,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     ) : (
                       <span style={{
                         ...theme.statNum, fontSize: 13, fontWeight: 600,
-                        color: tx.fee > 0 ? colors.earningsGreen : colors.textMuted,
+                        color: tx.status === 'failed' ? colors.textMuted : (tx.fee > 0 ? colors.earningsGreen : colors.textMuted),
                       }}>
-                        ${tx.fee}
+                        {tx.status === 'failed' ? '—' : `$${tx.fee}`}
                       </span>
                     )}
 
