@@ -524,18 +524,65 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         updatedTournaments = tournaments.map((t, i) => {
           if (i !== tournamentIndex || !t.results?.teams?.[mulliganTeam.id]) return t;
           const teamResult = t.results.teams[mulliganTeam.id];
+
+          // Try to find IN player's actual earnings from the tournament earnings map
+          const earningsMap = t.results?.earningsMap || {};
+          let inPlayerEarnings = earningsMap[playerInName] ?? 0;
+          // Fuzzy match if exact name not found
+          if (inPlayerEarnings === 0) {
+            const fuzzyKey = Object.keys(earningsMap).find(k =>
+              k.toLowerCase().replace(/[^a-z]/g, '') === playerInName.toLowerCase().replace(/[^a-z]/g, '')
+            );
+            if (fuzzyKey) inPlayerEarnings = earningsMap[fuzzyKey];
+          }
+
           const updatedPlayers = (teamResult.players || []).map(p => {
             const name = p.name || p;
             if (name !== playerOutName) return p;
             return typeof p === 'string'
-              ? { name: playerInName, earnings: 0, mulliganIn: true, replacedPlayer: playerOutName }
-              : { ...p, name: playerInName, earnings: 0, mulliganIn: true, replacedPlayer: playerOutName };
+              ? { name: playerInName, earnings: inPlayerEarnings, mulliganIn: true, replacedPlayer: playerOutName }
+              : { ...p, name: playerInName, earnings: inPlayerEarnings, bonus: 0, roundsLed: [], wasRoundLeader: false, mulliganIn: true, replacedPlayer: playerOutName };
           });
-          return { ...t, results: { ...t.results, teams: { ...t.results.teams, [mulliganTeam.id]: { ...teamResult, players: updatedPlayers } } } };
+
+          // Recalculate team totalEarnings from updated players
+          const newTotal = updatedPlayers.reduce((sum, p) => sum + (p.earnings || 0) + (p.bonus || 0), 0);
+
+          return {
+            ...t,
+            results: {
+              ...t.results,
+              teams: {
+                ...t.results.teams,
+                [mulliganTeam.id]: { ...teamResult, players: updatedPlayers, totalEarnings: newTotal },
+              },
+            },
+          };
         });
         setTournaments(updatedTournaments);
         await storage.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments);
         try { await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments); } catch(e) { console.error('sfgl tournaments sync failed:', e); }
+
+        // Also adjust team earnings + roster sfglEarnings to reflect the swap
+        const oldResult = tournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
+        const newResult = updatedTournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
+        if (oldResult && newResult) {
+          const earningsDiff = (newResult.totalEarnings || 0) - (oldResult.totalEarnings || 0);
+          const outPlayerOldEarnings = (oldResult.players || []).find(p => (p.name || p) === playerOutName)?.earnings || 0;
+          const inPlayerNewEarnings = (newResult.players || []).find(p => (p.name || p) === playerInName)?.earnings || 0;
+          updatedTeams = updatedTeams.map(t => {
+            if (t.name !== addTxTeam) return t;
+            return {
+              ...t,
+              earnings: (t.earnings || 0) + earningsDiff,
+              segmentEarnings: (t.segmentEarnings || 0) + earningsDiff,
+              roster: t.roster.map(p => {
+                if (p.name === playerOutName) return { ...p, sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - outPlayerOldEarnings) };
+                if (p.name === playerInName) return { ...p, sfglEarnings: (p.sfglEarnings || 0) + inPlayerNewEarnings };
+                return p;
+              }),
+            };
+          });
+        }
       }
 
       updateTeams(updatedTeams);
