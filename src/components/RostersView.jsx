@@ -422,7 +422,7 @@ export const RostersView = ({
   if (!team) return null;
 
   const lineupOpen    = windowStatus.lineupOpen;
-  const canEditLineup = isOwnTeam; // TODO: restore → isOwnTeam && (lineupOpen || isCommissioner)
+  const canEditLineup = isCommissioner || (isOwnTeam && lineupOpen);
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
 
 
