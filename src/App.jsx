@@ -80,10 +80,14 @@ const FantasyGolfLeague = () => {
         .sfgl-nav-row { justify-content: space-between; }
         .sfgl-tab { flex: 1; }
         .sfgl-tab-label { display: none; }
+        .sfgl-tournament-desktop { display: none !important; }
+        .sfgl-tournament-mobile { display: flex !important; }
         @media (min-width: 640px) {
           .sfgl-nav-row { justify-content: flex-start; }
           .sfgl-tab { flex: 1; }
           .sfgl-tab-label { display: inline; }
+          .sfgl-tournament-desktop { display: flex !important; }
+          .sfgl-tournament-mobile { display: none !important; }
         }
       `;
       document.head.appendChild(style);
@@ -337,33 +341,35 @@ const FantasyGolfLeague = () => {
           </div>
         )}
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400 }}>
-            {(() => {
-              // Derive swing from tournament data (same source of truth as TournamentsView):
-              // 1. Currently playing tournament
-              // 2. Next upcoming tournament
-              // 3. Last completed tournament
-              // 4. Fallback to calendar date
-              const active = safeTournaments.find(t => t.playing);
-              if (active?.segment) return active.segment;
-              const next = safeTournaments.find(t => !t.completed && !t.playing);
-              if (next?.segment) return next.segment;
-              const lastDone = [...safeTournaments].reverse().find(t => t.completed);
-              if (lastDone?.segment) return lastDone.segment;
-              return getSegmentByDate();
-            })()}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
+            <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
+              {(() => {
+                const active = safeTournaments.find(t => t.playing);
+                if (active?.segment) return active.segment;
+                const next = safeTournaments.find(t => !t.completed && !t.playing);
+                if (next?.segment) return next.segment;
+                const lastDone = [...safeTournaments].reverse().find(t => t.completed);
+                if (lastDone?.segment) return lastDone.segment;
+                return getSegmentByDate();
+              })()}
+            </div>
+            {currentTournament && (
+              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+                <span>⛳</span> {currentTournament.name}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {currentTournament && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
-              <span>⛳</span> {currentTournament.name}
-            </div>
-          )}
-          {isSyncing && (
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="animate-pulse">
-              Saving…
-            </span>
-          )}
+            {currentTournament && (
+              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+                <span>⛳</span> {currentTournament.name}
+              </div>
+            )}
+            {isSyncing && (
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="animate-pulse">
+                Saving…
+              </span>
+            )}
           </div>
         </div>
 
