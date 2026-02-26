@@ -578,14 +578,57 @@ export const RostersView = ({
 
           {/* Global search */}
           <div style={{ position: 'relative', flexShrink: 0, width: 160 }}>
-            <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary }} />
+            <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary, zIndex: 1 }} />
             <input
               type="text" placeholder="Search player…"
               value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
               style={{ ...theme.input, paddingLeft: 28, fontSize: 16, padding: '7px 10px 7px 28px' }}
               onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
-              onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
+              onBlur={e => {
+                e.target.style.borderColor = colors.borderInput;
+              }}
             />
+            {/* Mobile dropdown — opens upward above the search bar */}
+            {isMobile && globalSearch.trim().length > 0 && (
+              <div style={{
+                position: 'absolute', bottom: '110%', right: 0,
+                width: 'min(340px, 92vw)',
+                maxHeight: '45vh', overflowY: 'auto',
+                background: '#1a2744',
+                border: `1px solid ${colors.borderInput}`,
+                borderRadius: 4,
+                boxShadow: '0 -4px 24px rgba(0,0,0,0.5)',
+                zIndex: 200,
+              }}>
+                <div style={{ padding: '6px 12px', borderBottom: `1px solid ${colors.borderSubtle}`, fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                  {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+                </div>
+                {searchResults.slice(0, 30).map(player => (
+                  <div key={player.name} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <img
+                        src={getPlayerHeadshot(player.name, player.limited, headshots)}
+                        onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+                        alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
+                      />
+                      <div>
+                        <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{player.name}</div>
+                        <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
+                      </div>
+                    </div>
+                    <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 500, color: player.owner === 'Free Agent' ? colors.success : colors.textSecondary }}>
+                      {player.owner === 'Free Agent' ? 'FA' : getTeamAbbreviation(player.owner)}
+                    </span>
+                  </div>
+                ))}
+                {searchResults.length === 0 && (
+                  <div style={{ padding: '12px', fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, textAlign: 'center' }}>No players found</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -680,8 +723,8 @@ export const RostersView = ({
           </div>
         </div>
 
-        {/* ── Player table — global search ── */}
-        {globalSearch.trim().length > 0 ? (
+        {/* ── Player table — global search (desktop only; mobile uses dropdown above) ── */}
+        {!isMobile && globalSearch.trim().length > 0 ? (
           <div>
             <div style={{
               ...theme.tableHeaderCell,
