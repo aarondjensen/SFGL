@@ -177,7 +177,9 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                 borderRadius: 4,
                 padding: 3,
                 gap: 0,
-                width: 148,
+                width: '44%',
+                minWidth: 140,
+                maxWidth: 200,
               }}
             >
               {/* Sliding pill */}
@@ -319,7 +321,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                     <div className="sfgl-owner" style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
-                    <div style={{ ...theme.statNumLg, color: earningsColor(earnings) }}>
+                    <div style={{ ...theme.statNumLg, letterSpacing: 3, fontWeight: 300, color: earningsColor(earnings) }}>
                       {formatEarnings(earnings)}
                     </div>
                   </td>

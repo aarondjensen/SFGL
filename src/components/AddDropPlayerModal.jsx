@@ -4,8 +4,6 @@ import { useDialog } from './DialogContext';
 import { getSegmentByDate } from '../utils/index.js';
 import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
-import { storage } from '../api';
-import { STORAGE_KEYS } from '../constants/index.js';
 
 const accentColor   = (waiver) => waiver ? colors.warning         : colors.success;
 const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.12)' : 'rgba(80,180,120,0.12)';
@@ -13,7 +11,7 @@ const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,18
 
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, allPlayers, teams,
-  updateTeams, transactions, setTransactions,
+  updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
 }) => {
   const [searchTerm,           setSearchTerm]           = useState('');
@@ -45,8 +43,47 @@ export const AddDropPlayerModal = ({
   if (!isOpen || !team) return null;
 
   // ── Available players ──────────────────────────────────────────────────────
-  // Use each team's actual roster as the source of truth for who is rostered.
-  const rosteredPlayers = new Set(teams.flatMap(t => t.roster.map(p => p.name)));
+  // Build the effective roster for EVERY team by replaying processed transactions,
+  // matching the same logic as useRoster. This prevents players added via FA/waiver
+  // (who live in transactions but not in team.roster) from appearing as available.
+  const rosteredPlayers = new Set(
+    teams.flatMap(t => {
+      let roster = t.roster.map(p => p.name);
+      const rosterSet = new Set(roster);
+      transactions
+        .filter(tx =>
+          tx.team === t.name &&
+          tx.type !== 'mulligan' &&
+          tx.status === 'processed'
+        )
+        .forEach(tx => {
+          if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
+          if (tx.player) rosterSet.add(tx.player);
+        });
+      return [...rosterSet];
+    })
+  );
+
+  // Players dropped via a processed FA/waiver whose tournament hasn't been completed yet
+  // are "on waivers" — unavailable until that tournament is processed.
+  // We consider a drop "in limbo" if its tournamentIndex maps to an incomplete tournament,
+  // OR if it has no tournamentIndex but happened recently (this week).
+  const limboPlayers = new Set(
+    transactions
+      .filter(tx => {
+        if (tx.status !== 'processed') return false;
+        if (tx.type === 'mulligan') return false;
+        if (!tx.droppedPlayer) return false;
+        // If we have a tournamentIndex, check if that tournament is completed
+        if (tx.tournamentIndex !== undefined) {
+          const t = tournaments?.[tx.tournamentIndex];
+          return t && !t.completed; // limbo = tournament not yet completed
+        }
+        // No tournamentIndex: treat as current week (in limbo)
+        return true;
+      })
+      .map(tx => tx.droppedPlayer)
+  );
 
   // Hide players this team already has a pending waiver claim for
   const thisTeamPendingClaims = new Set(
@@ -119,9 +156,7 @@ export const AddDropPlayerModal = ({
 
     const newTransactions = [newTx, ...transactions];
     updateTeams(updatedTeams);
-    setTransactions(newTransactions);
-    await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, newTransactions);
+    setTransactions(newTransactions); // setTransactions IS updateTransactions — persists to Supabase + localStorage
 
     setSaving(false);
     dialog.showToast(
@@ -369,6 +404,7 @@ export const AddDropPlayerModal = ({
           ) : (
             filteredPlayers.slice(0, 50).map(player => {
               const isCurrentlySelected = selectedPlayerToAdd?.name === player.name;
+              const isLimbo = limboPlayers.has(player.name);
               return (
                 <div
                   key={player.name}
@@ -378,10 +414,11 @@ export const AddDropPlayerModal = ({
                     background: isCurrentlySelected ? accentBg(isWaiverMode) : colors.cardBg,
                     border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
                     transition: 'all 0.15s',
+                    cursor: isLimbo ? 'default' : 'pointer',
                   }}
-                  onClick={() => selectPlayerToAdd(player)}
-                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
-                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
+                  onClick={() => { if (!isLimbo) selectPlayerToAdd(player); }}
+                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
+                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{
@@ -396,21 +433,37 @@ export const AddDropPlayerModal = ({
                       {player.name}
                     </span>
                   </div>
-                  <button
-                    onClick={() => selectPlayerToAdd(player)}
-                    style={{
+                  {isLimbo ? (
+                    <span style={{
                       fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
-                      padding: '5px 14px', borderRadius: 3, cursor: 'pointer',
-                      transition: 'all 0.15s',
-                      background: isCurrentlySelected ? 'rgba(80,180,120,0.2)' : 'rgba(80,180,120,0.1)',
-                      border: `1px solid ${isCurrentlySelected ? 'rgba(80,180,120,0.6)' : 'rgba(80,180,120,0.3)'}`,
-                      color: colors.success,
-                    }}
-                  >
-                    {isCurrentlySelected ? '✓ Selected' : 'Select'}
-                  </button>
+                      padding: '5px 0', borderRadius: 3,
+                      width: 90, textAlign: 'center', flexShrink: 0,
+                      background: 'rgba(245,197,24,0.1)',
+                      border: '1px solid rgba(245,197,24,0.35)',
+                      color: colors.textGold,
+                      letterSpacing: '0.3px',
+                      display: 'inline-block',
+                    }}>
+                      On Waivers
+                    </span>
+                  ) : (
+                    <button
+                      onClick={e => { e.stopPropagation(); selectPlayerToAdd(player); }}
+                      style={{
+                        fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                        padding: '5px 0', borderRadius: 3, cursor: 'pointer',
+                        width: 90, textAlign: 'center', flexShrink: 0,
+                        transition: 'all 0.15s',
+                        background: isCurrentlySelected ? 'rgba(80,180,120,0.2)' : 'rgba(80,180,120,0.1)',
+                        border: `1px solid ${isCurrentlySelected ? 'rgba(80,180,120,0.6)' : 'rgba(80,180,120,0.3)'}`,
+                        color: colors.success,
+                      }}
+                    >
+                      {isCurrentlySelected ? '✓ Selected' : 'Select'}
+                    </button>
+                  )}
                 </div>
-              );
+                );
             })
           )}
         </div>
