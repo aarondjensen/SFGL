@@ -127,7 +127,9 @@ export function getTournamentTimezone(tournament) {
  * @param {number} [lockHour=7] - hour in local time to lock (default 7 AM)
  * @returns {Date|null} - UTC Date representing the lock moment, or null if no date available
  */
-export function getLineupLockTime(tournament, lockHour = 7) {
+export function getLineupLockTime(tournament, lockHour) {
+  // Use tournament-level override, then explicit param, then default 7 AM
+  const hour = lockHour ?? tournament.lockHour ?? 7;
   const tz = getTournamentTimezone(tournament);
 
   // Determine the start date
@@ -169,7 +171,7 @@ export function getLineupLockTime(tournament, lockHour = 7) {
 
   // Now build a date string for 7:00 AM in that timezone
   // Create an ISO-ish string and use the timezone to convert to UTC
-  const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(lockHour).padStart(2, '0')}:00:00`;
+  const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:00:00`;
 
   // Use Intl to figure out the UTC offset at that moment
   // We'll iterate to find the UTC time that corresponds to 7 AM local
@@ -184,7 +186,7 @@ export function getLineupLockTime(tournament, lockHour = 7) {
   }).format(utcGuess);
 
   const localHour = parseInt(localCheck);
-  const offsetHours = localHour - lockHour;
+  const offsetHours = localHour - hour;
 
   // Adjust: if local time is ahead of UTC, we need to subtract
   const lockUTC = new Date(utcGuess.getTime() - offsetHours * 60 * 60 * 1000);
