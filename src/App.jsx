@@ -230,6 +230,7 @@ const FantasyGolfLeague = () => {
           <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
           <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
         </div>
+        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading 2026 League</div>
       </div>
     );
   }
