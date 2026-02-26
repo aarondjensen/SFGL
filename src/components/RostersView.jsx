@@ -585,62 +585,75 @@ export const RostersView = ({
             )}
           </div>
 
-          {/* Global search — dropdown for all screen sizes */}
-          <div style={{ position: 'relative', flexShrink: 0, width: 160 }}>
-            <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary, zIndex: 1 }} />
-            <input
-              type="text" placeholder="Search player…"
-              value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
-              style={{ ...theme.input, paddingLeft: 28, fontSize: 16, padding: '7px 10px 7px 28px' }}
-              onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
-              onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
-            />
-            {globalSearch.trim().length > 0 && (
-              <div style={{
-                position: 'absolute',
-                bottom: isMobile ? '110%' : undefined,
-                top: isMobile ? undefined : '110%',
-                right: 0,
-                width: 'min(340px, 92vw)',
-                maxHeight: isMobile ? '45vh' : '60vh',
-                overflowY: 'auto',
-                background: '#1a2744',
-                border: `1px solid ${colors.borderInput}`,
-                borderRadius: 4,
-                boxShadow: isMobile ? '0 -4px 24px rgba(0,0,0,0.5)' : '0 4px 24px rgba(0,0,0,0.5)',
-                zIndex: 200,
-              }}>
-                <div style={{ padding: '6px 12px', borderBottom: `1px solid ${colors.borderSubtle}`, fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>{searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>
-                  <button onClick={() => setGlobalSearch('')} style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>✕</button>
-                </div>
-                {searchResults.slice(0, 30).map(player => (
-                  <div key={player.name} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}`,
+          {/* Global search — fixed dropdown works on all screen sizes */}
+          {(() => {
+            const searchRef = React.useRef(null);
+            const [dropdownRect, setDropdownRect] = React.useState(null);
+            React.useEffect(() => {
+              if (globalSearch.trim() && searchRef.current) {
+                const r = searchRef.current.getBoundingClientRect();
+                setDropdownRect(r);
+              } else {
+                setDropdownRect(null);
+              }
+            }, [globalSearch]);
+            return (
+              <div ref={searchRef} style={{ position: 'relative', flexShrink: 0, width: 160 }}>
+                <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary, zIndex: 1 }} />
+                <input
+                  type="text" placeholder="Search player…"
+                  value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
+                  style={{ ...theme.input, paddingLeft: 28, fontSize: 16, padding: '7px 10px 7px 28px' }}
+                  onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
+                  onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
+                />
+                {globalSearch.trim().length > 0 && dropdownRect && (
+                  <div style={{
+                    position: 'fixed',
+                    top: dropdownRect.bottom + 4,
+                    right: Math.max(8, window.innerWidth - dropdownRect.right),
+                    width: Math.min(340, window.innerWidth - 16),
+                    maxHeight: '50vh',
+                    overflowY: 'auto',
+                    background: '#1a2744',
+                    border: `1px solid ${colors.borderInput}`,
+                    borderRadius: 4,
+                    boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
+                    zIndex: 9999,
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <img
-                        src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                        onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
-                        alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
-                      />
-                      <div>
-                        <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{player.name}</div>
-                        <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
-                      </div>
+                    <div style={{ padding: '6px 12px', borderBottom: `1px solid ${colors.borderSubtle}`, fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>
+                      <button onClick={() => setGlobalSearch('')} style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>✕</button>
                     </div>
-                    <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 500, color: player.owner === 'Free Agent' ? colors.success : colors.textSecondary }}>
-                      {player.owner === 'Free Agent' ? 'FA' : getTeamAbbreviation(player.owner)}
-                    </span>
+                    {searchResults.slice(0, 30).map(player => (
+                      <div key={player.name} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}`,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <img
+                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
+                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+                            alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
+                          />
+                          <div>
+                            <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{player.name}</div>
+                            <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
+                          </div>
+                        </div>
+                        <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 500, color: player.owner === 'Free Agent' ? colors.success : colors.textSecondary }}>
+                          {player.owner === 'Free Agent' ? 'FA' : getTeamAbbreviation(player.owner)}
+                        </span>
+                      </div>
+                    ))}
+                    {searchResults.length === 0 && (
+                      <div style={{ padding: '12px', fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, textAlign: 'center' }}>No players found</div>
+                    )}
                   </div>
-                ))}
-                {searchResults.length === 0 && (
-                  <div style={{ padding: '12px', fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, textAlign: 'center' }}>No players found</div>
                 )}
               </div>
-            )}
-          </div>
+            );
+          })()}
         </div>
 
         {/* Lineup headshots */}
