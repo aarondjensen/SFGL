@@ -54,7 +54,6 @@ export const TEAM_ABBREVIATIONS = {
   'Dirty Bird(ies)':   'DBs',
   'Hip Happens':       'HH',
   'World #1':          'W#1',
-  'Dim Bulb':          'DB',
   'POPS, LLC':         'POP',
 };
 
@@ -80,7 +79,6 @@ export const FALLBACK_SCHEDULE_DATA = [
   { key: 'American Express',  loc: 'La Quinta, California',          course: 'PGA West',             d: 'Jan 19-25',     s: '2026-01-19', e: '2026-01-25' },
   { key: 'Farmers Insurance', loc: 'San Diego, California',          course: 'Torrey Pines',         d: 'Jan 26-Feb 1',  s: '2026-01-26', e: '2026-02-01' },
   { key: 'WM Phoenix',        loc: 'Scottsdale, Arizona',            course: 'TPC Scottsdale',       d: 'Feb 2-8',       s: '2026-02-02', e: '2026-02-08' },
-  { key: 'Phoenix Open',      loc: 'Scottsdale, Arizona',            course: 'TPC Scottsdale',       d: 'Feb 2-8',       s: '2026-02-02', e: '2026-02-08' },
   { key: 'Pebble Beach',      loc: 'Pebble Beach, California',       course: 'Pebble Beach GL',      d: 'Feb 9-15',      s: '2026-02-09', e: '2026-02-15' },
   { key: 'Genesis',           loc: 'Pacific Palisades, California',  course: 'Riviera CC',           d: 'Feb 16-22',     s: '2026-02-16', e: '2026-02-22' },
   { key: 'Cognizant',         loc: 'Palm Beach Gardens, Florida',    course: 'PGA National',         d: 'Feb 23-Mar 1',  s: '2026-02-23', e: '2026-03-01' },

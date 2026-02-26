@@ -1,32 +1,15 @@
 import React, { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { slashGolfFetch, getSegmentByDate } from '../utils';
+import { slashGolfFetch, getSegmentByDate, normalizePlayerName } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi } from '../api/supabase';
 import { theme, colors, fonts } from '../theme.js';
+import { BONUSES_REGULAR, BONUSES_MAJOR } from '../constants';
 
 
 // ── Tournament processing helpers ────────────────────────────────────────────
-const BONUSES_REGULAR = { round1: 20000, round2: 40000, round3: 60000 };
-const BONUSES_MAJOR   = { round1: 40000, round2: 80000, round3: 120000 };
-
-const CHAR_MAP = {
-  'ø':'o','ö':'o','ó':'o','ô':'o','õ':'o',
-  'å':'a','ä':'a','á':'a','à':'a','â':'a','ã':'a',
-  'ü':'u','ú':'u','ù':'u','û':'u',
-  'é':'e','è':'e','ê':'e','ë':'e',
-  'í':'i','ì':'i','î':'i','ï':'i',
-  'ñ':'n','ç':'c','ß':'ss',
-};
-
-const normalizePlayerName = (name) => {
-  if (!name) return '';
-  let n = name.toLowerCase().trim();
-  Object.keys(CHAR_MAP).forEach(ch => { n = n.replace(new RegExp(ch, 'g'), CHAR_MAP[ch]); });
-  return n.replace(/[.-]/g, ' ').replace(/\s+/g, ' ').trim();
-};
 
 const matchPlayerName = (a, b) => {
   const na = normalizePlayerName(a);
@@ -242,10 +225,9 @@ export const AdminView = ({
         return { ...team, roster: team.roster.map(p => earningsByName[p.name] !== undefined ? { ...p, sfglEarnings: (p.sfglEarnings || 0) + earningsByName[p.name] } : p) };
       });
       updateTeams(teamsWithSfgl); setGlobalPlayerStats(newStats); setTournaments(newT);
-      await storage.set(STORAGE_KEYS.TEAMS, teamsWithSfgl);
+      // Persist tournaments and stats (updateTeams already handles its own persistence)
       await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-      sfglDataApi.set(STORAGE_KEYS.TEAMS, teamsWithSfgl).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
       dialog.showToast('Results processed for ' + t.name + '!', 'success');
@@ -294,12 +276,10 @@ export const AdminView = ({
       const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
       if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
       updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
-      await storage.set(STORAGE_KEYS.TEAMS, newTeams);
       await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-      await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.error('sfgl teams sync:', e));
-      await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(e => console.error('sfgl tourney sync:', e));
-      await sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(e => console.error('sfgl stats sync:', e));
+      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
       dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
@@ -396,12 +376,10 @@ export const AdminView = ({
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
 
       updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
-      await storage.set(STORAGE_KEYS.TEAMS, newTeams);
       await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-      await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
-      await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
-      await sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
       dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
@@ -436,8 +414,6 @@ export const AdminView = ({
   const handleAddPlayer = async (teamId, name) => {
     const newTeams = teams.map(t => t.id === teamId ? { ...t, roster: [...t.roster, { name, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' }] } : t);
     updateTeams(newTeams);
-    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
     dialog.showToast('Added ' + name, 'success');
   };
   const handleDropPlayer = async (teamId, name, idx) => {
@@ -450,8 +426,6 @@ export const AdminView = ({
       : team.roster.filter(p => p.name !== name);
     const newTeams = teams.map(t => t.id === teamId ? { ...t, roster: newRoster } : t);
     updateTeams(newTeams);
-    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
     dialog.showToast('Dropped ' + label, 'success');
   };
   const resetMulligan = (teamId, type) => {
@@ -511,8 +485,8 @@ export const AdminView = ({
     // Only apply the winner's roster change
     const t2 = teams.map(t => applyWaiver(t, winner));
     setTransactions(tx2); updateTeams(t2);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
-    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
     if (losers.length) {
       dialog.showToast(winner.team + ' wins claim · ' + losers.map(l => l.team).join(', ') + ' blocked', 'success');
     } else {
@@ -580,7 +554,8 @@ export const AdminView = ({
     const nx = tournaments.findIndex((t, i) => i > li && !t.completed && !t.isAlternate);
     const ft = tournaments.map((t, i) => ({ ...t, playing: i === nx }));
     updateTeams(ut); setTournaments(ft);
-    await storage.set(STORAGE_KEYS.TEAMS, ut); await storage.set(STORAGE_KEYS.TOURNAMENTS, ft);
+    await storage.set(STORAGE_KEYS.TOURNAMENTS, ft);
+    sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, ft).catch(() => {});
     dialog.showToast('Recalculated · next up: ' + (ft[nx]?.name || 'none'), 'success');
   };
 
@@ -646,9 +621,7 @@ export const AdminView = ({
     updateTeams(newTeams);
     setTournaments(newTournaments);
     setTransactions(prev => [...prev, newTx]);
-    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
     sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newTournaments).catch(() => {});
     await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
     sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(() => {});
@@ -725,10 +698,9 @@ export const AdminView = ({
     updateTeams(finalTeamsWithEarnings);
     setTournaments(newTournaments);
     setGlobalPlayerStats(newStats);
-    await storage.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings);
     await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
     await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, finalTeamsWithEarnings).catch(() => {});
+    sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newTournaments).catch(() => {});
 
     dialog.showToast('Reprocessed ' + retMulTourney + ' for ' + team.name + (earningsDelta !== 0 ? ' · earnings delta $' + earningsDelta.toLocaleString() : ' · no earnings change'), 'success');
     setRetMulTeam(''); setRetMulTourney(''); setRetLineupEdit([]);
@@ -831,9 +803,7 @@ export const AdminView = ({
 
     updateTeams(newTeams);
     setTransactions(prev => [...prev, newTx]);
-    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
-    await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.error('sfgl teams:', e));
     await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(e => console.error('sfgl tx:', e));
 
     dialog.showToast('🏆 ' + winnerTeam.name + ' awarded $' + pot.toLocaleString() + ' for ' + swingAwardSeg, 'success');
@@ -887,8 +857,6 @@ export const AdminView = ({
     });
 
     updateTeams(newTeams);
-    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
 
     const totalFixed = teams.reduce((sum, team) => {
       return sum + team.roster.filter(p => p.limited).length;
@@ -960,9 +928,7 @@ export const AdminView = ({
 
     updateTeams(newTeams);
     setGlobalPlayerStats(newGlobalStats);
-    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
     await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newGlobalStats);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
     sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newGlobalStats).catch(() => {});
 
     const playerCount = Object.keys(newGlobalStats).length;

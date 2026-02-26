@@ -454,9 +454,17 @@ export const draftStateApi = {
  */
 // ── Manager Auth ─────────────────────────────────────────────────────────────
 // Credentials are stored in sfgl_data under key 'manager_credentials' as:
-//   { [teamId]: { name: string, password: string } }
+//   { [teamId]: { name: string, passwordHash: string } }
 // Sessions are stored only in localStorage (no Supabase table needed).
 const CREDS_KEY = 'manager_credentials';
+
+const _hashPassword = async (password) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
 
 export const managerAuthApi = {
   // Read all credentials from sfgl_data
@@ -468,19 +476,27 @@ export const managerAuthApi = {
   // Set credentials for one team (called from AdminView → Manager Logins)
   async setCredentials(teamId, name, password) {
     const creds = await this._getCreds();
-    creds[teamId] = { name: name.trim(), password: password.trim() };
+    const passwordHash = await _hashPassword(password.trim());
+    creds[teamId] = { name: name.trim(), passwordHash };
     await sfglDataApi.set(CREDS_KEY, creds);
   },
 
-  // Login: match name (case-insensitive) + password against stored credentials
+  // Login: match name (case-insensitive) + password hash against stored credentials
   async login(name, password) {
     const creds = await this._getCreds();
+    const passwordHash = await _hashPassword(password.trim());
     const entry = Object.entries(creds).find(([, c]) =>
       c.name.toLowerCase() === name.trim().toLowerCase() &&
-      c.password === password.trim()
+      // Support both hashed and legacy plain-text passwords
+      (c.passwordHash === passwordHash || c.password === password.trim())
     );
     if (!entry) throw new Error('Invalid name or password');
-    const [teamId] = entry;
+    const [teamId, cred] = entry;
+    // Auto-migrate legacy plain-text passwords to hashed
+    if (cred.password && !cred.passwordHash) {
+      creds[teamId] = { name: cred.name, passwordHash };
+      await sfglDataApi.set(CREDS_KEY, creds);
+    }
     localStorage.setItem('manager_team_id', teamId);
     localStorage.removeItem('is_commissioner');
     return { teamId };
@@ -656,16 +672,6 @@ export const tournamentResultsApi = {
     if (error) throw error;
   },
 };
-
-/**
- * ============================================================================
- * SFGL DATA API
- * Reads/writes the sfgl_data key-value table — the same table that the app's
- * internal storage layer uses. This is the source of truth for teams,
- * tournaments, transactions, settings, and globalPlayerStats.
- * ============================================================================
- */
-
 
 /**
  * ============================================================================
