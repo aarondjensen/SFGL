@@ -762,6 +762,7 @@ export const RostersView = ({
         nextTournamentIndex={addDropTournamentIndex}
         txSegment={tournaments[addDropTournamentIndex]?.segment || getSegmentByDate()}
         editingWaiverData={editingWaiverData}
+        headshots={headshots}
       />
     </div>
   );
