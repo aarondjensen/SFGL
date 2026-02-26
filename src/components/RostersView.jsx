@@ -314,6 +314,8 @@ export const RostersView = ({
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [showMulliganModal, setShowMulliganModal] = useState(false);
   const [globalSearch,      setGlobalSearch]      = useState('');
+  const searchRef = React.useRef(null);
+  const [dropdownRect, setDropdownRect] = React.useState(null);
   const dialog = useDialog();
 
   const activeTournament      = tournaments.find(t => t.playing);
@@ -367,6 +369,15 @@ export const RostersView = ({
     }
     prevLoggedInUser.current = loggedInUser;
   }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
+
+  // Update dropdown position whenever search changes
+  useEffect(() => {
+    if (globalSearch.trim() && searchRef.current) {
+      setDropdownRect(searchRef.current.getBoundingClientRect());
+    } else {
+      setDropdownRect(null);
+    }
+  }, [globalSearch]);
 
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex);
@@ -583,27 +594,15 @@ export const RostersView = ({
           </div>
 
           {/* Global search — fixed dropdown works on all screen sizes */}
-          {(() => {
-            const searchRef = React.useRef(null);
-            const [dropdownRect, setDropdownRect] = React.useState(null);
-            React.useEffect(() => {
-              if (globalSearch.trim() && searchRef.current) {
-                const r = searchRef.current.getBoundingClientRect();
-                setDropdownRect(r);
-              } else {
-                setDropdownRect(null);
-              }
-            }, [globalSearch]);
-            return (
-              <div ref={searchRef} style={{ position: 'relative', flexShrink: 0, width: 160 }}>
-                <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary, zIndex: 1 }} />
-                <input
-                  type="text" placeholder="Search player…"
-                  value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
-                  style={{ ...theme.input, paddingLeft: 28, fontSize: 16, padding: '7px 10px 7px 28px' }}
-                  onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
-                  onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
-                />
+          <div ref={searchRef} style={{ position: 'relative', flexShrink: 0, width: 160 }}>
+            <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary, zIndex: 1 }} />
+            <input
+              type="text" placeholder="Search player…"
+              value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
+              style={{ ...theme.input, paddingLeft: 28, fontSize: 16, padding: '7px 10px 7px 28px' }}
+              onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
+              onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
+            />
                 {globalSearch.trim().length > 0 && dropdownRect && (
                   <div style={{
                     position: 'fixed',
@@ -649,9 +648,7 @@ export const RostersView = ({
                   </div>
                 )}
               </div>
-            );
-          })()}
-        </div>
+          </div>
 
         {/* Lineup headshots */}
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, minHeight: 72, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
