@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Trash2 } from 'lucide-react';
+import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate } from '../utils/index.js';
 import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
@@ -266,13 +266,36 @@ export const AddDropPlayerModal = ({
               background: accentBg(isWaiverMode),
               border: `1px solid ${accentBorder(isWaiverMode)}`,
               borderRadius: 3,
+              display: 'flex', alignItems: 'center', gap: 8,
             }}>
-              <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: accentColor(isWaiverMode), marginBottom: 3 }}>
-                Adding
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: accentColor(isWaiverMode), marginBottom: 3 }}>
+                  Adding
+                </div>
+                <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {selectedPlayerToAdd.name}
+                </div>
               </div>
-              <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {selectedPlayerToAdd.name}
-              </div>
+              <button
+                onClick={() => { setSelectedPlayerToAdd(null); setSelectedPlayerToDrop(null); }}
+                title="Remove selection"
+                style={{
+                  background: 'rgba(220,80,80,0.1)',
+                  border: `1px solid rgba(220,80,80,0.3)`,
+                  borderRadius: 3,
+                  width: 26, height: 26,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: 'rgba(230,90,90,0.8)',
+                  fontSize: 13, lineHeight: 1, fontWeight: 700,
+                  flexShrink: 0,
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,80,80,0.25)'; e.currentTarget.style.borderColor = 'rgba(220,80,80,0.5)'; e.currentTarget.style.color = 'rgba(240,100,100,1)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,80,80,0.1)'; e.currentTarget.style.borderColor = 'rgba(220,80,80,0.3)'; e.currentTarget.style.color = 'rgba(230,90,90,0.8)'; }}
+              >
+                ✕
+              </button>
             </div>
 
             {/* Drop tile — shows placeholder or selected player */}
@@ -302,50 +325,34 @@ export const AddDropPlayerModal = ({
           {needsDrop && (
             <div style={{ marginBottom: 16 }}>
               <p style={{ ...theme.smallText, marginBottom: 8, color: colors.textSecondary }}>
-                Roster full · select a player to drop (Limited players cannot be dropped)
+                Roster full · select a player to drop
               </p>
-              {currentRoster.map(player => {
+              {currentRoster.filter(player => !player.limited).map(player => {
                 const isSelected     = selectedPlayerToDrop?.name === player.name;
-                const canDrop        = !player.limited;
                 const inPendingDrop  = pendingDropNames.has(player.name);
                 return (
                   <div
                     key={player.name}
-                    onClick={() => canDrop && setSelectedPlayerToDrop(isSelected ? null : player)}
+                    onClick={() => setSelectedPlayerToDrop(isSelected ? null : player)}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '9px 12px', marginBottom: 6, borderRadius: 3,
                       background: isSelected ? colors.dangerBg : 'rgba(255,255,255,0.03)',
                       border: `1px solid ${isSelected ? colors.dangerBorder : colors.borderSubtle}`,
-                      cursor: canDrop ? 'pointer' : 'not-allowed',
-                      opacity: canDrop ? 1 : 0.4,
+                      cursor: 'pointer',
                       transition: 'all 0.15s',
                     }}
-                    onMouseEnter={e => { if (canDrop && !isSelected) e.currentTarget.style.background = 'rgba(180,60,60,0.08)'; }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(180,60,60,0.08)'; }}
                     onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {/* Limited badge or drop icon */}
-                      {player.limited ? (
-                        <span style={{
-                          fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
-                          letterSpacing: 0.8, textTransform: 'uppercase',
-                          color: 'rgba(245,197,24,0.75)',
-                          border: '1px solid rgba(245,197,24,0.3)',
-                          borderRadius: 2, padding: '2px 5px',
-                          flexShrink: 0,
-                        }}>
-                          LTD
-                        </span>
-                      ) : (
-                        <Trash2 style={{
-                          width: 14, height: 14, flexShrink: 0,
-                          color: isSelected ? colors.danger : 'rgba(220,80,80,0.55)',
-                        }} />
-                      )}
+                      <MinusCircle style={{
+                        width: 15, height: 15, flexShrink: 0,
+                        color: isSelected ? 'rgba(240,90,90,0.95)' : 'rgba(230,85,85,0.65)',
+                      }} />
                       <span style={{
                         fontFamily: fonts.serif, fontSize: 13,
-                        color: isSelected ? colors.danger : (player.limited ? colors.textGold : colors.textPrimary),
+                        color: isSelected ? colors.danger : colors.textPrimary,
                       }}>
                         {player.name}
                       </span>
