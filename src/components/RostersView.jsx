@@ -655,7 +655,7 @@ export const RostersView = ({
                     border: `1px solid ${colors.borderInput}`,
                     borderRadius: 4,
                     boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
-                    zIndex: 9999,
+                    zIndex: 40,
                   }}>
                     <div style={{ padding: '6px 12px', borderBottom: `1px solid ${colors.borderSubtle}`, fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>{searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>
