@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Trophy, Edit2, Save } from 'lucide-react';
+import { Calendar, Trophy, Edit2, Save, Lock, Unlock } from 'lucide-react';
 import { useDialog } from './DialogContext';
+import {
+  getTournamentTimezone,
+  getLineupLockTime,
+  formatLockTime,
+  areLineupsLocked,
+  TIMEZONE_OPTIONS,
+} from '../utils/tournamentTimezones';
+
 // SWINGS defined locally (4 swings only)
 const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 import { theme, colors, fonts } from '../theme.js';
@@ -52,9 +60,6 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
   const saveChanges = async () => {
     setTournaments(localTournaments);
     setEditMode(false);
-    // Await both writes so the data is in Supabase before the toast fires.
-    // storage.set handles localStorage + sfgl_data via the app's own fetch layer.
-    // sfglDataApi.set is belt-and-suspenders using the Supabase JS client.
     try {
       await storage.set(STORAGE_KEYS.TOURNAMENTS, localTournaments);
     } catch (e) {
@@ -75,12 +80,54 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
   const completed = [...localTournaments.filter(t =>  t.completed)].reverse();
   const upcoming  = localTournaments.filter(t => !t.completed);
 
+  // ── Lock time badge component ──
+  const LockBadge = ({ tournament }) => {
+    const lockTime = getLineupLockTime(tournament);
+    const tz = getTournamentTimezone(tournament);
+    const locked = areLineupsLocked(tournament);
+
+    if (!lockTime) return null;
+
+    const isActive = tournament.playing && !tournament.completed;
+    if (!isActive) {
+      // For non-active upcoming tournaments, show lock time quietly
+      return (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          fontSize: 10, fontFamily: fonts.sans, color: colors.textMuted,
+          marginTop: 2,
+        }}>
+          <Lock style={{ width: 9, height: 9 }} />
+          <span>Locks {formatLockTime(lockTime, tz)}</span>
+        </div>
+      );
+    }
+
+    // Active tournament — show prominent lock status
+    return (
+      <div style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        fontSize: 10, fontFamily: fonts.sans, fontWeight: 600,
+        padding: '2px 8px', borderRadius: 3,
+        background: locked ? 'rgba(220,80,80,0.15)' : 'rgba(80,200,120,0.15)',
+        border: `1px solid ${locked ? 'rgba(220,80,80,0.4)' : 'rgba(80,200,120,0.4)'}`,
+        color: locked ? 'rgba(220,80,80,0.9)' : 'rgba(80,200,120,0.9)',
+        marginTop: 3,
+      }}>
+        {locked
+          ? <><Lock style={{ width: 9, height: 9 }} /> Lineups Locked</>
+          : <><Unlock style={{ width: 9, height: 9 }} /> Locks {formatLockTime(lockTime, tz)}</>
+        }
+      </div>
+    );
+  };
+
   const renderTable = (list) => (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
         <tr>
           {editMode ? (
-            ['Active', 'Type', 'Tournament', 'Swing'].map(h => (
+            ['Active', 'Type', 'Tournament', 'Swing', 'Timezone'].map(h => (
               <th key={h} style={theme.tableHeaderCell}>{h}</th>
             ))
           ) : (
@@ -96,6 +143,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
           const alt = isAlternate(t);
 
           if (editMode) {
+            const detectedTz = getTournamentTimezone({ ...t, timezoneOverride: null });
             return (
               <tr key={t.name}
                 style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
@@ -181,6 +229,30 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     {SWINGS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </td>
+
+                {/* Timezone override */}
+                <td style={{ padding: '8px 12px' }}>
+                  <select
+                    value={t.timezoneOverride || ''}
+                    onChange={e => updateLocal(realIndex, { timezoneOverride: e.target.value || null })}
+                    style={{
+                      ...theme.select,
+                      fontSize: 11,
+                      padding: '5px 8px',
+                      background: '#0d1b2e',
+                      color: colors.textPrimary,
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      minWidth: 130,
+                    }}
+                  >
+                    {TIMEZONE_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.value === '' ? `Auto (${detectedTz.split('/').pop().replace(/_/g, ' ')})` : opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </td>
               </tr>
             );
           }
@@ -206,7 +278,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 )}
               </td>
 
-              {/* Tournament name */}
+              {/* Tournament name + lock status */}
               <td style={{ padding: '10px 16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontFamily: fonts.serif, fontSize: 13, color: alt ? colors.textMuted : (t.playing && !t.completed) ? colors.textGold : colors.textPrimary }}>
@@ -218,6 +290,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     </span>
                   )}
                 </div>
+                {!t.completed && <LockBadge tournament={t} />}
               </td>
 
               {/* Dates (colored by swing) */}
@@ -250,7 +323,6 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <h2 style={theme.h1}>2026 Season Schedule</h2>
-
         </div>
         {isCommissioner && (
           <button
