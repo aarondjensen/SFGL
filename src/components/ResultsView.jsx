@@ -8,6 +8,21 @@ const GOLD_DIM    = 'rgba(245,197,24,0.35)';
 const BLUE_BRIGHT = 'rgba(100,180,255,0.95)';
 const BLUE_DIM    = 'rgba(100,180,255,0.35)';
 
+const SWING_ACCENT = {
+  'West Coast Swing': 'rgba(100,160,255,0.85)',
+  'Spring Swing':     'rgba(80,200,120,0.85)',
+  'Summer Swing':     'rgba(220,180,60,0.85)',
+  'Fall Finish':      'rgba(220,120,60,0.85)',
+};
+const swingColors = (seg) => {
+  const accent = SWING_ACCENT[seg] || 'rgba(100,160,255,0.85)';
+  return {
+    accent,
+    bg: accent.replace('0.85)', '0.07)'),
+    border: accent.replace('0.85)', '0.3)'),
+  };
+};
+
 const playerNameColor = (p, showEarnings) => {
   if (p.unlimited) return showEarnings ? (p.earnings > 0 ? BLUE_BRIGHT : BLUE_DIM) : BLUE_BRIGHT;
   if (p.limited)   return showEarnings ? (p.earnings > 0 ? GOLD_BRIGHT : GOLD_DIM)  : GOLD_BRIGHT;
@@ -305,14 +320,11 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
           }
         });
 
-        // All swing cards use gold
-        const RED = { accent: 'rgba(245,197,24,0.9)', bg: 'rgba(245,197,24,0.07)', border: 'rgba(245,197,24,0.3)' };
-
         return items.map(item => {
           if (item.type === 'swing') {
             const { summary } = item;
             const isExpanded = expandedTournament === ('swing:' + summary.seg);
-            const sc = RED;
+            const sc = swingColors(summary.seg);
             return (
               <div key={'swing:' + summary.seg} style={{
                 ...theme.cardLift,
