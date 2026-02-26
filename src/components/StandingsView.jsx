@@ -326,7 +326,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
-                    <div style={{ ...theme.statNum, fontSize: 13, color: isSwingWinner ? 'rgba(245,197,24,0.9)' : behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
+                    <div style={{ ...theme.statNum, fontSize: 13, letterSpacing: 3, fontWeight: 300, color: isSwingWinner ? 'rgba(245,197,24,0.9)' : behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
                       {isSwingWinner ? 'Winner' : formatBehind(behind)}
                     </div>
                   </td>
