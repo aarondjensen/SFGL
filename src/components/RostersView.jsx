@@ -1,12 +1,11 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Search } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { AddDropPlayerModal } from './AddDropPlayerModal';
 
 import { useRoster, useWindowStatus } from '../hooks';
 import {
-  getSortedRoster, shortName,
-  getTeamAbbreviation, getLineupStatus, getFreeAgentWindowStatus, getWaiverWindowStatus,
+  getSortedRoster,
+  getFreeAgentWindowStatus, getWaiverWindowStatus,
   getSegmentByDate, isTournamentLocked,
 } from '../utils';
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
@@ -81,35 +80,6 @@ const displayName = (fullName, isMobile) => {
 };
 
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
-const FaAddButton = ({ isFa, canAdd, onAdd }) => {
-  const [hovered, setHovered] = React.useState(false);
-  if (!isFa) return null;
-  if (!canAdd) return (
-    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 3, letterSpacing: '0.5px', background: 'rgba(80,180,120,0.18)', border: '1px solid rgba(80,180,120,0.5)', color: 'rgba(80,180,120,0.9)', display: 'inline-block' }}>FA</span>
-  );
-  return (
-    <button
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onMouseDown={e => e.preventDefault()}
-      onClick={e => { e.stopPropagation(); onAdd(); }}
-      style={{
-        fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, fontWeight: 700,
-        padding: '3px 8px', borderRadius: 3, letterSpacing: '0.5px',
-        background: hovered ? 'rgba(80,180,120,0.4)' : 'rgba(80,180,120,0.18)',
-        border: `1px solid ${hovered ? 'rgba(80,180,120,0.9)' : 'rgba(80,180,120,0.5)'}`,
-        color: hovered ? '#fff' : 'rgba(80,180,120,0.9)',
-        cursor: 'pointer',
-        transition: 'all 0.15s',
-        minWidth: 46, textAlign: 'center',
-        display: 'inline-block',
-      }}
-    >
-      {hovered ? '+ Add' : 'FA'}
-    </button>
-  );
-};
-
 const TeamDropdown = ({ teams, value, onChange }) => {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
@@ -342,9 +312,6 @@ export const RostersView = ({
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
-  const [globalSearch,      setGlobalSearch]      = useState('');
-  const searchRef = React.useRef(null);
-  const [dropdownRect, setDropdownRect] = React.useState(null);
   const dialog = useDialog();
 
   const activeTournament      = tournaments.find(t => t.playing);
@@ -399,57 +366,10 @@ export const RostersView = ({
     prevLoggedInUser.current = loggedInUser;
   }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
 
-  // Clear search when navigating away from this view
-  useEffect(() => {
-    return () => setGlobalSearch('');
-  }, []);
-
-  // Clear search on login/logout
-  useEffect(() => {
-    setGlobalSearch('');
-  }, [loggedInUser]);
-
-  // Update dropdown position whenever search changes
-  useEffect(() => {
-    if (globalSearch.trim() && searchRef.current) {
-      setDropdownRect(searchRef.current.getBoundingClientRect());
-    } else {
-      setDropdownRect(null);
-    }
-  }, [globalSearch]);
-
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex);
   const windowStatus  = useWindowStatus(activeTournament);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
-
-  const searchResults = useMemo(() => {
-    if (!globalSearch.trim()) return [];
-    const term = globalSearch.toLowerCase();
-    const allPlayerMap = new Map(
-      allPlayers
-        .filter(p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim()))
-        .map(p => [p.name, { ...p, owner: 'Free Agent' }])
-    );
-    // Replay processed transactions on top of team.roster — same logic as useRoster
-    teams.forEach(t => {
-      const rosterSet = new Map();
-      t.roster.forEach(rp => rosterSet.set(rp.name, t.name));
-      transactions
-        .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && tx.status === 'processed')
-        .forEach(tx => {
-          if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
-          if (tx.player) rosterSet.set(tx.player, t.name);
-        });
-      rosterSet.forEach((teamName, playerName) => {
-        if (allPlayerMap.has(playerName)) allPlayerMap.get(playerName).owner = teamName;
-        else allPlayerMap.set(playerName, { name: playerName, worldRank: 999, owner: teamName });
-      });
-    });
-    return [...allPlayerMap.values()]
-      .filter(p => p.name.toLowerCase().includes(term))
-      .sort((a, b) => a.worldRank - b.worldRank);
-  }, [globalSearch, allPlayers, teams, transactions]);
 
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
@@ -525,7 +445,7 @@ export const RostersView = ({
         background: 'linear-gradient(135deg, rgba(18,46,82,0.4) 0%, rgba(255,255,255,0.02) 100%)',
         overflow: 'visible',
       }}>
-        {/* Row 1: Team selector + search bar */}
+        {/* Row 1: Team selector + Add/Search button */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, overflow: 'visible' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
             <TeamDropdown
@@ -540,81 +460,29 @@ export const RostersView = ({
             )}
           </div>
 
-          {/* Search bar */}
-          <div ref={searchRef} style={{ position: 'relative', flexShrink: 0, width: isMobile ? 140 : 180 }}>
-            <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary, zIndex: 1 }} />
-            <input
-              type="text" placeholder="Search…"
-              value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
-              style={{ ...theme.input, paddingLeft: 28, fontSize: 16, padding: '7px 10px 7px 28px' }}
-              onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
-              onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
-            />
-                {globalSearch.trim().length > 0 && dropdownRect && (
-                  <div style={{
-                    position: 'fixed',
-                    top: dropdownRect.bottom + 4,
-                    right: Math.max(8, window.innerWidth - dropdownRect.right),
-                    width: Math.min(340, window.innerWidth - 16),
-                    maxHeight: '50vh',
-                    overflowY: 'auto',
-                    background: '#1a2744',
-                    border: `1px solid ${colors.borderInput}`,
-                    borderRadius: 4,
-                    boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
-                    zIndex: 40,
-                  }}>
-                    <div style={{ padding: '6px 12px', borderBottom: `1px solid ${colors.borderSubtle}`, fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>{searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>
-                      <button onClick={() => setGlobalSearch('')} style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>✕</button>
-                    </div>
-                    {searchResults.slice(0, 30).map(player => {
-                      const isFa = player.owner === 'Free Agent';
-                      return (
-                      <div key={player.name} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}`,
-                        gap: 8,
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                          <img
-                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
-                            alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
-                          />
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{player.name}</div>
-                            <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                          <FaAddButton
-                            isFa={isFa}
-                            canAdd={!!loggedInUser || isCommissioner}
-                            onAdd={() => {
-                              const useWaiver = !faStatus.open && waiverStatus.open;
-                              setPendingAddPlayer(player.name);
-                              setEditingWaiverData({ player: player.name });
-                              setIsWaiverMode(useWaiver);
-                              setShowAddDropModal(true);
-                              setGlobalSearch('');
-                            }}
-                          />
-                          {!isFa && (
-                            <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 500, color: colors.textSecondary }}>
-                              {getTeamAbbreviation(player.owner)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      );
-                    })}
-                    {searchResults.length === 0 && (
-                      <div style={{ padding: '12px', fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, textAlign: 'center' }}>No players found</div>
-                    )}
-                  </div>
-                )}
-              </div>
+          {/* Add/Search Player button */}
+          {isOwnTeam && (
+            <button
+              onClick={() => {
+                const useWaiver = !faStatus.open && waiverStatus.open;
+                setIsWaiverMode(useWaiver);
+                setShowAddDropModal(true);
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '6px 12px', borderRadius: 3, flexShrink: 0,
+                fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                background: (faStatus.open || waiverStatus.open) ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${(faStatus.open || waiverStatus.open) ? 'rgba(80,180,120,0.5)' : 'rgba(255,255,255,0.12)'}`,
+                color: (faStatus.open || waiverStatus.open) ? colors.success : colors.textSecondary,
+              }}
+            >
+              <span style={{ fontSize: 13, lineHeight: 1 }}>+</span>
+              <span>Add / Search</span>
+            </button>
+          )}
           </div>
 
         {/* Lineup headshots + Edit Lineup button */}
@@ -694,46 +562,13 @@ export const RostersView = ({
       {/* ── Action buttons + roster table ── */}
       <div style={{ ...theme.card }}>
 
-        {/* Action header — compact row */}
+        {/* Action header — tee time */}
         <div style={{
           ...theme.cardHeader,
           flexDirection: 'row', alignItems: 'center', gap: 8,
-          flexWrap: 'wrap',
         }}>
-          {/* Add Player button — auto-detects FA vs Waiver */}
-          {isOwnTeam && (
-            <button
-              onClick={() => {
-                const useWaiver = !faStatus.open && waiverStatus.open;
-                setIsWaiverMode(useWaiver);
-                setShowAddDropModal(true);
-              }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '6px 12px', borderRadius: 3,
-                fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
-                cursor: (faStatus.open || waiverStatus.open) ? 'pointer' : 'default',
-                transition: 'all 0.15s',
-                background: (faStatus.open || waiverStatus.open) ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${(faStatus.open || waiverStatus.open) ? 'rgba(80,180,120,0.5)' : colors.borderSubtle}`,
-                color: (faStatus.open || waiverStatus.open) ? colors.success : colors.textMuted,
-              }}
-            >
-              <span style={{ fontSize: 13, lineHeight: 1 }}>+</span>
-              <span>Add Player</span>
-              <span style={{
-                fontSize: 9, fontWeight: 500, opacity: 0.7,
-                marginLeft: 2,
-              }}>
-                {faStatus.open ? 'FA' : waiverStatus.open ? 'WVR' : 'Closed'}
-              </span>
-            </button>
-          )}
-
-
-          {/* Tee time — pushed right */}
           {activeTournament && firstTeeTime && (
-            <span style={{ ...theme.smallText, marginLeft: 'auto', flexShrink: 0 }}>
+            <span style={{ ...theme.smallText }}>
               {formatTeeTime(firstTeeTime)}
             </span>
           )}

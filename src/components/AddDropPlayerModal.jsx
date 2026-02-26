@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate } from '../utils/index.js';
+import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../utils/index.js';
 import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
 
@@ -95,10 +95,27 @@ export const AddDropPlayerModal = ({
   const availablePlayers = allPlayers.filter(p => {
     if (!p.name || typeof p.name !== 'string') return false;
     if (/^\d+$/.test(p.name.trim())) return false;
-    if (rosteredPlayers.has(p.name)) return false;
     if (thisTeamPendingClaims.has(p.name)) return false;
     return true;
   });
+
+  // Build ownership map: playerName → teamName
+  const ownerMap = new Map();
+  teams.forEach(t => {
+    const rosterSet = new Set(t.roster.map(p => p.name));
+    transactions
+      .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && tx.status === 'processed')
+      .forEach(tx => {
+        if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
+        if (tx.player) rosterSet.add(tx.player);
+      });
+    rosterSet.forEach(name => ownerMap.set(name, t.name));
+  });
+
+  // Is the active tournament currently locked (Thu–Sun)?
+  const activeTournament = tournaments?.find(t => t.playing && !t.completed);
+  const tournamentIsLocked = isTournamentLocked(activeTournament);
+
   const filteredPlayers  = availablePlayers.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
@@ -407,11 +424,14 @@ export const AddDropPlayerModal = ({
           />
 
           {filteredPlayers.length === 0 ? (
-            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0' }}>No available players found</p>
+            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0' }}>No players found</p>
           ) : (
             filteredPlayers.slice(0, 50).map(player => {
               const isCurrentlySelected = selectedPlayerToAdd?.name === player.name;
               const isLimbo = limboPlayers.has(player.name);
+              const playerOwner = ownerMap.get(player.name);
+              const isRostered = !!playerOwner;
+              const isOnOwnTeam = playerOwner === team.name;
               return (
                 <div
                   key={player.name}
@@ -421,11 +441,12 @@ export const AddDropPlayerModal = ({
                     background: isCurrentlySelected ? accentBg(isWaiverMode) : colors.cardBg,
                     border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
                     transition: 'all 0.15s',
-                    cursor: isLimbo ? 'default' : 'pointer',
+                    cursor: (isLimbo || isRostered || tournamentIsLocked) ? 'default' : 'pointer',
+                    opacity: isRostered ? 0.55 : 1,
                   }}
-                  onClick={() => { if (!isLimbo) selectPlayerToAdd(player); }}
-                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
-                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
+                  onClick={() => { if (!isLimbo && !isRostered && !tournamentIsLocked) selectPlayerToAdd(player); }}
+                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
+                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{
@@ -436,11 +457,23 @@ export const AddDropPlayerModal = ({
                     }}>
                       {player.worldRank === 999 ? 'NR' : `#${player.worldRank}`}
                     </div>
-                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
+                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isRostered ? colors.textMuted : isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
                       {player.name}
                     </span>
                   </div>
-                  {isLimbo ? (
+                  {isRostered ? (
+                    <span style={{
+                      fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                      padding: '4px 8px', borderRadius: 3,
+                      letterSpacing: '0.5px',
+                      background: isOnOwnTeam ? 'rgba(245,197,24,0.1)' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${isOnOwnTeam ? 'rgba(245,197,24,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                      color: isOnOwnTeam ? colors.textGold : colors.textMuted,
+                      flexShrink: 0,
+                    }}>
+                      {getTeamAbbreviation(playerOwner)}
+                    </span>
+                  ) : isLimbo ? (
                     <span style={{
                       fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
                       padding: '5px 0', borderRadius: 3,
@@ -452,6 +485,19 @@ export const AddDropPlayerModal = ({
                       display: 'inline-block',
                     }}>
                       On Waivers
+                    </span>
+                  ) : tournamentIsLocked ? (
+                    <span style={{
+                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      padding: '5px 0', borderRadius: 3,
+                      width: 90, textAlign: 'center', flexShrink: 0,
+                      background: 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${colors.borderSubtle}`,
+                      color: colors.textMuted,
+                      letterSpacing: '0.3px',
+                      display: 'inline-block',
+                    }}>
+                      Locked
                     </span>
                   ) : (
                     <button
