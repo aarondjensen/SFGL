@@ -642,7 +642,43 @@ export const RostersView = ({
                           </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                          {isFa ? (
+                          {isFa && isOwnTeam ? (
+                            <button
+                              onClick={() => {
+                                setPendingAddPlayer(player.name);
+                                setEditingWaiverData({ player: player.name });
+                                setIsWaiverMode(false);
+                                setShowAddDropModal(true);
+                                setGlobalSearch('');
+                              }}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.background = 'rgba(80,180,120,0.35)';
+                                e.currentTarget.style.borderColor = 'rgba(80,180,120,0.8)';
+                                e.currentTarget.style.paddingLeft = '10px';
+                                e.currentTarget.style.paddingRight = '10px';
+                                e.currentTarget.querySelector('.fa-label').textContent = '+ Add';
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.background = 'rgba(80,180,120,0.18)';
+                                e.currentTarget.style.borderColor = 'rgba(80,180,120,0.5)';
+                                e.currentTarget.style.paddingLeft = '7px';
+                                e.currentTarget.style.paddingRight = '7px';
+                                e.currentTarget.querySelector('.fa-label').textContent = 'FA';
+                              }}
+                              style={{
+                                fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                                padding: '2px 7px', borderRadius: 3, letterSpacing: '0.5px',
+                                background: 'rgba(80,180,120,0.18)',
+                                border: '1px solid rgba(80,180,120,0.5)',
+                                color: colors.success,
+                                cursor: 'pointer',
+                                transition: 'background 0.15s, border-color 0.15s, padding 0.15s',
+                                minWidth: 28,
+                              }}
+                            >
+                              <span className="fa-label">FA</span>
+                            </button>
+                          ) : isFa ? (
                             <span style={{
                               fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
                               padding: '2px 7px', borderRadius: 3, letterSpacing: '0.5px',
@@ -654,27 +690,6 @@ export const RostersView = ({
                             <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 500, color: colors.textSecondary }}>
                               {getTeamAbbreviation(player.owner)}
                             </span>
-                          )}
-                          {isFa && isOwnTeam && (
-                            <button
-                              onClick={() => {
-                                setPendingAddPlayer(player.name);
-                                setEditingWaiverData({ player: player.name });
-                                setIsWaiverMode(false);
-                                setShowAddDropModal(true);
-                                setGlobalSearch('');
-                              }}
-                              style={{
-                                width: 24, height: 24, borderRadius: '50%',
-                                background: 'rgba(80,180,120,0.18)',
-                                border: '1px solid rgba(80,180,120,0.5)',
-                                color: colors.success,
-                                fontWeight: 700, fontSize: 16, lineHeight: 1,
-                                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                flexShrink: 0,
-                              }}
-                              title={`Add ${player.name}`}
-                            >+</button>
                           )}
                         </div>
                       </div>
