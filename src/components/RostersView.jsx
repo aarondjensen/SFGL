@@ -306,7 +306,6 @@ export const RostersView = ({
 }) => {
   const isMobile            = useIsMobile();
   const [statsView,         setStatsView]         = useState('sfgl');
-  const [lineupMode,        setLineupMode]        = useState(false);
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
@@ -442,7 +441,7 @@ export const RostersView = ({
             <TeamDropdown
               teams={teams}
               value={selectedTeam || ''}
-              onChange={id => { setSelectedTeam(id); setLineupMode(false); }}
+              onChange={id => { setSelectedTeam(id); }}
             />
             {isCommissioner && team && (
               <span style={{ ...theme.badge, background: 'rgba(80,195,120,0.1)', border: '1px solid rgba(80,195,120,0.3)', color: colors.success, fontSize: 10 }}>
@@ -478,16 +477,16 @@ export const RostersView = ({
           )}
           </div>
 
-        {/* Lineup headshots + Edit Lineup */}
-        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, minHeight: 72 }}>
-          {team.lineup.length > 0 ? (
-            <div>
-              {/* Headshots — centered */}
-              <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flexWrap: 'nowrap', overflow: 'hidden' }}>
-                {getSortedRoster(currentRoster)
-                  .filter(p => team.lineup.includes(p.name))
-                  .map(player => {
-                    const lastName  = player.name.split(' ').pop();
+        {/* Lineup slots — always show 5: filled headshots + silhouette placeholders */}
+        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, paddingBottom: 6, minHeight: 72 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flexWrap: 'nowrap', overflow: 'hidden' }}>
+            {(() => {
+              const lineupPlayers = getSortedRoster(currentRoster).filter(p => team.lineup.includes(p.name));
+              const emptySlots = Math.max(0, LINEUP_SIZE - lineupPlayers.length);
+              return (
+                <>
+                  {lineupPlayers.map(player => {
+                    const lastName = player.name.split(' ').pop();
                     const nameFontSize = lastName.length > 9 ? 9 : lastName.length > 7 ? 10 : 11;
                     return (
                       <LineupHeadshot
@@ -496,50 +495,43 @@ export const RostersView = ({
                         lastName={lastName}
                         nameFontSize={nameFontSize}
                         headshots={headshots}
-                        canEdit={canEditLineup && lineupMode}
+                        canEdit={canEditLineup}
                         onRemove={() => togglePlayerInLineup(player)}
                       />
                     );
                   })}
-              </div>
-              {/* Edit / Done link — right-aligned below headshots */}
-              {canEditLineup && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 4, marginTop: 4 }}>
-                  <button
-                    onClick={() => setLineupMode(!lineupMode)}
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
-                      color: lineupMode ? colors.success : colors.textSecondary,
-                      padding: '2px 6px',
-                      transition: 'color 0.15s',
-                    }}
-                  >
-                    {lineupMode ? '✓ Done' : 'Edit Lineup'}
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            canEditLineup ? (
-              <button
-                onClick={() => setLineupMode(true)}
-                style={{
-                  width: '100%', padding: '10px 0',
-                  background: 'rgba(80,195,120,0.08)',
-                  border: `1px solid rgba(80,195,120,0.35)`,
-                  borderRadius: 3,
-                  fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
-                  color: colors.success, cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-              >
-                ▶ Set Lineup
-              </button>
-            ) : (
-              <div style={{ ...theme.smallText, textAlign: 'center', width: '100%' }}>No lineup set</div>
-            )
-          )}
+                  {Array.from({ length: emptySlots }).map((_, i) => (
+                    <div
+                      key={`empty-${i}`}
+                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, cursor: canEditLineup ? 'pointer' : 'default' }}
+                      onClick={() => { /* visual — roster rows below are already tappable */ }}
+                    >
+                      <div style={{
+                        width: 44, height: 44, borderRadius: '50%',
+                        background: 'rgba(255,255,255,0.04)',
+                        border: `2px dashed ${canEditLineup ? 'rgba(80,180,120,0.45)' : 'rgba(255,255,255,0.12)'}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'all 0.15s',
+                      }}>
+                        <span style={{
+                          fontSize: 20, fontWeight: 300, lineHeight: 1,
+                          color: canEditLineup ? 'rgba(80,180,120,0.6)' : 'rgba(255,255,255,0.15)',
+                        }}>+</span>
+                      </div>
+                      <div style={{
+                        fontSize: 9, fontFamily: fonts.sans, marginTop: 3,
+                        textAlign: 'center', width: '100%',
+                        color: canEditLineup ? 'rgba(80,180,120,0.5)' : 'rgba(255,255,255,0.15)',
+                        letterSpacing: '0.3px',
+                      }}>
+                        {canEditLineup ? 'open' : '—'}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
+          </div>
         </div>
       </div>
 
@@ -602,8 +594,10 @@ export const RostersView = ({
                 const isInLineup     = team.lineup.includes(player.name);
                 const canAddToLineup = team.lineup.length < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
                 const hasLineup      = team.lineup.length > 0;
-                const isBenched      = hasLineup && !isInLineup && !lineupMode;
+                const isEditing      = canEditLineup;
+                const isBenched      = hasLineup && !isInLineup && !isEditing;
                 const dimColor       = 'rgba(255,255,255,0.45)';
+                const rowClickable   = isEditing && isOwnTeam && (isInLineup || canAddToLineup);
 
                 return (
                   <tr key={player.name}
@@ -616,9 +610,9 @@ export const RostersView = ({
                       <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, minWidth: 0 }}>
                         {/* Headshot / lineup toggle */}
                         <button
-                          onClick={() => lineupMode && isOwnTeam && (isInLineup || canAddToLineup) && togglePlayerInLineup(player)}
-                          disabled={!lineupMode || !isOwnTeam || (!isInLineup && !canAddToLineup)}
-                          style={{ position: 'relative', background: 'none', border: 'none', cursor: lineupMode && isOwnTeam && (isInLineup || canAddToLineup) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          onClick={() => rowClickable && togglePlayerInLineup(player)}
+                          disabled={!rowClickable}
+                          style={{ position: 'relative', background: 'none', border: 'none', cursor: rowClickable ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
                             src={getPlayerHeadshot(player.name, player.limited, headshots)}
@@ -626,8 +620,8 @@ export const RostersView = ({
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
-                              opacity: isBenched ? 0.5 : lineupMode && !isInLineup && !canAddToLineup ? 0.25 : lineupMode && !isInLineup ? 0.55 : 1,
-                              border: lineupMode
+                              opacity: isBenched ? 0.5 : isEditing && !isInLineup && !canAddToLineup ? 0.25 : isEditing && !isInLineup ? 0.55 : 1,
+                              border: isEditing
                                 ? isInLineup
                                   ? `3px solid ${playerBorderColor(player)}`
                                   : `2px solid ${colors.borderSubtle}`
@@ -641,9 +635,9 @@ export const RostersView = ({
                             <div style={{
                               position: 'absolute', top: -3, right: -3,
                               width: 14, height: 14, borderRadius: '50%',
-                              background: lineupMode ? playerBorderColor(player) : 'rgba(80,195,120,0.85)',
+                              background: isEditing ? playerBorderColor(player) : 'rgba(80,195,120,0.85)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              opacity: lineupMode ? 1 : 0.75,
+                              opacity: isEditing ? 1 : 0.75,
                             }}>
                               <span style={{ color: '#111d2e', fontSize: 9, fontWeight: 900 }}>✓</span>
                             </div>
