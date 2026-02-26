@@ -30,13 +30,14 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
 
   const availableToAdd = useMemo(() => {
     return allPlayers.filter(p =>
-      !rosteredNames.has(p.name) || p.name === tx.player // keep original selectable
+      p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim()) &&
+      (!rosteredNames.has(p.name) || p.name === tx.player) // keep original selectable
     );
   }, [allPlayers, rosteredNames, tx.player]);
 
   const filteredAdd = addSearch.trim()
     ? availableToAdd.filter(p => p.name.toLowerCase().includes(addSearch.toLowerCase()))
-    : availableToAdd.slice(0, 30);
+    : [];
 
   const currentRoster = team?.roster || [];
   // Droppable: all roster players except Limited, plus the original dropped player
@@ -816,11 +817,13 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 {/* Player IN search */}
                 {(addTxType !== 'drop') && (() => {
                   const teamObj  = teams.find(t => t.name === addTxTeam);
+                  const validPlayer = p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim());
                   const pool = addTxType === 'mulligan'
                     ? (teamObj?.roster || [])
                     : addTxType === 'waiver blocked'
-                    ? allPlayers  // blocked waiver: show all players (player was claimed but lost tiebreaker)
+                    ? allPlayers.filter(validPlayer)
                     : allPlayers.filter(p => {
+                        if (!validPlayer(p)) return false;
                         const allRostered = new Set(teams.flatMap(t => t.roster.map(r => r.name)));
                         return !allRostered.has(p.name);
                       });
