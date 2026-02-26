@@ -482,7 +482,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     , 0);
     copy.splice(insertAt, 0, newTx);
 
-    // For mulligans: adjust starts, swap lineup, decrement mulligan counter, update tournament results
+    // For mulligans: swap lineup, decrement mulligan counter, update tournament results if already processed
     let updatedTeams = teams;
     let updatedTournaments = tournaments;
     if (addTxType === 'mulligan' && (playerInName || playerOutName)) {
@@ -490,6 +490,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       const tournament = tournaments[tournamentIndex];
       const isSigOrMajor = tournament?.isSignature || tournament?.isMajor;
       const mullKey = isSigOrMajor ? 'signatureMajor' : 'regular';
+      const alreadyProcessed = !!tournament?.completed;
 
       updatedTeams = teams.map(t => {
         if (t.name !== addTxTeam) return t;
@@ -499,14 +500,17 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           lineup: playerOutName && playerInName
             ? t.lineup.map(p => p === playerOutName ? playerInName : p)
             : t.lineup,
-          // Adjust limited starts
-          roster: t.roster.map(p => {
-            if (p.name === playerOutName && p.limited)
-              return { ...p, starts: Math.max(0, (p.starts || 0) - 1) };
-            if (p.name === playerInName && p.limited)
-              return { ...p, starts: (p.starts || 0) + 1 };
-            return p;
-          }),
+          // Only adjust limited starts if results were ALREADY processed
+          // (if not yet processed, processResults will handle starts via team.lineup)
+          roster: alreadyProcessed
+            ? t.roster.map(p => {
+                if (p.name === playerOutName && p.limited)
+                  return { ...p, starts: Math.max(0, (p.starts || 0) - 1) };
+                if (p.name === playerInName && p.limited)
+                  return { ...p, starts: (p.starts || 0) + 1 };
+                return p;
+              })
+            : t.roster,
           // Decrement mulligan counter
           mulligans: {
             ...t.mulligans,
@@ -515,8 +519,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         };
       });
 
-      // Swap player in stored tournament results so live starts count reflects the mulligan
-      if (mulliganTeam && playerOutName && playerInName) {
+      // Swap player in stored tournament results (only if tournament already processed)
+      if (alreadyProcessed && mulliganTeam && playerOutName && playerInName) {
         updatedTournaments = tournaments.map((t, i) => {
           if (i !== tournamentIndex || !t.results?.teams?.[mulliganTeam.id]) return t;
           const teamResult = t.results.teams[mulliganTeam.id];
