@@ -381,16 +381,25 @@ export const RostersView = ({
         .filter(p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim()))
         .map(p => [p.name, { ...p, owner: 'Free Agent' }])
     );
+    // Replay processed transactions on top of team.roster — same logic as useRoster
     teams.forEach(t => {
-      t.roster.forEach(rp => {
-        if (allPlayerMap.has(rp.name)) allPlayerMap.get(rp.name).owner = t.name;
-        else allPlayerMap.set(rp.name, { name: rp.name, worldRank: 999, owner: t.name });
+      const rosterSet = new Map();
+      t.roster.forEach(rp => rosterSet.set(rp.name, t.name));
+      transactions
+        .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && tx.status === 'processed')
+        .forEach(tx => {
+          if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
+          if (tx.player) rosterSet.set(tx.player, t.name);
+        });
+      rosterSet.forEach((teamName, playerName) => {
+        if (allPlayerMap.has(playerName)) allPlayerMap.get(playerName).owner = teamName;
+        else allPlayerMap.set(playerName, { name: playerName, worldRank: 999, owner: teamName });
       });
     });
     return [...allPlayerMap.values()]
       .filter(p => p.name.toLowerCase().includes(term))
       .sort((a, b) => a.worldRank - b.worldRank);
-  }, [globalSearch, allPlayers, teams]);
+  }, [globalSearch, allPlayers, teams, transactions]);
 
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
@@ -576,7 +585,7 @@ export const RostersView = ({
             )}
           </div>
 
-          {/* Global search */}
+          {/* Global search — dropdown for all screen sizes */}
           <div style={{ position: 'relative', flexShrink: 0, width: 160 }}>
             <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary, zIndex: 1 }} />
             <input
@@ -584,24 +593,26 @@ export const RostersView = ({
               value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
               style={{ ...theme.input, paddingLeft: 28, fontSize: 16, padding: '7px 10px 7px 28px' }}
               onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
-              onBlur={e => {
-                e.target.style.borderColor = colors.borderInput;
-              }}
+              onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
             />
-            {/* Mobile dropdown — opens upward above the search bar */}
-            {isMobile && globalSearch.trim().length > 0 && (
+            {globalSearch.trim().length > 0 && (
               <div style={{
-                position: 'absolute', bottom: '110%', right: 0,
+                position: 'absolute',
+                bottom: isMobile ? '110%' : undefined,
+                top: isMobile ? undefined : '110%',
+                right: 0,
                 width: 'min(340px, 92vw)',
-                maxHeight: '45vh', overflowY: 'auto',
+                maxHeight: isMobile ? '45vh' : '60vh',
+                overflowY: 'auto',
                 background: '#1a2744',
                 border: `1px solid ${colors.borderInput}`,
                 borderRadius: 4,
-                boxShadow: '0 -4px 24px rgba(0,0,0,0.5)',
+                boxShadow: isMobile ? '0 -4px 24px rgba(0,0,0,0.5)' : '0 4px 24px rgba(0,0,0,0.5)',
                 zIndex: 200,
               }}>
-                <div style={{ padding: '6px 12px', borderBottom: `1px solid ${colors.borderSubtle}`, fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                  {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+                <div style={{ padding: '6px 12px', borderBottom: `1px solid ${colors.borderSubtle}`, fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>
+                  <button onClick={() => setGlobalSearch('')} style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>✕</button>
                 </div>
                 {searchResults.slice(0, 30).map(player => (
                   <div key={player.name} style={{
@@ -723,72 +734,8 @@ export const RostersView = ({
           </div>
         </div>
 
-        {/* ── Player table — global search (desktop only; mobile uses dropdown above) ── */}
-        {!isMobile && globalSearch.trim().length > 0 ? (
-          <div>
-            <div style={{
-              ...theme.tableHeaderCell,
-              padding: '8px 16px',
-              borderBottom: `1px solid ${colors.borderSubtle}`,
-              color: colors.textSecondary,
-              fontSize: 11,
-            }}>
-              Search Results ({searchResults.length})
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
-              <colgroup>
-                <col />
-                <col style={{ width: isMobile ? 60 : 70 }} />
-                <col style={{ width: isMobile ? 60 : 70 }} />
-                <col style={{ width: isMobile ? 80 : 100 }} />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center' }}>Events</th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center' }}>Cuts</th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {searchResults.slice(0, 50).map(player => (
-                  <tr key={player.name}
-                    style={{ borderBottom: `1px solid ${colors.borderSubtle}`, transition: 'background 0.15s' }}
-                    onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <td style={{ padding: isMobile ? '8px 10px' : '8px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <img
-                          src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
-                          alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
-                        />
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: colors.textPrimary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name}</div>
-                          <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: isMobile ? '8px 4px' : '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.eventsPlayed || 0}</td>
-                    <td style={{ padding: isMobile ? '8px 4px' : '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.cutsMade || 0}</td>
-                    <td style={{ padding: isMobile ? '8px 10px 8px 4px' : '8px 16px', textAlign: 'right' }}>
-                      {player.owner === 'Free Agent'
-                        ? <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: isMobile ? 11 : 12, fontWeight: 500 }}>FA</span>
-                        : <span style={{ ...theme.bodyText, fontWeight: 500, fontSize: isMobile ? 11 : 12 }}>{getTeamAbbreviation(player.owner)}</span>}
-                    </td>
-                  </tr>
-                ))}
-                {searchResults.length === 0 && (
-                  <tr><td colSpan="4" style={theme.emptyState}>No matching players found</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-        ) : (
-          /* ── Roster table ── */
-          <>
+        {/* ── Roster table ── */}
+        <>
           {/* On mobile: slider sits above table as its own row */}
           {isMobile && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 10px 2px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
@@ -983,8 +930,7 @@ export const RostersView = ({
               })}
             </tbody>
           </table>
-          </>
-        )}
+        </>
       </div>
 
       {/* ── Modals ── */}
