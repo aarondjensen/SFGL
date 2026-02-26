@@ -1129,6 +1129,34 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         ) : null}
                       </>
                     )}
+
+                    {/* Mulligan: delete only (no edit/undo) */}
+                    {isCommissioner && tx.type === 'mulligan' && (
+                      <button
+                        onClick={async () => {
+                          const ok = await dialog.showConfirm('Delete Mulligan',
+                            `Delete mulligan for ${tx.team}?\n\n${tx.player} IN → ${tx.droppedPlayer} OUT\n\nThis removes the transaction record only. You may need to reprocess tournament results and fix the lineup manually.`,
+                            { type: 'danger', confirmText: 'Delete' });
+                          if (!ok) return;
+                          const newTx = transactions.filter(t => t !== tx);
+                          setTransactions(newTx);
+                          await storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
+                          sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx).catch(() => {});
+                          dialog.showToast('Mulligan deleted', 'success');
+                        }}
+                        title="Delete mulligan transaction"
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
+                          letterSpacing: '0.5px', color: colors.danger,
+                          padding: '2px 0', transition: 'opacity 0.15s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
+                        onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               );
