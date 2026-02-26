@@ -9,10 +9,43 @@ const accentColor   = (waiver) => waiver ? colors.warning         : colors.succe
 const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.12)' : 'rgba(80,180,120,0.12)';
 const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,180,120,0.35)';
 
+// ── Headshot helpers ─────────────────────────────────────────────────────────
+const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
+  const val = headshotMap[playerName];
+  if (!val) return [];
+  if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
+  return [
+    `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${val}`,
+    `https://res.cloudinary.com/pgatour-prod/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${val}.png`,
+  ];
+};
+
+const getPlayerHeadshot = (playerName, headshotMap = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  if (urls.length > 0) return urls[0];
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`;
+};
+
+const makeHeadshotErrorHandler = (playerName, headshotMap) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  let attempt = 0;
+  return function handler(e) {
+    attempt++;
+    if (attempt < urls.length) {
+      e.target.src = urls[attempt];
+      e.target.onerror = handler;
+    } else {
+      e.target.onerror = null;
+      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`;
+    }
+  };
+};
+
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, allPlayers, teams,
   updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
+  headshots,
 }) => {
   const [searchTerm,           setSearchTerm]           = useState('');
   const [selectedPlayerToAdd,  setSelectedPlayerToAdd]  = useState(null);
@@ -431,7 +464,6 @@ export const AddDropPlayerModal = ({
               const isLimbo = limboPlayers.has(player.name);
               const playerOwner = ownerMap.get(player.name);
               const isRostered = !!playerOwner;
-              const isOnOwnTeam = playerOwner === team.name;
               return (
                 <div
                   key={player.name}
@@ -449,14 +481,16 @@ export const AddDropPlayerModal = ({
                   onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: '50%',
-                      background: colors.buttonNavy, border: `1px solid ${colors.borderSubtle}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontFamily: fonts.sans, fontSize: 10, color: colors.textSecondary, flexShrink: 0,
-                    }}>
-                      {player.worldRank === 999 ? 'NR' : `#${player.worldRank}`}
-                    </div>
+                    <img
+                      src={getPlayerHeadshot(player.name, headshots)}
+                      onError={makeHeadshotErrorHandler(player.name, headshots)}
+                      alt=""
+                      style={{
+                        width: 28, height: 28, borderRadius: '50%', objectFit: 'cover',
+                        border: `1px solid ${colors.borderSubtle}`,
+                        flexShrink: 0,
+                      }}
+                    />
                     <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isRostered ? colors.textMuted : isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
                       {player.name}
                     </span>
@@ -466,9 +500,9 @@ export const AddDropPlayerModal = ({
                       fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
                       padding: '4px 8px', borderRadius: 3,
                       letterSpacing: '0.5px',
-                      background: isOnOwnTeam ? 'rgba(245,197,24,0.1)' : 'rgba(255,255,255,0.05)',
-                      border: `1px solid ${isOnOwnTeam ? 'rgba(245,197,24,0.3)' : 'rgba(255,255,255,0.1)'}`,
-                      color: isOnOwnTeam ? colors.textGold : colors.textMuted,
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      color: colors.textMuted,
                       flexShrink: 0,
                     }}>
                       {getTeamAbbreviation(playerOwner)}
