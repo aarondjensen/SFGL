@@ -383,14 +383,16 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       return tx.segment === filterSwing;
     });
 
-  const undoTransaction = async (tx) => {
+  const undoTransaction = async (tx, skipConfirm = false) => {
     if (tx.status !== 'processed') return; // only reverse completed transactions
-    const ok = await dialog.showConfirm(
-      'Undo Transaction',
-      'Undo ' + tx.type + ': ' + tx.team + ' added ' + tx.player + (tx.droppedPlayer ? ' / dropped ' + tx.droppedPlayer : '') + '?\n\nThis will reverse the roster change and refund the $' + tx.fee + ' fee.',
-      { type: 'danger', confirmText: 'Undo' },
-    );
-    if (!ok) return;
+    if (!skipConfirm) {
+      const ok = await dialog.showConfirm(
+        'Undo Transaction',
+        'Undo ' + tx.type + ': ' + tx.team + ' added ' + tx.player + (tx.droppedPlayer ? ' / dropped ' + tx.droppedPlayer : '') + '?\n\nThis will reverse the roster change and refund the $' + tx.fee + ' fee.',
+        { type: 'danger', confirmText: 'Undo' },
+      );
+      if (!ok) return;
+    }
     const team = teams.find(t => t.name === tx.team);
     if (!team) return;
 
@@ -1071,91 +1073,70 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       </span>
                     )}
 
-                    {isCommissioner && tx.type !== 'mulligan' && (
+                    {/* Commish actions */}
+                    {isCommissioner && (
                       <>
-                        {/* Edit button */}
-                        <button
-                          onClick={() => setEditingTx({ tx, txIndex: idx })}
-                          title="Edit transaction"
-                          style={{
-                            background: 'none', border: 'none', cursor: 'pointer',
-                            color: 'rgba(100,160,255,0.65)',
-                            padding: '3px 4px', borderRadius: 2,
-                            display: 'flex', alignItems: 'center',
-                            transition: 'color 0.15s',
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.color = 'rgba(150,190,255,0.9)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(100,160,255,0.65)'; }}
-                        >
-                          <Edit2 style={{ width: 13, height: 13 }} />
-                        </button>
-
-                        {/* Undo / Dismiss button — behavior depends on status */}
-                        {tx.status === 'processed' ? (
+                        {/* Edit button — only for FA/waiver/drop (not mulligan, swing_winner) */}
+                        {!['mulligan', 'swing_winner'].includes(tx.type) && (
                           <button
-                            onClick={() => undoTransaction(tx)}
-                            title="Undo transaction — reverses roster change"
+                            onClick={() => setEditingTx({ tx, txIndex: idx })}
+                            title="Edit transaction"
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
-                              fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
-                              letterSpacing: '0.5px', color: colors.danger,
-                              padding: '2px 0', transition: 'opacity 0.15s',
+                              color: 'rgba(100,160,255,0.65)',
+                              padding: '3px 4px', borderRadius: 2,
+                              display: 'flex', alignItems: 'center',
+                              transition: 'color 0.15s',
                             }}
-                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
-                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+                            onMouseEnter={e => { e.currentTarget.style.color = 'rgba(150,190,255,0.9)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(100,160,255,0.65)'; }}
                           >
-                            Undo
+                            <Edit2 style={{ width: 13, height: 13 }} />
                           </button>
-                        ) : tx.status === 'failed' ? (
-                          <button
-                            onClick={async () => {
+                        )}
+
+                        {/* Delete button — red ✕ for all types */}
+                        <button
+                          onClick={async () => {
+                            const label = tx.type === 'mulligan'
+                              ? `Delete mulligan for ${tx.team}?\n\n${tx.player} IN → ${tx.droppedPlayer} OUT`
+                              : tx.type === 'swing_winner'
+                                ? `Delete swing winner: ${tx.team}?`
+                                : tx.status === 'processed'
+                                  ? `Undo ${tx.type}: ${tx.team} added ${tx.player}${tx.droppedPlayer ? ' / dropped ' + tx.droppedPlayer : ''}?\n\nThis will reverse the roster change and refund the $${tx.fee} fee.`
+                                  : `Delete ${tx.type} record for ${tx.team}: ${tx.player}?`;
+                            const ok = await dialog.showConfirm(
+                              tx.status === 'processed' && !['mulligan', 'swing_winner'].includes(tx.type) ? 'Undo Transaction' : 'Delete Transaction',
+                              label,
+                              { type: 'danger', confirmText: tx.status === 'processed' && !['mulligan', 'swing_winner'].includes(tx.type) ? 'Undo' : 'Delete' },
+                            );
+                            if (!ok) return;
+                            // For processed FA/waiver/drop: full undo with roster reversal
+                            if (tx.status === 'processed' && !['mulligan', 'swing_winner'].includes(tx.type)) {
+                              undoTransaction(tx, true); // skipConfirm
+                            } else {
+                              // Simple delete for everything else
                               const newTx = transactions.filter(t => t !== tx);
                               setTransactions(newTx);
                               await storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
                               sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx).catch(() => {});
-                            }}
-                            title="Dismiss — removes this record, no roster change"
-                            style={{
-                              background: 'none', border: 'none', cursor: 'pointer',
-                              fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
-                              letterSpacing: '0.5px', color: colors.textMuted,
-                              padding: '2px 0', transition: 'opacity 0.15s',
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
-                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-                          >
-                            Dismiss
-                          </button>
-                        ) : null}
+                              dialog.showToast('Transaction deleted', 'success');
+                            }
+                          }}
+                          title="Delete transaction"
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'rgba(220,80,80,0.6)',
+                            padding: '3px 4px', borderRadius: 2,
+                            display: 'flex', alignItems: 'center',
+                            transition: 'color 0.15s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.color = 'rgba(240,100,100,0.95)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(220,80,80,0.6)'; }}
+                        >
+                          <X style={{ width: 14, height: 14 }} />
+                        </button>
                       </>
-                    )}
-
-                    {/* Mulligan: delete only (no edit/undo) */}
-                    {isCommissioner && tx.type === 'mulligan' && (
-                      <button
-                        onClick={async () => {
-                          const ok = await dialog.showConfirm('Delete Mulligan',
-                            `Delete mulligan for ${tx.team}?\n\n${tx.player} IN → ${tx.droppedPlayer} OUT\n\nThis removes the transaction record only. You may need to reprocess tournament results and fix the lineup manually.`,
-                            { type: 'danger', confirmText: 'Delete' });
-                          if (!ok) return;
-                          const newTx = transactions.filter(t => t !== tx);
-                          setTransactions(newTx);
-                          await storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
-                          sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx).catch(() => {});
-                          dialog.showToast('Mulligan deleted', 'success');
-                        }}
-                        title="Delete mulligan transaction"
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
-                          letterSpacing: '0.5px', color: colors.danger,
-                          padding: '2px 0', transition: 'opacity 0.15s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
-                        onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-                      >
-                        Delete
-                      </button>
                     )}
                   </div>
                 </div>
