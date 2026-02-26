@@ -209,9 +209,27 @@ const FantasyGolfLeague = () => {
 
   if (loading || !supabaseReady) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
-        <div style={{ fontSize: 28, fontWeight: 600, letterSpacing: 8, color: 'rgba(255,255,255,0.5)' }}>SFGL</div>
-        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>Loading…</div>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
+        <style>{`
+          @keyframes sfgl-pulse {
+            0%, 100% { opacity: 0.9; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.97); }
+          }
+          @keyframes sfgl-dot {
+            0%, 80%, 100% { opacity: 0.15; transform: translateY(0); }
+            40% { opacity: 1; transform: translateY(-5px); }
+          }
+          .sfgl-logo-load { animation: sfgl-pulse 2s ease-in-out infinite; }
+          .sfgl-dot { display: inline-block; animation: sfgl-dot 1.2s ease-in-out infinite; }
+          .sfgl-dot:nth-child(2) { animation-delay: 0.2s; }
+          .sfgl-dot:nth-child(3) { animation-delay: 0.4s; }
+        `}</style>
+        <div className="sfgl-logo-load" style={{ fontSize: 32, fontWeight: 600, letterSpacing: 10, color: 'rgba(255,255,255,0.9)' }}>SFGL</div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
+          <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
+          <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
+        </div>
       </div>
     );
   }
