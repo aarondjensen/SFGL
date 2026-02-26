@@ -575,9 +575,6 @@ export const RostersView = ({
               value={selectedTeam || ''}
               onChange={id => { setSelectedTeam(id); setLineupMode(false); }}
             />
-            {!loggedInUser && !isOwnTeam && (
-              <span style={{ ...theme.badge, ...theme.badgeNavy }}>View Only</span>
-            )}
             {isCommissioner && team && (
               <span style={{ ...theme.badge, background: 'rgba(80,195,120,0.1)', border: '1px solid rgba(80,195,120,0.3)', color: colors.success, fontSize: 10 }}>
                 Acting as Commish
