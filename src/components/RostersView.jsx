@@ -81,6 +81,35 @@ const displayName = (fullName, isMobile) => {
 };
 
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
+const FaAddButton = ({ isFa, canAdd, onAdd }) => {
+  const [hovered, setHovered] = React.useState(false);
+  if (!isFa) return null;
+  if (!canAdd) return (
+    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 3, letterSpacing: '0.5px', background: 'rgba(80,180,120,0.18)', border: '1px solid rgba(80,180,120,0.5)', color: 'rgba(80,180,120,0.9)', display: 'inline-block' }}>FA</span>
+  );
+  return (
+    <button
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onMouseDown={e => e.preventDefault()}
+      onClick={e => { e.stopPropagation(); onAdd(); }}
+      style={{
+        fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, fontWeight: 700,
+        padding: '3px 8px', borderRadius: 3, letterSpacing: '0.5px',
+        background: hovered ? 'rgba(80,180,120,0.4)' : 'rgba(80,180,120,0.18)',
+        border: `1px solid ${hovered ? 'rgba(80,180,120,0.9)' : 'rgba(80,180,120,0.5)'}`,
+        color: hovered ? '#fff' : 'rgba(80,180,120,0.9)',
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        minWidth: 46, textAlign: 'center',
+        display: 'inline-block',
+      }}
+    >
+      {hovered ? '+ Add' : 'FA'}
+    </button>
+  );
+};
+
 const TeamDropdown = ({ teams, value, onChange }) => {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
@@ -312,8 +341,11 @@ export const RostersView = ({
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
+  const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
   const [showMulliganModal, setShowMulliganModal] = useState(false);
   const [globalSearch,      setGlobalSearch]      = useState('');
+  const searchRef = React.useRef(null);
+  const [dropdownRect, setDropdownRect] = React.useState(null);
   const dialog = useDialog();
 
   const activeTournament      = tournaments.find(t => t.playing);
@@ -368,6 +400,25 @@ export const RostersView = ({
     prevLoggedInUser.current = loggedInUser;
   }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
 
+  // Clear search when navigating away from this view
+  useEffect(() => {
+    return () => setGlobalSearch('');
+  }, []);
+
+  // Clear search on login/logout
+  useEffect(() => {
+    setGlobalSearch('');
+  }, [loggedInUser]);
+
+  // Update dropdown position whenever search changes
+  useEffect(() => {
+    if (globalSearch.trim() && searchRef.current) {
+      setDropdownRect(searchRef.current.getBoundingClientRect());
+    } else {
+      setDropdownRect(null);
+    }
+  }, [globalSearch]);
+
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex);
   const windowStatus  = useWindowStatus(activeTournament);
@@ -381,16 +432,25 @@ export const RostersView = ({
         .filter(p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim()))
         .map(p => [p.name, { ...p, owner: 'Free Agent' }])
     );
+    // Replay processed transactions on top of team.roster — same logic as useRoster
     teams.forEach(t => {
-      t.roster.forEach(rp => {
-        if (allPlayerMap.has(rp.name)) allPlayerMap.get(rp.name).owner = t.name;
-        else allPlayerMap.set(rp.name, { name: rp.name, worldRank: 999, owner: t.name });
+      const rosterSet = new Map();
+      t.roster.forEach(rp => rosterSet.set(rp.name, t.name));
+      transactions
+        .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && tx.status === 'processed')
+        .forEach(tx => {
+          if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
+          if (tx.player) rosterSet.set(tx.player, t.name);
+        });
+      rosterSet.forEach((teamName, playerName) => {
+        if (allPlayerMap.has(playerName)) allPlayerMap.get(playerName).owner = teamName;
+        else allPlayerMap.set(playerName, { name: playerName, worldRank: 999, owner: teamName });
       });
     });
     return [...allPlayerMap.values()]
       .filter(p => p.name.toLowerCase().includes(term))
       .sort((a, b) => a.worldRank - b.worldRank);
-  }, [globalSearch, allPlayers, teams]);
+  }, [globalSearch, allPlayers, teams, transactions]);
 
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
@@ -566,9 +626,6 @@ export const RostersView = ({
               value={selectedTeam || ''}
               onChange={id => { setSelectedTeam(id); setLineupMode(false); }}
             />
-            {!loggedInUser && !isOwnTeam && (
-              <span style={{ ...theme.badge, ...theme.badgeNavy }}>View Only</span>
-            )}
             {isCommissioner && team && (
               <span style={{ ...theme.badge, background: 'rgba(80,195,120,0.1)', border: '1px solid rgba(80,195,120,0.3)', color: colors.success, fontSize: 10 }}>
                 Acting as Commish
@@ -576,9 +633,9 @@ export const RostersView = ({
             )}
           </div>
 
-          {/* Global search */}
-          <div style={{ position: 'relative', flexShrink: 0, width: 160 }}>
-            <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary }} />
+          {/* Global search — fixed dropdown works on all screen sizes */}
+          <div ref={searchRef} style={{ position: 'relative', flexShrink: 0, width: 160 }}>
+            <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary, zIndex: 1 }} />
             <input
               type="text" placeholder="Search player…"
               value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
@@ -586,8 +643,71 @@ export const RostersView = ({
               onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
               onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
             />
+                {globalSearch.trim().length > 0 && dropdownRect && (
+                  <div style={{
+                    position: 'fixed',
+                    top: dropdownRect.bottom + 4,
+                    right: Math.max(8, window.innerWidth - dropdownRect.right),
+                    width: Math.min(340, window.innerWidth - 16),
+                    maxHeight: '50vh',
+                    overflowY: 'auto',
+                    background: '#1a2744',
+                    border: `1px solid ${colors.borderInput}`,
+                    borderRadius: 4,
+                    boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
+                    zIndex: 9999,
+                  }}>
+                    <div style={{ padding: '6px 12px', borderBottom: `1px solid ${colors.borderSubtle}`, fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>
+                      <button onClick={() => setGlobalSearch('')} style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>✕</button>
+                    </div>
+                    {searchResults.slice(0, 30).map(player => {
+                      const isFa = player.owner === 'Free Agent';
+                      return (
+                      <div key={player.name} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}`,
+                        gap: 8,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                          <img
+                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
+                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+                            alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
+                          />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{player.name}</div>
+                            <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          <FaAddButton
+                            isFa={isFa}
+                            canAdd={!!loggedInUser || isCommissioner}
+                            onAdd={() => {
+                              setPendingAddPlayer(player.name);
+                              setEditingWaiverData({ player: player.name });
+                              setIsWaiverMode(false);
+                              setShowAddDropModal(true);
+                              setGlobalSearch('');
+                            }}
+                          />
+                          {!isFa && (
+                            <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 500, color: colors.textSecondary }}>
+                              {getTeamAbbreviation(player.owner)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      );
+                    })}
+                    {searchResults.length === 0 && (
+                      <div style={{ padding: '12px', fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, textAlign: 'center' }}>No players found</div>
+                    )}
+                  </div>
+                )}
+              </div>
           </div>
-        </div>
 
         {/* Lineup headshots */}
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, minHeight: 72, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -680,72 +800,8 @@ export const RostersView = ({
           </div>
         </div>
 
-        {/* ── Player table — global search ── */}
-        {globalSearch.trim().length > 0 ? (
-          <div>
-            <div style={{
-              ...theme.tableHeaderCell,
-              padding: '8px 16px',
-              borderBottom: `1px solid ${colors.borderSubtle}`,
-              color: colors.textSecondary,
-              fontSize: 11,
-            }}>
-              Search Results ({searchResults.length})
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
-              <colgroup>
-                <col />
-                <col style={{ width: isMobile ? 60 : 70 }} />
-                <col style={{ width: isMobile ? 60 : 70 }} />
-                <col style={{ width: isMobile ? 80 : 100 }} />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center' }}>Events</th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center' }}>Cuts</th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {searchResults.slice(0, 50).map(player => (
-                  <tr key={player.name}
-                    style={{ borderBottom: `1px solid ${colors.borderSubtle}`, transition: 'background 0.15s' }}
-                    onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <td style={{ padding: isMobile ? '8px 10px' : '8px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <img
-                          src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
-                          alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
-                        />
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: colors.textPrimary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name}</div>
-                          <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: isMobile ? '8px 4px' : '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.eventsPlayed || 0}</td>
-                    <td style={{ padding: isMobile ? '8px 4px' : '8px 16px', textAlign: 'center', ...theme.bodyText }}>{globalPlayerStats[player.name]?.cutsMade || 0}</td>
-                    <td style={{ padding: isMobile ? '8px 10px 8px 4px' : '8px 16px', textAlign: 'right' }}>
-                      {player.owner === 'Free Agent'
-                        ? <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: isMobile ? 11 : 12, fontWeight: 500 }}>FA</span>
-                        : <span style={{ ...theme.bodyText, fontWeight: 500, fontSize: isMobile ? 11 : 12 }}>{getTeamAbbreviation(player.owner)}</span>}
-                    </td>
-                  </tr>
-                ))}
-                {searchResults.length === 0 && (
-                  <tr><td colSpan="4" style={theme.emptyState}>No matching players found</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-        ) : (
-          /* ── Roster table ── */
-          <>
+        {/* ── Roster table ── */}
+        <>
           {/* On mobile: slider sits above table as its own row */}
           {isMobile && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 10px 2px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
@@ -940,8 +996,7 @@ export const RostersView = ({
               })}
             </tbody>
           </table>
-          </>
-        )}
+        </>
       </div>
 
       {/* ── Modals ── */}
@@ -958,7 +1013,7 @@ export const RostersView = ({
 
       <AddDropPlayerModal
         isOpen={showAddDropModal}
-        onClose={() => { setShowAddDropModal(false); setEditingWaiverData(null); }}
+        onClose={() => { setShowAddDropModal(false); setEditingWaiverData(null); setPendingAddPlayer(null); }}
         team={team}
         currentRoster={currentRoster}
         allPlayers={allPlayers}
@@ -966,6 +1021,7 @@ export const RostersView = ({
         updateTeams={updateTeams}
         transactions={transactions}
         setTransactions={setTransactions}
+        tournaments={tournaments}
         isWaiverMode={isWaiverMode}
         activeTournamentIndex={activeTournamentIndex}
         nextTournamentIndex={addDropTournamentIndex}
