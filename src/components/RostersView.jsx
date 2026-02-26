@@ -236,11 +236,11 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
   const [hovered, setHovered] = React.useState(false);
   return (
     <div
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56 }}
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, overflow: 'visible' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div style={{ position: 'relative', width: 44, height: 44 }}>
+      <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
         <img
           src={getPlayerHeadshot(player.name, player.limited, headshots)}
           onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
@@ -307,6 +307,7 @@ export const RostersView = ({
   const isMobile            = useIsMobile();
   const [statsView,         setStatsView]         = useState('sfgl');
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
+  const [lineupMode,        setLineupMode]        = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
@@ -441,7 +442,7 @@ export const RostersView = ({
             <TeamDropdown
               teams={teams}
               value={selectedTeam || ''}
-              onChange={id => { setSelectedTeam(id); }}
+              onChange={id => { setSelectedTeam(id); setLineupMode(false); }}
             />
             {isCommissioner && team && (
               <span style={{ ...theme.badge, background: 'rgba(80,195,120,0.1)', border: '1px solid rgba(80,195,120,0.3)', color: colors.success, fontSize: 10 }}>
@@ -479,7 +480,7 @@ export const RostersView = ({
 
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders */}
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, paddingBottom: 6, minHeight: 72 }}>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flexWrap: 'nowrap', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flexWrap: 'nowrap', overflow: 'visible' }}>
             {(() => {
               const lineupPlayers = getSortedRoster(currentRoster).filter(p => team.lineup.includes(p.name));
               const emptySlots = Math.max(0, LINEUP_SIZE - lineupPlayers.length);
@@ -495,7 +496,7 @@ export const RostersView = ({
                         lastName={lastName}
                         nameFontSize={nameFontSize}
                         headshots={headshots}
-                        canEdit={canEditLineup}
+                        canEdit={canEditLineup && lineupMode}
                         onRemove={() => togglePlayerInLineup(player)}
                       />
                     );
@@ -504,18 +505,18 @@ export const RostersView = ({
                     <div
                       key={`empty-${i}`}
                       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, cursor: canEditLineup ? 'pointer' : 'default' }}
-                      onClick={() => { /* visual — roster rows below are already tappable */ }}
+                      onClick={() => { if (canEditLineup) setLineupMode(true); }}
                     >
                       <div style={{
                         width: 44, height: 44, borderRadius: '50%',
-                        background: 'rgba(255,255,255,0.04)',
-                        border: `2px dashed ${canEditLineup ? 'rgba(80,180,120,0.45)' : 'rgba(255,255,255,0.12)'}`,
+                        background: lineupMode ? 'rgba(80,180,120,0.06)' : 'rgba(255,255,255,0.04)',
+                        border: `2px dashed ${canEditLineup ? (lineupMode ? 'rgba(80,180,120,0.6)' : 'rgba(80,180,120,0.35)') : 'rgba(255,255,255,0.12)'}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         transition: 'all 0.15s',
                       }}>
                         <span style={{
                           fontSize: 20, fontWeight: 300, lineHeight: 1,
-                          color: canEditLineup ? 'rgba(80,180,120,0.6)' : 'rgba(255,255,255,0.15)',
+                          color: canEditLineup ? (lineupMode ? 'rgba(80,180,120,0.8)' : 'rgba(80,180,120,0.45)') : 'rgba(255,255,255,0.15)',
                         }}>+</span>
                       </div>
                       <div style={{
@@ -532,6 +533,26 @@ export const RostersView = ({
               );
             })()}
           </div>
+          {/* Done button — appears only in edit mode */}
+          {lineupMode && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+              <button
+                onClick={() => setLineupMode(false)}
+                style={{
+                  padding: '5px 20px', borderRadius: 4,
+                  background: 'rgba(80,180,120,0.15)',
+                  border: '1.5px solid rgba(80,180,120,0.5)',
+                  fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
+                  color: colors.success, cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.25)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.15)'; }}
+              >
+                ✓ Done
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -594,7 +615,7 @@ export const RostersView = ({
                 const isInLineup     = team.lineup.includes(player.name);
                 const canAddToLineup = team.lineup.length < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
                 const hasLineup      = team.lineup.length > 0;
-                const isEditing      = canEditLineup;
+                const isEditing      = canEditLineup && lineupMode;
                 const isBenched      = hasLineup && !isInLineup && !isEditing;
                 const dimColor       = 'rgba(255,255,255,0.45)';
                 const rowClickable   = isEditing && isOwnTeam && (isInLineup || canAddToLineup);
