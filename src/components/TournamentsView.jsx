@@ -7,7 +7,7 @@ import {
   formatLockTime,
   areLineupsLocked,
   TIMEZONE_OPTIONS,
-} from '../utils/tournamentTimezones';
+} from '../utils/tournamenttimezones';
 
 // SWINGS defined locally (4 swings only)
 const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
