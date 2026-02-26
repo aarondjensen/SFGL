@@ -312,6 +312,7 @@ export const RostersView = ({
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
+  const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
   const [showMulliganModal, setShowMulliganModal] = useState(false);
   const [globalSearch,      setGlobalSearch]      = useState('');
   const searchRef = React.useRef(null);
@@ -621,27 +622,64 @@ export const RostersView = ({
                       <span>{searchResults.length} result{searchResults.length !== 1 ? 's' : ''}</span>
                       <button onClick={() => setGlobalSearch('')} style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>✕</button>
                     </div>
-                    {searchResults.slice(0, 30).map(player => (
+                    {searchResults.slice(0, 30).map(player => {
+                      const isFa = player.owner === 'Free Agent';
+                      return (
                       <div key={player.name} style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                         padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}`,
+                        gap: 8,
                       }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                           <img
                             src={getPlayerHeadshot(player.name, player.limited, headshots)}
                             onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
                             alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
                           />
-                          <div>
-                            <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{player.name}</div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{player.name}</div>
                             <div style={theme.smallText}>#{player.worldRank === 999 ? 'NR' : player.worldRank}</div>
                           </div>
                         </div>
-                        <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 500, color: player.owner === 'Free Agent' ? colors.success : colors.textSecondary }}>
-                          {player.owner === 'Free Agent' ? 'FA' : getTeamAbbreviation(player.owner)}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          {isFa ? (
+                            <span style={{
+                              fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                              padding: '2px 7px', borderRadius: 3, letterSpacing: '0.5px',
+                              background: 'rgba(80,180,120,0.18)',
+                              border: '1px solid rgba(80,180,120,0.5)',
+                              color: colors.success,
+                            }}>FA</span>
+                          ) : (
+                            <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 500, color: colors.textSecondary }}>
+                              {getTeamAbbreviation(player.owner)}
+                            </span>
+                          )}
+                          {isFa && isOwnTeam && (
+                            <button
+                              onClick={() => {
+                                setPendingAddPlayer(player.name);
+                                setEditingWaiverData({ player: player.name });
+                                setIsWaiverMode(false);
+                                setShowAddDropModal(true);
+                                setGlobalSearch('');
+                              }}
+                              style={{
+                                width: 24, height: 24, borderRadius: '50%',
+                                background: 'rgba(80,180,120,0.18)',
+                                border: '1px solid rgba(80,180,120,0.5)',
+                                color: colors.success,
+                                fontWeight: 700, fontSize: 16, lineHeight: 1,
+                                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                              title={`Add ${player.name}`}
+                            >+</button>
+                          )}
+                        </div>
                       </div>
-                    ))}
+                      );
+                    })}
                     {searchResults.length === 0 && (
                       <div style={{ padding: '12px', fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, textAlign: 'center' }}>No players found</div>
                     )}
@@ -954,7 +992,7 @@ export const RostersView = ({
 
       <AddDropPlayerModal
         isOpen={showAddDropModal}
-        onClose={() => { setShowAddDropModal(false); setEditingWaiverData(null); }}
+        onClose={() => { setShowAddDropModal(false); setEditingWaiverData(null); setPendingAddPlayer(null); }}
         team={team}
         currentRoster={currentRoster}
         allPlayers={allPlayers}
