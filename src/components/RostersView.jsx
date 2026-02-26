@@ -572,42 +572,7 @@ export const RostersView = ({
     return `${days[date.getDay()]} ${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${ampm} ET`;
   };
 
-  // ── Action button styles ──
-  const actionBtn = (active, activeColor) => ({
-    width: '100%', height: 56,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: '0 4px', borderRadius: 2,
-    fontFamily: fonts.sans, fontSize: 11, fontWeight: 500,
-    textAlign: 'center', cursor: active ? 'pointer' : 'not-allowed',
-    transition: 'all 0.15s',
-    background: 'rgba(255,255,255,0.03)',
-    border: active
-      ? `1px solid ${activeColor}`
-      : `1px solid ${colors.borderSubtle}`,
-    color: active ? activeColor : colors.textMuted,
-  });
-
-  const renderMulliganButton = () => {
-    const etDay = new Date().getDay();
-    const isMulliganDay = etDay >= 4 && etDay <= 6;
-    let btnLabel, btnAction, isDisabled, activeColor;
-
-    if (activeMulliganTx) {
-      btnLabel = 'Undo Mull.'; activeColor = 'rgba(100,150,255,0.8)';
-      if (canUndoMulligan) { btnAction = () => handleUndoMulligan(activeMulliganTx); isDisabled = false; }
-      else { isDisabled = true; }
-    } else {
-      btnLabel = 'Mulligan'; activeColor = colors.textGoldDim; btnAction = () => setShowMulliganModal(true);
-      isDisabled = mulliganRemaining === 0 || !isMulliganDay || !isOwnTeam || !activeTournament || team.lineup.length === 0;
-    }
-
-    return (
-      <button onClick={isDisabled ? undefined : btnAction} disabled={isDisabled}
-        style={actionBtn(!isDisabled, activeColor)}>
-        {btnLabel}
-      </button>
-    );
-  };
+  // ── Mulligan state ──
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'hidden' }}>
@@ -618,8 +583,8 @@ export const RostersView = ({
         background: 'linear-gradient(135deg, rgba(18,46,82,0.4) 0%, rgba(255,255,255,0.02) 100%)',
         overflow: 'visible',
       }}>
+        {/* Row 1: Team selector + search bar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, overflow: 'visible' }}>
-          {/* Team selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
             <TeamDropdown
               teams={teams}
@@ -628,16 +593,16 @@ export const RostersView = ({
             />
             {isCommissioner && team && (
               <span style={{ ...theme.badge, background: 'rgba(80,195,120,0.1)', border: '1px solid rgba(80,195,120,0.3)', color: colors.success, fontSize: 10 }}>
-                Acting as Commish
+                Commish
               </span>
             )}
           </div>
 
-          {/* Global search — fixed dropdown works on all screen sizes */}
-          <div ref={searchRef} style={{ position: 'relative', flexShrink: 0, width: 160 }}>
+          {/* Search bar */}
+          <div ref={searchRef} style={{ position: 'relative', flexShrink: 0, width: isMobile ? 140 : 180 }}>
             <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: colors.textSecondary, zIndex: 1 }} />
             <input
-              type="text" placeholder="Search player…"
+              type="text" placeholder="Search…"
               value={globalSearch} onChange={e => setGlobalSearch(e.target.value)}
               style={{ ...theme.input, paddingLeft: 28, fontSize: 16, padding: '7px 10px 7px 28px' }}
               onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
@@ -685,9 +650,10 @@ export const RostersView = ({
                             isFa={isFa}
                             canAdd={!!loggedInUser || isCommissioner}
                             onAdd={() => {
+                              const useWaiver = !faStatus.open && waiverStatus.open;
                               setPendingAddPlayer(player.name);
                               setEditingWaiverData({ player: player.name });
-                              setIsWaiverMode(false);
+                              setIsWaiverMode(useWaiver);
                               setShowAddDropModal(true);
                               setGlobalSearch('');
                             }}
@@ -709,30 +675,69 @@ export const RostersView = ({
               </div>
           </div>
 
-        {/* Lineup headshots */}
-        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, minHeight: 72, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {/* Lineup headshots + Edit Lineup button */}
+        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, minHeight: 72 }}>
           {team.lineup.length > 0 ? (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, width: '100%' }}>
-              {getSortedRoster(currentRoster)
-                .filter(p => team.lineup.includes(p.name))
-                .map(player => {
-                  const lastName  = player.name.split(' ').pop();
-                  const nameFontSize = lastName.length > 9 ? 9 : lastName.length > 7 ? 10 : 11;
-                  return (
-                    <LineupHeadshot
-                      key={player.name}
-                      player={player}
-                      lastName={lastName}
-                      nameFontSize={nameFontSize}
-                      headshots={headshots}
-                      canEdit={canEditLineup}
-                      onRemove={() => { if (!lineupMode) setLineupMode(true); togglePlayerInLineup(player); }}
-                    />
-                  );
-                })}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Edit lineup button — left side */}
+              {canEditLineup && (
+                <button
+                  onClick={() => setLineupMode(!lineupMode)}
+                  style={{
+                    flexShrink: 0,
+                    width: 32, height: 32, borderRadius: '50%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: lineupMode ? 'rgba(80,195,120,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: `1.5px solid ${lineupMode ? colors.success : 'rgba(255,255,255,0.15)'}`,
+                    color: lineupMode ? colors.success : colors.textSecondary,
+                    cursor: 'pointer', transition: 'all 0.15s',
+                    fontSize: 14,
+                  }}
+                  title={lineupMode ? 'Done editing' : 'Edit lineup'}
+                >
+                  {lineupMode ? '✓' : '✏'}
+                </button>
+              )}
+              {/* Headshots */}
+              <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flex: 1, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                {getSortedRoster(currentRoster)
+                  .filter(p => team.lineup.includes(p.name))
+                  .map(player => {
+                    const lastName  = player.name.split(' ').pop();
+                    const nameFontSize = lastName.length > 9 ? 9 : lastName.length > 7 ? 10 : 11;
+                    return (
+                      <LineupHeadshot
+                        key={player.name}
+                        player={player}
+                        lastName={lastName}
+                        nameFontSize={nameFontSize}
+                        headshots={headshots}
+                        canEdit={canEditLineup && lineupMode}
+                        onRemove={() => togglePlayerInLineup(player)}
+                      />
+                    );
+                  })}
+              </div>
             </div>
           ) : (
-            <div style={{ ...theme.smallText, textAlign: 'center', width: '100%' }}>No lineup set</div>
+            canEditLineup ? (
+              <button
+                onClick={() => setLineupMode(true)}
+                style={{
+                  width: '100%', padding: '10px 0',
+                  background: 'rgba(80,195,120,0.08)',
+                  border: `1px solid rgba(80,195,120,0.35)`,
+                  borderRadius: 3,
+                  fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
+                  color: colors.success, cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                ▶ Set Lineup
+              </button>
+            ) : (
+              <div style={{ ...theme.smallText, textAlign: 'center', width: '100%' }}>No lineup set</div>
+            )
           )}
         </div>
       </div>
@@ -747,57 +752,79 @@ export const RostersView = ({
       {/* ── Action buttons + roster table ── */}
       <div style={{ ...theme.card }}>
 
-        {/* Action header */}
+        {/* Action header — compact row */}
         <div style={{
           ...theme.cardHeader,
-          flexDirection: 'column', alignItems: 'stretch', gap: 10,
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          flexWrap: 'wrap',
         }}>
-          {activeTournament && firstTeeTime && (
-            <div style={{ overflow: 'hidden' }}>
-              <span style={{ ...theme.smallText }}>· {formatTeeTime(firstTeeTime)}</span>
-            </div>
+          {/* Add Player button — auto-detects FA vs Waiver */}
+          {isOwnTeam && (
+            <button
+              onClick={() => {
+                const useWaiver = !faStatus.open && waiverStatus.open;
+                setIsWaiverMode(useWaiver);
+                setShowAddDropModal(true);
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '6px 12px', borderRadius: 3,
+                fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                cursor: (faStatus.open || waiverStatus.open) ? 'pointer' : 'default',
+                transition: 'all 0.15s',
+                background: (faStatus.open || waiverStatus.open) ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${(faStatus.open || waiverStatus.open) ? 'rgba(80,180,120,0.5)' : colors.borderSubtle}`,
+                color: (faStatus.open || waiverStatus.open) ? colors.success : colors.textMuted,
+              }}
+            >
+              <span style={{ fontSize: 13, lineHeight: 1 }}>+</span>
+              <span>Add Player</span>
+              <span style={{
+                fontSize: 9, fontWeight: 500, opacity: 0.7,
+                marginLeft: 2,
+              }}>
+                {faStatus.open ? 'FA' : waiverStatus.open ? 'WVR' : 'Closed'}
+              </span>
+            </button>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, minWidth: 0 }}>
-            {/* Lineup button */}
-            {(() => {
-              const hasLineup = team.lineup.length > 0;
-              const needsSubmit = canEditLineup && !hasLineup && !lineupMode;
-              return (
-                <button
-                  onClick={() => { if (lineupMode && !hasLineup) return; setLineupMode(!lineupMode); }}
-                  disabled={!canEditLineup || (lineupMode && !hasLineup)}
+          {/* Mulligan button — compact */}
+          {isOwnTeam && activeTournament && (() => {
+            const etDay = new Date().getDay();
+            const isMulliganDay = etDay >= 4 && etDay <= 6;
+            if (activeMulliganTx) {
+              return canUndoMulligan ? (
+                <button onClick={() => handleUndoMulligan(activeMulliganTx)}
                   style={{
-                    ...actionBtn(canEditLineup, colors.success),
-                    border: canEditLineup ? `1px solid ${colors.success}` : `1px solid ${colors.borderSubtle}`,
-                    background: needsSubmit ? 'rgba(80,195,120,0.15)' : 'rgba(255,255,255,0.03)',
-                    boxShadow: needsSubmit ? '0 0 10px rgba(80,195,120,0.25)' : 'none',
-                    fontWeight: needsSubmit ? 700 : 500,
-                  }}
-                >
-                  {lineupMode ? '✓ Save' : hasLineup ? '✏ Edit Lineup' : '▶ Set Lineup'}
+                    padding: '6px 10px', borderRadius: 3,
+                    fontFamily: fonts.sans, fontSize: 11, fontWeight: 500,
+                    background: 'rgba(100,150,255,0.1)', border: '1px solid rgba(100,150,255,0.4)',
+                    color: 'rgba(100,150,255,0.8)', cursor: 'pointer', transition: 'all 0.15s',
+                  }}>
+                  Undo Mulligan
                 </button>
-              );
-            })()}
+              ) : null;
+            }
+            const canMull = mulliganRemaining > 0 && isMulliganDay && team.lineup.length > 0;
+            return canMull ? (
+              <button onClick={() => setShowMulliganModal(true)}
+                style={{
+                  padding: '6px 10px', borderRadius: 3,
+                  fontFamily: fonts.sans, fontSize: 11, fontWeight: 500,
+                  background: 'rgba(245,197,24,0.08)', border: `1px solid rgba(245,197,24,0.3)`,
+                  color: colors.textGoldDim, cursor: 'pointer', transition: 'all 0.15s',
+                }}>
+                Mulligan ({mulliganRemaining})
+              </button>
+            ) : null;
+          })()}
 
-            {/* Free agent button */}
-            <button
-              onClick={() => { setIsWaiverMode(false); setShowAddDropModal(true); }}
-              disabled={!isOwnTeam}
-              style={actionBtn(isOwnTeam, 'rgba(220,200,80,0.8)')}
-            >
-              Free Agent
-            </button>
-
-            {/* Waiver button */}
-            <button
-              onClick={() => { setIsWaiverMode(true); setShowAddDropModal(true); }}
-              disabled={!isOwnTeam}
-              style={actionBtn(isOwnTeam, 'rgba(220,200,80,0.8)')}
-            >
-              Waiver
-            </button>
-          </div>
+          {/* Tee time — pushed right */}
+          {activeTournament && firstTeeTime && (
+            <span style={{ ...theme.smallText, marginLeft: 'auto', flexShrink: 0 }}>
+              {formatTeeTime(firstTeeTime)}
+            </span>
+          )}
         </div>
 
         {/* ── Roster table ── */}
