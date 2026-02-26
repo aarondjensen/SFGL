@@ -336,20 +336,35 @@ const FantasyGolfLeague = () => {
             </span>
           </div>
         )}
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400 }}>
-            {getSegmentByDate()}
+            {(() => {
+              // Derive swing from tournament data (same source of truth as TournamentsView):
+              // 1. Currently playing tournament
+              // 2. Next upcoming tournament
+              // 3. Last completed tournament
+              // 4. Fallback to calendar date
+              const active = safeTournaments.find(t => t.playing);
+              if (active?.segment) return active.segment;
+              const next = safeTournaments.find(t => !t.completed && !t.playing);
+              if (next?.segment) return next.segment;
+              const lastDone = [...safeTournaments].reverse().find(t => t.completed);
+              if (lastDone?.segment) return lastDone.segment;
+              return getSegmentByDate();
+            })()}
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {currentTournament && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
               <span>⛳</span> {currentTournament.name}
             </div>
           )}
           {isSyncing && (
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="ml-auto animate-pulse">
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="animate-pulse">
               Saving…
             </span>
           )}
+          </div>
         </div>
 
         {/* ── Navigation ── */}
