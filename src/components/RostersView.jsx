@@ -81,27 +81,28 @@ const displayName = (fullName, isMobile) => {
 };
 
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
-const FaAddButton = ({ isFa, isOwnTeam, onAdd }) => {
+const FaAddButton = ({ isFa, canAdd, onAdd }) => {
   const [hovered, setHovered] = React.useState(false);
   if (!isFa) return null;
-  if (!isOwnTeam) return (
-    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 3, letterSpacing: '0.5px', background: 'rgba(80,180,120,0.18)', border: '1px solid rgba(80,180,120,0.5)', color: 'rgba(80,180,120,0.9)' }}>FA</span>
+  if (!canAdd) return (
+    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 3, letterSpacing: '0.5px', background: 'rgba(80,180,120,0.18)', border: '1px solid rgba(80,180,120,0.5)', color: 'rgba(80,180,120,0.9)', display: 'inline-block' }}>FA</span>
   );
   return (
     <button
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onMouseDown={e => e.preventDefault()} // prevent blur stealing focus
-      onClick={onAdd}
+      onMouseDown={e => e.preventDefault()}
+      onClick={e => { e.stopPropagation(); onAdd(); }}
       style={{
         fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, fontWeight: 700,
-        padding: '2px 10px', borderRadius: 3, letterSpacing: '0.5px',
-        background: hovered ? 'rgba(80,180,120,0.35)' : 'rgba(80,180,120,0.18)',
-        border: `1px solid ${hovered ? 'rgba(80,180,120,0.8)' : 'rgba(80,180,120,0.5)'}`,
-        color: 'rgba(80,180,120,0.9)',
+        padding: '3px 8px', borderRadius: 3, letterSpacing: '0.5px',
+        background: hovered ? 'rgba(80,180,120,0.4)' : 'rgba(80,180,120,0.18)',
+        border: `1px solid ${hovered ? 'rgba(80,180,120,0.9)' : 'rgba(80,180,120,0.5)'}`,
+        color: hovered ? '#fff' : 'rgba(80,180,120,0.9)',
         cursor: 'pointer',
-        transition: 'background 0.15s, border-color 0.15s',
-        minWidth: 42, textAlign: 'center',
+        transition: 'all 0.15s',
+        minWidth: 46, textAlign: 'center',
+        display: 'inline-block',
       }}
     >
       {hovered ? '+ Add' : 'FA'}
@@ -399,6 +400,16 @@ export const RostersView = ({
     prevLoggedInUser.current = loggedInUser;
   }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
 
+  // Clear search when navigating away from this view
+  useEffect(() => {
+    return () => setGlobalSearch('');
+  }, []);
+
+  // Clear search on login/logout
+  useEffect(() => {
+    setGlobalSearch('');
+  }, [loggedInUser]);
+
   // Update dropdown position whenever search changes
   useEffect(() => {
     if (globalSearch.trim() && searchRef.current) {
@@ -672,7 +683,7 @@ export const RostersView = ({
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                           <FaAddButton
                             isFa={isFa}
-                            isOwnTeam={isOwnTeam}
+                            canAdd={!!loggedInUser || isCommissioner}
                             onAdd={() => {
                               setPendingAddPlayer(player.name);
                               setEditingWaiverData({ player: player.name });
