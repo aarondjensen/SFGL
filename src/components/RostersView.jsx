@@ -303,7 +303,6 @@ export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
   loggedInUser, isCommissioner, globalPlayerStats, headshots,
-  firstTeeTime,
 }) => {
   const isMobile            = useIsMobile();
   const [statsView,         setStatsView]         = useState('sfgl');
@@ -426,13 +425,6 @@ export const RostersView = ({
   const canEditLineup = isOwnTeam && (lineupOpen || isCommissioner);
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
 
-  const formatTeeTime = (date) => {
-    if (!date) return '';
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const hours = date.getHours(); const minutes = date.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    return `${days[date.getDay()]} ${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${ampm} ET`;
-  };
 
 
   return (
@@ -459,64 +451,39 @@ export const RostersView = ({
             )}
           </div>
 
-          {/* Add/Search Player button — always one of FA (green) or Waiver (yellow) */}
-          {isOwnTeam && (() => {
-            const isFaMode = faStatus.open;
-            const btnColor = isFaMode ? 'rgba(80,180,120,0.9)' : 'rgba(220,180,60,0.9)';
-            const btnBg = isFaMode ? 'rgba(80,180,120,0.12)' : 'rgba(220,180,60,0.1)';
-            const btnBorder = isFaMode ? 'rgba(80,180,120,0.5)' : 'rgba(220,180,60,0.45)';
-            return (
-              <button
-                onClick={() => {
-                  setIsWaiverMode(!isFaMode);
-                  setShowAddDropModal(true);
-                }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '7px 14px', borderRadius: 4, flexShrink: 0,
-                  fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                  background: btnBg,
-                  border: `1.5px solid ${btnBorder}`,
-                  color: btnColor,
-                  letterSpacing: '0.2px',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = isFaMode ? 'rgba(80,180,120,0.22)' : 'rgba(220,180,60,0.18)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = btnBg; }}
-              >
-                <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>+</span>
-                <span>Add Player</span>
-              </button>
-            );
-          })()}
+          {/* Add Player button — always green */}
+          {isOwnTeam && (
+            <button
+              onClick={() => {
+                setIsWaiverMode(!faStatus.open);
+                setShowAddDropModal(true);
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 14px', borderRadius: 4, flexShrink: 0,
+                fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                background: 'rgba(80,180,120,0.12)',
+                border: '1.5px solid rgba(80,180,120,0.5)',
+                color: 'rgba(80,180,120,0.9)',
+                letterSpacing: '0.2px',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.12)'; }}
+            >
+              <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>+</span>
+              <span>Add Player</span>
+            </button>
+          )}
           </div>
 
-        {/* Lineup headshots + Edit Lineup button */}
+        {/* Lineup headshots + Edit Lineup */}
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, minHeight: 72 }}>
           {team.lineup.length > 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {/* Edit lineup button — left side */}
-              {canEditLineup && (
-                <button
-                  onClick={() => setLineupMode(!lineupMode)}
-                  style={{
-                    flexShrink: 0,
-                    width: 32, height: 32, borderRadius: '50%',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: lineupMode ? 'rgba(80,195,120,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: `1.5px solid ${lineupMode ? colors.success : 'rgba(255,255,255,0.15)'}`,
-                    color: lineupMode ? colors.success : colors.textSecondary,
-                    cursor: 'pointer', transition: 'all 0.15s',
-                    fontSize: 14,
-                  }}
-                  title={lineupMode ? 'Done editing' : 'Edit lineup'}
-                >
-                  {lineupMode ? '✓' : '✏'}
-                </button>
-              )}
-              {/* Headshots */}
-              <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flex: 1, flexWrap: 'nowrap', overflow: 'hidden' }}>
+            <div>
+              {/* Headshots — centered */}
+              <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flexWrap: 'nowrap', overflow: 'hidden' }}>
                 {getSortedRoster(currentRoster)
                   .filter(p => team.lineup.includes(p.name))
                   .map(player => {
@@ -535,6 +502,23 @@ export const RostersView = ({
                     );
                   })}
               </div>
+              {/* Edit / Done link — right-aligned below headshots */}
+              {canEditLineup && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 4, marginTop: 4 }}>
+                  <button
+                    onClick={() => setLineupMode(!lineupMode)}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      color: lineupMode ? colors.success : colors.textSecondary,
+                      padding: '2px 6px',
+                      transition: 'color 0.15s',
+                    }}
+                  >
+                    {lineupMode ? '✓ Done' : 'Edit Lineup'}
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             canEditLineup ? (
@@ -569,42 +553,29 @@ export const RostersView = ({
       {/* ── Action buttons + roster table ── */}
       <div style={{ ...theme.card }}>
 
-        {/* Action header — tee time */}
-        <div style={{
-          ...theme.cardHeader,
-          flexDirection: 'row', alignItems: 'center', gap: 8,
-        }}>
-          {activeTournament && firstTeeTime && (
-            <span style={{ ...theme.smallText }}>
-              {formatTeeTime(firstTeeTime)}
-            </span>
-          )}
+        {/* ── SFGL / PGAT slider — right-aligned above earnings column ── */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+          <div style={{
+            position: 'relative', display: 'flex',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(180,160,100,0.2)',
+            borderRadius: 4, padding: 2, width: 92,
+          }}>
+            <div style={{
+              position: 'absolute', top: 2, bottom: 2,
+              left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2,
+              width: 'calc(50% - 3px)', borderRadius: 2,
+              background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)',
+              border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`,
+              transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none',
+            }} />
+            <button onClick={() => setStatsView('sfgl')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'sfgl' ? colors.textGold : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>SFGL</button>
+            <button onClick={() => setStatsView('pgat')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>PGAT</button>
+          </div>
         </div>
 
         {/* ── Roster table ── */}
         <>
-          {/* On mobile: slider sits above table as its own row */}
-          {isMobile && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 10px 2px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-              <div style={{
-                position: 'relative', display: 'flex',
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(180,160,100,0.2)',
-                borderRadius: 4, padding: 2, width: 88,
-              }}>
-                <div style={{
-                  position: 'absolute', top: 2, bottom: 2,
-                  left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2,
-                  width: 'calc(50% - 3px)', borderRadius: 2,
-                  background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)',
-                  border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`,
-                  transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none',
-                }} />
-                <button onClick={() => setStatsView('sfgl')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'sfgl' ? colors.textGold : colors.textMuted, cursor: 'pointer' }}>SFGL</button>
-                <button onClick={() => setStatsView('pgat')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted, cursor: 'pointer' }}>PGAT</button>
-              </div>
-            </div>
-          )}
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
               <col />
@@ -621,29 +592,8 @@ export const RostersView = ({
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   {isMobile ? 'Cuts' : 'Cuts Made'}
                 </th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: isMobile ? 'center' : 'right', paddingRight: isMobile ? 10 : 8 }}>
-                  {!isMobile && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      <div style={{
-                        position: 'relative', display: 'flex',
-                        background: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(180,160,100,0.2)',
-                        borderRadius: 4, padding: 2, width: 96, flexShrink: 0,
-                      }}>
-                        <div style={{
-                          position: 'absolute', top: 2, bottom: 2,
-                          left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2,
-                          width: 'calc(50% - 3px)', borderRadius: 2,
-                          background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)',
-                          border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`,
-                          transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none',
-                        }} />
-                        <button onClick={() => setStatsView('sfgl')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'sfgl' ? colors.textGold : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>SFGL</button>
-                        <button onClick={() => setStatsView('pgat')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>PGAT</button>
-                      </div>
-                    </div>
-                  )}
-                  {isMobile && <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', display: 'block', textAlign: 'center' }}>$</span>}
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 10 : 8 }}>
+                  <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings</span>
                 </th>
               </tr>
             </thead>
