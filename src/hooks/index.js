@@ -183,9 +183,23 @@ export const useLeague = (STORAGE_KEYS) => {
     load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Refs for stable callback dependencies ───────────────────────────────
+  const teamsRef        = useRef(teams);
+  const tournamentsRef  = useRef(tournaments);
+  const transactionsRef = useRef(transactions);
+  const settingsRef     = useRef(settings);
+  const statsRef        = useRef(globalPlayerStats);
+  const headshotsRef    = useRef(headshots);
+  useEffect(() => { teamsRef.current = teams; }, [teams]);
+  useEffect(() => { tournamentsRef.current = tournaments; }, [tournaments]);
+  useEffect(() => { transactionsRef.current = transactions; }, [transactions]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => { statsRef.current = globalPlayerStats; }, [globalPlayerStats]);
+  useEffect(() => { headshotsRef.current = headshots; }, [headshots]);
+
   // ── Persisted updaters ────────────────────────────────────────────────────
   const updateTeams = useCallback(async (next) => {
-    const resolved = typeof next === 'function' ? next(teams) : next;
+    const resolved = typeof next === 'function' ? next(teamsRef.current) : next;
     setTeams(resolved);
     try {
       setIsSyncing(true);
@@ -198,10 +212,10 @@ export const useLeague = (STORAGE_KEYS) => {
     } finally {
       setIsSyncing(false);
     }
-  }, [teams, STORAGE_KEYS.TEAMS]);
+  }, [STORAGE_KEYS.TEAMS]);
 
   const updateTournaments = useCallback(async (next) => {
-    const resolved = typeof next === 'function' ? next(tournaments) : next;
+    const resolved = typeof next === 'function' ? next(tournamentsRef.current) : next;
     setTournaments(resolved);
     try {
       setIsSyncing(true);
@@ -214,10 +228,10 @@ export const useLeague = (STORAGE_KEYS) => {
     } finally {
       setIsSyncing(false);
     }
-  }, [tournaments, STORAGE_KEYS.TOURNAMENTS]);
+  }, [STORAGE_KEYS.TOURNAMENTS]);
 
   const updateTransactions = useCallback(async (next) => {
-    const resolved = typeof next === 'function' ? next(transactions) : next;
+    const resolved = typeof next === 'function' ? next(transactionsRef.current) : next;
     setTransactions(resolved);
     const { transactionsApi } = await import('../api/supabase');
     transactionsApi.setAll(resolved).catch(e =>
@@ -226,10 +240,10 @@ export const useLeague = (STORAGE_KEYS) => {
     storage.set(STORAGE_KEYS.TRANSACTIONS, resolved).catch(e =>
       console.error('[useLeague] transactions backup failed:', e)
     );
-  }, [transactions, STORAGE_KEYS.TRANSACTIONS]);
+  }, [STORAGE_KEYS.TRANSACTIONS]);
 
   const updateSettings = useCallback(async (next) => {
-    const resolved = typeof next === 'function' ? next(settings) : next;
+    const resolved = typeof next === 'function' ? next(settingsRef.current) : next;
     setSettings(resolved);
     try {
       const { settingsApi } = await import('../api/supabase');
@@ -241,10 +255,10 @@ export const useLeague = (STORAGE_KEYS) => {
       console.error('[useLeague] settings write failed:', e);
       try { await storage.set(STORAGE_KEYS.SETTINGS, resolved); } catch {}
     }
-  }, [settings, STORAGE_KEYS.SETTINGS]);
+  }, [STORAGE_KEYS.SETTINGS]);
 
   const updateGlobalStats = useCallback(async (next) => {
-    const resolved = typeof next === 'function' ? next(globalPlayerStats) : next;
+    const resolved = typeof next === 'function' ? next(statsRef.current) : next;
     setGlobalPlayerStats(resolved);
     try {
       const { playerStatsApi } = await import('../api/supabase');
@@ -254,10 +268,10 @@ export const useLeague = (STORAGE_KEYS) => {
       console.error('[useLeague] stats write failed:', e);
       try { await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, resolved); } catch {}
     }
-  }, [globalPlayerStats, STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
+  }, [STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
 
   const updateHeadshots = useCallback(async (next) => {
-    const resolved = typeof next === 'function' ? next(headshots) : next;
+    const resolved = typeof next === 'function' ? next(headshotsRef.current) : next;
     setHeadshots(resolved);
     try {
       const { headshotsApi } = await import('../api/supabase');
@@ -267,7 +281,7 @@ export const useLeague = (STORAGE_KEYS) => {
       console.error('[useLeague] headshots write failed:', e);
       try { await storage.set(STORAGE_KEYS.HEADSHOTS, resolved); } catch {}
     }
-  }, [headshots, STORAGE_KEYS.HEADSHOTS]);
+  }, [STORAGE_KEYS.HEADSHOTS]);
 
   const updateRankings = useCallback(async (players) => {
     setAllPlayers(players);

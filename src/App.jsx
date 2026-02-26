@@ -14,7 +14,7 @@ import LoginPage            from './components/LoginPage';
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi, sfglDataApi } from './api/supabase';
+import { managerAuthApi, tournamentResultsApi } from './api/supabase';
 
 
 
@@ -39,7 +39,6 @@ const FantasyGolfLeague = () => {
   const [adminPassword,         setAdminPassword]         = useState('');
   const [firstTeeTime,          setFirstTeeTime]          = useState(null);
   const [resultsHydrated,       setResultsHydrated]       = useState(false);
-  const [supabaseReady,         setSupabaseReady]         = useState(false);
 
   const league = useLeague(STORAGE_KEYS);
 
@@ -123,42 +122,6 @@ const FantasyGolfLeague = () => {
     }).catch(() => {});
   }, [resolvedTeams]);
 
-  // ── Primary Supabase boot hydration ──────────────────────────────────────
-  // The app's storage layer reads/writes sfgl_data using STORAGE_KEYS as keys.
-  // On a fresh device (mobile/new browser) localStorage is empty so useLeague
-  // returns INITIAL_TEAMS. This effect reads the real data directly from the
-  // sfgl_data table and overwrites empty state before rendering begins.
-  useEffect(() => {
-    if (loading) return;
-    const hydrateFromSupabase = async () => {
-      try {
-        const rows = await sfglDataApi.getMany([
-          STORAGE_KEYS.TEAMS,
-          STORAGE_KEYS.TOURNAMENTS,
-          STORAGE_KEYS.TRANSACTIONS,
-          STORAGE_KEYS.SETTINGS,
-          STORAGE_KEYS.GLOBAL_PLAYER_STATS,
-        ]);
-        if (rows[STORAGE_KEYS.TEAMS]?.length > 0)
-          setTeams(rows[STORAGE_KEYS.TEAMS]);
-        if (rows[STORAGE_KEYS.TOURNAMENTS]?.length > 0)
-          setTournaments(rows[STORAGE_KEYS.TOURNAMENTS]);
-        if (rows[STORAGE_KEYS.TRANSACTIONS]?.length > 0)
-          setTransactions(rows[STORAGE_KEYS.TRANSACTIONS]);
-        if (rows[STORAGE_KEYS.SETTINGS])
-          setSettings(rows[STORAGE_KEYS.SETTINGS]);
-        if (rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS] &&
-            Object.keys(rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS]).length > 0)
-          setGlobalPlayerStats(rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
-      } catch (e) {
-        console.warn('Supabase boot hydration failed:', e.message);
-      } finally {
-        setSupabaseReady(true);
-      }
-    };
-    hydrateFromSupabase();
-  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── Hydrate tournament results from Supabase ─────────────────────────────
   // Hydrate tournament results from Supabase once after load.
   // MERGE only — never overwrites a tournament that already has local results.
@@ -211,7 +174,7 @@ const FantasyGolfLeague = () => {
     setIsCommissioner(false);
   };
 
-  if (loading || !supabaseReady) {
+  if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
         <style>{`
@@ -482,7 +445,7 @@ const FantasyGolfLeague = () => {
       {/* ── Main content ── */}
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 80px" }}>
 
-        <ErrorBoundary>
+        <ErrorBoundary key={activeTab} tabName={activeTab}>
           {activeTab === 'standings' && (
             <StandingsView teams={resolvedTeams} tournaments={safeTournaments} transactions={safeTransactions} />
           )}
