@@ -65,6 +65,9 @@ export const useLeague = (STORAGE_KEYS) => {
 
         console.log('[useLeague] Loading all data from Supabase...');
 
+        // Also import sfglDataApi for fallback reads from the key-value table
+        const { sfglDataApi } = await import('../api/supabase');
+
         // Try to load everything from Supabase first
         try {
           const [
@@ -85,10 +88,23 @@ export const useLeague = (STORAGE_KEYS) => {
             playerRankingsApi.getAll().catch(() => []),
           ]);
 
-          // Set data from Supabase (with localStorage fallback)
+          // Load sfgl_data fallbacks in parallel (key-value table)
+          // Some data may only exist here if it was never synced to dedicated tables
+          const sfglFallback = await sfglDataApi.getMany([
+            STORAGE_KEYS.TEAMS,
+            STORAGE_KEYS.TOURNAMENTS,
+            STORAGE_KEYS.TRANSACTIONS,
+            STORAGE_KEYS.SETTINGS,
+            STORAGE_KEYS.GLOBAL_PLAYER_STATS,
+          ]).catch(() => ({}));
+
+          // Set data: dedicated table → sfgl_data fallback → localStorage fallback
           if (supabaseTeams?.length > 0) {
             setTeams(supabaseTeams);
             console.log(`✓ Loaded ${supabaseTeams.length} teams from Supabase`);
+          } else if (sfglFallback[STORAGE_KEYS.TEAMS]?.length > 0) {
+            setTeams(sfglFallback[STORAGE_KEYS.TEAMS]);
+            console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TEAMS].length} teams from sfgl_data`);
           } else {
             const localTeams = await storage.get(STORAGE_KEYS.TEAMS, null);
             if (localTeams) setTeams(localTeams);
@@ -97,6 +113,9 @@ export const useLeague = (STORAGE_KEYS) => {
           if (supabaseTournaments?.length > 0) {
             setTournaments(supabaseTournaments);
             console.log(`✓ Loaded ${supabaseTournaments.length} tournaments from Supabase`);
+          } else if (sfglFallback[STORAGE_KEYS.TOURNAMENTS]?.length > 0) {
+            setTournaments(sfglFallback[STORAGE_KEYS.TOURNAMENTS]);
+            console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TOURNAMENTS].length} tournaments from sfgl_data`);
           } else {
             const localTournaments = await storage.get(STORAGE_KEYS.TOURNAMENTS, null);
             if (localTournaments) setTournaments(localTournaments);
@@ -105,6 +124,9 @@ export const useLeague = (STORAGE_KEYS) => {
           if (supabaseTransactions?.length > 0) {
             setTransactions(supabaseTransactions);
             console.log(`✓ Loaded ${supabaseTransactions.length} transactions from Supabase`);
+          } else if (sfglFallback[STORAGE_KEYS.TRANSACTIONS]?.length > 0) {
+            setTransactions(sfglFallback[STORAGE_KEYS.TRANSACTIONS]);
+            console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TRANSACTIONS].length} transactions from sfgl_data`);
           } else {
             const localTransactions = await storage.get(STORAGE_KEYS.TRANSACTIONS, null);
             if (localTransactions) setTransactions(localTransactions);
@@ -113,6 +135,9 @@ export const useLeague = (STORAGE_KEYS) => {
           if (supabaseSettings && Object.keys(supabaseSettings).length > 0) {
             setSettings(supabaseSettings);
             console.log(`✓ Loaded settings from Supabase`);
+          } else if (sfglFallback[STORAGE_KEYS.SETTINGS] && Object.keys(sfglFallback[STORAGE_KEYS.SETTINGS]).length > 0) {
+            setSettings(sfglFallback[STORAGE_KEYS.SETTINGS]);
+            console.log(`✓ Loaded settings from sfgl_data`);
           } else {
             const localSettings = await storage.get(STORAGE_KEYS.SETTINGS, null);
             if (localSettings) setSettings(localSettings);
@@ -121,6 +146,9 @@ export const useLeague = (STORAGE_KEYS) => {
           if (supabaseStats && Object.keys(supabaseStats).length > 0) {
             setGlobalPlayerStats(supabaseStats);
             console.log(`✓ Loaded ${Object.keys(supabaseStats).length} player stats from Supabase`);
+          } else if (sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS] && Object.keys(sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS]).length > 0) {
+            setGlobalPlayerStats(sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
+            console.log(`✓ Loaded player stats from sfgl_data`);
           } else {
             const localStats = await storage.get(STORAGE_KEYS.GLOBAL_PLAYER_STATS, null);
             if (localStats) setGlobalPlayerStats(localStats);

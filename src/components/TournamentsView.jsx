@@ -6,7 +6,6 @@ import {
   getLineupLockTime,
   formatLockTime,
   areLineupsLocked,
-  TIMEZONE_OPTIONS,
 } from '../utils/tournamenttimezones';
 
 // SWINGS defined locally (4 swings only)
@@ -127,7 +126,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
       <thead>
         <tr>
           {editMode ? (
-            ['Active', 'Type', 'Tournament', 'Swing', 'Timezone'].map(h => (
+            ['Active', 'Type', 'Tournament', 'Swing', 'Lock Hour'].map(h => (
               <th key={h} style={theme.tableHeaderCell}>{h}</th>
             ))
           ) : (
@@ -143,7 +142,6 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
           const alt = isAlternate(t);
 
           if (editMode) {
-            const detectedTz = getTournamentTimezone({ ...t, timezoneOverride: null });
             return (
               <tr key={t.name}
                 style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
@@ -230,11 +228,11 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                   </select>
                 </td>
 
-                {/* Timezone override */}
+                {/* Lock hour override */}
                 <td style={{ padding: '8px 12px' }}>
                   <select
-                    value={t.timezoneOverride || ''}
-                    onChange={e => updateLocal(realIndex, { timezoneOverride: e.target.value || null })}
+                    value={t.lockHour ?? 7}
+                    onChange={e => updateLocal(realIndex, { lockHour: parseInt(e.target.value) })}
                     style={{
                       ...theme.select,
                       fontSize: 11,
@@ -243,13 +241,11 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                       color: colors.textPrimary,
                       appearance: 'none',
                       WebkitAppearance: 'none',
-                      minWidth: 130,
+                      minWidth: 110,
                     }}
                   >
-                    {TIMEZONE_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.value === '' ? `Auto (${detectedTz.split('/').pop().replace(/_/g, ' ')})` : opt.label}
-                      </option>
+                    {[7, 8, 9, 10, 11, 12].map(h => (
+                      <option key={h} value={h}>{h === 12 ? '12:00 PM' : `${h}:00 AM`}{h === 7 ? ' (default)' : ''}</option>
                     ))}
                   </select>
                 </td>
