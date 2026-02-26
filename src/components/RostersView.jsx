@@ -2,12 +2,12 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { AddDropPlayerModal } from './AddDropPlayerModal';
-import { MulliganModal } from './MulliganModal';
+
 import { useRoster, useWindowStatus } from '../hooks';
 import {
   getSortedRoster, shortName,
   getTeamAbbreviation, getLineupStatus, getFreeAgentWindowStatus, getWaiverWindowStatus,
-  isPastRoundStart, getSegmentByDate, isTournamentLocked,
+  getSegmentByDate, isTournamentLocked,
 } from '../utils';
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
@@ -332,7 +332,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
 export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
-  settings, loggedInUser, isCommissioner, globalPlayerStats, headshots,
+  loggedInUser, isCommissioner, globalPlayerStats, headshots,
   firstTeeTime,
 }) => {
   const isMobile            = useIsMobile();
@@ -342,7 +342,6 @@ export const RostersView = ({
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
-  const [showMulliganModal, setShowMulliganModal] = useState(false);
   const [globalSearch,      setGlobalSearch]      = useState('');
   const searchRef = React.useRef(null);
   const [dropdownRect, setDropdownRect] = React.useState(null);
@@ -471,60 +470,6 @@ export const RostersView = ({
     sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Lineup sync failed:', e.message));
   }, [team, teams, updateTeams, dialog]);
 
-  const handleMulliganConfirm = useCallback(({ playerOut, playerIn, afterRound, isSignatureOrMajor }) => {
-    const mulliganKey   = isSignatureOrMajor ? 'signatureMajor' : 'regular';
-    const newLineup     = team.lineup.map(p => p === playerOut ? playerIn : p);
-    const updatedRoster = team.roster.map(p => {
-      if (p.name === playerOut && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
-      if (p.name === playerIn  && p.limited) return { ...p, starts: p.starts + 1 };
-      return p;
-    });
-    const newMulligans = { ...team.mulligans, [mulliganKey]: (team.mulligans?.[mulliganKey] || 1) - 1 };
-    const newTeams = teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
-    const newTx = {
-      team: team.name, type: 'mulligan', player: playerIn, droppedPlayer: playerOut,
-      fee: 0, segment: settings.currentSegment || '', date: new Date().toLocaleDateString(),
-      tournamentIndex: activeTournamentIndex, status: 'completed',
-      mulliganType: isSignatureOrMajor ? 'signature/major' : 'regular',
-      afterRound, tournament: activeTournament.name,
-    };
-    updateTeams(newTeams);
-    setTransactions(prev => [...prev, newTx]);
-    storage.set(STORAGE_KEYS.TEAMS, newTeams);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Mulligan sync failed:', e.message));
-    // transaction saved via setTransactions -> storage via parent
-    dialog.showToast(`Mulligan used: ${playerOut} → ${playerIn}`, 'success');
-  }, [team, teams, updateTeams, setTransactions, activeTournament, activeTournamentIndex, settings, dialog]);
-
-  const handleUndoMulligan = async (tx) => {
-    const ok = await dialog.showConfirm('Undo Mulligan',
-      `Undo mulligan?\n\nThis will restore ${tx.droppedPlayer} to your lineup and return ${tx.player} to the bench. Your mulligan will be restored.`,
-      { confirmText: 'Undo Mulligan' });
-    if (!ok) return;
-    const newLineup     = team.lineup.map(p => p === tx.player ? tx.droppedPlayer : p);
-    const updatedRoster = team.roster.map(p => {
-      if (p.name === tx.player        && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
-      if (p.name === tx.droppedPlayer && p.limited) return { ...p, starts: p.starts + 1 };
-      return p;
-    });
-    const mulliganKey  = tx.mulliganType === 'signature/major' ? 'signatureMajor' : 'regular';
-    const newMulligans = { ...team.mulligans, [mulliganKey]: (team.mulligans?.[mulliganKey] || 0) + 1 };
-    const newTeams = teams.map(t => t.id === team.id ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
-    updateTeams(newTeams);
-    setTransactions(prev => prev.filter(t => t !== tx));
-    storage.set(STORAGE_KEYS.TEAMS, newTeams);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Undo mulligan sync failed:', e.message));
-    // transactions saved via setTransactions -> storage via parent
-    dialog.showToast('Mulligan successfully undone', 'success');
-  };
-
-  const isSignatureOrMajor = activeTournament?.isSignature || activeTournament?.isMajor;
-  const mulliganKey        = isSignatureOrMajor ? 'signatureMajor' : 'regular';
-  const mulliganRemaining  = team?.mulligans?.[mulliganKey] ?? 0;
-  const activeMulliganTx   = activeTournamentIndex >= 0
-    ? transactions.find(tx => tx.type === 'mulligan' && tx.team === team?.name && tx.tournamentIndex === activeTournamentIndex)
-    : null;
-  const canUndoMulligan = activeMulliganTx && !isPastRoundStart(activeTournament, activeMulliganTx.afterRound + 1);
 
   const pendingWaivers = useMemo(() => {
     if (!team) return [];
@@ -561,8 +506,6 @@ export const RostersView = ({
   const canEditLineup = isOwnTeam && (lineupOpen || isCommissioner);
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
   const waiverStatus  = getWaiverWindowStatus();
-  const lineupPlayers = currentRoster.filter(p => team.lineup.includes(p.name));
-  const benchPlayers  = currentRoster.filter(p => !team.lineup.includes(p.name));
 
   const formatTeeTime = (date) => {
     if (!date) return '';
@@ -572,7 +515,6 @@ export const RostersView = ({
     return `${days[date.getDay()]} ${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${ampm} ET`;
   };
 
-  // ── Mulligan state ──
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'hidden' }}>
@@ -788,36 +730,6 @@ export const RostersView = ({
             </button>
           )}
 
-          {/* Mulligan button — compact */}
-          {isOwnTeam && activeTournament && (() => {
-            const etDay = new Date().getDay();
-            const isMulliganDay = etDay >= 4 && etDay <= 6;
-            if (activeMulliganTx) {
-              return canUndoMulligan ? (
-                <button onClick={() => handleUndoMulligan(activeMulliganTx)}
-                  style={{
-                    padding: '6px 10px', borderRadius: 3,
-                    fontFamily: fonts.sans, fontSize: 11, fontWeight: 500,
-                    background: 'rgba(100,150,255,0.1)', border: '1px solid rgba(100,150,255,0.4)',
-                    color: 'rgba(100,150,255,0.8)', cursor: 'pointer', transition: 'all 0.15s',
-                  }}>
-                  Undo Mulligan
-                </button>
-              ) : null;
-            }
-            const canMull = mulliganRemaining > 0 && isMulliganDay && team.lineup.length > 0;
-            return canMull ? (
-              <button onClick={() => setShowMulliganModal(true)}
-                style={{
-                  padding: '6px 10px', borderRadius: 3,
-                  fontFamily: fonts.sans, fontSize: 11, fontWeight: 500,
-                  background: 'rgba(245,197,24,0.08)', border: `1px solid rgba(245,197,24,0.3)`,
-                  color: colors.textGoldDim, cursor: 'pointer', transition: 'all 0.15s',
-                }}>
-                Mulligan ({mulliganRemaining})
-              </button>
-            ) : null;
-          })()}
 
           {/* Tee time — pushed right */}
           {activeTournament && firstTeeTime && (
@@ -1027,17 +939,6 @@ export const RostersView = ({
       </div>
 
       {/* ── Modals ── */}
-      <MulliganModal
-        isOpen={showMulliganModal}
-        onClose={() => setShowMulliganModal(false)}
-        team={team}
-        activeTournament={activeTournament}
-        isSignatureOrMajor={isSignatureOrMajor}
-        lineupPlayers={lineupPlayers}
-        benchPlayers={benchPlayers}
-        onConfirm={handleMulliganConfirm}
-      />
-
       <AddDropPlayerModal
         isOpen={showAddDropModal}
         onClose={() => { setShowAddDropModal(false); setEditingWaiverData(null); setPendingAddPlayer(null); }}

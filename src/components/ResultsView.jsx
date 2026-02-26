@@ -32,6 +32,13 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                 color: playerNameColor(p, showEarnings),
               }}>
                 {shortName(p.name)}
+                {p.mulliganIn && (
+                  <span title={`Mulligan (replaced ${p.replacedPlayer || '?'})`} style={{
+                    marginLeft: 3, fontSize: 8, fontWeight: 700,
+                    color: 'rgba(160,130,255,0.9)',
+                    letterSpacing: 0.3,
+                  }}>M</span>
+                )}
                 {showEarnings && p.roundsLed?.map((rl, ri) => (
                   <span key={ri} style={{
                     marginLeft: 2, padding: '0 4px',

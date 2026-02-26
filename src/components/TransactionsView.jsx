@@ -482,15 +482,24 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     , 0);
     copy.splice(insertAt, 0, newTx);
 
-    // For mulligans: adjust starts on limited players AND update stored tournament results
+    // For mulligans: adjust starts, swap lineup, decrement mulligan counter, update tournament results
     let updatedTeams = teams;
     let updatedTournaments = tournaments;
     if (addTxType === 'mulligan' && (playerInName || playerOutName)) {
       const mulliganTeam = teams.find(t => t.name === addTxTeam);
+      const tournament = tournaments[tournamentIndex];
+      const isSigOrMajor = tournament?.isSignature || tournament?.isMajor;
+      const mullKey = isSigOrMajor ? 'signatureMajor' : 'regular';
+
       updatedTeams = teams.map(t => {
         if (t.name !== addTxTeam) return t;
         return {
           ...t,
+          // Swap in the active lineup
+          lineup: playerOutName && playerInName
+            ? t.lineup.map(p => p === playerOutName ? playerInName : p)
+            : t.lineup,
+          // Adjust limited starts
           roster: t.roster.map(p => {
             if (p.name === playerOutName && p.limited)
               return { ...p, starts: Math.max(0, (p.starts || 0) - 1) };
@@ -498,6 +507,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               return { ...p, starts: (p.starts || 0) + 1 };
             return p;
           }),
+          // Decrement mulligan counter
+          mulligans: {
+            ...t.mulligans,
+            [mullKey]: Math.max(0, (t.mulligans?.[mullKey] ?? 1) - 1),
+          },
         };
       });
 
@@ -509,7 +523,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           const updatedPlayers = (teamResult.players || []).map(p => {
             const name = p.name || p;
             if (name !== playerOutName) return p;
-            return typeof p === 'string' ? playerInName : { ...p, name: playerInName, earnings: 0 };
+            return typeof p === 'string'
+              ? { name: playerInName, earnings: 0, mulliganIn: true, replacedPlayer: playerOutName }
+              : { ...p, name: playerInName, earnings: 0, mulliganIn: true, replacedPlayer: playerOutName };
           });
           return { ...t, results: { ...t.results, teams: { ...t.results.teams, [mulliganTeam.id]: { ...teamResult, players: updatedPlayers } } } };
         });
