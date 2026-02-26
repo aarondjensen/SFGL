@@ -1495,17 +1495,35 @@ export const AdminView = ({
             style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
           />
           {(() => {
-            const rosteredNames = [...new Set(teams.flatMap(t => t.roster.map(p => p.name)))].sort();
+            // Build effective roster for all teams (same as useRoster) so
+            // transaction-added players aren't missed.
+            const rosteredNames = [...new Set(teams.flatMap(t => {
+              const rosterSet = new Set(t.roster.map(p => p.name));
+              transactions
+                .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && tx.status === 'processed')
+                .forEach(tx => {
+                  if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
+                  if (tx.player) rosterSet.add(tx.player);
+                });
+              return [...rosterSet];
+            }))].filter(Boolean).sort();
             const missing = rosteredNames.filter(n => !headshots[n]);
             const filtered = hsSearch.trim()
-              ? rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase()))
+              ? [...new Set([
+                  // Rostered players matching search
+                  ...rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase())),
+                  // All ranked players matching search (catches non-rostered players)
+                  ...allPlayers
+                    .filter(p => p.name && p.name.toLowerCase().includes(hsSearch.toLowerCase()))
+                    .map(p => p.name),
+                ])]
               : missing;
             const showingAll = hsSearch.trim().length > 0;
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ ...theme.smallText, marginBottom: 6, color: colors.textMuted }}>
                   {showingAll
-                    ? `Showing ${filtered.length} of ${rosteredNames.length} players`
+                    ? `Showing ${filtered.length} result${filtered.length !== 1 ? 's' : ''} (all ranked players)`
                     : missing.length === 0
                       ? <span style={{ color: colors.success }}>✓ All rostered players have headshot IDs</span>
                       : `${missing.length} player${missing.length !== 1 ? 's' : ''} missing IDs`
@@ -1535,6 +1553,7 @@ export const AdminView = ({
                       </div>
                       <input
                         type="text" defaultValue={currentId} placeholder="PGA Tour ID"
+                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
                         onBlur={async e => {
                           const val = e.target.value.trim();
                           if (val === currentId) return;
@@ -1588,7 +1607,34 @@ export const AdminView = ({
         }} style={{ ...S.btnSec, marginBottom: 8 }}>⬇️ Pull from Supabase (refresh this device)</button>
         <button onClick={handleRecalc} style={{ ...S.btnSec, marginBottom: 8 }}>📊 Recalculate Earnings from Results</button>
         <button onClick={handleRecalcAllStats} style={{ ...S.btnSec, marginBottom: 8 }}>📈 Recalculate All Player Stats (Events/Cuts/Tour$/SFGL$)</button>
-        <button onClick={handleRecalcStarts} style={{ ...S.btnSec, marginBottom: 16 }}>⭐ Recalculate Limited Player Starts</button>
+        <button onClick={handleRecalcStarts} style={{ ...S.btnSec, marginBottom: 8 }}>⭐ Recalculate Limited Player Starts</button>
+        <button onClick={async () => {
+          // Read transactions from localStorage and merge any missing into current state
+          try {
+            const local = await storage.get(STORAGE_KEYS.TRANSACTIONS, []);
+            if (!Array.isArray(local) || local.length === 0) {
+              dialog.showToast('No transactions found in localStorage', 'error'); return;
+            }
+            const currentIds = new Set(transactions.map(tx => tx.timestamp || JSON.stringify(tx)));
+            const missing = local.filter(tx => !currentIds.has(tx.timestamp || JSON.stringify(tx)));
+            if (missing.length === 0) {
+              dialog.showToast('No missing transactions found — localStorage matches Supabase', 'success'); return;
+            }
+            const ok = await dialog.showConfirm(
+              'Recover Transactions',
+              `Found ${missing.length} transaction(s) in localStorage not in Supabase:\n\n` +
+              missing.slice(0, 5).map(tx => `• ${tx.team}: ${tx.type} ${tx.player || ''}`).join('\n') +
+              (missing.length > 5 ? `\n...and ${missing.length - 5} more` : '') +
+              '\n\nMerge these into transaction history?',
+              { confirmText: `Recover ${missing.length}` }
+            );
+            if (!ok) return;
+            const merged = [...missing, ...transactions];
+            setTransactions(merged);
+            await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, merged);
+            dialog.showToast(`✓ Recovered ${missing.length} transaction(s)`, 'success');
+          } catch(e) { dialog.showToast('Recovery failed: ' + e.message, 'error'); }
+        }} style={{ ...S.btnSec, marginBottom: 16 }}>🔄 Recover Transactions from localStorage</button>
 
         {/* ── Raw Roster Inspector / Direct Fix ── */}
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12, marginBottom: 12 }}>

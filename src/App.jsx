@@ -80,10 +80,14 @@ const FantasyGolfLeague = () => {
         .sfgl-nav-row { justify-content: space-between; }
         .sfgl-tab { flex: 1; }
         .sfgl-tab-label { display: none; }
+        .sfgl-tournament-desktop { display: none !important; }
+        .sfgl-tournament-mobile { display: flex !important; }
         @media (min-width: 640px) {
           .sfgl-nav-row { justify-content: flex-start; }
           .sfgl-tab { flex: 1; }
           .sfgl-tab-label { display: inline; }
+          .sfgl-tournament-desktop { display: flex !important; }
+          .sfgl-tournament-mobile { display: none !important; }
         }
       `;
       document.head.appendChild(style);
@@ -209,9 +213,28 @@ const FantasyGolfLeague = () => {
 
   if (loading || !supabaseReady) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
-        <div style={{ fontSize: 28, fontWeight: 600, letterSpacing: 8, color: 'rgba(255,255,255,0.5)' }}>SFGL</div>
-        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>Loading…</div>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
+        <style>{`
+          @keyframes sfgl-pulse {
+            0%, 100% { opacity: 0.9; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.97); }
+          }
+          @keyframes sfgl-dot {
+            0%, 80%, 100% { opacity: 0.15; transform: translateY(0); }
+            40% { opacity: 1; transform: translateY(-5px); }
+          }
+          .sfgl-logo-load { animation: sfgl-pulse 2s ease-in-out infinite; }
+          .sfgl-dot { display: inline-block; animation: sfgl-dot 1.2s ease-in-out infinite; }
+          .sfgl-dot:nth-child(2) { animation-delay: 0.2s; }
+          .sfgl-dot:nth-child(3) { animation-delay: 0.4s; }
+        `}</style>
+        <div className="sfgl-logo-load" style={{ fontSize: 32, fontWeight: 600, letterSpacing: 10, color: 'rgba(255,255,255,0.9)' }}>SFGL</div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
+          <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
+          <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
+        </div>
+        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading 2026 League</div>
       </div>
     );
   }
@@ -303,21 +326,51 @@ const FantasyGolfLeague = () => {
           </div>
         </header>
 
-        {/* ── Segment / active tournament banner ── */}
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400 }}>
-            {getSegmentByDate()}
-          </div>
-          {currentTournament && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
-              <span>⛳</span> {currentTournament.name}
-            </div>
-          )}
-          {isSyncing && (
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="ml-auto animate-pulse">
-              Saving…
+        {/* ── Commissioner banner ── */}
+        {isCommissioner && (
+          <div style={{
+            background: 'repeating-linear-gradient(90deg, rgba(245,197,24,0.12) 0px, rgba(245,197,24,0.12) 12px, rgba(245,197,24,0.06) 12px, rgba(245,197,24,0.06) 24px)',
+            borderTop: '1px solid rgba(245,197,24,0.35)',
+            borderBottom: '1px solid rgba(245,197,24,0.35)',
+            padding: '4px 16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}>
+            <span style={{ fontSize: 11, letterSpacing: '0.15em', fontWeight: 700, fontFamily: "'Raleway', system-ui, sans-serif", color: 'rgba(245,197,24,0.9)', textTransform: 'uppercase' }}>
+              ⚙ Commissioner Mode
             </span>
-          )}
+          </div>
+        )}
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
+            <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
+              {(() => {
+                const active = safeTournaments.find(t => t.playing);
+                if (active?.segment) return active.segment;
+                const next = safeTournaments.find(t => !t.completed && !t.playing);
+                if (next?.segment) return next.segment;
+                const lastDone = [...safeTournaments].reverse().find(t => t.completed);
+                if (lastDone?.segment) return lastDone.segment;
+                return getSegmentByDate();
+              })()}
+            </div>
+            {currentTournament && (
+              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+                <span>⛳</span> {currentTournament.name}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {currentTournament && (
+              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+                <span>⛳</span> {currentTournament.name}
+              </div>
+            )}
+            {isSyncing && (
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="animate-pulse">
+                Saving…
+              </span>
+            )}
+          </div>
         </div>
 
         {/* ── Navigation ── */}

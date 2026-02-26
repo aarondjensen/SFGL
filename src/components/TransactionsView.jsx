@@ -457,18 +457,20 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     if (!ok) return;
 
     const tournamentIndex = parseInt(addTxTourney);
+    const isBlocked = addTxType === 'waiver blocked';
     const newTx = {
       team: addTxTeam,
-      type: addTxType,
+      type: isBlocked ? 'waiver' : addTxType,
       player: playerInName  || playerOutName || '—',
       droppedPlayer: addTxType === 'mulligan' ? playerOutName || undefined
                    : addTxType === 'drop'     ? undefined
-                   : undefined,
-      fee: 0,
+                   : playerOutName || undefined,
+      fee: isBlocked ? 0 : 0,
       segment: tournaments[tournamentIndex]?.segment || '',
       date: new Date().toLocaleDateString(),
       tournamentIndex,
-      status: 'completed',
+      status: isBlocked ? 'failed' : 'completed',
+      ...(isBlocked ? { failReason: 'Manually voided by commissioner' } : {}),
       manualEntry: true,
     };
 
@@ -695,8 +697,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 {/* Type */}
                 <div>
                   <div style={{ ...theme.label, marginBottom: 4 }}>Type</div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {['mulligan', 'waiver', 'fa', 'drop'].map(type => (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {['mulligan', 'waiver', 'fa', 'drop', 'waiver blocked'].map(type => (
                       <button key={type} onClick={() => {
                         setAddTxType(type);
                         // Always re-default tournament when type changes (commish can still override)
@@ -743,13 +745,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 </div>
 
                 {/* Player IN search */}
-                {addTxType !== 'drop' && (() => {
+                {(addTxType !== 'drop') && (() => {
                   const teamObj  = teams.find(t => t.name === addTxTeam);
-                  const rostered = new Set(teamObj?.roster?.map(p => p.name) || []);
-                  // For mulligan IN: search from the team's roster (bench players)
-                  // For waiver/fa: search from allPlayers not on any roster
                   const pool = addTxType === 'mulligan'
-                    ? (teamObj?.roster || [])  // whole roster — any player could be the swap-in
+                    ? (teamObj?.roster || [])
+                    : addTxType === 'waiver blocked'
+                    ? allPlayers  // blocked waiver: show all players (player was claimed but lost tiebreaker)
                     : allPlayers.filter(p => {
                         const allRostered = new Set(teams.flatMap(t => t.roster.map(r => r.name)));
                         return !allRostered.has(p.name);
@@ -757,7 +758,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   const filtered = pool.filter(p =>
                     (p.name || p).toLowerCase().includes(addTxSearchIn.toLowerCase())
                   );
-                  const label = addTxType === 'mulligan' ? 'Player IN (from roster)' : 'Player Added';
+                  const label = addTxType === 'mulligan' ? 'Player IN (from roster)'
+                              : addTxType === 'waiver blocked' ? 'Player Claimed (blocked)'
+                              : 'Player Added';
                   return (
                     <div>
                       <div style={{ ...theme.label, marginBottom: 4 }}>{label}</div>
@@ -975,7 +978,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       )}
                       {': '}
                       <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : tx.player}</span>
-                      {tx.droppedPlayer && (
+                      {tx.droppedPlayer && !(tx.status === 'failed' && tx.type === 'waiver') && (
                         <>
                           <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ {tx.type === 'mulligan' ? 'out' : 'drop'}</span>
                           <span style={{ color: colors.danger }}>{tx.droppedPlayer}</span>
