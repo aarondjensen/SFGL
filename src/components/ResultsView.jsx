@@ -34,10 +34,8 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                 {shortName(p.name)}
                 {p.mulliganIn && (
                   <span title={`Mulligan (replaced ${p.replacedPlayer || '?'})`} style={{
-                    marginLeft: 3, fontSize: 8, fontWeight: 700,
-                    color: 'rgba(160,130,255,0.9)',
-                    letterSpacing: 0.3,
-                  }}>M</span>
+                    marginLeft: 2, fontSize: 9, lineHeight: 1, verticalAlign: 'middle',
+                  }}>🚨</span>
                 )}
                 {showEarnings && p.roundsLed?.map((rl, ri) => (
                   <span key={ri} style={{
@@ -106,11 +104,25 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
     return map;
   }, [teams]);
 
-  // Enrich a result player with live roster flags as fallback
-  const enrich = (p) => ({
+  // Build mulliganIn map: { tournamentIndex → { playerInName → playerOutName } }
+  const mulliganMap = useMemo(() => {
+    const map = {};
+    transactions.forEach(tx => {
+      if (tx.type !== 'mulligan' || !tx.player) return;
+      const idx = tx.tournamentIndex ?? -1;
+      if (!map[idx]) map[idx] = {};
+      map[idx][tx.player] = tx.droppedPlayer || '?';
+    });
+    return map;
+  }, [transactions]);
+
+  // Enrich a result player with live roster flags + mulligan detection
+  const enrich = (p, tournamentIndex) => ({
     ...p,
     limited:   p.limited   ?? rosterFlagMap[p.name]?.limited   ?? false,
     unlimited: p.unlimited ?? rosterFlagMap[p.name]?.unlimited ?? false,
+    mulliganIn: p.mulliganIn || !!mulliganMap[tournamentIndex]?.[p.name],
+    replacedPlayer: p.replacedPlayer || mulliganMap[tournamentIndex]?.[p.name] || null,
   });
   const [expandedTournament, setExpandedTournament] = useState(null);
 
@@ -179,6 +191,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
       {inProgressTournaments.map((tournament) => {
         const isExpanded = expandedTournament === tournament.name;
         const teamsWithLineups = teams.filter(t => t.lineup?.length > 0).sort((a, b) => a.name.localeCompare(b.name));
+        const tIdx = tournaments.indexOf(tournament);
 
         return (
           <div key={tournament.name} style={{
@@ -240,7 +253,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                         <span style={{ ...theme.h3, fontSize: 13 }}>{team.name}</span>
                         <span style={{ ...theme.smallText, fontStyle: 'italic', color: colors.textGoldDim }}>pending</span>
                       </div>
-                      <PlayerSlotGrid players={sortedLineup.map(enrich)} showEarnings={false} />
+                      <PlayerSlotGrid players={sortedLineup.map(p => enrich(p, tIdx))} showEarnings={false} />
                     </div>
                   );
                 })}
@@ -376,6 +389,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
 
           // Regular tournament card
           const { tournament } = item;
+          const tIdx = tournaments.indexOf(tournament);
           const isExpanded = expandedTournament === tournament.name;
           const results = tournament.results;
           const rankedTeams = teams
@@ -454,7 +468,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                           ${(tr.totalEarnings || 0).toLocaleString()}
                         </span>
                       </div>
-                      <PlayerSlotGrid players={players.map(enrich)} showEarnings />
+                      <PlayerSlotGrid players={players.map(p => enrich(p, tIdx))} showEarnings />
                     </div>
                   );
                 })}
