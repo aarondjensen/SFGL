@@ -81,6 +81,34 @@ const displayName = (fullName, isMobile) => {
 };
 
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
+const FaAddButton = ({ isFa, isOwnTeam, onAdd }) => {
+  const [hovered, setHovered] = React.useState(false);
+  if (!isFa) return null;
+  if (!isOwnTeam) return (
+    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 3, letterSpacing: '0.5px', background: 'rgba(80,180,120,0.18)', border: '1px solid rgba(80,180,120,0.5)', color: 'rgba(80,180,120,0.9)' }}>FA</span>
+  );
+  return (
+    <button
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onMouseDown={e => e.preventDefault()} // prevent blur stealing focus
+      onClick={onAdd}
+      style={{
+        fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 10, fontWeight: 700,
+        padding: '2px 10px', borderRadius: 3, letterSpacing: '0.5px',
+        background: hovered ? 'rgba(80,180,120,0.35)' : 'rgba(80,180,120,0.18)',
+        border: `1px solid ${hovered ? 'rgba(80,180,120,0.8)' : 'rgba(80,180,120,0.5)'}`,
+        color: 'rgba(80,180,120,0.9)',
+        cursor: 'pointer',
+        transition: 'background 0.15s, border-color 0.15s',
+        minWidth: 42, textAlign: 'center',
+      }}
+    >
+      {hovered ? '+ Add' : 'FA'}
+    </button>
+  );
+};
+
 const TeamDropdown = ({ teams, value, onChange }) => {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
@@ -642,51 +670,18 @@ export const RostersView = ({
                           </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                          {isFa && isOwnTeam ? (
-                            <button
-                              onClick={() => {
-                                setPendingAddPlayer(player.name);
-                                setEditingWaiverData({ player: player.name });
-                                setIsWaiverMode(false);
-                                setShowAddDropModal(true);
-                                setGlobalSearch('');
-                              }}
-                              onMouseEnter={e => {
-                                e.currentTarget.style.background = 'rgba(80,180,120,0.35)';
-                                e.currentTarget.style.borderColor = 'rgba(80,180,120,0.8)';
-                                e.currentTarget.style.paddingLeft = '10px';
-                                e.currentTarget.style.paddingRight = '10px';
-                                e.currentTarget.querySelector('.fa-label').textContent = '+ Add';
-                              }}
-                              onMouseLeave={e => {
-                                e.currentTarget.style.background = 'rgba(80,180,120,0.18)';
-                                e.currentTarget.style.borderColor = 'rgba(80,180,120,0.5)';
-                                e.currentTarget.style.paddingLeft = '7px';
-                                e.currentTarget.style.paddingRight = '7px';
-                                e.currentTarget.querySelector('.fa-label').textContent = 'FA';
-                              }}
-                              style={{
-                                fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
-                                padding: '2px 7px', borderRadius: 3, letterSpacing: '0.5px',
-                                background: 'rgba(80,180,120,0.18)',
-                                border: '1px solid rgba(80,180,120,0.5)',
-                                color: colors.success,
-                                cursor: 'pointer',
-                                transition: 'background 0.15s, border-color 0.15s, padding 0.15s',
-                                minWidth: 28,
-                              }}
-                            >
-                              <span className="fa-label">FA</span>
-                            </button>
-                          ) : isFa ? (
-                            <span style={{
-                              fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
-                              padding: '2px 7px', borderRadius: 3, letterSpacing: '0.5px',
-                              background: 'rgba(80,180,120,0.18)',
-                              border: '1px solid rgba(80,180,120,0.5)',
-                              color: colors.success,
-                            }}>FA</span>
-                          ) : (
+                          <FaAddButton
+                            isFa={isFa}
+                            isOwnTeam={isOwnTeam}
+                            onAdd={() => {
+                              setPendingAddPlayer(player.name);
+                              setEditingWaiverData({ player: player.name });
+                              setIsWaiverMode(false);
+                              setShowAddDropModal(true);
+                              setGlobalSearch('');
+                            }}
+                          />
+                          {!isFa && (
                             <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 500, color: colors.textSecondary }}>
                               {getTeamAbbreviation(player.owner)}
                             </span>
