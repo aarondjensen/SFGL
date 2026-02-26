@@ -33,7 +33,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
               }}>
                 {shortName(p.name)}
                 {p.mulliganIn && (
-                  <span title={`Mulligan (replaced ${p.replacedPlayer || '?'})`} style={{
+                  <span title={`Mulligan · ${p.replacedPlayer || '?'}`} style={{
                     marginLeft: 2, fontSize: 9, lineHeight: 1, verticalAlign: 'middle',
                   }}>🚨</span>
                 )}
@@ -104,26 +104,41 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
     return map;
   }, [teams]);
 
-  // Build mulliganIn map: { tournamentIndex → { playerInName → playerOutName } }
+  // Build mulligan lookup: { tournamentIndex → { playerIn → droppedPlayer, droppedPlayer → playerIn } }
+  // We track both directions because tournament results may contain EITHER the original
+  // player (if the swap wasn't applied to results) or the replacement player (if it was).
   const mulliganMap = useMemo(() => {
     const map = {};
     transactions.forEach(tx => {
       if (tx.type !== 'mulligan' || !tx.player) return;
       const idx = tx.tournamentIndex ?? -1;
-      if (!map[idx]) map[idx] = {};
-      map[idx][tx.player] = tx.droppedPlayer || '?';
+      if (!map[idx]) map[idx] = { ins: {}, outs: {} };
+      // tx.player = player IN, tx.droppedPlayer = player OUT
+      map[idx].ins[tx.player] = tx.droppedPlayer || '?';
+      if (tx.droppedPlayer) map[idx].outs[tx.droppedPlayer] = tx.player;
     });
     return map;
   }, [transactions]);
 
   // Enrich a result player with live roster flags + mulligan detection
-  const enrich = (p, tournamentIndex) => ({
-    ...p,
-    limited:   p.limited   ?? rosterFlagMap[p.name]?.limited   ?? false,
-    unlimited: p.unlimited ?? rosterFlagMap[p.name]?.unlimited ?? false,
-    mulliganIn: p.mulliganIn || !!mulliganMap[tournamentIndex]?.[p.name],
-    replacedPlayer: p.replacedPlayer || mulliganMap[tournamentIndex]?.[p.name] || null,
-  });
+  const enrich = (p, tournamentIndex) => {
+    const tMap = mulliganMap[tournamentIndex];
+    // Player was mulliganed IN (replacement player appears in results)
+    const isMullIn = p.mulliganIn || !!tMap?.ins[p.name];
+    // Player was mulliganed OUT (original player still appears in results — swap wasn't applied)
+    const isMullOut = !!tMap?.outs[p.name];
+    return {
+      ...p,
+      limited:   p.limited   ?? rosterFlagMap[p.name]?.limited   ?? false,
+      unlimited: p.unlimited ?? rosterFlagMap[p.name]?.unlimited ?? false,
+      mulliganIn: isMullIn || isMullOut,
+      replacedPlayer: isMullIn
+        ? (p.replacedPlayer || tMap?.ins[p.name] || null)
+        : isMullOut
+          ? tMap?.outs[p.name] || null
+          : null,
+    };
+  };
   const [expandedTournament, setExpandedTournament] = useState(null);
 
   const completedTournaments = useMemo(() =>
