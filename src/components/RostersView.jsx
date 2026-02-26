@@ -5,7 +5,7 @@ import { AddDropPlayerModal } from './AddDropPlayerModal';
 import { useRoster, useWindowStatus } from '../hooks';
 import {
   getSortedRoster,
-  getFreeAgentWindowStatus, getWaiverWindowStatus,
+  getFreeAgentWindowStatus,
   getSegmentByDate, isTournamentLocked,
 } from '../utils';
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
@@ -425,7 +425,6 @@ export const RostersView = ({
   const lineupOpen    = windowStatus.lineupOpen;
   const canEditLineup = isOwnTeam && (lineupOpen || isCommissioner);
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
-  const waiverStatus  = getWaiverWindowStatus();
 
   const formatTeeTime = (date) => {
     if (!date) return '';
@@ -460,29 +459,37 @@ export const RostersView = ({
             )}
           </div>
 
-          {/* Add/Search Player button */}
-          {isOwnTeam && (
-            <button
-              onClick={() => {
-                const useWaiver = !faStatus.open && waiverStatus.open;
-                setIsWaiverMode(useWaiver);
-                setShowAddDropModal(true);
-              }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '6px 12px', borderRadius: 3, flexShrink: 0,
-                fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-                background: (faStatus.open || waiverStatus.open) ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)',
-                border: `1px solid ${(faStatus.open || waiverStatus.open) ? 'rgba(80,180,120,0.5)' : 'rgba(255,255,255,0.12)'}`,
-                color: (faStatus.open || waiverStatus.open) ? colors.success : colors.textSecondary,
-              }}
-            >
-              <span style={{ fontSize: 13, lineHeight: 1 }}>+</span>
-              <span>Add / Search</span>
-            </button>
-          )}
+          {/* Add/Search Player button — always one of FA (green) or Waiver (yellow) */}
+          {isOwnTeam && (() => {
+            const isFaMode = faStatus.open;
+            const btnColor = isFaMode ? 'rgba(80,180,120,0.9)' : 'rgba(220,180,60,0.9)';
+            const btnBg = isFaMode ? 'rgba(80,180,120,0.12)' : 'rgba(220,180,60,0.1)';
+            const btnBorder = isFaMode ? 'rgba(80,180,120,0.5)' : 'rgba(220,180,60,0.45)';
+            return (
+              <button
+                onClick={() => {
+                  setIsWaiverMode(!isFaMode);
+                  setShowAddDropModal(true);
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '7px 14px', borderRadius: 4, flexShrink: 0,
+                  fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  background: btnBg,
+                  border: `1.5px solid ${btnBorder}`,
+                  color: btnColor,
+                  letterSpacing: '0.2px',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = isFaMode ? 'rgba(80,180,120,0.22)' : 'rgba(220,180,60,0.18)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = btnBg; }}
+              >
+                <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>+</span>
+                <span>Add Player</span>
+              </button>
+            );
+          })()}
           </div>
 
         {/* Lineup headshots + Edit Lineup button */}
