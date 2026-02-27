@@ -286,8 +286,8 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
           <colgroup>
             <col style={{ width: 48 }} />
             <col />
-            <col style={{ width: '22%' }} />
-            <col style={{ width: '22%' }} />
+            <col style={{ width: '28%' }} />
+            <col style={{ width: '18%' }} />
           </colgroup>
           <thead>
             <tr>
