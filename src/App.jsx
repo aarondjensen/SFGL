@@ -307,10 +307,10 @@ const FantasyGolfLeague = () => {
               letterSpacing: 1.5,
               textTransform: 'uppercase',
               padding: '3px 10px',
-              background: 'rgba(245,197,24,0.15)',
-              border: '1px solid rgba(245,197,24,0.4)',
+              background: 'rgba(220,60,60,0.2)',
+              border: '1px solid rgba(220,60,60,0.5)',
               borderRadius: 1,
-              color: 'rgba(245,197,24,0.85)',
+              color: 'rgba(240,80,80,0.95)',
               cursor: 'pointer',
               transition: 'all 0.2s',
             }}>
