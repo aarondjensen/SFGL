@@ -31,9 +31,9 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
   const count = Math.min(Math.max(players.length, 1), 5);
   const slots = Array.from({ length: count }, (_, i) => players[i] || null);
   return (
-    <div style={{ marginLeft: 28, display: 'grid', gridTemplateColumns: `repeat(${count}, 1fr)`, gap: 4 }}>
+    <div style={{ marginLeft: 24, display: 'grid', gridTemplateColumns: `repeat(${count}, 1fr)`, gap: 3 }}>
       {slots.map((p, idx) => (
-        <div key={idx} style={{ fontSize: 11, minWidth: 0, overflow: 'hidden' }}>
+        <div key={idx} style={{ fontSize: 10, minWidth: 0, overflow: 'hidden' }}>
           {p ? (
             <>
               <div style={{
@@ -57,7 +57,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
               </div>
               {showEarnings ? (
                 <div>
-                  <span style={{ ...theme.statNum, fontSize: 11, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
+                  <span style={{ ...theme.statNum, fontSize: 10, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
                     ${(p.earnings || 0).toLocaleString()}
                   </span>
                   {p.bonus > 0 && (
@@ -228,7 +228,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               aria-expanded={isExpanded}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '14px 20px',
+                padding: '10px 14px',
                 background: isExpanded ? 'rgba(40,120,80,0.1)' : 'linear-gradient(90deg, rgba(40,120,80,0.12) 0%, transparent 100%)',
                 border: 'none', borderBottom: `1px solid rgba(80,180,120,0.15)`,
                 cursor: 'pointer', transition: 'background 0.2s',
@@ -330,7 +330,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   aria-expanded={isExpanded}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '14px 20px',
+                    padding: '10px 14px',
                     background: isExpanded ? sc.bg : `linear-gradient(90deg, ${sc.bg} 0%, transparent 100%)`,
                     border: 'none', borderBottom: isExpanded ? `1px solid ${sc.border}` : 'none',
                     cursor: 'pointer', transition: 'background 0.2s',
@@ -368,7 +368,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                     {summary.ranked.map((entry, rank) => (
                       <div key={entry.team.id}
                         style={{
-                          padding: '10px 20px',
+                          padding: '6px 14px',
                           borderBottom: `1px solid ${colors.borderSubtle}`,
                           background: rank === 0 ? sc.bg : 'transparent',
                           transition: 'background 0.15s',
@@ -376,21 +376,21 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                         onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'rgba(255,255,255,0.04)'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'transparent'; }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                           <span style={{
-                            fontSize: 11, fontWeight: 700, width: 20, textAlign: 'center',
+                            fontSize: 11, fontWeight: 700, width: 18, textAlign: 'center',
                             fontFamily: fonts.serif,
                             color: rank === 0 ? sc.accent : colors.textMuted,
                           }}>
                             {rank + 1}
                           </span>
-                          <span style={{ ...theme.h3, fontSize: 13, color: rank === 0 ? colors.textPrimary : colors.textSecondary }}>{entry.team.name}</span>
+                          <span style={{ ...theme.h3, fontSize: 12, color: rank === 0 ? colors.textPrimary : colors.textSecondary }}>{entry.team.name}</span>
                           <span style={{
                             ...theme.statNum,
-                            fontSize: rank === 0 ? 14 : 12,
+                            fontSize: rank === 0 ? 13 : 11,
                             fontWeight: rank === 0 ? 700 : 400,
                             color: rank === 0 ? colors.earningsGreen : 'rgba(80,180,120,0.5)',
-                            marginLeft: 4,
+                            marginLeft: 2,
                           }}>
                             ${entry.earnings.toLocaleString()}
                           </span>
@@ -425,7 +425,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               aria-expanded={isExpanded}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '14px 20px', background: isExpanded
+                padding: '10px 14px', background: isExpanded
                   ? 'rgba(18,46,82,0.3)'
                   : 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)',
                 border: 'none', borderBottom: isExpanded ? `1px solid ${colors.borderSubtle}` : 'none',
@@ -464,7 +464,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   return (
                     <div key={team.id}
                       style={{
-                        padding: '10px 20px',
+                        padding: '6px 14px',
                         borderBottom: `1px solid ${colors.borderSubtle}`,
                         background: rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent',
                         transition: 'background 0.15s',
@@ -472,19 +472,19 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                       onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.07)' : 'rgba(255,255,255,0.04)'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent'; }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                         <span style={{
-                          fontSize: 11, fontWeight: 700, width: 20, textAlign: 'center',
+                          fontSize: 11, fontWeight: 700, width: 18, textAlign: 'center',
                           fontFamily: fonts.serif,
                           color: rank === 0 ? colors.textGold : colors.textMuted,
                         }}>
                           {rank + 1}
                         </span>
-                        <span style={{ ...theme.h3, fontSize: 13 }}>{team.name}</span>
+                        <span style={{ ...theme.h3, fontSize: 12 }}>{team.name}</span>
                         <span style={{
-                          ...theme.statNum, fontSize: 13, fontWeight: 600,
+                          ...theme.statNum, fontSize: 12, fontWeight: 600,
                           color: (tr.totalEarnings || 0) > 0 ? colors.earningsGreen : colors.textMuted,
-                          marginLeft: 4,
+                          marginLeft: 2,
                         }}>
                           ${(tr.totalEarnings || 0).toLocaleString()}
                         </span>
