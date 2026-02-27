@@ -388,8 +388,33 @@ export const AdminView = ({
     }
   };
 
-    const RoundLeaderSelect = ({ label, leaders, onChange }) => {
-    const players = teams.flatMap(team => (team.lineup || []).map(name => ({ name, team: team.name }))).sort((a, b) => a.name.localeCompare(b.name));
+    const RoundLeaderSelect = ({ label, leaders, onChange, round }) => {
+    // Use the stored tournament lineups (manualEntry.teamLineups) instead of current live lineups.
+    // This ensures we show players who were actually in the lineup for that tournament.
+    const teamLineups = manualEntry.teamLineups || {};
+
+    // Build mulligan map for the selected tournament
+    const selectedTIdx = tournaments.findIndex(t => t.name === selectedTourney);
+    const tourneyMulligans = transactions.filter(tx =>
+      tx.type === 'mulligan' && tx.tournamentIndex === selectedTIdx && tx.status === 'processed'
+    );
+
+    const players = teams.flatMap(team => {
+      const lineup = teamLineups[team.id] || team.lineup || [];
+      let names = [...lineup];
+
+      // For R3+, include mulliganed-in players (they replace someone mid-tournament)
+      if (round >= 3) {
+        tourneyMulligans
+          .filter(tx => tx.team === team.name && tx.player)
+          .forEach(tx => {
+            if (!names.includes(tx.player)) names.push(tx.player);
+          });
+      }
+
+      return names.map(name => ({ name, team: team.name }));
+    }).sort((a, b) => a.name.localeCompare(b.name));
+
     return (
       <div style={{ flex: 1 }}>
         <div style={S.lbl}>{label}</div>
@@ -1051,9 +1076,9 @@ export const AdminView = ({
           <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
             <div style={{ ...S.lbl, color: colors.textMuted, textAlign: 'center', marginBottom: 10 }}>— or enter manually —</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-              <RoundLeaderSelect label="R1 Leader" leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
-              <RoundLeaderSelect label="R2 Leader" leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
-              <RoundLeaderSelect label="R3 Leader" leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
+              <RoundLeaderSelect label="R1 Leader" round={1} leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
+              <RoundLeaderSelect label="R2 Leader" round={2} leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
+              <RoundLeaderSelect label="R3 Leader" round={3} leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
             </div>
             {/* ── Lineup overrides ── */}
             {tournaments.find(t => t.name === selectedTourney)?.completed && (
