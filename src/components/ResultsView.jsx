@@ -27,11 +27,10 @@ const playerNameColor = (p, showEarnings) => {
 
 // ── Player slot grid ──────────────────────────────────────────────────────────
 const PlayerSlotGrid = ({ players, showEarnings }) => {
-  // Use actual lineup length (up to 5 max), never pad beyond what was submitted
-  const count = Math.min(Math.max(players.length, 1), 5);
-  const slots = Array.from({ length: count }, (_, i) => players[i] || null);
+  // Always 5 columns — pad with nulls for empty slots
+  const slots = Array.from({ length: 5 }, (_, i) => players[i] || null);
   return (
-    <div style={{ marginLeft: 24, display: 'grid', gridTemplateColumns: `repeat(${count}, 1fr)`, gap: 3 }}>
+    <div style={{ marginLeft: 24, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 3 }}>
       {slots.map((p, idx) => (
         <div key={idx} style={{ fontSize: 10, minWidth: 0, overflow: 'hidden' }}>
           {p ? (
@@ -279,13 +278,13 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   const sortedLineup = getSortedRoster(lineupPlayers);
                   return (
                     <div key={team.id} style={{
-                      padding: '10px 20px',
+                      padding: '6px 14px',
                       borderBottom: `1px solid ${colors.borderSubtle}`,
                     }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                        <span style={{ ...theme.smallText, width: 20, textAlign: 'center' }}>—</span>
-                        <span style={{ ...theme.h3, fontSize: 13 }}>{team.name}</span>
-                        <span style={{ ...theme.smallText, fontStyle: 'italic', color: colors.textGoldDim }}>pending</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, width: 18, textAlign: 'center', fontFamily: fonts.serif, color: colors.textMuted }}>—</span>
+                        <span style={{ ...theme.h3, fontSize: 12 }}>{team.name}</span>
+                        <span style={{ fontFamily: fonts.sans, fontSize: 10, fontStyle: 'italic', color: colors.textGoldDim }}>pending</span>
                       </div>
                       <PlayerSlotGrid players={sortedLineup.map(p => enrich(p, tIdx))} showEarnings={false} />
                     </div>
