@@ -158,7 +158,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
         {/* Top row: title + toggle buttons — always one line */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <Trophy style={{ width: 16, height: 16, color: colors.earningsGreen }} />
+            <Trophy style={{ width: 20, height: 20, color: colors.textPrimary }} />
             <h2 style={theme.h2}>Standings</h2>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -186,8 +186,8 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                 borderRadius: 2,
                 background: showSwing
                   ? accentColor.replace('0.85)', '0.18)')
-                  : 'rgba(80,195,120,0.14)',
-                border: `1px solid ${showSwing ? accentColor.replace('0.85)', '0.45)') : 'rgba(80,195,120,0.45)'}`,
+                  : 'rgba(255,255,255,0.1)',
+                border: `1px solid ${showSwing ? accentColor.replace('0.85)', '0.45)') : 'rgba(255,255,255,0.3)'}`,
                 transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
                 pointerEvents: 'none',
               }} />
@@ -200,7 +200,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                   background: 'none', border: 'none',
                   fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
                   letterSpacing: '1px', textTransform: 'uppercase',
-                  color: !showSwing ? colors.success : colors.textMuted,
+                  color: !showSwing ? colors.textPrimary : colors.textMuted,
                   cursor: 'pointer',
                   transition: 'color 0.18s',
                   borderRadius: 2,
@@ -316,7 +316,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                     <div className="sfgl-owner" style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'left' }}>
-                    <div style={{ ...theme.statNumLg, letterSpacing: 3, fontWeight: 300, color: earningsColor(earnings) }}>
+                    <div style={{ ...theme.statNumLg, letterSpacing: 3, fontWeight: 300, color: showSwing ? accentColor : (earnings > 0 ? colors.textPrimary : colors.textMuted) }}>
                       {formatEarnings(earnings)}
                     </div>
                   </td>
