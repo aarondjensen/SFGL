@@ -93,8 +93,8 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
         <colgroup>
           <col style={{ width: 36 }} />
           <col />
-          <col style={{ width: '22%' }} />
-          <col style={{ width: '30%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '36%' }} />
         </colgroup>
       )}
       <thead>
@@ -297,7 +297,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 )}
               </td>
 
-              {/* Tournament name + lock status */}
+              {/* Tournament name */}
               <td style={{ padding: '10px 16px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
                   <span style={{
@@ -311,15 +311,18 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                       <span style={{ fontSize: 12, color: colors.textMuted, marginLeft: 5 }}>✓</span>
                     )}
                   </span>
-                  {!t.completed && <StatusBadge tournament={t} />}
                 </div>
               </td>
 
-              {/* Dates (colored by swing) */}
+              {/* Dates — or "In Progress" badge for active tournament */}
               <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
-                <span style={{ fontFamily: fonts.sans, fontSize: 12, color: alt ? colors.textMuted : swingColor(t.segment, t.dates) }}>
-                  {t.dates}
-                </span>
+                {t.playing && !t.completed ? (
+                  <StatusBadge tournament={t} />
+                ) : (
+                  <span style={{ fontFamily: fonts.sans, fontSize: 11, color: alt ? colors.textMuted : swingColor(t.segment, t.dates) }}>
+                    {t.dates}
+                  </span>
+                )}
               </td>
 
               {/* Location + course */}
