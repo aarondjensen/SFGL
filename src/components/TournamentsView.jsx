@@ -75,12 +75,13 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
 
     return (
       <span style={{
-        display: 'inline-flex', alignItems: 'center', gap: 4,
-        fontSize: 10, fontFamily: fonts.sans, fontWeight: 600,
-        padding: '2px 8px', borderRadius: 3,
+        display: 'inline-flex', alignItems: 'center', gap: 3,
+        fontSize: 9, fontFamily: fonts.sans, fontWeight: 600,
+        padding: '2px 6px', borderRadius: 3,
         background: 'rgba(80,200,120,0.15)',
         border: '1px solid rgba(80,200,120,0.4)',
         color: 'rgba(80,200,120,0.9)',
+        whiteSpace: 'nowrap',
       }}>
         In Progress
       </span>
@@ -91,10 +92,10 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
       {!editMode && (
         <colgroup>
-          <col style={{ width: 36 }} />
+          <col style={{ width: 26 }} />
           <col />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '36%' }} />
+          <col style={{ width: 70 }} />
+          <col style={{ width: '34%' }} />
         </colgroup>
       )}
       <thead>
@@ -104,8 +105,8 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               <th key={h} style={{ ...theme.tableHeaderCell, fontSize: 10 }}>{h}</th>
             ))
           ) : (
-            [{ label: '' }, { label: 'Tournament' }, { label: 'Dates' }, { label: 'Location & Course' }].map(({ label }) => (
-              <th key={label || 'badge'} style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>{label}</th>
+            [{ label: '' }, { label: 'Tournament' }, { label: 'Dates' }, { label: 'Location' }].map(({ label }) => (
+              <th key={label || 'badge'} style={{ ...theme.tableHeaderCell, textAlign: 'left', padding: '8px 6px' }}>{label}</th>
             ))
           )}
         </tr>
@@ -288,34 +289,32 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
             >
               {/* Badge column */}
-              <td style={{ padding: '10px 8px 10px 12px' }}>
+              <td style={{ padding: '8px 2px 8px 8px', verticalAlign: 'middle' }}>
                 {t.isMajor && (
-                  <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 800, letterSpacing: 0, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</div>
+                  <div style={{ width: 18, height: 18, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</div>
                 )}
                 {t.isSignature && !t.isMajor && (
-                  <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 600, letterSpacing: 0, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</div>
+                  <div style={{ width: 18, height: 18, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 600, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</div>
                 )}
               </td>
 
               {/* Tournament name */}
-              <td style={{ padding: '10px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                  <span style={{
-                    fontFamily: fonts.serif, fontSize: 13,
-                    color: alt ? colors.textMuted : colors.textPrimary,
-                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden', lineHeight: 1.35, minWidth: 0, flex: 1,
-                  }}>
-                    {t.name}
-                    {t.completed && (
-                      <span style={{ fontSize: 12, color: colors.textMuted, marginLeft: 5 }}>✓</span>
-                    )}
-                  </span>
-                </div>
+              <td style={{ padding: '8px 8px' }}>
+                <span style={{
+                  fontFamily: fonts.serif, fontSize: 13,
+                  color: alt ? colors.textMuted : colors.textPrimary,
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden', lineHeight: 1.35,
+                }}>
+                  {t.name}
+                  {t.completed && (
+                    <span style={{ fontSize: 12, color: colors.textMuted, marginLeft: 4 }}>✓</span>
+                  )}
+                </span>
               </td>
 
               {/* Dates — or "In Progress" badge for active tournament */}
-              <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+              <td style={{ padding: '8px 6px', whiteSpace: 'nowrap' }}>
                 {t.playing && !t.completed ? (
                   <StatusBadge tournament={t} />
                 ) : (
@@ -326,15 +325,15 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               </td>
 
               {/* Location + course */}
-              <td style={{ padding: '10px 16px' }}>
+              <td style={{ padding: '8px 8px 8px 6px' }}>
                 <div style={{
-                  fontFamily: fonts.sans, fontSize: 11, color: alt ? colors.textMuted : colors.textSecondary,
+                  fontFamily: fonts.sans, fontSize: 10, color: alt ? colors.textMuted : colors.textSecondary,
                   display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden', lineHeight: 1.35,
+                  overflow: 'hidden', lineHeight: 1.4,
                 }}>
                   {t.location}
                   {t.course && t.course !== 'TBD' && (
-                    <span style={{ fontSize: 10, color: colors.textMuted }}> · {t.course}</span>
+                    <span style={{ color: colors.textMuted }}> · {t.course}</span>
                   )}
                 </div>
               </td>
