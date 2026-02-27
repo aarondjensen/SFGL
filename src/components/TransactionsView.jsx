@@ -7,6 +7,14 @@ import { sfglDataApi } from '../api/supabase';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
 
+// First initial + last name: "Scottie Scheffler" → "S. Scheffler"
+const shortName = (name) => {
+  if (!name) return '';
+  const parts = name.trim().split(' ');
+  if (parts.length < 2) return name;
+  return parts[0][0] + '. ' + parts[parts.length - 1];
+};
+
 // ── Inline edit modal ─────────────────────────────────────────────────────────
 const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, setTransactions, updateTeams, onClose }) => {
   const dialog = useDialog();
@@ -1049,11 +1057,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
                       )}
                       {': '}
-                      <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : tx.player}</span>
+                      <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : shortName(tx.player)}</span>
                       {tx.droppedPlayer && !(tx.status === 'failed' && tx.type === 'waiver') && (
                         <>
                           <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ {tx.type === 'mulligan' ? 'out' : 'drop'}</span>
-                          <span style={{ color: colors.danger }}>{tx.droppedPlayer}</span>
+                          <span style={{ color: colors.danger }}>{shortName(tx.droppedPlayer)}</span>
                         </>
                       )}
                     </div>
