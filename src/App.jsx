@@ -292,13 +292,11 @@ const FantasyGolfLeague = () => {
         {/* ── Commissioner banner ── */}
         {isCommissioner && (
           <div style={{
-            background: 'repeating-linear-gradient(90deg, rgba(245,197,24,0.22) 0px, rgba(245,197,24,0.22) 12px, rgba(245,197,24,0.12) 12px, rgba(245,197,24,0.12) 24px)',
-            borderTop: '1px solid rgba(245,197,24,0.5)',
-            borderBottom: '1px solid rgba(245,197,24,0.5)',
+            background: 'rgba(245,197,24,0.85)',
             padding: '4px 16px',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
           }}>
-            <span style={{ fontSize: 11, letterSpacing: '0.15em', fontWeight: 700, fontFamily: "'Raleway', system-ui, sans-serif", color: 'rgba(245,197,24,1)', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 11, letterSpacing: '0.15em', fontWeight: 700, fontFamily: "'Raleway', system-ui, sans-serif", color: '#0a1628', textTransform: 'uppercase' }}>
               ⚙ Commissioner Mode
             </span>
             <button onClick={handleLogout} style={{
@@ -307,12 +305,12 @@ const FantasyGolfLeague = () => {
               letterSpacing: 1.5,
               textTransform: 'uppercase',
               padding: '3px 10px',
-              background: 'rgba(220,60,60,0.2)',
-              border: '1px solid rgba(220,60,60,0.5)',
-              borderRadius: 1,
-              color: 'rgba(240,80,80,0.95)',
+              background: '#dc2626',
+              border: '1px solid #b91c1c',
+              borderRadius: 2,
+              color: '#fff',
               cursor: 'pointer',
-              transition: 'all 0.2s',
+              fontWeight: 700,
             }}>
               Sign Out
             </button>
@@ -328,14 +326,14 @@ const FantasyGolfLeague = () => {
               })()}
             </div>
             {currentTournament && (
-              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
                 <span>⛳</span> {currentTournament.name}
               </div>
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {currentTournament && (
-              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
                 <span>⛳</span> {currentTournament.name}
               </div>
             )}
