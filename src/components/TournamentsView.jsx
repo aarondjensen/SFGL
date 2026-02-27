@@ -243,7 +243,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               {/* Tournament name + lock status */}
               <td style={{ padding: '10px 16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontFamily: fonts.serif, fontSize: 13, color: alt ? colors.textMuted : (t.playing && !t.completed) ? colors.textGold : colors.textPrimary }}>
+                  <span style={{ fontFamily: fonts.serif, fontSize: 13, color: alt ? colors.textMuted : colors.textPrimary }}>
                     {t.name}
                   </span>
                   {t.completed && (
@@ -306,7 +306,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
       {/* ── Upcoming ── */}
       <div style={theme.card}>
         <div style={theme.cardHeader}>
-          <Calendar style={{ width: 15, height: 15, color: colors.textGold }} />
+          <Calendar style={{ width: 15, height: 15, color: colors.textPrimary }} />
           <h2 style={theme.h2}>Upcoming Events</h2>
         </div>
         <div style={{ overflowX: 'auto' }}>{renderTable(upcoming)}</div>
