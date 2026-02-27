@@ -36,7 +36,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
         <div key={idx} style={{ fontSize: 10, minWidth: 0, overflow: 'hidden' }}>
           {p ? (
             <>
-              {/* Line 1: name + mulligan + round leader badges */}
+              {/* Line 1: name + mulligan */}
               <div style={{
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 color: playerNameColor(p, showEarnings),
@@ -47,27 +47,29 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                     marginLeft: 2, fontSize: 9, lineHeight: 1, verticalAlign: 'middle',
                   }}>🚨</span>
                 )}
-                {showEarnings && p.roundsLed?.map((rl, ri) => (
-                  <span key={ri} style={{
-                    marginLeft: 2, padding: '0 3px',
-                    background: 'rgba(220,110,30,0.35)',
-                    color: 'rgba(255,165,80,0.95)',
-                    borderRadius: 2, fontSize: 8, verticalAlign: 'middle',
-                  }}>R{rl.round}</span>
-                ))}
               </div>
-              {/* Line 2: total earnings (base + bonus combined) */}
+              {/* Line 2: earnings (base + bonus combined) */}
               {showEarnings ? (
                 <div style={{ whiteSpace: 'nowrap' }}>
                   <span style={{ ...theme.statNum, fontSize: 10, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
                     ${((p.earnings || 0) + (p.bonus || 0)).toLocaleString()}
                   </span>
-                  {p.bonus > 0 && (
-                    <span style={{ color: 'rgba(255,150,60,0.8)', fontSize: 8, marginLeft: 1 }}>★</span>
-                  )}
                 </div>
               ) : (
                 <div style={{ color: colors.textMuted }}>—</div>
+              )}
+              {/* Line 3: round leader badges (only if any) */}
+              {showEarnings && p.roundsLed?.length > 0 && (
+                <div style={{ display: 'flex', gap: 2, marginTop: 1 }}>
+                  {p.roundsLed.map((rl, ri) => (
+                    <span key={ri} style={{
+                      padding: '1px 3px',
+                      background: 'rgba(220,110,30,0.35)',
+                      color: 'rgba(255,165,80,0.95)',
+                      borderRadius: 2, fontSize: 8, lineHeight: 1.2,
+                    }}>R{rl.round}</span>
+                  ))}
+                </div>
               )}
             </>
           ) : (
