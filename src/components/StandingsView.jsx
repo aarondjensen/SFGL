@@ -286,13 +286,13 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
           <colgroup>
             <col style={{ width: 48 }} />
             <col />
-            <col style={{ width: '28%' }} />
-            <col style={{ width: '18%' }} />
+            <col style={{ width: '26%' }} />
+            <col style={{ width: '20%' }} />
           </colgroup>
           <thead>
             <tr>
               {['Pos', 'Team', earningsLabel, 'Behind'].map((h, i) => (
-                <th key={h} style={{ ...theme.tableHeaderCell, textAlign: i >= 2 ? 'center' : 'left' }}>{h}</th>
+                <th key={h} style={{ ...theme.tableHeaderCell, textAlign: i === 2 ? 'left' : i === 3 ? 'right' : 'left' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -326,7 +326,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
-                    <div style={{ ...theme.statNum, fontSize: 11, letterSpacing: 3, fontWeight: 300, color: isSwingWinner ? accentColor.replace('0.85)', '1)') : behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
+                    <div style={{ ...theme.statNum, fontSize: 11, letterSpacing: 1.5, fontWeight: 300, color: isSwingWinner ? accentColor.replace('0.85)', '1)') : behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
                       {isSwingWinner ? 'Winner' : formatBehind(behind)}
                     </div>
                   </td>
