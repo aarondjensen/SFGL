@@ -26,7 +26,7 @@ const formatEarnings = (n) => {
 };
 
 const formatBehind = (n) => {
-  if (!n || n <= 0) return 'Leader';
+  if (!n || n <= 0) return '—';
   if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(2) + 'M';
   if (n >= 1_000)     return '$' + Math.round(n / 1_000) + 'k';
   return '$' + n;
@@ -326,7 +326,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
-                    <div style={{ ...theme.statNum, fontSize: 13, letterSpacing: 3, fontWeight: 300, color: isSwingWinner ? accentColor.replace('0.85)', '1)') : behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
+                    <div style={{ ...theme.statNum, fontSize: 11, letterSpacing: 3, fontWeight: 300, color: isSwingWinner ? accentColor.replace('0.85)', '1)') : behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
                       {isSwingWinner ? 'Winner' : formatBehind(behind)}
                     </div>
                   </td>
