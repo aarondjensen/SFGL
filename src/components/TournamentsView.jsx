@@ -299,13 +299,18 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
 
               {/* Tournament name + lock status */}
               <td style={{ padding: '10px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
-                  <span style={{ fontFamily: fonts.serif, fontSize: 13, color: alt ? colors.textMuted : colors.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                  <span style={{
+                    fontFamily: fonts.serif, fontSize: 13,
+                    color: alt ? colors.textMuted : colors.textPrimary,
+                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden', lineHeight: 1.35, minWidth: 0, flex: 1,
+                  }}>
                     {t.name}
+                    {t.completed && (
+                      <span style={{ fontSize: 12, color: colors.textMuted, marginLeft: 5 }}>✓</span>
+                    )}
                   </span>
-                  {t.completed && (
-                    <span style={{ fontSize: 13, color: colors.textMuted, lineHeight: 1, flexShrink: 0 }}>✓</span>
-                  )}
                   {!t.completed && <StatusBadge tournament={t} />}
                 </div>
               </td>
@@ -319,12 +324,16 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
 
               {/* Location + course */}
               <td style={{ padding: '10px 16px' }}>
-                <div style={{ fontFamily: fonts.sans, fontSize: 12, color: alt ? colors.textMuted : colors.textSecondary }}>
+                <div style={{
+                  fontFamily: fonts.sans, fontSize: 11, color: alt ? colors.textMuted : colors.textSecondary,
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden', lineHeight: 1.35,
+                }}>
                   {t.location}
+                  {t.course && t.course !== 'TBD' && (
+                    <span style={{ fontSize: 10, color: colors.textMuted }}> · {t.course}</span>
+                  )}
                 </div>
-                {t.course && t.course !== 'TBD' && (
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, marginTop: 1 }}>{t.course}</div>
-                )}
               </td>
             </tr>
           );
