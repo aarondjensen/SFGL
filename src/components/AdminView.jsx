@@ -518,16 +518,6 @@ export const AdminView = ({
     setMgCredSaving(false);
   };
 
-  // ── Season Reset ─────────────────────────────────────────────────────────
-  const handleReset = async () => {
-    if (!await dialog.showConfirm('Reset Entire Season', 'DELETE all results, transactions, rosters, lineups, and stats. Cannot be undone.', { type: 'danger', confirmText: 'Continue' })) return;
-    if (!await dialog.showConfirm('Final Warning', 'Are you absolutely sure? This wipes everything.', { type: 'danger', confirmText: 'Yes, Reset Everything' })) return;
-    updateTeams(teams.map(t => ({ ...t, earnings: 0, segmentEarnings: 0, lineup: [], roster: [], mulligans: { signatureMajor: 1, regular: 1 } })));
-    setTournaments(tournaments.map((t, i) => ({ ...t, completed: false, playing: i === 0, results: null })));
-    setTransactions([]); setGlobalPlayerStats({});
-    dialog.showToast('Season reset complete.', 'success');
-  };
-
   // ── Award Swing Winner ──────────────────────────────────────────────────
   const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 
@@ -1055,13 +1045,6 @@ export const AdminView = ({
       <div style={S.section}>
         <div style={S.title}>🎯 Draft</div>
         <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
-      </div>
-
-      {/* Danger Zone */}
-      <div style={{ ...S.section, borderColor: colors.dangerBorder, background: colors.dangerBg }}>
-        <div style={{ ...S.title, color: colors.danger }}>⚠ Danger Zone</div>
-        <div style={{ ...theme.smallText, marginBottom: 12 }}>Permanently deletes all results, rosters, transactions, and stats.</div>
-        <button onClick={handleReset} style={S.btnDgr}>🔥 Reset Entire Season</button>
       </div>
 
       {showDraftModal && <DraftModal teams={teams} allPlayers={allPlayers} updateTeams={updateTeams} onClose={() => setShowDraftModal(false)} headshots={headshots} />}
