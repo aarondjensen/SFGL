@@ -186,8 +186,8 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                 borderRadius: 2,
                 background: showSwing
                   ? accentColor.replace('0.85)', '0.18)')
-                  : 'rgba(180,160,100,0.14)',
-                border: `1px solid ${showSwing ? accentColor.replace('0.85)', '0.45)') : 'rgba(180,160,100,0.4)'}`,
+                  : 'rgba(80,195,120,0.14)',
+                border: `1px solid ${showSwing ? accentColor.replace('0.85)', '0.45)') : 'rgba(80,195,120,0.45)'}`,
                 transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
                 pointerEvents: 'none',
               }} />
@@ -200,7 +200,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                   background: 'none', border: 'none',
                   fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
                   letterSpacing: '1px', textTransform: 'uppercase',
-                  color: !showSwing ? colors.textGold : colors.textMuted,
+                  color: !showSwing ? colors.success : colors.textMuted,
                   cursor: 'pointer',
                   transition: 'color 0.18s',
                   borderRadius: 2,

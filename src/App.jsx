@@ -364,17 +364,17 @@ const FantasyGolfLeague = () => {
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   border: isActive
-                    ? '1px solid rgba(80,195,120,0.35)'
+                    ? '1px solid rgba(255,255,255,0.2)'
                     : '1px solid transparent',
                   background: isActive
-                    ? 'rgba(20,80,50,0.5)'
+                    ? 'rgba(255,255,255,0.08)'
                     : isAdminPopover
                       ? 'rgba(255,255,255,0.06)'
                       : 'rgba(255,255,255,0.04)',
                   color: isActive
-                    ? 'rgba(80,195,120,0.95)'
+                    ? 'rgba(255,255,255,0.95)'
                     : 'rgba(255,255,255,0.78)',
-                  boxShadow: isActive ? 'inset 0 1px 0 rgba(80,195,120,0.15)' : 'none',
+                  boxShadow: isActive ? 'inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
                 }}
               >
                 <tab.Icon style={{ width: 13, height: 13 }} />
