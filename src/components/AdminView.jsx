@@ -175,6 +175,7 @@ export const AdminView = ({
     select: { ...theme.select, marginBottom: 8, color: colors.textPrimary, backgroundColor: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' },
     lbl: { ...theme.label, display: 'block', marginBottom: 6 },
   };
+  const disabledBtn = (disabled) => disabled ? { opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' } : {};
 
   // ── Results: API fetch ───────────────────────────────────────────────────
   const handleFetchApiResults = async () => {
