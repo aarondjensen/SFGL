@@ -88,7 +88,15 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
   };
 
   const renderTable = (list) => (
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+      {!editMode && (
+        <colgroup>
+          <col style={{ width: 36 }} />
+          <col />
+          <col style={{ width: '22%' }} />
+          <col style={{ width: '30%' }} />
+        </colgroup>
+      )}
       <thead>
         <tr>
           {editMode ? (
@@ -96,8 +104,8 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               <th key={h} style={{ ...theme.tableHeaderCell, fontSize: 10 }}>{h}</th>
             ))
           ) : (
-            [{ label: '', width: 40 }, { label: 'Tournament' }, { label: 'Dates' }, { label: 'Location & Course' }].map(({ label, width }) => (
-              <th key={label} style={{ ...theme.tableHeaderCell, textAlign: 'left', width: width || 'auto' }}>{label}</th>
+            [{ label: '' }, { label: 'Tournament' }, { label: 'Dates' }, { label: 'Location & Course' }].map(({ label }) => (
+              <th key={label || 'badge'} style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>{label}</th>
             ))
           )}
         </tr>
@@ -280,7 +288,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
             >
               {/* Badge column */}
-              <td style={{ padding: '10px 16px', width: 40 }}>
+              <td style={{ padding: '10px 8px 10px 12px' }}>
                 {t.isMajor && (
                   <div style={{ width: 20, height: 20, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 800, letterSpacing: 0, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</div>
                 )}
@@ -296,9 +304,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     {t.name}
                   </span>
                   {t.completed && (
-                    <span style={{ ...theme.badge, background: 'rgba(255,255,255,0.05)', border: `1px solid ${colors.borderSubtle}`, color: colors.textSecondary }}>
-                      Final
-                    </span>
+                    <span style={{ fontSize: 13, color: colors.textMuted, lineHeight: 1 }}>✓</span>
                   )}
                   {!t.completed && <StatusBadge tournament={t} />}
                 </div>
