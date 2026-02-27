@@ -682,6 +682,8 @@ export const AdminView = ({
     }
   };
 
+  const pending = transactions.map((tx, i) => ({ ...tx, _idx: i })).filter(tx => tx.status === 'pending' && tx.type === 'waiver');
+
   return (
     <div style={{ paddingBottom: 40 }}>
 
