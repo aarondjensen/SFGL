@@ -92,8 +92,8 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
       <thead>
         <tr>
           {editMode ? (
-            ['Active', 'Type', 'Tournament', 'Swing', 'Lock Hour'].map(h => (
-              <th key={h} style={theme.tableHeaderCell}>{h}</th>
+            ['Active', 'Type', 'Tournament', 'Dates', 'Location / Course', 'Swing', 'Lock'].map(h => (
+              <th key={h} style={{ ...theme.tableHeaderCell, fontSize: 10 }}>{h}</th>
             ))
           ) : (
             [{ label: '', width: 40 }, { label: 'Tournament' }, { label: 'Dates' }, { label: 'Location & Course' }].map(({ label, width }) => (
@@ -115,7 +115,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
               >
                 {/* Active checkbox */}
-                <td style={{ padding: '8px 16px', textAlign: 'center' }}>
+                <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                   <input
                     type="checkbox"
                     checked={t.playing && !t.completed}
@@ -129,7 +129,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 </td>
 
                 {/* Type toggle badges */}
-                <td style={{ padding: '8px 12px' }}>
+                <td style={{ padding: '8px 8px' }}>
                   <div style={{ display: 'flex', gap: 4 }}>
                     {[
                       { badge: 'S', key: 'isSignature', activeColor: 'rgba(130,80,200,0.8)', activeBorder: 'rgba(130,80,200,0.5)' },
@@ -157,7 +157,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 </td>
 
                 {/* Name input */}
-                <td style={{ padding: '8px 12px' }}>
+                <td style={{ padding: '8px 8px' }}>
                   <input
                     value={t.name}
                     onChange={e => updateLocal(realIndex, { name: e.target.value })}
@@ -170,11 +170,60 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     onFocus={e => { e.target.style.borderBottomColor = colors.borderFocus; }}
                     onBlur={e => { e.target.style.borderBottomColor = colors.borderInput; }}
                   />
-                  <div style={{ ...theme.smallText, marginTop: 2 }}>{t.dates}</div>
+                </td>
+
+                {/* Dates input */}
+                <td style={{ padding: '8px 8px' }}>
+                  <input
+                    value={t.dates || ''}
+                    onChange={e => updateLocal(realIndex, { dates: e.target.value })}
+                    placeholder="e.g. Mar 4-7"
+                    style={{
+                      background: 'transparent',
+                      border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
+                      width: '100%', fontFamily: fonts.sans, fontSize: 11,
+                      color: colors.textPrimary, outline: 'none', padding: '2px 0',
+                      minWidth: 80,
+                    }}
+                    onFocus={e => { e.target.style.borderBottomColor = colors.borderFocus; }}
+                    onBlur={e => { e.target.style.borderBottomColor = colors.borderInput; }}
+                  />
+                </td>
+
+                {/* Location input */}
+                <td style={{ padding: '8px 8px' }}>
+                  <input
+                    value={t.location || ''}
+                    onChange={e => updateLocal(realIndex, { location: e.target.value })}
+                    placeholder="City, State"
+                    style={{
+                      background: 'transparent',
+                      border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
+                      width: '100%', fontFamily: fonts.sans, fontSize: 11,
+                      color: colors.textPrimary, outline: 'none', padding: '2px 0',
+                      minWidth: 100,
+                    }}
+                    onFocus={e => { e.target.style.borderBottomColor = colors.borderFocus; }}
+                    onBlur={e => { e.target.style.borderBottomColor = colors.borderInput; }}
+                  />
+                  <input
+                    value={t.course || ''}
+                    onChange={e => updateLocal(realIndex, { course: e.target.value })}
+                    placeholder="Course name"
+                    style={{
+                      background: 'transparent',
+                      border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
+                      width: '100%', fontFamily: fonts.sans, fontSize: 10,
+                      color: colors.textSecondary, outline: 'none', padding: '2px 0',
+                      marginTop: 3,
+                    }}
+                    onFocus={e => { e.target.style.borderBottomColor = colors.borderFocus; }}
+                    onBlur={e => { e.target.style.borderBottomColor = colors.borderInput; }}
+                  />
                 </td>
 
                 {/* Swing selector */}
-                <td style={{ padding: '8px 12px' }}>
+                <td style={{ padding: '8px 8px' }}>
                   <select
                     value={t.segment || ''}
                     onChange={e => updateLocal(realIndex, { segment: e.target.value || null })}
@@ -186,7 +235,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                       color: colors.textPrimary,
                       appearance: 'none',
                       WebkitAppearance: 'none',
-                      minWidth: 120,
+                      minWidth: 110,
                     }}
                   >
                     <option value="">— derived —</option>
@@ -195,7 +244,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 </td>
 
                 {/* Lock hour override */}
-                <td style={{ padding: '8px 12px' }}>
+                <td style={{ padding: '8px 8px' }}>
                   <select
                     value={t.lockHour ?? 7}
                     onChange={e => updateLocal(realIndex, { lockHour: parseInt(e.target.value) })}
@@ -207,7 +256,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                       color: colors.textPrimary,
                       appearance: 'none',
                       WebkitAppearance: 'none',
-                      minWidth: 110,
+                      minWidth: 90,
                     }}
                   >
                     {[7, 8, 9, 10, 11, 12].map(h => (
