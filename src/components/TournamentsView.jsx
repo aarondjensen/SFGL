@@ -5,6 +5,7 @@ import { useDialog } from './DialogContext';
 // SWINGS defined locally (4 swings only)
 const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 import { theme, colors, fonts } from '../theme.js';
+import { SWING_COLORS } from '../theme.js';
 import { storage } from '../api';
 import { sfglDataApi } from '../api/supabase';
 import { STORAGE_KEYS } from '../constants';
@@ -18,19 +19,13 @@ const isAlternate = (t) => {
 
 // Swing → accent color
 const swingColor = (swing, dateStr) => {
-  if (swing) {
-    if (swing === 'West Coast Swing') return 'rgba(220,80,80,0.8)';
-    if (swing === 'Spring Swing')     return 'rgba(100,215,175,0.85)';
-    if (swing === 'Summer Swing')     return 'rgba(80,140,220,0.8)';
-    if (swing === 'Fall Finish')      return 'rgba(220,140,60,0.8)';
-    return colors.textSecondary;
-  }
+  if (swing && SWING_COLORS[swing]) return SWING_COLORS[swing];
   if (!dateStr) return colors.textSecondary;
   const month = dateStr.split(' ')[0];
-  if (['Jan', 'Feb'].includes(month))        return 'rgba(220,80,80,0.8)';
-  if (['Mar', 'Apr', 'May'].includes(month)) return 'rgba(80,180,120,0.8)';
-  if (['Jun', 'Jul', 'Aug'].includes(month)) return 'rgba(80,140,220,0.8)';
-  return 'rgba(220,140,60,0.8)';
+  if (['Jan', 'Feb', 'Mar'].includes(month))  return SWING_COLORS['West Coast Swing'];
+  if (['Apr', 'May', 'Jun'].includes(month))  return SWING_COLORS['Spring Swing'];
+  if (['Jul', 'Aug', 'Sep'].includes(month))  return SWING_COLORS['Summer Swing'];
+  return SWING_COLORS['Fall Finish'];
 };
 
 export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, firstTeeTime }) => {

@@ -13,6 +13,7 @@ import LoginPage            from './components/LoginPage';
 
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
+import { getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
 import { managerAuthApi, tournamentResultsApi } from './api/supabase';
 
@@ -305,15 +306,11 @@ const FantasyGolfLeague = () => {
         )}
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
-            <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
+            <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
               {(() => {
                 const active = safeTournaments.find(t => t.playing);
-                if (active?.segment) return active.segment;
-                const next = safeTournaments.find(t => !t.completed && !t.playing);
-                if (next?.segment) return next.segment;
-                const lastDone = [...safeTournaments].reverse().find(t => t.completed);
-                if (lastDone?.segment) return lastDone.segment;
-                return getSegmentByDate();
+                const seg = active?.segment || safeTournaments.find(t => !t.completed && !t.playing)?.segment || [...safeTournaments].reverse().find(t => t.completed)?.segment || getSegmentByDate();
+                return <span style={{ color: getSwingColor(seg) }}>{seg}</span>;
               })()}
             </div>
             {currentTournament && (

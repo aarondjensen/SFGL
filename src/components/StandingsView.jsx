@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Trophy } from 'lucide-react';
-import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor } from '../theme.js';
+import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, SWING_COLORS } from '../theme.js';
 
 // Inject once — consistent row height on mobile
 if (typeof document !== 'undefined' && !document.getElementById('sfgl-standings-styles')) {
@@ -34,12 +34,7 @@ const formatBehind = (n) => {
 
 const ALL_SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 
-const SWING_ACCENT = {
-  'West Coast Swing': 'rgba(100,160,255,0.85)',
-  'Spring Swing':     'rgba(80,200,120,0.85)',
-  'Summer Swing':     'rgba(220,180,60,0.85)',
-  'Fall Finish':      'rgba(220,120,60,0.85)',
-};
+const SWING_ACCENT = SWING_COLORS;
 
 const MONTH_ABBREVS = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
 const getSegmentForTournament = (t) => {

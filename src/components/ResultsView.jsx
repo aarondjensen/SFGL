@@ -1,21 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Trophy } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
-import { theme, colors, fonts, cardLiftHandlers } from '../theme.js';
+import { theme, colors, fonts, cardLiftHandlers, SWING_COLORS } from '../theme.js';
 
 const GOLD_BRIGHT = '#f5c518';
 const GOLD_DIM    = 'rgba(245,197,24,0.35)';
 const BLUE_BRIGHT = 'rgba(100,180,255,0.95)';
 const BLUE_DIM    = 'rgba(100,180,255,0.35)';
 
-const SWING_ACCENT = {
-  'West Coast Swing': 'rgba(100,160,255,0.85)',
-  'Spring Swing':     'rgba(80,200,120,0.85)',
-  'Summer Swing':     'rgba(220,180,60,0.85)',
-  'Fall Finish':      'rgba(220,120,60,0.85)',
-};
 const swingColors = (seg) => {
-  const accent = SWING_ACCENT[seg] || 'rgba(100,160,255,0.85)';
+  const accent = SWING_COLORS[seg] || 'rgba(120,180,255,0.85)';
   return {
     accent,
     bg: accent.replace('0.85)', '0.07)'),
