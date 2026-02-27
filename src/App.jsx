@@ -250,8 +250,7 @@ const FantasyGolfLeague = () => {
                     {loggedInUser}
                   </span>
                 )}
-                {loggedInUser
-                  ? (
+                {loggedInUser && !isCommissioner && (
                     <button onClick={handleLogout} style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
                       fontSize: 10,
@@ -267,7 +266,8 @@ const FantasyGolfLeague = () => {
                     }}>
                       Sign Out
                     </button>
-                  ) : (
+                )}
+                {!loggedInUser && (
                     <button onClick={() => setShowLoginModal(true)} style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
                       fontSize: 10,
@@ -283,8 +283,7 @@ const FantasyGolfLeague = () => {
                     }}>
                       Sign In
                     </button>
-                  )
-                }
+                )}
               </div>
             </div>
           </div>
@@ -293,15 +292,30 @@ const FantasyGolfLeague = () => {
         {/* ── Commissioner banner ── */}
         {isCommissioner && (
           <div style={{
-            background: 'repeating-linear-gradient(90deg, rgba(245,197,24,0.12) 0px, rgba(245,197,24,0.12) 12px, rgba(245,197,24,0.06) 12px, rgba(245,197,24,0.06) 24px)',
-            borderTop: '1px solid rgba(245,197,24,0.35)',
-            borderBottom: '1px solid rgba(245,197,24,0.35)',
+            background: 'repeating-linear-gradient(90deg, rgba(245,197,24,0.22) 0px, rgba(245,197,24,0.22) 12px, rgba(245,197,24,0.12) 12px, rgba(245,197,24,0.12) 24px)',
+            borderTop: '1px solid rgba(245,197,24,0.5)',
+            borderBottom: '1px solid rgba(245,197,24,0.5)',
             padding: '4px 16px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
           }}>
-            <span style={{ fontSize: 11, letterSpacing: '0.15em', fontWeight: 700, fontFamily: "'Raleway', system-ui, sans-serif", color: 'rgba(245,197,24,0.9)', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 11, letterSpacing: '0.15em', fontWeight: 700, fontFamily: "'Raleway', system-ui, sans-serif", color: 'rgba(245,197,24,1)', textTransform: 'uppercase' }}>
               ⚙ Commissioner Mode
             </span>
+            <button onClick={handleLogout} style={{
+              fontFamily: "'Raleway', system-ui, sans-serif",
+              fontSize: 9,
+              letterSpacing: 1.5,
+              textTransform: 'uppercase',
+              padding: '3px 10px',
+              background: 'rgba(245,197,24,0.15)',
+              border: '1px solid rgba(245,197,24,0.4)',
+              borderRadius: 1,
+              color: 'rgba(245,197,24,0.85)',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}>
+              Sign Out
+            </button>
           </div>
         )}
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
