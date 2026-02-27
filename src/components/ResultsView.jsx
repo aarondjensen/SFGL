@@ -36,7 +36,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
         <div key={idx} style={{ fontSize: 10, minWidth: 0, overflow: 'hidden' }}>
           {p ? (
             <>
-              {/* Line 1: name + mulligan badge */}
+              {/* Line 1: name + mulligan + round leader badges */}
               <div style={{
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 color: playerNameColor(p, showEarnings),
@@ -47,26 +47,24 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                     marginLeft: 2, fontSize: 9, lineHeight: 1, verticalAlign: 'middle',
                   }}>🚨</span>
                 )}
+                {showEarnings && p.roundsLed?.map((rl, ri) => (
+                  <span key={ri} style={{
+                    marginLeft: 2, padding: '0 3px',
+                    background: 'rgba(220,110,30,0.35)',
+                    color: 'rgba(255,165,80,0.95)',
+                    borderRadius: 2, fontSize: 8, verticalAlign: 'middle',
+                  }}>R{rl.round}</span>
+                ))}
               </div>
-              {/* Line 2: earnings + bonus + round leader badges */}
+              {/* Line 2: total earnings (base + bonus combined) */}
               {showEarnings ? (
-                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ whiteSpace: 'nowrap' }}>
                   <span style={{ ...theme.statNum, fontSize: 10, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
-                    ${(p.earnings || 0).toLocaleString()}
+                    ${((p.earnings || 0) + (p.bonus || 0)).toLocaleString()}
                   </span>
                   {p.bonus > 0 && (
-                    <span style={{ color: 'rgba(255,150,60,0.9)', fontSize: 9, marginLeft: 2 }}>
-                      +{p.bonus.toLocaleString()}
-                    </span>
+                    <span style={{ color: 'rgba(255,150,60,0.8)', fontSize: 8, marginLeft: 1 }}>★</span>
                   )}
-                  {p.roundsLed?.map((rl, ri) => (
-                    <span key={ri} style={{
-                      marginLeft: 2, padding: '0 3px',
-                      background: 'rgba(220,110,30,0.35)',
-                      color: 'rgba(255,165,80,0.95)',
-                      borderRadius: 2, fontSize: 8,
-                    }}>R{rl.round}</span>
-                  ))}
                 </div>
               ) : (
                 <div style={{ color: colors.textMuted }}>—</div>
