@@ -320,12 +320,12 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                     </div>
                     <div className="sfgl-owner" style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
                   </td>
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'center' }}>
+                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'left' }}>
                     <div style={{ ...theme.statNumLg, letterSpacing: 3, fontWeight: 300, color: earningsColor(earnings) }}>
                       {formatEarnings(earnings)}
                     </div>
                   </td>
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'center' }}>
+                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
                     <div style={{ ...theme.statNum, fontSize: 11, letterSpacing: 3, fontWeight: 300, color: isSwingWinner ? accentColor.replace('0.85)', '1)') : behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
                       {isSwingWinner ? 'Winner' : formatBehind(behind)}
                     </div>
