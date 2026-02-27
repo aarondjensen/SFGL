@@ -287,24 +287,24 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const [addTxSearchOut,   setAddTxSearchOut]   = useState('');
   const dialog = useDialog();
 
-  const teamFees = useMemo(() => {
-    const getSegForTourney = (t) => {
-      if (t.segment) return t.segment;
-      if (t.dates) {
-        const m = t.dates.match(/^([A-Za-z]+)/);
-        if (m) {
-          const mo = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12}[m[1]];
-          if (mo) {
-            if (mo <= 3) return 'West Coast Swing';
-            if (mo <= 6) return 'Spring Swing';
-            if (mo <= 9) return 'Summer Swing';
-            return 'Fall Finish';
-          }
+  const getSegForTourney = (t) => {
+    if (t.segment) return t.segment;
+    if (t.dates) {
+      const m = t.dates.match(/^([A-Za-z]+)/);
+      if (m) {
+        const mo = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12}[m[1]];
+        if (mo) {
+          if (mo <= 3) return 'West Coast Swing';
+          if (mo <= 6) return 'Spring Swing';
+          if (mo <= 9) return 'Summer Swing';
+          return 'Fall Finish';
         }
       }
-      return null;
-    };
+    }
+    return null;
+  };
 
+  const teamFees = useMemo(() => {
     // Determine current swing for the fee counter:
     // 1. Find the swing of the last completed tournament
     // 2. If that swing has been awarded (swing_winner tx exists), advance to the
@@ -385,11 +385,19 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
     return ta - tb;
   });
+  const getTxSegment = (tx) => {
+    if (tx.segment) return tx.segment;
+    if (tx.tournamentIndex !== undefined && tournaments[tx.tournamentIndex]) {
+      return getSegForTourney(tournaments[tx.tournamentIndex]);
+    }
+    return '';
+  };
+
   const filteredTransactions = sortedTransactions
     .filter(tx => filterTeam === 'all' || tx.team === filterTeam)
     .filter(tx => {
       if (filterSwing === 'all') return true;
-      return tx.segment === filterSwing;
+      return getTxSegment(tx) === filterSwing;
     });
 
   const undoTransaction = async (tx, skipConfirm = false) => {
