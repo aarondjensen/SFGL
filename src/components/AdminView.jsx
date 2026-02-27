@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Settings } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { slashGolfFetch, getSegmentByDate, normalizePlayerName } from '../utils';
 import { storage } from '../api';
@@ -151,8 +150,6 @@ export const AdminView = ({
 }) => {
   const [selectedTourney, setSelectedTourney] = useState('');
   const [manualEntry, setManualEntry] = useState({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
-  const [rosterMgmtTeam, setRosterMgmtTeam] = useState('');
-  const [playerSearch, setPlayerSearch] = useState('');
   const [mgCredTeam, setMgCredTeam] = useState('');
   const [hsSearch,   setHsSearch]   = useState('');
   const [hsSaving,   setHsSaving]   = useState({});
@@ -161,18 +158,6 @@ export const AdminView = ({
   const [mgCredSaving, setMgCredSaving] = useState(false);
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [swingAwardSeg, setSwingAwardSeg]   = useState('');
-  // Apply mulligan (live, inside Roster Management)
-  const [mulliganMode, setMulliganMode]     = useState(false);
-  const [mulliganOut,  setMulliganOut]      = useState('');
-  const [mulliganIn,   setMulliganIn]       = useState('');
-  const [mulliganRound, setMulliganRound]   = useState('2');
-  // Retroactive lineup + mulligan + reprocess
-  const [retMulTeam, setRetMulTeam] = useState('');
-  const [retMulTourney, setRetMulTourney] = useState('');
-
-  const [retLineupEdit, setRetLineupEdit] = useState([]);  // edited starting lineup
-  const [mgrLoginOpen, setMgrLoginOpen]   = useState(false);
-  const [inspectTeamId, setInspectTeamId] = useState('');
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -435,30 +420,6 @@ export const AdminView = ({
     );
   };
 
-  // ── Roster Management ────────────────────────────────────────────────────
-  const handleAddPlayer = async (teamId, name) => {
-    const newTeams = teams.map(t => t.id === teamId ? { ...t, roster: [...t.roster, { name, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' }] } : t);
-    updateTeams(newTeams);
-    dialog.showToast('Added ' + name, 'success');
-  };
-  const handleDropPlayer = async (teamId, name, idx) => {
-    const team = teams.find(t => t.id === teamId);
-    const label = name || `roster entry #${idx + 1}`;
-    if (!await dialog.showConfirm('Drop Player', 'Remove ' + label + ' from ' + team.name + '?', { type: 'danger', confirmText: 'Drop' })) return;
-    // Drop by index if name is missing/ambiguous, otherwise by name
-    const newRoster = idx !== undefined
-      ? team.roster.filter((_, i) => i !== idx)
-      : team.roster.filter(p => p.name !== name);
-    const newTeams = teams.map(t => t.id === teamId ? { ...t, roster: newRoster } : t);
-    updateTeams(newTeams);
-    dialog.showToast('Dropped ' + label, 'success');
-  };
-  const resetMulligan = (teamId, type) => {
-    const team = teams.find(t => t.id === teamId);
-    updateTeams(teams.map(t => t.id === teamId ? { ...t, mulligans: { ...t.mulligans, [type === 'sig' ? 'signatureMajor' : 'regular']: 1 } } : t));
-    dialog.showToast('Reset ' + type + ' mulligan for ' + team.name, 'success');
-  };
-
   // ── Waivers ──────────────────────────────────────────────────────────────
   const buildRoster = (team) => {
     let r = team.roster.map(p => p.name);
@@ -557,33 +518,6 @@ export const AdminView = ({
     setMgCredSaving(false);
   };
 
-  // ── Push to Supabase ─────────────────────────────────────────────────────
-  const handlePush = async () => {
-    if (!await dialog.showConfirm('Push to Supabase', 'Overwrite the shared database with data from this device. All other devices update on next refresh.', { confirmText: 'Push' })) return;
-    dialog.showToast('Pushing...', 'info');
-    try {
-      await Promise.all([sfglDataApi.set(STORAGE_KEYS.TEAMS, teams), sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, tournaments), sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, transactions), sfglDataApi.set(STORAGE_KEYS.SETTINGS, settings), sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, globalPlayerStats)]);
-      await Promise.all(tournaments.filter(t => t.completed && t.results).map(t => tournamentResultsApi.save({ tournamentName: t.name, teamResults: t.results.teams || {}, earningsMap: t.results.earningsMap || {}, roundLeaders: t.results.roundLeaders || {}, fullLineups: t.results.fullLineups || {} }).catch(() => {})));
-      dialog.showToast('Pushed! Refresh mobile to sync.', 'success');
-    } catch (e) { dialog.showToast('Push failed: ' + e.message, 'error'); }
-  };
-
-  // ── Recalculate Earnings ─────────────────────────────────────────────────
-  const handleRecalc = async () => {
-    const done = tournaments.filter(t => t.completed && t.results?.teams);
-    if (!done.length) { dialog.showToast('No completed results found', 'error'); return; }
-    if (!await dialog.showConfirm('Recalculate Earnings', 'Recompute all team earnings from completed results and fix the current tournament indicator.', { confirmText: 'Recalculate' })) return;
-    const byTeam = {}; done.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
-    const ut = teams.map(team => ({ ...team, earnings: byTeam[team.id] || 0, segmentEarnings: (() => { const sw = typeof getSegmentByDate === 'function' ? getSegmentByDate() : null; return done.filter(t => !sw || getTournamentSegment(t) === sw).reduce((s, t) => s + (t.results?.teams?.[team.id]?.totalEarnings || 0), 0); })() }));
-    const li = [...tournaments].map((t, i) => ({ t, i })).filter(({ t }) => t.completed).pop()?.i ?? -1;
-    const nx = tournaments.findIndex((t, i) => i > li && !t.completed && !t.isAlternate);
-    const ft = tournaments.map((t, i) => ({ ...t, playing: i === nx }));
-    updateTeams(ut); setTournaments(ft);
-    await storage.set(STORAGE_KEYS.TOURNAMENTS, ft);
-    sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, ft).catch(() => {});
-    dialog.showToast('Recalculated · next up: ' + (ft[nx]?.name || 'none'), 'success');
-  };
-
   // ── Season Reset ─────────────────────────────────────────────────────────
   const handleReset = async () => {
     if (!await dialog.showConfirm('Reset Entire Season', 'DELETE all results, transactions, rosters, lineups, and stats. Cannot be undone.', { type: 'danger', confirmText: 'Continue' })) return;
@@ -593,145 +527,6 @@ export const AdminView = ({
     setTransactions([]); setGlobalPlayerStats({});
     dialog.showToast('Season reset complete.', 'success');
   };
-
-  // ── Apply Mulligan (live, from Roster Management) ───────────────────────
-  const handleApplyMulligan = async (teamId) => {
-    if (!mulliganOut || !mulliganIn) return;
-    const team = teams.find(t => t.id === teamId);
-    const activeTournament = tournaments.find(t => t.playing);
-    if (!team || !activeTournament) { dialog.showToast('No active tournament', 'error'); return; }
-
-    const isSignatureOrMajor = activeTournament.isSignature || activeTournament.isMajor;
-    const mulliganKey = isSignatureOrMajor ? 'signatureMajor' : 'regular';
-    const remaining = team.mulligans?.[mulliganKey] ?? 0;
-    if (remaining < 1) { dialog.showToast('No ' + (isSignatureOrMajor ? 'signature/major' : 'regular') + ' mulligans remaining', 'error'); return; }
-
-    const ok = await dialog.showConfirm('Apply Mulligan',
-      team.name + ': swap ' + mulliganOut + ' OUT → ' + mulliganIn + ' IN (after Round ' + mulliganRound + ')?\n\nDeducts one ' + (isSignatureOrMajor ? 'signature/major' : 'regular') + ' mulligan.',
-      { confirmText: 'Apply Mulligan' });
-    if (!ok) return;
-
-    // Update stored tournament results to swap mulliganed players so live starts count is correct
-    const applyMulliganToResults = (tourns, teamId, outPlayer, inPlayer) =>
-      tourns.map(t => {
-        if (!t.playing || !t.results?.teams?.[teamId]) return t;
-        const teamResult = t.results.teams[teamId];
-        const updatedPlayers = (teamResult.players || []).map(p => {
-          const name = p.name || p;
-          if (name !== outPlayer) return p;
-          // Replace out player with in player, preserve earnings structure
-          return typeof p === 'string' ? inPlayer : { ...p, name: inPlayer, earnings: 0 };
-        });
-        return { ...t, results: { ...t.results, teams: { ...t.results.teams, [teamId]: { ...teamResult, players: updatedPlayers } } } };
-      });
-
-    const newLineup = team.lineup.map(p => p === mulliganOut ? mulliganIn : p);
-    const updatedRoster = team.roster.map(p => {
-      if (p.name === mulliganOut && p.limited) return { ...p, starts: Math.max(0, p.starts - 1) };
-      if (p.name === mulliganIn  && p.limited) return { ...p, starts: p.starts + 1 };
-      return p;
-    });
-    const newMulligans = { ...team.mulligans, [mulliganKey]: remaining - 1 };
-    const tournamentIndex = tournaments.findIndex(t => t.playing);
-    const newTx = {
-      team: team.name, type: 'mulligan', player: mulliganIn, droppedPlayer: mulliganOut,
-      fee: 0, segment: activeTournament.segment || '', date: new Date().toLocaleDateString(),
-      timestamp: Date.now(),
-      tournamentIndex, status: 'completed',
-      mulliganType: isSignatureOrMajor ? 'signature/major' : 'regular',
-      afterRound: parseInt(mulliganRound), tournament: activeTournament.name,
-    };
-    const newTeams = teams.map(t => t.id === teamId ? { ...t, lineup: newLineup, roster: updatedRoster, mulligans: newMulligans } : t);
-    const newTournaments = applyMulliganToResults(tournaments, teamId, mulliganOut, mulliganIn);
-    updateTeams(newTeams);
-    setTournaments(newTournaments);
-    setTransactions(prev => [...prev, newTx]);
-    await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
-    sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newTournaments).catch(() => {});
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
-    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(() => {});
-
-    dialog.showToast('Mulligan applied: ' + mulliganOut + ' → ' + mulliganIn, 'success');
-    setMulliganMode(false); setMulliganOut(''); setMulliganIn(''); setMulliganRound('2');
-  };
-
-  // ── Retroactive Lineup Only (no mulligan) ─────────────────────────────
-  const handleRetroLineupOnly = async () => {
-    if (!retMulTeam || !retMulTourney) return;
-    const team = teams.find(t => t.id === retMulTeam);
-    const tournament = tournaments.find(t => t.name === retMulTourney);
-    const tournamentIndex = tournaments.findIndex(t => t.name === retMulTourney);
-    if (!team || !tournament || !tournament.results) return;
-
-    const savedLineup = tournament.results.fullLineups?.[team.id] || [];
-    const baseLineup = retLineupEdit.length > 0 ? retLineupEdit : savedLineup;
-    if (baseLineup.length === 0) { dialog.showToast('No lineup to reprocess', 'error'); return; }
-
-    const ok = await dialog.showConfirm(
-      'Reprocess Lineup (No Mulligan)',
-      'Reprocess ' + retMulTourney + ' for ' + team.name + ' with lineup: ' + baseLineup.join(', ') + '. No mulligan will be applied.',
-      { confirmText: 'Reprocess' }
-    );
-    if (!ok) return;
-
-    const teamsForReprocess = teams.map(t => t.id === team.id ? { ...t, lineup: baseLineup } : t);
-    const earningsMap = tournament.results.earningsMap || {};
-    const reprocessData = {
-      name: retMulTourney, status: 'post', competitors: [],
-      roundLeaders: tournament.results.roundLeaders || {},
-      earningsMap: new Map(Object.entries(earningsMap)),
-      isManualEntry: true,
-    };
-    const names = teams.flatMap(t => t.roster.map(p => p.name));
-    const { newTeams: reprocessedTeams, newStats, resultsData } = processTournamentData(
-      tournament, reprocessData, teamsForReprocess, globalPlayerStats, names
-    );
-
-    const oldTeamResult = tournament.results.teams?.[team.id];
-    const newTeamResult = resultsData.teams?.[team.id];
-    const oldSfglByPlayer = {};
-    (oldTeamResult?.players || []).forEach(p => { oldSfglByPlayer[p.name || p] = p.earnings || 0; });
-    const newSfglByPlayer = {};
-    (newTeamResult?.players || []).forEach(p => { newSfglByPlayer[p.name || p] = p.earnings || 0; });
-
-    const finalTeams = reprocessedTeams.map(t => {
-      if (t.id !== team.id) return t;
-      const newRoster = t.roster.map(p => {
-        const delta = (newSfglByPlayer[p.name] || 0) - (oldSfglByPlayer[p.name] || 0);
-        if (delta === 0) return p;
-        return { ...p, sfglEarnings: Math.max(0, (p.sfglEarnings || 0) + delta) };
-      });
-      return { ...t, roster: newRoster };
-    });
-
-    const earningsDelta = (newTeamResult?.totalEarnings || 0) - (oldTeamResult?.totalEarnings || 0);
-    const finalTeamsWithEarnings = finalTeams.map(t =>
-      t.id === team.id
-        ? { ...t, earnings: (t.earnings || 0) + earningsDelta, segmentEarnings: (t.segmentEarnings || 0) + earningsDelta }
-        : t
-    );
-
-    const newTournamentResults = {
-      ...tournament.results,
-      teams: { ...tournament.results.teams, [team.id]: newTeamResult },
-      fullLineups: { ...(tournament.results.fullLineups || {}), [team.id]: baseLineup },
-    };
-    const newTournaments = tournaments.map((t, i) =>
-      i === tournamentIndex ? { ...t, results: newTournamentResults } : t
-    );
-
-    updateTeams(finalTeamsWithEarnings);
-    setTournaments(newTournaments);
-    setGlobalPlayerStats(newStats);
-    await storage.set(STORAGE_KEYS.TOURNAMENTS, newTournaments);
-    await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-    sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newTournaments).catch(() => {});
-
-    dialog.showToast('Reprocessed ' + retMulTourney + ' for ' + team.name + (earningsDelta !== 0 ? ' · earnings delta $' + earningsDelta.toLocaleString() : ' · no earnings change'), 'success');
-    setRetMulTeam(''); setRetMulTourney(''); setRetLineupEdit([]);
-    setRetMulOut(''); setRetMulIn(''); setRetApplyMulligan(false);
-  };
-
 
   // ── Award Swing Winner ──────────────────────────────────────────────────
   const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
@@ -835,134 +630,6 @@ export const AdminView = ({
     setSwingAwardSeg('');
   };
 
-  // ── Recalculate Starts from History ────────────────────────────────────
-  const handleRecalcStarts = async () => {
-    const completed = tournaments.filter(t => t.completed && t.results?.teams);
-    if (!completed.length) { dialog.showToast('No completed tournaments to calculate from', 'error'); return; }
-
-    const ok = await dialog.showConfirm(
-      'Recalculate Limited Player Starts',
-      'Rebuild each limited player start count from completed tournament history. This is the source of truth and overrides any manual counts.',
-      { confirmText: 'Recalculate' }
-    );
-    if (!ok) return;
-
-    // Build starts map: teamId → playerName → count
-    const startsMap = {};
-    teams.forEach(t => { startsMap[t.id] = {}; });
-
-    completed.forEach(tourney => {
-      Object.entries(tourney.results.teams).forEach(([teamId, teamResult]) => {
-        if (!startsMap[teamId]) return;
-        // results.teams[id].players contains the players who contributed to the score
-        const players = teamResult.players || [];
-        players.forEach(p => {
-          const name = p.name || p;
-          if (!startsMap[teamId][name]) startsMap[teamId][name] = 0;
-          startsMap[teamId][name] += 1;
-        });
-      });
-    });
-
-    // Apply mulligan corrections:
-    // A mulligan-OUT means that player was replaced mid-tournament —
-    // processTournamentData uses the post-mulligan lineup, so playerOut is NOT
-    // in results.players and doesn't need a deduction.
-    // A mulligan-IN means the replacement IS in results.players → already counted.
-    // So the results.players list IS already the post-mulligan truth. No correction needed.
-
-    const newTeams = teams.map(team => {
-      const tMap = startsMap[team.id] || {};
-      const newRoster = team.roster.map(p => {
-        if (!p.limited) return p;
-        const computedStarts = tMap[p.name] || 0;
-        return { ...p, starts: computedStarts };
-      });
-      return { ...team, roster: newRoster };
-    });
-
-    updateTeams(newTeams);
-
-    const totalFixed = teams.reduce((sum, team) => {
-      return sum + team.roster.filter(p => p.limited).length;
-    }, 0);
-    dialog.showToast('Starts recalculated for ' + totalFixed + ' limited players across ' + completed.length + ' tournaments', 'success');
-  };
-
-  // ── Recalculate All Player Stats from History ──────────────────────────
-  const handleRecalcAllStats = async () => {
-    const completed = tournaments.filter(t => t.completed && t.results?.teams);
-    if (!completed.length) { dialog.showToast('No completed tournaments found', 'error'); return; }
-
-    const ok = await dialog.showConfirm(
-      'Recalculate All Player Stats',
-      'Rebuild Events, Cuts, Tour$, SFGL$, and Starts for every rostered player from completed tournament history.',
-      { confirmText: 'Recalculate' }
-    );
-    if (!ok) return;
-
-    // --- globalPlayerStats: {playerName: {eventsPlayed, cutsMade, pgaTourEarnings}}
-    // sourced from results.earningsMap which has ALL players who made the cut
-    const newGlobalStats = {};
-
-    // --- per-roster sfglEarnings & starts: sourced from results.teams[id].players
-    // {teamId: {playerName: {sfglEarnings, starts}}}
-    const rosterStats = {};
-    teams.forEach(t => { rosterStats[t.id] = {}; });
-
-    completed.forEach(tourney => {
-      const earningsMap = tourney.results.earningsMap || {};
-
-      // PGA Tour stats from earningsMap (all players who earned money)
-      Object.entries(earningsMap).forEach(([playerName, pgaEarnings]) => {
-        if (!newGlobalStats[playerName]) {
-          newGlobalStats[playerName] = { eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0 };
-        }
-        newGlobalStats[playerName].eventsPlayed += 1;
-        if (pgaEarnings > 0) newGlobalStats[playerName].cutsMade += 1;
-        newGlobalStats[playerName].pgaTourEarnings += pgaEarnings;
-      });
-
-      // SFGL earnings & starts from each team result
-      Object.entries(tourney.results.teams).forEach(([teamId, teamResult]) => {
-        if (!rosterStats[teamId]) return;
-        const players = teamResult.players || [];
-        players.forEach(p => {
-          const name = p.name || p;
-          const sfgl = p.earnings || 0;
-          if (!rosterStats[teamId][name]) rosterStats[teamId][name] = { sfglEarnings: 0, starts: 0 };
-          rosterStats[teamId][name].sfglEarnings += sfgl;
-          rosterStats[teamId][name].starts += 1;
-        });
-      });
-    });
-
-    // Apply to teams — update roster sfglEarnings and starts
-    const newTeams = teams.map(team => {
-      const tStats = rosterStats[team.id] || {};
-      const newRoster = team.roster.map(p => {
-        const ps = tStats[p.name] || { sfglEarnings: 0, starts: 0 };
-        return {
-          ...p,
-          sfglEarnings: ps.sfglEarnings,
-          starts: p.limited ? ps.starts : p.starts,
-        };
-      });
-      return { ...team, roster: newRoster };
-    });
-
-    updateTeams(newTeams);
-    setGlobalPlayerStats(newGlobalStats);
-    await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newGlobalStats);
-    sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newGlobalStats).catch(() => {});
-
-    const playerCount = Object.keys(newGlobalStats).length;
-    dialog.showToast('Stats rebuilt from ' + completed.length + ' tournaments · ' + playerCount + ' players updated', 'success');
-  };
-
-  const pending = transactions.map((tx, idx) => ({ ...tx, _idx: idx })).filter(tx => tx.type === 'waiver' && tx.status === 'pending');
-  const disabledBtn = (cond) => cond ? { opacity: 0.4, cursor: 'not-allowed' } : {};
-
   // ── OWGR CSV handler ──────────────────────────────────────────────────────
   const [owgrStatus, setOwgrStatus] = useState(null); // null | 'parsing' | 'done' | 'error'
   const [owgrSummary, setOwgrSummary] = useState('');
@@ -1026,15 +693,6 @@ export const AdminView = ({
 
   return (
     <div style={{ paddingBottom: 40 }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', background: colors.cardBg, border: `1px solid ${colors.border}`, borderRadius: 4, marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Settings size={14} style={{ color: colors.textGoldDim }} />
-          <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: colors.textGold }}>Commissioner</span>
-        </div>
-        <button onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }} style={{ ...theme.btnDanger, padding: '6px 14px', fontSize: 11 }}>Logout</button>
-      </div>
 
       {/* ── Row 1: Tournament Results · Waivers · Swing Winner (side by side) ── */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
@@ -1233,212 +891,6 @@ export const AdminView = ({
 
       </div>{/* end Row 1 */}
 
-      {/* ── Row 2: Roster Management · Fix Prior Lineup (side by side) ── */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-
-        {/* Roster Management */}
-        <div style={{ ...S.section, flex: 1, minWidth: 0 }}>
-          <div style={S.title}>👥 Roster Management</div>
-          <label style={S.lbl}>Team</label>
-          <select value={rosterMgmtTeam} onChange={e => { setRosterMgmtTeam(e.target.value); setPlayerSearch(''); }} style={S.select}>
-            <option value="">Choose team...</option>
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-          {rosterMgmtTeam && (() => {
-            const team = teams.find(t => t.id === rosterMgmtTeam);
-
-            // Compute effective roster the same way RostersView does —
-            // start from team.roster and replay all processed transactions.
-            // This is what the manager sees, and what we must edit.
-            let effectiveRoster = [...team.roster];
-            transactions
-              .filter(tx => tx.team === team.name && tx.status === 'processed' && tx.type !== 'mulligan')
-              .forEach(tx => {
-                if (tx.droppedPlayer) effectiveRoster = effectiveRoster.filter(p => p.name !== tx.droppedPlayer);
-                if (tx.player && !effectiveRoster.some(p => p.name === tx.player)) {
-                  // Preserve full player object if already on roster, else create stub
-                  const existing = team.roster.find(p => p.name === tx.player);
-                  effectiveRoster.push(existing || { name: tx.player, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0 });
-                }
-              });
-
-            const effectiveNames = new Set(effectiveRoster.map(p => p.name));
-            const results = playerSearch.trim() ? allPlayers.filter(p =>
-              p.name && !/^\d+$/.test(p.name) &&
-              p.name.toLowerCase().includes(playerSearch.toLowerCase()) &&
-              !effectiveNames.has(p.name)
-            ).slice(0, 15) : [];
-            return (
-              <div>
-                <div style={{ background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '10px 12px', marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={S.lbl}>Mulligans</span>
-                    <span style={{ ...theme.smallText }}>Sig: {team.mulligans?.signatureMajor ?? 0} · Reg: {team.mulligans?.regular ?? 0}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                    <button onClick={() => resetMulligan(team.id, 'sig')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Sig</button>
-                    <button onClick={() => resetMulligan(team.id, 'reg')} style={{ ...theme.btnSecondary, flex: 1, padding: '7px 10px', fontSize: 11 }}>Reset Reg</button>
-                  </div>
-                  {(() => {
-                    const activeTournament = tournaments.find(t => t.playing);
-                    if (!activeTournament) return (
-                      <div style={{ ...theme.smallText, color: colors.textMuted, textAlign: 'center', paddingTop: 4 }}>No active tournament — can't apply mulligan</div>
-                    );
-                    const isSignatureOrMajor = activeTournament.isSignature || activeTournament.isMajor;
-                    const mulliganKey = isSignatureOrMajor ? 'signatureMajor' : 'regular';
-                    const remaining = team.mulligans?.[mulliganKey] ?? 0;
-                    const lineupPlayers = team.lineup || [];
-                    const benchPlayers = (team.roster || []).map(p => p.name).filter(n => !lineupPlayers.includes(n));
-                    return (
-                      <div>
-                        <button
-                          onClick={() => { setMulliganMode(!mulliganMode); setMulliganOut(''); setMulliganIn(''); setMulliganRound('2'); }}
-                          style={{ ...theme.btnSecondary, width: '100%', padding: '7px 10px', fontSize: 11, marginBottom: mulliganMode ? 8 : 0,
-                            borderColor: mulliganMode ? colors.border : colors.borderInput,
-                            color: mulliganMode ? colors.textGold : colors.textSecondary }}>
-                          🚨 {mulliganMode ? 'Cancel Mulligan' : 'Apply Mulligan'} ({remaining} {isSignatureOrMajor ? 'sig' : 'reg'} left)
-                        </button>
-                        {mulliganMode && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <select value={mulliganOut} onChange={e => setMulliganOut(e.target.value)} style={{ ...S.select, marginBottom: 0 }}>
-                              <option value="">Player OUT (from lineup)...</option>
-                              {lineupPlayers.map(n => <option key={n} value={n}>{n}</option>)}
-                            </select>
-                            <select value={mulliganIn} onChange={e => setMulliganIn(e.target.value)} style={{ ...S.select, marginBottom: 0 }}>
-                              <option value="">Player IN (from bench)...</option>
-                              {benchPlayers.map(n => <option key={n} value={n}>{n}</option>)}
-                            </select>
-                            <div style={{ display: 'flex', gap: 4 }}>
-                              {['1','2','3'].map(r => (
-                                <button key={r} onClick={() => setMulliganRound(r)}
-                                  style={{ flex: 1, padding: '6px 0', borderRadius: 2, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
-                                    background: mulliganRound === r ? colors.buttonNavy : 'transparent',
-                                    border: `1px solid ${mulliganRound === r ? colors.border : colors.borderInput}`,
-                                    color: mulliganRound === r ? colors.textGold : colors.textSecondary }}>
-                                  R{r}
-                                </button>
-                              ))}
-                            </div>
-                            <button onClick={() => handleApplyMulligan(team.id)}
-                              disabled={!mulliganOut || !mulliganIn || remaining < 1}
-                              style={{ ...theme.btnPrimary, padding: '8px 10px', fontSize: 11,
-                                opacity: (!mulliganOut || !mulliganIn || remaining < 1) ? 0.4 : 1,
-                                cursor: (!mulliganOut || !mulliganIn || remaining < 1) ? 'not-allowed' : 'pointer' }}>
-                              Confirm Mulligan
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-                <div style={{ border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, marginBottom: 8 }}>
-                  {!effectiveRoster.length
-                    ? <div style={theme.emptyState}>No players on roster</div>
-                    : effectiveRoster.map((p, idx) => (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                        <span style={{ fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted, flexShrink: 0, width: 18 }}>{idx + 1}</span>
-                        <img src={'https://pga-tour-res.cloudflare.com/resources/photoplayer/' + (headshots[p.name] || 'default') + '.jpg'}
-                          onError={e => { e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(p.name || '?') + '&background=111d2e&color=9ca3af&size=28'; }}
-                          alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }} />
-                        <span style={{ fontFamily: fonts.sans, fontSize: 13, color: p.name ? colors.textPrimary : colors.danger, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {p.name || <em>unnamed entry</em>}
-                        </span>
-                        <button onClick={async () => {
-                          const label = p.name || `entry #${idx + 1}`;
-                          if (!await dialog.showConfirm('Drop Player', `Remove ${label} from ${team.name}?`, { type: 'danger', confirmText: 'Drop' })) return;
-                          // Write the effective roster minus this player back to team.roster
-                          const newRoster = effectiveRoster.filter((_, i) => i !== idx);
-                          const newTeams = teams.map(t => t.id === team.id ? { ...t, roster: newRoster } : t);
-                          updateTeams(newTeams);
-                          await storage.set(STORAGE_KEYS.TEAMS, newTeams);
-                          sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
-                          dialog.showToast('Dropped ' + label, 'success');
-                        }} style={{ ...theme.btnDanger, padding: '4px 10px', fontSize: 11 }}>Drop</button>
-                      </div>
-                    ))
-                  }
-                </div>
-                <input type="text" placeholder="Search to add player..." value={playerSearch} onChange={e => setPlayerSearch(e.target.value)} style={S.input} />
-                {results.length > 0 && (
-                  <div style={{ border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, maxHeight: 160, overflowY: 'auto' }}>
-                    {results.map(p => (
-                      <button key={p.name} onClick={() => { handleAddPlayer(team.id, p.name); setPlayerSearch(''); }}
-                        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'none', border: 'none', borderBottom: `1px solid ${colors.borderSubtle}`, cursor: 'pointer', textAlign: 'left' }}
-                        onMouseEnter={e => e.currentTarget.style.background = colors.rowHover}
-                        onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                        <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary }}>{p.name}</span>
-                        <span style={{ fontSize: 11, color: colors.earningsGreen, fontWeight: 700 }}>Add</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* Fix Prior Lineup */}
-        <div style={{ ...S.section, flex: 1, minWidth: 0 }}>
-          <div style={S.title}>🚨 Fix Prior Lineup</div>
-          <div style={{ ...theme.smallText, marginBottom: 12 }}>
-            Correct a submitted lineup for a completed tournament and reprocess earnings.
-          </div>
-          <label style={S.lbl}>Team</label>
-          <select value={retMulTeam} onChange={e => { setRetMulTeam(e.target.value); setRetLineupEdit([]); }} style={S.select}>
-            <option value="">Select team...</option>
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
-          </select>
-          <label style={S.lbl}>Tournament</label>
-          <select value={retMulTourney} onChange={e => { setRetMulTourney(e.target.value); setRetLineupEdit([]); }} style={S.select}>
-            <option value="">Select tournament...</option>
-            {tournaments.filter(t => t.completed).map(t => (
-              <option key={t.name} value={t.name}>✓ {t.name}</option>
-            ))}
-          </select>
-          {retMulTeam && retMulTourney && (() => {
-            const team = teams.find(t => t.id === retMulTeam);
-            const tournament = tournaments.find(t => t.name === retMulTourney);
-            const savedLineup = tournament?.results?.fullLineups?.[retMulTeam] || [];
-            const baseLineup = retLineupEdit.length > 0 ? retLineupEdit : (savedLineup.length > 0 ? savedLineup : []);
-            const rosterPlayers = team?.roster?.map(p => p.name) || [];
-            return (
-              <div>
-                <label style={S.lbl}>
-                  Lineup
-                  <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>
-                    {savedLineup.length > 0 ? '(loaded from saved results)' : '(not saved — build manually)'}
-                  </span>
-                </label>
-                <div style={{ marginBottom: 8, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: '1px solid ' + colors.borderSubtle, fontSize: 11, fontFamily: fonts.sans }}>
-                  {baseLineup.length > 0
-                    ? baseLineup.map(name => (
-                      <span key={name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 8, marginBottom: 4 }}>
-                        <span style={{ color: colors.textGold }}>{name}</span>
-                        <button onClick={() => setRetLineupEdit(baseLineup.filter(n => n !== name))}
-                          style={{ background: 'none', border: 'none', color: colors.danger, cursor: 'pointer', fontSize: 11, padding: '0 2px' }}>✕</button>
-                      </span>
-                    ))
-                    : <span style={{ color: colors.textMuted }}>No lineup — add players below</span>
-                  }
-                </div>
-                {baseLineup.length < 5 && (
-                  <select onChange={e => { if (e.target.value) setRetLineupEdit([...baseLineup, e.target.value]); e.target.value = ''; }} style={{ ...S.select, marginBottom: 12 }}>
-                    <option value="">+ Add player to lineup...</option>
-                    {rosterPlayers.filter(n => !baseLineup.includes(n)).map(name => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                )}
-                <button onClick={handleRetroLineupOnly} disabled={baseLineup.length === 0}
-                  style={{ ...S.btn, ...disabledBtn(baseLineup.length === 0) }}>
-                  Reprocess Lineup
-                </button>
-              </div>
-            );
-          })()}
-        </div>
-
-      </div>{/* end Row 2 */}
-
       {/* ── Row 3: OWGR · Headshot Manager (side by side) ── */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
 
@@ -1582,160 +1034,21 @@ export const AdminView = ({
 
       </div>{/* end Row 3 */}
 
-      {/* ── Data & Sync (with Manager Login as expandable subsection) ── */}
+
+      {/* ── Manager Login Credentials ── */}
       <div style={S.section}>
-        <div style={S.title}>☁️ Data & Sync</div>
-        <button onClick={handlePush} style={{ ...S.btn, marginBottom: 8 }}>☁️ Push to Supabase (sync all devices)</button>
-        <button onClick={async () => {
-          dialog.showToast('Pulling from Supabase...', 'info');
-          try {
-            const rows = await sfglDataApi.getMany([STORAGE_KEYS.TEAMS, STORAGE_KEYS.TOURNAMENTS, STORAGE_KEYS.TRANSACTIONS]);
-            if (rows[STORAGE_KEYS.TEAMS]?.length > 0) updateTeams(rows[STORAGE_KEYS.TEAMS]);
-            if (rows[STORAGE_KEYS.TOURNAMENTS]?.length > 0) setTournaments(rows[STORAGE_KEYS.TOURNAMENTS]);
-            if (rows[STORAGE_KEYS.TRANSACTIONS]?.length > 0) setTransactions(rows[STORAGE_KEYS.TRANSACTIONS]);
-            dialog.showToast('✓ Pulled latest data from Supabase', 'success');
-          } catch (e) { dialog.showToast('Pull failed: ' + e.message, 'error'); }
-        }} style={{ ...S.btnSec, marginBottom: 8 }}>⬇️ Pull from Supabase (refresh this device)</button>
-        <button onClick={handleRecalc} style={{ ...S.btnSec, marginBottom: 8 }}>📊 Recalculate Earnings from Results</button>
-        <button onClick={handleRecalcAllStats} style={{ ...S.btnSec, marginBottom: 8 }}>📈 Recalculate All Player Stats (Events/Cuts/Tour$/SFGL$)</button>
-        <button onClick={handleRecalcStarts} style={{ ...S.btnSec, marginBottom: 8 }}>⭐ Recalculate Limited Player Starts</button>
-        <button onClick={async () => {
-          // Read transactions from localStorage and merge any missing into current state
-          try {
-            const local = await storage.get(STORAGE_KEYS.TRANSACTIONS, []);
-            if (!Array.isArray(local) || local.length === 0) {
-              dialog.showToast('No transactions found in localStorage', 'error'); return;
-            }
-            const currentIds = new Set(transactions.map(tx => tx.timestamp || JSON.stringify(tx)));
-            const missing = local.filter(tx => !currentIds.has(tx.timestamp || JSON.stringify(tx)));
-            if (missing.length === 0) {
-              dialog.showToast('No missing transactions found — localStorage matches Supabase', 'success'); return;
-            }
-            const ok = await dialog.showConfirm(
-              'Recover Transactions',
-              `Found ${missing.length} transaction(s) in localStorage not in Supabase:\n\n` +
-              missing.slice(0, 5).map(tx => `• ${tx.team}: ${tx.type} ${tx.player || ''}`).join('\n') +
-              (missing.length > 5 ? `\n...and ${missing.length - 5} more` : '') +
-              '\n\nMerge these into transaction history?',
-              { confirmText: `Recover ${missing.length}` }
-            );
-            if (!ok) return;
-            const merged = [...missing, ...transactions];
-            setTransactions(merged);
-            await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, merged);
-            dialog.showToast(`✓ Recovered ${missing.length} transaction(s)`, 'success');
-          } catch(e) { dialog.showToast('Recovery failed: ' + e.message, 'error'); }
-        }} style={{ ...S.btnSec, marginBottom: 16 }}>🔄 Recover Transactions from localStorage</button>
-
-        {/* ── Raw Roster Inspector / Direct Fix ── */}
-        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12, marginBottom: 12 }}>
-          <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, color: colors.warning, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 8 }}>
-            🔧 Raw Roster Inspector
-          </div>
-          <select value={inspectTeamId} onChange={e => setInspectTeamId(e.target.value)} style={{ ...S.select, marginBottom: 8 }}>
-            <option value="">Select team to inspect...</option>
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-          {inspectTeamId && (() => {
-            const team = teams.find(t => t.id === inspectTeamId);
-            if (!team) return null;
-            const teamTx = transactions.map((tx, i) => ({ ...tx, _i: i })).filter(tx => tx.team === team.name && (tx.type === 'waiver' || tx.type === 'free agent'));
-            return (
-              <div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary, marginBottom: 4 }}>
-                  <strong>team.roster</strong> — {team.roster.length} players (what AdminView reads):
-                </div>
-                <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 3, padding: '8px 10px', marginBottom: 10, fontFamily: fonts.mono, fontSize: 11 }}>
-                  {team.roster.length === 0
-                    ? <span style={{ color: colors.textMuted }}>empty</span>
-                    : team.roster.map((p, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                        <span style={{ color: colors.textPrimary }}>{i + 1}. {p.name || <em style={{ color: colors.danger }}>UNNAMED</em>}</span>
-                        <button onClick={async () => {
-                          if (!window.confirm(`Directly remove "${p.name || 'entry #' + (i+1)}" from team.roster? This bypasses all logic.`)) return;
-                          const newRoster = team.roster.filter((_, ri) => ri !== i);
-                          const newTeams = teams.map(t => t.id === team.id ? { ...t, roster: newRoster } : t);
-                          updateTeams(newTeams);
-                          await storage.set(STORAGE_KEYS.TEAMS, newTeams);
-                          await sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams);
-                          dialog.showToast('Removed from roster', 'success');
-                        }} style={{ fontFamily: fonts.sans, fontSize: 10, padding: '1px 6px', background: 'rgba(180,60,60,0.2)', border: '1px solid rgba(180,60,60,0.4)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}>
-                          ✕ Remove
-                        </button>
-                      </div>
-                    ))
-                  }
-                </div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary, marginBottom: 4 }}>
-                  <strong>Waiver/FA transactions</strong> — what useRoster replays:
-                </div>
-                <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 3, padding: '8px 10px', fontFamily: fonts.mono, fontSize: 10, maxHeight: 200, overflowY: 'auto' }}>
-                  {teamTx.length === 0
-                    ? <span style={{ color: colors.textMuted }}>none</span>
-                    : teamTx.map((tx, i) => (
-                      <div key={i} style={{ padding: '3px 0', borderBottom: `1px solid ${colors.borderSubtle}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                        <span style={{ color: tx.status === 'processed' ? colors.success : tx.status === 'failed' ? colors.danger : colors.warning }}>
-                          [{tx.status}] +{tx.player}{tx.droppedPlayer ? ' / -' + tx.droppedPlayer : ''}
-                          {tx.failReason ? <span style={{ color: colors.textMuted }}> ({tx.failReason})</span> : null}
-                        </span>
-                        {tx.status === 'processed' && (
-                          <button onClick={async () => {
-                            if (!window.confirm(`Mark this transaction as FAILED to stop useRoster from replaying it?\n\n+${tx.player}${tx.droppedPlayer ? ' / -' + tx.droppedPlayer : ''}`)) return;
-                            const newTx = transactions.map((t, i) => i === tx._i ? { ...t, status: 'failed', failReason: 'Manually voided by commissioner' } : t);
-                            setTransactions(newTx);
-                            await storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
-                            await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx);
-                            dialog.showToast('Transaction voided', 'success');
-                          }} style={{ fontFamily: fonts.sans, fontSize: 10, padding: '1px 6px', background: 'rgba(180,60,60,0.2)', border: '1px solid rgba(180,60,60,0.4)', color: colors.danger, borderRadius: 2, cursor: 'pointer', flexShrink: 0 }}>
-                            Void
-                          </button>
-                        )}
-                        <button onClick={async () => {
-                          if (!window.confirm(`DELETE this transaction record entirely?\n\n[${tx.status}] +${tx.player}${tx.droppedPlayer ? ' / -' + tx.droppedPlayer : ''}`)) return;
-                          const newTx = transactions.filter((_, i) => i !== tx._i);
-                          setTransactions(newTx);
-                          await storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
-                          await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx);
-                          dialog.showToast('Transaction deleted', 'success');
-                        }} style={{ fontFamily: fonts.sans, fontSize: 10, padding: '1px 6px', background: 'rgba(100,100,100,0.2)', border: '1px solid rgba(100,100,100,0.4)', color: colors.textMuted, borderRadius: 2, cursor: 'pointer', flexShrink: 0 }}>
-                          Delete
-                        </button>
-                      </div>
-                    ))
-                  }
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* Manager Login — expandable */}
-        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
-          <button
-            onClick={() => setMgrLoginOpen(v => !v)}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-              background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: mgrLoginOpen ? 12 : 0 }}>
-            <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textSecondary, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-              🔑 Manager Login Credentials
-            </span>
-            <span style={{ fontSize: 11, color: colors.textMuted, transition: 'transform 0.15s', display: 'inline-block', transform: mgrLoginOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
-          </button>
-          {mgrLoginOpen && (
-            <div>
-              <label style={S.lbl}>Team</label>
-              <select value={mgCredTeam} onChange={e => { setMgCredTeam(e.target.value); setMgCredName(teams.find(x => x.id === e.target.value)?.owner || ''); }} style={S.select}>
-                <option value="">Select team...</option>
-                {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
-              </select>
-              <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
-              <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
-              <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
-                style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
-                {mgCredSaving ? 'Saving...' : 'Set Login'}
-              </button>
-            </div>
-          )}
-        </div>
+        <div style={S.title}>🔑 Manager Login Credentials</div>
+        <label style={S.lbl}>Team</label>
+        <select value={mgCredTeam} onChange={e => { setMgCredTeam(e.target.value); setMgCredName(teams.find(x => x.id === e.target.value)?.owner || ''); }} style={S.select}>
+          <option value="">Select team...</option>
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
+        </select>
+        <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
+        <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
+        <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
+          style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
+          {mgCredSaving ? 'Saving...' : 'Set Login'}
+        </button>
       </div>
 
       {/* Draft */}
