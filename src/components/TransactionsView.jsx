@@ -5,7 +5,7 @@ import { getSegmentByDate, makePlayer, getTeamAbbreviation } from '../utils/inde
 import { storage } from '../api';
 import { sfglDataApi } from '../api/supabase';
 import { STORAGE_KEYS } from '../constants/index.js';
-import { theme, colors, fonts } from '../theme.js';
+import { theme, colors, fonts, getSwingColor } from '../theme.js';
 
 // First initial + last name: "Scottie Scheffler" → "S. Scheffler"
 const shortName = (name) => {
@@ -664,12 +664,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           <div style={{ ...theme.cardHeader, justifyContent: 'space-between' }}>
             <h2 style={theme.h2}>Transaction Fees</h2>
             {teamFees[0]?.currentSwing && (() => {
-              const swingColor =
-                teamFees[0].currentSwing === 'West Coast Swing' ? 'rgba(220,80,80,0.85)' :
-                teamFees[0].currentSwing === 'Spring Swing'     ? 'rgba(100,215,175,0.9)' :
-                teamFees[0].currentSwing === 'Summer Swing'     ? 'rgba(80,140,220,0.85)' :
-                teamFees[0].currentSwing === 'Fall Finish'      ? 'rgba(220,140,60,0.85)' :
-                'rgba(245,197,24,0.55)';
+              const swingColor = getSwingColor(teamFees[0].currentSwing);
               const swingPot = teamFees.reduce((sum, t) => sum + (t.swingTotal || 0), 0);
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -704,10 +699,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>
                       {abbr}
                     </div>
-                    <div style={{ ...theme.statNum, fontSize: 13, color: colors.earningsGreen, marginTop: 2 }}>
+                    <div style={{ ...theme.statNum, fontSize: 13, color: colors.textGold, marginTop: 2 }}>
                       ${team.seasonTotal}
                     </div>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: team.swingIsComplete ? 'rgba(245,197,24,0.65)' : 'rgba(180,180,200,0.7)', marginTop: 1 }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: getSwingColor(team.currentSwing), marginTop: 1 }}>
                       ${team.swingTotal} swing
                     </div>
                   </div>
