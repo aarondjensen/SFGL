@@ -299,12 +299,12 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
 
               {/* Tournament name + lock status */}
               <td style={{ padding: '10px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontFamily: fonts.serif, fontSize: 13, color: alt ? colors.textMuted : colors.textPrimary }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
+                  <span style={{ fontFamily: fonts.serif, fontSize: 13, color: alt ? colors.textMuted : colors.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                     {t.name}
                   </span>
                   {t.completed && (
-                    <span style={{ fontSize: 13, color: colors.textMuted, lineHeight: 1 }}>✓</span>
+                    <span style={{ fontSize: 13, color: colors.textMuted, lineHeight: 1, flexShrink: 0 }}>✓</span>
                   )}
                   {!t.completed && <StatusBadge tournament={t} />}
                 </div>
