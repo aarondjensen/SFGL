@@ -36,6 +36,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
         <div key={idx} style={{ fontSize: 10, minWidth: 0, overflow: 'hidden' }}>
           {p ? (
             <>
+              {/* Line 1: name + mulligan badge */}
               <div style={{
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 color: playerNameColor(p, showEarnings),
@@ -46,25 +47,26 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                     marginLeft: 2, fontSize: 9, lineHeight: 1, verticalAlign: 'middle',
                   }}>🚨</span>
                 )}
-                {showEarnings && p.roundsLed?.map((rl, ri) => (
-                  <span key={ri} style={{
-                    marginLeft: 2, padding: '0 4px',
-                    background: 'rgba(220,110,30,0.35)',
-                    color: 'rgba(255,165,80,0.95)',
-                    borderRadius: 2, fontSize: 9,
-                  }}>R{rl.round}</span>
-                ))}
               </div>
+              {/* Line 2: earnings + bonus + round leader badges */}
               {showEarnings ? (
-                <div>
+                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   <span style={{ ...theme.statNum, fontSize: 10, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
                     ${(p.earnings || 0).toLocaleString()}
                   </span>
                   {p.bonus > 0 && (
-                    <span style={{ color: 'rgba(255,150,60,0.9)', marginLeft: 2 }}>
+                    <span style={{ color: 'rgba(255,150,60,0.9)', fontSize: 9, marginLeft: 2 }}>
                       +{p.bonus.toLocaleString()}
                     </span>
                   )}
+                  {p.roundsLed?.map((rl, ri) => (
+                    <span key={ri} style={{
+                      marginLeft: 2, padding: '0 3px',
+                      background: 'rgba(220,110,30,0.35)',
+                      color: 'rgba(255,165,80,0.95)',
+                      borderRadius: 2, fontSize: 8,
+                    }}>R{rl.round}</span>
+                  ))}
                 </div>
               ) : (
                 <div style={{ color: colors.textMuted }}>—</div>
@@ -129,23 +131,31 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
     return map;
   }, [transactions]);
 
-  // Enrich a result player with live roster flags + mulligan detection
+  // Enrich a result player with live roster flags + mulligan detection.
+  // When the original player (mulliganed OUT) still appears in results data,
+  // swap the display name to the replacement player (mulliganed IN).
   const enrich = (p, tournamentIndex) => {
     const tMap = mulliganMap[tournamentIndex];
     // Player was mulliganed IN (replacement player appears in results)
     const isMullIn = p.mulliganIn || !!tMap?.ins[p.name];
     // Player was mulliganed OUT (original player still appears in results — swap wasn't applied)
     const isMullOut = !!tMap?.outs[p.name];
+
+    // If the original player is still in results, swap to show the replacement
+    const displayName = isMullOut ? tMap.outs[p.name] : p.name;
+    const replacedPlayer = isMullIn
+      ? (p.replacedPlayer || tMap?.ins[p.name] || null)
+      : isMullOut
+        ? p.name  // the original player who was replaced
+        : null;
+
     return {
       ...p,
-      limited:   p.limited   ?? rosterFlagMap[p.name]?.limited   ?? false,
-      unlimited: p.unlimited ?? rosterFlagMap[p.name]?.unlimited ?? false,
+      name: displayName,
+      limited:   rosterFlagMap[displayName]?.limited   ?? p.limited   ?? false,
+      unlimited: rosterFlagMap[displayName]?.unlimited ?? p.unlimited ?? false,
       mulliganIn: isMullIn || isMullOut,
-      replacedPlayer: isMullIn
-        ? (p.replacedPlayer || tMap?.ins[p.name] || null)
-        : isMullOut
-          ? tMap?.outs[p.name] || null
-          : null,
+      replacedPlayer,
     };
   };
   const [expandedTournament, setExpandedTournament] = useState(null);
@@ -460,7 +470,9 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               <div>
                 {rankedTeams.map((team, rank) => {
                   const tr = team.result;
-                  const players = getSortedRoster(tr.players || []);
+                  const players = (tr.players || [])
+                    .map(p => enrich(p, tIdx))
+                    .sort((a, b) => (b.earnings || 0) - (a.earnings || 0));
                   return (
                     <div key={team.id}
                       style={{
@@ -489,7 +501,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                           ${(tr.totalEarnings || 0).toLocaleString()}
                         </span>
                       </div>
-                      <PlayerSlotGrid players={players.map(p => enrich(p, tIdx))} showEarnings />
+                      <PlayerSlotGrid players={players} showEarnings />
                     </div>
                   );
                 })}
