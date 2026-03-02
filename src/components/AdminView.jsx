@@ -158,6 +158,8 @@ export const AdminView = ({
   const [mgCredSaving, setMgCredSaving] = useState(false);
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [swingAwardSeg, setSwingAwardSeg]   = useState('');
+  const [livSearch, setLivSearch] = useState('');
+  const [livSaving, setLivSaving] = useState({});
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -1012,7 +1014,107 @@ export const AdminView = ({
         })()}
       </div>
 
-      {/* ── 6. Manager Login Credentials ── */}
+      {/* ── 6. LIV Golf Ineligible Players ── */}
+      <div style={S.section}>
+        <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
+        <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
+          Players flagged as LIV are hidden from the add/drop modal and waiver system.
+        </div>
+        <input type="text" placeholder="Search players to add/remove LIV flag…"
+          value={livSearch} onChange={e => setLivSearch(e.target.value)}
+          style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
+        />
+        {(() => {
+          const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
+          const searchResults = livSearch.trim().length >= 2
+            ? allPlayers
+                .filter(p => p.name && p.name.toLowerCase().includes(livSearch.toLowerCase()) && !p.isLiv)
+                .slice(0, 10)
+            : [];
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {/* Search results — players to add to LIV list */}
+              {searchResults.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+                    Add to LIV list
+                  </div>
+                  {searchResults.map(p => (
+                    <div key={p.name} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '6px 10px', marginBottom: 2, borderRadius: 3,
+                      background: 'rgba(80,180,120,0.06)', border: `1px solid rgba(80,180,120,0.2)`,
+                    }}>
+                      <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+                        {p.name}
+                        {p.worldRank && <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>#{p.worldRank}</span>}
+                      </span>
+                      <button
+                        disabled={livSaving[p.name]}
+                        onClick={async () => {
+                          setLivSaving(prev => ({ ...prev, [p.name]: true }));
+                          try {
+                            await playersApi.update(p.name, { isLiv: true });
+                            // Update local allPlayers state
+                            const idx = allPlayers.findIndex(x => x.name === p.name);
+                            if (idx >= 0) allPlayers[idx] = { ...allPlayers[idx], isLiv: true };
+                            dialog.showToast('Flagged ' + p.name + ' as LIV', 'success');
+                            setLivSearch('');
+                          } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
+                          finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
+                        }}
+                        style={{ fontFamily: fonts.sans, fontSize: 10, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}
+                      >
+                        {livSaving[p.name] ? '…' : '+ Flag LIV'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Current LIV roster */}
+              <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+                {livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}
+              </div>
+              {livPlayers.length === 0 ? (
+                <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.textMuted }}>No LIV players flagged</div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {livPlayers.map(p => (
+                    <div key={p.name} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '4px 8px', borderRadius: 3,
+                      background: 'rgba(220,60,60,0.08)', border: `1px solid rgba(220,60,60,0.2)`,
+                      fontSize: 11, fontFamily: fonts.sans, color: colors.textSecondary,
+                    }}>
+                      {p.name}
+                      <button
+                        disabled={livSaving[p.name]}
+                        onClick={async () => {
+                          setLivSaving(prev => ({ ...prev, [p.name]: true }));
+                          try {
+                            await playersApi.update(p.name, { isLiv: false });
+                            const idx = allPlayers.findIndex(x => x.name === p.name);
+                            if (idx >= 0) allPlayers[idx] = { ...allPlayers[idx], isLiv: false };
+                            dialog.showToast('Removed LIV flag from ' + p.name, 'success');
+                          } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
+                          finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
+                        }}
+                        style={{ background: 'none', border: 'none', color: 'rgba(220,100,80,0.7)', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}
+                        title={'Remove LIV flag from ' + p.name}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* ── 7. Manager Login Credentials ── */}
       <div style={S.section}>
         <div style={S.title}>🔑 Manager Login Credentials</div>
         <label style={S.lbl}>Team</label>
