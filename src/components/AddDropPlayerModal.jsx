@@ -87,7 +87,7 @@ export const AddDropPlayerModal = ({
         .filter(tx =>
           tx.team === t.name &&
           tx.type !== 'mulligan' &&
-          tx.status === 'processed'
+          (tx.status === 'processed' || tx.status === 'completed')
         )
         .forEach(tx => {
           if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
@@ -104,7 +104,7 @@ export const AddDropPlayerModal = ({
   const limboPlayers = new Set(
     transactions
       .filter(tx => {
-        if (tx.status !== 'processed') return false;
+        if (tx.status !== 'processed' && tx.status !== 'completed') return false;
         if (tx.type === 'mulligan') return false;
         if (!tx.droppedPlayer) return false;
         // If we have a tournamentIndex, check if that tournament is completed
@@ -137,7 +137,7 @@ export const AddDropPlayerModal = ({
   teams.forEach(t => {
     const rosterSet = new Set(t.roster.map(p => p.name));
     transactions
-      .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && tx.status === 'processed')
+      .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && (tx.status === 'processed' || tx.status === 'completed'))
       .forEach(tx => {
         if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
         if (tx.player) rosterSet.add(tx.player);
@@ -152,6 +152,13 @@ export const AddDropPlayerModal = ({
   const filteredPlayers  = availablePlayers.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
+
+  // When not searching, hide rostered players from the browse list so it starts
+  // with the highest-ranked available free agent.  When searching by name, show
+  // rostered players (greyed out with team badge) so the user can see who owns them.
+  const displayPlayers = searchTerm.trim()
+    ? filteredPlayers                                          // search: show all matches (rostered shown greyed)
+    : filteredPlayers.filter(p => !rosteredPlayers.has(p.name) && !limboPlayers.has(p.name)); // browse: free agents only
 
   const rosterFull   = currentRoster.length >= ROSTER_LIMIT;
 
@@ -456,10 +463,10 @@ export const AddDropPlayerModal = ({
             onBlur={e => { e.target.style.borderColor = colors.borderInput; e.target.style.background = colors.inputBg; }}
           />
 
-          {filteredPlayers.length === 0 ? (
+          {displayPlayers.length === 0 ? (
             <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0' }}>No players found</p>
           ) : (
-            filteredPlayers.slice(0, 50).map(player => {
+            displayPlayers.slice(0, 50).map(player => {
               const isCurrentlySelected = selectedPlayerToAdd?.name === player.name;
               const isLimbo = limboPlayers.has(player.name);
               const playerOwner = ownerMap.get(player.name);
