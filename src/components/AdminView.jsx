@@ -1021,22 +1021,28 @@ export const AdminView = ({
           Players flagged as LIV are hidden from the add/drop modal and waiver system.
         </div>
         {/* Bulk import from constants */}
-        {allPlayers.filter(p => p.isLiv).length === 0 && (
+        {allPlayers.filter(p => p.isLiv).length < LIV_GOLF_ROSTER.length / 2 && (
           <button
             onClick={async () => {
               const count = LIV_GOLF_ROSTER.length;
               if (!await dialog.showConfirm('Import LIV Roster', `Flag ${count} players from the built-in LIV roster as ineligible?`, { confirmText: `Flag ${count} Players` })) return;
               dialog.showToast('Flagging LIV players...', 'info');
-              const livSet = new Set(LIV_GOLF_ROSTER);
-              let success = 0;
-              for (const name of LIV_GOLF_ROSTER) {
-                try {
-                  await playersApi.update(name, { isLiv: true });
-                  success++;
-                } catch(e) { /* player may not exist in DB — skip */ }
+              try {
+                const rows = LIV_GOLF_ROSTER.map(name => ({ name, isLiv: true }));
+                await playersApi.upsertMany(rows);
+                // Add any missing players to local state and flag all as LIV
+                const livSet = new Set(LIV_GOLF_ROSTER);
+                setAllPlayers(prev => {
+                  const existing = new Set(prev.map(p => p.name));
+                  const newPlayers = LIV_GOLF_ROSTER
+                    .filter(name => !existing.has(name))
+                    .map(name => ({ name, worldRank: null, isLiv: true }));
+                  return [...prev.map(p => livSet.has(p.name) ? { ...p, isLiv: true } : p), ...newPlayers];
+                });
+                dialog.showToast(`✓ Flagged ${count} LIV players`, 'success');
+              } catch(e) {
+                dialog.showToast('Error: ' + e.message, 'error');
               }
-              setAllPlayers(prev => prev.map(p => livSet.has(p.name) ? { ...p, isLiv: true } : p));
-              dialog.showToast(`✓ Flagged ${success}/${count} LIV players`, 'success');
             }}
             style={{ ...S.btn, marginBottom: 10 }}
           >
@@ -1049,10 +1055,22 @@ export const AdminView = ({
         />
         {(() => {
           const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
+          // Search: show non-LIV players from allPlayers, plus LIV_GOLF_ROSTER names not yet in DB
           const searchResults = livSearch.trim().length >= 2
-            ? allPlayers
-                .filter(p => p.name && p.name.toLowerCase().includes(livSearch.toLowerCase()) && !p.isLiv)
-                .slice(0, 10)
+            ? (() => {
+                const q = livSearch.toLowerCase();
+                const livNames = new Set(allPlayers.filter(p => p.isLiv).map(p => p.name));
+                // Players in allPlayers that aren't LIV
+                const fromAll = allPlayers
+                  .filter(p => p.name && p.name.toLowerCase().includes(q) && !p.isLiv)
+                  .map(p => ({ name: p.name, worldRank: p.worldRank }));
+                // LIV_GOLF_ROSTER names not yet in allPlayers at all
+                const existingNames = new Set(allPlayers.map(p => p.name));
+                const fromConst = LIV_GOLF_ROSTER
+                  .filter(name => name.toLowerCase().includes(q) && !existingNames.has(name) && !livNames.has(name))
+                  .map(name => ({ name, worldRank: null }));
+                return [...fromAll, ...fromConst].slice(0, 10);
+              })()
             : [];
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1077,8 +1095,12 @@ export const AdminView = ({
                         onClick={async () => {
                           setLivSaving(prev => ({ ...prev, [p.name]: true }));
                           try {
-                            await playersApi.update(p.name, { isLiv: true });
-                            setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x));
+                            await playersApi.upsertMany([{ name: p.name, isLiv: true }]);
+                            setAllPlayers(prev => {
+                              const exists = prev.some(x => x.name === p.name);
+                              if (exists) return prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x);
+                              return [...prev, { name: p.name, worldRank: p.worldRank || null, isLiv: true }];
+                            });
                             dialog.showToast('Flagged ' + p.name + ' as LIV', 'success');
                             setLivSearch('');
                           } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
