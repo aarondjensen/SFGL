@@ -361,7 +361,7 @@ export const useRoster = (team, transactions, activeTournamentIndex) => {
         tx.type !== 'mulligan' &&
         tx.tournamentIndex !== undefined &&
         tx.tournamentIndex <= activeTournamentIndex &&
-        tx.status === 'processed', // ← FIX: was '!== pending', which included failed transactions
+        (tx.status === 'processed' || tx.status === 'completed'),
       )
       .sort((a, b) => a.tournamentIndex - b.tournamentIndex);
 
