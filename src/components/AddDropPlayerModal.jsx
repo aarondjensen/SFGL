@@ -481,7 +481,6 @@ export const AddDropPlayerModal = ({
                     border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
                     transition: 'all 0.15s',
                     cursor: (isLimbo || isRostered || tournamentIsLocked) ? 'default' : 'pointer',
-                    opacity: isRostered ? 0.55 : 1,
                   }}
                   onClick={() => { if (!isLimbo && !isRostered && !tournamentIsLocked) selectPlayerToAdd(player); }}
                   onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
@@ -498,18 +497,23 @@ export const AddDropPlayerModal = ({
                         flexShrink: 0,
                       }}
                     />
-                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isRostered ? colors.textMuted : isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
+                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
                       {player.name}
                     </span>
+                    {isRostered && (
+                      <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: colors.danger, textTransform: 'uppercase' }}>
+                        Unavailable
+                      </span>
+                    )}
                   </div>
                   {isRostered ? (
                     <span style={{
                       fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
                       padding: '4px 8px', borderRadius: 3,
                       letterSpacing: '0.5px',
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      color: colors.textMuted,
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      color: colors.textSecondary,
                       flexShrink: 0,
                     }}>
                       {getTeamAbbreviation(playerOwner)}
