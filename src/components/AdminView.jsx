@@ -5,7 +5,7 @@ import { storage } from '../api';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi } from '../api/supabase';
 import { theme, colors, fonts } from '../theme.js';
-import { BONUSES_REGULAR, BONUSES_MAJOR } from '../constants';
+import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
 
 
 // ── Tournament processing helpers ────────────────────────────────────────────
@@ -1020,6 +1020,29 @@ export const AdminView = ({
         <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
           Players flagged as LIV are hidden from the add/drop modal and waiver system.
         </div>
+        {/* Bulk import from constants */}
+        {allPlayers.filter(p => p.isLiv).length === 0 && (
+          <button
+            onClick={async () => {
+              const count = LIV_GOLF_ROSTER.length;
+              if (!await dialog.showConfirm('Import LIV Roster', `Flag ${count} players from the built-in LIV roster as ineligible?`, { confirmText: `Flag ${count} Players` })) return;
+              dialog.showToast('Flagging LIV players...', 'info');
+              let success = 0;
+              for (const name of LIV_GOLF_ROSTER) {
+                try {
+                  await playersApi.update(name, { isLiv: true });
+                  const idx = allPlayers.findIndex(x => x.name === name);
+                  if (idx >= 0) allPlayers[idx] = { ...allPlayers[idx], isLiv: true };
+                  success++;
+                } catch(e) { /* player may not exist in DB — skip */ }
+              }
+              dialog.showToast(`✓ Flagged ${success}/${count} LIV players`, 'success');
+            }}
+            style={{ ...S.btn, marginBottom: 10 }}
+          >
+            📋 Import LIV Roster ({LIV_GOLF_ROSTER.length} players)
+          </button>
+        )}
         <input type="text" placeholder="Search players to add/remove LIV flag…"
           value={livSearch} onChange={e => setLivSearch(e.target.value)}
           style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
