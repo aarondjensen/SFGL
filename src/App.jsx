@@ -46,7 +46,7 @@ const FantasyGolfLeague = () => {
   const {
     teams, tournaments, transactions, settings, globalPlayerStats,
     allPlayers, rankingsLastUpdated, headshots, loading, isSyncing,
-    setTeams, setTournaments, setTransactions, setSettings, setGlobalPlayerStats, setHeadshots,
+    setTeams, setTournaments, setTransactions, setSettings, setGlobalPlayerStats, setHeadshots, setAllPlayers,
     updateTeams, updateTournaments, updateTransactions, updateSettings,
     updateGlobalStats, updateHeadshots, updateRankings,
   } = league;
@@ -514,6 +514,7 @@ const FantasyGolfLeague = () => {
               transactions={safeTransactions}
               setTransactions={updateTransactions}
               allPlayers={allPlayers}
+              setAllPlayers={setAllPlayers}
               globalPlayerStats={globalPlayerStats}
               setGlobalPlayerStats={updateGlobalStats}
               headshots={resolvedHeadshots}

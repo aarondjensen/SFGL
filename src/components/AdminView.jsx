@@ -143,7 +143,7 @@ export const AdminView = ({
   teams, updateTeams,
   tournaments, setTournaments,
   transactions, setTransactions,
-  allPlayers, globalPlayerStats, setGlobalPlayerStats,
+  allPlayers, setAllPlayers, globalPlayerStats, setGlobalPlayerStats,
   headshots, setHeadshots,
   updateRankings, rankingsLastUpdated,
   STORAGE_KEYS,
@@ -1027,15 +1027,15 @@ export const AdminView = ({
               const count = LIV_GOLF_ROSTER.length;
               if (!await dialog.showConfirm('Import LIV Roster', `Flag ${count} players from the built-in LIV roster as ineligible?`, { confirmText: `Flag ${count} Players` })) return;
               dialog.showToast('Flagging LIV players...', 'info');
+              const livSet = new Set(LIV_GOLF_ROSTER);
               let success = 0;
               for (const name of LIV_GOLF_ROSTER) {
                 try {
                   await playersApi.update(name, { isLiv: true });
-                  const idx = allPlayers.findIndex(x => x.name === name);
-                  if (idx >= 0) allPlayers[idx] = { ...allPlayers[idx], isLiv: true };
                   success++;
                 } catch(e) { /* player may not exist in DB — skip */ }
               }
+              setAllPlayers(prev => prev.map(p => livSet.has(p.name) ? { ...p, isLiv: true } : p));
               dialog.showToast(`✓ Flagged ${success}/${count} LIV players`, 'success');
             }}
             style={{ ...S.btn, marginBottom: 10 }}
@@ -1078,9 +1078,7 @@ export const AdminView = ({
                           setLivSaving(prev => ({ ...prev, [p.name]: true }));
                           try {
                             await playersApi.update(p.name, { isLiv: true });
-                            // Update local allPlayers state
-                            const idx = allPlayers.findIndex(x => x.name === p.name);
-                            if (idx >= 0) allPlayers[idx] = { ...allPlayers[idx], isLiv: true };
+                            setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x));
                             dialog.showToast('Flagged ' + p.name + ' as LIV', 'success');
                             setLivSearch('');
                           } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
@@ -1117,8 +1115,7 @@ export const AdminView = ({
                           setLivSaving(prev => ({ ...prev, [p.name]: true }));
                           try {
                             await playersApi.update(p.name, { isLiv: false });
-                            const idx = allPlayers.findIndex(x => x.name === p.name);
-                            if (idx >= 0) allPlayers[idx] = { ...allPlayers[idx], isLiv: false };
+                            setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: false } : x));
                             dialog.showToast('Removed LIV flag from ' + p.name, 'success');
                           } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
                           finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
