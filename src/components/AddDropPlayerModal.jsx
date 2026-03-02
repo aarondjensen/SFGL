@@ -128,6 +128,7 @@ export const AddDropPlayerModal = ({
   const availablePlayers = allPlayers.filter(p => {
     if (!p.name || typeof p.name !== 'string') return false;
     if (/^\d+$/.test(p.name.trim())) return false;
+    if (p.isLiv) return false;
     if (thisTeamPendingClaims.has(p.name)) return false;
     return true;
   });
