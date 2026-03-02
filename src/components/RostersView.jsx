@@ -234,11 +234,25 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 // ── LineupHeadshot — shows ×-remove button on hover when editable ─────────────
 const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, onRemove }) => {
   const [hovered, setHovered] = React.useState(false);
+  const [tapped, setTapped]   = React.useState(false);
+  const isMobileDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
+
+  // On mobile: first tap reveals the × badge, second tap (on the ×) removes.
+  // Tapping elsewhere resets. On desktop: hover reveals ×.
+  const showRemove = canEdit && (hovered || tapped);
+
   return (
     <div
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, overflow: 'visible' }}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => { setHovered(false); setTapped(false); }}
+      onClick={() => {
+        if (!canEdit) return;
+        if (isMobileDevice) {
+          if (tapped) { onRemove(); setTapped(false); }
+          else setTapped(true);
+        }
+      }}
     >
       <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
         <img
@@ -249,12 +263,12 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
             width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
             border: `2px solid ${playerBorderColor(player)}`,
             transition: 'opacity 0.15s',
-            opacity: canEdit && hovered ? 0.55 : 1,
+            opacity: showRemove ? 0.55 : 1,
           }}
         />
-        {canEdit && hovered && (
+        {showRemove && (
           <button
-            onClick={e => { e.stopPropagation(); onRemove(); }}
+            onClick={e => { e.stopPropagation(); onRemove(); setTapped(false); }}
             style={{
               position: 'absolute', top: -3, right: -3,
               width: 18, height: 18, borderRadius: '50%',
@@ -496,7 +510,7 @@ export const RostersView = ({
                         lastName={lastName}
                         nameFontSize={nameFontSize}
                         headshots={headshots}
-                        canEdit={canEditLineup && lineupMode}
+                        canEdit={canEditLineup}
                         onRemove={() => togglePlayerInLineup(player)}
                       />
                     );
@@ -656,11 +670,21 @@ export const RostersView = ({
                             <div style={{
                               position: 'absolute', top: -3, right: -3,
                               width: 14, height: 14, borderRadius: '50%',
-                              background: isEditing ? playerBorderColor(player) : 'rgba(80,195,120,0.85)',
+                              background: isEditing ? 'rgba(220,60,60,0.9)' : 'rgba(80,195,120,0.85)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               opacity: isEditing ? 1 : 0.75,
                             }}>
-                              <span style={{ color: '#111d2e', fontSize: 9, fontWeight: 900 }}>✓</span>
+                              <span style={{ color: '#fff', fontSize: 9, fontWeight: 900 }}>{isEditing ? '✕' : '✓'}</span>
+                            </div>
+                          )}
+                          {isEditing && !isInLineup && canAddToLineup && (
+                            <div style={{
+                              position: 'absolute', top: -3, right: -3,
+                              width: 14, height: 14, borderRadius: '50%',
+                              background: 'rgba(80,195,120,0.9)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>
+                              <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>+</span>
                             </div>
                           )}
                           {player.limited && (player.stars || 1) > 0 && (
