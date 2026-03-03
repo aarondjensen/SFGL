@@ -354,10 +354,66 @@ export const transactionsApi = {
   },
 
   async setAll(transactions) {
-    await supabase.from('transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    const { data, error } = await supabase.from('transactions').insert(transactions).select();
-    if (error) throw error;
-    return data;
+    return await this.sync(transactions);
+  },
+
+  async sync(localTransactions) {
+    const { data: remote, error: fetchErr } = await supabase
+      .from('transactions')
+      .select('*');
+    if (fetchErr) throw fetchErr;
+
+    const remoteByTxId = new Map();
+    const remoteById = new Map();
+    (remote || []).forEach(tx => {
+      if (tx.txId) remoteByTxId.set(tx.txId, tx);
+      if (tx.id) remoteById.set(tx.id, tx);
+    });
+
+    const toInsert = [];
+    const toUpdate = [];
+    localTransactions.forEach(tx => {
+      if (tx.txId && remoteByTxId.has(tx.txId)) {
+        const remoteTx = remoteByTxId.get(tx.txId);
+        if (tx.status !== remoteTx.status || tx.failReason !== remoteTx.failReason) {
+          toUpdate.push({ ...tx, id: remoteTx.id });
+        }
+      } else if (tx.id && remoteById.has(tx.id)) {
+        const remoteTx = remoteById.get(tx.id);
+        if (tx.status !== remoteTx.status || tx.failReason !== remoteTx.failReason) {
+          toUpdate.push(tx);
+        }
+      } else if (!tx.id) {
+        toInsert.push(tx);
+      }
+    });
+
+    const localTxIds = new Set(localTransactions.filter(tx => tx.txId).map(tx => tx.txId));
+    const localIds = new Set(localTransactions.filter(tx => tx.id).map(tx => tx.id));
+    const fromRemoteOnly = (remote || []).filter(tx => {
+      if (tx.txId && localTxIds.has(tx.txId)) return false;
+      if (tx.id && localIds.has(tx.id)) return false;
+      return true;
+    });
+
+    if (toInsert.length > 0) {
+      const { error: insertErr } = await supabase
+        .from('transactions')
+        .insert(toInsert)
+        .select();
+      if (insertErr) console.error('[transactionsApi.sync] insert error:', insertErr);
+    }
+
+    for (const tx of toUpdate) {
+      if (tx.id) {
+        const { id, ...rest } = tx;
+        await supabase.from('transactions').update(rest).eq('id', id).catch(e =>
+          console.error('[transactionsApi.sync] update error:', e)
+        );
+      }
+    }
+
+    return [...localTransactions, ...fromRemoteOnly];
   },
 };
 

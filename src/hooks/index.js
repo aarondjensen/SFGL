@@ -261,10 +261,15 @@ export const useLeague = (STORAGE_KEYS) => {
   const updateTransactions = useCallback(async (next) => {
     const resolved = typeof next === 'function' ? next(transactionsRef.current) : next;
     setTransactions(resolved);
-    const { transactionsApi } = await import('../api/supabase');
-    transactionsApi.setAll(resolved).catch(e =>
-      console.error('[useLeague] transactions write failed:', e)
-    );
+    try {
+      const { transactionsApi } = await import('../api/supabase');
+      const merged = await transactionsApi.sync(resolved);
+      if (merged && merged.length > resolved.length) {
+        setTransactions(merged);
+      }
+    } catch(e) {
+      console.error('[useLeague] transactions sync failed:', e);
+    }
     storage.set(STORAGE_KEYS.TRANSACTIONS, resolved).catch(e =>
       console.error('[useLeague] transactions backup failed:', e)
     );

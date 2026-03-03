@@ -478,6 +478,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const tournamentIndex = parseInt(addTxTourney);
     const isBlocked = addTxType === 'waiver blocked';
     const newTx = {
+      txId: `manual-${addTxTeam}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team: addTxTeam,
       type: isBlocked ? 'waiver' : addTxType,
       player: playerInName  || playerOutName || '—',
