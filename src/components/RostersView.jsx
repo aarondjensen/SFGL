@@ -583,12 +583,14 @@ export const RostersView = ({
         </div>
       </div>
 
-      {/* ── Waiver queue ── */}
-      <WaiverQueue
-        team={team} pendingWaivers={pendingWaivers} transactions={transactions}
-        setTransactions={setTransactions} updateTeams={updateTeams} teams={teams}
-        isOwnTeam={isOwnTeam}
-      />
+      {/* ── Waiver queue — only visible to the team's own manager ── */}
+      {isOwnTeam && (
+        <WaiverQueue
+          team={team} pendingWaivers={pendingWaivers} transactions={transactions}
+          setTransactions={setTransactions} updateTeams={updateTeams} teams={teams}
+          isOwnTeam={isOwnTeam}
+        />
+      )}
 
       {/* ── Action buttons + roster table ── */}
       <div style={{ ...theme.card }}>
