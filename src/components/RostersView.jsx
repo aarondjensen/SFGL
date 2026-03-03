@@ -438,6 +438,8 @@ export const RostersView = ({
   const lineupOpen    = windowStatus.lineupOpen;
   const canEditLineup = isCommissioner || (isOwnTeam && lineupOpen);
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
+  const hasPendingWaivers = transactions.some(tx => tx.status === 'pending' && tx.type === 'waiver');
+  const addDropBlocked = faStatus.open && hasPendingWaivers;
 
 
 
@@ -466,7 +468,7 @@ export const RostersView = ({
           </div>
 
           {/* Add Player button — always green */}
-          {isOwnTeam && (
+          {isOwnTeam && !addDropBlocked && (
             <button
               onClick={() => {
                 setIsWaiverMode(!faStatus.open);
@@ -489,6 +491,19 @@ export const RostersView = ({
               <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>+</span>
               <span>Add Player</span>
             </button>
+          )}
+          {isOwnTeam && addDropBlocked && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '7px 14px', borderRadius: 4, flexShrink: 0,
+              fontFamily: fonts.sans, fontSize: 11,
+              background: 'rgba(220,170,60,0.08)',
+              border: '1.5px solid rgba(220,170,60,0.3)',
+              color: 'rgba(220,190,80,0.9)',
+            }}>
+              <span style={{ fontSize: 13 }}>&#9888;</span>
+              <span>Waivers pending</span>
+            </div>
           )}
           </div>
 
