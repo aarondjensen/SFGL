@@ -862,7 +862,7 @@ export const AdminView = ({
       <div style={S.section}>
         <div style={S.title}>🌍 Update OWGR Top 250</div>
         <div style={{ ...theme.smallText, marginBottom: 12 }}>
-          Upload a CSV from owgr.com. Must include a <strong style={{ color: colors.textSecondary }}>name</strong> and <strong style={{ color: colors.textSecondary }}>rank</strong> column.
+          Upload a CSV from <a href="https://www.owgr.com/current-world-ranking" target="_blank" rel="noopener noreferrer" style={{ color: colors.textGold, textDecoration: 'underline' }}>owgr.com</a>. Must include a <strong style={{ color: colors.textSecondary }}>name</strong> and <strong style={{ color: colors.textSecondary }}>rank</strong> column.
           {rankingsLastUpdated && (
             <span style={{ display: 'block', marginTop: 4, color: colors.textGoldDim }}>
               Last updated: {new Date(Number(rankingsLastUpdated)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
