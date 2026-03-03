@@ -300,7 +300,7 @@ const FantasyGolfLeague = () => {
             <span style={{ fontSize: 11, letterSpacing: '0.15em', fontWeight: 700, fontFamily: "'Raleway', system-ui, sans-serif", color: '#0a1628', textTransform: 'uppercase' }}>
               ⚙ Commissioner Mode
             </span>
-            <button onClick={() => setIsCommissioner(false)} style={{
+            <button onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }} style={{
               fontFamily: "'Raleway', system-ui, sans-serif",
               fontSize: 9,
               letterSpacing: 1.5,
