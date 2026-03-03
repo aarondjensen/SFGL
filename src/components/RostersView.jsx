@@ -494,15 +494,13 @@ export const RostersView = ({
           )}
           {isOwnTeam && addDropBlocked && (
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '7px 14px', borderRadius: 4, flexShrink: 0,
+              padding: '8px 14px', borderRadius: 4,
               fontFamily: fonts.sans, fontSize: 11,
               background: 'rgba(220,170,60,0.08)',
               border: '1.5px solid rgba(220,170,60,0.3)',
               color: 'rgba(220,190,80,0.9)',
             }}>
-              <span style={{ fontSize: 13 }}>&#9888;</span>
-              <span>Waivers pending</span>
+              Free agency is unavailable until the Commish processes waivers
             </div>
           )}
           </div>
