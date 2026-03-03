@@ -165,6 +165,7 @@ const FantasyGolfLeague = () => {
     // result = { teamId } — resolve display name from loaded teams
     const team = resolvedTeams.find(t => t.id === result.teamId);
     setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
+    setIsCommissioner(false);
     setShowLoginModal(false);
   };
 
