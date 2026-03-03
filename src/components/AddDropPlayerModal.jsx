@@ -179,7 +179,6 @@ export const AddDropPlayerModal = ({
     setSaving(true);
 
     const newTx = {
-      txId:            `${team.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team:            team.name,
       type:            isWaiverMode ? 'waiver' : 'free agent',
       player:          selectedPlayerToAdd.name,
@@ -322,13 +321,13 @@ export const AddDropPlayerModal = ({
             {/* Adding tile */}
             <div style={{
               flex: 1, padding: '8px 12px',
-              background: accentBg(isWaiverMode),
-              border: `1px solid ${accentBorder(isWaiverMode)}`,
+              background: 'rgba(80,180,120,0.12)',
+              border: '1px solid rgba(80,180,120,0.35)',
               borderRadius: 3,
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: accentColor(isWaiverMode), marginBottom: 3 }}>
+                <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: colors.success, marginBottom: 3 }}>
                   Adding
                 </div>
                 <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -364,14 +363,30 @@ export const AddDropPlayerModal = ({
                 background: selectedPlayerToDrop ? colors.dangerBg : 'rgba(255,255,255,0.02)',
                 border: `1px solid ${selectedPlayerToDrop ? colors.dangerBorder : 'rgba(255,255,255,0.06)'}`,
                 borderRadius: 3,
-                display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                display: 'flex', alignItems: 'center', gap: 8,
               }}>
-                <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: selectedPlayerToDrop ? colors.danger : colors.textMuted, marginBottom: 3 }}>
-                  Dropping
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: selectedPlayerToDrop ? colors.danger : colors.textMuted, marginBottom: 3 }}>
+                    Dropping
+                  </div>
+                  <div style={{ fontFamily: fonts.serif, fontSize: 13, color: selectedPlayerToDrop ? colors.danger : colors.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {selectedPlayerToDrop ? selectedPlayerToDrop.name : '← tap a player'}
+                  </div>
                 </div>
-                <div style={{ fontFamily: fonts.serif, fontSize: 13, color: selectedPlayerToDrop ? colors.danger : colors.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {selectedPlayerToDrop ? selectedPlayerToDrop.name : '← tap a player'}
-                </div>
+                {selectedPlayerToDrop && (
+                  <button
+                    onClick={() => setSelectedPlayerToDrop(null)}
+                    title="Clear drop selection"
+                    style={{
+                      background: 'rgba(220,80,80,0.1)',
+                      border: '1px solid rgba(220,80,80,0.3)',
+                      borderRadius: 3, width: 26, height: 26,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', color: 'rgba(230,90,90,0.8)',
+                      fontSize: 13, lineHeight: 1, fontWeight: 700, flexShrink: 0,
+                    }}
+                  >✕</button>
+                )}
               </div>
             )}
           </div>
