@@ -158,6 +158,7 @@ export const AdminView = ({
   const [mgCredSaving, setMgCredSaving] = useState(false);
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [swingAwardSeg, setSwingAwardSeg]   = useState('');
+  const [waiverRevealed, setWaiverRevealed] = useState(false);
   const [livSearch, setLivSearch] = useState('');
   const [livSaving, setLivSaving] = useState({});
   const dialog = useDialog();
@@ -820,6 +821,20 @@ export const AdminView = ({
         </div>
         {pending.length === 0 ? (
           <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.success }}>✓ No pending waiver claims</div>
+        ) : !waiverRevealed ? (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+              {pending.map(w => (
+                <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '6px 12px' }}>
+                  <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
+                  <div style={{ flex: 1 }} />
+                  <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>claim pending</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setWaiverRevealed(true)} style={{ ...S.btnSec, fontSize: 11 }}>Reveal Claims</button>
+          </>
         ) : (
           <>
             <button onClick={() => handleProcessAll(pending)} style={{ ...S.btn, marginBottom: 8 }}>⚡ Process All ({pending.length})</button>
@@ -838,6 +853,7 @@ export const AdminView = ({
                 </div>
               ))}
             </div>
+            <button onClick={() => setWaiverRevealed(false)} style={{ ...theme.btnSecondary, marginTop: 8, fontSize: 10, padding: '4px 12px', width: 'auto', display: 'inline-block' }}>Hide Claims</button>
           </>
         )}
       </div>
