@@ -384,9 +384,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
     if (ta !== tb) return ta - tb;
-    // Within same type (e.g. waiver), successful before blocked
-    const sa = a.status === 'failed' ? 1 : 0;
-    const sb = b.status === 'failed' ? 1 : 0;
+    // Within same type (e.g. waiver), blocked before successful (blocked happened after)
+    const sa = a.status === 'failed' ? 0 : 1;
+    const sb = b.status === 'failed' ? 0 : 1;
     return sa - sb;
   });
   const getTxSegment = (tx) => {
