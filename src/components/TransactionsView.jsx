@@ -715,6 +715,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
         {/* ── Commissioner: Add Manual Transaction ── */}
         {isCommissioner && (
+          <>
           <button
               onClick={() => setAddTxOpen(!addTxOpen)}
               style={{
@@ -992,6 +993,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               </div>
           </div>
             )}
+          </>
         )}
 
         {/* ── Transaction history ── */}
