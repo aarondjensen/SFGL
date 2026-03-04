@@ -358,11 +358,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   });
 
   const sortedTransactions = [...transactions].sort((a, b) => {
-    // Resolve a float sort key:
-    // - Normal transactions: their tournamentIndex (integer)
-    // - swing_winner: last tournament of that swing + 0.5, so it sorts
-    //   AFTER all transactions from that final event but BEFORE any
-    //   transactions from the next swing's tournaments (higher index).
     const resolveKey = tx => {
       if (tx.type === 'swing_winner') {
         const lastIdx = tx.tournamentIndex ?? (tx.segment ? swingLastIndex[tx.segment] : undefined);
@@ -373,21 +368,21 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const ak = resolveKey(a);
     const bk = resolveKey(b);
     if (bk !== ak) return bk - ak;
-    // Same key: sort by timestamp/date, most recent first.
+    // Same tournament: sort by type order (waiver → waiver blocked → FA → mulligan)
+    const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
+    const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
+    if (ta !== tb) return ta - tb;
+    // Within same type, blocked before successful
+    const sa = a.status === 'failed' ? 0 : 1;
+    const sb = b.status === 'failed' ? 0 : 1;
+    if (sa !== sb) return sa - sb;
+    // Final tiebreak: timestamp, most recent first
     const toMs = tx => {
       if (tx.timestamp) return typeof tx.timestamp === 'number' ? tx.timestamp : new Date(tx.timestamp).getTime();
       if (tx.date) return new Date(tx.date).getTime();
       return 0;
     };
-    if (toMs(b) !== toMs(a)) return toMs(b) - toMs(a);
-    // Final tiebreak: type order (swing_winner last within same key)
-    const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
-    const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
-    if (ta !== tb) return ta - tb;
-    // Within same type (e.g. waiver), blocked before successful (blocked happened after)
-    const sa = a.status === 'failed' ? 0 : 1;
-    const sb = b.status === 'failed' ? 0 : 1;
-    return sa - sb;
+    return toMs(b) - toMs(a);
   });
   const getTxSegment = (tx) => {
     if (tx.segment) return tx.segment;
