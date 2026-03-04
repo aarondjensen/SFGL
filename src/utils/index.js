@@ -209,6 +209,8 @@ export const isLineupEditingOpen = (tournament) => {
 
 export const isFreeAgentWindowOpen = (tournament) => {
   if (isTournamentLocked(tournament)) return false;
+  // TEMPORARY: always open for testing — revert after test
+  return false; // waiver mode takes priority when both are false
   const et      = getETNow();
   const day     = et.getDay();
   const timeVal = et.getHours() * 60 + et.getMinutes();
@@ -218,6 +220,8 @@ export const isFreeAgentWindowOpen = (tournament) => {
 };
 
 export const isWaiverWindowOpen = () => {
+  // TEMPORARY: always open for testing — revert after test
+  return true;
   const et      = getETNow();
   const day     = et.getDay();
   const timeVal = et.getHours() * 60 + et.getMinutes();
