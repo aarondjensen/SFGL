@@ -279,7 +279,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
   const [addTxOpen,        setAddTxOpen]        = useState(false);
   const [addTxTeam,        setAddTxTeam]        = useState('');
-  const [addTxType,        setAddTxType]        = useState('mulligan');
+  const [addTxType,        setAddTxType]        = useState('waiver');
   const [addTxPlayerIn,    setAddTxPlayerIn]    = useState(null);   // selected player object
   const [addTxPlayerOut,   setAddTxPlayerOut]   = useState(null);   // selected player object
   const [addTxTourney,     setAddTxTourney]     = useState('');
@@ -616,7 +616,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
     dialog.showToast('Transaction added', 'success');
     setAddTxOpen(false);
-    setAddTxTeam(''); setAddTxType('mulligan');
+    setAddTxTeam(''); setAddTxType('waiver');
     setAddTxPlayerIn(null); setAddTxPlayerOut(null);
     setAddTxSearchIn(''); setAddTxSearchOut('');
     setAddTxTourney('');
@@ -715,19 +715,30 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
         {/* ── Commissioner: Add Manual Transaction ── */}
         {isCommissioner && (
-          <div style={theme.card}>
-            <div
-              style={{ ...theme.cardHeader, cursor: 'pointer', userSelect: 'none' }}
+          <button
               onClick={() => setAddTxOpen(!addTxOpen)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 14px', borderRadius: 4,
+                fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                background: 'rgba(80,180,120,0.12)',
+                border: '1.5px solid rgba(80,180,120,0.5)',
+                color: 'rgba(80,180,120,0.9)',
+                letterSpacing: '0.2px',
+                marginBottom: addTxOpen ? 0 : 8,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.12)'; }}
             >
-              <h2 style={theme.h2}>+ Add Transaction</h2>
-              <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>
-                {addTxOpen ? '▲' : '▼'}
-              </span>
-            </div>
+              <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>{addTxOpen ? '−' : '+'}</span>
+              <span>Add Transaction</span>
+            </button>
 
             {addTxOpen && (
-              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={theme.card}>
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {/* Team */}
                 <div>
                   <div style={{ ...theme.label, marginBottom: 4 }}>Team</div>
@@ -780,7 +791,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 <div>
                   <div style={{ ...theme.label, marginBottom: 4 }}>Type</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {['mulligan', 'waiver', 'fa', 'drop', 'waiver blocked'].map(type => (
+                    {['waiver', 'waiver blocked', 'fa', 'mulligan'].map(type => (
                       <button key={type} onClick={() => {
                         setAddTxType(type);
                         // Always re-default tournament when type changes (commish can still override)
@@ -979,8 +990,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   Add Transaction
                 </button>
               </div>
-            )}
           </div>
+            )}
         )}
 
         {/* ── Transaction history ── */}
