@@ -398,7 +398,7 @@ export const transactionsApi = {
 
     if (toInsert.length > 0) {
       // Strip to only valid table columns to avoid insert errors
-      const validCols = ['team','type','player','droppedPlayer','status','fee','segment','priority','timestamp','processedDate','failReason','txId'];
+      const validCols = ['team','type','player','droppedPlayer','status','fee','segment','priority','timestamp','processedDate','failReason','txId','tournamentIndex','tournament','date'];
       const cleaned = toInsert.map(tx => {
         const row = {};
         validCols.forEach(col => { if (tx[col] !== undefined) row[col] = tx[col]; });
