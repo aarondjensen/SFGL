@@ -349,7 +349,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     return Object.values(fees).sort((a, b) => b.seasonTotal - a.seasonTotal);
   }, [teams, transactions, tournaments]);
 
-  const TYPE_ORDER = { 'waiver': 0, 'fa': 0, 'free agent': 0, 'drop': 1, 'mulligan': 2, 'swing_winner': 99 };
+  const TYPE_ORDER = { 'waiver': 0, 'fa': 2, 'free agent': 2, 'mulligan': 3, 'drop': 4, 'swing_winner': 99 };
   // Build a map of segment → last tournamentIndex for sorting swing_winner records.
   const swingLastIndex = {};
   tournaments.forEach((t, i) => {
@@ -383,7 +383,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     // Final tiebreak: type order (swing_winner last within same key)
     const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
-    return ta - tb;
+    if (ta !== tb) return ta - tb;
+    // Within same type (e.g. waiver), successful before blocked
+    const sa = a.status === 'failed' ? 1 : 0;
+    const sb = b.status === 'failed' ? 1 : 0;
+    return sa - sb;
   });
   const getTxSegment = (tx) => {
     if (tx.segment) return tx.segment;
