@@ -209,25 +209,31 @@ export const isLineupEditingOpen = (tournament) => {
 
 export const isFreeAgentWindowOpen = (tournament) => {
   if (isTournamentLocked(tournament)) return false;
-  // TEMPORARY: always open for testing — revert after test
-  return false; // waiver mode takes priority when both are false
+  // Free agency opens after Tue 8pm ET (when waiver period ends)
+  // Actual availability depends on whether pending waivers exist (checked in RostersView)
   const et      = getETNow();
   const day     = et.getDay();
   const timeVal = et.getHours() * 60 + et.getMinutes();
-  if (day === 2 && timeVal >= 20 * 60 + 1) return true; // Tue 8:01pm+
+  // Tue 8pm+ through Thursday lock
+  if (day === 2 && timeVal >= 20 * 60) return true;
   if (day === 3 || day === 4) return true;
   return false;
 };
 
-export const isWaiverWindowOpen = () => {
-  // TEMPORARY: always open for testing — revert after test
-  return true;
+export const isWaiverWindowOpen = (tournament) => {
+  if (!tournament) return false;
+  if (isTournamentLocked(tournament)) return false;
+  // Waiver window: tournament start through Tue 8pm ET
   const et      = getETNow();
   const day     = et.getDay();
   const timeVal = et.getHours() * 60 + et.getMinutes();
-  if (day === 0 && timeVal >= 21 * 60) return true;
-  if (day === 1) return true;
+  // Thu (after lock) through Tue 8pm — basically any time tournament is active and before Tue 8pm
+  // Sun, Mon, all day
+  if (day === 0 || day === 1) return true;
+  // Tue before 8pm
   if (day === 2 && timeVal < 20 * 60) return true;
+  // Thu after tournament starts, Fri, Sat
+  if (day >= 4 || day === 5 || day === 6) return true;
   return false;
 };
 
@@ -274,13 +280,13 @@ export const getFreeAgentWindowStatus = (tournament) => {
     return { open: true, label: `Open until Thu ${lockStr(h)} ET` };
   }
   if (isTournamentLocked(tournament)) return { open: false, label: 'Locked' };
-  return { open: false, label: 'Opens Tue 8:01pm ET' };
+  return { open: false, label: 'Opens after waivers processed' };
 };
 
-export const getWaiverWindowStatus = () =>
-  isWaiverWindowOpen()
-    ? { open: true,  label: 'Open' }
-    : { open: false, label: 'Opens Sun 9pm ET' };
+export const getWaiverWindowStatus = (tournament) =>
+  isWaiverWindowOpen(tournament)
+    ? { open: true,  label: 'Open — closes Tue 8pm ET' }
+    : { open: false, label: 'Closed' };
 
 // ============================================================================
 // SCORING ENGINE

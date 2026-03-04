@@ -7,6 +7,7 @@ import {
   getSortedRoster,
   getFreeAgentWindowStatus,
   getSegmentByDate, isTournamentLocked,
+  isWaiverWindowOpen,
 } from '../utils';
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
@@ -172,7 +173,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
         <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: 11 }}>
           ⏰ Pending Waiver Claims ({pendingWaivers.length})
         </h3>
-        <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>Processed Tue 8pm ET</span>
+        <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>{(() => { const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })); const d = et.getDay(); const t = et.getHours() * 60 + et.getMinutes(); return (d < 2 || (d === 2 && t < 20 * 60)) ? 'Waiver window closes Tue 8pm ET' : 'Pending commish processing'; })()}</span>
       </div>
       {pendingWaivers.length > 1 && isOwnTeam && (
         <p style={{ ...theme.smallText, marginBottom: 8 }}>↕ Use arrows to set priority — #1 processes first</p>
@@ -471,7 +472,7 @@ export const RostersView = ({
           {isOwnTeam && !addDropBlocked && (
             <button
               onClick={() => {
-                setIsWaiverMode(!faStatus.open);
+                setIsWaiverMode(isWaiverWindowOpen(activeTournament));
                 setShowAddDropModal(true);
               }}
               style={{
