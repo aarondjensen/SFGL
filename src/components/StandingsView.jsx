@@ -231,8 +231,13 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                 Swing
               </button>
             </div>
-            {/* Swing selector dropdown */}
-            {showSwing && swingsWithResults.length > 1 && (
+            {/* Swing selector dropdown - removed from this row, moved below */}
+          </div>
+        </div>
+        {/* Swing badge row — below the toggle */}
+        {showSwing && selectedSwing && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {swingsWithResults.length > 1 ? (
               <select
                 value={selectedSwing || ''}
                 onChange={e => setSelectedSwing(e.target.value)}
@@ -242,9 +247,13 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
+            ) : (
+              <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: accentColor, letterSpacing: '0.3px' }}>
+                {selectedSwing}
+              </span>
             )}
           </div>
-        </div>
+        )}
         {/* Subtitle row */}
         {!showSwing && mostRecentTournament && (
           <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, letterSpacing: '0.3px' }}>
