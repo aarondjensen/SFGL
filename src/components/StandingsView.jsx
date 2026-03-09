@@ -180,7 +180,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
               )
             )}
             {!showSwing && mostRecentTournament && (
-              <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, letterSpacing: '0.3px' }}>
+              <div style={{ fontFamily: fonts.sans, fontSize: 11, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.3px' }}>
                 through {mostRecentTournament.name}
               </div>
             )}
@@ -252,7 +252,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
               </button>
             </div>
             {showSwing && swingEventCount > 0 && (
-              <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, minWidth: 140, maxWidth: 200, width: '100%' }}>
                 {swingIsComplete ? (
                   <>
                     <span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', fontSize: 10 }}>Final</span>
