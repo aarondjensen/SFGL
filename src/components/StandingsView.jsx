@@ -162,28 +162,31 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
               <Trophy style={{ width: 20, height: 20, color: colors.textPrimary }} />
               <h2 style={theme.h2}>Standings</h2>
             </div>
-            {showSwing && selectedSwing && (
-              swingsWithResults.length > 1 ? (
-                <select
-                  value={selectedSwing || ''}
-                  onChange={e => setSelectedSwing(e.target.value)}
-                  style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '4px 8px', color: accentColor, borderColor: accentColor.replace('0.85', '0.3'), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
-                >
-                  {swingsWithResults.map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              ) : (
-                <span style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: accentColor, letterSpacing: '0.3px' }}>
-                  {selectedSwing}
+            {/* Subtitle — always reserve space to prevent layout shift */}
+            <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', minHeight: 18, display: 'flex', alignItems: 'center' }}>
+              {showSwing && selectedSwing && (
+                swingsWithResults.length > 1 ? (
+                  <select
+                    value={selectedSwing || ''}
+                    onChange={e => setSelectedSwing(e.target.value)}
+                    style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '0px 8px', height: 18, color: accentColor, borderColor: accentColor.replace('0.85', '0.3'), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
+                  >
+                    {swingsWithResults.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span style={{ fontWeight: 600, color: accentColor }}>
+                    {selectedSwing}
+                  </span>
+                )
+              )}
+              {!showSwing && mostRecentTournament && (
+                <span style={{ color: 'rgba(255,255,255,0.55)' }}>
+                  through {mostRecentTournament.name}
                 </span>
-              )
-            )}
-            {!showSwing && mostRecentTournament && (
-              <div style={{ fontFamily: fonts.sans, fontSize: 11, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.3px' }}>
-                through {mostRecentTournament.name}
-              </div>
-            )}
+              )}
+            </div>
           </div>
           {/* Right: toggle + event count */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
@@ -251,9 +254,10 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                 Swing
               </button>
             </div>
-            {showSwing && swingEventCount > 0 && (
-              <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, minWidth: 140, maxWidth: 200, width: '100%' }}>
-                {swingIsComplete ? (
+            {/* Event count — always reserve space */}
+            <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, minWidth: 140, maxWidth: 200, width: '100%', minHeight: 16 }}>
+              {showSwing && swingEventCount > 0 && (
+                swingIsComplete ? (
                   <>
                     <span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', fontSize: 10 }}>Final</span>
                     <span style={{ color: colors.textMuted }}>{swingEventCount} events</span>
@@ -262,9 +266,9 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                   <span style={{ color: accentColor.replace('0.85', '0.7') }}>
                     {swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}
                   </span>
-                )}
-              </div>
-            )}
+                )
+              )}
+            </div>
           </div>
         </div>
       </div>
