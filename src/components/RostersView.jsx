@@ -556,26 +556,6 @@ export const RostersView = ({
               );
             })()}
           </div>
-          {/* Done button — appears only in edit mode */}
-          {lineupMode && (
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
-              <button
-                onClick={() => setLineupMode(false)}
-                style={{
-                  padding: '5px 20px', borderRadius: 4,
-                  background: 'rgba(80,180,120,0.15)',
-                  border: '1.5px solid rgba(80,180,120,0.5)',
-                  fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
-                  color: colors.success, cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.25)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.15)'; }}
-              >
-                ✓ Done
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
@@ -592,7 +572,24 @@ export const RostersView = ({
       <div style={{ ...theme.card }}>
 
         {/* ── SFGL / PGAT slider — right-aligned above earnings column ── */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+        <div style={{ display: 'flex', justifyContent: lineupMode ? 'space-between' : 'flex-end', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+          {lineupMode && (
+            <button
+              onClick={() => setLineupMode(false)}
+              style={{
+                padding: '4px 16px', borderRadius: 4,
+                background: 'rgba(80,180,120,0.15)',
+                border: '1.5px solid rgba(80,180,120,0.5)',
+                fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                color: colors.success, cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.25)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.15)'; }}
+            >
+              ✓ Done
+            </button>
+          )}
           <div style={{
             position: 'relative', display: 'flex',
             background: 'rgba(255,255,255,0.04)',
