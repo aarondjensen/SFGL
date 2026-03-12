@@ -569,14 +569,15 @@ export const RostersView = ({
       )}
 
       {/* ── Action buttons + roster table ── */}
-      <div style={{ ...theme.card }}>
+      <div style={{ ...theme.card }} onClick={() => { if (lineupMode) setLineupMode(false); }}>
 
         {/* ── SFGL / PGAT slider — right-aligned above earnings column ── */}
-        <div style={{ display: 'flex', justifyContent: lineupMode ? 'space-between' : 'flex-end', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
           {lineupMode && (
             <button
-              onClick={() => setLineupMode(false)}
+              onClick={(e) => { e.stopPropagation(); setLineupMode(false); }}
               style={{
+                position: 'absolute', left: '50%', transform: 'translateX(-50%)',
                 padding: '4px 16px', borderRadius: 4,
                 background: 'rgba(80,180,120,0.15)',
                 border: '1.5px solid rgba(80,180,120,0.5)',
@@ -653,7 +654,8 @@ export const RostersView = ({
                       <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, minWidth: 0 }}>
                         {/* Headshot / lineup toggle */}
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             if (canEditLineup && isOwnTeam) {
                               if (!lineupMode) {
                                 setLineupMode(true);
