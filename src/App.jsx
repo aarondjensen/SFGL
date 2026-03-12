@@ -150,6 +150,8 @@ const FantasyGolfLeague = () => {
   const handleAdminLogin = async () => {
     const hashed = await hashPassword(adminPassword);
     if (hashed === COMMISSIONER_PASSWORD_HASH) {
+      // Blur input to dismiss keyboard and reset iOS zoom
+      if (document.activeElement) document.activeElement.blur();
       setIsCommissioner(true);
       setShowAdminLoginPopover(false);
       setAdminPassword('');
@@ -417,6 +419,8 @@ const FantasyGolfLeague = () => {
           }}>
             <input
               type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
               autoFocus
               autoComplete="current-password"
               placeholder="Password"
@@ -428,7 +432,7 @@ const FantasyGolfLeague = () => {
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: 1,
                 padding: '7px 10px',
-                fontSize: 13,
+                fontSize: 16,
                 width: 160,
                 color: 'white',
                 outline: 'none',
