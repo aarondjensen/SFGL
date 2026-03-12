@@ -341,7 +341,24 @@ export const transactionsApi = {
       .select('*')
       .order('timestamp', { ascending: false });
     if (error) throw error;
-    return data || [];
+    // Dedup: for transactions without txId, dedup by team+type+player+droppedPlayer+tournamentIndex+status
+    const seen = new Set();
+    const deduped = [];
+    (data || []).forEach(tx => {
+      if (tx.txId) {
+        if (!seen.has('txId:' + tx.txId)) {
+          seen.add('txId:' + tx.txId);
+          deduped.push(tx);
+        }
+      } else {
+        const key = [tx.team, tx.type, tx.player, tx.droppedPlayer, tx.tournamentIndex, tx.status, tx.segment].join('|');
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push(tx);
+        }
+      }
+    });
+    return deduped;
   },
 
   async add(transaction) {

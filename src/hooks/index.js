@@ -127,17 +127,6 @@ export const useLeague = (STORAGE_KEYS) => {
           } else if (sfglFallback[STORAGE_KEYS.TRANSACTIONS]?.length > 0) {
             setTransactions(sfglFallback[STORAGE_KEYS.TRANSACTIONS]);
             console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TRANSACTIONS].length} transactions from sfgl_data`);
-            // One-time migration: copy sfgl_data transactions into the transactions table
-            try {
-              const txToMigrate = sfglFallback[STORAGE_KEYS.TRANSACTIONS];
-              if (Array.isArray(txToMigrate) && txToMigrate.length > 0) {
-                const { transactionsApi } = await import('../api/supabase');
-                await transactionsApi.sync(txToMigrate);
-                console.log(`✓ Migrated ${txToMigrate.length} transactions to Supabase table`);
-              }
-            } catch (migErr) {
-              console.error('[useLeague] transaction migration failed:', migErr);
-            }
           } else {
             const localTransactions = await storage.get(STORAGE_KEYS.TRANSACTIONS, null);
             if (localTransactions) setTransactions(localTransactions);

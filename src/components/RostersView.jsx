@@ -418,21 +418,32 @@ export const RostersView = ({
   // Source: results.teams[teamId].players — each entry is a player who was in the
   // starting lineup for that tournament, with the earnings they contributed.
   // starts = appeared in lineup, cuts = appeared in lineup AND earned > $0
+  // Mulliganed-out players are excluded from start counts.
   const sfglCutsMap = useMemo(() => {
     const map = {};
     if (!team) return map;
-    tournaments.forEach(t => {
+    // Build set of mulliganed-out players per tournament index
+    const mulliganedOut = {};
+    transactions.forEach(tx => {
+      if (tx.type === 'mulligan' && tx.status !== 'failed' && tx.droppedPlayer && tx.tournamentIndex != null) {
+        if (!mulliganedOut[tx.tournamentIndex]) mulliganedOut[tx.tournamentIndex] = new Set();
+        mulliganedOut[tx.tournamentIndex].add(tx.droppedPlayer);
+      }
+    });
+    tournaments.forEach((t, tIdx) => {
       if (!t.completed || !t.results?.teams?.[team.id]) return;
       const players = t.results.teams[team.id].players || [];
+      const excluded = mulliganedOut[tIdx] || new Set();
       players.forEach(p => {
         const name = p.name || p;
+        if (excluded.has(name)) return; // mulliganed out — not a start
         if (!map[name]) map[name] = { cuts: 0, starts: 0 };
         map[name].starts += 1;
         if ((p.earnings || 0) > 0) map[name].cuts += 1;
       });
     });
     return map;
-  }, [team, tournaments]);
+  }, [team, tournaments, transactions]);
 
   if (!team) return null;
 
