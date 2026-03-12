@@ -661,9 +661,19 @@ export const RostersView = ({
                       <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, minWidth: 0 }}>
                         {/* Headshot / lineup toggle */}
                         <button
-                          onClick={() => rowClickable && togglePlayerInLineup(player)}
-                          disabled={!rowClickable}
-                          style={{ position: 'relative', background: 'none', border: 'none', cursor: rowClickable ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          onClick={() => {
+                            if (canEditLineup && isOwnTeam) {
+                              if (!lineupMode) {
+                                setLineupMode(true);
+                                // If clicking a non-lineup player with room, add them
+                                if (!isInLineup && canAddToLineup) togglePlayerInLineup(player);
+                              } else if (isInLineup || canAddToLineup) {
+                                togglePlayerInLineup(player);
+                              }
+                            }
+                          }}
+                          disabled={!canEditLineup || !isOwnTeam}
+                          style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
                             src={getPlayerHeadshot(player.name, player.limited, headshots)}
@@ -682,15 +692,14 @@ export const RostersView = ({
                               transition: 'all 0.15s',
                             }}
                           />
-                          {isInLineup && (
+                          {isEditing && isInLineup && (
                             <div style={{
                               position: 'absolute', top: -3, right: -3,
                               width: 14, height: 14, borderRadius: '50%',
-                              background: isEditing ? 'rgba(220,60,60,0.9)' : 'rgba(80,195,120,0.85)',
+                              background: 'rgba(220,60,60,0.9)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              opacity: isEditing ? 1 : 0.75,
                             }}>
-                              <span style={{ color: '#fff', fontSize: 9, fontWeight: 900 }}>{isEditing ? '✕' : '✓'}</span>
+                              <span style={{ color: '#fff', fontSize: 9, fontWeight: 900 }}>✕</span>
                             </div>
                           )}
                           {isEditing && !isInLineup && canAddToLineup && (
