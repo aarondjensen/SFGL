@@ -337,31 +337,14 @@ export const RostersView = ({
   // The add/drop window is Mon–Wed of that week (before Thursday tee time).
   // We search by date so late result processing by the commish doesn't shift the tag.
   const getAddDropTournamentIndex = () => {
-    const parseStart = (t) => {
-      if (!t?.dates) return null;
-      const m = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
-      if (!m) return null;
-      const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
-      const mo = months[m[1]];
-      if (mo === undefined) return null;
-      return new Date(2026, mo, parseInt(m[2]));
-    };
-    // ET now
-    const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-    const now   = new Date(etStr);
-    // Find the tournament whose window contains today.
-    // Window = [startDate, startDate + 13] (full 2-week buffer so late processing is safe)
-    let best = -1;
-    tournaments.forEach((t, i) => {
-      const start = parseStart(t);
-      if (!start) return;
-      const end = new Date(start); end.setDate(end.getDate() + 13);
-      if (now >= start && now <= end) best = i;
-    });
-    if (best >= 0) return best;
-    // Fallback: first upcoming non-completed tournament
-    const upcoming = tournaments.findIndex(t => !t.completed);
-    return upcoming >= 0 ? upcoming : Math.max(0, tournaments.length - 1);
+    // Prefer the currently active (playing) tournament
+    const playingIdx = tournaments.findIndex(t => t.playing && !t.completed);
+    if (playingIdx >= 0) return playingIdx;
+    // Next: first non-completed tournament (upcoming)
+    const upcomingIdx = tournaments.findIndex(t => !t.completed);
+    if (upcomingIdx >= 0) return upcomingIdx;
+    // Fallback: last tournament
+    return Math.max(0, tournaments.length - 1);
   };
   const addDropTournamentIndex = getAddDropTournamentIndex();
 

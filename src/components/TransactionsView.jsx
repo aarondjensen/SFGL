@@ -16,13 +16,14 @@ const shortName = (name) => {
 };
 
 // ── Inline edit modal ─────────────────────────────────────────────────────────
-const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, setTransactions, updateTeams, onClose }) => {
+const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, transactions, setTransactions, updateTeams, onClose }) => {
   const dialog = useDialog();
 
   // Derive initial values from the transaction
   const [editTeam,   setEditTeam]   = useState(tx.team);
   const [editAdd,    setEditAdd]    = useState(tx.player || '');
   const [editDrop,   setEditDrop]   = useState(tx.droppedPlayer || '');
+  const [editTourneyIdx, setEditTourneyIdx] = useState(tx.tournamentIndex != null ? String(tx.tournamentIndex) : '');
   const [addSearch,  setAddSearch]  = useState('');
   const [saving,     setSaving]     = useState(false);
 
@@ -66,9 +67,10 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
     const newTeam = editTeam;
 
     // Update the transaction record
+    const newTourneyIdx = editTourneyIdx !== '' ? parseInt(editTourneyIdx) : tx.tournamentIndex;
     const updatedTx = transactions.map((t, i) =>
       i === txIndex
-        ? { ...t, team: newTeam, player: newAdd, droppedPlayer: newDrop || undefined }
+        ? { ...t, team: newTeam, player: newAdd, droppedPlayer: newDrop || undefined, tournamentIndex: newTourneyIdx, segment: tournaments[newTourneyIdx]?.segment || t.segment }
         : t
     );
 
@@ -103,6 +105,13 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
     updateTeams(updatedTeams);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, updatedTx);
     await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+    // Sync to Supabase
+    try {
+      const { transactionsApi } = await import('../api/supabase');
+      await transactionsApi.sync(updatedTx);
+    } catch (e) {
+      console.error('[EditTx] sync error:', e);
+    }
 
     setSaving(false);
     dialog.showToast('Transaction updated', 'success');
@@ -157,6 +166,21 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
               onBlur={e => e.target.style.borderColor = colors.borderInput}
             >
               {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+            </select>
+          </div>
+
+          {/* Tournament selector */}
+          <div>
+            <label style={{ ...theme.label, display: 'block', marginBottom: 5 }}>Tournament</label>
+            <select
+              value={editTourneyIdx}
+              onChange={e => setEditTourneyIdx(e.target.value)}
+              style={{ ...theme.select, colorScheme: 'dark' }}
+              onFocus={e => e.target.style.borderColor = colors.borderFocus}
+              onBlur={e => e.target.style.borderColor = colors.borderInput}
+            >
+              <option value="">—</option>
+              {tournaments.map((t, i) => <option key={i} value={i}>{t.name}</option>)}
             </select>
           </div>
 
@@ -651,6 +675,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           tx={editingTx.tx}
           txIndex={editingTx.txIndex}
           teams={teams}
+          tournaments={tournaments}
           allPlayers={allPlayers}
           transactions={transactions}
           setTransactions={setTransactions}
