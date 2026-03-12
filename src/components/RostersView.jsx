@@ -746,14 +746,18 @@ export const RostersView = ({
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                             <span style={{
                               fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, fontWeight: 500,
-                              color: isBenched ? dimColor : player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
+                              color: player.limited
+                                ? (isBenched ? 'rgba(245,197,24,0.4)' : colors.textGold)
+                                : player.unlimited
+                                  ? (isBenched ? 'rgba(100,140,220,0.4)' : 'rgba(100,140,220,0.9)')
+                                  : (isBenched ? dimColor : colors.textPrimary),
                             }}>
                               {displayName(player.name, isMobile)}
                             </span>
                             {player.limited && (
                               <span style={{
                                 fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
-                                color: isBenched ? dimColor : colors.textGoldDim,
+                                color: isBenched ? 'rgba(245,197,24,0.35)' : colors.textGoldDim,
                               }}>
                                 {sfglCutsMap[player.name]?.starts ?? player.starts}/{MAX_LIMITED_STARTS}
                               </span>
