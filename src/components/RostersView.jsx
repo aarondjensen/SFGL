@@ -337,13 +337,41 @@ export const RostersView = ({
   // The add/drop window is Mon–Wed of that week (before Thursday tee time).
   // We search by date so late result processing by the commish doesn't shift the tag.
   const getAddDropTournamentIndex = () => {
-    // Prefer the currently active (playing) tournament
-    const playingIdx = tournaments.findIndex(t => t.playing && !t.completed);
-    if (playingIdx >= 0) return playingIdx;
-    // Next: first non-completed tournament (upcoming)
+    const parseStart = (t) => {
+      if (!t?.dates) return null;
+      const m = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
+      if (!m) return null;
+      const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
+      const mo = months[m[1]];
+      if (mo === undefined) return null;
+      return new Date(2026, mo, parseInt(m[2]));
+    };
+    const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+    const now = new Date(etStr);
+    // Find the tournament whose week we're currently in:
+    // A tournament "week" runs from the prior Sunday through the following Saturday.
+    // We look for the tournament whose start date (Thursday) is closest to now,
+    // checking if now falls within Sun before start through Sat after start.
+    let best = -1;
+    let bestDist = Infinity;
+    tournaments.forEach((t, i) => {
+      const start = parseStart(t);
+      if (!start) return;
+      // Tournament week: Sunday before start through Saturday after
+      const sun = new Date(start);
+      sun.setDate(sun.getDate() - (sun.getDay())); // back to Sunday
+      const sat = new Date(sun);
+      sat.setDate(sat.getDate() + 6); // through Saturday
+      sat.setHours(23, 59, 59);
+      if (now >= sun && now <= sat) {
+        const dist = Math.abs(now - start);
+        if (dist < bestDist) { best = i; bestDist = dist; }
+      }
+    });
+    if (best >= 0) return best;
+    // Fallback: next non-completed tournament
     const upcomingIdx = tournaments.findIndex(t => !t.completed);
     if (upcomingIdx >= 0) return upcomingIdx;
-    // Fallback: last tournament
     return Math.max(0, tournaments.length - 1);
   };
   const addDropTournamentIndex = getAddDropTournamentIndex();
