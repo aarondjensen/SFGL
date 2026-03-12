@@ -461,11 +461,6 @@ export const RostersView = ({
               value={selectedTeam || ''}
               onChange={id => { setSelectedTeam(id); setLineupMode(false); }}
             />
-            {isCommissioner && team && (
-              <span style={{ ...theme.badge, background: 'rgba(80,195,120,0.1)', border: '1px solid rgba(80,195,120,0.3)', color: colors.success, fontSize: 10 }}>
-                Commish
-              </span>
-            )}
           </div>
 
           {/* Add Player button — always green */}
@@ -672,7 +667,6 @@ export const RostersView = ({
                               }
                             }
                           }}
-                          disabled={!canEditLineup || !isOwnTeam}
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
