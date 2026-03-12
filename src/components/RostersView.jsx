@@ -733,7 +733,7 @@ export const RostersView = ({
                                 fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
                                 color: isBenched ? dimColor : colors.textGoldDim,
                               }}>
-                                {player.starts}/{MAX_LIMITED_STARTS}
+                                {sfglCutsMap[player.name]?.starts ?? player.starts}/{MAX_LIMITED_STARTS}
                               </span>
                             )}
                             {player.unlimited && (
