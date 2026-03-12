@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy, Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
+import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
 import { DialogProvider } from './components/DialogContext';
 import { ErrorBoundary }  from './components/ErrorBoundary';
