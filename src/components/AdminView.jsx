@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDialog } from './DialogContext';
-import { slashGolfFetch, getSegmentByDate, normalizePlayerName } from '../utils';
+import { getSegmentByDate, normalizePlayerName } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi } from '../api/firebase';
@@ -183,48 +183,6 @@ export const AdminView = ({
   };
   const disabledBtn = (disabled) => disabled ? { opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' } : {};
 
-  // ── Results: API fetch ───────────────────────────────────────────────────
-  const handleFetchApiResults = async () => {
-    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
-    const ti = tournaments.findIndex(t => t.name === selectedTourney);
-    const t = tournaments[ti];
-    if (!t?.slashGolfId) { dialog.showToast('No API ID for this tournament', 'error'); return; }
-    if (t.completed) {
-      const ok = await dialog.showConfirm('Already Processed', 'Re-fetching will ADD earnings again (doubling them). Continue?', { type: 'danger', confirmText: 'Force Re-Fetch' });
-      if (!ok) return;
-    }
-    try {
-      dialog.showToast('Fetching ' + t.name + '...', 'info');
-      let data = await slashGolfFetch('leaderboard', { tournId: t.slashGolfId, year: '2026' });
-      let ap = data.leaderboardRows || data.leaderboard || data.results || [];
-      if (!ap.length) { dialog.showToast('No results found in API yet.', 'error'); return; }
-      try {
-        const ed = await slashGolfFetch('earnings', { tournId: t.slashGolfId, year: '2026' });
-        const ep = ed.leaderboard || ed.earnings || ed.results || [];
-        if (ep.length) ap = ap.map(lp => ({ ...lp, earnings: ep.find(e => e.playerId === lp.playerId)?.earnings || 0 }));
-      } catch (_) {}
-      const names = teams.flatMap(t => t.roster.map(p => p.name));
-      const { newTeams, newStats, resultsData } = processTournamentData(t, ap, teams, globalPlayerStats, names);
-      const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
-      const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
-      if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
-      // Also apply sfglEarnings from resultsData.teams directly onto roster
-      const teamsWithSfgl = newTeams.map(team => {
-        const teamResult = resultsData?.teams?.[team.id];
-        if (!teamResult?.players) return team;
-        const earningsByName = {};
-        teamResult.players.forEach(p => { earningsByName[p.name || p] = (p.earnings || 0); });
-        return { ...team, roster: team.roster.map(p => earningsByName[p.name] !== undefined ? { ...p, sfglEarnings: (p.sfglEarnings || 0) + earningsByName[p.name] } : p) };
-      });
-      updateTeams(teamsWithSfgl); setGlobalPlayerStats(newStats); setTournaments(newT);
-      // Persist tournaments and stats (updateTeams already handles its own persistence)
-      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
-      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
-      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
-      dialog.showToast('Results processed for ' + t.name + '!', 'success');
-    } catch (err) { dialog.showToast('API Error: ' + err.message, 'error'); }
-  };
 
 
   // ── Results: PGA Tour fetch ───────────────────────────────────────
@@ -848,7 +806,6 @@ export const AdminView = ({
             </div>
           );
         })()}
-        <button onClick={handleFetchApiResults} style={{ ...S.btn, marginBottom: 10 }}>⚡ Fetch from Slash Golf API</button>
 
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
           <div style={{ ...S.lbl, color: colors.textMuted, textAlign: 'center', marginBottom: 10 }}>— or enter manually —</div>
