@@ -302,23 +302,20 @@ function parseHtmlTable(html) {
     seenNames.add(name);
     players.push({ name, earnings: rawMoney ? parseInt(rawMoney) : 0 });
 
-    // Parse round scores from cells between name and money
-    // Scores look like: "-5", "+3", "E", "--", "WD"
-    // There should be 4 round scores + 1 total between nameIdx and moneyIdx
+    // Cells between name and money: R1 | R2 | R3 | R4 | Total | FedExPts
+    // (FedEx points column appears as decimal like "750.00" or "26.10")
+    // Take only the first 4 score cells; skip total and FedEx pts.
     const scoreCells = cells.slice(nameIdx + 1, moneyIdx);
-    const scores = scoreCells
-      .map(c => {
-        if (c === 'E' || c === 'Par') return 0;
-        if (c === '--' || c === 'WD' || c === 'DQ' || c === '') return null;
-        const n = parseInt(c.replace('+', ''));
-        return isNaN(n) ? null : n;
-      });
-
-    // Expect 4 round scores + 1 total = 5 cells, or 4 + total for 72-hole events
-    // The last score-like cell before money is the total — skip it, take first 4
-    const roundScores = scores.slice(0, 4);
-    if (roundScores.length >= 1 && roundScores[0] !== null) {
-      scoreRows.push({ name, r1: roundScores[0], r2: roundScores[1] ?? null, r3: roundScores[2] ?? null, r4: roundScores[3] ?? null });
+    const parseScore = c => {
+      if (c === 'E' || c === 'Par') return 0;
+      if (!c || c === '--' || c === 'WD' || c === 'DQ') return null;
+      if (c.includes('.')) return null; // FedEx pts are decimals — skip
+      const n = parseInt(c.replace('+', ''));
+      return isNaN(n) ? null : n;
+    };
+    const roundScores = scoreCells.map(parseScore).filter(s => s !== null).slice(0, 4);
+    if (roundScores.length >= 1) {
+      scoreRows.push({ name, r1: roundScores[0] ?? null, r2: roundScores[1] ?? null, r3: roundScores[2] ?? null, r4: roundScores[3] ?? null });
     }
   }
 
