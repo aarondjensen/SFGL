@@ -1,244 +1,260 @@
-/**
- * api/pga-results.js
- * Vercel serverless function — fetches and parses PGA Tour past results.
- *
- * Query params:
- *   ?url=https://www.pgatour.com/tournaments/2026/the-players-championship/R2026011/past-results
- *
- * OR lookup by name + year (searches schedule page):
- *   ?name=THE PLAYERS Championship&year=2026
- *
- * Returns JSON:
- * {
- *   earningsMap: { [playerName]: earnings },
- *   roundLeaders: { round1: [name], round2: [name], round3: [name] },
- *   playerCount, madeCutCount, missedCutCount, tournamentName, url
- * }
- */
+// api/pga-results.js — Vercel serverless function
+// Fetches official earnings from PGA Tour past-results pages.
+//
+// Resolution order (first match wins):
+//   1. ?url=<full past-results URL>         — commissioner pastes it once; auto-saved on tournament
+//   2. ?pgaTourId=R2026011&name=...         — stored on tournament object, URL constructed directly
+//   3. ?name=The+Players&year=2026          — schedule lookup (fallback, less reliable)
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { url: directUrl, name, year = new Date().getFullYear() } = req.query;
+  const { url: directUrl, pgaTourId, name, year } = req.query;
+  const resolvedYear = year || new Date().getFullYear().toString();
 
-  const fetchHeaders = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml',
-    'Accept-Language': 'en-US,en;q=0.9',
-  };
+  let pastResultsUrl = null;
 
-  let pastResultsUrl = directUrl || null;
+  // ── Strategy 1: direct URL ───────────────────────────────────────────────
+  if (directUrl) {
+    pastResultsUrl = directUrl;
+    console.log('[pga-results] Strategy 1 — direct URL:', pastResultsUrl);
+  }
 
-  // ── Find URL via schedule page if not provided directly ───────────────────
-  if (!pastResultsUrl) {
-    if (!name) return res.status(400).json({ error: 'Missing url or name param' });
+  // ── Strategy 2: pgaTourId ────────────────────────────────────────────────
+  if (!pastResultsUrl && pgaTourId && name) {
+    const slug = nameToSlug(name);
+    pastResultsUrl = `https://www.pgatour.com/tournaments/${resolvedYear}/${slug}/${pgaTourId}/past-results`;
+    console.log('[pga-results] Strategy 2 — pgaTourId URL:', pastResultsUrl);
+  }
 
+  // ── Strategy 3: schedule lookup ──────────────────────────────────────────
+  if (!pastResultsUrl && name) {
     try {
-      const schedResp = await fetch('https://www.pgatour.com/schedule', { headers: fetchHeaders });
-      if (!schedResp.ok) throw new Error(`Schedule fetch failed: ${schedResp.status}`);
-      const schedHtml = await schedResp.text();
-      pastResultsUrl  = findTournamentUrl(schedHtml, name, year);
+      pastResultsUrl = await lookupFromSchedule(name, resolvedYear);
+      console.log('[pga-results] Strategy 3 — schedule lookup URL:', pastResultsUrl);
     } catch (err) {
-      return res.status(500).json({ error: `Could not fetch schedule: ${err.message}` });
-    }
-
-    if (!pastResultsUrl) {
-      return res.status(404).json({
-        error: `Could not find "${name}" on the PGA Tour schedule. Try again or enter results manually.`,
-      });
+      console.warn('[pga-results] Schedule lookup failed:', err.message);
     }
   }
 
-  // Ensure URL ends with /past-results
-  if (!pastResultsUrl.includes('past-results')) {
-    pastResultsUrl = pastResultsUrl.replace(/\/$/, '') + '/past-results';
-  }
-
-  // ── Fetch the past-results page ────────────────────────────────────────────
-  let html = '';
-  try {
-    const pgaResp = await fetch(pastResultsUrl, { headers: fetchHeaders });
-    if (!pgaResp.ok) {
-      return res.status(pgaResp.status).json({ error: `PGA Tour returned ${pgaResp.status}`, url: pastResultsUrl });
-    }
-    html = await pgaResp.text();
-  } catch (err) {
-    return res.status(500).json({ error: `Fetch failed: ${err.message}` });
-  }
-
-  // ── Parse the results table ────────────────────────────────────────────────
-  const result = parseResultsHtml(html);
-
-  if (result.playerCount === 0) {
-    return res.status(422).json({
-      error: 'Could not parse results. The tournament may not be complete yet.',
-      url: pastResultsUrl,
+  if (!pastResultsUrl) {
+    return res.status(400).json({
+      error: 'Could not determine past-results URL. Provide ?url=, ?pgaTourId=, or ?name=',
     });
   }
 
-  res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
-  return res.status(200).json({
-    ...result,
-    tournamentName: name || 'Tournament',
-    url: pastResultsUrl,
+  // ── Fetch and parse ──────────────────────────────────────────────────────
+  try {
+    const html = await fetchPage(pastResultsUrl);
+    const parsed = parsePastResults(html);
+
+    if (!parsed.players.length) {
+      return res.status(404).json({
+        error: `No results found at ${pastResultsUrl}. The page may not have final results yet.`,
+        url: pastResultsUrl,
+      });
+    }
+
+    return res.status(200).json({
+      players: parsed.players,
+      roundLeaders: parsed.roundLeaders,
+      resolvedUrl: pastResultsUrl,
+    });
+  } catch (err) {
+    console.error('[pga-results] Fetch/parse error:', err.message);
+    return res.status(500).json({
+      error: err.message,
+      url: pastResultsUrl,
+    });
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function nameToSlug(name) {
+  return name
+    .toLowerCase()
+    .replace(/['']/g, '')          // remove apostrophes
+    .replace(/[^a-z0-9\s-]/g, '') // strip special chars
+    .trim()
+    .replace(/\s+/g, '-');         // spaces to hyphens
+}
+
+async function fetchPage(url) {
+  const resp = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+      'Referer': 'https://www.pgatour.com/',
+    },
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
+  return resp.text();
+}
+
+async function lookupFromSchedule(name, year) {
+  // Try the PGA Tour schedule page to find the tournament's URL path
+  const scheduleUrl = `https://www.pgatour.com/schedule`;
+  const html = await fetchPage(scheduleUrl);
+
+  // Look for JSON embedded in __NEXT_DATA__ script tag
+  const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (nextDataMatch) {
+    try {
+      const nextData = JSON.parse(nextDataMatch[1]);
+      const tournaments = extractTournamentsFromNextData(nextData);
+      const match = findTournamentByName(tournaments, name);
+      if (match?.id && match?.slug) {
+        return `https://www.pgatour.com/tournaments/${year}/${match.slug}/${match.id}/past-results`;
+      }
+    } catch (_) {}
+  }
+
+  // Fallback: scan href links for name-matching tournament path
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const hrefMatches = [...html.matchAll(/href="(\/tournaments\/\d{4}\/([^/]+)\/(R\d+)\/past-results)"/g)];
+  for (const [, href, slug] of hrefMatches) {
+    const slugNorm = slug.replace(/-/g, '');
+    if (slugNorm.includes(normalized) || normalized.includes(slugNorm.substring(0, 8))) {
+      return `https://www.pgatour.com${href}`;
+    }
+  }
+
+  throw new Error(`Could not find "${name}" on the PGA Tour schedule`);
+}
+
+function extractTournamentsFromNextData(data) {
+  const results = [];
+  const walk = (obj) => {
+    if (!obj || typeof obj !== 'object') return;
+    if (Array.isArray(obj)) { obj.forEach(walk); return; }
+    if (obj.tournamentId && obj.name) {
+      results.push({ id: obj.tournamentId, slug: obj.tournamentSlug || nameToSlug(obj.name), name: obj.name });
+    }
+    Object.values(obj).forEach(walk);
+  };
+  walk(data);
+  return results;
+}
+
+function findTournamentByName(tournaments, name) {
+  const norm = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return tournaments.find(t => {
+    const tn = (t.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return tn === norm || tn.includes(norm) || norm.includes(tn.substring(0, 8));
   });
 }
 
-// ── Find tournament URL from schedule HTML ────────────────────────────────────
-function findTournamentUrl(html, tournamentName, year) {
-  // Extract all /tournaments/{year}/{slug}/{id}/ patterns
-  const urlPattern = new RegExp(
-    `/tournaments/${year}/([a-z0-9-]+)/(R${year}\\d+)/`,
-    'gi'
-  );
-
-  const normTarget = normStr(tournamentName);
-  const targetWords = normTarget.split(' ').filter(w => w.length > 2);
-
-  let bestMatch = null;
-  let bestScore = -1;
-  const seen = new Set();
-
-  let match;
-  while ((match = urlPattern.exec(html)) !== null) {
-    const slug    = match[1];
-    const tournId = match[2];
-    const key     = `${slug}/${tournId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    const normSlug  = normStr(slug.replace(/-/g, ' '));
-    const slugWords = normSlug.split(' ').filter(w => w.length > 2);
-
-    const sharedCount = targetWords.filter(w => slugWords.includes(w)).length;
-    const score = sharedCount / Math.max(targetWords.length, slugWords.length, 1);
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = { slug, tournId };
-    }
-  }
-
-  if (!bestMatch || bestScore < 0.25) return null;
-
-  return `https://www.pgatour.com/tournaments/${year}/${bestMatch.slug}/${bestMatch.tournId}/past-results`;
-}
-
-function normStr(s) {
-  return (s || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, '')
-    .replace(/\b(the|championship|open|invitational|classic|at|of|pga|tour)\b/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// ── Parse the PGA Tour past-results HTML table ────────────────────────────────
-function parseResultsHtml(html) {
-  const earningsMap = {};
-  const rowData     = [];
-
-  // Strip HTML tags from a cell, decode entities, collapse whitespace
-  const stripHtml = (s) =>
-    s.replace(/<[^>]+>/g, '')
-      .replace(/&amp;/g, '&')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&#[0-9]+;/g, '')
-      .replace(/&[a-z]+;/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  // Only look at the table rows — find the results table first
-  // The past-results table has "Official Money" in the header
-  const tableMatch = html.match(/<table[\s\S]*?Official Money[\s\S]*?<\/table>/i);
-  const tableHtml  = tableMatch ? tableMatch[0] : html;
-
-  const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let trMatch;
-
-  while ((trMatch = trRegex.exec(tableHtml)) !== null) {
-    const rowHtml = trMatch[1];
-    const cells   = [];
-    const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-    let tdMatch;
-
-    while ((tdMatch = tdRegex.exec(rowHtml)) !== null) {
-      cells.push(stripHtml(tdMatch[1]));
-    }
-
-    // Need at least: Pos | Player | R1 | R2 | ... | Money
-    if (cells.length < 7) continue;
-
-    const pos        = cells[0].replace(/\s+/g, '').toUpperCase();
-    const playerName = cells[1];
-
-    // Skip header rows and garbage rows
-    if (!playerName || playerName.toLowerCase() === 'player') continue;
-    if (pos === 'POS' || pos === '') continue;
-    // Reject rows where player name contains CSS or is too long (leaked styles)
-    if (playerName.includes('{') || playerName.includes(':') || playerName.length > 60) continue;
-    // Reject purely numeric names
-    if (/^\d+$/.test(playerName)) continue;
-    // Must look like a real name (at least one letter, reasonable length)
-    if (!/[a-zA-Z]{2,}/.test(playerName)) continue;
-
-    const r1       = cells[2];
-    const r2       = cells[3];
-    const r3       = cells[4];
-    const r4       = cells[5];
-    const moneyRaw = cells[cells.length - 1];
-
-    // Parse money — strip $ and commas, find digits
-    const moneyClean = moneyRaw.replace(/[$,]/g, '');
-    const moneyMatch = moneyClean.match(/^\d+$/);
-    const earnings   = moneyMatch ? parseInt(moneyClean, 10) : 0;
-
-    const isCut = ['CUT', 'WD', 'DQ', 'MDF', 'W/D', 'RTD'].includes(pos);
-
-    earningsMap[playerName] = earnings;
-    rowData.push({ name: playerName, rounds: [r1, r2, r3, r4], isCut });
-  }
-
-  // ── Round leaders ──────────────────────────────────────────────────────────
-  const parseScore = (s) => {
-    if (!s || s === '-' || s === '' || s === '--') return null;
-    if (s === 'E') return 0;
-    const clean = s.replace(/[^-+\d]/g, '');
-    const n = parseInt(clean, 10);
-    return isNaN(n) ? null : n;
-  };
-
+function parsePastResults(html) {
+  const players = [];
   const roundLeaders = { round1: [], round2: [], round3: [] };
 
-  [1, 2, 3].forEach(roundNum => {
-    const scores = rowData
-      .map(p => {
-        let total = 0;
-        for (let i = 0; i < roundNum; i++) {
-          const s = parseScore(p.rounds[i]);
-          if (s === null) return null;
-          total += s;
-        }
-        return { name: p.name, score: total };
-      })
-      .filter(Boolean);
+  // ── Try __NEXT_DATA__ JSON first (most reliable) ──────────────────────────
+  const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (nextDataMatch) {
+    try {
+      const nextData = JSON.parse(nextDataMatch[1]);
+      const pastResults = findPastResultsInNextData(nextData);
+      if (pastResults?.players?.length) {
+        return pastResults;
+      }
+    } catch (_) {}
+  }
 
-    if (!scores.length) return;
-    const best = Math.min(...scores.map(s => s.score));
-    roundLeaders[`round${roundNum}`] = scores
-      .filter(s => s.score === best)
-      .map(s => s.name);
-  });
+  // ── Fallback: parse HTML table ────────────────────────────────────────────
+  const rowPattern = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch;
 
-  const madeCutCount   = Object.values(earningsMap).filter(e => e > 0).length;
-  const missedCutCount = rowData.filter(p => p.isCut).length;
+  while ((rowMatch = rowPattern.exec(html)) !== null) {
+    const row = rowMatch[1];
+    if (/<th/i.test(row)) continue;
 
-  return {
-    earningsMap,
-    roundLeaders,
-    playerCount:    Object.keys(earningsMap).length,
-    madeCutCount,
-    missedCutCount,
+    const cells = [];
+    const cellPattern = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    let cellMatch;
+    while ((cellMatch = cellPattern.exec(row)) !== null) {
+      cells.push(stripTags(cellMatch[1]).trim());
+    }
+
+    if (cells.length < 3) continue;
+
+    const moneyIdx = cells.findIndex(c => /^\$?[\d,]+$/.test(c.replace(/\s/g, '')) && parseInt(c.replace(/[^0-9]/g, '')) > 1000);
+    if (moneyIdx < 1) continue;
+
+    const nameIdx = findNameCell(cells, moneyIdx);
+    if (nameIdx === -1) continue;
+
+    const name = cleanPlayerName(cells[nameIdx]);
+    const earnings = parseInt(cells[moneyIdx].replace(/[^0-9]/g, ''));
+
+    if (name && !isNaN(earnings)) {
+      players.push({ name, earnings });
+    }
+  }
+
+  // ── Extract round leaders from HTML ──────────────────────────────────────
+  const r1Match = html.match(/[Rr]ound\s*1\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
+  const r2Match = html.match(/[Rr]ound\s*2\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
+  const r3Match = html.match(/[Rr]ound\s*3\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
+  if (r1Match) roundLeaders.round1 = [cleanPlayerName(r1Match[1])];
+  if (r2Match) roundLeaders.round2 = [cleanPlayerName(r2Match[1])];
+  if (r3Match) roundLeaders.round3 = [cleanPlayerName(r3Match[1])];
+
+  return { players, roundLeaders };
+}
+
+function findPastResultsInNextData(data) {
+  const players = [];
+  const roundLeaders = { round1: [], round2: [], round3: [] };
+
+  const walk = (obj, depth = 0) => {
+    if (!obj || typeof obj !== 'object' || depth > 15) return;
+    if (Array.isArray(obj)) { obj.forEach(item => walk(item, depth + 1)); return; }
+
+    // PGA Tour shape: { player: { displayName }, earnings }
+    if (obj.player?.displayName && obj.earnings !== undefined) {
+      players.push({ name: obj.player.displayName, earnings: obj.earnings || 0 });
+      return;
+    }
+    // Alt shape: { displayName, officialMoney }
+    if (obj.displayName && obj.officialMoney !== undefined) {
+      players.push({ name: obj.displayName, earnings: obj.officialMoney || 0 });
+      return;
+    }
+
+    // Round leaders
+    if (obj.roundLeader) {
+      const rl = obj.roundLeader;
+      const toNames = (v) => Array.isArray(v) ? v.map(p => p.displayName || p) : (v ? [v.displayName || v] : []);
+      if (rl.round1) roundLeaders.round1 = toNames(rl.round1);
+      if (rl.round2) roundLeaders.round2 = toNames(rl.round2);
+      if (rl.round3) roundLeaders.round3 = toNames(rl.round3);
+    }
+
+    Object.values(obj).forEach(v => walk(v, depth + 1));
   };
+  walk(data);
+
+  return players.length ? { players, roundLeaders } : null;
+}
+
+function stripTags(html) {
+  return html.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '').trim();
+}
+
+function findNameCell(cells, moneyIdx) {
+  for (let i = moneyIdx - 1; i >= 0; i--) {
+    const c = cells[i];
+    if (/^[A-Za-z][A-Za-z\s'.,-]{5,}$/.test(c) && c.split(/\s+/).length >= 2) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function cleanPlayerName(raw) {
+  return raw.replace(/\s+/g, ' ').replace(/[^\w\s'.,-]/g, '').trim();
 }
