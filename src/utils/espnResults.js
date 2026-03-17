@@ -1,20 +1,20 @@
 /**
  * espnResults.js
  * ============================================================================
- * Fetches completed tournament earnings and round leaders from ESPN's
- * public scoreboard API. Uses only site.api.espn.com which is CORS-safe
- * for browser requests (unlike site.web.api.espn.com which blocks cross-origin).
+ * Fetches completed tournament earnings and round leaders from ESPN.
  *
- * Usage:
- *   import { fetchESPNResults } from '../utils/espnResults';
- *   const { earningsMap, roundLeaders, madeCutCount, missedCutCount } =
- *     await fetchESPNResults('THE PLAYERS Championship');
+ * Endpoints used (both CORS-safe from the browser):
+ *   - Scoreboard: site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard
+ *     Used to look up the ESPN event ID by tournament name.
+ *   - Summary:    site.api.espn.com/apis/site/v2/sports/golf/pga/summary?event={id}
+ *     Returns full leaderboard with competitors, linescores, and earnings.
  *
  * Returns:
  *   {
  *     earningsMap:    { [playerName]: earnings }
- *                     ALL starters: made-cut have earnings > 0,
- *                     missed-cut / WD / DQ have earnings = 0.
+ *                     ALL starters included.
+ *                     Made-cut players: earnings > 0.
+ *                     Missed-cut / WD / DQ players: earnings = 0.
  *     roundLeaders:   { round1: [name], round2: [name], round3: [name] }
  *     playerCount:    number
  *     madeCutCount:   number
@@ -25,7 +25,8 @@
  * ============================================================================
  */
 
-const BASE = 'https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard';
+const SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard';
+const SUMMARY_URL    = 'https://site.api.espn.com/apis/site/v2/sports/golf/pga/summary';
 
 // ── Name normalisation ────────────────────────────────────────────────────────
 const normName = (s) =>
@@ -41,16 +42,13 @@ const normTournName = (s) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-// ── ESPN event lookup ─────────────────────────────────────────────────────────
+// ── ESPN event lookup via scoreboard ─────────────────────────────────────────
 async function findESPNEvent(tournamentName) {
   const target = normTournName(tournamentName);
 
-  // Helper: find best match in an events array
   const findMatch = (events) => {
-    // Exact normalised match
     let m = events.find(e => normTournName(e.name) === target);
     if (m) return m;
-    // Partial match
     m = events.find(e => {
       const en = normTournName(e.name);
       return en.includes(target) || target.includes(en);
@@ -58,18 +56,18 @@ async function findESPNEvent(tournamentName) {
     return m || null;
   };
 
-  // 1. Try current scoreboard (includes recent/in-progress/upcoming events)
-  const sbResp = await fetch(BASE);
-  if (!sbResp.ok) throw new Error(`ESPN fetch failed: ${sbResp.status}`);
-  const sbData = await sbResp.json();
+  // 1. Current scoreboard
+  const sbResp = await fetch(SCOREBOARD_URL);
+  if (!sbResp.ok) throw new Error(`ESPN scoreboard fetch failed: ${sbResp.status}`);
+  const sbData  = await sbResp.json();
   const sbMatch = findMatch(sbData.events || []);
   if (sbMatch) return { id: sbMatch.id, name: sbMatch.name };
 
-  // 2. Try full calendar for current year
-  const year = new Date().getFullYear();
-  const calResp = await fetch(`${BASE}?dates=${year}`);
+  // 2. Full year calendar
+  const year     = new Date().getFullYear();
+  const calResp  = await fetch(`${SCOREBOARD_URL}?dates=${year}`);
   if (calResp.ok) {
-    const calData = await calResp.json();
+    const calData  = await calResp.json();
     const calMatch = findMatch(calData.events || []);
     if (calMatch) return { id: calMatch.id, name: calMatch.name };
   }
@@ -80,29 +78,12 @@ async function findESPNEvent(tournamentName) {
   );
 }
 
-// ── Fetch full event data by ID ───────────────────────────────────────────────
-// Using the scoreboard endpoint with ?event= returns the full competition
-// including competitors, linescores, and statistics — all CORS-safe.
-async function fetchEventData(espnEventId) {
-  const resp = await fetch(`${BASE}?event=${espnEventId}`);
-  if (!resp.ok) throw new Error(`ESPN event fetch failed: ${resp.status}`);
-  const data = await resp.json();
-
-  // The event should be in data.events[0]
-  const event = (data.events || []).find(e => e.id === espnEventId) || data.events?.[0];
-  if (!event) throw new Error('ESPN returned no event data.');
-
-  const competition = event.competitions?.[0];
-  if (!competition) throw new Error('ESPN returned no competition data.');
-
-  return competition;
-}
-
 // ── Round score helpers ───────────────────────────────────────────────────────
 
-/** Per-round scores as integers (relative to par). null = not played. */
 function getRoundScores(competitor) {
-  return (competitor.linescores || []).map(ls => {
+  // linescores may live on competitor directly or nested under rounds
+  const linescores = competitor.linescores || [];
+  return linescores.map(ls => {
     const val = ls.value ?? ls.score ?? ls.displayValue;
     if (val === undefined || val === null || val === '--' || val === '') return null;
     const n = parseInt(val, 10);
@@ -110,7 +91,6 @@ function getRoundScores(competitor) {
   });
 }
 
-/** Leader name(s) after a given round (1-indexed). */
 function getLeadersAfterRound(competitors, roundIndex) {
   const scores = competitors
     .map(c => {
@@ -133,7 +113,7 @@ function getLeadersAfterRound(competitors, roundIndex) {
 // ── Earnings extraction ───────────────────────────────────────────────────────
 
 function extractEarnings(competitor) {
-  // Direct earnings field
+  // Direct field
   if (competitor.earnings !== undefined && competitor.earnings !== null) {
     const n = parseInt(competitor.earnings, 10);
     if (!isNaN(n) && n > 0) return n;
@@ -141,7 +121,6 @@ function extractEarnings(competitor) {
 
   // statistics array
   if (Array.isArray(competitor.statistics)) {
-    // Named earnings stat
     const earnStat = competitor.statistics.find(s =>
       (s.name || '').toLowerCase().includes('earn') ||
       (s.abbreviation || '').toLowerCase().includes('earn')
@@ -150,7 +129,6 @@ function extractEarnings(competitor) {
       const n = parseInt((earnStat.displayValue || '').replace(/[^0-9]/g, ''), 10);
       if (!isNaN(n) && n > 0) return n;
     }
-    // Fallback: any stat value that looks like prize money (>= $10,000)
     for (const stat of competitor.statistics) {
       const raw = (stat.displayValue || '').replace(/[$,]/g, '');
       const n   = parseInt(raw, 10);
@@ -158,16 +136,9 @@ function extractEarnings(competitor) {
     }
   }
 
-  // status.earnings or nested prize
-  if (competitor.status?.earnings) {
-    const n = parseInt(competitor.status.earnings, 10);
-    if (!isNaN(n) && n > 0) return n;
-  }
-
   return 0;
 }
 
-/** True if this competitor missed the cut, withdrew, or was disqualified. */
 function didNotFinish(competitor) {
   const statusName = (
     competitor.status?.type?.name ||
@@ -178,28 +149,51 @@ function didNotFinish(competitor) {
   ).toLowerCase();
 
   return (
-    statusName.includes('cut')       ||
-    statusName.includes('wd')        ||
-    statusName.includes('withdraw')  ||
-    statusName.includes('dq')        ||
+    statusName.includes('cut')      ||
+    statusName.includes('wd')       ||
+    statusName.includes('withdraw') ||
+    statusName.includes('dq')       ||
     statusName.includes('disqualif')
   );
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function fetchESPNResults(tournamentName) {
-  // Step 1: Find the ESPN event ID via the CORS-safe scoreboard endpoint
+  // Step 1: Find event ID via scoreboard
   const { id: espnEventId, name: eventName } = await findESPNEvent(tournamentName);
 
-  // Step 2: Fetch full competition data (also via the CORS-safe scoreboard endpoint)
-  const competition = await fetchEventData(espnEventId);
+  // Step 2: Fetch full leaderboard via summary endpoint
+  const summaryResp = await fetch(`${SUMMARY_URL}?event=${espnEventId}`);
+  if (!summaryResp.ok) {
+    throw new Error(`ESPN summary fetch failed: ${summaryResp.status}`);
+  }
+  const summaryData = await summaryResp.json();
 
-  const competitors = competition.competitors || [];
-  if (competitors.length === 0) {
-    throw new Error('ESPN returned no competitors. The event may not be complete yet.');
+  // Summary shape: { competition: { competitors: [...] } }
+  // or sometimes:  { leaderboard: { ... } }
+  // Try multiple paths
+  let competitors =
+    summaryData.competition?.competitors ||
+    summaryData.leaderboard?.competitors ||
+    summaryData.competitors ||
+    [];
+
+  // If still empty, try digging into events array (some responses wrap differently)
+  if (competitors.length === 0 && summaryData.events) {
+    const event = summaryData.events.find(e => e.id === espnEventId) || summaryData.events[0];
+    competitors = event?.competitions?.[0]?.competitors || [];
   }
 
-  // Step 3: Build earningsMap — ALL starters included
+  if (competitors.length === 0) {
+    // Log what we got to help debug
+    console.warn('[ESPN] Summary response keys:', Object.keys(summaryData));
+    throw new Error(
+      'ESPN returned no competitors from the summary endpoint. ' +
+      'The event may not be complete yet, or the data structure may have changed.'
+    );
+  }
+
+  // Step 3: Build earningsMap
   const earningsMap = {};
   let missedCutCount = 0;
 
@@ -215,7 +209,6 @@ export async function fetchESPNResults(tournamentName) {
     }
   });
 
-  // Sanity check: if nobody has earnings > 0, data isn't finalised yet
   const madeCutCount = Object.values(earningsMap).filter(e => e > 0).length;
   if (madeCutCount === 0 && competitors.length > 0) {
     throw new Error(
@@ -224,7 +217,7 @@ export async function fetchESPNResults(tournamentName) {
     );
   }
 
-  // Step 4: Round leaders (after R1, R2, R3)
+  // Step 4: Round leaders
   const roundLeaders = {
     round1: getLeadersAfterRound(competitors, 1),
     round2: getLeadersAfterRound(competitors, 2),
