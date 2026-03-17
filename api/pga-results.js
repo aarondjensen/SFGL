@@ -313,7 +313,12 @@ function findNameCell(cells, moneyIdx) {
 }
 
 function stripTags(html) {
-  return html.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '').replace(/\s+/g, ' ').trim();
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // remove inline <style> blocks (Chakra UI injects these per-cell)
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // remove any inline scripts too
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '')
+    .replace(/\s+/g, ' ').trim();
 }
 
 function cleanName(raw) {
