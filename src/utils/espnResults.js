@@ -1,24 +1,16 @@
 /**
  * espnResults.js
  * ============================================================================
- * Fetches completed tournament earnings and round leaders via a Vercel
- * serverless proxy (/api/espn-leaderboard) that calls ESPN server-side,
- * bypassing CORS restrictions on direct browser requests.
+ * Fetches completed tournament earnings and round leaders from ESPN.
  *
- * Returns:
- *   {
- *     earningsMap:    { [playerName]: earnings }
- *                     ALL starters. Made-cut: earnings > 0. Missed-cut: 0.
- *     roundLeaders:   { round1: [name], round2: [name], round3: [name] }
- *     playerCount, madeCutCount, missedCutCount, eventName, espnEventId
- *   }
+ * - Event ID lookup: site.api.espn.com/scoreboard (CORS-safe, direct)
+ * - Leaderboard data: site.web.api.espn.com/leaderboard via corsproxy.io
+ *   (ESPN blocks direct browser requests; corsproxy.io relays them)
  * ============================================================================
  */
 
-// Routes all ESPN requests through our Vercel proxy to avoid CORS blocks.
-// In local dev (localhost) this hits the same Vercel dev server via vite proxy,
-// or falls back to direct ESPN if the proxy isn't available yet.
-const PROXY = '/api/espn-leaderboard';
+const SCOREBOARD  = 'https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard';
+const LEADERBOARD = 'https://site.web.api.espn.com/apis/v2/sports/golf/pga/leaderboard';
 
 // ── Name normalisation ────────────────────────────────────────────────────────
 const normName = (s) =>
@@ -34,15 +26,6 @@ const normTournName = (s) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-// ── Fetch via proxy ───────────────────────────────────────────────────────────
-async function proxyFetch(params) {
-  const qs   = new URLSearchParams(params).toString();
-  const resp = await fetch(`${PROXY}?${qs}`);
-  if (!resp.ok) throw new Error(`Proxy fetch failed: ${resp.status}`);
-  return resp.json();
-}
-
-// ── Find event in a list ──────────────────────────────────────────────────────
 function findEventInList(events, target) {
   let match = events.find(e => normTournName(e.name) === target);
   if (!match) {
@@ -54,63 +37,70 @@ function findEventInList(events, target) {
   return match || null;
 }
 
-// ── Find ESPN event ID ────────────────────────────────────────────────────────
+// ── Find ESPN event ID via the CORS-safe scoreboard ───────────────────────────
 async function findESPNEventId(tournamentName) {
   const target = normTournName(tournamentName);
 
   // 1. Current scoreboard
-  const sbData  = await proxyFetch({ scoreboard: 1 });
+  const sbResp  = await fetch(SCOREBOARD);
+  if (!sbResp.ok) throw new Error(`ESPN scoreboard fetch failed: ${sbResp.status}`);
+  const sbData  = await sbResp.json();
   const sbMatch = findEventInList(sbData.events || [], target);
   if (sbMatch) {
-    console.log(`[ESPN] Found "${sbMatch.name}" on current scoreboard (id: ${sbMatch.id})`);
+    console.log(`[ESPN] Found on current scoreboard: "${sbMatch.name}" (id: ${sbMatch.id})`);
     return { id: sbMatch.id, name: sbMatch.name };
   }
 
   // 2. Full year calendar
   const year    = new Date().getFullYear();
-  const calData = await proxyFetch({ scoreboard: 1, dates: year });
-  const calMatch = findEventInList(calData.events || [], target);
-  if (calMatch) {
-    console.log(`[ESPN] Found "${calMatch.name}" on year calendar (id: ${calMatch.id})`);
-    return { id: calMatch.id, name: calMatch.name };
+  const calResp = await fetch(`${SCOREBOARD}?dates=${year}`);
+  if (calResp.ok) {
+    const calData  = await calResp.json();
+    const calMatch = findEventInList(calData.events || [], target);
+    if (calMatch) {
+      console.log(`[ESPN] Found on year calendar: "${calMatch.name}" (id: ${calMatch.id})`);
+      return { id: calMatch.id, name: calMatch.name };
+    }
   }
 
   // 3. Walk back week by week up to 12 weeks
   const now = new Date();
-  for (let weeksBack = 1; weeksBack <= 12; weeksBack++) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - weeksBack * 7);
-    const dateStr  = d.toISOString().slice(0, 10).replace(/-/g, '');
-    const wData    = await proxyFetch({ scoreboard: 1, dates: dateStr }).catch(() => null);
-    if (!wData) continue;
-    const wMatch   = findEventInList(wData.events || [], target);
+  for (let w = 1; w <= 12; w++) {
+    const d       = new Date(now);
+    d.setDate(d.getDate() - w * 7);
+    const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '');
+    const wResp   = await fetch(`${SCOREBOARD}?dates=${dateStr}`).catch(() => null);
+    if (!wResp?.ok) continue;
+    const wData   = await wResp.json();
+    const wMatch  = findEventInList(wData.events || [], target);
     if (wMatch) {
-      console.log(`[ESPN] Found "${wMatch.name}" at week -${weeksBack} (id: ${wMatch.id})`);
+      console.log(`[ESPN] Found at week -${w}: "${wMatch.name}" (id: ${wMatch.id})`);
       return { id: wMatch.id, name: wMatch.name };
     }
   }
 
-  throw new Error(
-    `Could not find "${tournamentName}" on ESPN. ` +
-    `The tournament may not be available yet.`
-  );
+  throw new Error(`Could not find "${tournamentName}" on ESPN.`);
 }
 
-// ── Fetch full leaderboard ────────────────────────────────────────────────────
+// ── Fetch full leaderboard via corsproxy.io ───────────────────────────────────
 async function fetchLeaderboard(espnEventId) {
-  const data = await proxyFetch({ tournamentId: espnEventId });
+  const targetUrl  = `${LEADERBOARD}?event=${espnEventId}`;
+  const proxiedUrl = `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
 
-  // ESPN leaderboard v2 shape: data.events[0].competitions[0].competitors
-  let competitors =
+  console.log(`[ESPN] Fetching leaderboard via corsproxy.io for event ${espnEventId}`);
+  const resp = await fetch(proxiedUrl);
+  if (!resp.ok) throw new Error(`ESPN leaderboard fetch failed: ${resp.status}`);
+  const data = await resp.json();
+
+  const competitors =
     data.events?.[0]?.competitions?.[0]?.competitors ||
     data.competitions?.[0]?.competitors ||
     data.competitors ||
-    data.leaderboard?.competitors ||
     [];
 
-  console.log(`[ESPN] Leaderboard returned ${competitors.length} competitors`);
+  console.log(`[ESPN] Got ${competitors.length} competitors`);
   if (competitors.length === 0) {
-    console.warn('[ESPN] Response top-level keys:', Object.keys(data));
+    console.warn('[ESPN] Response keys:', Object.keys(data));
   }
 
   return competitors;
@@ -182,20 +172,13 @@ function didNotFinish(competitor) {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function fetchESPNResults(tournamentName) {
-  // Step 1: Find the ESPN event ID
   const { id: espnEventId, name: eventName } = await findESPNEventId(tournamentName);
-
-  // Step 2: Fetch full leaderboard via proxy
   const competitors = await fetchLeaderboard(espnEventId);
 
   if (competitors.length === 0) {
-    throw new Error(
-      `ESPN found the event but returned no player data. ` +
-      `The event may not have started or results may not be posted yet.`
-    );
+    throw new Error('ESPN found the event but returned no player data. The event may not be complete yet.');
   }
 
-  // Step 3: Build earningsMap
   const earningsMap  = {};
   let missedCutCount = 0;
 
@@ -214,12 +197,10 @@ export async function fetchESPNResults(tournamentName) {
   if (madeCutCount === 0 && competitors.length > 0) {
     throw new Error(
       'ESPN has player data but no earnings yet. ' +
-      'The event may still be in progress or prize money may not be posted. ' +
       'Try again after the tournament concludes.'
     );
   }
 
-  // Step 4: Round leaders
   const roundLeaders = {
     round1: getLeadersAfterRound(competitors, 1),
     round2: getLeadersAfterRound(competitors, 2),
