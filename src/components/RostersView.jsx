@@ -12,7 +12,7 @@ import {
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
-import { sfglDataApi } from '../api/supabase';
+import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers ─────────────────────────────────────────────────────────
