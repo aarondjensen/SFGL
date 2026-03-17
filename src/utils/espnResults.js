@@ -3,18 +3,16 @@
  * ============================================================================
  * Fetches completed tournament earnings and round leaders from ESPN.
  *
- * Uses a SINGLE fetch to the ESPN scoreboard endpoint, which is CORS-safe.
- * The scoreboard returns full competitor data (scores, stats, status) for
- * recent/current events. For completed events that have aged off the default
- * scoreboard, we try the calendar year endpoint.
- *
- * NO secondary fetch to site.web.api.espn.com or summary endpoints —
- * those are not reliably CORS-accessible from the browser.
+ * Strategy:
+ *  1. Use the CORS-safe scoreboard to find the ESPN event ID by tournament name.
+ *  2. Fetch full leaderboard data from cdn.espn.com/golf/leaderboard?tournamentId=
+ *     This CDN endpoint is publicly accessible and returns complete results
+ *     including earnings for completed events.
  *
  * Returns:
  *   {
  *     earningsMap:    { [playerName]: earnings }
- *                     ALL starters. Made-cut: earnings > 0. Missed-cut: earnings = 0.
+ *                     ALL starters. Made-cut: earnings > 0. Missed-cut: 0.
  *     roundLeaders:   { round1: [name], round2: [name], round3: [name] }
  *     playerCount, madeCutCount, missedCutCount, eventName, espnEventId
  *   }
@@ -22,6 +20,7 @@
  */
 
 const SCOREBOARD = 'https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard';
+const CDN_LEADERBOARD = 'https://cdn.espn.com/golf/leaderboard';
 
 // ── Name normalisation ────────────────────────────────────────────────────────
 const normName = (s) =>
@@ -37,12 +36,7 @@ const normTournName = (s) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-// ── Extract competitors from an ESPN event object ─────────────────────────────
-function extractCompetitors(event) {
-  return event?.competitions?.[0]?.competitors || [];
-}
-
-// ── Find matching event + return its competitor list ─────────────────────────
+// ── Find event in a list, return the matching event object ────────────────────
 function findEventInList(events, target) {
   let match = events.find(e => normTournName(e.name) === target);
   if (!match) {
@@ -52,6 +46,90 @@ function findEventInList(events, target) {
     });
   }
   return match || null;
+}
+
+// ── Find ESPN event ID via scoreboard ─────────────────────────────────────────
+async function findESPNEventId(tournamentName) {
+  const target = normTournName(tournamentName);
+
+  // 1. Current scoreboard
+  const sbResp = await fetch(SCOREBOARD);
+  if (!sbResp.ok) throw new Error(`ESPN scoreboard fetch failed: ${sbResp.status}`);
+  const sbData  = await sbResp.json();
+  const sbMatch = findEventInList(sbData.events || [], target);
+  if (sbMatch) {
+    console.log(`[ESPN] Found "${sbMatch.name}" on current scoreboard (id: ${sbMatch.id})`);
+    return { id: sbMatch.id, name: sbMatch.name };
+  }
+
+  // 2. Full year calendar — scoreboard with year gives list of all events
+  //    but without competitor data. We just need the ID here.
+  const year    = new Date().getFullYear();
+  const calResp = await fetch(`${SCOREBOARD}?dates=${year}`);
+  if (calResp.ok) {
+    const calData  = await calResp.json();
+    const calMatch = findEventInList(calData.events || [], target);
+    if (calMatch) {
+      console.log(`[ESPN] Found "${calMatch.name}" on year calendar (id: ${calMatch.id})`);
+      return { id: calMatch.id, name: calMatch.name };
+    }
+  }
+
+  // 3. Walk back week by week (up to 12 weeks) using dated scoreboard
+  const now = new Date();
+  for (let weeksBack = 0; weeksBack <= 12; weeksBack++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - weeksBack * 7);
+    const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '');
+    const wResp   = await fetch(`${SCOREBOARD}?dates=${dateStr}`).catch(() => null);
+    if (!wResp?.ok) continue;
+    const wData   = await wResp.json();
+    const wMatch  = findEventInList(wData.events || [], target);
+    if (wMatch) {
+      console.log(`[ESPN] Found "${wMatch.name}" at week -${weeksBack} (id: ${wMatch.id})`);
+      return { id: wMatch.id, name: wMatch.name };
+    }
+  }
+
+  throw new Error(
+    `Could not find "${tournamentName}" on ESPN. ` +
+    `The tournament may not be available yet.`
+  );
+}
+
+// ── Fetch full leaderboard from CDN endpoint ──────────────────────────────────
+async function fetchLeaderboard(espnEventId) {
+  const url  = `${CDN_LEADERBOARD}?tournamentId=${espnEventId}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`ESPN CDN leaderboard fetch failed: ${resp.status}`);
+  const data = await resp.json();
+
+  // CDN leaderboard shape:
+  //   data.leaderboard.competitors  — array of competitor objects
+  // or sometimes nested under events/competitions
+  let competitors =
+    data.leaderboard?.competitors ||
+    data.events?.[0]?.competitions?.[0]?.competitors ||
+    data.competitions?.[0]?.competitors ||
+    data.competitors ||
+    [];
+
+  // Some CDN responses wrap everything under a "leaderboard" key differently
+  if (competitors.length === 0 && data.leaderboard) {
+    // Try iterating leaderboard rows
+    const rows = data.leaderboard.rows || data.leaderboard.groups || [];
+    rows.forEach(group => {
+      (group.competitors || group.athletes || []).forEach(c => competitors.push(c));
+    });
+  }
+
+  console.log(`[ESPN] CDN leaderboard returned ${competitors.length} competitors`);
+  if (competitors.length === 0) {
+    console.warn('[ESPN] CDN response keys:', Object.keys(data));
+    if (data.leaderboard) console.warn('[ESPN] leaderboard keys:', Object.keys(data.leaderboard));
+  }
+
+  return competitors;
 }
 
 // ── Round score helpers ───────────────────────────────────────────────────────
@@ -85,10 +163,12 @@ function getLeadersAfterRound(competitors, roundIndex) {
 
 // ── Earnings extraction ───────────────────────────────────────────────────────
 function extractEarnings(competitor) {
+  // Direct earnings field
   if (competitor.earnings !== undefined && competitor.earnings !== null) {
     const n = parseInt(competitor.earnings, 10);
     if (!isNaN(n) && n > 0) return n;
   }
+  // statistics array
   if (Array.isArray(competitor.statistics)) {
     const earnStat = competitor.statistics.find(s =>
       (s.name || '').toLowerCase().includes('earn') ||
@@ -120,85 +200,22 @@ function didNotFinish(competitor) {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function fetchESPNResults(tournamentName) {
-  const target = normTournName(tournamentName);
+  // Step 1: Find the ESPN event ID
+  const { id: espnEventId, name: eventName } = await findESPNEventId(tournamentName);
 
-  let eventName    = '';
-  let espnEventId  = '';
-  let competitors  = [];
-
-  // ── Attempt 1: current scoreboard (recent/in-progress events, full data) ──
-  const sbResp = await fetch(SCOREBOARD);
-  if (!sbResp.ok) throw new Error(`ESPN fetch failed: ${sbResp.status}`);
-  const sbData = await sbResp.json();
-
-  const sbMatch = findEventInList(sbData.events || [], target);
-  if (sbMatch) {
-    eventName   = sbMatch.name;
-    espnEventId = sbMatch.id;
-    competitors = extractCompetitors(sbMatch);
-    console.log(`[ESPN] Found "${eventName}" on current scoreboard. Competitors: ${competitors.length}`);
-  }
-
-  // ── Attempt 2: calendar year scoreboard ───────────────────────────────────
-  // The current scoreboard only shows a rolling window of recent events.
-  // For events a few weeks old, try the full calendar year endpoint.
-  if (competitors.length === 0) {
-    const year    = new Date().getFullYear();
-    const calResp = await fetch(`${SCOREBOARD}?dates=${year}`);
-    if (!calResp.ok) throw new Error(`ESPN calendar fetch failed: ${calResp.status}`);
-    const calData = await calResp.json();
-
-    const calMatch = findEventInList(calData.events || [], target);
-    if (calMatch) {
-      eventName   = calMatch.name;
-      espnEventId = calMatch.id;
-      competitors = extractCompetitors(calMatch);
-      console.log(`[ESPN] Found "${eventName}" on year calendar. Competitors: ${competitors.length}`);
-    }
-  }
-
-  // ── Attempt 3: try a few recent weeks of the calendar ─────────────────────
-  // ?dates=YYYYMMDD on the scoreboard returns events for that week.
-  // Walk back up to 8 weeks to find the event if it's not on the year view.
-  if (competitors.length === 0 && !espnEventId) {
-    const now = new Date();
-    for (let weeksBack = 0; weeksBack <= 8; weeksBack++) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - weeksBack * 7);
-      const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '');
-      const wResp   = await fetch(`${SCOREBOARD}?dates=${dateStr}`);
-      if (!wResp.ok) continue;
-      const wData   = await wResp.json();
-      const wMatch  = findEventInList(wData.events || [], target);
-      if (wMatch) {
-        eventName   = wMatch.name;
-        espnEventId = wMatch.id;
-        competitors = extractCompetitors(wMatch);
-        console.log(`[ESPN] Found "${eventName}" at week -${weeksBack}. Competitors: ${competitors.length}`);
-        break;
-      }
-    }
-  }
-
-  if (!espnEventId) {
-    throw new Error(
-      `Could not find "${tournamentName}" on ESPN. ` +
-      `The tournament may not be available yet.`
-    );
-  }
+  // Step 2: Fetch full leaderboard via CDN endpoint
+  const competitors = await fetchLeaderboard(espnEventId);
 
   if (competitors.length === 0) {
-    // Log what we got to help debug
-    console.warn('[ESPN] Event found but no competitors in scoreboard response. Event ID:', espnEventId);
     throw new Error(
       `ESPN found the event but returned no player data. ` +
       `The event may not have started or results may not be posted yet.`
     );
   }
 
-  // ── Build earningsMap ─────────────────────────────────────────────────────
+  // Step 3: Build earningsMap
   const earningsMap  = {};
-  let   missedCutCount = 0;
+  let missedCutCount = 0;
 
   competitors.forEach(c => {
     const name = c.athlete?.displayName || c.displayName;
@@ -220,7 +237,7 @@ export async function fetchESPNResults(tournamentName) {
     );
   }
 
-  // ── Round leaders ─────────────────────────────────────────────────────────
+  // Step 4: Round leaders
   const roundLeaders = {
     round1: getLeadersAfterRound(competitors, 1),
     round2: getLeadersAfterRound(competitors, 2),
