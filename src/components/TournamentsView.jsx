@@ -7,7 +7,7 @@ const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish
 import { theme, colors, fonts } from '../theme.js';
 import { SWING_COLORS } from '../theme.js';
 import { storage } from '../api';
-import { sfglDataApi } from '../api/supabase';
+import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
 const ALTERNATE_KEYWORDS = ['Puerto Rico', 'Zurich', 'Corales', 'Myrtle Beach', 'ISCO', 'Barracuda'];
@@ -391,3 +391,4 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
     </div>
   );
 };
+

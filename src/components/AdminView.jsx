@@ -3,7 +3,7 @@ import { useDialog } from './DialogContext';
 import { slashGolfFetch, getSegmentByDate, normalizePlayerName } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi } from '../api/supabase';
+import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi } from '../api/firebase';
 import { theme, colors, fonts } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
 
@@ -1171,4 +1171,5 @@ export const AdminView = ({
     </div>
   );
 };
+
 

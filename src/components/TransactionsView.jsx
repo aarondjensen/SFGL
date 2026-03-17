@@ -3,7 +3,7 @@ import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, makePlayer, getTeamAbbreviation } from '../utils/index.js';
 import { storage } from '../api';
-import { sfglDataApi } from '../api/supabase';
+import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 
@@ -107,7 +107,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
     await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
     // Sync to Supabase
     try {
-      const { transactionsApi } = await import('../api/supabase');
+      const { transactionsApi } = await import('../api/firebase');
       await transactionsApi.sync(updatedTx);
     } catch (e) {
       console.error('[EditTx] sync error:', e);
@@ -1202,3 +1202,4 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     </>
   );
 };
+

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { storage } from '../api';
-import { playerRankingsApi } from '../api/supabase';
+import { playerRankingsApi } from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
 
 // ============================================================================
@@ -61,12 +61,12 @@ export const useLeague = (STORAGE_KEYS) => {
           playerStatsApi, 
           headshotsApi,
           playerRankingsApi 
-        } = await import('../api/supabase');
+        } = await import('../api/firebase');
 
         console.log('[useLeague] Loading all data from Supabase...');
 
         // Also import sfglDataApi for fallback reads from the key-value table
-        const { sfglDataApi } = await import('../api/supabase');
+        const { sfglDataApi } = await import('../api/firebase');
 
         // Try to load everything from Supabase first
         try {
@@ -231,7 +231,7 @@ export const useLeague = (STORAGE_KEYS) => {
     setTeams(resolved);
     try {
       setIsSyncing(true);
-      const { teamsApi } = await import('../api/supabase');
+      const { teamsApi } = await import('../api/firebase');
       await teamsApi.setAll(resolved);
       await storage.set(STORAGE_KEYS.TEAMS, resolved);
     } catch (e) {
@@ -247,7 +247,7 @@ export const useLeague = (STORAGE_KEYS) => {
     setTournaments(resolved);
     try {
       setIsSyncing(true);
-      const { tournamentsApi } = await import('../api/supabase');
+      const { tournamentsApi } = await import('../api/firebase');
       await tournamentsApi.setAll(resolved);
       await storage.set(STORAGE_KEYS.TOURNAMENTS, resolved);
     } catch (e) {
@@ -262,7 +262,7 @@ export const useLeague = (STORAGE_KEYS) => {
     const resolved = typeof next === 'function' ? next(transactionsRef.current) : next;
     setTransactions(resolved);
     try {
-      const { transactionsApi } = await import('../api/supabase');
+      const { transactionsApi } = await import('../api/firebase');
       const merged = await transactionsApi.sync(resolved);
       if (merged && merged.length > resolved.length) {
         setTransactions(merged);
@@ -279,7 +279,7 @@ export const useLeague = (STORAGE_KEYS) => {
     const resolved = typeof next === 'function' ? next(settingsRef.current) : next;
     setSettings(resolved);
     try {
-      const { settingsApi } = await import('../api/supabase');
+      const { settingsApi } = await import('../api/firebase');
       for (const [key, value] of Object.entries(resolved)) {
         await settingsApi.set(key, value);
       }
@@ -294,7 +294,7 @@ export const useLeague = (STORAGE_KEYS) => {
     const resolved = typeof next === 'function' ? next(statsRef.current) : next;
     setGlobalPlayerStats(resolved);
     try {
-      const { playerStatsApi } = await import('../api/supabase');
+      const { playerStatsApi } = await import('../api/firebase');
       await playerStatsApi.setAll(resolved);
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, resolved);
     } catch (e) {
@@ -307,7 +307,7 @@ export const useLeague = (STORAGE_KEYS) => {
     const resolved = typeof next === 'function' ? next(headshotsRef.current) : next;
     setHeadshots(resolved);
     try {
-      const { headshotsApi } = await import('../api/supabase');
+      const { headshotsApi } = await import('../api/firebase');
       await headshotsApi.setAll(resolved);
       await storage.set(STORAGE_KEYS.HEADSHOTS, resolved);
     } catch (e) {
@@ -402,3 +402,4 @@ export const useWindowStatus = (tournament) => {
 
   return status;
 };
+

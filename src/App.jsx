@@ -15,7 +15,7 @@ import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi } from './api/supabase';
+import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
 
 
@@ -575,3 +575,4 @@ const App = () => (
 );
 
 export default App;
+

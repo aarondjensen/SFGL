@@ -1,20 +1,22 @@
-// Re-export storage from wherever it currently exists
-// This maintains backward compatibility
+// Re-export storage
 export { storage } from './storage';
 
-// Export Supabase client and APIs
-export { 
-  supabase,
-  playersApi,           // New consolidated API
-  playerRankingsApi,    // Legacy wrapper
+// Export Firebase APIs (replaces Supabase)
+export {
+  db,
+  playersApi,
+  playerRankingsApi,
   livRosterApi,
   teamsApi,
   tournamentsApi,
   transactionsApi,
   settingsApi,
-  playerStatsApi,       // Legacy wrapper
-  headshotsApi,         // Legacy wrapper
-  draftStateApi,        // Draft persistence
-  managerAuthApi,       // Manager authentication
-  draftPicksApi,        // Draft pick history
-} from './supabase';
+  playerStatsApi,
+  headshotsApi,
+  draftStateApi,
+  managerAuthApi,
+  draftPicksApi,
+  sfglDataApi,
+  globalPlayerStatsApi,
+  tournamentResultsApi,
+} from './firebase';
