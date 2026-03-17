@@ -281,13 +281,22 @@ export const AdminView = ({
         .map(p => `${p.name}, ${p.earnings}`)
         .join('\n');
 
+      // Only keep leaders who were actually in an SFGL starting lineup —
+      // same rule as the manual dropdown. Filter against current team lineups.
+      const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
+      const filterToStarted = (names) => {
+        if (!names?.length) return [''];
+        const filtered = names.filter(n => startedPlayers.has(n));
+        return filtered.length ? filtered : [''];
+      };
+
       const rl = roundLeaders || {};
       setManualEntry(prev => ({
         ...prev,
         playerEarnings: earningsLines,
-        round1Leaders: rl.round1?.length ? rl.round1 : [''],
-        round2Leaders: rl.round2?.length ? rl.round2 : [''],
-        round3Leaders: rl.round3?.length ? rl.round3 : [''],
+        round1Leaders: filterToStarted(rl.round1),
+        round2Leaders: filterToStarted(rl.round2),
+        round3Leaders: filterToStarted(rl.round3),
       }));
 
       dialog.showToast(`✓ Fetched ${players.length} players from PGA Tour`, 'success');
