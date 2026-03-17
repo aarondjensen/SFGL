@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useDialog } from './DialogContext';
-import { slashGolfFetch, getSegmentByDate, normalizePlayerName } from '../utils';
+import { getSegmentByDate, normalizePlayerName } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi } from '../api/firebase';
 import { theme, colors, fonts } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
+import { fetchESPNResults } from '../utils/espnResults';
 
 
 // ── Tournament processing helpers ────────────────────────────────────────────
@@ -150,6 +151,7 @@ export const AdminView = ({
 }) => {
   const [selectedTourney, setSelectedTourney] = useState('');
   const [manualEntry, setManualEntry] = useState({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
+  const [espnFetching, setEspnFetching] = useState(false);
   const [mgCredTeam, setMgCredTeam] = useState('');
   const [hsSearch,   setHsSearch]   = useState('');
   const [hsSaving,   setHsSaving]   = useState({});
@@ -180,47 +182,62 @@ export const AdminView = ({
   };
   const disabledBtn = (disabled) => disabled ? { opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' } : {};
 
-  // ── Results: API fetch ───────────────────────────────────────────────────
-  const handleFetchApiResults = async () => {
+  // ── Results: ESPN fetch ───────────────────────────────────────────────────
+  const handleFetchESPNResults = async () => {
     if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
-    const ti = tournaments.findIndex(t => t.name === selectedTourney);
-    const t = tournaments[ti];
-    if (!t?.slashGolfId) { dialog.showToast('No API ID for this tournament', 'error'); return; }
-    if (t.completed) {
-      const ok = await dialog.showConfirm('Already Processed', 'Re-fetching will ADD earnings again (doubling them). Continue?', { type: 'danger', confirmText: 'Force Re-Fetch' });
+    const ti         = tournaments.findIndex(t => t.name === selectedTourney);
+    const tournament = tournaments[ti];
+
+    if (tournament.completed) {
+      const ok = await dialog.showConfirm(
+        'Already Processed',
+        'Re-fetching will ADD earnings again (doubling them). Use "Reprocess Tournament" instead unless you want to start fresh. Continue with fetch?',
+        { type: 'danger', confirmText: 'Force Re-Fetch' }
+      );
       if (!ok) return;
     }
+
+    setEspnFetching(true);
+    dialog.showToast('Fetching ' + selectedTourney + ' from ESPN...', 'info');
+
     try {
-      dialog.showToast('Fetching ' + t.name + '...', 'info');
-      let data = await slashGolfFetch('leaderboard', { tournId: t.slashGolfId, year: '2026' });
-      let ap = data.leaderboardRows || data.leaderboard || data.results || [];
-      if (!ap.length) { dialog.showToast('No results found in API yet.', 'error'); return; }
-      try {
-        const ed = await slashGolfFetch('earnings', { tournId: t.slashGolfId, year: '2026' });
-        const ep = ed.leaderboard || ed.earnings || ed.results || [];
-        if (ep.length) ap = ap.map(lp => ({ ...lp, earnings: ep.find(e => e.playerId === lp.playerId)?.earnings || 0 }));
-      } catch (_) {}
-      const names = teams.flatMap(t => t.roster.map(p => p.name));
-      const { newTeams, newStats, resultsData } = processTournamentData(t, ap, teams, globalPlayerStats, names);
-      const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
-      const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
-      if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
-      // Also apply sfglEarnings from resultsData.teams directly onto roster
-      const teamsWithSfgl = newTeams.map(team => {
-        const teamResult = resultsData?.teams?.[team.id];
-        if (!teamResult?.players) return team;
-        const earningsByName = {};
-        teamResult.players.forEach(p => { earningsByName[p.name || p] = (p.earnings || 0); });
-        return { ...team, roster: team.roster.map(p => earningsByName[p.name] !== undefined ? { ...p, sfglEarnings: (p.sfglEarnings || 0) + earningsByName[p.name] } : p) };
-      });
-      updateTeams(teamsWithSfgl); setGlobalPlayerStats(newStats); setTournaments(newT);
-      // Persist tournaments and stats (updateTeams already handles its own persistence)
-      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
-      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
-      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
-      dialog.showToast('Results processed for ' + t.name + '!', 'success');
-    } catch (err) { dialog.showToast('API Error: ' + err.message, 'error'); }
+      const {
+        earningsMap,
+        roundLeaders,
+        madeCutCount,
+        missedCutCount,
+        eventName,
+      } = await fetchESPNResults(selectedTourney);
+
+      // Earnings textarea shows only made-cut players (earnings > 0).
+      // Commissioner can review and edit before processing.
+      const earningsLines = Object.entries(earningsMap)
+        .filter(([, amt]) => amt > 0)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, amt]) => `${name}, ${amt}`)
+        .join('\n');
+
+      setManualEntry(prev => ({
+        ...prev,
+        playerEarnings:   earningsLines,
+        round1Leaders:    roundLeaders.round1.length ? roundLeaders.round1 : [''],
+        round2Leaders:    roundLeaders.round2.length ? roundLeaders.round2 : [''],
+        round3Leaders:    roundLeaders.round3.length ? roundLeaders.round3 : [''],
+        // Full map (including missed-cut = 0) preserved so handleManualEntry
+        // can merge it in for complete eventsPlayed tracking.
+        _espnEarningsMap: earningsMap,
+      }));
+
+      dialog.showToast(
+        `✓ ESPN: ${madeCutCount} made cut · ${missedCutCount} missed cut (${eventName}). Review round leaders then click Process.`,
+        'success'
+      );
+    } catch (err) {
+      console.error('[ESPN fetch]', err);
+      dialog.showToast('ESPN Error: ' + err.message, 'error');
+    } finally {
+      setEspnFetching(false);
+    }
   };
 
   // ── Results: manual entry ────────────────────────────────────────────────
@@ -248,6 +265,18 @@ export const AdminView = ({
         dialog.showToast('No valid earnings lines found. Format: "Player Name, 123456"', 'error');
         return;
       }
+
+      // Merge missed-cut players from the ESPN fetch (earnings = 0).
+      // These aren't in the textarea but need eventsPlayed tracked.
+      // Made-cut players already in earningsMap take precedence.
+      if (manualEntry._espnEarningsMap) {
+        Object.entries(manualEntry._espnEarningsMap).forEach(([name, amt]) => {
+          if (amt === 0 && !earningsMap.has(name)) {
+            earningsMap.set(name, 0);
+          }
+        });
+      }
+
       const ti = tournaments.findIndex(t => t.name === selectedTourney);
       const manualData = {
         name: selectedTourney, status: 'post', competitors: [],
@@ -269,7 +298,12 @@ export const AdminView = ({
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
       sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
-      dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
+      const madeCut   = [...earningsMap.values()].filter(v => v > 0).length;
+      const missedCut = [...earningsMap.values()].filter(v => v === 0).length;
+      dialog.showToast(
+        `Results processed! ${madeCut} made cut · ${missedCut} missed cut · ${Object.keys(resultsData.teams).length} teams scored`,
+        'success'
+      );
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
       console.error('handleManualEntry error:', err);
@@ -305,6 +339,15 @@ export const AdminView = ({
       });
       if (!earningsMap.size) { dialog.showToast('No valid earnings lines found', 'error'); return; }
 
+      // Merge missed-cut players from ESPN fetch if available
+      if (manualEntry._espnEarningsMap) {
+        Object.entries(manualEntry._espnEarningsMap).forEach(([name, amt]) => {
+          if (amt === 0 && !earningsMap.has(name)) {
+            earningsMap.set(name, 0);
+          }
+        });
+      }
+
       // Step 1: Reverse old results from all teams
       const oldResults = tournament.results;
       let reversedTeams = teams.map(team => {
@@ -313,7 +356,6 @@ export const AdminView = ({
         // Reverse team earnings
         const earningsDelta = -(oldTeamResult.totalEarnings || 0);
         // Reverse per-player sfglEarnings and starts
-        // Use fullLineups for start reversal (all starters), players list for earnings
         const oldLineup = new Set(oldResults.fullLineups?.[team.id] || (oldTeamResult.players || []).map(p => p.name || p));
         const oldEarningsByPlayer = {};
         (oldTeamResult.players || []).forEach(p => { oldEarningsByPlayer[p.name || p] = p.earnings || 0; });
@@ -378,11 +420,8 @@ export const AdminView = ({
   };
 
     const RoundLeaderSelect = ({ label, leaders, onChange, round }) => {
-    // Use the stored tournament lineups (manualEntry.teamLineups) instead of current live lineups.
-    // This ensures we show players who were actually in the lineup for that tournament.
     const teamLineups = manualEntry.teamLineups || {};
 
-    // Build mulligan map for the selected tournament
     const selectedTIdx = tournaments.findIndex(t => t.name === selectedTourney);
     const tourneyMulligans = transactions.filter(tx =>
       tx.type === 'mulligan' && tx.tournamentIndex === selectedTIdx && tx.status === 'processed'
@@ -392,7 +431,6 @@ export const AdminView = ({
       const lineup = teamLineups[team.id] || team.lineup || [];
       let names = [...lineup];
 
-      // For R3+, include mulliganed-in players (they replace someone mid-tournament)
       if (round >= 3) {
         tourneyMulligans
           .filter(tx => tx.team === team.name && tx.player)
@@ -453,26 +491,21 @@ export const AdminView = ({
       dialog.showToast(w.droppedPlayer + ' already dropped', 'error'); return;
     }
 
-    // Check for competing pending claims from other teams on the same player
     const competing = transactions
       .map((tx, i) => ({ ...tx, _idx: i }))
       .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.player === w.player && tx.team !== w.team);
 
-    // Determine tiebreaker: lowest earnings wins
     const earningsMap = {}; teams.forEach(t => { earningsMap[t.name] = t.earnings || 0; });
     const allClaims = [w, ...competing].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
     const winner = allClaims[0];
     const losers = allClaims.slice(1);
 
     let tx2 = [...transactions];
-    // Mark winner as processed
     tx2[winner._idx] = { ...tx2[winner._idx], status: 'processed', processedDate: new Date().toLocaleDateString() };
-    // Mark losers as blocked
     losers.forEach(l => {
       tx2[l._idx] = { ...tx2[l._idx], status: 'failed', failReason: 'Waiver blocked — lost tiebreaker to ' + winner.team, processedDate: new Date().toLocaleDateString() };
     });
 
-    // Only apply the winner's roster change
     const t2 = teams.map(t => applyWaiver(t, winner));
     setTransactions(tx2); updateTeams(t2);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2);
@@ -487,7 +520,7 @@ export const AdminView = ({
     if (!pending.length) return;
     if (!await dialog.showConfirm('Process All Waivers', 'Process ' + pending.length + ' pending claim' + (pending.length !== 1 ? 's' : '') + '?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims.', { confirmText: 'Process All' })) return;
     const pm = {}; [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
-    let nextLastPlace = teams.length; // counter for pushing winners to back of priority
+    let nextLastPlace = teams.length;
     const byTeam = {}; pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
     Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
     const allR = new Set(); teams.forEach(t => buildRoster(t).forEach(n => allR.add(n)));
@@ -504,7 +537,7 @@ export const AdminView = ({
         if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allR.has(w.claim.droppedPlayer))) { failed.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }; f++; more = true; return; }
         if (w.claim.droppedPlayer) { allR.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
         allR.add(player); done.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() }; applied.push(w.claim); p++;
-        pm[w.tn] = nextLastPlace++; // winner moves to back of priority line
+        pm[w.tn] = nextLastPlace++;
         cs.slice(1).forEach(l => { failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: 'Waiver blocked — lost tiebreaker to ' + w.tn, processedDate: new Date().toLocaleDateString() }; f++; }); more = true;
       });
     }
@@ -527,11 +560,8 @@ export const AdminView = ({
   // ── Award Swing Winner ──────────────────────────────────────────────────
   const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 
-  // Get the swing a tournament belongs to, using t.segment if set,
-  // otherwise infer from the tournament's own dates field (not today's date)
   const getTournamentSegment = (t) => {
     if (t.segment) return t.segment;
-    // Parse month from dates: "Feb 9-15" → month=2
     if (t.dates) {
       const m = t.dates.match(/^([A-Za-z]+)/);
       if (m) {
@@ -551,8 +581,6 @@ export const AdminView = ({
   const handleSwingWinner = async () => {
     if (!swingAwardSeg) return;
 
-    // Sum all transaction fees for this swing using tournamentIndex range,
-    // matching the same logic as TransactionsView's fee counter.
     const swingTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
     if (!swingTournaments.length) {
       dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
@@ -564,7 +592,6 @@ export const AdminView = ({
         if ((tx.fee || 0) <= 0) return false;
         if (tx.status === 'failed') return false;
         if (tx.type === 'swing_winner') return false;
-        // Match by tournamentIndex if available, fall back to segment string
         return tx.tournamentIndex !== undefined
           ? swingIndexes.has(tx.tournamentIndex)
           : tx.segment === swingAwardSeg;
@@ -583,7 +610,6 @@ export const AdminView = ({
       });
     });
 
-    // Debug: log what we found so issues are visible in console
     console.log('[SwingWinner] Swing:', swingAwardSeg);
     console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
     console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
@@ -627,7 +653,7 @@ export const AdminView = ({
   };
 
   // ── OWGR CSV handler ──────────────────────────────────────────────────────
-  const [owgrStatus, setOwgrStatus] = useState(null); // null | 'parsing' | 'done' | 'error'
+  const [owgrStatus, setOwgrStatus] = useState(null);
   const [owgrSummary, setOwgrSummary] = useState('');
 
   const handleOwgrUpload = async (e) => {
@@ -635,14 +661,13 @@ export const AdminView = ({
     if (!file) return;
     setOwgrStatus('parsing');
     setOwgrSummary('');
-    e.target.value = ''; // reset input so same file can be re-uploaded
+    e.target.value = '';
 
     try {
       const text = await file.text();
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
       if (lines.length < 2) throw new Error('CSV appears empty');
 
-      // Detect header row — find rank/name columns case-insensitively
       const header = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
       const rankCol = header.findIndex(h => h.includes('rank'));
       const nameCol = header.findIndex(h => h.includes('name') || h.includes('player'));
@@ -650,7 +675,6 @@ export const AdminView = ({
 
       const parsed = [];
       for (let i = 1; i < lines.length; i++) {
-        // Handle quoted fields
         const cols = lines[i].match(/(".*?"|[^,]+)(?=,|$)/g)?.map(c => c.replace(/^"|"$/g, '').trim()) || lines[i].split(',').map(c => c.trim());
         const name = cols[nameCol];
         const rank = rankCol >= 0 ? parseInt(cols[rankCol], 10) : i;
@@ -660,7 +684,6 @@ export const AdminView = ({
 
       if (parsed.length === 0) throw new Error('No players found in CSV');
 
-      // Merge with existing allPlayers — update worldRank for matches, add new entries
       const updatedPlayers = [...allPlayers];
       let updated = 0, added = 0;
 
@@ -675,7 +698,6 @@ export const AdminView = ({
         }
       });
 
-      // Sort by rank
       updatedPlayers.sort((a, b) => (a.worldRank || 9999) - (b.worldRank || 9999));
 
       await updateRankings(updatedPlayers);
@@ -702,6 +724,7 @@ export const AdminView = ({
           const t = tournaments.find(t => t.name === name);
           if (t?.completed && t.results?.earningsMap) {
             const lines = Object.entries(t.results.earningsMap)
+              .filter(([, amt]) => amt > 0)
               .sort((a, b) => b[1] - a[1])
               .map(([player, amt]) => player + ', ' + amt)
               .join('\n');
@@ -724,7 +747,13 @@ export const AdminView = ({
           <option value="">Choose tournament...</option>
           {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
         </select>
-        <button onClick={handleFetchApiResults} style={{ ...S.btn, marginBottom: 10 }}>⚡ Fetch from API</button>
+        <button
+          onClick={handleFetchESPNResults}
+          disabled={!selectedTourney || espnFetching}
+          style={{ ...S.btn, marginBottom: 10, ...disabledBtn(!selectedTourney || espnFetching) }}
+        >
+          {espnFetching ? '⏳ Fetching from ESPN...' : '⚡ Fetch from ESPN'}
+        </button>
 
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
           <div style={{ ...S.lbl, color: colors.textMuted, textAlign: 'center', marginBottom: 10 }}>— or enter manually —</div>
@@ -797,7 +826,6 @@ export const AdminView = ({
 
       {/* ── 2. Process Waivers ── */}
       <div style={S.section}>
-        {/* Tuesday night reminder */}
         {(() => {
           const now = new Date();
           const etOffset = -4;
@@ -1044,16 +1072,13 @@ export const AdminView = ({
         />
         {(() => {
           const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
-          // Search: show non-LIV players from allPlayers, plus LIV_GOLF_ROSTER names not yet in DB
           const searchResults = livSearch.trim().length >= 2
             ? (() => {
                 const q = livSearch.toLowerCase();
                 const livNames = new Set(allPlayers.filter(p => p.isLiv).map(p => p.name));
-                // Players in allPlayers that aren't LIV
                 const fromAll = allPlayers
                   .filter(p => p.name && p.name.toLowerCase().includes(q) && !p.isLiv)
                   .map(p => ({ name: p.name, worldRank: p.worldRank }));
-                // LIV_GOLF_ROSTER names not yet in allPlayers at all
                 const existingNames = new Set(allPlayers.map(p => p.name));
                 const fromConst = LIV_GOLF_ROSTER
                   .filter(name => name.toLowerCase().includes(q) && !existingNames.has(name) && !livNames.has(name))
@@ -1063,7 +1088,6 @@ export const AdminView = ({
             : [];
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {/* Search results — players to add to LIV list */}
               {searchResults.length > 0 && (
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
@@ -1104,7 +1128,6 @@ export const AdminView = ({
                 </div>
               )}
 
-              {/* Current LIV roster */}
               <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
                 {livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}
               </div>
@@ -1161,7 +1184,7 @@ export const AdminView = ({
         </button>
       </div>
 
-      {/* ── 7. Draft ── */}
+      {/* ── 8. Draft ── */}
       <div style={S.section}>
         <div style={S.title}>🎯 Draft</div>
         <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
@@ -1171,5 +1194,3 @@ export const AdminView = ({
     </div>
   );
 };
-
-
