@@ -1,5 +1,7 @@
 // api/owgr.js — Vercel serverless function
+// Fetches current OWGR world rankings from apiweb.owgr.com
 
+const API_URL = 'https://apiweb.owgr.com/api/owgr/rankings/getRankings';
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'application/json, text/plain, */*',
@@ -12,49 +14,44 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const debug = req.query.debug === '1';
+  try {
+    const players = [];
 
-  if (debug) {
-    try {
-      const pageResp = await fetch('https://www.owgr.com/current-world-ranking', {
-        headers: { 'User-Agent': HEADERS['User-Agent'], 'Accept': 'text/html', 'Referer': 'https://www.owgr.com/' },
-      });
-      const html = await pageResp.text();
-      const chunkUrls = [...html.matchAll(/src="(\/_next\/static\/chunks\/[^"]+\.js)"/g)]
-        .map(m => `https://www.owgr.com${m[1]}`);
+    for (let page = 1; page <= 5; page++) {
+      const url = `${API_URL}?pageSize=200&pageNumber=${page}&rankingDate=&regionId=0&countryId=0&categoryId=0`;
+      const resp = await fetch(url, { headers: HEADERS });
 
-      // Get ALL apiweb paths from ALL chunks — extract just the path segment after /api/
-      const allPaths = new Set();
-      for (const chunkUrl of chunkUrls) {
-        try {
-          const r = await fetch(chunkUrl, { headers: { 'Referer': 'https://www.owgr.com/' } });
-          if (!r.ok) continue;
-          const js = await r.text();
-          for (const m of js.matchAll(/apiweb\.owgr\.com\/api\/["'`],["'`]([^"'`\s,)]{3,80})/g)) {
-            allPaths.add(m[1]);
-          }
-          // Also try direct concat pattern
-          for (const m of js.matchAll(/apiweb\.owgr\.com\/api\/([a-zA-Z][^"'`\s\\]{3,80})/g)) {
-            allPaths.add(m[1]);
-          }
-        } catch (_) {}
+      if (!resp.ok) {
+        if (page === 1) return res.status(resp.status).json({ error: `OWGR API returned ${resp.status}` });
+        break;
       }
 
-      return res.status(200).json({ paths: [...allPaths] });
-    } catch (err) {
-      return res.status(500).json({ error: err.message });
-    }
-  }
+      const data = await resp.json();
 
-  try {
-    const players = await fetchRankings();
+      // Discover the shape on first page if debug requested
+      if (page === 1 && req.query.debug === '1') {
+        return res.status(200).json({ sample: data });
+      }
+
+      const rows = data.rankings || data.rankingsList || data.data ||
+        data.rankingList || data.players || (Array.isArray(data) ? data : null);
+
+      if (!rows?.length) break;
+
+      for (const row of rows) {
+        const name = row.playerName || row.name || row.fullName ||
+          [row.firstName, row.lastName].filter(Boolean).join(' ').trim();
+        const rank = row.rank || row.worldRanking || row.rankingPosition || row.position;
+        if (name && rank) players.push({ name: name.trim(), worldRank: parseInt(rank) });
+      }
+
+      if (rows.length < 200) break; // last page
+    }
+
     if (!players.length) return res.status(404).json({ error: 'No ranking data returned' });
+
     return res.status(200).json({ players, count: players.length });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
-}
-
-async function fetchRankings() {
-  return [];
 }
