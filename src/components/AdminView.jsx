@@ -1027,7 +1027,7 @@ export const AdminView = ({
       <div style={S.section}>
         <div style={S.title}>🖼 Headshot Manager</div>
         <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
-          Map rostered players to their PGA Tour ID. Find the ID in the pgatour.com URL: /player/<strong style={{ color: colors.textPrimary }}>28237</strong>/rory-mcilroy
+          Map rostered players to their ESPN athlete ID. Use Auto-Fetch to populate automatically, or find the ID in the ESPN URL: /golfer/rory-mcilroy/<strong style={{ color: colors.textPrimary }}>4696529</strong>/overview
         </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           <input type="text" placeholder="Filter players…"
@@ -1052,6 +1052,21 @@ export const AdminView = ({
             {hsFetching ? '⏳ Looking up…' : '🔍 Auto-Fetch IDs'}
           </button>
         </div>
+        <button
+          onClick={async () => {
+            const ok = await dialog.showConfirm('Clear All Headshot IDs', 'This will remove all stored headshot IDs. Run Auto-Fetch after to repopulate with ESPN IDs.', { type: 'danger', confirmText: 'Clear All' });
+            if (!ok) return;
+            const allNames = Object.keys(headshots);
+            for (const name of allNames) {
+              try { await playersApi.update(name, { pgaTourId: null }); } catch (_) {}
+            }
+            setHeadshots({});
+            dialog.showToast('✓ Cleared ' + allNames.length + ' headshot IDs', 'success');
+          }}
+          style={{ ...S.btnDgr, marginBottom: 8, padding: '7px 12px', fontSize: 11 }}
+        >
+          🗑 Clear All IDs
+        </button>
         {(() => {
           const rosteredNames = [...new Set(teams.flatMap(t => {
             const rosterSet = new Set(t.roster.map(p => p.name));
@@ -1095,7 +1110,7 @@ export const AdminView = ({
                   }}>
                     <img
                       src={hasSrc
-                        ? (currentId.startsWith('http') ? currentId : `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${currentId}`)
+                        ? (currentId.startsWith('http') ? currentId : `https://a.espncdn.com/i/headshots/golf/players/full/${currentId}.png`)
                         : `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`
                       }
                       onError={e => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`; }}

@@ -16,21 +16,13 @@ import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers ─────────────────────────────────────────────────────────
-// Stored IDs are PGA Tour numeric IDs (e.g. 28237 for McIlroy).
-// Primary: PGA Tour Cloudinary CDN
-// Fallback: alternate Cloudinary format, then ESPN CDN
-// ESPN uses different IDs so it only works if the stored ID happens to match —
-// but it catches cases where Cloudinary is down.
+// Stored IDs are ESPN athlete IDs (e.g. 4696529 for McIlroy).
+// Image URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
 const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
   const val = headshotMap[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
-  // Numeric ID — Cloudinary first (PGA Tour IDs), ESPN as last resort
-  return [
-    `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${val}`,
-    `https://res.cloudinary.com/pgatour-prod/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${val}.png`,
-    `https://media.pgatour.com/headshots/${val}.png`,
-  ];
+  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
 };
 
 const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {

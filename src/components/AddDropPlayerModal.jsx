@@ -9,15 +9,13 @@ const accentColor   = (waiver) => waiver ? colors.warning         : colors.succe
 const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.12)' : 'rgba(80,180,120,0.12)';
 const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,180,120,0.35)';
 
-// ── Headshot helpers ─────────────────────────────────────────────────────────
+// ── Headshot helpers ─────────────────────────────────────────────────────────────────────────────
+// Stored IDs are ESPN athlete IDs.
 const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
   const val = headshotMap[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
-  return [
-    `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${val}`,
-    `https://res.cloudinary.com/pgatour-prod/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${val}.png`,
-  ];
+  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
 };
 
 const getPlayerHeadshot = (playerName, headshotMap = {}) => {
