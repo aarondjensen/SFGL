@@ -11,8 +11,9 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { url: directUrl, pgaTourId, name, year } = req.query;
+  const { url: directUrl, pgaTourId, name, year, debug } = req.query;
   const resolvedYear = year || new Date().getFullYear().toString();
+  const debugMode = debug === '1';
 
   let pastResultsUrl = null;
 
@@ -48,7 +49,30 @@ export default async function handler(req, res) {
   // ── Fetch and parse ──────────────────────────────────────────────────────
   try {
     const html = await fetchPage(pastResultsUrl);
-    const parsed = parsePastResults(html);
+    const parsed = parsePastResults(html, debugMode);
+
+    if (debugMode) {
+      // Return raw debug info instead of parsed results
+      const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+      let nextDataKeys = [];
+      let samplePaths = [];
+      if (nextDataMatch) {
+        try {
+          const nd = JSON.parse(nextDataMatch[1]);
+          nextDataKeys = Object.keys(nd);
+          samplePaths = findDeepPaths(nd, 'earnings', 5);
+        } catch (_) {}
+      }
+      return res.status(200).json({
+        resolvedUrl: pastResultsUrl,
+        htmlLength: html.length,
+        hasNextData: !!nextDataMatch,
+        nextDataTopKeys: nextDataKeys,
+        earningsKeyPaths: samplePaths,
+        parsedCount: parsed.players.length,
+        firstFew: parsed.players.slice(0, 5),
+      });
+    }
 
     if (!parsed.players.length) {
       return res.status(404).json({
@@ -76,10 +100,10 @@ export default async function handler(req, res) {
 function nameToSlug(name) {
   return name
     .toLowerCase()
-    .replace(/['']/g, '')          // remove apostrophes
-    .replace(/[^a-z0-9\s-]/g, '') // strip special chars
+    .replace(/['']/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
     .trim()
-    .replace(/\s+/g, '-');         // spaces to hyphens
+    .replace(/\s+/g, '-');
 }
 
 async function fetchPage(url) {
@@ -96,11 +120,9 @@ async function fetchPage(url) {
 }
 
 async function lookupFromSchedule(name, year) {
-  // Try the PGA Tour schedule page to find the tournament's URL path
   const scheduleUrl = `https://www.pgatour.com/schedule`;
   const html = await fetchPage(scheduleUrl);
 
-  // Look for JSON embedded in __NEXT_DATA__ script tag
   const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
   if (nextDataMatch) {
     try {
@@ -113,7 +135,6 @@ async function lookupFromSchedule(name, year) {
     } catch (_) {}
   }
 
-  // Fallback: scan href links for name-matching tournament path
   const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
   const hrefMatches = [...html.matchAll(/href="(\/tournaments\/\d{4}\/([^/]+)\/(R\d+)\/past-results)"/g)];
   for (const [, href, slug] of hrefMatches) {
@@ -148,7 +169,23 @@ function findTournamentByName(tournaments, name) {
   });
 }
 
-function parsePastResults(html) {
+// Debug helper: find all JSON paths where a key exists
+function findDeepPaths(obj, key, maxResults = 5, path = '', results = []) {
+  if (results.length >= maxResults) return results;
+  if (!obj || typeof obj !== 'object') return results;
+  if (Array.isArray(obj)) {
+    obj.slice(0, 3).forEach((item, i) => findDeepPaths(item, key, maxResults, `${path}[${i}]`, results));
+  } else {
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === key) results.push(`${path}.${k} = ${JSON.stringify(v)?.slice(0, 80)}`);
+      if (v && typeof v === 'object') findDeepPaths(v, key, maxResults, `${path}.${k}`, results);
+      if (results.length >= maxResults) break;
+    }
+  }
+  return results;
+}
+
+function parsePastResults(html, debugMode = false) {
   const players = [];
   const roundLeaders = { round1: [], round2: [], round3: [] };
 
@@ -159,12 +196,23 @@ function parsePastResults(html) {
       const nextData = JSON.parse(nextDataMatch[1]);
       const pastResults = findPastResultsInNextData(nextData);
       if (pastResults?.players?.length) {
+        console.log(`[pga-results] __NEXT_DATA__ found ${pastResults.players.length} players`);
         return pastResults;
       }
-    } catch (_) {}
+      console.log('[pga-results] __NEXT_DATA__ parsed but no players found, falling back to HTML table');
+    } catch (err) {
+      console.log('[pga-results] __NEXT_DATA__ parse error:', err.message);
+    }
   }
 
   // ── Fallback: parse HTML table ────────────────────────────────────────────
+  // PGA Tour past-results table columns: Pos | Player | R1 | R2 | R3 | R4 | Tot | Money
+  // We find rows with a money column ($x,xxx,xxx format) and extract name + money.
+  // We also include $0 rows (MC/WD) by scanning for player names near money-like cells.
+
+  const seenNames = new Set();
+
+  // First pass: rows with actual earnings > 0
   const rowPattern = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
 
@@ -181,16 +229,30 @@ function parsePastResults(html) {
 
     if (cells.length < 3) continue;
 
-    const moneyIdx = cells.findIndex(c => /^\$?[\d,]+$/.test(c.replace(/\s/g, '')) && parseInt(c.replace(/[^0-9]/g, '')) > 1000);
-    if (moneyIdx < 1) continue;
+    // Find money cell: $x,xxx,xxx or plain digits with commas >= 4 digits
+    // Also allow $0 and plain 0 for MC/WD rows
+    const moneyIdx = cells.findIndex(c => {
+      const stripped = c.replace(/[$,\s]/g, '');
+      return /^\d+$/.test(stripped) && stripped.length >= 4;
+    });
 
-    const nameIdx = findNameCell(cells, moneyIdx);
+    // Also check for $0 / "0" at the end (MC/WD)
+    const zeroMoneyIdx = moneyIdx === -1
+      ? cells.findLastIndex(c => c === '$0' || c === '0' || c === '--')
+      : -1;
+
+    const effectiveMoneyIdx = moneyIdx !== -1 ? moneyIdx : zeroMoneyIdx;
+    if (effectiveMoneyIdx < 1) continue;
+
+    const nameIdx = findNameCell(cells, effectiveMoneyIdx);
     if (nameIdx === -1) continue;
 
     const name = cleanPlayerName(cells[nameIdx]);
-    const earnings = parseInt(cells[moneyIdx].replace(/[^0-9]/g, ''));
+    const rawMoney = cells[effectiveMoneyIdx].replace(/[^0-9]/g, '');
+    const earnings = rawMoney ? parseInt(rawMoney) : 0;
 
-    if (name && !isNaN(earnings)) {
+    if (name && name.length > 3 && !seenNames.has(name)) {
+      seenNames.add(name);
       players.push({ name, earnings });
     }
   }
@@ -203,41 +265,73 @@ function parsePastResults(html) {
   if (r2Match) roundLeaders.round2 = [cleanPlayerName(r2Match[1])];
   if (r3Match) roundLeaders.round3 = [cleanPlayerName(r3Match[1])];
 
+  console.log(`[pga-results] HTML table fallback found ${players.length} players`);
   return { players, roundLeaders };
 }
 
 function findPastResultsInNextData(data) {
   const players = [];
   const roundLeaders = { round1: [], round2: [], round3: [] };
+  const seenNames = new Set();
 
-  const walk = (obj, depth = 0) => {
-    if (!obj || typeof obj !== 'object' || depth > 15) return;
-    if (Array.isArray(obj)) { obj.forEach(item => walk(item, depth + 1)); return; }
+  // Unlimited depth walk — PGA Tour Apollo cache can be deeply nested
+  const walk = (obj) => {
+    if (!obj || typeof obj !== 'object') return;
 
-    // PGA Tour shape: { player: { displayName }, earnings }
-    if (obj.player?.displayName && obj.earnings !== undefined) {
-      players.push({ name: obj.player.displayName, earnings: obj.earnings || 0 });
-      return;
-    }
-    // Alt shape: { displayName, officialMoney }
-    if (obj.displayName && obj.officialMoney !== undefined) {
-      players.push({ name: obj.displayName, earnings: obj.officialMoney || 0 });
+    if (Array.isArray(obj)) {
+      obj.forEach(walk);
       return;
     }
 
-    // Round leaders
+    // PGA Tour shape 1: { player: { displayName }, earnings }
+    // earnings can be 0 for MC/WD — must check !== undefined, not truthiness
+    if (obj.player?.displayName && 'earnings' in obj) {
+      const name = obj.player.displayName;
+      if (!seenNames.has(name)) {
+        seenNames.add(name);
+        players.push({ name, earnings: obj.earnings ?? 0 });
+      }
+      // Still walk children for roundLeader data
+    }
+
+    // PGA Tour shape 2: { displayName, officialMoney }
+    if (obj.displayName && 'officialMoney' in obj) {
+      const name = obj.displayName;
+      if (!seenNames.has(name)) {
+        seenNames.add(name);
+        players.push({ name, earnings: obj.officialMoney ?? 0 });
+      }
+    }
+
+    // Round leaders — various shapes PGA Tour has used
     if (obj.roundLeader) {
       const rl = obj.roundLeader;
-      const toNames = (v) => Array.isArray(v) ? v.map(p => p.displayName || p) : (v ? [v.displayName || v] : []);
+      const toNames = (v) => {
+        if (!v) return [];
+        if (Array.isArray(v)) return v.map(p => (typeof p === 'string' ? p : p.displayName || p.name || ''));
+        return [typeof v === 'string' ? v : v.displayName || v.name || ''];
+      };
       if (rl.round1) roundLeaders.round1 = toNames(rl.round1);
       if (rl.round2) roundLeaders.round2 = toNames(rl.round2);
       if (rl.round3) roundLeaders.round3 = toNames(rl.round3);
     }
 
-    Object.values(obj).forEach(v => walk(v, depth + 1));
-  };
-  walk(data);
+    // Also handle: { leadersByRound: { r1: [...], r2: [...], r3: [...] } }
+    if (obj.leadersByRound) {
+      const rl = obj.leadersByRound;
+      const toNames = (v) => !v ? [] : Array.isArray(v) ? v.map(p => p.displayName || p.name || p) : [v.displayName || v.name || v];
+      if (rl.r1 || rl.round1) roundLeaders.round1 = toNames(rl.r1 || rl.round1);
+      if (rl.r2 || rl.round2) roundLeaders.round2 = toNames(rl.r2 || rl.round2);
+      if (rl.r3 || rl.round3) roundLeaders.round3 = toNames(rl.r3 || rl.round3);
+    }
 
+    // Walk all children
+    for (const v of Object.values(obj)) {
+      if (v && typeof v === 'object') walk(v);
+    }
+  };
+
+  walk(data);
   return players.length ? { players, roundLeaders } : null;
 }
 
@@ -246,9 +340,10 @@ function stripTags(html) {
 }
 
 function findNameCell(cells, moneyIdx) {
+  // Walk backwards from money cell looking for a player name (2+ words, letters/spaces/hyphens)
   for (let i = moneyIdx - 1; i >= 0; i--) {
     const c = cells[i];
-    if (/^[A-Za-z][A-Za-z\s'.,-]{5,}$/.test(c) && c.split(/\s+/).length >= 2) {
+    if (/^[A-Za-z][A-Za-z\s'.,-]{4,}$/.test(c) && c.split(/\s+/).length >= 2) {
       return i;
     }
   }
