@@ -93,8 +93,11 @@ async function buildPlayerMap(eventIds) {
 function normalize(name) {
   return name.toLowerCase()
     .replace(/[àáâãäå]/g, 'a').replace(/[èéêë]/g, 'e')
-    .replace(/[ìíîï]/g, 'i').replace(/[òóôõö]/g, 'o')
-    .replace(/[ùúûü]/g, 'u').replace(/[ñ]/g, 'n').replace(/[ç]/g, 'c')
+    .replace(/[ìíîï]/g, 'i').replace(/[òóôõöø]/g, 'o')  // ø -> o (Højgaard, Thorbjørn)
+    .replace(/[ùúûü]/g, 'u').replace(/[ý]/g, 'y')
+    .replace(/[ñ]/g, 'n').replace(/[ç]/g, 'c')
+    .replace(/[æ]/g, 'ae')                                 // æ -> ae
+    .replace(/[ß]/g, 'ss')                                 // ß -> ss
     .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 }
 
