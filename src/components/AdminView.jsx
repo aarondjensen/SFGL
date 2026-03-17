@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, normalizePlayerName } from '../utils';
+import { slashGolfFetch, getSegmentByDate, normalizePlayerName } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi } from '../api/firebase';
+import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi } from '../api/supabase';
 import { theme, colors, fonts } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
 
@@ -32,12 +32,13 @@ const getRosterForTournament = (team, tournamentIndex, allTransactions) => {
 };
 
 /**
- * Core tournament processing.
+ * Core tournament processing. Mirrors the original processTournamentResults logic.
  * Returns { newTeams, newStats, resultsData }.
  */
 const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = []) => {
   const bonuses = tournament.isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
 
+  // Build earningsMap from the tournamentData
   const earningsMap = {};
   if (tournamentData.earningsMap instanceof Map) {
     tournamentData.earningsMap.forEach((earnings, name) => { earningsMap[name] = earnings; });
@@ -51,6 +52,7 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
     });
   }
 
+  // Update global stats
   const newStats = { ...globalPlayerStats };
   Object.entries(earningsMap).forEach(([playerName, earnings]) => {
     if (!newStats[playerName]) newStats[playerName] = { eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0 };
@@ -62,6 +64,7 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
     };
   });
 
+  const tournamentIndex = -1; // used only for getRosterForTournament; -1 = ignore tx filtering
   const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders: tournamentData.roundLeaders || {}, fullLineups: {} };
 
   const newTeams = teams.map(team => {
@@ -147,7 +150,6 @@ export const AdminView = ({
 }) => {
   const [selectedTourney, setSelectedTourney] = useState('');
   const [manualEntry, setManualEntry] = useState({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
-  const [pgaFetching, setPgaFetching] = useState(false);
   const [mgCredTeam, setMgCredTeam] = useState('');
   const [hsSearch,   setHsSearch]   = useState('');
   const [hsSaving,   setHsSaving]   = useState({});
@@ -159,6 +161,9 @@ export const AdminView = ({
   const [waiverRevealed, setWaiverRevealed] = useState(false);
   const [livSearch, setLivSearch] = useState('');
   const [livSaving, setLivSaving] = useState({});
+  const [pgaFetching, setPgaFetching] = useState(false);
+  const [pgaTourUrlInput, setPgaTourUrlInput] = useState('');
+  const [pgaTourIdInput, setPgaTourIdInput] = useState('');
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -178,66 +183,117 @@ export const AdminView = ({
   };
   const disabledBtn = (disabled) => disabled ? { opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' } : {};
 
-  // ── Results: PGA Tour fetch ───────────────────────────────────────────────
+  // ── Results: API fetch ───────────────────────────────────────────────────
+  const handleFetchApiResults = async () => {
+    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const ti = tournaments.findIndex(t => t.name === selectedTourney);
+    const t = tournaments[ti];
+    if (!t?.slashGolfId) { dialog.showToast('No API ID for this tournament', 'error'); return; }
+    if (t.completed) {
+      const ok = await dialog.showConfirm('Already Processed', 'Re-fetching will ADD earnings again (doubling them). Continue?', { type: 'danger', confirmText: 'Force Re-Fetch' });
+      if (!ok) return;
+    }
+    try {
+      dialog.showToast('Fetching ' + t.name + '...', 'info');
+      let data = await slashGolfFetch('leaderboard', { tournId: t.slashGolfId, year: '2026' });
+      let ap = data.leaderboardRows || data.leaderboard || data.results || [];
+      if (!ap.length) { dialog.showToast('No results found in API yet.', 'error'); return; }
+      try {
+        const ed = await slashGolfFetch('earnings', { tournId: t.slashGolfId, year: '2026' });
+        const ep = ed.leaderboard || ed.earnings || ed.results || [];
+        if (ep.length) ap = ap.map(lp => ({ ...lp, earnings: ep.find(e => e.playerId === lp.playerId)?.earnings || 0 }));
+      } catch (_) {}
+      const names = teams.flatMap(t => t.roster.map(p => p.name));
+      const { newTeams, newStats, resultsData } = processTournamentData(t, ap, teams, globalPlayerStats, names);
+      const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
+      const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
+      if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
+      // Also apply sfglEarnings from resultsData.teams directly onto roster
+      const teamsWithSfgl = newTeams.map(team => {
+        const teamResult = resultsData?.teams?.[team.id];
+        if (!teamResult?.players) return team;
+        const earningsByName = {};
+        teamResult.players.forEach(p => { earningsByName[p.name || p] = (p.earnings || 0); });
+        return { ...team, roster: team.roster.map(p => earningsByName[p.name] !== undefined ? { ...p, sfglEarnings: (p.sfglEarnings || 0) + earningsByName[p.name] } : p) };
+      });
+      updateTeams(teamsWithSfgl); setGlobalPlayerStats(newStats); setTournaments(newT);
+      // Persist tournaments and stats (updateTeams already handles its own persistence)
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
+      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
+      dialog.showToast('Results processed for ' + t.name + '!', 'success');
+    } catch (err) { dialog.showToast('API Error: ' + err.message, 'error'); }
+  };
+
+
+  // ── Results: PGA Tour fetch ───────────────────────────────────────
   const handleFetchPGAResults = async () => {
     if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
-    const ti         = tournaments.findIndex(t => t.name === selectedTourney);
-    const tournament = tournaments[ti];
+    const ti = tournaments.findIndex(t => t.name === selectedTourney);
+    const t = tournaments[ti];
 
-    if (tournament.completed) {
-      const ok = await dialog.showConfirm(
-        'Already Processed',
-        'Re-fetching will ADD earnings again (doubling them). Use "Reprocess Tournament" instead unless you want to start fresh. Continue?',
-        { type: 'danger', confirmText: 'Force Re-Fetch' }
-      );
-      if (!ok) return;
+    // Build query params — try all three strategies in order
+    const params = new URLSearchParams();
+    const savedUrl = pgaTourUrlInput.trim() || t.pgaTourUrl || '';
+    const savedId  = pgaTourIdInput.trim()  || t.pgaTourId  || '';
+
+    if (savedUrl) {
+      params.set('url', savedUrl);
+    } else if (savedId) {
+      params.set('pgaTourId', savedId);
+      params.set('name', t.name);
+      params.set('year', '2026');
+    } else {
+      params.set('name', t.name);
+      params.set('year', '2026');
     }
 
     setPgaFetching(true);
-    dialog.showToast('Fetching ' + selectedTourney + ' from PGA Tour...', 'info');
-
     try {
-      const year   = new Date().getFullYear();
-      const params = new URLSearchParams({ name: selectedTourney, year });
-      const resp   = await fetch(`/api/pga-results?${params}`);
+      dialog.showToast('Fetching from PGA Tour…', 'info');
+      const resp = await fetch(`/api/pga-results?${params.toString()}`);
+      const data = await resp.json();
 
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
-        throw new Error(err.error || `PGA Tour fetch failed: ${resp.status}`);
+        dialog.showToast(data.error || 'Fetch failed', 'error');
+        return;
       }
 
-      const {
-        earningsMap,
-        roundLeaders,
-        madeCutCount,
-        missedCutCount,
-        tournamentName: fetchedName,
-      } = await resp.json();
+      const { players, roundLeaders, resolvedUrl } = data;
 
-      // Earnings textarea shows only made-cut players (earnings > 0)
-      const earningsLines = Object.entries(earningsMap)
-        .filter(([, amt]) => amt > 0)
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, amt]) => `${name}, ${amt}`)
+      // Auto-save the resolved URL onto the tournament for future use
+      const urlToSave = savedUrl || resolvedUrl || '';
+      if (urlToSave && urlToSave !== t.pgaTourUrl) {
+        const newT = tournaments.map((nt, i) => i === ti ? { ...nt, pgaTourUrl: urlToSave } : nt);
+        setTournaments(newT);
+        sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      }
+      if (savedId && savedId !== t.pgaTourId) {
+        const newT = tournaments.map((nt, i) => i === ti ? { ...nt, pgaTourId: savedId } : nt);
+        setTournaments(newT);
+        sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      }
+
+      // Pre-fill earnings textarea and round leaders
+      const earningsLines = players
+        .sort((a, b) => b.earnings - a.earnings)
+        .map(p => `${p.name}, ${p.earnings}`)
         .join('\n');
 
+      const rl = roundLeaders || {};
       setManualEntry(prev => ({
         ...prev,
-        playerEarnings:   earningsLines,
-        round1Leaders:    roundLeaders.round1?.length ? roundLeaders.round1 : [''],
-        round2Leaders:    roundLeaders.round2?.length ? roundLeaders.round2 : [''],
-        round3Leaders:    roundLeaders.round3?.length ? roundLeaders.round3 : [''],
-        // Full map including missed-cut (earnings=0) for eventsPlayed tracking
-        _espnEarningsMap: earningsMap,
+        playerEarnings: earningsLines,
+        round1Leaders: rl.round1?.length ? rl.round1 : [''],
+        round2Leaders: rl.round2?.length ? rl.round2 : [''],
+        round3Leaders: rl.round3?.length ? rl.round3 : [''],
       }));
 
-      dialog.showToast(
-        `✓ PGA Tour: ${madeCutCount} made cut · ${missedCutCount} missed cut (${fetchedName || selectedTourney}). Review round leaders then click Process.`,
-        'success'
-      );
+      dialog.showToast(`✓ Fetched ${players.length} players from PGA Tour`, 'success');
     } catch (err) {
-      console.error('[PGA Tour fetch]', err);
-      dialog.showToast('PGA Tour Error: ' + err.message, 'error');
+      console.error('[handleFetchPGAResults]', err);
+      dialog.showToast('Error: ' + err.message, 'error');
     } finally {
       setPgaFetching(false);
     }
@@ -253,6 +309,7 @@ export const AdminView = ({
         const ok = await dialog.showConfirm('Already Processed', 'Re-entering will ADD earnings again (doubling them). Continue?', { type: 'danger', confirmText: 'Re-enter Results' });
         if (!ok) return;
       }
+      // Parse earnings lines: "Player Name, 123456" or "Player Name, 1,234,567"
       const earningsMap = new Map();
       manualEntry.playerEarnings.split('\n').forEach(line => {
         const trimmed = line.trim();
@@ -267,16 +324,6 @@ export const AdminView = ({
         dialog.showToast('No valid earnings lines found. Format: "Player Name, 123456"', 'error');
         return;
       }
-
-      // Merge missed-cut players from PGA Tour fetch (earnings = 0)
-      if (manualEntry._espnEarningsMap) {
-        Object.entries(manualEntry._espnEarningsMap).forEach(([name, amt]) => {
-          if (amt === 0 && !earningsMap.has(name)) {
-            earningsMap.set(name, 0);
-          }
-        });
-      }
-
       const ti = tournaments.findIndex(t => t.name === selectedTourney);
       const manualData = {
         name: selectedTourney, status: 'post', competitors: [],
@@ -289,6 +336,7 @@ export const AdminView = ({
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));
       const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names, transactions);
+      // Mark tournament completed, advance playing to next non-alternate
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
       const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
       if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
@@ -297,12 +345,7 @@ export const AdminView = ({
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
       sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
-      const madeCut   = [...earningsMap.values()].filter(v => v > 0).length;
-      const missedCut = [...earningsMap.values()].filter(v => v === 0).length;
-      dialog.showToast(
-        `Results processed! ${madeCut} made cut · ${missedCut} missed cut · ${Object.keys(resultsData.teams).length} teams scored`,
-        'success'
-      );
+      dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
       console.error('handleManualEntry error:', err);
@@ -325,6 +368,7 @@ export const AdminView = ({
     if (!ok) return;
 
     try {
+      // Parse corrected earnings
       const earningsMap = new Map();
       manualEntry.playerEarnings.split('\n').forEach(line => {
         const trimmed = line.trim();
@@ -337,18 +381,15 @@ export const AdminView = ({
       });
       if (!earningsMap.size) { dialog.showToast('No valid earnings lines found', 'error'); return; }
 
-      // Merge missed-cut players if available
-      if (manualEntry._espnEarningsMap) {
-        Object.entries(manualEntry._espnEarningsMap).forEach(([name, amt]) => {
-          if (amt === 0 && !earningsMap.has(name)) earningsMap.set(name, 0);
-        });
-      }
-
+      // Step 1: Reverse old results from all teams
       const oldResults = tournament.results;
       let reversedTeams = teams.map(team => {
         const oldTeamResult = oldResults?.teams?.[team.id];
         if (!oldTeamResult) return team;
+        // Reverse team earnings
         const earningsDelta = -(oldTeamResult.totalEarnings || 0);
+        // Reverse per-player sfglEarnings and starts
+        // Use fullLineups for start reversal (all starters), players list for earnings
         const oldLineup = new Set(oldResults.fullLineups?.[team.id] || (oldTeamResult.players || []).map(p => p.name || p));
         const oldEarningsByPlayer = {};
         (oldTeamResult.players || []).forEach(p => { oldEarningsByPlayer[p.name || p] = p.earnings || 0; });
@@ -370,6 +411,7 @@ export const AdminView = ({
         };
       });
 
+      // Reverse global stats from old earningsMap
       const oldEarningsMap = oldResults?.earningsMap || {};
       const reversedStats = { ...globalPlayerStats };
       Object.entries(oldEarningsMap).forEach(([playerName, earnings]) => {
@@ -382,6 +424,7 @@ export const AdminView = ({
         };
       });
 
+      // Step 2: Apply corrected results
       const manualData = {
         name: selectedTourney, status: 'post', competitors: [],
         roundLeaders: {
@@ -393,7 +436,10 @@ export const AdminView = ({
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));
       const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions);
+
+      // Mark tournament with new results (keep completed, don't change playing)
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
+
       updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
       await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
@@ -407,20 +453,30 @@ export const AdminView = ({
     }
   };
 
-  const RoundLeaderSelect = ({ label, leaders, onChange, round }) => {
+    const RoundLeaderSelect = ({ label, leaders, onChange, round }) => {
+    // Use the stored tournament lineups (manualEntry.teamLineups) instead of current live lineups.
+    // This ensures we show players who were actually in the lineup for that tournament.
     const teamLineups = manualEntry.teamLineups || {};
+
+    // Build mulligan map for the selected tournament
     const selectedTIdx = tournaments.findIndex(t => t.name === selectedTourney);
     const tourneyMulligans = transactions.filter(tx =>
       tx.type === 'mulligan' && tx.tournamentIndex === selectedTIdx && tx.status === 'processed'
     );
+
     const players = teams.flatMap(team => {
       const lineup = teamLineups[team.id] || team.lineup || [];
       let names = [...lineup];
+
+      // For R3+, include mulliganed-in players (they replace someone mid-tournament)
       if (round >= 3) {
         tourneyMulligans
           .filter(tx => tx.team === team.name && tx.player)
-          .forEach(tx => { if (!names.includes(tx.player)) names.push(tx.player); });
+          .forEach(tx => {
+            if (!names.includes(tx.player)) names.push(tx.player);
+          });
       }
+
       return names.map(name => ({ name, team: team.name }));
     }).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -472,18 +528,27 @@ export const AdminView = ({
       setTransactions(tx2); await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
       dialog.showToast(w.droppedPlayer + ' already dropped', 'error'); return;
     }
+
+    // Check for competing pending claims from other teams on the same player
     const competing = transactions
       .map((tx, i) => ({ ...tx, _idx: i }))
       .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.player === w.player && tx.team !== w.team);
+
+    // Determine tiebreaker: lowest earnings wins
     const earningsMap = {}; teams.forEach(t => { earningsMap[t.name] = t.earnings || 0; });
     const allClaims = [w, ...competing].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
     const winner = allClaims[0];
     const losers = allClaims.slice(1);
+
     let tx2 = [...transactions];
+    // Mark winner as processed
     tx2[winner._idx] = { ...tx2[winner._idx], status: 'processed', processedDate: new Date().toLocaleDateString() };
+    // Mark losers as blocked
     losers.forEach(l => {
       tx2[l._idx] = { ...tx2[l._idx], status: 'failed', failReason: 'Waiver blocked — lost tiebreaker to ' + winner.team, processedDate: new Date().toLocaleDateString() };
     });
+
+    // Only apply the winner's roster change
     const t2 = teams.map(t => applyWaiver(t, winner));
     setTransactions(tx2); updateTeams(t2);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2);
@@ -498,7 +563,7 @@ export const AdminView = ({
     if (!pending.length) return;
     if (!await dialog.showConfirm('Process All Waivers', 'Process ' + pending.length + ' pending claim' + (pending.length !== 1 ? 's' : '') + '?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims.', { confirmText: 'Process All' })) return;
     const pm = {}; [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
-    let nextLastPlace = teams.length;
+    let nextLastPlace = teams.length; // counter for pushing winners to back of priority
     const byTeam = {}; pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
     Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
     const allR = new Set(); teams.forEach(t => buildRoster(t).forEach(n => allR.add(n)));
@@ -515,7 +580,7 @@ export const AdminView = ({
         if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allR.has(w.claim.droppedPlayer))) { failed.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }; f++; more = true; return; }
         if (w.claim.droppedPlayer) { allR.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
         allR.add(player); done.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() }; applied.push(w.claim); p++;
-        pm[w.tn] = nextLastPlace++;
+        pm[w.tn] = nextLastPlace++; // winner moves to back of priority line
         cs.slice(1).forEach(l => { failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: 'Waiver blocked — lost tiebreaker to ' + w.tn, processedDate: new Date().toLocaleDateString() }; f++; }); more = true;
       });
     }
@@ -538,8 +603,11 @@ export const AdminView = ({
   // ── Award Swing Winner ──────────────────────────────────────────────────
   const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 
+  // Get the swing a tournament belongs to, using t.segment if set,
+  // otherwise infer from the tournament's own dates field (not today's date)
   const getTournamentSegment = (t) => {
     if (t.segment) return t.segment;
+    // Parse month from dates: "Feb 9-15" → month=2
     if (t.dates) {
       const m = t.dates.match(/^([A-Za-z]+)/);
       if (m) {
@@ -558,44 +626,84 @@ export const AdminView = ({
 
   const handleSwingWinner = async () => {
     if (!swingAwardSeg) return;
+
+    // Sum all transaction fees for this swing using tournamentIndex range,
+    // matching the same logic as TransactionsView's fee counter.
     const swingTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
-    if (!swingTournaments.length) { dialog.showToast('No completed results found for ' + swingAwardSeg, 'error'); return; }
+    if (!swingTournaments.length) {
+      dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
+      return;
+    }
     const swingIndexes = new Set(swingTournaments.map(t => tournaments.indexOf(t)));
     const pot = transactions
       .filter(tx => {
         if ((tx.fee || 0) <= 0) return false;
         if (tx.status === 'failed') return false;
         if (tx.type === 'swing_winner') return false;
-        return tx.tournamentIndex !== undefined ? swingIndexes.has(tx.tournamentIndex) : tx.segment === swingAwardSeg;
+        // Match by tournamentIndex if available, fall back to segment string
+        return tx.tournamentIndex !== undefined
+          ? swingIndexes.has(tx.tournamentIndex)
+          : tx.segment === swingAwardSeg;
       })
       .reduce((sum, tx) => sum + tx.fee, 0);
-    if (pot === 0) { dialog.showToast('No fees collected for ' + swingAwardSeg, 'error'); return; }
+
+    if (pot === 0) {
+      dialog.showToast('No fees collected for ' + swingAwardSeg, 'error');
+      return;
+    }
+
     const byTeam = {};
-    swingTournaments.forEach(t => { Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }); });
+    swingTournaments.forEach(t => {
+      Object.entries(t.results.teams).forEach(([id, tr]) => {
+        byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
+      });
+    });
+
+    // Debug: log what we found so issues are visible in console
     console.log('[SwingWinner] Swing:', swingAwardSeg);
-    console.log('[SwingWinner] Tournaments:', swingTournaments.map(t => t.name));
+    console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
     console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
+
     const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
     if (!winnerEntry) { dialog.showToast('Could not determine winner', 'error'); return; }
     const [winnerId, winnerEarnings] = winnerEntry;
     const winnerTeam = teams.find(t => t.id === winnerId);
     if (!winnerTeam) { dialog.showToast('Winner team not found', 'error'); return; }
+
     const msg = swingAwardSeg + ' complete. Winner: ' + winnerTeam.name + ' (' + winnerTeam.owner + '). Swing: $' + winnerEarnings.toLocaleString() + '. Pot: $' + pot.toLocaleString() + '. Award pot?';
     const ok = await dialog.showConfirm('Award Swing Winner', msg, { confirmText: 'Award $' + pot.toLocaleString() });
     if (!ok) return;
-    const lastSwingTournament = swingTournaments.reduce((last, t) => { const idx = tournaments.indexOf(t); return idx > (last?.idx ?? -1) ? { t, idx } : last; }, null);
-    const newTx = { team: winnerTeam.name, type: 'swing_winner', player: winnerTeam.owner, fee: 0, amount: pot, segment: swingAwardSeg, date: new Date().toLocaleDateString(), status: 'completed', tournamentIndex: lastSwingTournament?.idx ?? undefined, note: swingAwardSeg + ' winner pot' };
-    const newTeams = teams.map(t => t.id === winnerId ? { ...t, earnings: (t.earnings || 0) + pot } : t);
+
+    const lastSwingTournament = swingTournaments.reduce((last, t) => {
+      const idx = tournaments.indexOf(t);
+      return idx > (last?.idx ?? -1) ? { t, idx } : last;
+    }, null);
+
+    const newTx = {
+      team: winnerTeam.name, type: 'swing_winner', player: winnerTeam.owner,
+      fee: 0, amount: pot, segment: swingAwardSeg,
+      date: new Date().toLocaleDateString(), status: 'completed',
+      tournamentIndex: lastSwingTournament?.idx ?? undefined,
+      note: swingAwardSeg + ' winner pot',
+    };
+
+    const newTeams = teams.map(t =>
+      t.id === winnerId
+        ? { ...t, earnings: (t.earnings || 0) + pot }
+        : t
+    );
+
     updateTeams(newTeams);
     setTransactions(prev => [...prev, newTx]);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
     await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(e => console.error('sfgl tx:', e));
+
     dialog.showToast('🏆 ' + winnerTeam.name + ' awarded $' + pot.toLocaleString() + ' for ' + swingAwardSeg, 'success');
     setSwingAwardSeg('');
   };
 
   // ── OWGR CSV handler ──────────────────────────────────────────────────────
-  const [owgrStatus, setOwgrStatus] = useState(null);
+  const [owgrStatus, setOwgrStatus] = useState(null); // null | 'parsing' | 'done' | 'error'
   const [owgrSummary, setOwgrSummary] = useState('');
 
   const handleOwgrUpload = async (e) => {
@@ -603,32 +711,49 @@ export const AdminView = ({
     if (!file) return;
     setOwgrStatus('parsing');
     setOwgrSummary('');
-    e.target.value = '';
+    e.target.value = ''; // reset input so same file can be re-uploaded
+
     try {
       const text = await file.text();
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
       if (lines.length < 2) throw new Error('CSV appears empty');
+
+      // Detect header row — find rank/name columns case-insensitively
       const header = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
       const rankCol = header.findIndex(h => h.includes('rank'));
       const nameCol = header.findIndex(h => h.includes('name') || h.includes('player'));
       if (nameCol === -1) throw new Error('Could not find a "name" or "player" column in CSV');
+
       const parsed = [];
       for (let i = 1; i < lines.length; i++) {
+        // Handle quoted fields
         const cols = lines[i].match(/(".*?"|[^,]+)(?=,|$)/g)?.map(c => c.replace(/^"|"$/g, '').trim()) || lines[i].split(',').map(c => c.trim());
         const name = cols[nameCol];
         const rank = rankCol >= 0 ? parseInt(cols[rankCol], 10) : i;
         if (!name || name.toLowerCase() === 'name' || name.toLowerCase() === 'player') continue;
         parsed.push({ name, worldRank: isNaN(rank) ? i : rank });
       }
+
       if (parsed.length === 0) throw new Error('No players found in CSV');
+
+      // Merge with existing allPlayers — update worldRank for matches, add new entries
       const updatedPlayers = [...allPlayers];
       let updated = 0, added = 0;
+
       parsed.forEach(({ name, worldRank }) => {
         const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-        if (idx >= 0) { updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank }; updated++; }
-        else { updatedPlayers.push({ name, worldRank }); added++; }
+        if (idx >= 0) {
+          updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank };
+          updated++;
+        } else {
+          updatedPlayers.push({ name, worldRank });
+          added++;
+        }
       });
+
+      // Sort by rank
       updatedPlayers.sort((a, b) => (a.worldRank || 9999) - (b.worldRank || 9999));
+
       await updateRankings(updatedPlayers);
       setOwgrStatus('done');
       setOwgrSummary(`✓ ${parsed.length} players loaded · ${updated} updated · ${added} new`);
@@ -651,15 +776,19 @@ export const AdminView = ({
           const name = e.target.value;
           setSelectedTourney(name);
           const t = tournaments.find(t => t.name === name);
+          // Pre-fill PGA Tour URL/ID inputs from saved tournament data
+          setPgaTourUrlInput(t?.pgaTourUrl || '');
+          setPgaTourIdInput(t?.pgaTourId || '');
           if (t?.completed && t.results?.earningsMap) {
             const lines = Object.entries(t.results.earningsMap)
-              .filter(([, amt]) => amt > 0)
               .sort((a, b) => b[1] - a[1])
               .map(([player, amt]) => player + ', ' + amt)
               .join('\n');
             const teamLineups = {};
             if (t.results.fullLineups) {
-              Object.entries(t.results.fullLineups).forEach(([teamId, lineup]) => { teamLineups[teamId] = [...lineup]; });
+              Object.entries(t.results.fullLineups).forEach(([teamId, lineup]) => {
+                teamLineups[teamId] = [...lineup];
+              });
             }
             setManualEntry(prev => ({ ...prev, playerEarnings: lines,
               round1Leaders: t.results.roundLeaders?.round1?.length ? t.results.roundLeaders.round1 : [''],
@@ -674,13 +803,43 @@ export const AdminView = ({
           <option value="">Choose tournament...</option>
           {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
         </select>
-        <button
-          onClick={handleFetchPGAResults}
-          disabled={!selectedTourney || pgaFetching}
-          style={{ ...S.btn, marginBottom: 10, ...disabledBtn(!selectedTourney || pgaFetching) }}
-        >
-          {pgaFetching ? '⏳ Fetching from PGA Tour...' : '⚡ Fetch from PGA Tour'}
-        </button>
+        {/* PGA Tour fetch — URL / pgaTourId / name fallback */}
+        {(() => {
+          const t = tournaments.find(t => t.name === selectedTourney);
+          const savedUrl = t?.pgaTourUrl || '';
+          const savedId  = t?.pgaTourId  || '';
+          return (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <input
+                  value={pgaTourUrlInput || savedUrl}
+                  onChange={e => setPgaTourUrlInput(e.target.value)}
+                  placeholder="PGA Tour past-results URL (paste once, auto-saved)…"
+                  style={{ ...theme.input, flex: 1, fontSize: 11, marginBottom: 0 }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <input
+                  value={pgaTourIdInput || savedId}
+                  onChange={e => setPgaTourIdInput(e.target.value)}
+                  placeholder="PGA Tour ID (e.g. R2026011) — optional"
+                  style={{ ...theme.input, flex: 1, fontSize: 11, marginBottom: 0 }}
+                />
+              </div>
+              <button
+                onClick={handleFetchPGAResults}
+                disabled={pgaFetching || !selectedTourney}
+                style={{ ...S.btn, marginBottom: 4, ...(!selectedTourney || pgaFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
+              >
+                {pgaFetching ? 'Fetching…' : '⛳ Fetch from PGA Tour'}
+              </button>
+              <div style={{ textAlign: 'center', fontSize: 10, color: colors.textMuted, marginBottom: 6 }}>
+                Auto-fills earnings + round leaders below for review before processing
+              </div>
+            </div>
+          );
+        })()}
+        <button onClick={handleFetchApiResults} style={{ ...S.btn, marginBottom: 10 }}>⚡ Fetch from Slash Golf API</button>
 
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
           <div style={{ ...S.lbl, color: colors.textMuted, textAlign: 'center', marginBottom: 10 }}>— or enter manually —</div>
@@ -690,6 +849,7 @@ export const AdminView = ({
             <RoundLeaderSelect label="R3 Leader" round={3} leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
           </div>
 
+          {/* Lineup overrides (only for completed tournaments being reprocessed) */}
           {tournaments.find(t => t.name === selectedTourney)?.completed && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ ...S.lbl, marginBottom: 6 }}>
@@ -752,6 +912,7 @@ export const AdminView = ({
 
       {/* ── 2. Process Waivers ── */}
       <div style={S.section}>
+        {/* Tuesday night reminder */}
         {(() => {
           const now = new Date();
           const etOffset = -4;
@@ -760,9 +921,14 @@ export const AdminView = ({
           const isReadyToProcess = etDay === 2 && etHour >= 20 && pending.length > 0;
           if (!isReadyToProcess) return null;
           return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 10, borderRadius: 3, background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.45)' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 10, borderRadius: 3,
+              background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.45)',
+            }}>
               <span style={{ fontSize: 14 }}>⏰</span>
-              <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,190,80,0.9)', fontWeight: 600 }}>Past 8pm ET Tuesday — process now!</div>
+              <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,190,80,0.9)', fontWeight: 600 }}>
+                Past 8pm ET Tuesday — process now!
+              </div>
             </div>
           );
         })()}
@@ -820,12 +986,23 @@ export const AdminView = ({
             </span>
           )}
         </div>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, ...S.btn, cursor: owgrStatus === 'parsing' ? 'wait' : 'pointer', opacity: owgrStatus === 'parsing' ? 0.6 : 1 }}>
+        <label style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          ...S.btn,
+          cursor: owgrStatus === 'parsing' ? 'wait' : 'pointer',
+          opacity: owgrStatus === 'parsing' ? 0.6 : 1,
+        }}>
           {owgrStatus === 'parsing' ? '⏳ Parsing…' : '📂 Choose CSV File'}
-          <input type="file" accept=".csv,text/csv" onChange={handleOwgrUpload} style={{ display: 'none' }} disabled={owgrStatus === 'parsing'} />
+          <input type="file" accept=".csv,text/csv" onChange={handleOwgrUpload}
+            style={{ display: 'none' }} disabled={owgrStatus === 'parsing'} />
         </label>
         {owgrSummary && (
-          <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans, background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)', border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`, color: owgrStatus === 'error' ? colors.danger : colors.success }}>
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+            background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+            color: owgrStatus === 'error' ? colors.danger : colors.success,
+          }}>
             {owgrSummary}
           </div>
         )}
@@ -863,7 +1040,8 @@ export const AdminView = ({
             </div>
           );
         })()}
-        <button onClick={handleSwingWinner} disabled={!swingAwardSeg} style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
+        <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
+          style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
           🏆 Award Swing Winner
         </button>
       </div>
@@ -874,35 +1052,65 @@ export const AdminView = ({
         <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
           Map rostered players to their PGA Tour ID. Find the ID in the pgatour.com URL: /player/<strong style={{ color: colors.textPrimary }}>28237</strong>/rory-mcilroy
         </div>
-        <input type="text" placeholder="Filter players…" value={hsSearch} onChange={e => setHsSearch(e.target.value)} style={{ ...theme.input, marginBottom: 10, fontSize: 12 }} />
+        <input type="text" placeholder="Filter players…"
+          value={hsSearch} onChange={e => setHsSearch(e.target.value)}
+          style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
+        />
         {(() => {
           const rosteredNames = [...new Set(teams.flatMap(t => {
             const rosterSet = new Set(t.roster.map(p => p.name));
-            transactions.filter(tx => tx.team === t.name && tx.type !== 'mulligan' && tx.status === 'processed').forEach(tx => { if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer); if (tx.player) rosterSet.add(tx.player); });
+            transactions
+              .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && tx.status === 'processed')
+              .forEach(tx => {
+                if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
+                if (tx.player) rosterSet.add(tx.player);
+              });
             return [...rosterSet];
           }))].filter(Boolean).sort();
           const missing = rosteredNames.filter(n => !headshots[n]);
-          const filtered = hsSearch.trim() ? [...new Set([...rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase())), ...allPlayers.filter(p => p.name && p.name.toLowerCase().includes(hsSearch.toLowerCase())).map(p => p.name)])] : missing;
+          const filtered = hsSearch.trim()
+            ? [...new Set([
+                ...rosteredNames.filter(n => n.toLowerCase().includes(hsSearch.toLowerCase())),
+                ...allPlayers
+                  .filter(p => p.name && p.name.toLowerCase().includes(hsSearch.toLowerCase()))
+                  .map(p => p.name),
+              ])]
+            : missing;
           const showingAll = hsSearch.trim().length > 0;
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ ...theme.smallText, marginBottom: 6, color: colors.textMuted }}>
-                {showingAll ? `Showing ${filtered.length} result${filtered.length !== 1 ? 's' : ''}` : missing.length === 0 ? <span style={{ color: colors.success }}>✓ All rostered players have headshot IDs</span> : `${missing.length} player${missing.length !== 1 ? 's' : ''} missing IDs`}
+                {showingAll
+                  ? `Showing ${filtered.length} result${filtered.length !== 1 ? 's' : ''}`
+                  : missing.length === 0
+                    ? <span style={{ color: colors.success }}>✓ All rostered players have headshot IDs</span>
+                    : `${missing.length} player${missing.length !== 1 ? 's' : ''} missing IDs`
+                }
               </div>
               {filtered.map(name => {
                 const currentId = headshots[name] || '';
-                const hasSrc = !!currentId;
-                const saving = hsSaving[name];
+                const hasSrc    = !!currentId;
+                const saving    = hsSaving[name];
                 return (
-                  <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8, background: colors.inputBg, border: `1px solid ${hasSrc ? colors.borderSubtle : 'rgba(220,100,80,0.25)'}`, borderRadius: 3, padding: '6px 10px' }}>
-                    <img src={hasSrc ? (currentId.startsWith('http') ? currentId : `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${currentId}`) : `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`}
+                  <div key={name} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: colors.inputBg, border: `1px solid ${hasSrc ? colors.borderSubtle : 'rgba(220,100,80,0.25)'}`,
+                    borderRadius: 3, padding: '6px 10px',
+                  }}>
+                    <img
+                      src={hasSrc
+                        ? (currentId.startsWith('http') ? currentId : `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${currentId}`)
+                        : `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`
+                      }
                       onError={e => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`; }}
-                      alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }} />
+                      alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}
+                    />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, fontWeight: 500 }}>{name}</div>
                       {!hasSrc && <div style={{ fontFamily: fonts.sans, fontSize: 10, color: 'rgba(220,100,80,0.8)' }}>No ID set</div>}
                     </div>
-                    <input type="text" defaultValue={currentId} placeholder="PGA Tour ID"
+                    <input
+                      type="text" defaultValue={currentId} placeholder="PGA Tour ID"
                       onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
                       onBlur={async e => {
                         const val = e.target.value.trim();
@@ -918,14 +1126,22 @@ export const AdminView = ({
                             const who = existing ? ` — already assigned to "${existing[0]}"` : ' — already assigned to another player';
                             dialog.showToast(`ID ${val} is a duplicate${who}`, 'error');
                             e.target.value = currentId;
-                          } else { dialog.showToast('Error: ' + err.message, 'error'); }
-                        } finally { setHsSaving(prev => ({ ...prev, [name]: false })); }
+                          } else {
+                            dialog.showToast('Error: ' + err.message, 'error');
+                          }
+                        } finally {
+                          setHsSaving(prev => ({ ...prev, [name]: false }));
+                        }
                       }}
-                      style={{ ...theme.input, width: 100, fontSize: 12, padding: '5px 8px', marginBottom: 0, textAlign: 'center', fontFamily: fonts.mono, opacity: saving ? 0.5 : 1 }} />
+                      style={{ ...theme.input, width: 100, fontSize: 12, padding: '5px 8px', marginBottom: 0,
+                        textAlign: 'center', fontFamily: fonts.mono, opacity: saving ? 0.5 : 1 }}
+                    />
                   </div>
                 );
               })}
-              {filtered.length === 0 && <div style={{ ...theme.smallText, textAlign: 'center', padding: '12px 0' }}>No players found</div>}
+              {filtered.length === 0 && (
+                <div style={{ ...theme.smallText, textAlign: 'center', padding: '12px 0' }}>No players found</div>
+              )}
             </div>
           );
         })()}
@@ -934,52 +1150,107 @@ export const AdminView = ({
       {/* ── 6. LIV Golf Ineligible Players ── */}
       <div style={S.section}>
         <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
-        <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>Players flagged as LIV are hidden from the add/drop modal and waiver system.</div>
-        <input type="text" placeholder="Search players to add/remove LIV flag…" value={livSearch} onChange={e => setLivSearch(e.target.value)} style={{ ...theme.input, marginBottom: 10, fontSize: 12 }} />
+        <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
+          Players flagged as LIV are hidden from the add/drop modal and waiver system.
+        </div>
+        <input type="text" placeholder="Search players to add/remove LIV flag…"
+          value={livSearch} onChange={e => setLivSearch(e.target.value)}
+          style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
+        />
         {(() => {
           const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
-          const searchResults = livSearch.trim().length >= 2 ? (() => {
-            const q = livSearch.toLowerCase();
-            const livNames = new Set(allPlayers.filter(p => p.isLiv).map(p => p.name));
-            const fromAll = allPlayers.filter(p => p.name && p.name.toLowerCase().includes(q) && !p.isLiv).map(p => ({ name: p.name, worldRank: p.worldRank }));
-            const existingNames = new Set(allPlayers.map(p => p.name));
-            const fromConst = LIV_GOLF_ROSTER.filter(name => name.toLowerCase().includes(q) && !existingNames.has(name) && !livNames.has(name)).map(name => ({ name, worldRank: null }));
-            return [...fromAll, ...fromConst].slice(0, 10);
-          })() : [];
+          // Search: show non-LIV players from allPlayers, plus LIV_GOLF_ROSTER names not yet in DB
+          const searchResults = livSearch.trim().length >= 2
+            ? (() => {
+                const q = livSearch.toLowerCase();
+                const livNames = new Set(allPlayers.filter(p => p.isLiv).map(p => p.name));
+                // Players in allPlayers that aren't LIV
+                const fromAll = allPlayers
+                  .filter(p => p.name && p.name.toLowerCase().includes(q) && !p.isLiv)
+                  .map(p => ({ name: p.name, worldRank: p.worldRank }));
+                // LIV_GOLF_ROSTER names not yet in allPlayers at all
+                const existingNames = new Set(allPlayers.map(p => p.name));
+                const fromConst = LIV_GOLF_ROSTER
+                  .filter(name => name.toLowerCase().includes(q) && !existingNames.has(name) && !livNames.has(name))
+                  .map(name => ({ name, worldRank: null }));
+                return [...fromAll, ...fromConst].slice(0, 10);
+              })()
+            : [];
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {/* Search results — players to add to LIV list */}
               {searchResults.length > 0 && (
                 <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>Add to LIV list</div>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+                    Add to LIV list
+                  </div>
                   {searchResults.map(p => (
-                    <div key={p.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', marginBottom: 2, borderRadius: 3, background: 'rgba(80,180,120,0.06)', border: `1px solid rgba(80,180,120,0.2)` }}>
-                      <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>{p.name}{p.worldRank && <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>#{p.worldRank}</span>}</span>
-                      <button disabled={livSaving[p.name]} onClick={async () => {
-                        setLivSaving(prev => ({ ...prev, [p.name]: true }));
-                        try { await playersApi.upsertMany([{ name: p.name, isLiv: true }]); setAllPlayers(prev => { const exists = prev.some(x => x.name === p.name); if (exists) return prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x); return [...prev, { name: p.name, worldRank: p.worldRank || null, isLiv: true }]; }); dialog.showToast('Flagged ' + p.name + ' as LIV', 'success'); setLivSearch(''); }
-                        catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
-                        finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
-                      }} style={{ fontFamily: fonts.sans, fontSize: 10, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}>
+                    <div key={p.name} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '6px 10px', marginBottom: 2, borderRadius: 3,
+                      background: 'rgba(80,180,120,0.06)', border: `1px solid rgba(80,180,120,0.2)`,
+                    }}>
+                      <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+                        {p.name}
+                        {p.worldRank && <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>#{p.worldRank}</span>}
+                      </span>
+                      <button
+                        disabled={livSaving[p.name]}
+                        onClick={async () => {
+                          setLivSaving(prev => ({ ...prev, [p.name]: true }));
+                          try {
+                            await playersApi.upsertMany([{ name: p.name, isLiv: true }]);
+                            setAllPlayers(prev => {
+                              const exists = prev.some(x => x.name === p.name);
+                              if (exists) return prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x);
+                              return [...prev, { name: p.name, worldRank: p.worldRank || null, isLiv: true }];
+                            });
+                            dialog.showToast('Flagged ' + p.name + ' as LIV', 'success');
+                            setLivSearch('');
+                          } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
+                          finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
+                        }}
+                        style={{ fontFamily: fonts.sans, fontSize: 10, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}
+                      >
                         {livSaving[p.name] ? '…' : '+ Flag LIV'}
                       </button>
                     </div>
                   ))}
                 </div>
               )}
-              <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>{livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}</div>
+
+              {/* Current LIV roster */}
+              <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+                {livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}
+              </div>
               {livPlayers.length === 0 ? (
                 <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.textMuted }}>No LIV players flagged</div>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {livPlayers.map(p => (
-                    <div key={p.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 3, background: 'rgba(220,60,60,0.08)', border: `1px solid rgba(220,60,60,0.2)`, fontSize: 11, fontFamily: fonts.sans, color: colors.textSecondary }}>
+                    <div key={p.name} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '4px 8px', borderRadius: 3,
+                      background: 'rgba(220,60,60,0.08)', border: `1px solid rgba(220,60,60,0.2)`,
+                      fontSize: 11, fontFamily: fonts.sans, color: colors.textSecondary,
+                    }}>
                       {p.name}
-                      <button disabled={livSaving[p.name]} onClick={async () => {
-                        setLivSaving(prev => ({ ...prev, [p.name]: true }));
-                        try { await playersApi.update(p.name, { isLiv: false }); setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: false } : x)); dialog.showToast('Removed LIV flag from ' + p.name, 'success'); }
-                        catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
-                        finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
-                      }} style={{ background: 'none', border: 'none', color: 'rgba(220,100,80,0.7)', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }} title={'Remove LIV flag from ' + p.name}>✕</button>
+                      <button
+                        disabled={livSaving[p.name]}
+                        onClick={async () => {
+                          setLivSaving(prev => ({ ...prev, [p.name]: true }));
+                          try {
+                            await playersApi.update(p.name, { isLiv: false });
+                            setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: false } : x));
+                            dialog.showToast('Removed LIV flag from ' + p.name, 'success');
+                          } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
+                          finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
+                        }}
+                        style={{ background: 'none', border: 'none', color: 'rgba(220,100,80,0.7)', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}
+                        title={'Remove LIV flag from ' + p.name}
+                      >
+                        ✕
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -999,12 +1270,13 @@ export const AdminView = ({
         </select>
         <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
         <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
-        <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass} style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
+        <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
+          style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
           {mgCredSaving ? 'Saving...' : 'Set Login'}
         </button>
       </div>
 
-      {/* ── 8. Draft ── */}
+      {/* ── 7. Draft ── */}
       <div style={S.section}>
         <div style={S.title}>🎯 Draft</div>
         <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
@@ -1014,3 +1286,4 @@ export const AdminView = ({
     </div>
   );
 };
+
