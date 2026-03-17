@@ -52,25 +52,28 @@ export default async function handler(req, res) {
     const parsed = parsePastResults(html, debugMode);
 
     if (debugMode) {
-      // Return raw debug info instead of parsed results
       const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-      let nextDataKeys = [];
-      let samplePaths = [];
+      let nextDataInfo = {};
       if (nextDataMatch) {
         try {
           const nd = JSON.parse(nextDataMatch[1]);
-          nextDataKeys = Object.keys(nd);
-          samplePaths = findDeepPaths(nd, 'earnings', 5);
-        } catch (_) {}
+          nextDataInfo = {
+            topKeys: Object.keys(nd),
+            earningsPaths: findDeepPaths(nd, 'earnings', 10),
+            officialMoneyPaths: findDeepPaths(nd, 'officialMoney', 5),
+            displayNamePaths: findDeepPaths(nd, 'displayName', 5),
+            // Find objects that have both a name-like field and earnings
+            samplePlayerObjects: findPlayerObjects(nd, 3),
+          };
+        } catch (e) { nextDataInfo = { error: e.message }; }
       }
       return res.status(200).json({
         resolvedUrl: pastResultsUrl,
         htmlLength: html.length,
         hasNextData: !!nextDataMatch,
-        nextDataTopKeys: nextDataKeys,
-        earningsKeyPaths: samplePaths,
+        nextDataInfo,
         parsedCount: parsed.players.length,
-        firstFew: parsed.players.slice(0, 5),
+        parsedPlayers: parsed.players,
       });
     }
 
@@ -169,6 +172,24 @@ function findTournamentByName(tournaments, name) {
   });
 }
 
+// Debug helper: find sample objects that look like player results
+function findPlayerObjects(data, maxResults = 3) {
+  const results = [];
+  const walk = (obj) => {
+    if (results.length >= maxResults || !obj || typeof obj !== 'object') return;
+    if (Array.isArray(obj)) { obj.forEach(walk); return; }
+    // Look for objects that have earnings + some name field
+    if (('earnings' in obj || 'officialMoney' in obj) &&
+        (obj.player?.displayName || obj.displayName || obj.name)) {
+      results.push(JSON.parse(JSON.stringify(obj, null, 0)).slice ? 
+        JSON.stringify(obj).slice(0, 300) : String(obj).slice(0, 300));
+    }
+    Object.values(obj).forEach(walk);
+  };
+  walk(data);
+  return results;
+}
+
 // Debug helper: find all JSON paths where a key exists
 function findDeepPaths(obj, key, maxResults = 5, path = '', results = []) {
   if (results.length >= maxResults) return results;
@@ -265,6 +286,38 @@ function parsePastResults(html, debugMode = false) {
   if (r2Match) roundLeaders.round2 = [cleanPlayerName(r2Match[1])];
   if (r3Match) roundLeaders.round3 = [cleanPlayerName(r3Match[1])];
 
+  // ── Champion/winner extraction from hero sections ───────────────────────
+  // The winner sometimes appears in a banner/hero section separate from the table
+  // Patterns: "champion", "winner", first-place indicator near a name + money amount
+  if (players.length > 0) {
+    const topEarnings = Math.max(...players.map(p => p.earnings));
+    // If top earnings seems low (< $3M for a regular event), try to find the winner
+    // by scanning for large money amounts in the raw HTML outside table rows
+    if (topEarnings < 2000000) {
+      const winnerMoneyMatch = html.match(/\$([\d,]+)/g);
+      if (winnerMoneyMatch) {
+        const largestAmt = winnerMoneyMatch
+          .map(m => parseInt(m.replace(/[^0-9]/g, '')))
+          .filter(n => !isNaN(n))
+          .sort((a, b) => b - a)[0];
+        if (largestAmt > topEarnings * 1.5) {
+          // Find this amount in the HTML and try to get nearby player name
+          const escapedAmt = largestAmt.toLocaleString('en-US');
+          const pattern = new RegExp(`([A-Z][a-z\u00C0-\u024F]+(?:\s+[A-Z][a-z\u00C0-\u024F]+)+)[^$]{0,200}\$${escapedAmt.replace(/,/g, ',')}`);
+          const altPattern = new RegExp(`\$${escapedAmt.replace(/,/g, ',')}[^A-Z]{0,200}([A-Z][a-z\u00C0-\u024F]+(?:\s+[A-Z][a-z\u00C0-\u024F]+)+)`);
+          const m1 = html.match(pattern);
+          const m2 = html.match(altPattern);
+          const winnerName = m1?.[1] || m2?.[1];
+          if (winnerName && !seenNames.has(winnerName)) {
+            console.log(`[pga-results] Found winner via hero scan: ${winnerName} $${largestAmt}`);
+            seenNames.add(winnerName);
+            players.unshift({ name: cleanPlayerName(winnerName), earnings: largestAmt });
+          }
+        }
+      }
+    }
+  }
+
   console.log(`[pga-results] HTML table fallback found ${players.length} players`);
   return { players, roundLeaders };
 }
@@ -284,12 +337,17 @@ function findPastResultsInNextData(data) {
     }
 
     // PGA Tour shape 1: { player: { displayName }, earnings }
-    // earnings can be 0 for MC/WD — must check !== undefined, not truthiness
+    // earnings can be 0 for MC/WD — check with 'in', not truthiness
     if (obj.player?.displayName && 'earnings' in obj) {
       const name = obj.player.displayName;
       if (!seenNames.has(name)) {
         seenNames.add(name);
         players.push({ name, earnings: obj.earnings ?? 0 });
+      } else if (obj.earnings > 0) {
+        // If we've seen this name before with earnings=0 (e.g. from a champion banner),
+        // update earnings to the real value
+        const existing = players.find(p => p.name === name);
+        if (existing && existing.earnings === 0) existing.earnings = obj.earnings;
       }
       // Still walk children for roundLeader data
     }
@@ -300,6 +358,18 @@ function findPastResultsInNextData(data) {
       if (!seenNames.has(name)) {
         seenNames.add(name);
         players.push({ name, earnings: obj.officialMoney ?? 0 });
+      } else if (obj.officialMoney > 0) {
+        const existing = players.find(p => p.name === name);
+        if (existing && existing.earnings === 0) existing.earnings = obj.officialMoney;
+      }
+    }
+
+    // PGA Tour shape 3: { displayName, total, earnings } — sometimes winner appears this way
+    if (obj.displayName && typeof obj.displayName === 'string' && obj.earnings > 0 && !obj.player) {
+      const name = obj.displayName;
+      if (!seenNames.has(name)) {
+        seenNames.add(name);
+        players.push({ name, earnings: obj.earnings });
       }
     }
 
@@ -340,10 +410,15 @@ function stripTags(html) {
 }
 
 function findNameCell(cells, moneyIdx) {
-  // Walk backwards from money cell looking for a player name (2+ words, letters/spaces/hyphens)
+  // Walk backwards from money cell looking for a player name
+  // Use Unicode-aware pattern to handle names like Åberg, Højgaard, etc.
   for (let i = moneyIdx - 1; i >= 0; i--) {
     const c = cells[i];
-    if (/^[A-Za-z][A-Za-z\s'.,-]{4,}$/.test(c) && c.split(/\s+/).length >= 2) {
+    // Must be 2+ "words", mostly letters (including Unicode), no digits, reasonable length
+    if (c.length >= 5 && c.split(/\s+/).length >= 2 && !/\d/.test(c) && /\p{L}/u.test(c)) {
+      // Reject obvious non-names: positions like "T1", score totals like "-18", etc.
+      if (/^[T]?\d/.test(c)) continue;
+      if (/^[-+]\d/.test(c)) continue;
       return i;
     }
   }
@@ -351,5 +426,10 @@ function findNameCell(cells, moneyIdx) {
 }
 
 function cleanPlayerName(raw) {
-  return raw.replace(/\s+/g, ' ').replace(/[^\w\s'.,-]/g, '').trim();
+  // \w only covers ASCII — use a negative approach to strip truly unwanted chars
+  // Keep letters (including accented/Unicode), digits, spaces, apostrophes, hyphens, dots, commas
+  return raw
+    .replace(/\s+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s'.,-]/gu, '')  // Unicode-aware: keep all letters/numbers
+    .trim();
 }
