@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     const players = await fetchRankings(debug);
 
     if (!players.length) {
-      return res.status(404).json({ error: 'No ranking data found' });
+      return res.status(404).json({ error: 'No ranking data found — all fetch strategies failed. Try ?debug=1 for details.' });
     }
 
     return res.status(200).json({ players, count: players.length, source: players._source || 'owgr' });
@@ -134,16 +134,20 @@ async function fetchRankings(debug = false) {
     }
 
     if (debug) {
-      // Return debug info about the page structure
-      const scriptTags = [...html.matchAll(/<script[^>]*>([\s\S]{50,2000}?)<\/script>/gi)]
-        .map(m => m[1].slice(0, 200))
-        .filter(s => s.includes('rank') || s.includes('player'))
-        .slice(0, 3);
+      const scriptSrcs = [...html.matchAll(/<script[^>]*src="([^"]+)"/gi)].map(m => m[1]).slice(0, 10);
+      const apiUrls = [...html.matchAll(/["'](https?:\/\/[^"']*(?:api|ranking|player)[^"']{5,80})["']/gi)].map(m => m[1]).slice(0, 10);
+      const inlineScriptSamples = [...html.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]{20,500}?)<\/script>/gi)]
+        .map(m => m[1].slice(0, 300).trim())
+        .filter(s => s.includes('rank') || s.includes('api') || s.includes('player'))
+        .slice(0, 5);
       throw new Error(JSON.stringify({
         htmlLength: html.length,
         hasNextData: !!nextDataMatch,
-        playerInHtml: html.includes('Scottie Scheffler'),
-        scripts: scriptTags,
+        schefflerInHtml: html.includes('Scheffler'),
+        mcilroyInHtml: html.includes('McIlroy'),
+        scriptSrcs,
+        apiUrls,
+        inlineScriptSamples,
       }));
     }
   } catch (err) {
