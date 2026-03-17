@@ -16,38 +16,31 @@ export default async function handler(req, res) {
 
   if (debug) {
     try {
-      // Fetch the page to get current chunk filenames
       const pageResp = await fetch('https://www.owgr.com/current-world-ranking', {
         headers: { 'User-Agent': HEADERS['User-Agent'], 'Accept': 'text/html', 'Referer': 'https://www.owgr.com/' },
       });
       const html = await pageResp.text();
-
-      // Get ALL chunk URLs (not just _app)
       const chunkUrls = [...html.matchAll(/src="(\/_next\/static\/chunks\/[^"]+\.js)"/g)]
         .map(m => `https://www.owgr.com${m[1]}`);
 
-      // Scan every chunk — look for 200 chars around "apiweb" to see path construction
-      const contexts = [];
+      // Get ALL apiweb paths from ALL chunks — extract just the path segment after /api/
+      const allPaths = new Set();
       for (const chunkUrl of chunkUrls) {
         try {
           const r = await fetch(chunkUrl, { headers: { 'Referer': 'https://www.owgr.com/' } });
           if (!r.ok) continue;
           const js = await r.text();
-          // Find all occurrences of "apiweb" and grab surrounding context
-          let idx = 0;
-          while ((idx = js.indexOf('apiweb', idx)) !== -1) {
-            contexts.push({
-              chunk: chunkUrl.split('/').pop(),
-              context: js.slice(Math.max(0, idx - 100), idx + 200),
-            });
-            idx += 6;
-            if (contexts.length >= 10) break;
+          for (const m of js.matchAll(/apiweb\.owgr\.com\/api\/["'`],["'`]([^"'`\s,)]{3,80})/g)) {
+            allPaths.add(m[1]);
           }
-          if (contexts.length >= 10) break;
+          // Also try direct concat pattern
+          for (const m of js.matchAll(/apiweb\.owgr\.com\/api\/([a-zA-Z][^"'`\s\\]{3,80})/g)) {
+            allPaths.add(m[1]);
+          }
         } catch (_) {}
       }
 
-      return res.status(200).json({ contexts });
+      return res.status(200).json({ paths: [...allPaths] });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
@@ -63,6 +56,5 @@ export default async function handler(req, res) {
 }
 
 async function fetchRankings() {
-  // Placeholder — will be updated once we know the exact endpoint
   return [];
 }
