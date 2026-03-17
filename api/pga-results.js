@@ -2,9 +2,9 @@
 // Fetches official earnings from PGA Tour past-results pages.
 //
 // Resolution order (first match wins):
-//   1. ?url=<full past-results URL>         — commissioner pastes it once; auto-saved on tournament
-//   2. ?pgaTourId=R2026011&name=...         — stored on tournament object, URL constructed directly
-//   3. ?name=The+Players&year=2026          — schedule lookup (fallback, less reliable)
+//   1. ?url=<full past-results URL>
+//   2. ?pgaTourId=R2026011&name=...
+//   3. ?name=The+Players&year=2026  (schedule lookup)
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -13,100 +13,64 @@ export default async function handler(req, res) {
 
   const { url: directUrl, pgaTourId, name, year, debug } = req.query;
   const resolvedYear = year || new Date().getFullYear().toString();
-  const debugMode = debug === '1';
 
   let pastResultsUrl = null;
 
-  // ── Strategy 1: direct URL ───────────────────────────────────────────────
   if (directUrl) {
     pastResultsUrl = directUrl;
-    console.log('[pga-results] Strategy 1 — direct URL:', pastResultsUrl);
-  }
-
-  // ── Strategy 2: pgaTourId ────────────────────────────────────────────────
-  if (!pastResultsUrl && pgaTourId && name) {
-    const slug = nameToSlug(name);
-    pastResultsUrl = `https://www.pgatour.com/tournaments/${resolvedYear}/${slug}/${pgaTourId}/past-results`;
-    console.log('[pga-results] Strategy 2 — pgaTourId URL:', pastResultsUrl);
-  }
-
-  // ── Strategy 3: schedule lookup ──────────────────────────────────────────
-  if (!pastResultsUrl && name) {
+  } else if (pgaTourId && name) {
+    pastResultsUrl = `https://www.pgatour.com/tournaments/${resolvedYear}/${nameToSlug(name)}/${pgaTourId}/past-results`;
+  } else if (name) {
     try {
       pastResultsUrl = await lookupFromSchedule(name, resolvedYear);
-      console.log('[pga-results] Strategy 3 — schedule lookup URL:', pastResultsUrl);
     } catch (err) {
-      console.warn('[pga-results] Schedule lookup failed:', err.message);
+      return res.status(404).json({ error: `Could not find "${name}" on PGA Tour schedule. Try providing the past-results URL directly.` });
     }
+  } else {
+    return res.status(400).json({ error: 'Provide ?url=, ?pgaTourId=+?name=, or ?name=' });
   }
 
-  if (!pastResultsUrl) {
-    return res.status(400).json({
-      error: 'Could not determine past-results URL. Provide ?url=, ?pgaTourId=, or ?name=',
-    });
-  }
-
-  // ── Fetch and parse ──────────────────────────────────────────────────────
   try {
     const html = await fetchPage(pastResultsUrl);
-    const parsed = parsePastResults(html, debugMode);
 
-    if (debugMode) {
-      const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-      let nextDataInfo = {};
-      if (nextDataMatch) {
-        try {
-          const nd = JSON.parse(nextDataMatch[1]);
-          nextDataInfo = {
-            topKeys: Object.keys(nd),
-            earningsPaths: findDeepPaths(nd, 'earnings', 10),
-            officialMoneyPaths: findDeepPaths(nd, 'officialMoney', 5),
-            displayNamePaths: findDeepPaths(nd, 'displayName', 5),
-            // Find objects that have both a name-like field and earnings
-            samplePlayerObjects: findPlayerObjects(nd, 3),
-          };
-        } catch (e) { nextDataInfo = { error: e.message }; }
-      }
+    // ── Debug mode: expose raw JSON structure ──────────────────────────────
+    if (debug === '1') {
+      const nd = extractNextData(html);
+      if (!nd) return res.status(200).json({ error: 'No __NEXT_DATA__ found', htmlLength: html.length });
+
+      // Find every unique object shape that contains earnings-like fields
+      const shapes = [];
+      walkForDebug(nd, shapes, 8);
+
       return res.status(200).json({
         resolvedUrl: pastResultsUrl,
         htmlLength: html.length,
-        hasNextData: !!nextDataMatch,
-        nextDataInfo,
-        parsedCount: parsed.players.length,
-        parsedPlayers: parsed.players,
+        // Show first 5 objects that have any earnings/money/purse field + a name field
+        sampleShapes: shapes.slice(0, 5),
       });
     }
 
-    if (!parsed.players.length) {
+    // ── Parse ──────────────────────────────────────────────────────────────
+    const { players, roundLeaders } = parseResults(html);
+
+    if (!players.length) {
       return res.status(404).json({
-        error: `No results found at ${pastResultsUrl}. The page may not have final results yet.`,
+        error: 'No player results found. The page may not have final results yet.',
         url: pastResultsUrl,
       });
     }
 
-    return res.status(200).json({
-      players: parsed.players,
-      roundLeaders: parsed.roundLeaders,
-      resolvedUrl: pastResultsUrl,
-    });
+    return res.status(200).json({ players, roundLeaders, resolvedUrl: pastResultsUrl });
+
   } catch (err) {
-    console.error('[pga-results] Fetch/parse error:', err.message);
-    return res.status(500).json({
-      error: err.message,
-      url: pastResultsUrl,
-    });
+    return res.status(500).json({ error: err.message, url: pastResultsUrl });
   }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 function nameToSlug(name) {
-  return name
-    .toLowerCase()
-    .replace(/['']/g, '')
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-');
+  return name.toLowerCase().replace(/['']/g, '').replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-');
 }
 
 async function fetchPage(url) {
@@ -118,318 +82,225 @@ async function fetchPage(url) {
       'Referer': 'https://www.pgatour.com/',
     },
   });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
   return resp.text();
 }
 
+function extractNextData(html) {
+  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  try { return JSON.parse(m[1]); } catch { return null; }
+}
+
 async function lookupFromSchedule(name, year) {
-  const scheduleUrl = `https://www.pgatour.com/schedule`;
-  const html = await fetchPage(scheduleUrl);
-
-  const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (nextDataMatch) {
-    try {
-      const nextData = JSON.parse(nextDataMatch[1]);
-      const tournaments = extractTournamentsFromNextData(nextData);
-      const match = findTournamentByName(tournaments, name);
-      if (match?.id && match?.slug) {
-        return `https://www.pgatour.com/tournaments/${year}/${match.slug}/${match.id}/past-results`;
-      }
-    } catch (_) {}
+  const html = await fetchPage('https://www.pgatour.com/schedule');
+  const nd = extractNextData(html);
+  if (nd) {
+    const list = [];
+    const walk = (o) => {
+      if (!o || typeof o !== 'object') return;
+      if (Array.isArray(o)) { o.forEach(walk); return; }
+      if (o.tournamentId && o.name) list.push({ id: o.tournamentId, slug: o.tournamentSlug || nameToSlug(o.name), name: o.name });
+      Object.values(o).forEach(walk);
+    };
+    walk(nd);
+    const norm = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const match = list.find(t => {
+      const tn = t.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return tn === norm || tn.includes(norm) || norm.includes(tn.slice(0, 8));
+    });
+    if (match?.id) return `https://www.pgatour.com/tournaments/${year}/${match.slug}/${match.id}/past-results`;
   }
-
-  const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const hrefMatches = [...html.matchAll(/href="(\/tournaments\/\d{4}\/([^/]+)\/(R\d+)\/past-results)"/g)];
-  for (const [, href, slug] of hrefMatches) {
-    const slugNorm = slug.replace(/-/g, '');
-    if (slugNorm.includes(normalized) || normalized.includes(slugNorm.substring(0, 8))) {
-      return `https://www.pgatour.com${href}`;
-    }
-  }
-
-  throw new Error(`Could not find "${name}" on the PGA Tour schedule`);
-}
-
-function extractTournamentsFromNextData(data) {
-  const results = [];
-  const walk = (obj) => {
-    if (!obj || typeof obj !== 'object') return;
-    if (Array.isArray(obj)) { obj.forEach(walk); return; }
-    if (obj.tournamentId && obj.name) {
-      results.push({ id: obj.tournamentId, slug: obj.tournamentSlug || nameToSlug(obj.name), name: obj.name });
-    }
-    Object.values(obj).forEach(walk);
-  };
-  walk(data);
-  return results;
-}
-
-function findTournamentByName(tournaments, name) {
+  // Fallback: scan hrefs
   const norm = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return tournaments.find(t => {
-    const tn = (t.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    return tn === norm || tn.includes(norm) || norm.includes(tn.substring(0, 8));
-  });
-}
-
-// Debug helper: find sample objects that look like player results
-function findPlayerObjects(data, maxResults = 3) {
-  const results = [];
-  const walk = (obj) => {
-    if (results.length >= maxResults || !obj || typeof obj !== 'object') return;
-    if (Array.isArray(obj)) { obj.forEach(walk); return; }
-    // Look for objects that have earnings + some name field
-    if (('earnings' in obj || 'officialMoney' in obj) &&
-        (obj.player?.displayName || obj.displayName || obj.name)) {
-      results.push(JSON.parse(JSON.stringify(obj, null, 0)).slice ? 
-        JSON.stringify(obj).slice(0, 300) : String(obj).slice(0, 300));
-    }
-    Object.values(obj).forEach(walk);
-  };
-  walk(data);
-  return results;
-}
-
-// Debug helper: find all JSON paths where a key exists
-function findDeepPaths(obj, key, maxResults = 5, path = '', results = []) {
-  if (results.length >= maxResults) return results;
-  if (!obj || typeof obj !== 'object') return results;
-  if (Array.isArray(obj)) {
-    obj.slice(0, 3).forEach((item, i) => findDeepPaths(item, key, maxResults, `${path}[${i}]`, results));
-  } else {
-    for (const [k, v] of Object.entries(obj)) {
-      if (k === key) results.push(`${path}.${k} = ${JSON.stringify(v)?.slice(0, 80)}`);
-      if (v && typeof v === 'object') findDeepPaths(v, key, maxResults, `${path}.${k}`, results);
-      if (results.length >= maxResults) break;
-    }
+  for (const [, href, slug] of html.matchAll(/href="(\/tournaments\/\d{4}\/([^/]+)\/(R\d+)\/past-results)"/g)) {
+    if (slug.replace(/-/g, '').includes(norm.slice(0, 8))) return `https://www.pgatour.com${href}`;
   }
-  return results;
+  throw new Error(`Not found: ${name}`);
 }
 
-function parsePastResults(html, debugMode = false) {
+// ── Main parse function ───────────────────────────────────────────────────────
+
+function parseResults(html) {
+  const nd = extractNextData(html);
+
+  if (nd) {
+    // Walk the entire JSON tree collecting every object that has:
+    //   - A player name (any of several known field patterns)
+    //   - Any money field (earnings, officialMoney, prize, purse, total, moneyAmount, winnings)
+    // This intentionally casts a wide net so we don't miss the winner.
+
+    const playerMap = new Map(); // name -> earnings (keep highest seen)
+    const roundLeaders = { round1: [], round2: [], round3: [] };
+
+    const MONEY_KEYS = ['earnings', 'officialMoney', 'prize', 'purse', 'moneyAmount', 'winnings', 'money', 'totalMoney'];
+    const NAME_KEYS  = ['displayName', 'name', 'fullName', 'playerName'];
+
+    const walk = (obj) => {
+      if (!obj || typeof obj !== 'object') return;
+      if (Array.isArray(obj)) { obj.forEach(walk); return; }
+
+      // Resolve player name from this object or its nested `player` sub-object
+      let playerName = null;
+      const src = obj.player || obj; // prefer obj.player if it exists
+      for (const k of NAME_KEYS) {
+        if (typeof src[k] === 'string' && src[k].trim().length > 2) {
+          playerName = src[k].trim();
+          break;
+        }
+      }
+
+      if (playerName) {
+        // Find any money value on this object
+        let money = null;
+        for (const k of MONEY_KEYS) {
+          if (k in obj && obj[k] !== null && obj[k] !== undefined) {
+            const val = Number(obj[k]);
+            if (!isNaN(val)) { money = val; break; }
+          }
+        }
+        // Also check inside obj.player for money keys
+        if (money === null && obj.player) {
+          for (const k of MONEY_KEYS) {
+            if (k in obj.player && obj.player[k] !== null) {
+              const val = Number(obj.player[k]);
+              if (!isNaN(val)) { money = val; break; }
+            }
+          }
+        }
+
+        if (money !== null) {
+          // Keep the highest earnings value seen for this player
+          // (handles case where winner appears first with earnings=null/0 in a banner object,
+          //  then again with real earnings in the leaderboard array)
+          const current = playerMap.get(playerName) ?? -1;
+          if (money > current) playerMap.set(playerName, money);
+        }
+      }
+
+      // Round leaders
+      if (obj.roundLeader) {
+        const rl = obj.roundLeader;
+        const toNames = (v) => !v ? [] : (Array.isArray(v) ? v : [v]).map(p => (typeof p === 'string' ? p : p?.displayName || p?.name || '').trim()).filter(Boolean);
+        if (rl.round1) roundLeaders.round1 = toNames(rl.round1);
+        if (rl.round2) roundLeaders.round2 = toNames(rl.round2);
+        if (rl.round3) roundLeaders.round3 = toNames(rl.round3);
+      }
+      if (obj.leadersByRound) {
+        const rl = obj.leadersByRound;
+        const toNames = (v) => !v ? [] : (Array.isArray(v) ? v : [v]).map(p => (typeof p === 'string' ? p : p?.displayName || p?.name || '').trim()).filter(Boolean);
+        if (rl.r1 || rl.round1) roundLeaders.round1 = toNames(rl.r1 || rl.round1);
+        if (rl.r2 || rl.round2) roundLeaders.round2 = toNames(rl.r2 || rl.round2);
+        if (rl.r3 || rl.round3) roundLeaders.round3 = toNames(rl.r3 || rl.round3);
+      }
+
+      for (const v of Object.values(obj)) {
+        if (v && typeof v === 'object') walk(v);
+      }
+    };
+
+    walk(nd);
+
+    if (playerMap.size > 0) {
+      const players = [...playerMap.entries()]
+        .map(([name, earnings]) => ({ name, earnings }))
+        .sort((a, b) => b.earnings - a.earnings);
+      console.log(`[pga-results] __NEXT_DATA__ found ${players.length} players, top: ${players[0]?.name} $${players[0]?.earnings}`);
+      return { players, roundLeaders };
+    }
+
+    console.log('[pga-results] __NEXT_DATA__ found no players, falling back to HTML table');
+  }
+
+  // ── HTML table fallback ───────────────────────────────────────────────────
+  return parseHtmlTable(html);
+}
+
+// ── HTML table parser (fallback) ──────────────────────────────────────────────
+
+function parseHtmlTable(html) {
   const players = [];
+  const seenNames = new Set();
   const roundLeaders = { round1: [], round2: [], round3: [] };
 
-  // ── Try __NEXT_DATA__ JSON first (most reliable) ──────────────────────────
-  const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (nextDataMatch) {
-    try {
-      const nextData = JSON.parse(nextDataMatch[1]);
-      const pastResults = findPastResultsInNextData(nextData);
-      if (pastResults?.players?.length) {
-        console.log(`[pga-results] __NEXT_DATA__ found ${pastResults.players.length} players`);
-        return pastResults;
-      }
-      console.log('[pga-results] __NEXT_DATA__ parsed but no players found, falling back to HTML table');
-    } catch (err) {
-      console.log('[pga-results] __NEXT_DATA__ parse error:', err.message);
-    }
-  }
-
-  // ── Fallback: parse HTML table ────────────────────────────────────────────
-  // PGA Tour past-results table columns: Pos | Player | R1 | R2 | R3 | R4 | Tot | Money
-  // We find rows with a money column ($x,xxx,xxx format) and extract name + money.
-  // We also include $0 rows (MC/WD) by scanning for player names near money-like cells.
-
-  const seenNames = new Set();
-
-  // First pass: rows with actual earnings > 0
-  const rowPattern = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let rowMatch;
-
-  while ((rowMatch = rowPattern.exec(html)) !== null) {
+  for (const rowMatch of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
     const row = rowMatch[1];
     if (/<th/i.test(row)) continue;
 
     const cells = [];
-    const cellPattern = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-    let cellMatch;
-    while ((cellMatch = cellPattern.exec(row)) !== null) {
+    for (const cellMatch of row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)) {
       cells.push(stripTags(cellMatch[1]).trim());
     }
-
     if (cells.length < 3) continue;
 
-    // Find money cell: $x,xxx,xxx or plain digits with commas >= 4 digits
-    // Also allow $0 and plain 0 for MC/WD rows
-    const moneyIdx = cells.findIndex(c => {
-      const stripped = c.replace(/[$,\s]/g, '');
-      return /^\d+$/.test(stripped) && stripped.length >= 4;
-    });
-
-    // Also check for $0 / "0" at the end (MC/WD)
-    const zeroMoneyIdx = moneyIdx === -1
-      ? cells.findLastIndex(c => c === '$0' || c === '0' || c === '--')
-      : -1;
-
-    const effectiveMoneyIdx = moneyIdx !== -1 ? moneyIdx : zeroMoneyIdx;
-    if (effectiveMoneyIdx < 1) continue;
-
-    const nameIdx = findNameCell(cells, effectiveMoneyIdx);
-    if (nameIdx === -1) continue;
-
-    const name = cleanPlayerName(cells[nameIdx]);
-    const rawMoney = cells[effectiveMoneyIdx].replace(/[^0-9]/g, '');
-    const earnings = rawMoney ? parseInt(rawMoney) : 0;
-
-    if (name && name.length > 3 && !seenNames.has(name)) {
-      seenNames.add(name);
-      players.push({ name, earnings });
-    }
-  }
-
-  // ── Extract round leaders from HTML ──────────────────────────────────────
-  const r1Match = html.match(/[Rr]ound\s*1\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
-  const r2Match = html.match(/[Rr]ound\s*2\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
-  const r3Match = html.match(/[Rr]ound\s*3\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
-  if (r1Match) roundLeaders.round1 = [cleanPlayerName(r1Match[1])];
-  if (r2Match) roundLeaders.round2 = [cleanPlayerName(r2Match[1])];
-  if (r3Match) roundLeaders.round3 = [cleanPlayerName(r3Match[1])];
-
-  // ── Champion/winner extraction from hero sections ───────────────────────
-  // The winner sometimes appears in a banner/hero section separate from the table
-  // Patterns: "champion", "winner", first-place indicator near a name + money amount
-  if (players.length > 0) {
-    const topEarnings = Math.max(...players.map(p => p.earnings));
-    // If top earnings seems low (< $3M for a regular event), try to find the winner
-    // by scanning for large money amounts in the raw HTML outside table rows
-    if (topEarnings < 2000000) {
-      const winnerMoneyMatch = html.match(/\$([\d,]+)/g);
-      if (winnerMoneyMatch) {
-        const largestAmt = winnerMoneyMatch
-          .map(m => parseInt(m.replace(/[^0-9]/g, '')))
-          .filter(n => !isNaN(n))
-          .sort((a, b) => b - a)[0];
-        if (largestAmt > topEarnings * 1.5) {
-          // Find this amount in the HTML and try to get nearby player name
-          const escapedAmt = largestAmt.toLocaleString('en-US');
-          const pattern = new RegExp(`([A-Z][a-z\u00C0-\u024F]+(?:\s+[A-Z][a-z\u00C0-\u024F]+)+)[^$]{0,200}\$${escapedAmt.replace(/,/g, ',')}`);
-          const altPattern = new RegExp(`\$${escapedAmt.replace(/,/g, ',')}[^A-Z]{0,200}([A-Z][a-z\u00C0-\u024F]+(?:\s+[A-Z][a-z\u00C0-\u024F]+)+)`);
-          const m1 = html.match(pattern);
-          const m2 = html.match(altPattern);
-          const winnerName = m1?.[1] || m2?.[1];
-          if (winnerName && !seenNames.has(winnerName)) {
-            console.log(`[pga-results] Found winner via hero scan: ${winnerName} $${largestAmt}`);
-            seenNames.add(winnerName);
-            players.unshift({ name: cleanPlayerName(winnerName), earnings: largestAmt });
-          }
-        }
+    // Money cell: 4+ digit number (with or without $ or commas), or exactly $0 / 0
+    let moneyIdx = -1;
+    for (let i = cells.length - 1; i >= 1; i--) {
+      const stripped = cells[i].replace(/[$,\s]/g, '');
+      if (/^\d+$/.test(stripped) && (stripped.length >= 4 || cells[i] === '$0' || cells[i] === '0')) {
+        moneyIdx = i;
+        break;
       }
     }
+    if (moneyIdx < 1) continue;
+
+    const nameIdx = findNameCell(cells, moneyIdx);
+    if (nameIdx === -1) continue;
+
+    const name = cleanName(cells[nameIdx]);
+    if (!name || name.length < 4 || seenNames.has(name)) continue;
+
+    const rawMoney = cells[moneyIdx].replace(/[^0-9]/g, '');
+    seenNames.add(name);
+    players.push({ name, earnings: rawMoney ? parseInt(rawMoney) : 0 });
   }
+
+  // Round leaders
+  const r1 = html.match(/[Rr]ound\s*1\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
+  const r2 = html.match(/[Rr]ound\s*2\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
+  const r3 = html.match(/[Rr]ound\s*3\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
+  if (r1) roundLeaders.round1 = [cleanName(r1[1])];
+  if (r2) roundLeaders.round2 = [cleanName(r2[1])];
+  if (r3) roundLeaders.round3 = [cleanName(r3[1])];
 
   console.log(`[pga-results] HTML table fallback found ${players.length} players`);
   return { players, roundLeaders };
 }
 
-function findPastResultsInNextData(data) {
-  const players = [];
-  const roundLeaders = { round1: [], round2: [], round3: [] };
-  const seenNames = new Set();
-
-  // Unlimited depth walk — PGA Tour Apollo cache can be deeply nested
-  const walk = (obj) => {
-    if (!obj || typeof obj !== 'object') return;
-
-    if (Array.isArray(obj)) {
-      obj.forEach(walk);
-      return;
-    }
-
-    // PGA Tour shape 1: { player: { displayName }, earnings }
-    // earnings can be 0 for MC/WD — check with 'in', not truthiness
-    if (obj.player?.displayName && 'earnings' in obj) {
-      const name = obj.player.displayName;
-      if (!seenNames.has(name)) {
-        seenNames.add(name);
-        players.push({ name, earnings: obj.earnings ?? 0 });
-      } else if (obj.earnings > 0) {
-        // If we've seen this name before with earnings=0 (e.g. from a champion banner),
-        // update earnings to the real value
-        const existing = players.find(p => p.name === name);
-        if (existing && existing.earnings === 0) existing.earnings = obj.earnings;
-      }
-      // Still walk children for roundLeader data
-    }
-
-    // PGA Tour shape 2: { displayName, officialMoney }
-    if (obj.displayName && 'officialMoney' in obj) {
-      const name = obj.displayName;
-      if (!seenNames.has(name)) {
-        seenNames.add(name);
-        players.push({ name, earnings: obj.officialMoney ?? 0 });
-      } else if (obj.officialMoney > 0) {
-        const existing = players.find(p => p.name === name);
-        if (existing && existing.earnings === 0) existing.earnings = obj.officialMoney;
-      }
-    }
-
-    // PGA Tour shape 3: { displayName, total, earnings } — sometimes winner appears this way
-    if (obj.displayName && typeof obj.displayName === 'string' && obj.earnings > 0 && !obj.player) {
-      const name = obj.displayName;
-      if (!seenNames.has(name)) {
-        seenNames.add(name);
-        players.push({ name, earnings: obj.earnings });
-      }
-    }
-
-    // Round leaders — various shapes PGA Tour has used
-    if (obj.roundLeader) {
-      const rl = obj.roundLeader;
-      const toNames = (v) => {
-        if (!v) return [];
-        if (Array.isArray(v)) return v.map(p => (typeof p === 'string' ? p : p.displayName || p.name || ''));
-        return [typeof v === 'string' ? v : v.displayName || v.name || ''];
-      };
-      if (rl.round1) roundLeaders.round1 = toNames(rl.round1);
-      if (rl.round2) roundLeaders.round2 = toNames(rl.round2);
-      if (rl.round3) roundLeaders.round3 = toNames(rl.round3);
-    }
-
-    // Also handle: { leadersByRound: { r1: [...], r2: [...], r3: [...] } }
-    if (obj.leadersByRound) {
-      const rl = obj.leadersByRound;
-      const toNames = (v) => !v ? [] : Array.isArray(v) ? v.map(p => p.displayName || p.name || p) : [v.displayName || v.name || v];
-      if (rl.r1 || rl.round1) roundLeaders.round1 = toNames(rl.r1 || rl.round1);
-      if (rl.r2 || rl.round2) roundLeaders.round2 = toNames(rl.r2 || rl.round2);
-      if (rl.r3 || rl.round3) roundLeaders.round3 = toNames(rl.r3 || rl.round3);
-    }
-
-    // Walk all children
-    for (const v of Object.values(obj)) {
-      if (v && typeof v === 'object') walk(v);
-    }
-  };
-
-  walk(data);
-  return players.length ? { players, roundLeaders } : null;
-}
-
-function stripTags(html) {
-  return html.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '').trim();
-}
-
 function findNameCell(cells, moneyIdx) {
-  // Walk backwards from money cell looking for a player name
-  // Use Unicode-aware pattern to handle names like Åberg, Højgaard, etc.
   for (let i = moneyIdx - 1; i >= 0; i--) {
     const c = cells[i];
-    // Must be 2+ "words", mostly letters (including Unicode), no digits, reasonable length
-    if (c.length >= 5 && c.split(/\s+/).length >= 2 && !/\d/.test(c) && /\p{L}/u.test(c)) {
-      // Reject obvious non-names: positions like "T1", score totals like "-18", etc.
-      if (/^[T]?\d/.test(c)) continue;
-      if (/^[-+]\d/.test(c)) continue;
-      return i;
-    }
+    if (c.length < 4 || /\d/.test(c)) continue;
+    if (/^[T]?\d/.test(c) || /^[-+]\d/.test(c)) continue;
+    if (c.split(/\s+/).length >= 2 && /\p{L}/u.test(c)) return i;
   }
   return -1;
 }
 
-function cleanPlayerName(raw) {
-  // \w only covers ASCII — use a negative approach to strip truly unwanted chars
-  // Keep letters (including accented/Unicode), digits, spaces, apostrophes, hyphens, dots, commas
-  return raw
-    .replace(/\s+/g, ' ')
-    .replace(/[^\p{L}\p{N}\s'.,-]/gu, '')  // Unicode-aware: keep all letters/numbers
-    .trim();
+function stripTags(html) {
+  return html.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function cleanName(raw) {
+  return raw.replace(/\s+/g, ' ').replace(/[^\p{L}\p{N}\s'.,-]/gu, '').trim();
+}
+
+// ── Debug helpers ─────────────────────────────────────────────────────────────
+
+function walkForDebug(obj, results, maxDepth, depth = 0, path = '') {
+  if (!obj || typeof obj !== 'object' || depth > maxDepth) return;
+  if (Array.isArray(obj)) {
+    obj.slice(0, 2).forEach((item, i) => walkForDebug(item, results, maxDepth, depth + 1, `${path}[${i}]`));
+    return;
+  }
+  const MONEY_KEYS = ['earnings', 'officialMoney', 'prize', 'purse', 'moneyAmount', 'winnings', 'money'];
+  const NAME_KEYS  = ['displayName', 'name', 'fullName', 'playerName'];
+  const hasMoneyKey = MONEY_KEYS.some(k => k in obj);
+  const hasNameKey  = NAME_KEYS.some(k => typeof obj[k] === 'string') || NAME_KEYS.some(k => typeof obj.player?.[k] === 'string');
+  if (hasMoneyKey && hasNameKey && results.length < 5) {
+    results.push({ path, keys: Object.keys(obj), sample: JSON.stringify(obj).slice(0, 400) });
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    if (v && typeof v === 'object') walkForDebug(v, results, maxDepth, depth + 1, `${path}.${k}`);
+  }
 }
