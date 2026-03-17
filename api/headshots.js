@@ -1,25 +1,22 @@
 // api/headshots.js — Vercel serverless function
-// Looks up ESPN player IDs for headshots by scraping ESPN golf leaderboards.
-// ESPN headshot URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
+// Looks up PGA Tour player IDs (for Cloudinary headshots) by player name.
+// Uses ESPN's leaderboard API to get player names + their pgatour.com links,
+// which contain the numeric PGA Tour player ID.
 //
 // GET /api/headshots?names=Rory+McIlroy,Scottie+Scheffler
-// Returns: { results: { "Rory McIlroy": "4696529", ... }, notFound: ["..."] }
+// Returns: { results: { "Rory McIlroy": "28237", ... }, notFound: ["..."] }
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
   'Accept': 'application/json',
-  'Origin': 'https://www.espn.com',
-  'Referer': 'https://www.espn.com/',
 };
 
-// ESPN event IDs to try — recent/current PGA Tour events give the biggest fields
-// These are stable IDs for major events that always have full fields
+// Recent PGA Tour event ESPN IDs — large fields = more players indexed
 const ESPN_EVENT_IDS = [
-  '401811938', // THE PLAYERS 2026 (current)
-  '401580360', // Masters 2025
-  '401580362', // US Open 2025
-  '401580364', // The Open 2025
-  '401580366', // PGA Championship 2025
+  '401811938', // THE PLAYERS 2026
+  '401811934', // Arnold Palmer 2026
+  '401811932', // Genesis 2026
+  '401811930', // AT&T Pebble Beach 2026
 ];
 
 export default async function handler(req, res) {
@@ -30,13 +27,12 @@ export default async function handler(req, res) {
   const { names, eventId, debug } = req.query;
 
   try {
-    // Build player map from ESPN leaderboard(s)
-    const playerMap = await buildPlayerMap(eventId ? [eventId] : ESPN_EVENT_IDS, debug === '1');
+    const playerMap = await buildPlayerMap(eventId ? [eventId] : ESPN_EVENT_IDS);
 
     if (debug === '1') {
       return res.status(200).json({
         totalPlayers: playerMap.size,
-        sample: [...playerMap.entries()].slice(0, 10).map(([name, id]) => ({ name, espnId: id })),
+        sample: [...playerMap.entries()].slice(0, 8).map(([name, p]) => ({ name, pgaTourId: p.pgaTourId, espnId: p.espnId })),
       });
     }
 
@@ -49,9 +45,12 @@ export default async function handler(req, res) {
     const notFound = [];
 
     for (const name of requestedNames) {
-      const id = findInMap(playerMap, name);
-      if (id) results[name] = id;
-      else notFound.push(name);
+      const player = findInMap(playerMap, name);
+      if (player?.pgaTourId) {
+        results[name] = player.pgaTourId;
+      } else {
+        notFound.push(name);
+      }
     }
 
     return res.status(200).json({ results, notFound, totalIndexed: playerMap.size });
@@ -60,8 +59,8 @@ export default async function handler(req, res) {
   }
 }
 
-async function buildPlayerMap(eventIds, debug = false) {
-  const map = new Map(); // normalizedName -> espnId
+async function buildPlayerMap(eventIds) {
+  const map = new Map(); // normalizedName -> { pgaTourId, espnId, name }
 
   for (const eventId of eventIds) {
     try {
@@ -75,13 +74,30 @@ async function buildPlayerMap(eventIds, debug = false) {
 
       for (const c of competitors) {
         const name = c.athlete?.displayName;
-        const id = c.athlete?.id;
-        if (name && id) {
-          map.set(normalize(name), { id, name });
+        const espnId = c.athlete?.id;
+        if (!name || !espnId) continue;
+
+        // ESPN includes a links array — one of them points to pgatour.com
+        // Shape: [{ href: "https://www.pgatour.com/player/28237/rory-mcilroy", ... }]
+        let pgaTourId = null;
+        const links = c.athlete?.links || [];
+        for (const link of links) {
+          const m = link.href?.match(/pgatour\.com\/player\/(\d+)/);
+          if (m) { pgaTourId = m[1]; break; }
+        }
+
+        // Fallback: try the athlete's uid which sometimes is "s:60~a:28237" format
+        if (!pgaTourId && c.athlete?.uid) {
+          const m = c.athlete.uid.match(/a:(\d+)/);
+          if (m) pgaTourId = m[1];
+        }
+
+        if (pgaTourId) {
+          map.set(normalize(name), { pgaTourId, espnId, name });
         }
       }
 
-      console.log(`[headshots] Event ${eventId}: ${competitors.length} players indexed`);
+      console.log(`[headshots] Event ${eventId}: ${competitors.length} players, ${map.size} with PGA Tour IDs`);
     } catch (err) {
       console.warn(`[headshots] Event ${eventId} failed:`, err.message);
     }
@@ -100,27 +116,22 @@ function normalize(name) {
 
 function findInMap(map, name) {
   const norm = normalize(name);
+  if (map.has(norm)) return map.get(norm);
 
-  // Exact match
-  if (map.has(norm)) return map.get(norm).id;
-
-  // Try last name only match if unique
   const parts = norm.split(' ');
   const lastName = parts[parts.length - 1];
   const firstInitial = parts[0]?.[0];
 
-  // Find all entries matching last name
   const lastNameMatches = [...map.entries()].filter(([key]) => {
     const keyParts = key.split(' ');
     return keyParts[keyParts.length - 1] === lastName;
   });
 
-  if (lastNameMatches.length === 1) return lastNameMatches[0][1].id;
+  if (lastNameMatches.length === 1) return lastNameMatches[0][1];
 
-  // Multiple last name matches — narrow by first initial
   if (lastNameMatches.length > 1 && firstInitial) {
-    const initialMatch = lastNameMatches.find(([key]) => key.startsWith(firstInitial));
-    if (initialMatch) return initialMatch[1].id;
+    const match = lastNameMatches.find(([key]) => key.startsWith(firstInitial));
+    if (match) return match[1];
   }
 
   return null;
