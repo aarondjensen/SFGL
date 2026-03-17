@@ -1,5 +1,5 @@
 // api/headshots.js — Vercel serverless function
-// Returns ESPN athlete IDs for player names, sourced from ESPN leaderboard API.
+// Returns ESPN athlete IDs for player names, sourced from ESPN golf leaderboards.
 // Headshot URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
 //
 // GET /api/headshots?names=Rory+McIlroy,Scottie+Scheffler
@@ -10,7 +10,7 @@ const HEADERS = {
   'Accept': 'application/json',
 };
 
-// Recent PGA Tour event ESPN IDs — large fields = more players indexed
+// Fetch all events in parallel — recent large-field events cover most tour regulars
 const ESPN_EVENT_IDS = [
   '401811938', // THE PLAYERS 2026
   '401811934', // Arnold Palmer 2026
@@ -27,12 +27,14 @@ export default async function handler(req, res) {
   const { names, eventId, debug } = req.query;
 
   try {
-    const playerMap = await buildPlayerMap(eventId ? [eventId] : ESPN_EVENT_IDS);
+    const eventIds = eventId ? [eventId] : ESPN_EVENT_IDS;
+    const playerMap = await buildPlayerMap(eventIds);
 
     if (debug === '1') {
       return res.status(200).json({
         totalPlayers: playerMap.size,
-        sample: [...playerMap.entries()].slice(0, 8).map(([name, p]) => ({ name, espnId: p.espnId })),
+        eventsUsed: eventIds,
+        sample: [...playerMap.entries()].slice(0, 10).map(([name, p]) => ({ name, espnId: p.espnId })),
       });
     }
 
@@ -59,28 +61,30 @@ export default async function handler(req, res) {
 async function buildPlayerMap(eventIds) {
   const map = new Map(); // normalizedName -> { espnId, name }
 
-  for (const eventId of eventIds) {
-    try {
-      const url = `https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${eventId}`;
-      const resp = await fetch(url, { headers: HEADERS });
-      if (!resp.ok) continue;
+  // Fetch all events in parallel to avoid timeout
+  const results = await Promise.allSettled(
+    eventIds.map(eventId =>
+      fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${eventId}`, { headers: HEADERS })
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null)
+    )
+  );
 
-      const data = await resp.json();
-      const competitors = data?.events?.[0]?.competitions?.[0]?.competitors || [];
-      if (!competitors.length) continue;
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status !== 'fulfilled' || !result.value) continue;
 
-      for (const c of competitors) {
-        const name = c.athlete?.displayName;
-        const espnId = c.athlete?.id;
-        if (name && espnId) {
-          map.set(normalize(name), { espnId, name });
-        }
+    const data = result.value;
+    const competitors = data?.events?.[0]?.competitions?.[0]?.competitors || [];
+
+    for (const c of competitors) {
+      const name = c.athlete?.displayName;
+      const espnId = c.athlete?.id;
+      if (name && espnId && !map.has(normalize(name))) {
+        map.set(normalize(name), { espnId, name });
       }
-
-      console.log(`[headshots] Event ${eventId}: ${competitors.length} players indexed (total: ${map.size})`);
-    } catch (err) {
-      console.warn(`[headshots] Event ${eventId} failed:`, err.message);
     }
+    console.log(`[headshots] Event ${eventIds[i]}: ${competitors.length} players (total: ${map.size})`);
   }
 
   return map;
@@ -96,12 +100,15 @@ function normalize(name) {
 
 function findInMap(map, name) {
   const norm = normalize(name);
+
+  // Exact match
   if (map.has(norm)) return map.get(norm);
 
   const parts = norm.split(' ');
   const lastName = parts[parts.length - 1];
   const firstInitial = parts[0]?.[0];
 
+  // Find all entries with same last name
   const lastNameMatches = [...map.entries()].filter(([key]) => {
     const keyParts = key.split(' ');
     return keyParts[keyParts.length - 1] === lastName;
@@ -109,6 +116,7 @@ function findInMap(map, name) {
 
   if (lastNameMatches.length === 1) return lastNameMatches[0][1];
 
+  // Narrow by first initial
   if (lastNameMatches.length > 1 && firstInitial) {
     const match = lastNameMatches.find(([key]) => key.startsWith(firstInitial));
     if (match) return match[1];

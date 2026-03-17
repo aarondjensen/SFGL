@@ -159,30 +159,31 @@ export const AdminView = ({
     if (!namesToLookup?.length) return;
     setHsFetching(true);
     try {
+      // Send all names in one request — serverless function handles batching internally
       const resp = await fetch('/api/headshots?names=' + encodeURIComponent(namesToLookup.join(',')));
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'Fetch failed');
 
       const { results, notFound } = data;
       if (!Object.keys(results).length) {
-        dialog.showToast('No IDs found automatically', 'error');
+        dialog.showToast('No IDs found. Try ?debug=1 in browser to check ESPN response.', 'error');
         return;
       }
 
-      // Save each found ID
+      // Save all found IDs — store as strings (ESPN IDs, not parsed as int)
       const newHeadshots = { ...headshots };
       let saved = 0;
       for (const [name, id] of Object.entries(results)) {
-        if (id && !headshots[name]) {
+        if (id) {
           try {
-            await playersApi.update(name, { pgaTourId: parseInt(id) || id });
+            await playersApi.update(name, { pgaTourId: String(id) });
             newHeadshots[name] = String(id);
             saved++;
           } catch (_) {}
         }
       }
       setHeadshots(newHeadshots);
-      const msg = `✓ Found ${saved} IDs` + (notFound.length ? ` · ${notFound.length} not found: ${notFound.slice(0,3).join(', ')}${notFound.length > 3 ? '…' : ''}` : '');
+      const msg = `✓ Saved ${saved} ESPN IDs` + (notFound.length ? ` · ${notFound.length} not found: ${notFound.slice(0, 3).join(', ')}${notFound.length > 3 ? '…' : ''}` : '');
       dialog.showToast(msg, saved > 0 ? 'success' : 'error');
     } catch (err) {
       dialog.showToast('Error: ' + err.message, 'error');
