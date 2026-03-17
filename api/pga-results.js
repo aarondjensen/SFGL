@@ -38,50 +38,46 @@ export default async function handler(req, res) {
       const nd = extractNextData(html);
       const ndSize = nd ? JSON.stringify(nd).length : 0;
 
-      // Search for Cameron Young specifically in raw HTML
-      const youngIdx = html.indexOf('Cameron Young');
-      let youngContext = null;
-      if (youngIdx >= 0) {
-        // Grab 300 chars before and after to see surrounding structure
-        youngContext = html.slice(Math.max(0, youngIdx - 300), youngIdx + 300)
-          .replace(/</g, '\n<').slice(0, 1500);
-      }
-
-      // Search for his earnings amount
-      const amt4500 = html.indexOf('4500000');
-      const amt4500c = html.indexOf('4,500,000');
-      let amountContext = null;
-      const amtIdx = amt4500 >= 0 ? amt4500 : amt4500c >= 0 ? amt4500c : -1;
-      if (amtIdx >= 0) {
-        amountContext = html.slice(Math.max(0, amtIdx - 300), amtIdx + 300)
-          .replace(/</g, '\n<').slice(0, 1500);
-      }
-
-      // Show what table rows look like for the top few players we DO find
-      const { players } = parseResults(html);
-      const topFound = players.filter(p => p.earnings > 0).slice(0, 3);
-
-      // Also find inline <script> tags that might have player data (not __NEXT_DATA__)
-      const scriptTags = [];
-      for (const m of html.matchAll(/<script(?![^>]*id="__NEXT_DATA__")[^>]*>([\s\S]{100,5000}?)<\/script>/gi)) {
-        const src = m[1];
-        if (src.includes('earnings') || src.includes('displayName') || src.includes('Cameron')) {
-          scriptTags.push(src.slice(0, 400));
+      // Search for round leader patterns in the HTML
+      const leaderSearchTerms = [
+        'Round 1 Leader', 'Round 2 Leader', 'Round 3 Leader',
+        'round1Leader', 'round2Leader', 'round3Leader',
+        'roundLeader', 'R1 Leader', 'R2 Leader', 'R3 Leader',
+        'round-leader', 'leaderR1', 'leaderR2', 'leaderR3',
+        'Maverick McNealy', // known R1 leader for THE PLAYERS
+        'Ludvig', // known R2 leader
+      ];
+      const leaderContexts = {};
+      for (const term of leaderSearchTerms) {
+        const idx = html.indexOf(term);
+        if (idx >= 0) {
+          leaderContexts[term] = html.slice(Math.max(0, idx - 200), idx + 400)
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 500);
         }
       }
+
+      // Also grab the __NEXT_DATA__ keys at top level to see what's there
+      const ndKeys = nd ? Object.keys(nd) : [];
+      const ndPropsKeys = nd?.props ? Object.keys(nd.props) : [];
+      const ndPagePropsKeys = nd?.props?.pageProps ? Object.keys(nd.props.pageProps) : [];
+
+      const { players } = parseResults(html);
 
       return res.status(200).json({
         resolvedUrl: pastResultsUrl,
         htmlLength: html.length,
-        hasNextData: !!nd,
         nextDataSize: ndSize,
-        cameronYoungInHtml: youngIdx >= 0,
-        cameronYoungContext: youngContext,
-        amount4500000InHtml: amtIdx >= 0,
-        amountContext,
+        ndKeys,
+        ndPropsKeys,
+        ndPagePropsKeys,
+        leaderContexts,
         playersFoundCount: players.length,
-        topPlayersFound: topFound,
-        otherScriptsWithPlayerData: scriptTags.slice(0, 3),
+        topThree: players.filter(p => p.earnings > 0).slice(0, 3),
+        currentRoundLeaders: players.length ? parseResults(html).roundLeaders : null,
       });
     }
 
