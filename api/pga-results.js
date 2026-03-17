@@ -252,7 +252,11 @@ function parseResults(html) {
 function parseHtmlTable(html) {
   const players = [];
   const seenNames = new Set();
-  const roundLeaders = { round1: [], round2: [], round3: [] };
+
+  // Each player row contains: Pos | Player | R1 | R2 | R3 | R4 | Total | Money
+  // Round scores are per-round integers like "-5", "+3", "E", "--" (WD/MC)
+  // We collect scores to compute round leaders from cumulative totals.
+  const scoreRows = []; // { name, r1, r2, r3, r4 }
 
   for (const rowMatch of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
     const row = rowMatch[1];
@@ -264,7 +268,7 @@ function parseHtmlTable(html) {
     }
     if (cells.length < 3) continue;
 
-    // Money cell: 4+ digit number (with or without $ or commas), or exactly $0 / 0
+    // Money cell: scan right-to-left for 4+ digit number or $0
     let moneyIdx = -1;
     for (let i = cells.length - 1; i >= 1; i--) {
       const stripped = cells[i].replace(/[$,\s]/g, '');
@@ -284,17 +288,51 @@ function parseHtmlTable(html) {
     const rawMoney = cells[moneyIdx].replace(/[^0-9]/g, '');
     seenNames.add(name);
     players.push({ name, earnings: rawMoney ? parseInt(rawMoney) : 0 });
+
+    // Parse round scores from cells between name and money
+    // Scores look like: "-5", "+3", "E", "--", "WD"
+    // There should be 4 round scores + 1 total between nameIdx and moneyIdx
+    const scoreCells = cells.slice(nameIdx + 1, moneyIdx);
+    const scores = scoreCells
+      .map(c => {
+        if (c === 'E' || c === 'Par') return 0;
+        if (c === '--' || c === 'WD' || c === 'DQ' || c === '') return null;
+        const n = parseInt(c.replace('+', ''));
+        return isNaN(n) ? null : n;
+      });
+
+    // Expect 4 round scores + 1 total = 5 cells, or 4 + total for 72-hole events
+    // The last score-like cell before money is the total — skip it, take first 4
+    const roundScores = scores.slice(0, 4);
+    if (roundScores.length >= 1 && roundScores[0] !== null) {
+      scoreRows.push({ name, r1: roundScores[0], r2: roundScores[1] ?? null, r3: roundScores[2] ?? null, r4: roundScores[3] ?? null });
+    }
   }
 
-  // Round leaders
-  const r1 = html.match(/[Rr]ound\s*1\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
-  const r2 = html.match(/[Rr]ound\s*2\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
-  const r3 = html.match(/[Rr]ound\s*3\s*[Ll]eader[^<]*<[^>]*>([^<]+)/);
-  if (r1) roundLeaders.round1 = [cleanName(r1[1])];
-  if (r2) roundLeaders.round2 = [cleanName(r2[1])];
-  if (r3) roundLeaders.round3 = [cleanName(r3[1])];
+  // ── Compute round leaders from scores ────────────────────────────────────
+  // R1 leader  = lowest R1 score
+  // R2 leader  = lowest cumulative R1+R2
+  // R3 leader  = lowest cumulative R1+R2+R3
+  const roundLeaders = { round1: [], round2: [], round3: [] };
 
-  console.log(`[pga-results] HTML table fallback found ${players.length} players`);
+  const withR1 = scoreRows.filter(p => p.r1 !== null);
+  const withR2 = scoreRows.filter(p => p.r1 !== null && p.r2 !== null);
+  const withR3 = scoreRows.filter(p => p.r1 !== null && p.r2 !== null && p.r3 !== null);
+
+  if (withR1.length) {
+    const best = Math.min(...withR1.map(p => p.r1));
+    roundLeaders.round1 = withR1.filter(p => p.r1 === best).map(p => p.name);
+  }
+  if (withR2.length) {
+    const best = Math.min(...withR2.map(p => p.r1 + p.r2));
+    roundLeaders.round2 = withR2.filter(p => p.r1 + p.r2 === best).map(p => p.name);
+  }
+  if (withR3.length) {
+    const best = Math.min(...withR3.map(p => p.r1 + p.r2 + p.r3));
+    roundLeaders.round3 = withR3.filter(p => p.r1 + p.r2 + p.r3 === best).map(p => p.name);
+  }
+
+  console.log(`[pga-results] HTML table: ${players.length} players, R1 leaders: ${roundLeaders.round1.join(', ')} | R2: ${roundLeaders.round2.join(', ')} | R3: ${roundLeaders.round3.join(', ')}`);
   return { players, roundLeaders };
 }
 
