@@ -669,45 +669,26 @@ export const AdminView = ({
     setSwingAwardSeg('');
   };
 
-  // ── OWGR CSV handler ──────────────────────────────────────────────────────
-  const [owgrStatus, setOwgrStatus] = useState(null); // null | 'parsing' | 'done' | 'error'
+  // ── OWGR auto-fetch handler ───────────────────────────────────────────────
+  const [owgrStatus, setOwgrStatus] = useState(null); // null | 'fetching' | 'done' | 'error'
   const [owgrSummary, setOwgrSummary] = useState('');
 
-  const handleOwgrUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setOwgrStatus('parsing');
+  const handleFetchOwgr = async () => {
+    setOwgrStatus('fetching');
     setOwgrSummary('');
-    e.target.value = ''; // reset input so same file can be re-uploaded
-
     try {
-      const text = await file.text();
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-      if (lines.length < 2) throw new Error('CSV appears empty');
+      const resp = await fetch('/api/owgr');
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Fetch failed');
 
-      // Detect header row — find rank/name columns case-insensitively
-      const header = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
-      const rankCol = header.findIndex(h => h.includes('rank'));
-      const nameCol = header.findIndex(h => h.includes('name') || h.includes('player'));
-      if (nameCol === -1) throw new Error('Could not find a "name" or "player" column in CSV');
+      const { players: fetched } = data;
+      if (!fetched?.length) throw new Error('No ranking data returned');
 
-      const parsed = [];
-      for (let i = 1; i < lines.length; i++) {
-        // Handle quoted fields
-        const cols = lines[i].match(/(".*?"|[^,]+)(?=,|$)/g)?.map(c => c.replace(/^"|"$/g, '').trim()) || lines[i].split(',').map(c => c.trim());
-        const name = cols[nameCol];
-        const rank = rankCol >= 0 ? parseInt(cols[rankCol], 10) : i;
-        if (!name || name.toLowerCase() === 'name' || name.toLowerCase() === 'player') continue;
-        parsed.push({ name, worldRank: isNaN(rank) ? i : rank });
-      }
-
-      if (parsed.length === 0) throw new Error('No players found in CSV');
-
-      // Merge with existing allPlayers — update worldRank for matches, add new entries
+      // Merge into allPlayers — update worldRank for matches, add new entries
       const updatedPlayers = [...allPlayers];
       let updated = 0, added = 0;
 
-      parsed.forEach(({ name, worldRank }) => {
+      fetched.forEach(({ name, worldRank }) => {
         const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
         if (idx >= 0) {
           updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank };
@@ -718,15 +699,14 @@ export const AdminView = ({
         }
       });
 
-      // Sort by rank
       updatedPlayers.sort((a, b) => (a.worldRank || 9999) - (b.worldRank || 9999));
 
       await updateRankings(updatedPlayers);
       setOwgrStatus('done');
-      setOwgrSummary(`✓ ${parsed.length} players loaded · ${updated} updated · ${added} new`);
+      setOwgrSummary(`✓ ${fetched.length} players loaded · ${updated} updated · ${added} new`);
     } catch (err) {
       setOwgrStatus('error');
-      setOwgrSummary(err.message || 'Failed to parse CSV');
+      setOwgrSummary(err.message || 'Failed to fetch rankings');
     }
   };
 
@@ -943,25 +923,19 @@ export const AdminView = ({
 
       {/* ── 3. Update OWGR ── */}
       <div style={S.section}>
-        <div style={S.title}>🌍 Update OWGR Top 250</div>
-        <div style={{ ...theme.smallText, marginBottom: 12 }}>
-          Upload a CSV from <a href="https://www.owgr.com/current-world-ranking" target="_blank" rel="noopener noreferrer" style={{ color: colors.textGold, textDecoration: 'underline' }}>owgr.com</a>. Must include a <strong style={{ color: colors.textSecondary }}>name</strong> and <strong style={{ color: colors.textSecondary }}>rank</strong> column.
-          {rankingsLastUpdated && (
-            <span style={{ display: 'block', marginTop: 4, color: colors.textGoldDim }}>
-              Last updated: {new Date(Number(rankingsLastUpdated)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
-        </div>
-        <label style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          ...S.btn,
-          cursor: owgrStatus === 'parsing' ? 'wait' : 'pointer',
-          opacity: owgrStatus === 'parsing' ? 0.6 : 1,
-        }}>
-          {owgrStatus === 'parsing' ? '⏳ Parsing…' : '📂 Choose CSV File'}
-          <input type="file" accept=".csv,text/csv" onChange={handleOwgrUpload}
-            style={{ display: 'none' }} disabled={owgrStatus === 'parsing'} />
-        </label>
+        <div style={S.title}>🌍 Update OWGR Rankings</div>
+        {rankingsLastUpdated && (
+          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+            Last updated: {new Date(Number(rankingsLastUpdated)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
+        <button
+          onClick={handleFetchOwgr}
+          disabled={owgrStatus === 'fetching'}
+          style={{ ...S.btn, ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+        >
+          {owgrStatus === 'fetching' ? '⏳ Fetching…' : '🌍 Fetch Latest Rankings'}
+        </button>
         {owgrSummary && (
           <div style={{
             marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
