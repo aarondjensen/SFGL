@@ -65,19 +65,32 @@ export default async function handler(req, res) {
       const ndPropsKeys = nd?.props ? Object.keys(nd.props) : [];
       const ndPagePropsKeys = nd?.props?.pageProps ? Object.keys(nd.props.pageProps) : [];
 
-      const { players } = parseResults(html);
+      const { players, roundLeaders } = parseResults(html);
+
+      // Show raw cells for a few known players so we can see the exact column structure
+      const targetNames = ['Maverick McNealy', 'Ludvig', 'Cameron Young', 'Sepp Straka'];
+      const rowDump = [];
+      for (const rowMatch of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+        const row = rowMatch[1];
+        if (/<th/i.test(row)) continue;
+        const cells = [];
+        for (const cellMatch of row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)) {
+          cells.push(stripTags(cellMatch[1]).trim());
+        }
+        const joined = cells.join(' | ');
+        if (targetNames.some(n => joined.includes(n))) {
+          rowDump.push({ cells, joined: joined.slice(0, 300) });
+          if (rowDump.length >= 4) break;
+        }
+      }
 
       return res.status(200).json({
         resolvedUrl: pastResultsUrl,
         htmlLength: html.length,
-        nextDataSize: ndSize,
-        ndKeys,
-        ndPropsKeys,
-        ndPagePropsKeys,
-        leaderContexts,
+        roundLeaders,
         playersFoundCount: players.length,
         topThree: players.filter(p => p.earnings > 0).slice(0, 3),
-        currentRoundLeaders: players.length ? parseResults(html).roundLeaders : null,
+        rowDump,
       });
     }
 
