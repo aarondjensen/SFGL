@@ -153,6 +153,43 @@ export const AdminView = ({
   const [mgCredTeam, setMgCredTeam] = useState('');
   const [hsSearch,   setHsSearch]   = useState('');
   const [hsSaving,   setHsSaving]   = useState({});
+  const [hsFetching, setHsFetching] = useState(false);
+
+  const handleAutoFetchHeadshots = async (namesToLookup) => {
+    if (!namesToLookup?.length) return;
+    setHsFetching(true);
+    try {
+      const resp = await fetch('/api/headshots?names=' + encodeURIComponent(namesToLookup.join(',')));
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Fetch failed');
+
+      const { results, notFound } = data;
+      if (!Object.keys(results).length) {
+        dialog.showToast('No IDs found automatically', 'error');
+        return;
+      }
+
+      // Save each found ID
+      const newHeadshots = { ...headshots };
+      let saved = 0;
+      for (const [name, id] of Object.entries(results)) {
+        if (id && !headshots[name]) {
+          try {
+            await playersApi.update(name, { pgaTourId: parseInt(id) || id });
+            newHeadshots[name] = String(id);
+            saved++;
+          } catch (_) {}
+        }
+      }
+      setHeadshots(newHeadshots);
+      const msg = `✓ Found ${saved} IDs` + (notFound.length ? ` · ${notFound.length} not found: ${notFound.slice(0,3).join(', ')}${notFound.length > 3 ? '…' : ''}` : '');
+      dialog.showToast(msg, saved > 0 ? 'success' : 'error');
+    } catch (err) {
+      dialog.showToast('Error: ' + err.message, 'error');
+    } finally {
+      setHsFetching(false);
+    }
+  };
   const [mgCredName, setMgCredName] = useState('');
   const [mgCredPass, setMgCredPass] = useState('');
   const [mgCredSaving, setMgCredSaving] = useState(false);
@@ -992,10 +1029,29 @@ export const AdminView = ({
         <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
           Map rostered players to their PGA Tour ID. Find the ID in the pgatour.com URL: /player/<strong style={{ color: colors.textPrimary }}>28237</strong>/rory-mcilroy
         </div>
-        <input type="text" placeholder="Filter players…"
-          value={hsSearch} onChange={e => setHsSearch(e.target.value)}
-          style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
-        />
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <input type="text" placeholder="Filter players…"
+            value={hsSearch} onChange={e => setHsSearch(e.target.value)}
+            style={{ ...theme.input, flex: 1, marginBottom: 0, fontSize: 12 }}
+          />
+          <button
+            onClick={() => {
+              const rosteredNames = [...new Set(teams.flatMap(t => {
+                const rosterSet = new Set(t.roster.map(p => p.name));
+                transactions.filter(tx => tx.team === t.name && tx.type !== 'mulligan' && tx.status === 'processed')
+                  .forEach(tx => { if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer); if (tx.player) rosterSet.add(tx.player); });
+                return [...rosterSet];
+              }))].filter(Boolean);
+              const missing = rosteredNames.filter(n => !headshots[n]);
+              handleAutoFetchHeadshots(missing.length ? missing : rosteredNames);
+            }}
+            disabled={hsFetching}
+            style={{ ...S.btn, whiteSpace: 'nowrap', padding: '8px 12px', width: 'auto',
+              ...(hsFetching ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+          >
+            {hsFetching ? '⏳ Looking up…' : '🔍 Auto-Fetch IDs'}
+          </button>
+        </div>
         {(() => {
           const rosteredNames = [...new Set(teams.flatMap(t => {
             const rosterSet = new Set(t.roster.map(p => p.name));
@@ -1039,7 +1095,7 @@ export const AdminView = ({
                   }}>
                     <img
                       src={hasSrc
-                        ? (currentId.startsWith('http') ? currentId : `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${currentId}`)
+                        ? (currentId.startsWith('http') ? currentId : `https://a.espncdn.com/i/headshots/golf/players/full/${currentId}.png`)
                         : `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`
                       }
                       onError={e => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`; }}

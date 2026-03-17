@@ -12,18 +12,20 @@ import {
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
-import { sfglDataApi } from '../api/firebase';
+import { sfglDataApi } from '../api/supabase';
 import { STORAGE_KEYS } from '../constants';
 
-// ── Headshot helpers (Cloudinary PGA Tour CDN — no ESPN 400 errors) ─────────
+// ── Headshot helpers ─────────────────────────────────────────────────────────
+// Primary: ESPN CDN (stable, publicly accessible)
+// Fallback: PGA Tour Cloudinary CDN, then initials avatar
 const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
   const val = headshotMap[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
-  // Numeric ID — try both CDN formats
+  // Numeric ID — ESPN first, then PGA Tour Cloudinary fallbacks
   return [
+    `https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`,
     `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${val}`,
-    `https://res.cloudinary.com/pgatour-prod/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${val}.png`,
     `https://media.pgatour.com/headshots/${val}.png`,
   ];
 };
@@ -79,13 +81,6 @@ const displayName = (fullName, isMobile) => {
   if (parts.length < 2) return fullName;
   return parts[0][0] + '. ' + parts[parts.length - 1];
 };
-
-// ── Name normalisation for field matching ─────────────────────────────────────
-const normPlayerName = (s) =>
-  (s || '').toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z ]/g, '')
-    .trim();
 
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
 const TeamDropdown = ({ teams, value, onChange }) => {
@@ -333,26 +328,16 @@ export const RostersView = ({
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
-  const [currentField,      setCurrentField]      = useState(new Set());
   const dialog = useDialog();
-
-  // ── Fetch current PGA Tour field from DataGolf ──────────────────────────────
-  // Fetches once on mount. The field is stable within a week and updates
-  // automatically each week when DataGolf publishes the new field.
-  // Silently fails — the emoji is decorative.
-  useEffect(() => {
-    fetch('https://feeds.datagolf.com/field-updates?tour=pga&file_format=json')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data?.field) return;
-        setCurrentField(new Set(data.field.map(p => normPlayerName(p.player_name))));
-      })
-      .catch(() => {});
-  }, []);
 
   const activeTournament      = tournaments.find(t => t.playing);
   const activeTournamentIndex = activeTournament ? tournaments.findIndex(t => t.name === activeTournament.name) : -1;
   // ── Date-based tournament week resolution ────────────────────────────────
+  // Add/drop/waiver belong to whichever tournament's week we're currently in,
+  // based on calendar date — regardless of whether that tournament is "playing" yet.
+  // Tournament dates format: "Feb 9-15" → startDate = Feb 9 (Mon of that week)
+  // The add/drop window is Mon–Wed of that week (before Thursday tee time).
+  // We search by date so late result processing by the commish doesn't shift the tag.
   const getAddDropTournamentIndex = () => {
     const parseStart = (t) => {
       if (!t?.dates) return null;
@@ -365,15 +350,20 @@ export const RostersView = ({
     };
     const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
     const now = new Date(etStr);
+    // Find the tournament whose week we're currently in:
+    // A tournament "week" runs from the prior Sunday through the following Saturday.
+    // We look for the tournament whose start date (Thursday) is closest to now,
+    // checking if now falls within Sun before start through Sat after start.
     let best = -1;
     let bestDist = Infinity;
     tournaments.forEach((t, i) => {
       const start = parseStart(t);
       if (!start) return;
+      // Tournament week: Sunday before start through Saturday after
       const sun = new Date(start);
-      sun.setDate(sun.getDate() - (sun.getDay()));
+      sun.setDate(sun.getDate() - (sun.getDay())); // back to Sunday
       const sat = new Date(sun);
-      sat.setDate(sat.getDate() + 6);
+      sat.setDate(sat.getDate() + 6); // through Saturday
       sat.setHours(23, 59, 59);
       if (now >= sun && now <= sat) {
         const dist = Math.abs(now - start);
@@ -381,20 +371,23 @@ export const RostersView = ({
       }
     });
     if (best >= 0) return best;
+    // Fallback: next non-completed tournament
     const upcomingIdx = tournaments.findIndex(t => !t.completed);
     if (upcomingIdx >= 0) return upcomingIdx;
     return Math.max(0, tournaments.length - 1);
   };
   const addDropTournamentIndex = getAddDropTournamentIndex();
 
-  // Switch to the logged-in manager's team whenever loggedInUser changes
+  // Switch to the logged-in manager's team whenever loggedInUser changes (e.g. after login)
   const prevLoggedInUser = React.useRef(null);
   useEffect(() => {
     if (teams.length === 0) return;
     const userTeam = loggedInUser ? teams.find(t => t.owner === loggedInUser) : null;
     if (loggedInUser && loggedInUser !== prevLoggedInUser.current && userTeam) {
+      // User just logged in — jump to their team
       setSelectedTeam(userTeam.id);
     } else if (!selectedTeam) {
+      // No selection yet — default to user's team or first team
       setSelectedTeam(userTeam?.id ?? teams[0].id);
     }
     prevLoggedInUser.current = loggedInUser;
@@ -424,6 +417,7 @@ export const RostersView = ({
     sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Lineup sync failed:', e.message));
   }, [team, teams, updateTeams, dialog]);
 
+
   const pendingWaivers = useMemo(() => {
     if (!team) return [];
     return transactions
@@ -433,9 +427,15 @@ export const RostersView = ({
   }, [team, transactions]);
 
   // Derive SFGL cuts per player per team from completed tournament results
+  // sfglCutsMap: { playerName: { cuts, starts } }
+  // Source: results.teams[teamId].players — each entry is a player who was in the
+  // starting lineup for that tournament, with the earnings they contributed.
+  // starts = appeared in lineup, cuts = appeared in lineup AND earned > $0
+  // Mulliganed-out players are excluded from start counts.
   const sfglCutsMap = useMemo(() => {
     const map = {};
     if (!team) return map;
+    // Build set of mulliganed-out players per tournament index
     const mulliganedOut = {};
     transactions.forEach(tx => {
       if (tx.type === 'mulligan' && tx.status !== 'failed' && tx.droppedPlayer && tx.tournamentIndex != null) {
@@ -449,7 +449,7 @@ export const RostersView = ({
       const excluded = mulliganedOut[tIdx] || new Set();
       players.forEach(p => {
         const name = p.name || p;
-        if (excluded.has(name)) return;
+        if (excluded.has(name)) return; // mulliganed out — not a start
         if (!map[name]) map[name] = { cuts: 0, starts: 0 };
         map[name].starts += 1;
         if ((p.earnings || 0) > 0) map[name].cuts += 1;
@@ -465,6 +465,8 @@ export const RostersView = ({
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
   const hasPendingWaivers = transactions.some(tx => tx.status === 'pending' && tx.type === 'waiver');
   const addDropBlocked = faStatus.open && hasPendingWaivers;
+
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'hidden' }}>
@@ -521,7 +523,7 @@ export const RostersView = ({
               Free agency is unavailable until the Commish processes waivers
             </div>
           )}
-        </div>
+          </div>
 
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders */}
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, paddingBottom: 6, minHeight: 72 }}>
@@ -664,7 +666,6 @@ export const RostersView = ({
                 const isBenched      = hasLineup && !isInLineup && !isEditing;
                 const dimColor       = 'rgba(255,255,255,0.45)';
                 const rowClickable   = isEditing && isOwnTeam && (isInLineup || canAddToLineup);
-                const isInField      = currentField.has(normPlayerName(player.name));
 
                 return (
                   <tr key={player.name}
@@ -682,6 +683,7 @@ export const RostersView = ({
                             if (canEditLineup && isOwnTeam) {
                               if (!lineupMode) {
                                 setLineupMode(true);
+                                // If clicking a non-lineup player with room, add them
                                 if (!isInLineup && canAddToLineup) togglePlayerInLineup(player);
                               } else if (isInLineup || canAddToLineup) {
                                 togglePlayerInLineup(player);
@@ -754,14 +756,6 @@ export const RostersView = ({
                             }}>
                               {displayName(player.name, isMobile)}
                             </span>
-                            {isInField && (
-                              <span
-                                title="In this week's field"
-                                style={{ fontSize: 11, opacity: isBenched ? 0.4 : 1 }}
-                              >
-                                🏌️
-                              </span>
-                            )}
                             {player.limited && (
                               <span style={{
                                 fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
@@ -805,7 +799,7 @@ export const RostersView = ({
 
                     {/* $ — SFGL earnings or PGA Tour earnings depending on mode */}
                     {(() => {
-                      const amount   = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0);
+                      const amount  = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0);
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
                         <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 12 : 12, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>
