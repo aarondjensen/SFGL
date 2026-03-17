@@ -100,59 +100,75 @@ async function fetchRankings(debug = false) {
     console.warn('[owgr] Strategy 2 failed:', err.message);
   }
 
-  // ── Strategy 3: Scrape the HTML page ─────────────────────────────────────
+  // ── Strategy 3: Find API endpoint from JS bundle ─────────────────────────
+  // OWGR is a Next.js SPA — player data loads via XHR after mount.
+  // Fetch the page to get chunk URLs, then scan the chunks for the API endpoint.
   try {
-    const resp = await fetch('https://www.owgr.com/current-world-ranking', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Referer': 'https://www.owgr.com/',
-      },
+    const pageResp = await fetch('https://www.owgr.com/current-world-ranking', {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html', 'Referer': 'https://www.owgr.com/' },
     });
+    if (!pageResp.ok) throw new Error(`Page HTTP ${pageResp.status}`);
+    const html = await pageResp.text();
 
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const html = await resp.text();
+    // Get all JS chunk URLs
+    const chunkUrls = [...html.matchAll(/src="(\/_next\/static\/chunks\/[^"]+\.js)"/g)]
+      .map(m => `https://www.owgr.com${m[1]}`);
 
-    // Try __NEXT_DATA__ or similar embedded JSON first
-    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-    if (nextDataMatch) {
-      const nd = JSON.parse(nextDataMatch[1]);
-      const players = extractPlayersFromJson(nd);
-      if (players.length > 0) {
-        console.log(`[owgr] Strategy 3a (__NEXT_DATA__): ${players.length} players`);
-        players._source = 'owgr-html-json';
-        return players;
-      }
-    }
-
-    // Try table parsing
-    const players = parseHtmlTable(html);
-    if (players.length > 0) {
-      console.log(`[owgr] Strategy 3b (HTML table): ${players.length} players`);
-      players._source = 'owgr-html-table';
-      return players;
+    // Scan each chunk for API endpoint patterns
+    let apiBase = null;
+    for (const chunkUrl of chunkUrls) {
+      try {
+        const chunkResp = await fetch(chunkUrl, { headers: { 'Referer': 'https://www.owgr.com/' } });
+        if (!chunkResp.ok) continue;
+        const js = await chunkResp.text();
+        // Look for patterns like: "https://api.owgr.com" or fetch("/api/rankings") or axios.get("...")
+        const apiMatch = js.match(/["'`](https?:\/\/[^"'`]*owgr[^"'`]{0,50}(?:rank|player|list)[^"'`]{0,30})["'`]/i)
+          || js.match(/["'`](\/api\/[^"'`]{5,60}(?:rank|player|list)[^"'`]{0,20})["'`]/i)
+          || js.match(/baseURL\s*[:=]\s*["'`]([^"'`]{10,80})["'`]/i)
+          || js.match(/["'`](https?:\/\/[^"'`]{10,80}owgr[^"'`]{0,40})["'`]/i);
+        if (apiMatch) {
+          apiBase = apiMatch[1];
+          console.log(`[owgr] Found API pattern in ${chunkUrl}: ${apiBase}`);
+          break;
+        }
+      } catch (_) {}
     }
 
     if (debug) {
-      const scriptSrcs = [...html.matchAll(/<script[^>]*src="([^"]+)"/gi)].map(m => m[1]).slice(0, 10);
-      const apiUrls = [...html.matchAll(/["'](https?:\/\/[^"']*(?:api|ranking|player)[^"']{5,80})["']/gi)].map(m => m[1]).slice(0, 10);
-      const inlineScriptSamples = [...html.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]{20,500}?)<\/script>/gi)]
-        .map(m => m[1].slice(0, 300).trim())
-        .filter(s => s.includes('rank') || s.includes('api') || s.includes('player'))
-        .slice(0, 5);
-      throw new Error(JSON.stringify({
-        htmlLength: html.length,
-        hasNextData: !!nextDataMatch,
-        schefflerInHtml: html.includes('Scheffler'),
-        mcilroyInHtml: html.includes('McIlroy'),
-        scriptSrcs,
-        apiUrls,
-        inlineScriptSamples,
-      }));
+      // Return what we found in the chunks
+      const chunkSamples = {};
+      for (const chunkUrl of chunkUrls.slice(0, 5)) {
+        try {
+          const r = await fetch(chunkUrl, { headers: { 'Referer': 'https://www.owgr.com/' } });
+          const js = await r.text();
+          const hits = [...js.matchAll(/["'`](https?:\/\/[^"'`]{10,100})["'`]/g)]
+            .map(m => m[1])
+            .filter(u => u.includes('owgr') || u.includes('rank') || u.includes('golf'))
+            .slice(0, 5);
+          if (hits.length) chunkSamples[chunkUrl.split('/').pop()] = hits;
+        } catch (_) {}
+      }
+      throw new Error(JSON.stringify({ apiBase, chunkSamples, totalChunks: chunkUrls.length }));
+    }
+
+    // If we found an API base, try fetching rankings from it
+    if (apiBase) {
+      const rankUrl = apiBase.startsWith('http') ? apiBase : `https://www.owgr.com${apiBase}`;
+      const rankResp = await fetch(`${rankUrl}?pageSize=500&pageNumber=1`, {
+        headers: { 'Referer': 'https://www.owgr.com/', 'Accept': 'application/json' },
+      });
+      if (rankResp.ok) {
+        const data = await rankResp.json();
+        const players = extractPlayersFromJson(data);
+        if (players.length > 0) {
+          players._source = 'owgr-bundle-api';
+          return players;
+        }
+      }
     }
   } catch (err) {
+    if (debug) throw err;
     console.warn('[owgr] Strategy 3 failed:', err.message);
-    throw err;
   }
 
   return [];
