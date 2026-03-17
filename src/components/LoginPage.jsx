@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { managerAuthApi } from "../api/supabase";
+import { managerAuthApi } from "../api/firebase";
 
 const styles = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -349,3 +349,4 @@ export default function LoginPage({ onLogin }) {
     </>
   );
 }
+
