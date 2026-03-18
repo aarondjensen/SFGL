@@ -287,26 +287,6 @@ export const RostersView = ({
   const [tournamentField,   setTournamentField]   = useState(null); // Set<string> of player names in the current field
   const dialog = useDialog();
 
-  // ── Fetch tournament field from /api/field ────────────────────────────────
-  // useMemo so the name is a stable hook in the chain; only re-fetches when
-  // the tournament actually changes — not on every render cycle.
-  const activeTournamentName = useMemo(
-    () => (tournaments.find(t => t.playing) || tournaments.find(t => !t.completed))?.name || null,
-    [tournaments]
-  );
-  useEffect(() => {
-    if (!activeTournamentName) return;
-    let cancelled = false;
-    fetch('/api/field')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (cancelled || !data?.players?.length) return;
-        setTournamentField(new Set(data.players));
-      })
-      .catch(() => {}); // silently ignore — field badge is non-critical
-    return () => { cancelled = true; };
-  }, [activeTournamentName]); // re-fetch only when tournament changes
-
   const activeTournament      = tournaments.find(t => t.playing);
   const activeTournamentIndex = activeTournament ? tournaments.findIndex(t => t.name === activeTournament.name) : -1;
   // ── Date-based tournament week resolution ────────────────────────────────
@@ -434,6 +414,25 @@ export const RostersView = ({
     });
     return map;
   }, [team, tournaments, transactions]);
+
+  // ── Fetch tournament field from /api/field ────────────────────────────────
+  // Keyed on tournament name — only re-fetches when the tournament changes.
+  const activeTournamentName = useMemo(
+    () => (tournaments.find(t => t.playing) || tournaments.find(t => !t.completed))?.name || null,
+    [tournaments]
+  );
+  useEffect(() => {
+    if (!activeTournamentName) return;
+    let cancelled = false;
+    fetch('/api/field')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled || !data?.players?.length) return;
+        setTournamentField(new Set(data.players));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeTournamentName]);
 
   if (!team) return null;
 
