@@ -8,7 +8,6 @@ import {
   getFreeAgentWindowStatus,
   getSegmentByDate, isTournamentLocked,
   isWaiverWindowOpen,
-  abbreviateName,
 } from '../utils';
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
@@ -17,7 +16,6 @@ import { getPlayerHeadshot, getPlayerHeadshotFallback, makeHeadshotErrorHandler 
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
-// Headshot helpers live in utils/headshotUtils.js — imported below
 
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
@@ -36,7 +34,6 @@ const useIsMobile = () => {
   return isMobile;
 };
 
-// displayName: uses abbreviateName from utils when on mobile
 
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
 const TeamDropdown = ({ teams, value, onChange }) => {
@@ -730,7 +727,7 @@ export const RostersView = ({
                                   ? (isBenched ? 'rgba(100,140,220,0.4)' : 'rgba(100,140,220,0.9)')
                                   : (isBenched ? dimColor : colors.textPrimary),
                             }}>
-                              {(isMobile ? abbreviateName(player.name) : player.name)}
+                              {(isMobile ? (() => { const p = player.name.trim().split(" "); return p.length < 2 ? player.name : p[0][0] + ". " + p[p.length-1]; })() : player.name)}
                             </span>
                             {player.limited && (
                               <span style={{
