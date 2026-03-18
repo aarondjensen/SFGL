@@ -176,7 +176,13 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                     ))}
                   </select>
                 ) : (
-                  <span style={{ fontWeight: 600, color: accentColor }}>
+                  <span style={{
+                    fontWeight: 600, color: accentColor,
+                    border: `1px solid ${accentColor.replace('0.85', '0.4')}`,
+                    borderRadius: 4,
+                    padding: '1px 8px',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
                     {selectedSwing}
                   </span>
                 )
