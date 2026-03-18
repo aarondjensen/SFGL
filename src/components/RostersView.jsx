@@ -288,9 +288,12 @@ export const RostersView = ({
   const dialog = useDialog();
 
   // ── Fetch tournament field from /api/field ────────────────────────────────
-  // Keyed on the active/next tournament's name so we only re-fetch when the
-  // tournament actually changes — not on every render cycle.
-  const activeTournamentName = (tournaments.find(t => t.playing) || tournaments.find(t => !t.completed))?.name || null;
+  // useMemo so the name is a stable hook in the chain; only re-fetches when
+  // the tournament actually changes — not on every render cycle.
+  const activeTournamentName = useMemo(
+    () => (tournaments.find(t => t.playing) || tournaments.find(t => !t.completed))?.name || null,
+    [tournaments]
+  );
   useEffect(() => {
     if (!activeTournamentName) return;
     let cancelled = false;
