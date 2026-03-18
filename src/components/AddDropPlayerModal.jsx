@@ -5,6 +5,21 @@ import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../ut
 import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
 
+// Known LIV Golf players — used as fallback filter when isLiv flag isn't set in DB
+const LIV_PLAYERS = new Set([
+  'Dustin Johnson','Phil Mickelson','Bryson DeChambeau','Patrick Reed','Brooks Koepka',
+  'Sergio Garcia','Lee Westwood','Ian Poulter','Henrik Stenson','Louis Oosthuizen',
+  'Charl Schwartzel','Kevin Na','Hudson Swafford','Talor Gooch','Matthew Wolff',
+  'Carlos Ortiz','Jason Kokrak','Patrick Cantlay','Harold Varner III','Graeme McDowell',
+  'Anirban Lahiri','Brendan Steele','James Piot','Jediah Morgan','Jinichiro Kozuma',
+  'Kevin Yuan','Laurie Canter','Phachara Khongwatmai','Peter Uihlein','Richard Bland',
+  'Sam Horsfield','Sihwan Kim','Eugenio Chacarra','Abraham Ancer','Cam Smith',
+  'Marc Leishman','Matt Jones','Scott Vincent','Joaquin Niemann','Sebastian Munoz',
+  'Thomas Pieters','Dean Burmester','Branden Grace','David Puig','Jon Rahm',
+  'Tyrrell Hatton','Bubba Watson','Patrick Cantlay','Adrian Meronk','Mito Pereira',
+  'Charles Howell III','Lucas Herbert','Andy Ogletree',
+]);
+
 const accentColor   = (waiver) => waiver ? colors.warning         : colors.success;
 const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.12)' : 'rgba(80,180,120,0.12)';
 const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,180,120,0.35)';
@@ -126,7 +141,7 @@ export const AddDropPlayerModal = ({
   const availablePlayers = allPlayers.filter(p => {
     if (!p.name || typeof p.name !== 'string') return false;
     if (/^\d+$/.test(p.name.trim())) return false;
-    if (p.isLiv) return false;
+    if (p.isLiv || LIV_PLAYERS.has(p.name)) return false;
     if (thisTeamPendingClaims.has(p.name)) return false;
     return true;
   });
