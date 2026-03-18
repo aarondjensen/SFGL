@@ -463,7 +463,10 @@ export const RostersView = ({
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (cancelled || !data?.players?.length) return;
-        setTournamentField(new Set(data.players));
+        // Normalize accented characters so ESPN names match roster names
+        // e.g. "Rasmus Højgaard" → "Rasmus Hojgaard", "Ludvig Åberg" → "Ludvig Aberg"
+        const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
+        setTournamentField(new Set(data.players.map(normalize)));
       })
       .catch(() => {});
     return () => { cancelled = true; };
