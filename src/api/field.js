@@ -1,10 +1,12 @@
 // api/field.js — Vercel serverless function
 // Returns the current PGA Tour tournament field as an array of player name strings.
 //
-// Fully automatic — discovers the current week's ESPN event ID by querying
-// the ESPN scoreboard API. No manual ID updates needed week to week.
+// Fully automatic — discovers the current week's ESPN event ID from the
+// ESPN golf scoreboard, then fetches the field for that event.
 //
-// GET /api/field
+// GET /api/field          → field data
+// GET /api/field?debug=1  → diagnostic info (what event was found, raw counts, etc.)
+//
 // Returns: { players: string[], tournament: string, eventId: string, source: 'espn', count: number }
 
 const HEADERS = {
@@ -12,48 +14,58 @@ const HEADERS = {
   'Accept': 'application/json',
 };
 
-// ── Step 1: Find the current week's PGA Tour event ID ─────────────────────────
-// ESPN's scoreboard endpoint returns active/upcoming PGA Tour events.
-// We try a few date ranges to find whichever tournament is current or next.
+// ── Find current PGA Tour event via the scoreboard ────────────────────────────
+// ESPN's golf scoreboard uses ?dates=YYYYMMDD (single date, not a range).
+// We try today, then the next few days, to find an event in or near the current week.
 
-async function getCurrentEventId() {
-  // Try current week first, then next two weeks as fallback
-  const dates = [getWeekRange(0), getWeekRange(1), getWeekRange(-1)];
+async function getCurrentEvent() {
+  const attempts = [];
 
-  for (const { startDate, endDate } of dates) {
+  // Try today + next 5 days (catches Wed before a Thu-start tournament)
+  for (let offset = 0; offset <= 5; offset++) {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    const dateStr = toESPNDate(d);
+    attempts.push(dateStr);
     try {
-      const url = `https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?league=pga&dates=${startDate}-${endDate}`;
+      const url = `https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?dates=${dateStr}`;
       const resp = await fetch(url, { headers: HEADERS });
       if (!resp.ok) continue;
       const data = await resp.json();
       const events = data?.events || [];
-      if (events.length > 0) {
-        // Prefer events that are in progress or scheduled (not completed)
-        const active = events.find(e => e.status?.type?.state !== 'post')
-          || events[events.length - 1];
-        return { id: active.id, name: active.name };
+      // Filter to PGA Tour events only (slug = 'pga')
+      const pga = events.filter(e => e.league?.slug === 'pga' || !e.league);
+      if (pga.length > 0) {
+        // Prefer in-progress or upcoming over completed
+        const best = pga.find(e => e.status?.type?.state !== 'post') || pga[0];
+        return { event: best, dateStr, allEvents: events };
       }
     } catch (_) {
       continue;
     }
   }
-  return null;
+  return { event: null, attempts };
 }
 
-// Returns { startDate, endDate } as YYYYMMDD strings for a given week offset
-function getWeekRange(weekOffset = 0) {
-  const now = new Date();
-  now.setDate(now.getDate() + weekOffset * 7);
-  // Find the Monday of the current week
-  const day = now.getDay();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
-  // Sunday = Monday + 6
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
+// ── Fetch field for a known event ID ─────────────────────────────────────────
+
+async function fetchFieldByEventId(eventId) {
+  const resp = await fetch(
+    `https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${eventId}&_=${Date.now()}`,
+    { headers: HEADERS }
+  );
+  if (!resp.ok) throw new Error(`ESPN leaderboard returned ${resp.status}`);
+  const data = await resp.json();
+  const event = data?.events?.[0];
+  const competitors = event?.competitions?.[0]?.competitors || [];
+  const players = competitors
+    .map(p => (p.athlete?.displayName || '').trim())
+    .filter(Boolean);
   return {
-    startDate: toESPNDate(monday),
-    endDate: toESPNDate(sunday),
+    players,
+    name: event?.name || '',
+    state: event?.status?.type?.state || 'unknown',
+    competitorCount: competitors.length,
   };
 }
 
@@ -64,50 +76,50 @@ function toESPNDate(date) {
   return `${y}${m}${d}`;
 }
 
-// ── Step 2: Fetch the field for a given event ID ──────────────────────────────
-
-async function fetchField(eventId) {
-  const resp = await fetch(
-    `https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${eventId}&_=${Date.now()}`,
-    { headers: HEADERS }
-  );
-  if (!resp.ok) throw new Error(`ESPN returned ${resp.status} for event ${eventId}`);
-  const data = await resp.json();
-  const event = data?.events?.[0];
-  const competitors = event?.competitions?.[0]?.competitors || [];
-  const players = competitors
-    .map(p => (p.athlete?.displayName || '').trim())
-    .filter(Boolean);
-  return { players, name: event?.name || '' };
-}
-
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  // Cache 30 min — field is stable once posted; stale-while-revalidate handles
-  // late withdrawal updates without blocking the response.
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  const isDebug = req.query.debug === '1';
+
   try {
-    // Auto-discover the current event
-    const event = await getCurrentEventId();
+    // Step 1: discover the current event
+    const { event, dateStr, allEvents, attempts } = await getCurrentEvent();
+
     if (!event) {
       return res.status(404).json({
-        error: 'Could not find a current PGA Tour event on ESPN.',
+        error: 'Could not find a current PGA Tour event.',
+        datesTriedCount: attempts?.length,
+        hint: 'Try hitting /api/field?debug=1 for more info',
       });
     }
 
-    // Fetch the field for that event
-    const { players, name } = await fetchField(event.id);
+    // Step 2: fetch the field for that event
+    const { players, name, state, competitorCount } = await fetchFieldByEventId(event.id);
+
+    if (isDebug) {
+      return res.status(200).json({
+        discoveredEvent: { id: event.id, name: event.name, state: event.status?.type?.state },
+        fieldState: state,
+        competitorCount,
+        playersReturned: players.length,
+        samplePlayers: players.slice(0, 10),
+        dateStr,
+        allEventsOnDate: allEvents?.map(e => ({ id: e.id, name: e.name, state: e.status?.type?.state })),
+      });
+    }
 
     if (!players.length) {
       return res.status(404).json({
-        error: 'Field not yet available for this event.',
+        error: 'Field not yet available — ESPN has not posted competitors for this event yet.',
         tournament: name,
         eventId: event.id,
+        state,
+        hint: 'Field data typically appears Thu morning when tee times are posted. Try again then.',
       });
     }
 
@@ -118,6 +130,7 @@ export default async function handler(req, res) {
       source: 'espn',
       count: players.length,
     });
+
   } catch (err) {
     return res.status(503).json({ error: err.message });
   }
