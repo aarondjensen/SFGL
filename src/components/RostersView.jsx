@@ -396,7 +396,8 @@ export const RostersView = ({
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
     const isInLineup = team.lineup.includes(player.name);
-    if (!isInLineup && team.lineup.length >= LINEUP_SIZE) {
+    const activeLineupCount = team.lineup.filter(name => currentRoster.some(p => p.name === name)).length;
+    if (!isInLineup && activeLineupCount >= LINEUP_SIZE) {
       dialog.showToast(`You can only have ${LINEUP_SIZE} starters`, 'error'); return;
     }
     if (!isInLineup && player.limited && player.starts >= MAX_LIMITED_STARTS) {
@@ -671,7 +672,8 @@ export const RostersView = ({
             <tbody>
               {getSortedRoster(currentRoster).map(player => {
                 const isInLineup     = team.lineup.includes(player.name);
-                const canAddToLineup = team.lineup.length < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
+                const activeLineupCount = team.lineup.filter(name => currentRoster.some(p => p.name === name)).length;
+                const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
                 const hasLineup      = team.lineup.length > 0;
                 const isEditing      = canEditLineup && lineupMode;
                 const isBenched      = hasLineup && !isInLineup && !isEditing;
