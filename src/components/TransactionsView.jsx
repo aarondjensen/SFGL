@@ -1,19 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, makePlayer, getTeamAbbreviation } from '../utils/index.js';
+import { getSegmentByDate, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { storage } from '../api';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 
-// First initial + last name: "Scottie Scheffler" → "S. Scheffler"
-const shortName = (name) => {
-  if (!name) return '';
-  const parts = name.trim().split(' ');
-  if (parts.length < 2) return name;
-  return parts[0][0] + '. ' + parts[parts.length - 1];
-};
+// shortName imported from utils (see abbreviateName)
 
 // ── Inline edit modal ─────────────────────────────────────────────────────────
 const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, transactions, setTransactions, updateTeams, onClose }) => {

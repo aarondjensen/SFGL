@@ -61,21 +61,23 @@ const FantasyGolfLeague = () => {
   const resolvedHeadshots = Object.keys(safeHeadshots).length > 0 ? safeHeadshots : PGA_TOUR_IDS;
   const currentTournament = safeTournaments.find(t => t.playing);
 
-  // ── Inject Google Fonts (Raleway only) once on mount ────────────────────────
+  // ── Inject styles once on mount — each block has its own guard so that
+  //    fast-refresh (or the font already being cached) doesn't skip the others.
   useEffect(() => {
-    if (document.getElementById('sfgl-google-fonts')) return; // already injected
-    const link = document.createElement('link');
-    link.id   = 'sfgl-google-fonts';
-    link.rel  = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap';
-    document.head.appendChild(link);
-    // Set Raleway on body so everything inherits it — overrides Tailwind preflight
-    document.body.style.fontFamily = "'Raleway', system-ui, sans-serif";
-    document.body.style.fontVariantNumeric = 'tabular-nums lining-nums';
-    // Responsive tab styles
-    const style = document.createElement('style');
-    style.id = 'sfgl-tab-styles';
+    // Google Fonts
+    if (!document.getElementById('sfgl-google-fonts')) {
+      const link = document.createElement('link');
+      link.id   = 'sfgl-google-fonts';
+      link.rel  = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap';
+      document.head.appendChild(link);
+      document.body.style.fontFamily = "'Raleway', system-ui, sans-serif";
+      document.body.style.fontVariantNumeric = 'tabular-nums lining-nums';
+    }
+    // Responsive tab / tournament banner styles
     if (!document.getElementById('sfgl-tab-styles')) {
+      const style = document.createElement('style');
+      style.id = 'sfgl-tab-styles';
       style.textContent = `
         .sfgl-nav-row { justify-content: space-between; }
         .sfgl-tab { flex: 1; }
@@ -112,16 +114,20 @@ const FantasyGolfLeague = () => {
   }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
+  // Depends on `teams` (the raw value from useLeague) rather than `resolvedTeams`
+  // which is re-derived on every render and would cause this effect to re-fire
+  // after any team state update.
   useEffect(() => {
+    if (!teams || teams.length === 0) return; // wait until teams have loaded
     managerAuthApi.getCurrentSession().then(session => {
       if (!session) return;
       const teamId = localStorage.getItem('manager_team_id');
       if (teamId) {
-        const team = resolvedTeams.find(t => t.id === teamId);
+        const team = teams.find(t => t.id === teamId);
         if (team) setLoggedInUser(team.owner || team.name);
       }
     }).catch(() => {});
-  }, [resolvedTeams]);
+  }, [teams]);
 
   // ── Hydrate tournament results from Supabase ─────────────────────────────
   // Hydrate tournament results from Supabase once after load.

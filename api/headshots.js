@@ -10,7 +10,13 @@ const HEADERS = {
   'Accept': 'application/json',
 };
 
-// Fetch all events in parallel — recent large-field events cover most tour regulars
+// Fetch all events in parallel — recent large-field events cover most tour regulars.
+//
+// ⚠️  UPDATE EACH SEASON: ESPN event IDs change every year.
+// To find new IDs: visit https://www.espn.com/golf/leaderboard and inspect the
+// network requests, or check https://site.api.espn.com/apis/site/v2/sports/golf/scoreboard
+// Pick 4-5 recent large-field events (100+ players) to maximise coverage.
+// Current IDs are valid for the 2026 PGA Tour season.
 const ESPN_EVENT_IDS = [
   '401811938', // THE PLAYERS 2026
   '401811934', // Arnold Palmer 2026
@@ -22,6 +28,8 @@ const ESPN_EVENT_IDS = [
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  // Cache for 24 h — ESPN athlete IDs don't change within a season
+  res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate=172800');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { names, eventId, debug } = req.query;
