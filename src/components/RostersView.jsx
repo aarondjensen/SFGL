@@ -284,7 +284,25 @@ export const RostersView = ({
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
+  const [tournamentField,   setTournamentField]   = useState(null); // Set<string> of player names in the current field
   const dialog = useDialog();
+
+  // ── Fetch tournament field from /api/field ────────────────────────────────
+  // Keyed on the active/next tournament's name so we only re-fetch when the
+  // tournament actually changes — not on every render cycle.
+  const activeTournamentName = (tournaments.find(t => t.playing) || tournaments.find(t => !t.completed))?.name || null;
+  useEffect(() => {
+    if (!activeTournamentName) return;
+    let cancelled = false;
+    fetch('/api/field')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled || !data?.players?.length) return;
+        setTournamentField(new Set(data.players));
+      })
+      .catch(() => {}); // silently ignore — field badge is non-critical
+    return () => { cancelled = true; };
+  }, [activeTournamentName]); // re-fetch only when tournament changes
 
   const activeTournament      = tournaments.find(t => t.playing);
   const activeTournamentIndex = activeTournament ? tournaments.findIndex(t => t.name === activeTournament.name) : -1;
@@ -722,6 +740,13 @@ export const RostersView = ({
                             )}
                             {player.unlimited && (
                               <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)' }}>♾️</span>
+                            )}
+                            {/* ⛳ In-field badge — shown when player is in the current tournament field */}
+                            {tournamentField?.has(player.name) && (
+                              <span
+                                title="In this week's field"
+                                style={{ fontSize: 11, lineHeight: 1, opacity: isBenched ? 0.35 : 1 }}
+                              >⛳</span>
                             )}
                           </div>
                           <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
