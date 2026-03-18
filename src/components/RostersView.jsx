@@ -12,10 +12,46 @@ import {
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
-import { getPlayerHeadshot, getPlayerHeadshotFallback, makeHeadshotErrorHandler } from '../utils/headshotUtils';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
+// ── Headshot helpers ─────────────────────────────────────────────────────────
+// Stored IDs are ESPN athlete IDs (e.g. 4696529 for McIlroy).
+// Image URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
+const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
+  const val = headshotMap[playerName];
+  if (!val) return [];
+  if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
+  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
+};
+
+const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  if (urls.length > 0) return urls[0];
+  const bg = isLimited ? '8B6914' : '1c3a5e';
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
+};
+
+const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  let attempt = 0;
+  return function handler(e) {
+    attempt++;
+    if (attempt < urls.length) {
+      e.target.src = urls[attempt];
+      e.target.onerror = handler;
+    } else {
+      e.target.onerror = null;
+      const bg = isLimited ? '8B6914' : '1c3a5e';
+      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
+    }
+  };
+};
+
+const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
+  const bg = isLimited ? '8B6914' : '1c3a5e';
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
+};
 
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
@@ -34,6 +70,12 @@ const useIsMobile = () => {
   return isMobile;
 };
 
+const displayName = (fullName, isMobile) => {
+  if (!isMobile || !fullName) return fullName;
+  const parts = fullName.trim().split(' ');
+  if (parts.length < 2) return fullName;
+  return parts[0][0] + '. ' + parts[parts.length - 1];
+};
 
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
 const TeamDropdown = ({ teams, value, onChange }) => {
@@ -212,8 +254,8 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
     >
       <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
         <img
-          src={getPlayerHeadshot(player.name, headshots, player.limited)}
-          onError={makeHeadshotErrorHandler(player.name, headshots, player.limited)}
+          src={getPlayerHeadshot(player.name, player.limited, headshots)}
+          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
           alt=""
           style={{
             width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
@@ -281,7 +323,7 @@ export const RostersView = ({
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
-  const [tournamentField,   setTournamentField]   = useState(null); // Set<string> of player names in the current field
+  const [tournamentField,   setTournamentField]   = useState(null);
   const dialog = useDialog();
 
   const activeTournament      = tournaments.find(t => t.playing);
@@ -412,14 +454,10 @@ export const RostersView = ({
     return map;
   }, [team, tournaments, transactions]);
 
-  // ── Fetch tournament field from /api/field ────────────────────────────────
-  // Keyed on tournament name — only re-fetches when the tournament changes.
-  const activeTournamentName = useMemo(
-    () => (tournaments.find(t => t.playing) || tournaments.find(t => !t.completed))?.name || null,
-    [tournaments]
-  );
+  // Fetch current week's field from /api/field — re-runs only when tournament name changes
+  const _fieldTournamentName = (tournaments.find(t => t.playing) || tournaments.find(t => !t.completed))?.name || null;
   useEffect(() => {
-    if (!activeTournamentName) return;
+    if (!_fieldTournamentName) return;
     let cancelled = false;
     fetch('/api/field')
       .then(r => r.ok ? r.json() : null)
@@ -429,7 +467,7 @@ export const RostersView = ({
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [activeTournamentName]);
+  }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!team) return null;
 
@@ -666,8 +704,8 @@ export const RostersView = ({
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
-                            src={getPlayerHeadshot(player.name, headshots, player.limited)}
-                            onError={makeHeadshotErrorHandler(player.name, headshots, player.limited)}
+                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
+                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
@@ -727,7 +765,7 @@ export const RostersView = ({
                                   ? (isBenched ? 'rgba(100,140,220,0.4)' : 'rgba(100,140,220,0.9)')
                                   : (isBenched ? dimColor : colors.textPrimary),
                             }}>
-                              {(isMobile ? (() => { const p = player.name.trim().split(" "); return p.length < 2 ? player.name : p[0][0] + ". " + p[p.length-1]; })() : player.name)}
+                              {displayName(player.name, isMobile)}
                             </span>
                             {player.limited && (
                               <span style={{
@@ -740,12 +778,8 @@ export const RostersView = ({
                             {player.unlimited && (
                               <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)' }}>♾️</span>
                             )}
-                            {/* ⛳ In-field badge — shown when player is in the current tournament field */}
                             {tournamentField?.has(player.name) && (
-                              <span
-                                title="In this week's field"
-                                style={{ fontSize: 11, lineHeight: 1, opacity: isBenched ? 0.35 : 1 }}
-                              >⛳</span>
+                              <span title="In this week's field" style={{ fontSize: 11, lineHeight: 1, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
                             )}
                           </div>
                           <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
