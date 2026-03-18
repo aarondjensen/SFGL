@@ -1,16 +1,43 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../utils/index.js';
 import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
 import { theme, colors, fonts } from '../theme.js';
-import { getPlayerHeadshot, makeHeadshotErrorHandler } from '../utils/headshotUtils';
 
 const accentColor   = (waiver) => waiver ? colors.warning         : colors.success;
 const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.12)' : 'rgba(80,180,120,0.12)';
 const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,180,120,0.35)';
 
-// Headshot helpers imported from utils/headshotUtils.js
+// ── Headshot helpers ─────────────────────────────────────────────────────────────────────────────
+// Stored IDs are ESPN athlete IDs.
+const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
+  const val = headshotMap[playerName];
+  if (!val) return [];
+  if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
+  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
+};
+
+const getPlayerHeadshot = (playerName, headshotMap = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  if (urls.length > 0) return urls[0];
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`;
+};
+
+const makeHeadshotErrorHandler = (playerName, headshotMap) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  let attempt = 0;
+  return function handler(e) {
+    attempt++;
+    if (attempt < urls.length) {
+      e.target.src = urls[attempt];
+      e.target.onerror = handler;
+    } else {
+      e.target.onerror = null;
+      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`;
+    }
+  };
+};
 
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, allPlayers, teams,
@@ -25,22 +52,17 @@ export const AddDropPlayerModal = ({
   const bodyRef  = useRef(null);
   const dialog   = useDialog();
 
-  // Pre-populate when editing an existing waiver claim.
-  // We derive the drop player from allPlayers (not just currentRoster) so that
-  // recently-transacted players who no longer appear in currentRoster are still
-  // selectable — preventing the stale-roster silent-fail bug.
+  // Pre-populate when editing an existing waiver claim
   useEffect(() => {
-    if (!editingWaiverData || !isOpen) return;
-    const toAdd = allPlayers.find(p => p.name === editingWaiverData.player);
-    if (toAdd) setSelectedPlayerToAdd(toAdd);
-    if (editingWaiverData.droppedPlayer) {
-      // Prefer currentRoster (has player metadata), fall back to a minimal object
-      const toDrop =
-        currentRoster.find(p => p.name === editingWaiverData.droppedPlayer) ||
-        { name: editingWaiverData.droppedPlayer };
-      setSelectedPlayerToDrop(toDrop);
+    if (editingWaiverData && isOpen) {
+      const toAdd = allPlayers.find(p => p.name === editingWaiverData.player);
+      if (toAdd) setSelectedPlayerToAdd(toAdd);
+      if (editingWaiverData.droppedPlayer) {
+        const toDrop = currentRoster.find(p => p.name === editingWaiverData.droppedPlayer);
+        if (toDrop) setSelectedPlayerToDrop(toDrop);
+      }
     }
-  }, [editingWaiverData, isOpen]); // intentionally omit allPlayers/currentRoster — only re-run when the claim or modal open state changes
+  }, [editingWaiverData, isOpen, allPlayers, currentRoster]);
 
   // Scroll to top whenever drop selection changes (or add selection is made)
   useEffect(() => {
@@ -52,14 +74,13 @@ export const AddDropPlayerModal = ({
   if (!isOpen || !team) return null;
 
   // ── Available players ──────────────────────────────────────────────────────
-  // Single memoised pass: builds rosteredPlayers, ownerMap, and limboPlayers
-  // together so we don't replay all transactions twice on every render.
-  const { rosteredPlayers, ownerMap, limboPlayers } = useMemo(() => {
-    const ownerMap = new Map();
-    const rosteredPlayers = new Set();
-
-    teams.forEach(t => {
-      const rosterSet = new Set(t.roster.map(p => p.name));
+  // Build the effective roster for EVERY team by replaying processed transactions,
+  // matching the same logic as useRoster. This prevents players added via FA/waiver
+  // (who live in transactions but not in team.roster) from appearing as available.
+  const rosteredPlayers = new Set(
+    teams.flatMap(t => {
+      let roster = t.roster.map(p => p.name);
+      const rosterSet = new Set(roster);
       transactions
         .filter(tx =>
           tx.team === t.name &&
@@ -70,62 +91,73 @@ export const AddDropPlayerModal = ({
           if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
           if (tx.player) rosterSet.add(tx.player);
         });
-      rosterSet.forEach(name => {
-        rosteredPlayers.add(name);
-        ownerMap.set(name, t.name);
-      });
-    });
+      return [...rosterSet];
+    })
+  );
 
-    const limboPlayers = new Set(
-      transactions
-        .filter(tx => {
-          if (tx.status !== 'processed' && tx.status !== 'completed') return false;
-          if (tx.type === 'mulligan') return false;
-          if (!tx.droppedPlayer) return false;
-          if (tx.tournamentIndex !== undefined) {
-            const t = tournaments?.[tx.tournamentIndex];
-            return t && !t.completed;
-          }
-          return true;
-        })
-        .map(tx => tx.droppedPlayer)
-    );
-
-    return { rosteredPlayers, ownerMap, limboPlayers };
-  }, [teams, transactions, tournaments]);
+  // Players dropped via a processed FA/waiver whose tournament hasn't been completed yet
+  // are "on waivers" — unavailable until that tournament is processed.
+  // We consider a drop "in limbo" if its tournamentIndex maps to an incomplete tournament,
+  // OR if it has no tournamentIndex but happened recently (this week).
+  const limboPlayers = new Set(
+    transactions
+      .filter(tx => {
+        if (tx.status !== 'processed' && tx.status !== 'completed') return false;
+        if (tx.type === 'mulligan') return false;
+        if (!tx.droppedPlayer) return false;
+        // If we have a tournamentIndex, check if that tournament is completed
+        if (tx.tournamentIndex !== undefined) {
+          const t = tournaments?.[tx.tournamentIndex];
+          return t && !t.completed; // limbo = tournament not yet completed
+        }
+        // No tournamentIndex: treat as current week (in limbo)
+        return true;
+      })
+      .map(tx => tx.droppedPlayer)
+  );
 
   // Hide players this team already has a pending waiver claim for
-  const thisTeamPendingClaims = useMemo(() => new Set(
+  const thisTeamPendingClaims = new Set(
     transactions
       .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.team === team.name && tx.player)
       .map(tx => tx.player)
-  ), [transactions, team.name]);
+  );
 
-  const availablePlayers = useMemo(() => allPlayers.filter(p => {
+  const availablePlayers = allPlayers.filter(p => {
     if (!p.name || typeof p.name !== 'string') return false;
     if (/^\d+$/.test(p.name.trim())) return false;
     if (p.isLiv) return false;
     if (thisTeamPendingClaims.has(p.name)) return false;
     return true;
-  }), [allPlayers, thisTeamPendingClaims]);
+  });
+
+  // Build ownership map: playerName → teamName
+  const ownerMap = new Map();
+  teams.forEach(t => {
+    const rosterSet = new Set(t.roster.map(p => p.name));
+    transactions
+      .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && (tx.status === 'processed' || tx.status === 'completed'))
+      .forEach(tx => {
+        if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
+        if (tx.player) rosterSet.add(tx.player);
+      });
+    rosterSet.forEach(name => ownerMap.set(name, t.name));
+  });
 
   // Is the active tournament currently locked (Thu–Sun)?
   const activeTournament = tournaments?.find(t => t.playing && !t.completed);
   const tournamentIsLocked = isTournamentLocked(activeTournament);
 
-  const filteredPlayers = useMemo(() =>
-    availablePlayers.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())),
-    [availablePlayers, searchTerm]
+  const filteredPlayers  = availablePlayers.filter(p =>
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   // When not searching, hide rostered players from the browse list so it starts
   // with the highest-ranked available free agent.  When searching by name, show
   // rostered players (greyed out with team badge) so the user can see who owns them.
-  const displayPlayers = useMemo(() => searchTerm.trim()
+  const displayPlayers = searchTerm.trim()
     ? filteredPlayers                                          // search: show all matches (rostered shown greyed)
-    : filteredPlayers.filter(p => !rosteredPlayers.has(p.name) && !limboPlayers.has(p.name)), // browse: free agents only
-    [filteredPlayers, searchTerm, rosteredPlayers, limboPlayers]
-  );
+    : filteredPlayers.filter(p => !rosteredPlayers.has(p.name) && !limboPlayers.has(p.name)); // browse: free agents only
 
   const rosterFull   = currentRoster.length >= ROSTER_LIMIT;
 
