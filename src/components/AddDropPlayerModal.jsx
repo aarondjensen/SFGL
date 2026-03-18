@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../utils/index.js';
@@ -65,6 +65,7 @@ export const AddDropPlayerModal = ({
   const [selectedPlayerToDrop, setSelectedPlayerToDrop] = useState(null);
   const [saving,               setSaving]               = useState(false);
   const bodyRef  = useRef(null);
+  const [localHeadshots, setLocalHeadshots] = useState({});
   const dialog   = useDialog();
 
   // Pre-populate when editing an existing waiver claim
@@ -86,7 +87,29 @@ export const AddDropPlayerModal = ({
     }
   }, [selectedPlayerToDrop]);
 
+  // Fetch ESPN headshot IDs for players not already in the headshots map
+  useEffect(() => {
+    if (!isOpen || !allPlayers?.length) return;
+    const missing = allPlayers
+      .filter(p => p.name && !headshots?.[p.name])
+      .map(p => p.name)
+      .slice(0, 150); // limit to avoid huge query string
+    if (!missing.length) return;
+    const encoded = missing.map(n => encodeURIComponent(n)).join(',');
+    fetch(`/api/headshots?names=${encoded}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.results) return;
+        // results is { playerName: espnId }
+        setLocalHeadshots(prev => ({ ...prev, ...data.results }));
+      })
+      .catch(() => {});
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!isOpen || !team) return null;
+
+  // Merge prop headshots with locally fetched ones
+  const mergedHeadshots = { ...localHeadshots, ...headshots };
 
   // ── Available players ──────────────────────────────────────────────────────
   // Build the effective roster for EVERY team by replaying processed transactions,
@@ -518,8 +541,8 @@ export const AddDropPlayerModal = ({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <img
-                      src={getPlayerHeadshot(player.name, headshots)}
-                      onError={makeHeadshotErrorHandler(player.name, headshots)}
+                      src={getPlayerHeadshot(player.name, mergedHeadshots)}
+                      onError={makeHeadshotErrorHandler(player.name, mergedHeadshots)}
                       alt=""
                       style={{
                         width: 28, height: 28, borderRadius: '50%', objectFit: 'cover',
