@@ -1,18 +1,14 @@
 /**
- * firebase.js
+ * firebase.js  —  api/firebase.js
  * ============================================================================
- * Drop-in replacement for supabase.js. Exports the exact same API surface so
- * no component code needs to change — only the import path.
- *
- * Import path to use everywhere (was '../api/firebase'):
- *   import { ... } from '../api/firebase';
+ * Firebase/Firestore backend for SFGL. Import from '../api/firebase'.
  *
  * Firebase services used:
- *   • Firestore  — all league data (replaces every Supabase table)
- *   • No Firebase Auth — manager auth stays localStorage-based (unchanged)
- *   • No Firebase Storage — headshots still served from CDN / manual overrides
+ *   • Firestore  — all league data
+ *   • No Firebase Auth — manager auth is localStorage-based (managerAuthApi)
+ *   • No Firebase Storage — headshots served from ESPN CDN / manual overrides
  *
- * Firestore collections → former Supabase tables:
+ * Firestore collections:
  *   players            → /players/{name}
  *   app_metadata       → /app_metadata/{key}
  *   liv_roster         → /liv_roster/{name}
@@ -398,12 +394,19 @@ export const transactionsApi = {
       }
     }
 
-    // Individual updates (preserving ids)
-    for (const tx of toUpdate) {
-      if (tx.id) {
-        const { id, ...rest } = tx;
-        await updateDoc(doc(db, 'transactions', id), rest).catch(e =>
-          console.error('[transactionsApi.sync] update error:', e)
+    // Batched updates (preserving ids) — avoids serial round-trips
+    if (toUpdate.length > 0) {
+      const BATCH_SIZE = 499;
+      for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db);
+        toUpdate.slice(i, i + BATCH_SIZE).forEach(tx => {
+          if (tx.id) {
+            const { id, ...rest } = tx;
+            batch.update(doc(db, 'transactions', id), rest);
+          }
+        });
+        await batch.commit().catch(e =>
+          console.error('[transactionsApi.sync] batch update error:', e)
         );
       }
     }
@@ -497,15 +500,10 @@ export const managerAuthApi = {
     const passwordHash = await _hashPassword(password.trim());
     const entry = Object.entries(creds).find(([, c]) =>
       c.name.toLowerCase() === name.trim().toLowerCase() &&
-      (c.passwordHash === passwordHash || c.password === password.trim())
+      c.passwordHash === passwordHash
     );
     if (!entry) throw new Error('Invalid name or password');
-    const [teamId, cred] = entry;
-    // Auto-migrate legacy plain-text → hashed
-    if (cred.password && !cred.passwordHash) {
-      creds[teamId] = { name: cred.name, passwordHash };
-      await sfglDataApi.set(CREDS_KEY, creds);
-    }
+    const [teamId] = entry;
     localStorage.setItem('manager_team_id', teamId);
     localStorage.removeItem('is_commissioner');
     return { teamId };

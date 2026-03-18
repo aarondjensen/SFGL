@@ -64,7 +64,13 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
     };
   });
 
-  const tournamentIndex = -1; // used only for getRosterForTournament; -1 = ignore tx filtering
+  // tournamentIndex is set to -1 here because processTournamentData works from
+  // team.lineup (set by the commish before processing), not by re-deriving rosters
+  // from transactions at a given point in time. getRosterForTournament is therefore
+  // not called in this path and the value is unused.
+  // TODO: if roster-aware result processing is needed in future (e.g. auto-lineup),
+  // pass the real tournament index and derive rosters via getRosterForTournament.
+  const tournamentIndex = -1;
   const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders: tournamentData.roundLeaders || {}, fullLineups: {} };
 
   const newTeams = teams.map(team => {

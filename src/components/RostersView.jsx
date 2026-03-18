@@ -8,50 +8,16 @@ import {
   getFreeAgentWindowStatus,
   getSegmentByDate, isTournamentLocked,
   isWaiverWindowOpen,
+  abbreviateName,
 } from '../utils';
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
+import { getPlayerHeadshot, getPlayerHeadshotFallback, makeHeadshotErrorHandler } from '../utils/headshotUtils';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
-// ── Headshot helpers ─────────────────────────────────────────────────────────
-// Stored IDs are ESPN athlete IDs (e.g. 4696529 for McIlroy).
-// Image URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
-const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
-  const val = headshotMap[playerName];
-  if (!val) return [];
-  if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
-  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
-};
-
-const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
-  if (urls.length > 0) return urls[0];
-  const bg = isLimited ? '8B6914' : '1c3a5e';
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
-};
-
-const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
-  let attempt = 0;
-  return function handler(e) {
-    attempt++;
-    if (attempt < urls.length) {
-      e.target.src = urls[attempt];
-      e.target.onerror = handler;
-    } else {
-      e.target.onerror = null;
-      const bg = isLimited ? '8B6914' : '1c3a5e';
-      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
-    }
-  };
-};
-
-const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
-  const bg = isLimited ? '8B6914' : '1c3a5e';
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
-};
+// Headshot helpers live in utils/headshotUtils.js — imported below
 
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
@@ -70,12 +36,7 @@ const useIsMobile = () => {
   return isMobile;
 };
 
-const displayName = (fullName, isMobile) => {
-  if (!isMobile || !fullName) return fullName;
-  const parts = fullName.trim().split(' ');
-  if (parts.length < 2) return fullName;
-  return parts[0][0] + '. ' + parts[parts.length - 1];
-};
+// displayName: uses abbreviateName from utils when on mobile
 
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
 const TeamDropdown = ({ teams, value, onChange }) => {
@@ -254,8 +215,8 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
     >
       <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
         <img
-          src={getPlayerHeadshot(player.name, player.limited, headshots)}
-          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+          src={getPlayerHeadshot(player.name, headshots, player.limited)}
+          onError={makeHeadshotErrorHandler(player.name, headshots, player.limited)}
           alt=""
           style={{
             width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
@@ -688,8 +649,8 @@ export const RostersView = ({
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
-                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+                            src={getPlayerHeadshot(player.name, headshots, player.limited)}
+                            onError={makeHeadshotErrorHandler(player.name, headshots, player.limited)}
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
@@ -749,7 +710,7 @@ export const RostersView = ({
                                   ? (isBenched ? 'rgba(100,140,220,0.4)' : 'rgba(100,140,220,0.9)')
                                   : (isBenched ? dimColor : colors.textPrimary),
                             }}>
-                              {displayName(player.name, isMobile)}
+                              {(isMobile ? abbreviateName(player.name) : player.name)}
                             </span>
                             {player.limited && (
                               <span style={{

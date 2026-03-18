@@ -70,6 +70,18 @@ export const shortName = (fullName) => {
   return parts[parts.length - 1];
 };
 
+/**
+ * "First Last" → "F. Last"
+ * Used by TransactionsView and RostersView (mobile) to abbreviate player names.
+ * Single-word names are returned unchanged.
+ */
+export const abbreviateName = (name) => {
+  if (!name) return '';
+  const parts = name.trim().split(' ');
+  if (parts.length < 2) return name;
+  return parts[0][0] + '. ' + parts[parts.length - 1];
+};
+
 export const getSortedRoster = (roster) => {
   const limited   = roster.filter(p => p.limited);
   const unlimited = roster.filter(p => !p.limited);
@@ -128,8 +140,14 @@ export const getETNow = () => {
 // ============================================================================
 // SEGMENT
 // ============================================================================
-export const getSegmentByDate = () => {
-  const month = new Date().getMonth() + 1;
+/**
+ * Returns the segment name for a given date (defaults to today).
+ * Accepts an optional Date object so callers like StandingsView can
+ * resolve the segment for a specific tournament start date rather than
+ * relying on the current wall-clock month.
+ */
+export const getSegmentByDate = (date) => {
+  const month = (date || new Date()).getMonth() + 1;
   if (month >= 1 && month <= 3) return 'West Coast Swing';
   if (month >= 4 && month <= 5) return 'Florida Swing';
   if (month >= 6 && month <= 8) return 'Summer Swing';

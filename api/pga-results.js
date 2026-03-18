@@ -9,6 +9,10 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  // Cache results for 5 min on Vercel CDN; stale-while-revalidate allows serving
+  // cached results for up to 10 min while revalidating in the background.
+  // PGA Tour past-results pages don't change once the tournament is complete.
+  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { url: directUrl, pgaTourId, name, year, debug } = req.query;
@@ -44,8 +48,6 @@ export default async function handler(req, res) {
         'round1Leader', 'round2Leader', 'round3Leader',
         'roundLeader', 'R1 Leader', 'R2 Leader', 'R3 Leader',
         'round-leader', 'leaderR1', 'leaderR2', 'leaderR3',
-        'Maverick McNealy', // known R1 leader for THE PLAYERS
-        'Ludvig', // known R2 leader
       ];
       const leaderContexts = {};
       for (const term of leaderSearchTerms) {
@@ -68,7 +70,8 @@ export default async function handler(req, res) {
       const { players, roundLeaders } = parseResults(html);
 
       // Show raw cells for a few known players so we can see the exact column structure
-      const targetNames = ['Maverick McNealy', 'Ludvig', 'Cameron Young', 'Sepp Straka'];
+      // Populate with known players from the specific tournament you're debugging
+      const targetNames = [];
       const rowDump = [];
       for (const rowMatch of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
         const row = rowMatch[1];

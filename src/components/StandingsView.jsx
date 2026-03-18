@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Trophy } from 'lucide-react';
 import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, SWING_COLORS } from '../theme.js';
+import { getSegmentByDate } from '../utils';
 
 // Inject once — consistent row height on mobile
 if (typeof document !== 'undefined' && !document.getElementById('sfgl-standings-styles')) {
@@ -36,19 +37,18 @@ const ALL_SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Fi
 
 const SWING_ACCENT = SWING_COLORS;
 
-const MONTH_ABBREVS = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+// Prefer the stored segment/swing, then derive from the tournament start date.
+// Keeps StandingsView in sync with getSegmentByDate used everywhere else.
 const getSegmentForTournament = (t) => {
   if (t.segment) return t.segment;
   if (t.swing) return t.swing;
   if (!t.dates) return null;
-  const match = t.dates.match(/^([A-Za-z]+)/);
+  const MONTHS = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+  const match = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
   if (!match) return null;
-  const month = MONTH_ABBREVS[match[1]];
+  const month = MONTHS[match[1]];
   if (!month) return null;
-  if (month >= 1 && month <= 3) return 'West Coast Swing';
-  if (month >= 4 && month <= 6) return 'Spring Swing';
-  if (month >= 7 && month <= 9) return 'Summer Swing';
-  return 'Fall Finish';
+  return getSegmentByDate(new Date(new Date().getFullYear(), month - 1, parseInt(match[2])));
 };
 
 export const StandingsView = ({ teams, tournaments = [], transactions = [] }) => {
