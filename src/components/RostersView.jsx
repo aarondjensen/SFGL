@@ -12,7 +12,6 @@ import {
 import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
-import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers ─────────────────────────────────────────────────────────
@@ -408,9 +407,7 @@ export const RostersView = ({
       const newLineup = isInLineup ? t.lineup.filter(p => p !== player.name) : [...t.lineup, player.name];
       return { ...t, lineup: newLineup };
     });
-    updateTeams(newTeams);
-    storage.set(STORAGE_KEYS.TEAMS, newTeams);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(e => console.warn('Lineup sync failed:', e.message));
+    updateTeams(newTeams); // writes to teamsApi (Firebase) + localStorage
   }, [team, teams, updateTeams, dialog]);
 
 
