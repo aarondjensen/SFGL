@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
+import { Trophy,  Award, Users, DollarSign, Calendar, Settings, BarChart2 } from 'lucide-react';
 
-import { DialogProvider } from './components/DialogContext';
-import { ErrorBoundary }  from './components/ErrorBoundary';
-import { StandingsView }  from './components/StandingsView';
-import { ResultsView }    from './components/ResultsView';
-import { RostersView }    from './components/RostersView';
-import { TransactionsView } from './components/TransactionsView';
-import { TournamentsView }  from './components/TournamentsView';
-import { AdminView }        from './components/AdminView';
-import LoginPage            from './components/LoginPage';
+import { DialogProvider } from './pages/DialogContext';
+import { ErrorBoundary }  from './pages/ErrorBoundary';
+import { StandingsView }  from './pages/StandingsView';
+import { ResultsView }    from './pages/ResultsView';
+import { RostersView }    from './pages/RostersView';
+import { TransactionsView } from './pages/TransactionsView';
+import { TournamentsView }  from './pages/TournamentsView';
+import { AdminView }        from './pages/AdminView';
+import LoginPage            from './pages/LoginPage';
+import { StatsView }         from './pages/StatsView';
 
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
@@ -26,6 +27,7 @@ const TABS = [
   { id: 'results',      label: 'Results',      Icon: Award      },
   { id: 'transactions', label: 'Transactions', Icon: DollarSign },
   { id: 'tournaments',  label: 'Tournaments',  Icon: Calendar   },
+  { id: 'stats',        label: 'Stats',        Icon: BarChart2  },
   { id: 'admin',        label: 'Commish',      Icon: Settings   },
 ];
 
@@ -518,6 +520,14 @@ const FantasyGolfLeague = () => {
               isCommissioner={isCommissioner}
               setTournaments={updateTournaments}
               firstTeeTime={firstTeeTime}
+            />
+          )}
+          {activeTab === 'stats' && (
+            <StatsView
+              teams={resolvedTeams}
+              tournaments={safeTournaments}
+              transactions={safeTransactions}
+              globalPlayerStats={globalPlayerStats}
             />
           )}
           {activeTab === 'admin' && isCommissioner && (
