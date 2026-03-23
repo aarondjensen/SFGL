@@ -1,79 +1,113 @@
 // api/field.js — Vercel serverless function
-// Returns the current PGA Tour tournament field as an array of player name strings.
+// Returns the current/upcoming PGA Tour tournament field as an array of player names.
 //
-// Fully automatic — discovers the current week's ESPN event ID from the
-// ESPN golf scoreboard, then fetches the field for that event.
+// Strategy:
+//   1. Fetch pgatour.com/schedule — parse __NEXT_DATA__ to find the next upcoming tournament
+//   2. Fetch pgatour.com/tournaments/{year}/{slug}/{id}/field — parse __NEXT_DATA__ for competitors
 //
-// GET /api/field          → field data
-// GET /api/field?debug=1  → diagnostic info (what event was found, raw counts, etc.)
-//
-// Returns: { players: string[], tournament: string, eventId: string, source: 'espn', count: number }
+// GET /api/field          → { players, tournament, count }
+// GET /api/field?debug=1  → diagnostic info
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-  'Accept': 'application/json',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
 };
 
-// ── Find current PGA Tour event via the scoreboard ────────────────────────────
-// ESPN's golf scoreboard uses ?dates=YYYYMMDD (single date, not a range).
-// We try today, then the next few days, to find an event in or near the current week.
+async function fetchPage(url) {
+  const resp = await fetch(url, { headers: HEADERS });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
+  return resp.text();
+}
 
-async function getCurrentEvent() {
-  const attempts = [];
+function extractNextData(html) {
+  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  try { return JSON.parse(m[1]); } catch { return null; }
+}
 
-  // Try today + next 5 days (catches Wed before a Thu-start tournament)
-  for (let offset = 0; offset <= 5; offset++) {
-    const d = new Date();
-    d.setDate(d.getDate() + offset);
-    const dateStr = toESPNDate(d);
-    attempts.push(dateStr);
-    try {
-      const url = `https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?dates=${dateStr}`;
-      const resp = await fetch(url, { headers: HEADERS });
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      const events = data?.events || [];
-      // Filter to PGA Tour events only (slug = 'pga')
-      const pga = events.filter(e => e.league?.slug === 'pga' || !e.league);
-      if (pga.length > 0) {
-        // Prefer in-progress or upcoming over completed
-        const best = pga.find(e => e.status?.type?.state !== 'post') || pga[0];
-        return { event: best, dateStr, allEvents: events };
+// Walk the entire __NEXT_DATA__ tree collecting all objects
+function walkAll(obj, collect) {
+  if (!obj || typeof obj !== 'object') return;
+  collect(obj);
+  if (Array.isArray(obj)) obj.forEach(o => walkAll(o, collect));
+  else Object.values(obj).forEach(v => walkAll(v, collect));
+}
+
+// ── Step 1: find the next upcoming tournament from the schedule ───────────────
+async function findUpcomingTournament(year) {
+  const html = await fetchPage('https://www.pgatour.com/schedule');
+  const nd = extractNextData(html);
+  if (!nd) throw new Error('No __NEXT_DATA__ on schedule page');
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const tournaments = [];
+  walkAll(nd, obj => {
+    // Look for tournament objects with an ID, name, and date
+    if (obj.tournamentId && obj.name && (obj.startDate || obj.date)) {
+      tournaments.push({
+        id:    obj.tournamentId,
+        slug:  obj.tournamentSlug || obj.tournamentId.toLowerCase(),
+        name:  obj.name,
+        date:  new Date(obj.startDate || obj.date),
+        status: obj.status || '',
+      });
+    }
+  });
+
+  // Deduplicate by ID
+  const seen = new Set();
+  const unique = tournaments.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
+
+  // Find the first non-completed tournament (upcoming or in-progress)
+  unique.sort((a, b) => a.date - b.date);
+  const upcoming = unique.find(t => {
+    const status = t.status.toLowerCase();
+    // Skip completed
+    if (status === 'completed' || status === 'official') return false;
+    // Prefer in-progress or future events
+    return true;
+  }) || unique.find(t => t.date >= today);
+
+  if (!upcoming) throw new Error('No upcoming tournament found on schedule');
+  return upcoming;
+}
+
+// ── Step 2: fetch the field page and extract player names ─────────────────────
+async function fetchField(tournament, year) {
+  const url = `https://www.pgatour.com/tournaments/${year}/${tournament.slug}/${tournament.id}/field`;
+  const html = await fetchPage(url);
+  const nd = extractNextData(html);
+
+  const players = new Set();
+
+  if (nd) {
+    walkAll(nd, obj => {
+      // Player objects have displayName or firstName+lastName
+      if (obj.displayName && typeof obj.displayName === 'string' && obj.displayName.includes(' ')) {
+        players.add(obj.displayName.trim());
       }
-    } catch (_) {
-      continue;
+      if (obj.firstName && obj.lastName) {
+        players.add(`${obj.firstName.trim()} ${obj.lastName.trim()}`);
+      }
+      // Some schemas use playerName
+      if (obj.playerName && typeof obj.playerName === 'string' && obj.playerName.includes(' ')) {
+        players.add(obj.playerName.trim());
+      }
+    });
+  }
+
+  // Fallback: scrape player names from HTML anchor tags linking to player profiles
+  if (players.size < 10) {
+    const profilePattern = /\/players\/[^"]+">([A-Z][a-z]+ [A-Z][a-zA-Z\s'-]+)</g;
+    for (const [, name] of html.matchAll(profilePattern)) {
+      if (name.trim().split(' ').length >= 2) players.add(name.trim());
     }
   }
-  return { event: null, attempts };
-}
 
-// ── Fetch field for a known event ID ─────────────────────────────────────────
-
-async function fetchFieldByEventId(eventId) {
-  const resp = await fetch(
-    `https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${eventId}&_=${Date.now()}`,
-    { headers: HEADERS }
-  );
-  if (!resp.ok) throw new Error(`ESPN leaderboard returned ${resp.status}`);
-  const data = await resp.json();
-  const event = data?.events?.[0];
-  const competitors = event?.competitions?.[0]?.competitors || [];
-  const players = competitors
-    .map(p => (p.athlete?.displayName || '').trim())
-    .filter(Boolean);
-  return {
-    players,
-    name: event?.name || '',
-    state: event?.status?.type?.state || 'unknown',
-    competitorCount: competitors.length,
-  };
-}
-
-function toESPNDate(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}${m}${d}`;
+  return { players: [...players], url };
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -81,54 +115,39 @@ function toESPNDate(date) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
+  // 15 min cache — PGA Tour field pages update infrequently during the week
+  res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const isDebug = req.query.debug === '1';
+  const year = new Date().getFullYear().toString();
 
   try {
-    // Step 1: discover the current event
-    const { event, dateStr, allEvents, attempts } = await getCurrentEvent();
-
-    if (!event) {
-      return res.status(404).json({
-        error: 'Could not find a current PGA Tour event.',
-        datesTriedCount: attempts?.length,
-        hint: 'Try hitting /api/field?debug=1 for more info',
-      });
-    }
-
-    // Step 2: fetch the field for that event
-    const { players, name, state, competitorCount } = await fetchFieldByEventId(event.id);
+    const tournament = await findUpcomingTournament(year);
+    const { players, url } = await fetchField(tournament, year);
 
     if (isDebug) {
       return res.status(200).json({
-        discoveredEvent: { id: event.id, name: event.name, state: event.status?.type?.state },
-        fieldState: state,
-        competitorCount,
-        playersReturned: players.length,
-        samplePlayers: players.slice(0, 10),
-        dateStr,
-        allEventsOnDate: allEvents?.map(e => ({ id: e.id, name: e.name, state: e.status?.type?.state })),
+        tournament: { id: tournament.id, slug: tournament.slug, name: tournament.name, date: tournament.date, status: tournament.status },
+        fieldUrl: url,
+        playerCount: players.length,
+        samplePlayers: players.slice(0, 15),
       });
     }
 
     if (!players.length) {
       return res.status(404).json({
-        error: 'Field not yet available — ESPN has not posted competitors for this event yet.',
-        tournament: name,
-        eventId: event.id,
-        state,
-        hint: 'Field data typically appears Thu morning when tee times are posted. Try again then.',
+        error: 'Field not yet posted for ' + tournament.name,
+        tournament: tournament.name,
+        hint: 'PGA Tour typically posts the field Sunday or Monday before the event.',
       });
     }
 
     return res.status(200).json({
       players,
-      tournament: name,
-      eventId: event.id,
-      source: 'espn',
+      tournament: tournament.name,
       count: players.length,
+      source: 'pgatour',
     });
 
   } catch (err) {
