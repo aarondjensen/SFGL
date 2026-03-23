@@ -639,19 +639,18 @@ export const AdminView = ({
     setSwingAwardSeg('');
   };
 
-  // ── Combined OWGR + LIV sync ─────────────────────────────────────────────
+  // ── OWGR sync ────────────────────────────────────────────────────────────
   const [owgrStatus, setOwgrStatus] = useState(null);
   const [owgrSummary, setOwgrSummary] = useState('');
 
-  const handleSyncData = async () => {
+  const handleSyncOwgr = async () => {
     setOwgrStatus('fetching');
     setOwgrSummary('');
     try {
-      // ── Step 1: OWGR — top 250 only to avoid Firestore quota ─────────────
-      const owgrResp = await fetch('/api/owgr');
-      const owgrData = await owgrResp.json();
-      if (!owgrResp.ok) throw new Error(owgrData.error || 'OWGR fetch failed');
-      const fetched = (owgrData.players || []).slice(0, 250);
+      const resp = await fetch('/api/owgr');
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'OWGR fetch failed');
+      const fetched = (data.players || []).slice(0, 250);
       if (!fetched.length) throw new Error('No ranking data returned');
 
       let updatedPlayers = [...allPlayers];
@@ -661,45 +660,59 @@ export const AdminView = ({
         if (idx >= 0) { updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank }; updated++; }
         else { updatedPlayers.push({ name, worldRank }); added++; }
       });
-      // Single batched write — only the 250 players
       await playersApi.upsertMany(fetched.map(({ name, worldRank }) => ({ name, worldRank })));
+      setAllPlayers(updatedPlayers);
+      await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
+      setOwgrStatus('done');
+      setOwgrSummary(`✓ Top 250 rankings synced · ${updated} updated · ${added} new`);
+    } catch (err) {
+      setOwgrStatus('error');
+      setOwgrSummary(err.message || 'OWGR sync failed');
+    }
+  };
 
-      // ── Step 2: LIV sync — only write what actually changed ──────────────
+  // ── LIV roster sync ───────────────────────────────────────────────────────
+  const [livSyncStatus, setLivSyncStatus] = useState(null);
+  const [livSyncSummary, setLivSyncSummary] = useState('');
+
+  const handleSyncLiv = async () => {
+    setLivSyncStatus('fetching');
+    setLivSyncSummary('');
+    try {
       const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
       const toFlag   = LIV_GOLF_ROSTER.filter(name =>
-        !updatedPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
+        !allPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
       );
-      const toUnflag = updatedPlayers.filter(p =>
+      const toUnflag = allPlayers.filter(p =>
         p.isLiv && !livRosterLower.has(p.name.toLowerCase())
       );
 
-      if (toFlag.length > 0 || toUnflag.length > 0) {
-        const livWrites = [
-          ...toFlag.map(name => ({ name, isLiv: true })),
-          ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
-        ];
-        await playersApi.upsertMany(livWrites);
-        toFlag.forEach(name => {
-          const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-          if (idx >= 0) updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: true };
-          else updatedPlayers.push({ name, isLiv: true, worldRank: null });
-        });
-        toUnflag.forEach(p => {
-          const idx = updatedPlayers.findIndex(x => x.name === p.name);
-          if (idx >= 0) updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: false };
-        });
+      if (toFlag.length === 0 && toUnflag.length === 0) {
+        setLivSyncStatus('done');
+        setLivSyncSummary('✓ LIV roster already up to date — no changes needed');
+        return;
       }
 
-      setAllPlayers(updatedPlayers);
-      await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
+      const livWrites = [
+        ...toFlag.map(name => ({ name, isLiv: true })),
+        ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
+      ];
+      await playersApi.upsertMany(livWrites);
 
-      const livMsg    = toFlag.length   > 0 ? ` · ${toFlag.length} LIV tagged`  : ' · LIV up to date';
-      const unflagMsg = toUnflag.length > 0 ? ` · ${toUnflag.length} unflagged` : '';
-      setOwgrStatus('done');
-      setOwgrSummary(`✓ Top 250 rankings synced · ${updated} updated · ${added} new${livMsg}${unflagMsg}`);
+      setAllPlayers(prev => prev.map(p => {
+        if (toFlag.some(n => n.toLowerCase() === p.name.toLowerCase())) return { ...p, isLiv: true };
+        if (toUnflag.some(u => u.name === p.name)) return { ...p, isLiv: false };
+        return p;
+      }));
+
+      const flagMsg   = toFlag.length   > 0 ? `${toFlag.length} tagged`   : '';
+      const unflagMsg = toUnflag.length > 0 ? `${toUnflag.length} unflagged` : '';
+      const parts = [flagMsg, unflagMsg].filter(Boolean).join(' · ');
+      setLivSyncStatus('done');
+      setLivSyncSummary(`✓ LIV roster synced · ${parts}`);
     } catch (err) {
-      setOwgrStatus('error');
-      setOwgrSummary(err.message || 'Sync failed');
+      setLivSyncStatus('error');
+      setLivSyncSummary(err.message || 'LIV sync failed');
     }
   };
 
@@ -880,23 +893,20 @@ export const AdminView = ({
         )}
       </div>
 
-      {/* ── 3. Sync Rankings & LIV Roster ── */}
+      {/* ── 3. Update OWGR Rankings ── */}
       <div style={S.section}>
-        <div style={S.title}>🔄 Sync Rankings & LIV Roster</div>
-        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 10 }}>
-          Fetches the latest OWGR world rankings and syncs the current LIV Golf roster — tagging ineligible players and clearing stale flags in one step.
-        </div>
+        <div style={S.title}>🌍 Update OWGR Rankings</div>
         {rankingsLastUpdated && (
           <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
             Last synced: {new Date(rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </div>
         )}
         <button
-          onClick={handleSyncData}
+          onClick={handleSyncOwgr}
           disabled={owgrStatus === 'fetching'}
           style={{ ...S.btn, ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
         >
-          {owgrStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync Rankings & LIV Roster'}
+          {owgrStatus === 'fetching' ? '⏳ Fetching…' : '🌍 Sync Top 250 Rankings'}
         </button>
         {owgrSummary && (
           <div style={{
@@ -910,7 +920,32 @@ export const AdminView = ({
         )}
       </div>
 
-      {/* ── 4. Award Swing Winner ── */}
+      {/* ── 4. Sync LIV Roster ── */}
+      <div style={S.section}>
+        <div style={S.title}>🚫 Sync LIV Roster</div>
+        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 10 }}>
+          Tags current LIV players as ineligible and clears stale flags for players who have returned to the PGA Tour. Source: livgolf.com/teams.
+        </div>
+        <button
+          onClick={handleSyncLiv}
+          disabled={livSyncStatus === 'fetching'}
+          style={{ ...S.btn, ...(livSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+        >
+          {livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🚫 Sync LIV Roster'}
+        </button>
+        {livSyncSummary && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+            background: livSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${livSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+            color: livSyncStatus === 'error' ? colors.danger : colors.success,
+          }}>
+            {livSyncSummary}
+          </div>
+        )}
+      </div>
+
+      {/* ── 5. Award Swing Winner ── */}
       <div style={S.section}>
         <div style={S.title}>🏆 Award Swing Winner</div>
         <label style={S.lbl}>Swing</label>
@@ -949,7 +984,7 @@ export const AdminView = ({
       </div>
 
 
-      {/* ── 6. LIV Golf Ineligible Players ── */}
+      {/* ── 7. LIV Golf Ineligible Players ── */}
       <div style={S.section}>
         <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
         <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
@@ -1062,7 +1097,7 @@ export const AdminView = ({
         })()}
       </div>
 
-      {/* ── 7. Manager Login Credentials ── */}
+      {/* ── 8. Manager Login Credentials ── */}
       <div style={S.section}>
         <div style={S.title}>🔑 Manager Login Credentials</div>
         <label style={S.lbl}>Team</label>
@@ -1078,7 +1113,7 @@ export const AdminView = ({
         </button>
       </div>
 
-      {/* ── 7. Draft ── */}
+      {/* ── 9. Draft ── */}
       <div style={S.section}>
         <div style={S.title}>🎯 Draft</div>
         <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
