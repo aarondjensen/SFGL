@@ -153,6 +153,21 @@ export const AdminView = ({
   const [mgCredTeam, setMgCredTeam] = useState('');
 
 
+  const [mgCredName, setMgCredName] = useState('');
+  const [mgCredPass, setMgCredPass] = useState('');
+  const [mgCredSaving, setMgCredSaving] = useState(false);
+  const [showDraftModal, setShowDraftModal] = useState(false);
+  const [swingAwardSeg, setSwingAwardSeg]   = useState('');
+  const [waiverRevealed, setWaiverRevealed] = useState(false);
+  const [livSearch, setLivSearch] = useState('');
+  const [livSaving, setLivSaving] = useState({});
+  const [pgaFetching, setPgaFetching] = useState(false);
+  const dialog = useDialog();
+
+  React.useEffect(() => {
+    const active = tournaments.find(t => t.playing);
+    if (active && !selectedTourney) setSelectedTourney(active.name);
+  }, [tournaments, selectedTourney]);
 
   const S = {
     section: { background: colors.cardBg, border: `1px solid ${colors.border}`, borderRadius: 4, padding: '16px 18px', marginBottom: 12 },
@@ -165,6 +180,521 @@ export const AdminView = ({
     lbl: { ...theme.label, display: 'block', marginBottom: 6 },
   };
   const disabledBtn = (disabled) => disabled ? { opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' } : {};
+
+
+
+  // ── Results: PGA Tour fetch ───────────────────────────────────────
+  const handleFetchPGAResults = async () => {
+    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const ti = tournaments.findIndex(t => t.name === selectedTourney);
+    const t = tournaments[ti];
+
+    const params = new URLSearchParams({ name: t.name, year: '2026' });
+
+    setPgaFetching(true);
+    try {
+      dialog.showToast('Fetching results…', 'info');
+      const resp = await fetch(`/api/pga-results?${params.toString()}`);
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        dialog.showToast(data.error || 'Fetch failed', 'error');
+        return;
+      }
+
+      const { players, roundLeaders } = data;
+
+      // Pre-fill earnings textarea and round leaders
+      const earningsLines = players
+        .sort((a, b) => b.earnings - a.earnings)
+        .map(p => `${p.name}, ${p.earnings}`)
+        .join('\n');
+
+      // Only keep leaders who were actually in an SFGL starting lineup —
+      // same rule as the manual dropdown. Filter against current team lineups.
+      const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
+      const filterToStarted = (names) => {
+        if (!names?.length) return [''];
+        const filtered = names.filter(n => startedPlayers.has(n));
+        return filtered.length ? filtered : [''];
+      };
+
+      const rl = roundLeaders || {};
+      setManualEntry(prev => ({
+        ...prev,
+        playerEarnings: earningsLines,
+        round1Leaders: filterToStarted(rl.round1),
+        round2Leaders: filterToStarted(rl.round2),
+        round3Leaders: filterToStarted(rl.round3),
+      }));
+
+      dialog.showToast(`✓ ${players.length} players loaded`, 'success');
+    } catch (err) {
+      dialog.showToast('Error: ' + err.message, 'error');
+    } finally {
+      setPgaFetching(false);
+    }
+  };
+
+  // ── Results: manual entry ────────────────────────────────────────────────
+  const handleManualEntry = async () => {
+    try {
+      if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+      const tournament = tournaments.find(t => t.name === selectedTourney);
+      if (!tournament) { dialog.showToast('Tournament not found', 'error'); return; }
+      if (tournament.completed) {
+        const ok = await dialog.showConfirm('Already Processed', 'Re-entering will ADD earnings again (doubling them). Continue?', { type: 'danger', confirmText: 'Re-enter Results' });
+        if (!ok) return;
+      }
+      // Parse earnings lines: "Player Name, 123456" or "Player Name, 1,234,567"
+      const earningsMap = new Map();
+      manualEntry.playerEarnings.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        const m = trimmed.match(/^(.+?),\s*([\d,]+)$/);
+        if (m) {
+          const amt = parseInt(m[2].replace(/,/g, ''));
+          if (!isNaN(amt) && amt >= 0) earningsMap.set(m[1].trim(), amt);
+        }
+      });
+      if (!earningsMap.size) {
+        dialog.showToast('No valid earnings lines found. Format: "Player Name, 123456"', 'error');
+        return;
+      }
+      const ti = tournaments.findIndex(t => t.name === selectedTourney);
+      const manualData = {
+        name: selectedTourney, status: 'post', competitors: [],
+        roundLeaders: {
+          round1: manualEntry.round1Leaders.filter(l => l.trim()),
+          round2: manualEntry.round2Leaders.filter(l => l.trim()),
+          round3: manualEntry.round3Leaders.filter(l => l.trim()),
+        },
+        earningsMap, isManualEntry: true,
+      };
+      const names = teams.flatMap(t => t.roster.map(p => p.name));
+      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names, transactions);
+      // Mark tournament completed, advance playing to next non-alternate
+      const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
+      const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
+      if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
+      updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
+      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
+      dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
+      setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
+    } catch (err) {
+      console.error('handleManualEntry error:', err);
+      dialog.showToast('Error processing results: ' + err.message, 'error');
+    }
+  };
+
+  // ── Results: reprocess completed tournament ─────────────────────────────
+  const handleReprocess = async () => {
+    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const tournament = tournaments.find(t => t.name === selectedTourney);
+    if (!tournament?.completed) { dialog.showToast('Tournament is not yet completed', 'error'); return; }
+    const ti = tournaments.findIndex(t => t.name === selectedTourney);
+
+    const ok = await dialog.showConfirm(
+      'Reprocess Tournament',
+      'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.',
+      { confirmText: 'Reprocess' }
+    );
+    if (!ok) return;
+
+    try {
+      // Parse corrected earnings
+      const earningsMap = new Map();
+      manualEntry.playerEarnings.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        const m = trimmed.match(/^(.+?),\s*([\d,]+)$/);
+        if (m) {
+          const amt = parseInt(m[2].replace(/,/g, ''));
+          if (!isNaN(amt) && amt >= 0) earningsMap.set(m[1].trim(), amt);
+        }
+      });
+      if (!earningsMap.size) { dialog.showToast('No valid earnings lines found', 'error'); return; }
+
+      // Step 1: Reverse old results from all teams
+      const oldResults = tournament.results;
+      let reversedTeams = teams.map(team => {
+        const oldTeamResult = oldResults?.teams?.[team.id];
+        if (!oldTeamResult) return team;
+        // Reverse team earnings
+        const earningsDelta = -(oldTeamResult.totalEarnings || 0);
+        // Reverse per-player sfglEarnings and starts
+        // Use fullLineups for start reversal (all starters), players list for earnings
+        const oldLineup = new Set(oldResults.fullLineups?.[team.id] || (oldTeamResult.players || []).map(p => p.name || p));
+        const oldEarningsByPlayer = {};
+        (oldTeamResult.players || []).forEach(p => { oldEarningsByPlayer[p.name || p] = p.earnings || 0; });
+        const newRoster = team.roster.map(p => {
+          const wasInLineup = oldLineup.has(p.name);
+          if (!wasInLineup) return p;
+          return {
+            ...p,
+            sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - (oldEarningsByPlayer[p.name] || 0)),
+            starts: Math.max(0, (p.starts || 0) - 1),
+          };
+        });
+        return {
+          ...team,
+          roster: newRoster,
+          earnings: Math.max(0, (team.earnings || 0) + earningsDelta),
+          segmentEarnings: Math.max(0, (team.segmentEarnings || 0) + earningsDelta),
+          lineup: (manualEntry.teamLineups[team.id] || oldResults.fullLineups?.[team.id] || []),
+        };
+      });
+
+      // Reverse global stats from old earningsMap
+      const oldEarningsMap = oldResults?.earningsMap || {};
+      const reversedStats = { ...globalPlayerStats };
+      Object.entries(oldEarningsMap).forEach(([playerName, earnings]) => {
+        if (!reversedStats[playerName]) return;
+        reversedStats[playerName] = {
+          ...reversedStats[playerName],
+          eventsPlayed: Math.max(0, (reversedStats[playerName].eventsPlayed || 0) - 1),
+          cutsMade: Math.max(0, (reversedStats[playerName].cutsMade || 0) - (earnings > 0 ? 1 : 0)),
+          pgaTourEarnings: Math.max(0, (reversedStats[playerName].pgaTourEarnings || 0) - earnings),
+        };
+      });
+
+      // Step 2: Apply corrected results
+      const manualData = {
+        name: selectedTourney, status: 'post', competitors: [],
+        roundLeaders: {
+          round1: manualEntry.round1Leaders.filter(l => l.trim()),
+          round2: manualEntry.round2Leaders.filter(l => l.trim()),
+          round3: manualEntry.round3Leaders.filter(l => l.trim()),
+        },
+        earningsMap, isManualEntry: true,
+      };
+      const names = teams.flatMap(t => t.roster.map(p => p.name));
+      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions);
+
+      // Mark tournament with new results (keep completed, don't change playing)
+      const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
+
+      updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
+      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
+      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
+      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
+      dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
+      setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
+    } catch (err) {
+      console.error('handleReprocess error:', err);
+      dialog.showToast('Error reprocessing: ' + err.message, 'error');
+    }
+  };
+
+    const RoundLeaderSelect = ({ label, leaders, onChange, round }) => {
+    // Use the stored tournament lineups (manualEntry.teamLineups) instead of current live lineups.
+    // This ensures we show players who were actually in the lineup for that tournament.
+    const teamLineups = manualEntry.teamLineups || {};
+
+    // Build mulligan map for the selected tournament
+    const selectedTIdx = tournaments.findIndex(t => t.name === selectedTourney);
+    const tourneyMulligans = transactions.filter(tx =>
+      tx.type === 'mulligan' && tx.tournamentIndex === selectedTIdx && tx.status === 'processed'
+    );
+
+    const players = teams.flatMap(team => {
+      const lineup = teamLineups[team.id] || team.lineup || [];
+      let names = [...lineup];
+
+      // For R3+, include mulliganed-in players (they replace someone mid-tournament)
+      if (round >= 3) {
+        tourneyMulligans
+          .filter(tx => tx.team === team.name && tx.player)
+          .forEach(tx => {
+            if (!names.includes(tx.player)) names.push(tx.player);
+          });
+      }
+
+      return names.map(name => ({ name, team: team.name }));
+    }).sort((a, b) => a.name.localeCompare(b.name));
+
+    return (
+      <div style={{ flex: 1 }}>
+        <div style={S.lbl}>{label}</div>
+        {leaders.map((leader, idx) => (
+          <div key={idx} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+            <select value={leader} onChange={e => { const n = [...leaders]; n[idx] = e.target.value; onChange(n); }}
+              style={{ ...theme.select, flex: 1, marginBottom: 0, fontSize: 12, padding: '7px 8px' }}>
+              <option value="">(none)</option>
+              {players.map(p => <option key={p.name + p.team} value={p.name}>{p.name} — {p.team}</option>)}
+            </select>
+            {idx > 0 && <button onClick={() => onChange(leaders.filter((_, i) => i !== idx))}
+              style={{ background: 'none', border: `1px solid ${colors.dangerBorder}`, color: colors.danger, borderRadius: 2, padding: '4px 7px', cursor: 'pointer', fontSize: 11 }}>✕</button>}
+          </div>
+        ))}
+        <button onClick={() => onChange([...leaders, ''])}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: colors.textGoldDim, padding: 0 }}>+ co-leader</button>
+      </div>
+    );
+  };
+
+  // ── Waivers ──────────────────────────────────────────────────────────────
+  const buildRoster = (team) => {
+    let r = team.roster.map(p => p.name);
+    transactions.filter(tx => tx.team === team.name && tx.status === 'processed' && tx.type !== 'mulligan').forEach(tx => {
+      if (tx.droppedPlayer) r = r.filter(n => n !== tx.droppedPlayer);
+      if (!r.includes(tx.player)) r.push(tx.player);
+    });
+    return new Set(r);
+  };
+  const applyWaiver = (t, w) => {
+    if (t.name !== w.team) return t;
+    let r = [...t.roster];
+    if (w.droppedPlayer) r = r.filter(p => p.name !== w.droppedPlayer);
+    if (!r.some(p => p.name === w.player)) r.push({ name: w.player, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' });
+    return { ...t, roster: r };
+  };
+  const handleProcessSingle = async (w) => {
+    const allRostered = new Set(); teams.forEach(t => t.roster.forEach(p => allRostered.add(p.name)));
+    if (allRostered.has(w.player)) {
+      const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() } : tx);
+      setTransactions(tx2); await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
+      dialog.showToast(w.player + ' already rostered', 'error'); return;
+    }
+    if (w.droppedPlayer && !teams.find(t => t.name === w.team)?.roster.some(p => p.name === w.droppedPlayer)) {
+      const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'failed', failReason: w.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() } : tx);
+      setTransactions(tx2); await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
+      dialog.showToast(w.droppedPlayer + ' already dropped', 'error'); return;
+    }
+
+    // Check for competing pending claims from other teams on the same player
+    const competing = transactions
+      .map((tx, i) => ({ ...tx, _idx: i }))
+      .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.player === w.player && tx.team !== w.team);
+
+    // Determine tiebreaker: lowest earnings wins
+    const earningsMap = {}; teams.forEach(t => { earningsMap[t.name] = t.earnings || 0; });
+    const allClaims = [w, ...competing].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
+    const winner = allClaims[0];
+    const losers = allClaims.slice(1);
+
+    let tx2 = [...transactions];
+    // Mark winner as processed
+    tx2[winner._idx] = { ...tx2[winner._idx], status: 'processed', processedDate: new Date().toLocaleDateString() };
+    // Mark losers as blocked
+    losers.forEach(l => {
+      tx2[l._idx] = { ...tx2[l._idx], status: 'failed', failReason: 'Waiver blocked — lost tiebreaker to ' + winner.team, processedDate: new Date().toLocaleDateString() };
+    });
+
+    // Only apply the winner's roster change
+    const t2 = teams.map(t => applyWaiver(t, winner));
+    setTransactions(tx2); updateTeams(t2);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
+    if (losers.length) {
+      dialog.showToast(winner.team + ' wins claim · ' + losers.map(l => l.team).join(', ') + ' blocked', 'success');
+    } else {
+      dialog.showToast(winner.team + ' adds ' + winner.player + (winner.droppedPlayer ? ' / drops ' + winner.droppedPlayer : ''), 'success');
+    }
+  };
+  const handleProcessAll = async (pending) => {
+    if (!pending.length) return;
+    if (!await dialog.showConfirm('Process All Waivers', 'Process ' + pending.length + ' pending claim' + (pending.length !== 1 ? 's' : '') + '?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims.', { confirmText: 'Process All' })) return;
+    const pm = {}; [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
+    let nextLastPlace = teams.length; // counter for pushing winners to back of priority
+    const byTeam = {}; pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
+    Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
+    const allR = new Set(); teams.forEach(t => buildRoster(t).forEach(n => allR.add(n)));
+    const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
+    const tx2 = [...transactions]; let p = 0, f = 0, more = true;
+    while (more) {
+      more = false;
+      const round = []; Object.entries(byTeam).forEach(([tn, claims]) => { const top = claims.find(c => !done.has(c._idx) && !failed.has(c._idx)); if (top) round.push({ tn, claim: top, o: pm[tn] ?? 999 }); });
+      if (!round.length) break;
+      const byP = {}; round.forEach(rc => { if (!byP[rc.claim.player]) byP[rc.claim.player] = []; byP[rc.claim.player].push(rc); });
+      Object.entries(byP).forEach(([player, cs]) => {
+        cs.sort((a, b) => a.o - b.o); const w = cs[0];
+        if (allR.has(player)) { cs.forEach(c => { failed.add(c.claim._idx); tx2[c.claim._idx] = { ...tx2[c.claim._idx], status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() }; f++; }); more = true; return; }
+        if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allR.has(w.claim.droppedPlayer))) { failed.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }; f++; more = true; return; }
+        if (w.claim.droppedPlayer) { allR.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
+        allR.add(player); done.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() }; applied.push(w.claim); p++;
+        pm[w.tn] = nextLastPlace++; // winner moves to back of priority line
+        cs.slice(1).forEach(l => { failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: 'Waiver blocked — lost tiebreaker to ' + w.tn, processedDate: new Date().toLocaleDateString() }; f++; }); more = true;
+      });
+    }
+    let t2 = [...teams]; applied.forEach(w => { t2 = t2.map(t => applyWaiver(t, w)); });
+    setTransactions(tx2); updateTeams(t2);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
+    dialog.showToast('Processed ' + p + (f ? ' · ' + f + ' failed' : ''), p > 0 ? 'success' : 'error');
+  };
+
+  // ── Manager Login ────────────────────────────────────────────────────────
+  const handleSetLogin = async () => {
+    if (!mgCredTeam || !mgCredName || !mgCredPass) return;
+    setMgCredSaving(true);
+    try { await managerAuthApi.setCredentials(mgCredTeam, mgCredName, mgCredPass); dialog.showToast('Login set for ' + mgCredName, 'success'); setMgCredTeam(''); setMgCredName(''); setMgCredPass(''); }
+    catch (e) { dialog.showToast('Failed: ' + e.message, 'error'); }
+    setMgCredSaving(false);
+  };
+
+  // ── Award Swing Winner ──────────────────────────────────────────────────
+  const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
+
+  // Get the swing a tournament belongs to, using t.segment if set,
+  // otherwise infer from the tournament's own dates field (not today's date)
+  const getTournamentSegment = (t) => {
+    if (t.segment) return t.segment;
+    // Parse month from dates: "Feb 9-15" → month=2
+    if (t.dates) {
+      const m = t.dates.match(/^([A-Za-z]+)/);
+      if (m) {
+        const months = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+        const mo = months[m[1]];
+        if (mo) {
+          if (mo >= 1 && mo <= 3) return 'West Coast Swing';
+          if (mo >= 4 && mo <= 6) return 'Spring Swing';
+          if (mo >= 7 && mo <= 9) return 'Summer Swing';
+          return 'Fall Finish';
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleSwingWinner = async () => {
+    if (!swingAwardSeg) return;
+
+    // Sum all transaction fees for this swing using tournamentIndex range,
+    // matching the same logic as TransactionsView's fee counter.
+    const swingTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
+    if (!swingTournaments.length) {
+      dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
+      return;
+    }
+    const swingIndexes = new Set(swingTournaments.map(t => tournaments.indexOf(t)));
+    const pot = transactions
+      .filter(tx => {
+        if ((tx.fee || 0) <= 0) return false;
+        if (tx.status === 'failed') return false;
+        if (tx.type === 'swing_winner') return false;
+        // Match by tournamentIndex if available, fall back to segment string
+        return tx.tournamentIndex !== undefined
+          ? swingIndexes.has(tx.tournamentIndex)
+          : tx.segment === swingAwardSeg;
+      })
+      .reduce((sum, tx) => sum + tx.fee, 0);
+
+    if (pot === 0) {
+      dialog.showToast('No fees collected for ' + swingAwardSeg, 'error');
+      return;
+    }
+
+    const byTeam = {};
+    swingTournaments.forEach(t => {
+      Object.entries(t.results.teams).forEach(([id, tr]) => {
+        byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
+      });
+    });
+
+    // Debug: log what we found so issues are visible in console
+    console.log('[SwingWinner] Swing:', swingAwardSeg);
+    console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
+    console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
+
+    const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+    if (!winnerEntry) { dialog.showToast('Could not determine winner', 'error'); return; }
+    const [winnerId, winnerEarnings] = winnerEntry;
+    const winnerTeam = teams.find(t => t.id === winnerId);
+    if (!winnerTeam) { dialog.showToast('Winner team not found', 'error'); return; }
+
+    const msg = swingAwardSeg + ' complete. Winner: ' + winnerTeam.name + ' (' + winnerTeam.owner + '). Swing: $' + winnerEarnings.toLocaleString() + '. Pot: $' + pot.toLocaleString() + '. Award pot?';
+    const ok = await dialog.showConfirm('Award Swing Winner', msg, { confirmText: 'Award $' + pot.toLocaleString() });
+    if (!ok) return;
+
+    const lastSwingTournament = swingTournaments.reduce((last, t) => {
+      const idx = tournaments.indexOf(t);
+      return idx > (last?.idx ?? -1) ? { t, idx } : last;
+    }, null);
+
+    const newTx = {
+      team: winnerTeam.name, type: 'swing_winner', player: winnerTeam.owner,
+      fee: 0, amount: pot, segment: swingAwardSeg,
+      date: new Date().toLocaleDateString(), status: 'completed',
+      tournamentIndex: lastSwingTournament?.idx ?? undefined,
+      note: swingAwardSeg + ' winner pot',
+    };
+
+    const newTeams = teams.map(t =>
+      t.id === winnerId
+        ? { ...t, earnings: (t.earnings || 0) + pot }
+        : t
+    );
+
+    updateTeams(newTeams);
+    setTransactions(prev => [...prev, newTx]);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
+    await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(e => console.error('sfgl tx:', e));
+
+    dialog.showToast('🏆 ' + winnerTeam.name + ' awarded $' + pot.toLocaleString() + ' for ' + swingAwardSeg, 'success');
+    setSwingAwardSeg('');
+  };
+
+  // ── Combined OWGR + LIV sync ─────────────────────────────────────────────
+  const [owgrStatus, setOwgrStatus] = useState(null);
+  const [owgrSummary, setOwgrSummary] = useState('');
+
+  const handleSyncData = async () => {
+    setOwgrStatus('fetching');
+    setOwgrSummary('');
+    try {
+      const owgrResp = await fetch('/api/owgr');
+      const owgrData = await owgrResp.json();
+      if (!owgrResp.ok) throw new Error(owgrData.error || 'OWGR fetch failed');
+      const { players: fetched } = owgrData;
+      if (!fetched?.length) throw new Error('No ranking data returned');
+
+      let updatedPlayers = [...allPlayers];
+      let updated = 0, added = 0;
+      fetched.forEach(({ name, worldRank }) => {
+        const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+        if (idx >= 0) { updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank }; updated++; }
+        else { updatedPlayers.push({ name, worldRank }); added++; }
+      });
+
+      await playersApi.upsertMany(fetched.map(({ name, worldRank }) => ({ name, worldRank })));
+
+      const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
+      const toFlag   = LIV_GOLF_ROSTER.filter(name => !updatedPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv);
+      const toUnflag = updatedPlayers.filter(p => p.isLiv && !livRosterLower.has(p.name.toLowerCase()));
+      const livWrites = [
+        ...toFlag.map(name => ({ name, isLiv: true })),
+        ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
+      ];
+      if (livWrites.length > 0) {
+        await playersApi.upsertMany(livWrites);
+        toFlag.forEach(name => {
+          const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+          if (idx >= 0) updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: true };
+          else updatedPlayers.push({ name, isLiv: true, worldRank: null });
+        });
+        toUnflag.forEach(p => {
+          const idx = updatedPlayers.findIndex(x => x.name === p.name);
+          if (idx >= 0) updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: false };
+        });
+      }
+
+      setAllPlayers(updatedPlayers);
+      await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
+
+      const livMsg    = toFlag.length   > 0 ? ` · ${toFlag.length} LIV tagged`  : ' · LIV up to date';
+      const unflagMsg = toUnflag.length > 0 ? ` · ${toUnflag.length} unflagged` : '';
+      setOwgrStatus('done');
+      setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new${livMsg}${unflagMsg}`);
+    } catch (err) {
+      setOwgrStatus('error');
+      setOwgrSummary(err.message || 'Sync failed');
+    }
+  };
 
   const pending = transactions.map((tx, i) => ({ ...tx, _idx: i })).filter(tx => tx.status === 'pending' && tx.type === 'waiver');
 
