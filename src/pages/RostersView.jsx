@@ -9,7 +9,7 @@ import {
   getSegmentByDate, isTournamentLocked,
   isWaiverWindowOpen,
 } from '../utils';
-import { MAX_LIMITED_STARTS, LINEUP_SIZE } from '../constants';
+// MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
 import { STORAGE_KEYS } from '../constants';
@@ -328,7 +328,11 @@ export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
   loggedInUser, isCommissioner, globalPlayerStats, headshots,
+  leagueSettings = {},
 }) => {
+  // Destructure with fallbacks to constants for safety
+  const LINEUP_SIZE       = leagueSettings.lineupSize       ?? 5;
+  const MAX_LIMITED_STARTS = leagueSettings.maxLimitedStarts ?? 12;
   const isMobile            = useIsMobile();
   const [statsView,         setStatsView]         = useState('sfgl');
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
@@ -863,6 +867,7 @@ export const RostersView = ({
         txSegment={tournaments[addDropTournamentIndex]?.segment || getSegmentByDate()}
         editingWaiverData={editingWaiverData}
         headshots={headshots}
+        leagueSettings={leagueSettings}
       />
     </div>
   );
