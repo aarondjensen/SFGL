@@ -2,22 +2,41 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../utils/index.js';
-import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
+// ROSTER_LIMIT and fees now come from leagueSettings prop
 import { theme, colors, fonts } from '../theme.js';
 
-// Known LIV Golf players — used as fallback filter when isLiv flag isn't set in DB
+// Current LIV Golf roster — updated from livgolf.com/teams March 2026.
+// Used as fallback filter when isLiv flag isn't set in DB.
+// Update at the start of each LIV season.
 const LIV_PLAYERS = new Set([
-  'Dustin Johnson','Phil Mickelson','Bryson DeChambeau','Patrick Reed','Brooks Koepka',
-  'Sergio Garcia','Lee Westwood','Ian Poulter','Henrik Stenson','Louis Oosthuizen',
-  'Charl Schwartzel','Kevin Na','Hudson Swafford','Talor Gooch','Matthew Wolff',
-  'Carlos Ortiz','Jason Kokrak','Patrick Cantlay','Harold Varner III','Graeme McDowell',
-  'Anirban Lahiri','Brendan Steele','James Piot','Jediah Morgan','Jinichiro Kozuma',
-  'Kevin Yuan','Laurie Canter','Phachara Khongwatmai','Peter Uihlein','Richard Bland',
-  'Sam Horsfield','Sihwan Kim','Eugenio Chacarra','Abraham Ancer','Cam Smith',
-  'Marc Leishman','Matt Jones','Scott Vincent','Joaquin Niemann','Sebastian Munoz',
-  'Thomas Pieters','Dean Burmester','Branden Grace','David Puig','Jon Rahm',
-  'Tyrrell Hatton','Bubba Watson','Patrick Cantlay','Adrian Meronk','Mito Pereira',
-  'Charles Howell III','Lucas Herbert','Andy Ogletree',
+  // 4Aces GC
+  'Dustin Johnson', 'Thomas Detry', 'Anthony Kim', 'Thomas Pieters',
+  // Cleeks GC
+  'Martin Kaymer', 'Richard Bland', 'Adrian Meronk', 'Victor Perez',
+  // Crushers GC
+  'Bryson DeChambeau', 'Paul Casey', 'Charles Howell III', 'Anirban Lahiri',
+  // Fireballs GC
+  'Sergio Garcia', 'Josele Ballester', 'Luis Masaveu', 'David Puig',
+  // HyFlyers GC
+  'Phil Mickelson', 'Michael La Sasso', 'Brendan Steele', 'Cameron Tringale',
+  // Korean Golf Club
+  'Byeong Hun An', 'Minkyu Kim', 'Danny Lee', 'Younghan Song',
+  // Legion XIII
+  'Jon Rahm', 'Tyrrell Hatton', 'Tom McKibbin', 'Caleb Surratt',
+  // Majesticks GC
+  'Ian Poulter', 'Lee Westwood', 'Laurie Canter', 'Sam Horsfield',
+  // RangeGoats GC
+  'Bubba Watson', 'Ben Campbell', 'Peter Uihlein', 'Matthew Wolff',
+  // Ripper GC
+  'Cameron Smith', 'Lucas Herbert', 'Marc Leishman', 'Elvis Smylie',
+  // Smash GC
+  'Talor Gooch', 'Jason Kokrak', 'Graeme McDowell', 'Harold Varner III',
+  // Southern Guards GC
+  'Louis Oosthuizen', 'Dean Burmester', 'Branden Grace', 'Charl Schwartzel',
+  // Torque GC
+  'Joaquin Niemann', 'Abraham Ancer', 'Sebastian Munoz', 'Carlos Ortiz',
+  // Wild Card
+  'Yosuke Asaji', 'Bjorn Hellgren', 'Richard T. Lee', 'Miguel Tabuena', 'Scott Vincent',
 ]);
 
 const accentColor   = (waiver) => waiver ? colors.warning         : colors.success;
@@ -58,8 +77,11 @@ export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, allPlayers, teams,
   updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
-  headshots,
+  headshots, leagueSettings = {},
 }) => {
+  const ROSTER_LIMIT            = leagueSettings.rosterLimit ?? 13;
+  const TRANSACTION_FEE_FREE_AGENT = leagueSettings.feeFA    ?? 1;
+  const TRANSACTION_FEE_WAIVER  = leagueSettings.feeWaiver   ?? 2;
   const [searchTerm,           setSearchTerm]           = useState('');
   const [selectedPlayerToAdd,  setSelectedPlayerToAdd]  = useState(null);
   const [selectedPlayerToDrop, setSelectedPlayerToDrop] = useState(null);

@@ -35,8 +35,15 @@ const getRosterForTournament = (team, tournamentIndex, allTransactions) => {
  * Core tournament processing. Mirrors the original processTournamentResults logic.
  * Returns { newTeams, newStats, resultsData }.
  */
-const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = []) => {
-  const bonuses = tournament.isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
+const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = [], leagueSettings = {}) => {
+  // Bonuses come from leagueSettings (passed as param) with constant fallbacks
+  const bonuses = tournament.isMajor
+    ? { round1: leagueSettings?.bonusR1Major    ?? BONUSES_MAJOR.round1,
+        round2: leagueSettings?.bonusR2Major    ?? BONUSES_MAJOR.round2,
+        round3: leagueSettings?.bonusR3Major    ?? BONUSES_MAJOR.round3 }
+    : { round1: leagueSettings?.bonusR1Regular  ?? BONUSES_REGULAR.round1,
+        round2: leagueSettings?.bonusR2Regular  ?? BONUSES_REGULAR.round2,
+        round3: leagueSettings?.bonusR3Regular  ?? BONUSES_REGULAR.round3 };
 
   // Build earningsMap from the tournamentData
   const earningsMap = {};
@@ -139,7 +146,7 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
 
 export const AdminView = ({
   isCommissioner, setIsCommissioner, setActiveTab,
-  settings, setSettings,
+  settings, setSettings, leagueSettings = {},
   teams, updateTeams,
   tournaments, setTournaments,
   transactions, setTransactions,
@@ -272,7 +279,7 @@ export const AdminView = ({
         earningsMap, isManualEntry: true,
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));
-      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names, transactions);
+      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names, transactions, leagueSettings);
       // Mark tournament completed, advance playing to next non-alternate
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
       const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
@@ -372,7 +379,7 @@ export const AdminView = ({
         earningsMap, isManualEntry: true,
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));
-      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions);
+      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions, leagueSettings);
 
       // Mark tournament with new results (keep completed, don't change playing)
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
@@ -528,6 +535,40 @@ export const AdminView = ({
     dialog.showToast('Processed ' + p + (f ? ' · ' + f + ' failed' : ''), p > 0 ? 'success' : 'error');
   };
 
+  // ── Season Settings ──────────────────────────────────────────────────────
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState(null); // local edits before save
+
+  // Initialize draft from current settings + constant fallbacks
+  const getSettingsDraft = () => ({
+    bonusR1Regular:  settings?.bonusR1Regular  ?? 20000,
+    bonusR2Regular:  settings?.bonusR2Regular  ?? 40000,
+    bonusR3Regular:  settings?.bonusR3Regular  ?? 60000,
+    bonusR1Major:    settings?.bonusR1Major    ?? 40000,
+    bonusR2Major:    settings?.bonusR2Major    ?? 80000,
+    bonusR3Major:    settings?.bonusR3Major    ?? 120000,
+    feeFA:           settings?.feeFA           ?? 1,
+    feeWaiver:       settings?.feeWaiver       ?? 2,
+    rosterLimit:     settings?.rosterLimit     ?? 13,
+    lineupSize:      settings?.lineupSize      ?? 5,
+    maxLimitedStarts:settings?.maxLimitedStarts?? 12,
+  });
+
+  const handleSaveSettings = async () => {
+    if (!settingsDraft) return;
+    setSettingsSaving(true);
+    try {
+      const newSettings = { ...settings, ...settingsDraft };
+      await setSettings(newSettings);
+      setSettingsDraft(null);
+      dialog.showToast('✓ Season settings saved', 'success');
+    } catch (err) {
+      dialog.showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
   // ── Manager Login ────────────────────────────────────────────────────────
   const handleSetLogin = async () => {
     if (!mgCredTeam || !mgCredName || !mgCredPass) return;
@@ -679,17 +720,22 @@ export const AdminView = ({
     setLivSyncStatus('fetching');
     setLivSyncSummary('');
     try {
+      // Compare DB state against the authoritative LIV_GOLF_ROSTER constant.
+      // Note: LIV_GOLF_ROSTER must be kept current in constants/index.js.
       const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
-      const toFlag   = LIV_GOLF_ROSTER.filter(name =>
+
+      // Players in roster not yet flagged in DB
+      const toFlag = LIV_GOLF_ROSTER.filter(name =>
         !allPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
       );
+      // Players flagged in DB but no longer in current roster (returned to PGA Tour)
       const toUnflag = allPlayers.filter(p =>
         p.isLiv && !livRosterLower.has(p.name.toLowerCase())
       );
 
       if (toFlag.length === 0 && toUnflag.length === 0) {
         setLivSyncStatus('done');
-        setLivSyncSummary('✓ LIV roster already up to date — no changes needed');
+        setLivSyncSummary('✓ LIV roster already matches DB — no changes needed');
         return;
       }
 
@@ -699,15 +745,24 @@ export const AdminView = ({
       ];
       await playersApi.upsertMany(livWrites);
 
-      setAllPlayers(prev => prev.map(p => {
-        if (toFlag.some(n => n.toLowerCase() === p.name.toLowerCase())) return { ...p, isLiv: true };
-        if (toUnflag.some(u => u.name === p.name)) return { ...p, isLiv: false };
-        return p;
-      }));
+      setAllPlayers(prev => {
+        const updated = [...prev];
+        toFlag.forEach(name => {
+          const idx = updated.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: true };
+          else updated.push({ name, isLiv: true, worldRank: null });
+        });
+        toUnflag.forEach(u => {
+          const idx = updated.findIndex(p => p.name === u.name);
+          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: false };
+        });
+        return updated;
+      });
 
-      const flagMsg   = toFlag.length   > 0 ? `${toFlag.length} tagged`   : '';
-      const unflagMsg = toUnflag.length > 0 ? `${toUnflag.length} unflagged` : '';
-      const parts = [flagMsg, unflagMsg].filter(Boolean).join(' · ');
+      const parts = [
+        toFlag.length   > 0 ? `${toFlag.length} tagged (${toFlag.slice(0,3).join(', ')}${toFlag.length > 3 ? '…' : ''})` : '',
+        toUnflag.length > 0 ? `${toUnflag.length} unflagged (${toUnflag.slice(0,3).map(p=>p.name).join(', ')}${toUnflag.length > 3 ? '…' : ''})` : '',
+      ].filter(Boolean).join(' · ');
       setLivSyncStatus('done');
       setLivSyncSummary(`✓ LIV roster synced · ${parts}`);
     } catch (err) {
@@ -920,22 +975,24 @@ export const AdminView = ({
         )}
       </div>
 
-      {/* ── 4. Sync LIV Roster ── */}
+      {/* ── 4. LIV Golf — Ineligible Players ── */}
       <div style={S.section}>
-        <div style={S.title}>🚫 Sync LIV Roster</div>
+        <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
         <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 10 }}>
-          Tags current LIV players as ineligible and clears stale flags for players who have returned to the PGA Tour. Source: livgolf.com/teams.
+          Players flagged as LIV are hidden from the add/drop modal. Sync against livgolf.com/teams, or manually add/remove flags below.
         </div>
+
+        {/* Sync button */}
         <button
           onClick={handleSyncLiv}
           disabled={livSyncStatus === 'fetching'}
-          style={{ ...S.btn, ...(livSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+          style={{ ...S.btn, marginBottom: 8, ...(livSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
         >
-          {livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🚫 Sync LIV Roster'}
+          {livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync LIV Roster from livgolf.com'}
         </button>
         {livSyncSummary && (
           <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+            marginBottom: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
             background: livSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
             border: `1px solid ${livSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
             color: livSyncStatus === 'error' ? colors.danger : colors.success,
@@ -943,6 +1000,82 @@ export const AdminView = ({
             {livSyncSummary}
           </div>
         )}
+
+        {/* Manual search/add */}
+        <input type="text" placeholder="Search to manually add/remove LIV flag…"
+          value={livSearch} onChange={e => setLivSearch(e.target.value)}
+          style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
+        />
+        {(() => {
+          const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
+          const searchResults = livSearch.trim().length >= 2
+            ? (() => {
+                const q = livSearch.toLowerCase();
+                const livNames = new Set(allPlayers.filter(p => p.isLiv).map(p => p.name));
+                const fromAll = allPlayers
+                  .filter(p => p.name && p.name.toLowerCase().includes(q) && !p.isLiv)
+                  .map(p => ({ name: p.name, worldRank: p.worldRank }));
+                const existingNames = new Set(allPlayers.map(p => p.name));
+                const fromConst = LIV_GOLF_ROSTER
+                  .filter(name => name.toLowerCase().includes(q) && !existingNames.has(name) && !livNames.has(name))
+                  .map(name => ({ name, worldRank: null }));
+                return [...fromAll, ...fromConst].slice(0, 10);
+              })()
+            : [];
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {searchResults.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>Add to LIV list</div>
+                  {searchResults.map(p => (
+                    <div key={p.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', marginBottom: 2, borderRadius: 3, background: 'rgba(80,180,120,0.06)', border: `1px solid rgba(80,180,120,0.2)` }}>
+                      <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+                        {p.name}{p.worldRank && <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>#{p.worldRank}</span>}
+                      </span>
+                      <button disabled={livSaving[p.name]} onClick={async () => {
+                        setLivSaving(prev => ({ ...prev, [p.name]: true }));
+                        try {
+                          await playersApi.upsertMany([{ name: p.name, isLiv: true }]);
+                          setAllPlayers(prev => { const exists = prev.some(x => x.name === p.name); if (exists) return prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x); return [...prev, { name: p.name, worldRank: p.worldRank || null, isLiv: true }]; });
+                          dialog.showToast('Flagged ' + p.name + ' as LIV', 'success');
+                          setLivSearch('');
+                        } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
+                        finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
+                      }} style={{ fontFamily: fonts.sans, fontSize: 10, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}>
+                        {livSaving[p.name] ? '…' : '+ Flag LIV'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+                {livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}
+              </div>
+              {livPlayers.length === 0 ? (
+                <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.textMuted }}>No LIV players flagged — run Sync above</div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {livPlayers.map(p => (
+                    <div key={p.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 3, background: 'rgba(220,60,60,0.08)', border: `1px solid rgba(220,60,60,0.2)`, fontSize: 11, fontFamily: fonts.sans, color: colors.textSecondary }}>
+                      {p.name}
+                      <button disabled={livSaving[p.name]} onClick={async () => {
+                        setLivSaving(prev => ({ ...prev, [p.name]: true }));
+                        try {
+                          await playersApi.update(p.name, { isLiv: false });
+                          setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: false } : x));
+                          dialog.showToast('Removed LIV flag from ' + p.name, 'success');
+                        } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
+                        finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
+                      }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textMuted, fontSize: 11, padding: '0 2px', lineHeight: 1 }}>
+                        {livSaving[p.name] ? '…' : '×'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── 5. Award Swing Winner ── */}
@@ -984,112 +1117,85 @@ export const AdminView = ({
       </div>
 
 
-      {/* ── 7. LIV Golf Ineligible Players ── */}
-      <div style={S.section}>
-        <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
-        <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
-          Players flagged as LIV are hidden from the add/drop modal and waiver system.
-        </div>
-        <input type="text" placeholder="Search players to add/remove LIV flag…"
-          value={livSearch} onChange={e => setLivSearch(e.target.value)}
-          style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
-        />
-        {(() => {
-          const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
-          // Search: show non-LIV players from allPlayers, plus LIV_GOLF_ROSTER names not yet in DB
-          const searchResults = livSearch.trim().length >= 2
-            ? (() => {
-                const q = livSearch.toLowerCase();
-                const livNames = new Set(allPlayers.filter(p => p.isLiv).map(p => p.name));
-                // Players in allPlayers that aren't LIV
-                const fromAll = allPlayers
-                  .filter(p => p.name && p.name.toLowerCase().includes(q) && !p.isLiv)
-                  .map(p => ({ name: p.name, worldRank: p.worldRank }));
-                // LIV_GOLF_ROSTER names not yet in allPlayers at all
-                const existingNames = new Set(allPlayers.map(p => p.name));
-                const fromConst = LIV_GOLF_ROSTER
-                  .filter(name => name.toLowerCase().includes(q) && !existingNames.has(name) && !livNames.has(name))
-                  .map(name => ({ name, worldRank: null }));
-                return [...fromAll, ...fromConst].slice(0, 10);
-              })()
-            : [];
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {/* Search results — players to add to LIV list */}
-              {searchResults.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
-                    Add to LIV list
-                  </div>
-                  {searchResults.map(p => (
-                    <div key={p.name} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '6px 10px', marginBottom: 2, borderRadius: 3,
-                      background: 'rgba(80,180,120,0.06)', border: `1px solid rgba(80,180,120,0.2)`,
-                    }}>
-                      <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
-                        {p.name}
-                        {p.worldRank && <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>#{p.worldRank}</span>}
-                      </span>
-                      <button
-                        disabled={livSaving[p.name]}
-                        onClick={async () => {
-                          setLivSaving(prev => ({ ...prev, [p.name]: true }));
-                          try {
-                            await playersApi.upsertMany([{ name: p.name, isLiv: true }]);
-                            setAllPlayers(prev => {
-                              const exists = prev.some(x => x.name === p.name);
-                              if (exists) return prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x);
-                              return [...prev, { name: p.name, worldRank: p.worldRank || null, isLiv: true }];
-                            });
-                            dialog.showToast('Flagged ' + p.name + ' as LIV', 'success');
-                            setLivSearch('');
-                          } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
-                          finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
-                        }}
-                        style={{ fontFamily: fonts.sans, fontSize: 10, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}
-                      >
-                        {livSaving[p.name] ? '…' : '+ Flag LIV'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
 
-              {/* Current LIV roster */}
-              <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
-                {livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}
+      {/* ── 8. Season Settings ── */}
+      <div style={S.section}>
+        <div style={S.title}>⚙️ Season Settings</div>
+        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 14 }}>
+          Configurable league rules. Changes take effect immediately across all views. Constants are used as fallbacks if not set.
+        </div>
+        {(() => {
+          const draft = settingsDraft || getSettingsDraft();
+          const set = (key, val) => setSettingsDraft({ ...(settingsDraft || getSettingsDraft()), [key]: val });
+          const numInput = (key, label, min = 0) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <label style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</label>
+              <input
+                type="number" min={min} value={draft[key]}
+                onChange={e => { set(key, Number(e.target.value)); }}
+                style={{ ...theme.input, marginBottom: 0, fontSize: 13, textAlign: 'center', width: '100%' }}
+              />
+            </div>
+          );
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+              {/* Round Leader Bonuses */}
+              <div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>
+                  Round Leader Bonuses
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                  {numInput('bonusR1Regular', 'R1 — Regular')}
+                  {numInput('bonusR2Regular', 'R2 — Regular')}
+                  {numInput('bonusR3Regular', 'R3 — Regular')}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  {numInput('bonusR1Major', 'R1 — Major')}
+                  {numInput('bonusR2Major', 'R2 — Major')}
+                  {numInput('bonusR3Major', 'R3 — Major')}
+                </div>
               </div>
-              {livPlayers.length === 0 ? (
-                <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.textMuted }}>No LIV players flagged</div>
-              ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {livPlayers.map(p => (
-                    <div key={p.name} style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      padding: '4px 8px', borderRadius: 3,
-                      background: 'rgba(220,60,60,0.08)', border: `1px solid rgba(220,60,60,0.2)`,
-                      fontSize: 11, fontFamily: fonts.sans, color: colors.textSecondary,
-                    }}>
-                      {p.name}
-                      <button
-                        disabled={livSaving[p.name]}
-                        onClick={async () => {
-                          setLivSaving(prev => ({ ...prev, [p.name]: true }));
-                          try {
-                            await playersApi.update(p.name, { isLiv: false });
-                            setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: false } : x));
-                            dialog.showToast('Removed LIV flag from ' + p.name, 'success');
-                          } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
-                          finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
-                        }}
-                        style={{ background: 'none', border: 'none', color: 'rgba(220,100,80,0.7)', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}
-                        title={'Remove LIV flag from ' + p.name}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
+
+              {/* Transaction Fees */}
+              <div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>
+                  Transaction Fees ($)
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {numInput('feeFA', 'Free Agent')}
+                  {numInput('feeWaiver', 'Waiver Claim')}
+                </div>
+              </div>
+
+              {/* Roster Rules */}
+              <div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>
+                  Roster Rules
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  {numInput('rosterLimit', 'Roster Size', 1)}
+                  {numInput('lineupSize', 'Lineup Size', 1)}
+                  {numInput('maxLimitedStarts', 'Max ★ Starts', 1)}
+                </div>
+              </div>
+
+              {/* Save button */}
+              {settingsDraft && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={handleSaveSettings}
+                    disabled={settingsSaving}
+                    style={{ ...S.btn, flex: 1, ...(settingsSaving ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+                  >
+                    {settingsSaving ? '⏳ Saving…' : '✓ Save Season Settings'}
+                  </button>
+                  <button
+                    onClick={() => setSettingsDraft(null)}
+                    style={{ ...S.btnSec, flex: 0, padding: '10px 16px', whiteSpace: 'nowrap' }}
+                  >
+                    Cancel
+                  </button>
                 </div>
               )}
             </div>
@@ -1097,7 +1203,7 @@ export const AdminView = ({
         })()}
       </div>
 
-      {/* ── 8. Manager Login Credentials ── */}
+      {/* ── 9. Manager Login Credentials ── */}
       <div style={S.section}>
         <div style={S.title}>🔑 Manager Login Credentials</div>
         <label style={S.lbl}>Team</label>
