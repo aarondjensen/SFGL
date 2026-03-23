@@ -64,13 +64,7 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
     };
   });
 
-  // tournamentIndex is set to -1 here because processTournamentData works from
-  // team.lineup (set by the commish before processing), not by re-deriving rosters
-  // from transactions at a given point in time. getRosterForTournament is therefore
-  // not called in this path and the value is unused.
-  // TODO: if roster-aware result processing is needed in future (e.g. auto-lineup),
-  // pass the real tournament index and derive rosters via getRosterForTournament.
-  const tournamentIndex = -1;
+  const tournamentIndex = -1; // used only for getRosterForTournament; -1 = ignore tx filtering
   const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders: tournamentData.roundLeaders || {}, fullLineups: {} };
 
   const newTeams = teams.map(team => {
@@ -208,6 +202,7 @@ export const AdminView = ({
   const [pgaFetching, setPgaFetching] = useState(false);
   const [pgaTourUrlInput, setPgaTourUrlInput] = useState('');
   const [pgaTourIdInput, setPgaTourIdInput] = useState('');
+  const [espnFetching, setEspnFetching] = useState(false);
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -307,6 +302,60 @@ export const AdminView = ({
       dialog.showToast('Error: ' + err.message, 'error');
     } finally {
       setPgaFetching(false);
+    }
+  };
+
+  // ── Results: ESPN fetch ──────────────────────────────────────────────────
+  const handleFetchESPNResults = async () => {
+    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const tournament = tournaments.find(t => t.name === selectedTourney);
+
+    setEspnFetching(true);
+    try {
+      dialog.showToast('Fetching from ESPN…', 'info');
+      const params = new URLSearchParams({ name: tournament.name });
+      const resp = await fetch(`/api/espn-results?${params.toString()}`);
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        dialog.showToast(data.error || 'ESPN fetch failed', 'error');
+        return;
+      }
+
+      const { players, roundLeaders } = data;
+
+      // Pre-fill earnings textarea
+      const earningsLines = players
+        .sort((a, b) => b.earnings - a.earnings)
+        .map(p => `${p.name}, ${p.earnings}`)
+        .join('\n');
+
+      // Filter round leaders to only players who were in an SFGL starting lineup
+      const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
+      const filterToStarted = (names) => {
+        if (!names?.length) return [''];
+        const filtered = names.filter(n => startedPlayers.has(n));
+        return filtered.length ? filtered : [''];
+      };
+
+      const rl = roundLeaders || {};
+      setManualEntry(prev => ({
+        ...prev,
+        playerEarnings: earningsLines,
+        round1Leaders: filterToStarted(rl.round1),
+        round2Leaders: filterToStarted(rl.round2),
+        round3Leaders: filterToStarted(rl.round3),
+      }));
+
+      dialog.showToast(
+        `✓ Fetched ${players.length} players from ESPN (${data.madeCutCount} made cut)`,
+        'success',
+      );
+    } catch (err) {
+      console.error('[handleFetchESPNResults]', err);
+      dialog.showToast('Error: ' + err.message, 'error');
+    } finally {
+      setEspnFetching(false);
     }
   };
 
@@ -823,6 +872,13 @@ export const AdminView = ({
                 style={{ ...S.btn, marginBottom: 4, ...(!selectedTourney || pgaFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
               >
                 {pgaFetching ? 'Fetching…' : '⛳ Fetch from PGA Tour'}
+              </button>
+              <button
+                onClick={handleFetchESPNResults}
+                disabled={espnFetching || !selectedTourney}
+                style={{ ...S.btnSec, marginBottom: 4, ...(!selectedTourney || espnFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
+              >
+                {espnFetching ? 'Fetching…' : '📡 Fetch from ESPN'}
               </button>
               <div style={{ textAlign: 'center', fontSize: 10, color: colors.textMuted, marginBottom: 6 }}>
                 Auto-fills earnings + round leaders below for review before processing

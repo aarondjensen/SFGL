@@ -232,7 +232,20 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, onRemove }) => {
   const [hovered, setHovered] = React.useState(false);
   const [tapped, setTapped]   = React.useState(false);
+  const containerRef = React.useRef(null);
   const isMobileDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
+
+  // Reset tapped state when user touches anywhere outside this headshot
+  React.useEffect(() => {
+    if (!tapped) return;
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setTapped(false);
+      }
+    };
+    document.addEventListener('touchstart', handler, { passive: true });
+    return () => document.removeEventListener('touchstart', handler);
+  }, [tapped]);
 
   // On mobile: first tap reveals the × badge, second tap (on the ×) removes.
   // Tapping elsewhere resets. On desktop: hover reveals ×.
@@ -240,6 +253,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
 
   return (
     <div
+      ref={containerRef}
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, overflow: 'visible' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setTapped(false); }}
