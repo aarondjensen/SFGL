@@ -167,9 +167,6 @@ export const AdminView = ({
           const name = e.target.value;
           setSelectedTourney(name);
           const t = tournaments.find(t => t.name === name);
-          // Pre-fill PGA Tour URL/ID inputs from saved tournament data
-          setPgaTourUrlInput(t?.pgaTourUrl || '');
-          setPgaTourIdInput(t?.pgaTourId || '');
           if (t?.completed && t.results?.earningsMap) {
             const lines = Object.entries(t.results.earningsMap)
               .sort((a, b) => b[1] - a[1])
@@ -194,50 +191,20 @@ export const AdminView = ({
           <option value="">Choose tournament...</option>
           {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
         </select>
-        {/* PGA Tour fetch — URL / pgaTourId / name fallback */}
-        {(() => {
-          const t = tournaments.find(t => t.name === selectedTourney);
-          const savedUrl = t?.pgaTourUrl || '';
-          const savedId  = t?.pgaTourId  || '';
-          return (
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                <input
-                  value={pgaTourUrlInput || savedUrl}
-                  onChange={e => setPgaTourUrlInput(e.target.value)}
-                  placeholder="PGA Tour past-results URL (paste once, auto-saved)…"
-                  style={{ ...theme.input, flex: 1, fontSize: 11, marginBottom: 0 }}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                <input
-                  value={pgaTourIdInput || savedId}
-                  onChange={e => setPgaTourIdInput(e.target.value)}
-                  placeholder="PGA Tour ID (e.g. R2026011) — optional"
-                  style={{ ...theme.input, flex: 1, fontSize: 11, marginBottom: 0 }}
-                />
-              </div>
-              <button
-                onClick={handleFetchPGAResults}
-                disabled={pgaFetching || !selectedTourney}
-                style={{ ...S.btn, marginBottom: 4, ...(!selectedTourney || pgaFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
-              >
-                {pgaFetching ? 'Fetching…' : '⛳ Fetch from PGA Tour'}
-              </button>
-              <div style={{ textAlign: 'center', fontSize: 10, color: colors.textMuted, marginBottom: 6 }}>
-                Auto-fills earnings + round leaders below for review before processing
-              </div>
-            </div>
-          );
-        })()}
+        {/* Fetch button — discovers results automatically by tournament name */}
+        <button
+          onClick={handleFetchPGAResults}
+          disabled={pgaFetching || !selectedTourney}
+          style={{ ...S.btn, marginBottom: 12, ...(!selectedTourney || pgaFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
+        >
+          {pgaFetching ? '⏳ Fetching…' : selectedTourney ? `⛳ Get ${selectedTourney} Results` : '⛳ Get Tournament Results'}
+        </button>
 
-        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 12 }}>
-          <div style={{ ...S.lbl, color: colors.textMuted, textAlign: 'center', marginBottom: 10 }}>— or enter manually —</div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <RoundLeaderSelect label="R1 Leader" round={1} leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
-            <RoundLeaderSelect label="R2 Leader" round={2} leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
-            <RoundLeaderSelect label="R3 Leader" round={3} leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
-          </div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <RoundLeaderSelect label="R1 Leader" round={1} leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
+          <RoundLeaderSelect label="R2 Leader" round={2} leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
+          <RoundLeaderSelect label="R3 Leader" round={3} leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
+        </div>
 
           {/* Lineup overrides (only for completed tournaments being reprocessed) */}
           {tournaments.find(t => t.name === selectedTourney)?.completed && (
@@ -279,10 +246,10 @@ export const AdminView = ({
             </div>
           )}
 
-          <label style={S.lbl}>Player Earnings <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>— one per line: Player Name, 123456</span></label>
+          <label style={{ ...S.lbl, color: colors.textMuted }}>Player Earnings <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>— auto-filled by fetch, or enter manually</span></label>
           <textarea value={manualEntry.playerEarnings} onChange={e => setManualEntry({ ...manualEntry, playerEarnings: e.target.value })}
-            placeholder={'Scottie Scheffler, 3600000\nRory McIlroy, 2160000'} rows={6}
-            style={{ ...theme.input, fontFamily: fonts.mono, fontSize: 12, resize: 'vertical', marginBottom: 8 }} />
+            placeholder={'Scottie Scheffler, 3600000\nRory McIlroy, 2160000'} rows={3}
+            style={{ ...theme.input, fontFamily: fonts.mono, fontSize: 11, resize: 'vertical', marginBottom: 8, opacity: 0.75 }} />
           <div style={{ display: 'flex', gap: 8 }}>
             {!tournaments.find(t => t.name === selectedTourney)?.completed && (
               <button onClick={handleManualEntry} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
@@ -296,7 +263,6 @@ export const AdminView = ({
                 ✏️ Reprocess Tournament
               </button>
             )}
-          </div>
         </div>
       </div>
 
@@ -365,11 +331,11 @@ export const AdminView = ({
         )}
       </div>
 
-      {/* ── 3. Sync Rankings + LIV Roster ── */}
+      {/* ── 3. Sync Rankings & LIV Roster ── */}
       <div style={S.section}>
         <div style={S.title}>🔄 Sync Rankings & LIV Roster</div>
         <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 10 }}>
-          Fetches the latest OWGR world rankings and automatically syncs the current LIV Golf roster — tagging ineligible players and clearing stale flags in one step.
+          Fetches the latest OWGR world rankings and syncs the current LIV Golf roster — tagging ineligible players and clearing stale flags in one step.
         </div>
         {rankingsLastUpdated && (
           <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
