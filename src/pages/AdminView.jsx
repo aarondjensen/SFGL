@@ -537,7 +537,8 @@ export const AdminView = ({
 
   // ── Season Settings ──────────────────────────────────────────────────────
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsDraft, setSettingsDraft] = useState(null); // local edits before save
+  const [settingsOpen, setSettingsOpen] = useState(false);  // collapsed by default
+  const [settingsDraft, setSettingsDraft] = useState(null);    // null = no edits, object = editing
 
   // Initialize draft from current settings + constant fallbacks
   const getSettingsDraft = () => ({
@@ -560,7 +561,7 @@ export const AdminView = ({
     try {
       const newSettings = { ...settings, ...settingsDraft };
       await setSettings(newSettings);
-      setSettingsDraft(null);
+      setSettingsDraft(null); // keep open after save
       dialog.showToast('✓ Season settings saved', 'success');
     } catch (err) {
       dialog.showToast('Error: ' + err.message, 'error');
@@ -715,6 +716,7 @@ export const AdminView = ({
   // ── LIV roster sync ───────────────────────────────────────────────────────
   const [livSyncStatus, setLivSyncStatus] = useState(null);
   const [livSyncSummary, setLivSyncSummary] = useState('');
+  const [livLastSynced, setLivLastSynced] = useState(() => settings?.livRosterLastSynced || null);
 
   const handleSyncLiv = async () => {
     setLivSyncStatus('fetching');
@@ -763,6 +765,9 @@ export const AdminView = ({
         toFlag.length   > 0 ? `${toFlag.length} tagged (${toFlag.slice(0,3).join(', ')}${toFlag.length > 3 ? '…' : ''})` : '',
         toUnflag.length > 0 ? `${toUnflag.length} unflagged (${toUnflag.slice(0,3).map(p=>p.name).join(', ')}${toUnflag.length > 3 ? '…' : ''})` : '',
       ].filter(Boolean).join(' · ');
+      const livTs = new Date().toISOString();
+      setLivLastSynced(livTs);
+      setSettings({ ...settings, livRosterLastSynced: livTs }).catch(() => {});
       setLivSyncStatus('done');
       setLivSyncSummary(`✓ LIV roster synced · ${parts}`);
     } catch (err) {
@@ -871,7 +876,7 @@ export const AdminView = ({
             {!tournaments.find(t => t.name === selectedTourney)?.completed && (
               <button onClick={handleManualEntry} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
                 style={{ ...S.btn, flex: 1, ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
-                Process Manual Entry
+                {selectedTourney ? `Process ${selectedTourney} Results` : 'Process Tournament Results'}
               </button>
             )}
             {tournaments.find(t => t.name === selectedTourney)?.completed && (
@@ -948,6 +953,45 @@ export const AdminView = ({
         )}
       </div>
 
+
+      {/* ── 5. Award Swing Winner ── */}
+      <div style={S.section}>
+        <div style={S.title}>🏆 Award Swing Winner</div>
+        <label style={S.lbl}>Swing</label>
+        <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
+          <option value="">Select swing...</option>
+          {SWINGS.map(s => {
+            const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+            const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
+            return (
+              <option key={s} value={s} disabled={alreadyAwarded}>
+                {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
+              </option>
+            );
+          })}
+        </select>
+        {swingAwardSeg && (() => {
+          const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+          const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
+          const byTeam = {};
+          swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
+          const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+          const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
+          return (
+            <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
+              {leader
+                ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
+                : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
+              }
+            </div>
+          );
+        })()}
+        <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
+          style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
+          🏆 Award Swing Winner
+        </button>
+      </div>
+
       {/* ── 3. Update OWGR Rankings ── */}
       <div style={S.section}>
         <div style={S.title}>🌍 Update OWGR Rankings</div>
@@ -983,6 +1027,11 @@ export const AdminView = ({
         </div>
 
         {/* Sync button */}
+        {(livLastSynced || settings?.livRosterLastSynced) && (
+          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 8 }}>
+            Last synced: {new Date(livLastSynced || settings?.livRosterLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
         <button
           onClick={handleSyncLiv}
           disabled={livSyncStatus === 'fetching'}
@@ -1078,53 +1127,25 @@ export const AdminView = ({
         })()}
       </div>
 
-      {/* ── 5. Award Swing Winner ── */}
-      <div style={S.section}>
-        <div style={S.title}>🏆 Award Swing Winner</div>
-        <label style={S.lbl}>Swing</label>
-        <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
-          <option value="">Select swing...</option>
-          {SWINGS.map(s => {
-            const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
-            const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
-            return (
-              <option key={s} value={s} disabled={alreadyAwarded}>
-                {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
-              </option>
-            );
-          })}
-        </select>
-        {swingAwardSeg && (() => {
-          const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
-          const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
-          const byTeam = {};
-          swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
-          const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
-          const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
-          return (
-            <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
-              {leader
-                ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
-                : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
-              }
-            </div>
-          );
-        })()}
-        <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
-          style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
-          🏆 Award Swing Winner
-        </button>
-      </div>
 
 
 
       {/* ── 8. Season Settings ── */}
       <div style={S.section}>
-        <div style={S.title}>⚙️ Season Settings</div>
-        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 14 }}>
-          Configurable league rules. Changes take effect immediately across all views. Constants are used as fallbacks if not set.
-        </div>
-        {(() => {
+        {/* Collapsed header — click to expand */}
+        <button
+          onClick={() => { setSettingsOpen(o => !o); setSettingsDraft(null); }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          <div style={S.title}>⚙️ Season Settings</div>
+          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>
+            {settingsOpen ? '▲ close' : '▼ edit'}
+          </span>
+        </button>
+
+        {/* Content — only shown when expanded (settingsDraft !== false) */}
+        {settingsOpen && (() => {
+          const isEditing = settingsDraft !== null && typeof settingsDraft === 'object';
           const draft = settingsDraft || getSettingsDraft();
           const set = (key, val) => setSettingsDraft({ ...(settingsDraft || getSettingsDraft()), [key]: val });
           const numInput = (key, label, min = 0) => (
@@ -1132,19 +1153,21 @@ export const AdminView = ({
               <label style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</label>
               <input
                 type="number" min={min} value={draft[key]}
-                onChange={e => { set(key, Number(e.target.value)); }}
-                style={{ ...theme.input, marginBottom: 0, fontSize: 13, textAlign: 'center', width: '100%' }}
+                onChange={e => set(key, Number(e.target.value))}
+                style={{ ...theme.input, marginBottom: 0, fontSize: 13, textAlign: 'center', width: '100%',
+                  border: isEditing ? `1px solid rgba(220,170,60,0.5)` : undefined }}
               />
             </div>
           );
           return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4 }}>
+              <div style={{ ...theme.smallText, color: colors.textMuted }}>
+                ⚠️ Changes apply immediately to all league calculations. Click a field to edit, then confirm before saving.
+              </div>
 
               {/* Round Leader Bonuses */}
               <div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>
-                  Round Leader Bonuses
-                </div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Round Leader Bonuses</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
                   {numInput('bonusR1Regular', 'R1 — Regular')}
                   {numInput('bonusR2Regular', 'R2 — Regular')}
@@ -1159,9 +1182,7 @@ export const AdminView = ({
 
               {/* Transaction Fees */}
               <div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>
-                  Transaction Fees ($)
-                </div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Transaction Fees ($)</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   {numInput('feeFA', 'Free Agent')}
                   {numInput('feeWaiver', 'Waiver Claim')}
@@ -1170,9 +1191,7 @@ export const AdminView = ({
 
               {/* Roster Rules */}
               <div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>
-                  Roster Rules
-                </div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Roster Rules</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                   {numInput('rosterLimit', 'Roster Size', 1)}
                   {numInput('lineupSize', 'Lineup Size', 1)}
@@ -1180,11 +1199,18 @@ export const AdminView = ({
                 </div>
               </div>
 
-              {/* Save button */}
-              {settingsDraft && (
+              {/* Save / cancel — only shown when edits have been made */}
+              {isEditing && (
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
-                    onClick={handleSaveSettings}
+                    onClick={async () => {
+                      const ok = await dialog.showConfirm(
+                        'Save Season Settings',
+                        'These changes affect all league calculations immediately. Are you sure?',
+                        { confirmText: 'Yes, Save', type: 'warning' }
+                      );
+                      if (ok) handleSaveSettings();
+                    }}
                     disabled={settingsSaving}
                     style={{ ...S.btn, flex: 1, ...(settingsSaving ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
                   >
@@ -1194,7 +1220,7 @@ export const AdminView = ({
                     onClick={() => setSettingsDraft(null)}
                     style={{ ...S.btnSec, flex: 0, padding: '10px 16px', whiteSpace: 'nowrap' }}
                   >
-                    Cancel
+                    Discard
                   </button>
                 </div>
               )}
