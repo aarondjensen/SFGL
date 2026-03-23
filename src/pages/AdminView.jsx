@@ -3,7 +3,7 @@ import { useDialog } from './DialogContext';
 import { getSegmentByDate, normalizePlayerName } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi } from '../api/firebase';
+import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi, playerRankingsApi } from '../api/firebase';
 import { theme, colors, fonts } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
 
@@ -715,73 +715,66 @@ export const AdminView = ({
     setOwgrStatus('fetching');
     setOwgrSummary('');
     try {
-      // Run OWGR fetch and LIV sync in parallel
-      const [owgrResp] = await Promise.all([
-        fetch('/api/owgr'),
-      ]);
-
-      // ── OWGR rankings ──────────────────────────────────────────────────────
+      // ── Step 1: Fetch OWGR rankings ───────────────────────────────────────
+      const owgrResp = await fetch('/api/owgr');
       const owgrData = await owgrResp.json();
       if (!owgrResp.ok) throw new Error(owgrData.error || 'OWGR fetch failed');
       const { players: fetched } = owgrData;
       if (!fetched?.length) throw new Error('No ranking data returned');
 
+      // Merge rankings into local player list
       let updatedPlayers = [...allPlayers];
       let updated = 0, added = 0;
-
       fetched.forEach(({ name, worldRank }) => {
         const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-        if (idx >= 0) {
-          updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank };
-          updated++;
-        } else {
-          updatedPlayers.push({ name, worldRank });
-          added++;
-        }
+        if (idx >= 0) { updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank }; updated++; }
+        else { updatedPlayers.push({ name, worldRank }); added++; }
       });
 
-      // ── LIV roster sync ────────────────────────────────────────────────────
-      // Tag all players in LIV_GOLF_ROSTER as isLiv:true in the DB.
-      // Only upsert players not already correctly flagged to minimise writes.
-      const alreadyFlagged = new Set(updatedPlayers.filter(p => p.isLiv).map(p => p.name.toLowerCase()));
-      const toFlag = LIV_GOLF_ROSTER.filter(name => !alreadyFlagged.has(name.toLowerCase()));
-
-      if (toFlag.length > 0) {
-        await playersApi.upsertMany(toFlag.map(name => ({ name, isLiv: true })));
-        // Update local state
-        toFlag.forEach(name => {
-          const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-          if (idx >= 0) {
-            updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: true };
-          } else {
-            updatedPlayers.push({ name, isLiv: true, worldRank: null });
-          }
-        });
-      }
-
-      // Also clear isLiv flag for anyone in DB marked LIV but NOT in current roster
-      // (handles players who returned to PGA Tour)
-      const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
-      const toUnflag = updatedPlayers.filter(p => p.isLiv && !livRosterLower.has(p.name.toLowerCase()));
-      if (toUnflag.length > 0) {
-        await Promise.all(toUnflag.map(p => playersApi.update(p.name, { isLiv: false })));
-        toUnflag.forEach(p => {
-          const idx = updatedPlayers.findIndex(x => x.name === p.name);
-          if (idx >= 0) updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: false };
-        });
-      }
-
-      updatedPlayers.sort((a, b) => (a.worldRank || 9999) - (b.worldRank || 9999));
+      // Write ONLY the ranking changes to Firebase (not all 10k players)
+      const rankingUpdates = fetched.map(({ name, worldRank }) => ({ name, worldRank }));
+      await playersApi.upsertMany(rankingUpdates);
+      // Update last-synced timestamp
+      const timestamp = new Date().toISOString();
       setAllPlayers(updatedPlayers);
-      await updateRankings(updatedPlayers);
+
+      // ── Step 2: LIV roster sync ───────────────────────────────────────────
+      // Use the authoritative LIV_GOLF_ROSTER (sourced from livgolf.com/teams).
+      // Tag anyone on that list, unflag anyone no longer on it.
+      const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
+
+      // Players to flag (in roster but not yet tagged)
+      const toFlag = LIV_GOLF_ROSTER.filter(name => {
+        const p = updatedPlayers.find(x => x.name.toLowerCase() === name.toLowerCase());
+        return !p?.isLiv; // not already tagged
+      });
+
+      // Players to unflag (tagged in DB but no longer in current LIV roster)
+      const toUnflag = updatedPlayers.filter(p => p.isLiv && !livRosterLower.has(p.name.toLowerCase()));
+
+      // Batch both operations via upsertMany (single Firestore batch write)
+      const livWrites = [
+        ...toFlag.map(name => ({ name, isLiv: true })),
+        ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
+      ];
+      if (livWrites.length > 0) {
+        await playersApi.upsertMany(livWrites);
+        // Update local state
+        setAllPlayers(prev => prev.map(p => {
+          if (toFlag.some(n => n.toLowerCase() === p.name.toLowerCase())) return { ...p, isLiv: true };
+          if (toUnflag.some(u => u.name === p.name)) return { ...p, isLiv: false };
+          return p;
+        }));
+      }
+
+      // Update the last-synced timestamp in Firebase metadata
+      await playerRankingsApi.setLastUpdated(timestamp).catch(() => {});
 
       const livMsg = toFlag.length > 0
-        ? ` · ${toFlag.length} LIV player${toFlag.length !== 1 ? 's' : ''} tagged`
-        : ' · LIV roster up to date';
+        ? ` · ${toFlag.length} LIV tagged` : ' · LIV up to date';
       const unflagMsg = toUnflag.length > 0 ? ` · ${toUnflag.length} unflagged` : '';
-
       setOwgrStatus('done');
-      setOwgrSummary(`✓ ${fetched.length} rankings loaded · ${updated} updated · ${added} new${livMsg}${unflagMsg}`);
+      setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new${livMsg}${unflagMsg}`);
     } catch (err) {
       setOwgrStatus('error');
       setOwgrSummary(err.message || 'Sync failed');
