@@ -1,12 +1,4 @@
 // api/field.js — Vercel serverless function
-// Returns the current/upcoming PGA Tour tournament field as an array of player names.
-//
-// Strategy:
-//   1. Fetch pgatour.com/schedule — parse __NEXT_DATA__ to find the next upcoming tournament
-//   2. Fetch pgatour.com/tournaments/{year}/{slug}/{id}/field — parse __NEXT_DATA__ for competitors
-//
-// GET /api/field          → { players, tournament, count }
-// GET /api/field?debug=1  → diagnostic info
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
@@ -33,131 +25,85 @@ function walkAll(obj, collect) {
   else Object.values(obj).forEach(v => walkAll(v, collect));
 }
 
-// ── Step 1: find the next upcoming tournament from the schedule ───────────────
-async function findUpcomingTournament(year) {
-  const html = await fetchPage('https://www.pgatour.com/schedule');
-  const nd = extractNextData(html);
-  if (!nd) throw new Error('No __NEXT_DATA__ on schedule page');
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const tournaments = [];
-  walkAll(nd, obj => {
-    if (obj.tournamentId && obj.name && (obj.startDate || obj.date)) {
-      tournaments.push({
-        id:     obj.tournamentId,
-        slug:   obj.tournamentSlug || obj.tournamentId.toLowerCase(),
-        name:   obj.name,
-        date:   new Date(obj.startDate || obj.date),
-        endDate: obj.endDate ? new Date(obj.endDate) : null,
-        status: (obj.status || obj.statusV2 || '').toLowerCase(),
-      });
-    }
-  });
-
-  // Deduplicate by ID
-  const seen = new Set();
-  const unique = tournaments.filter(t => {
-    if (seen.has(t.id)) return false;
-    seen.add(t.id);
-    return true;
-  });
-
-  unique.sort((a, b) => a.date - b.date);
-
-  // Find first tournament that hasn't ended yet
-  // "completed" and "official" mean it's done — everything else is fair game
-  const DONE = ['completed', 'official', 'past'];
-  const upcoming = unique.find(t => {
-    if (DONE.some(s => t.status.includes(s))) return false;
-    // Also skip if end date is in the past
-    if (t.endDate && t.endDate < today) return false;
-    return true;
-  });
-
-  // Last resort: just find the nearest future start date
-  const fallback = upcoming || unique.find(t => t.date >= today) || unique[unique.length - 1];
-
-  return { tournament: fallback, allTournaments: unique };
-}
-
-// ── Step 2: fetch the field page and extract player names ─────────────────────
-async function fetchField(tournament, year) {
-  const url = `https://www.pgatour.com/tournaments/${year}/${tournament.slug}/${tournament.id}/field`;
-  const html = await fetchPage(url);
-  const nd = extractNextData(html);
-
-  const players = new Set();
-
-  if (nd) {
-    walkAll(nd, obj => {
-      if (obj.displayName && typeof obj.displayName === 'string' && obj.displayName.trim().includes(' ')) {
-        players.add(obj.displayName.trim());
-      }
-      if (obj.firstName && obj.lastName && typeof obj.firstName === 'string') {
-        players.add(`${obj.firstName.trim()} ${obj.lastName.trim()}`);
-      }
-      if (obj.playerName && typeof obj.playerName === 'string' && obj.playerName.trim().includes(' ')) {
-        players.add(obj.playerName.trim());
-      }
-    });
-  }
-
-  // Fallback: scrape player names from HTML
-  if (players.size < 10) {
-    for (const [, name] of html.matchAll(/\/players\/[^"]+">([A-Z][a-z]+ [A-Z][a-zA-Z\s'-]+)</g)) {
-      if (name.trim().split(' ').length >= 2) players.add(name.trim());
-    }
-  }
-
-  return { players: [...players], url };
-}
-
-// ── Handler ───────────────────────────────────────────────────────────────────
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
+  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const isDebug = req.query.debug === '1';
   const year = new Date().getFullYear().toString();
 
   try {
-    const { tournament, allTournaments } = await findUpcomingTournament(year);
-
-    if (!tournament) {
-      return res.status(404).json({ error: 'No upcoming tournament found on schedule' });
-    }
-
-    const { players, url } = await fetchField(tournament, year);
+    const html = await fetchPage('https://www.pgatour.com/schedule');
+    const nd = extractNextData(html);
 
     if (isDebug) {
+      if (!nd) {
+        // No __NEXT_DATA__ — show raw HTML snippet to diagnose
+        return res.status(200).json({
+          error: 'No __NEXT_DATA__ found',
+          hasScriptTag: html.includes('__NEXT_DATA__'),
+          htmlLength: html.length,
+          htmlSnippet: html.slice(0, 2000),
+        });
+      }
+
+      // Show the top-level keys and search for any tournament-like data
+      const topLevelKeys = Object.keys(nd);
+      const allKeys = new Set();
+      const tournamentLike = [];
+      const stringValues = [];
+
+      walkAll(nd, obj => {
+        Object.keys(obj).forEach(k => allKeys.add(k));
+        // Collect objects that look tournament-related
+        if (obj.id && obj.name && typeof obj.name === 'string' && obj.name.length > 3) {
+          tournamentLike.push({ id: obj.id, name: obj.name, keys: Object.keys(obj).slice(0, 10) });
+        }
+        // Look for Houston or tournament name strings
+        Object.values(obj).forEach(v => {
+          if (typeof v === 'string' && (v.includes('Houston') || v.includes('Valero') || v.includes('Masters'))) {
+            stringValues.push(v.slice(0, 100));
+          }
+        });
+      });
+
       return res.status(200).json({
-        tournament: { id: tournament.id, slug: tournament.slug, name: tournament.name, date: tournament.date, status: tournament.status },
-        fieldUrl: url,
-        playerCount: players.length,
-        samplePlayers: players.slice(0, 15),
-        // Show all tournaments found for debugging status values
-        allTournamentsFound: allTournaments.map(t => ({ id: t.id, name: t.name, status: t.status, date: t.date })),
+        topLevelKeys,
+        allKeysFound: [...allKeys].sort().slice(0, 80),
+        tournamentLikeSample: tournamentLike.slice(0, 10),
+        tournamentStrings: [...new Set(stringValues)].slice(0, 20),
       });
     }
 
-    if (!players.length) {
-      return res.status(404).json({
-        error: 'Field not yet posted for ' + tournament.name,
-        tournament: tournament.name,
-        hint: 'PGA Tour typically posts the field Sunday or Monday before the event.',
-      });
-    }
+    // Non-debug: attempt to find field using __NEXT_DATA__
+    if (!nd) throw new Error('No __NEXT_DATA__ on pgatour.com/schedule');
+
+    // Try to find Houston Open ID directly from known pattern
+    // PGA Tour tournament IDs follow R{year}{num} pattern — scan all string values
+    const today = new Date();
+    const tournaments = [];
+    walkAll(nd, obj => {
+      const id = obj.tournamentId || obj.id;
+      const name = obj.tournamentName || obj.name;
+      const date = obj.startDate || obj.date || obj.tournamentDate;
+      if (id && name && typeof id === 'string' && id.startsWith('R') && typeof name === 'string') {
+        tournaments.push({ id, name, date: date ? new Date(date) : null, slug: obj.tournamentSlug || obj.slug || '' });
+      }
+    });
+
+    const seen = new Set();
+    const unique = tournaments.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
+    unique.sort((a, b) => (a.date || 0) - (b.date || 0));
+    const upcoming = unique.find(t => !t.date || t.date >= today) || unique[0];
+
+    if (!upcoming) throw new Error('Could not identify upcoming tournament from schedule data');
 
     return res.status(200).json({
-      players,
-      tournament: tournament.name,
-      count: players.length,
-      source: 'pgatour',
+      players: [],
+      tournament: upcoming.name,
+      count: 0,
+      debug: { upcoming, totalFound: unique.length },
     });
 
   } catch (err) {
