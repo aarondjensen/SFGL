@@ -37,11 +37,13 @@ async function getCurrentEvent() {
       // Filter to PGA Tour events only (slug = 'pga')
       const pga = events.filter(e => e.league?.slug === 'pga' || !e.league);
       if (pga.length > 0) {
-        // Prefer upcoming (pre) over in-progress over completed
-        const best = pga.find(e => e.status?.type?.state === 'pre')
-                  || pga.find(e => e.status?.type?.state === 'in')
-                  || pga.find(e => e.status?.type?.state !== 'post')
-                  || pga[0];
+        // Skip dates where all events are completed — keep looking ahead
+        const nonPost = pga.filter(e => e.status?.type?.state !== 'post');
+        if (nonPost.length === 0) continue;
+        // Prefer upcoming (pre) over in-progress
+        const best = nonPost.find(e => e.status?.type?.state === 'pre')
+                  || nonPost.find(e => e.status?.type?.state === 'in')
+                  || nonPost[0];
         return { event: best, dateStr, allEvents: events };
       }
     } catch (_) {
