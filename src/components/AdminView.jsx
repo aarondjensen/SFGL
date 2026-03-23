@@ -1026,7 +1026,7 @@ export const AdminView = ({
         <div style={S.title}>🌍 Update OWGR Rankings</div>
         {rankingsLastUpdated && (
           <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Last updated: {new Date(Number(rankingsLastUpdated)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            Last updated: {new Date(rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </div>
         )}
         <button
