@@ -26,7 +26,6 @@ function extractNextData(html) {
   try { return JSON.parse(m[1]); } catch { return null; }
 }
 
-// Walk the entire __NEXT_DATA__ tree collecting all objects
 function walkAll(obj, collect) {
   if (!obj || typeof obj !== 'object') return;
   collect(obj);
@@ -45,34 +44,42 @@ async function findUpcomingTournament(year) {
 
   const tournaments = [];
   walkAll(nd, obj => {
-    // Look for tournament objects with an ID, name, and date
     if (obj.tournamentId && obj.name && (obj.startDate || obj.date)) {
       tournaments.push({
-        id:    obj.tournamentId,
-        slug:  obj.tournamentSlug || obj.tournamentId.toLowerCase(),
-        name:  obj.name,
-        date:  new Date(obj.startDate || obj.date),
-        status: obj.status || '',
+        id:     obj.tournamentId,
+        slug:   obj.tournamentSlug || obj.tournamentId.toLowerCase(),
+        name:   obj.name,
+        date:   new Date(obj.startDate || obj.date),
+        endDate: obj.endDate ? new Date(obj.endDate) : null,
+        status: (obj.status || obj.statusV2 || '').toLowerCase(),
       });
     }
   });
 
   // Deduplicate by ID
   const seen = new Set();
-  const unique = tournaments.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
-
-  // Find the first non-completed tournament (upcoming or in-progress)
-  unique.sort((a, b) => a.date - b.date);
-  const upcoming = unique.find(t => {
-    const status = t.status.toLowerCase();
-    // Skip completed
-    if (status === 'completed' || status === 'official') return false;
-    // Prefer in-progress or future events
+  const unique = tournaments.filter(t => {
+    if (seen.has(t.id)) return false;
+    seen.add(t.id);
     return true;
-  }) || unique.find(t => t.date >= today);
+  });
 
-  if (!upcoming) throw new Error('No upcoming tournament found on schedule');
-  return upcoming;
+  unique.sort((a, b) => a.date - b.date);
+
+  // Find first tournament that hasn't ended yet
+  // "completed" and "official" mean it's done — everything else is fair game
+  const DONE = ['completed', 'official', 'past'];
+  const upcoming = unique.find(t => {
+    if (DONE.some(s => t.status.includes(s))) return false;
+    // Also skip if end date is in the past
+    if (t.endDate && t.endDate < today) return false;
+    return true;
+  });
+
+  // Last resort: just find the nearest future start date
+  const fallback = upcoming || unique.find(t => t.date >= today) || unique[unique.length - 1];
+
+  return { tournament: fallback, allTournaments: unique };
 }
 
 // ── Step 2: fetch the field page and extract player names ─────────────────────
@@ -85,24 +92,21 @@ async function fetchField(tournament, year) {
 
   if (nd) {
     walkAll(nd, obj => {
-      // Player objects have displayName or firstName+lastName
-      if (obj.displayName && typeof obj.displayName === 'string' && obj.displayName.includes(' ')) {
+      if (obj.displayName && typeof obj.displayName === 'string' && obj.displayName.trim().includes(' ')) {
         players.add(obj.displayName.trim());
       }
-      if (obj.firstName && obj.lastName) {
+      if (obj.firstName && obj.lastName && typeof obj.firstName === 'string') {
         players.add(`${obj.firstName.trim()} ${obj.lastName.trim()}`);
       }
-      // Some schemas use playerName
-      if (obj.playerName && typeof obj.playerName === 'string' && obj.playerName.includes(' ')) {
+      if (obj.playerName && typeof obj.playerName === 'string' && obj.playerName.trim().includes(' ')) {
         players.add(obj.playerName.trim());
       }
     });
   }
 
-  // Fallback: scrape player names from HTML anchor tags linking to player profiles
+  // Fallback: scrape player names from HTML
   if (players.size < 10) {
-    const profilePattern = /\/players\/[^"]+">([A-Z][a-z]+ [A-Z][a-zA-Z\s'-]+)</g;
-    for (const [, name] of html.matchAll(profilePattern)) {
+    for (const [, name] of html.matchAll(/\/players\/[^"]+">([A-Z][a-z]+ [A-Z][a-zA-Z\s'-]+)</g)) {
       if (name.trim().split(' ').length >= 2) players.add(name.trim());
     }
   }
@@ -115,7 +119,6 @@ async function fetchField(tournament, year) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  // 15 min cache — PGA Tour field pages update infrequently during the week
   res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -123,7 +126,12 @@ export default async function handler(req, res) {
   const year = new Date().getFullYear().toString();
 
   try {
-    const tournament = await findUpcomingTournament(year);
+    const { tournament, allTournaments } = await findUpcomingTournament(year);
+
+    if (!tournament) {
+      return res.status(404).json({ error: 'No upcoming tournament found on schedule' });
+    }
+
     const { players, url } = await fetchField(tournament, year);
 
     if (isDebug) {
@@ -132,6 +140,8 @@ export default async function handler(req, res) {
         fieldUrl: url,
         playerCount: players.length,
         samplePlayers: players.slice(0, 15),
+        // Show all tournaments found for debugging status values
+        allTournamentsFound: allTournaments.map(t => ({ id: t.id, name: t.name, status: t.status, date: t.date })),
       });
     }
 
