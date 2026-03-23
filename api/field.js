@@ -18,11 +18,22 @@ function extractNextData(html) {
   try { return JSON.parse(m[1]); } catch { return null; }
 }
 
-function walkAll(obj, collect) {
-  if (!obj || typeof obj !== 'object') return;
-  collect(obj);
-  if (Array.isArray(obj)) obj.forEach(o => walkAll(o, collect));
-  else Object.values(obj).forEach(v => walkAll(v, collect));
+// Find the parent object containing a specific string value anywhere in the tree
+function findParentsWithString(obj, needle, path = '', results = []) {
+  if (!obj || typeof obj !== 'object') return results;
+  if (Array.isArray(obj)) {
+    obj.forEach((v, i) => findParentsWithString(v, needle, `${path}[${i}]`, results));
+  } else {
+    let found = false;
+    Object.entries(obj).forEach(([k, v]) => {
+      if (typeof v === 'string' && v.includes(needle)) found = true;
+    });
+    if (found && results.length < 5) {
+      results.push({ path, keys: Object.keys(obj), sample: JSON.stringify(obj).slice(0, 500) });
+    }
+    Object.entries(obj).forEach(([k, v]) => findParentsWithString(v, needle, `${path}.${k}`, results));
+  }
+  return results;
 }
 
 export default async function handler(req, res) {
@@ -38,73 +49,26 @@ export default async function handler(req, res) {
     const nd = extractNextData(html);
 
     if (isDebug) {
-      if (!nd) {
-        // No __NEXT_DATA__ — show raw HTML snippet to diagnose
-        return res.status(200).json({
-          error: 'No __NEXT_DATA__ found',
-          hasScriptTag: html.includes('__NEXT_DATA__'),
-          htmlLength: html.length,
-          htmlSnippet: html.slice(0, 2000),
-        });
-      }
+      if (!nd) return res.status(200).json({ error: 'No __NEXT_DATA__', htmlLength: html.length });
 
-      // Show the top-level keys and search for any tournament-like data
-      const topLevelKeys = Object.keys(nd);
-      const allKeys = new Set();
-      const tournamentLike = [];
-      const stringValues = [];
-
-      walkAll(nd, obj => {
-        Object.keys(obj).forEach(k => allKeys.add(k));
-        // Collect objects that look tournament-related
-        if (obj.id && obj.name && typeof obj.name === 'string' && obj.name.length > 3) {
-          tournamentLike.push({ id: obj.id, name: obj.name, keys: Object.keys(obj).slice(0, 10) });
-        }
-        // Look for Houston or tournament name strings
-        Object.values(obj).forEach(v => {
-          if (typeof v === 'string' && (v.includes('Houston') || v.includes('Valero') || v.includes('Masters'))) {
-            stringValues.push(v.slice(0, 100));
-          }
-        });
-      });
+      // Find objects that contain "Houston" to understand the tournament data structure
+      const houstonParents = findParentsWithString(nd, 'Houston');
+      // Also look for R2026 pattern (tournament IDs) in the raw JSON string
+      const rawJson = JSON.stringify(nd);
+      const r2026Matches = [...new Set(rawJson.match(/R202[0-9][0-9]{3}/g) || [])];
+      // Find any key that looks like a tournament slug
+      const slugMatches = [...new Set(rawJson.match(/"texas-childrens[^"]+"/g) || [])];
+      const urlMatches = [...new Set(rawJson.match(/\/tournaments\/[^"]{5,80}/g) || [])].slice(0, 10);
 
       return res.status(200).json({
-        topLevelKeys,
-        allKeysFound: [...allKeys].sort().slice(0, 80),
-        tournamentLikeSample: tournamentLike.slice(0, 10),
-        tournamentStrings: [...new Set(stringValues)].slice(0, 20),
+        houstonParents,
+        r2026IdsFound: r2026Matches,
+        slugsFound: slugMatches,
+        tournamentUrlsFound: urlMatches,
       });
     }
 
-    // Non-debug: attempt to find field using __NEXT_DATA__
-    if (!nd) throw new Error('No __NEXT_DATA__ on pgatour.com/schedule');
-
-    // Try to find Houston Open ID directly from known pattern
-    // PGA Tour tournament IDs follow R{year}{num} pattern — scan all string values
-    const today = new Date();
-    const tournaments = [];
-    walkAll(nd, obj => {
-      const id = obj.tournamentId || obj.id;
-      const name = obj.tournamentName || obj.name;
-      const date = obj.startDate || obj.date || obj.tournamentDate;
-      if (id && name && typeof id === 'string' && id.startsWith('R') && typeof name === 'string') {
-        tournaments.push({ id, name, date: date ? new Date(date) : null, slug: obj.tournamentSlug || obj.slug || '' });
-      }
-    });
-
-    const seen = new Set();
-    const unique = tournaments.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
-    unique.sort((a, b) => (a.date || 0) - (b.date || 0));
-    const upcoming = unique.find(t => !t.date || t.date >= today) || unique[0];
-
-    if (!upcoming) throw new Error('Could not identify upcoming tournament from schedule data');
-
-    return res.status(200).json({
-      players: [],
-      tournament: upcoming.name,
-      count: 0,
-      debug: { upcoming, totalFound: unique.length },
-    });
+    return res.status(503).json({ error: 'Use ?debug=1 to diagnose' });
 
   } catch (err) {
     return res.status(503).json({ error: err.message });
