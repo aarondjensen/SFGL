@@ -202,7 +202,6 @@ export const AdminView = ({
   const [pgaFetching, setPgaFetching] = useState(false);
   const [pgaTourUrlInput, setPgaTourUrlInput] = useState('');
   const [pgaTourIdInput, setPgaTourIdInput] = useState('');
-  const [espnFetching, setEspnFetching] = useState(false);
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -302,60 +301,6 @@ export const AdminView = ({
       dialog.showToast('Error: ' + err.message, 'error');
     } finally {
       setPgaFetching(false);
-    }
-  };
-
-  // ── Results: ESPN fetch ──────────────────────────────────────────────────
-  const handleFetchESPNResults = async () => {
-    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
-    const tournament = tournaments.find(t => t.name === selectedTourney);
-
-    setEspnFetching(true);
-    try {
-      dialog.showToast('Fetching from ESPN…', 'info');
-      const params = new URLSearchParams({ name: tournament.name });
-      const resp = await fetch(`/api/espn-results?${params.toString()}`);
-      const data = await resp.json();
-
-      if (!resp.ok) {
-        dialog.showToast(data.error || 'ESPN fetch failed', 'error');
-        return;
-      }
-
-      const { players, roundLeaders } = data;
-
-      // Pre-fill earnings textarea
-      const earningsLines = players
-        .sort((a, b) => b.earnings - a.earnings)
-        .map(p => `${p.name}, ${p.earnings}`)
-        .join('\n');
-
-      // Filter round leaders to only players who were in an SFGL starting lineup
-      const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
-      const filterToStarted = (names) => {
-        if (!names?.length) return [''];
-        const filtered = names.filter(n => startedPlayers.has(n));
-        return filtered.length ? filtered : [''];
-      };
-
-      const rl = roundLeaders || {};
-      setManualEntry(prev => ({
-        ...prev,
-        playerEarnings: earningsLines,
-        round1Leaders: filterToStarted(rl.round1),
-        round2Leaders: filterToStarted(rl.round2),
-        round3Leaders: filterToStarted(rl.round3),
-      }));
-
-      dialog.showToast(
-        `✓ Fetched ${players.length} players from ESPN (${data.madeCutCount} made cut)`,
-        'success',
-      );
-    } catch (err) {
-      console.error('[handleFetchESPNResults]', err);
-      dialog.showToast('Error: ' + err.message, 'error');
-    } finally {
-      setEspnFetching(false);
     }
   };
 
@@ -762,23 +707,26 @@ export const AdminView = ({
     setSwingAwardSeg('');
   };
 
-  // ── OWGR auto-fetch handler ───────────────────────────────────────────────
+  // ── Combined OWGR + LIV sync handler ────────────────────────────────────
   const [owgrStatus, setOwgrStatus] = useState(null); // null | 'fetching' | 'done' | 'error'
   const [owgrSummary, setOwgrSummary] = useState('');
 
-  const handleFetchOwgr = async () => {
+  const handleSyncData = async () => {
     setOwgrStatus('fetching');
     setOwgrSummary('');
     try {
-      const resp = await fetch('/api/owgr');
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'Fetch failed');
+      // Run OWGR fetch and LIV sync in parallel
+      const [owgrResp] = await Promise.all([
+        fetch('/api/owgr'),
+      ]);
 
-      const { players: fetched } = data;
+      // ── OWGR rankings ──────────────────────────────────────────────────────
+      const owgrData = await owgrResp.json();
+      if (!owgrResp.ok) throw new Error(owgrData.error || 'OWGR fetch failed');
+      const { players: fetched } = owgrData;
       if (!fetched?.length) throw new Error('No ranking data returned');
 
-      // Merge into allPlayers — update worldRank for matches, add new entries
-      const updatedPlayers = [...allPlayers];
+      let updatedPlayers = [...allPlayers];
       let updated = 0, added = 0;
 
       fetched.forEach(({ name, worldRank }) => {
@@ -792,14 +740,51 @@ export const AdminView = ({
         }
       });
 
-      updatedPlayers.sort((a, b) => (a.worldRank || 9999) - (b.worldRank || 9999));
+      // ── LIV roster sync ────────────────────────────────────────────────────
+      // Tag all players in LIV_GOLF_ROSTER as isLiv:true in the DB.
+      // Only upsert players not already correctly flagged to minimise writes.
+      const alreadyFlagged = new Set(updatedPlayers.filter(p => p.isLiv).map(p => p.name.toLowerCase()));
+      const toFlag = LIV_GOLF_ROSTER.filter(name => !alreadyFlagged.has(name.toLowerCase()));
 
+      if (toFlag.length > 0) {
+        await playersApi.upsertMany(toFlag.map(name => ({ name, isLiv: true })));
+        // Update local state
+        toFlag.forEach(name => {
+          const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+          if (idx >= 0) {
+            updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: true };
+          } else {
+            updatedPlayers.push({ name, isLiv: true, worldRank: null });
+          }
+        });
+      }
+
+      // Also clear isLiv flag for anyone in DB marked LIV but NOT in current roster
+      // (handles players who returned to PGA Tour)
+      const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
+      const toUnflag = updatedPlayers.filter(p => p.isLiv && !livRosterLower.has(p.name.toLowerCase()));
+      if (toUnflag.length > 0) {
+        await Promise.all(toUnflag.map(p => playersApi.update(p.name, { isLiv: false })));
+        toUnflag.forEach(p => {
+          const idx = updatedPlayers.findIndex(x => x.name === p.name);
+          if (idx >= 0) updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: false };
+        });
+      }
+
+      updatedPlayers.sort((a, b) => (a.worldRank || 9999) - (b.worldRank || 9999));
+      setAllPlayers(updatedPlayers);
       await updateRankings(updatedPlayers);
+
+      const livMsg = toFlag.length > 0
+        ? ` · ${toFlag.length} LIV player${toFlag.length !== 1 ? 's' : ''} tagged`
+        : ' · LIV roster up to date';
+      const unflagMsg = toUnflag.length > 0 ? ` · ${toUnflag.length} unflagged` : '';
+
       setOwgrStatus('done');
-      setOwgrSummary(`✓ ${fetched.length} players loaded · ${updated} updated · ${added} new`);
+      setOwgrSummary(`✓ ${fetched.length} rankings loaded · ${updated} updated · ${added} new${livMsg}${unflagMsg}`);
     } catch (err) {
       setOwgrStatus('error');
-      setOwgrSummary(err.message || 'Failed to fetch rankings');
+      setOwgrSummary(err.message || 'Sync failed');
     }
   };
 
@@ -872,13 +857,6 @@ export const AdminView = ({
                 style={{ ...S.btn, marginBottom: 4, ...(!selectedTourney || pgaFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
               >
                 {pgaFetching ? 'Fetching…' : '⛳ Fetch from PGA Tour'}
-              </button>
-              <button
-                onClick={handleFetchESPNResults}
-                disabled={espnFetching || !selectedTourney}
-                style={{ ...S.btnSec, marginBottom: 4, ...(!selectedTourney || espnFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
-              >
-                {espnFetching ? 'Fetching…' : '📡 Fetch from ESPN'}
               </button>
               <div style={{ textAlign: 'center', fontSize: 10, color: colors.textMuted, marginBottom: 6 }}>
                 Auto-fills earnings + round leaders below for review before processing
@@ -1021,20 +999,23 @@ export const AdminView = ({
         )}
       </div>
 
-      {/* ── 3. Update OWGR ── */}
+      {/* ── 3. Sync Rankings + LIV Roster ── */}
       <div style={S.section}>
-        <div style={S.title}>🌍 Update OWGR Rankings</div>
+        <div style={S.title}>🔄 Sync Rankings & LIV Roster</div>
+        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 10 }}>
+          Fetches the latest OWGR world rankings and automatically syncs the current LIV Golf roster — tagging ineligible players and clearing stale flags in one step.
+        </div>
         {rankingsLastUpdated && (
           <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Last updated: {new Date(rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            Last synced: {new Date(rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </div>
         )}
         <button
-          onClick={handleFetchOwgr}
+          onClick={handleSyncData}
           disabled={owgrStatus === 'fetching'}
           style={{ ...S.btn, ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
         >
-          {owgrStatus === 'fetching' ? '⏳ Fetching…' : '🌍 Fetch Latest Rankings'}
+          {owgrStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync Rankings & LIV Roster'}
         </button>
         {owgrSummary && (
           <div style={{
