@@ -647,11 +647,12 @@ export const AdminView = ({
     setOwgrStatus('fetching');
     setOwgrSummary('');
     try {
+      // ── Step 1: OWGR — top 250 only to avoid Firestore quota ─────────────
       const owgrResp = await fetch('/api/owgr');
       const owgrData = await owgrResp.json();
       if (!owgrResp.ok) throw new Error(owgrData.error || 'OWGR fetch failed');
-      const { players: fetched } = owgrData;
-      if (!fetched?.length) throw new Error('No ranking data returned');
+      const fetched = (owgrData.players || []).slice(0, 250);
+      if (!fetched.length) throw new Error('No ranking data returned');
 
       let updatedPlayers = [...allPlayers];
       let updated = 0, added = 0;
@@ -660,17 +661,23 @@ export const AdminView = ({
         if (idx >= 0) { updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank }; updated++; }
         else { updatedPlayers.push({ name, worldRank }); added++; }
       });
-
+      // Single batched write — only the 250 players
       await playersApi.upsertMany(fetched.map(({ name, worldRank }) => ({ name, worldRank })));
 
+      // ── Step 2: LIV sync — only write what actually changed ──────────────
       const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
-      const toFlag   = LIV_GOLF_ROSTER.filter(name => !updatedPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv);
-      const toUnflag = updatedPlayers.filter(p => p.isLiv && !livRosterLower.has(p.name.toLowerCase()));
-      const livWrites = [
-        ...toFlag.map(name => ({ name, isLiv: true })),
-        ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
-      ];
-      if (livWrites.length > 0) {
+      const toFlag   = LIV_GOLF_ROSTER.filter(name =>
+        !updatedPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
+      );
+      const toUnflag = updatedPlayers.filter(p =>
+        p.isLiv && !livRosterLower.has(p.name.toLowerCase())
+      );
+
+      if (toFlag.length > 0 || toUnflag.length > 0) {
+        const livWrites = [
+          ...toFlag.map(name => ({ name, isLiv: true })),
+          ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
+        ];
         await playersApi.upsertMany(livWrites);
         toFlag.forEach(name => {
           const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
@@ -689,7 +696,7 @@ export const AdminView = ({
       const livMsg    = toFlag.length   > 0 ? ` · ${toFlag.length} LIV tagged`  : ' · LIV up to date';
       const unflagMsg = toUnflag.length > 0 ? ` · ${toUnflag.length} unflagged` : '';
       setOwgrStatus('done');
-      setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new${livMsg}${unflagMsg}`);
+      setOwgrSummary(`✓ Top 250 rankings synced · ${updated} updated · ${added} new${livMsg}${unflagMsg}`);
     } catch (err) {
       setOwgrStatus('error');
       setOwgrSummary(err.message || 'Sync failed');
