@@ -328,7 +328,7 @@ export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
   loggedInUser, isCommissioner, globalPlayerStats, headshots,
-  leagueSettings = {},
+  leagueSettings = {}, firstTeeTime,
 }) => {
   // Destructure with fallbacks to constants for safety
   const LINEUP_SIZE       = leagueSettings.lineupSize       ?? 5;
