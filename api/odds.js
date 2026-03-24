@@ -1,7 +1,7 @@
 // api/odds.js — Vercel serverless function
-// Fetches PGA Tour tournament winner odds by scraping pgatour.com's field page,
-// which embeds DraftKings odds in its __NEXT_DATA__ when oddsEnabled is true.
-// Falls back to scraping covers.com which publishes public golf odds.
+// Scrapes DraftKings Network (dknetwork.draftkings.com) for the current week's
+// PGA Tour tournament winner odds. This is a public WordPress blog that publishes
+// a full-field odds article every Monday — plain HTML, no JS rendering required.
 //
 // GET /api/odds          → { odds: { "Scottie Scheffler": "+350", ... }, tournament, count }
 // GET /api/odds?debug=1  → diagnostic info
@@ -12,116 +12,74 @@ const HEADERS = {
   'Accept-Language': 'en-US,en;q=0.9',
 };
 
-function nameToSlug(name) {
-  return name.toLowerCase().replace(/['']/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+// DK Network publishes a weekly "odds, full field" article.
+// We find it via their WordPress REST API — no scraping the sportsbook needed.
+const DKN_API = 'https://dknetwork.draftkings.com/wp-json/wp/v2/posts?per_page=5&categories=golf&search=odds+full+field';
+
+async function findOddsArticle() {
+  const resp = await fetch(DKN_API, { headers: { ...HEADERS, Accept: 'application/json' } });
+  if (!resp.ok) throw new Error(`DKN API ${resp.status}`);
+  const posts = await resp.json();
+  if (!posts?.length) throw new Error('No posts found');
+
+  // Find the most recent "odds, full field" article (published this week)
+  const oneWeekAgo = Date.now() - 8 * 24 * 60 * 60 * 1000;
+  const recent = posts.find(p => {
+    const published = new Date(p.date).getTime();
+    return published > oneWeekAgo && p.link?.includes('odds');
+  }) || posts[0];
+
+  return recent.link;
 }
 
-function extractNextData(html) {
-  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (!m) return null;
-  try { return JSON.parse(m[1]); } catch { return null; }
-}
-
-function walkAll(obj, collect) {
-  if (!obj || typeof obj !== 'object') return;
-  collect(obj);
-  if (Array.isArray(obj)) obj.forEach(o => walkAll(o, collect));
-  else Object.values(obj).forEach(v => walkAll(v, collect));
-}
-
-// ── Source 1: PGA Tour field page __NEXT_DATA__ odds ─────────────────────────
-async function fetchFromPGATour() {
-  // Get upcoming tournament from schedule
-  const schedResp = await fetch('https://www.pgatour.com/schedule', { headers: HEADERS });
-  if (!schedResp.ok) throw new Error(`Schedule ${schedResp.status}`);
-  const nd = extractNextData(await schedResp.text());
-  if (!nd) throw new Error('No __NEXT_DATA__ on schedule');
-
-  const queries = nd?.props?.pageProps?.dehydratedState?.queries || [];
-  let tournaments = [];
-  for (const q of queries) {
-    if (q?.state?.data?.tournaments) tournaments = tournaments.concat(q.state.data.tournaments);
-  }
-  const DONE = ['COMPLETED', 'OFFICIAL', 'PAST', 'CANCELLED'];
-  const seen = new Set();
-  const unique = tournaments.filter(t => { if (seen.has(t.tournamentId)) return false; seen.add(t.tournamentId); return true; });
-  const tournament = unique.find(t => t.status === 'IN_PROGRESS')
-    || unique.find(t => t.status === 'UPCOMING')
-    || unique.find(t => !DONE.includes(t.status?.toUpperCase()));
-  if (!tournament) throw new Error('No upcoming tournament');
-
-  const slug = nameToSlug(tournament.name);
-  const fieldUrl = `https://www.pgatour.com/tournaments/${new Date().getFullYear()}/${slug}/${tournament.tournamentId}/field`;
-  const fieldResp = await fetch(fieldUrl, { headers: HEADERS });
-  if (!fieldResp.ok) throw new Error(`Field page ${fieldResp.status}`);
-  const fieldNd = extractNextData(await fieldResp.text());
-  if (!fieldNd) throw new Error('No __NEXT_DATA__ on field page');
-
-  const odds = {};
-  walkAll(fieldNd, obj => {
-    // PGA Tour embeds odds object: { oddsToWinId, oddsEnabled, players: [{ displayName, odds }] }
-    if (obj.oddsToWinId && obj.oddsEnabled === true && Array.isArray(obj.players) && obj.players.length) {
-      obj.players.forEach(p => {
-        const name = p.displayName?.trim() || p.playerName?.trim();
-        const raw = p.odds || p.currentOdds || p.americanOdds;
-        if (name && raw !== undefined && raw !== null) {
-          const n = parseInt(raw, 10);
-          if (!isNaN(n)) odds[name] = n > 0 ? `+${n}` : `${n}`;
-        }
-      });
-    }
-  });
-
-  if (!Object.keys(odds).length) throw new Error('oddsEnabled=false or no players in odds object');
-  return { odds, tournament: tournament.name, source: 'pgatour' };
-}
-
-// ── Source 2: scrape covers.com golf odds page ────────────────────────────────
-async function fetchFromCovers() {
-  const resp = await fetch('https://www.covers.com/sport/golf/pga/odds', {
-    headers: { ...HEADERS, Accept: 'text/html' },
-  });
-  if (!resp.ok) throw new Error(`covers.com ${resp.status}`);
+async function fetchOddsFromArticle(url) {
+  const resp = await fetch(url, { headers: HEADERS });
+  if (!resp.ok) throw new Error(`Article fetch ${resp.status}`);
   const html = await resp.text();
 
+  // Extract tournament name from <h1> or <title>
+  const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/);
+  const tournament = titleMatch
+    ? titleMatch[1].replace(/<[^>]+>/g, '').replace(/odds.*$/i, '').trim()
+    : null;
+
+  // Odds appear in the article as: Player Name **+2000** or Player Name +2000
+  // The WordPress content renders markdown bold as <strong>+2000</strong>
   const odds = {};
-  let tournament = null;
 
-  // Covers embeds odds in a JSON blob in a script tag
-  const jsonMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*({[\s\S]*?});\s*<\/script>/);
-  if (jsonMatch) {
-    try {
-      const state = JSON.parse(jsonMatch[1]);
-      // Walk for odds data
-      walkAll(state, obj => {
-        if (obj.participantName && (obj.americanOdds || obj.currentLine)) {
-          const name = obj.participantName.trim();
-          const price = obj.americanOdds || obj.currentLine;
-          const n = parseInt(price, 10);
-          if (name && !isNaN(n)) odds[name] = n > 0 ? `+${n}` : `${n}`;
-        }
-        if (obj.eventName && !tournament) tournament = obj.eventName;
-      });
-    } catch (_) {}
-  }
-
-  // Fallback: parse HTML table rows with player name + odds pattern
-  if (!Object.keys(odds).length) {
-    // Covers renders odds like: PlayerName ... +2000
-    const rowPattern = /([A-Z][a-z]+ [A-Z][a-zA-Z\s'-]+?)\s*[\s\S]{0,200}?([+-]\d{3,5})/g;
-    for (const [, name, price] of html.matchAll(rowPattern)) {
-      const n = parseInt(price, 10);
-      if (name.trim().split(' ').length >= 2 && !isNaN(n)) {
-        odds[name.trim()] = n > 0 ? `+${n}` : `${n}`;
+  // Pattern 1: <li>Player Name <strong>+2000</strong></li>
+  const liPattern = /<li>([\s\S]*?)<\/li>/gi;
+  for (const [, item] of html.matchAll(liPattern)) {
+    const text = item.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    // Match "Player Name +2000" or "Player Name -150"
+    const m = text.match(/^(.+?)\s+([+-]\d{3,6})\s*$/);
+    if (m) {
+      const name = m[1].trim();
+      const price = m[2].trim();
+      // Filter out non-player items (must have at least first + last name)
+      if (name.split(' ').length >= 2 && !name.toLowerCase().includes('click') && !name.toLowerCase().includes('http')) {
+        odds[name] = price;
       }
     }
   }
 
-  if (!Object.keys(odds).length) throw new Error('No odds found on covers.com');
-  return { odds, tournament, source: 'covers' };
+  // Pattern 2: plain text lines "Player Name +2000" (fallback)
+  if (!Object.keys(odds).length) {
+    const textPattern = /([A-Z][a-z][\w\s'.\-]+?)\s+([+-]\d{3,6})(?:\s|$)/g;
+    const bodyMatch = html.match(/<article[\s\S]*?<\/article>/);
+    const body = bodyMatch ? bodyMatch[0] : html;
+    const plain = body.replace(/<[^>]+>/g, ' ');
+    for (const [, name, price] of plain.matchAll(textPattern)) {
+      const trimmed = name.trim();
+      if (trimmed.split(' ').length >= 2 && trimmed.length < 40) {
+        odds[trimmed] = price;
+      }
+    }
+  }
+
+  return { odds, tournament, url };
 }
 
-// ── Handler ───────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -130,22 +88,26 @@ export default async function handler(req, res) {
 
   const isDebug = req.query.debug === '1';
 
-  const errors = [];
-
-  // Try PGA Tour field page first (free, already being fetched)
   try {
-    const result = await fetchFromPGATour();
-    if (isDebug) return res.status(200).json({ source: result.source, tournament: result.tournament, count: Object.keys(result.odds).length, sample: Object.entries(result.odds).slice(0, 5) });
-    return res.status(200).json(result);
-  } catch (e) { errors.push(`pgatour: ${e.message}`); }
+    const articleUrl = await findOddsArticle();
+    const { odds, tournament, url } = await fetchOddsFromArticle(articleUrl);
 
-  // Fallback: covers.com
-  try {
-    const result = await fetchFromCovers();
-    if (isDebug) return res.status(200).json({ source: result.source, tournament: result.tournament, count: Object.keys(result.odds).length, sample: Object.entries(result.odds).slice(0, 5), errors });
-    return res.status(200).json(result);
-  } catch (e) { errors.push(`covers: ${e.message}`); }
+    if (isDebug) {
+      return res.status(200).json({
+        articleUrl: url,
+        tournament,
+        count: Object.keys(odds).length,
+        sample: Object.entries(odds).slice(0, 10),
+      });
+    }
 
-  // Nothing worked — return empty
-  return res.status(200).json({ odds: {}, tournament: null, reason: 'all-sources-failed', errors });
+    if (!Object.keys(odds).length) {
+      return res.status(200).json({ odds: {}, tournament, reason: 'no-odds-parsed', url });
+    }
+
+    return res.status(200).json({ odds, tournament, count: Object.keys(odds).length, source: 'dknetwork' });
+
+  } catch (err) {
+    return res.status(200).json({ odds: {}, tournament: null, reason: err.message });
+  }
 }
