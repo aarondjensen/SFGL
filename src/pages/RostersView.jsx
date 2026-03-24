@@ -414,7 +414,7 @@ export const RostersView = ({
   }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
 
   const team          = teams.find(t => t.id === selectedTeam);
-  const currentRoster = useRoster(team, transactions, activeTournamentIndex);
+  const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
   const windowStatus  = useWindowStatus(activeTournament);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
