@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { managerAuthApi } from "../api/supabase";
+import { managerAuthApi } from "../api/firebase";
 
 const styles = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -98,7 +98,7 @@ const styles = `
     border-radius: 1px;
     padding: 12px 16px;
     font-family: 'Raleway', system-ui, sans-serif;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 400;
     color: #ffffff;
     outline: none;

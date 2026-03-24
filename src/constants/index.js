@@ -54,7 +54,6 @@ export const TEAM_ABBREVIATIONS = {
   'Dirty Bird(ies)':   'DBs',
   'Hip Happens':       'HH',
   'World #1':          'W#1',
-  'Dim Bulb':          'DB',
   'POPS, LLC':         'POP',
 };
 
@@ -80,7 +79,6 @@ export const FALLBACK_SCHEDULE_DATA = [
   { key: 'American Express',  loc: 'La Quinta, California',          course: 'PGA West',             d: 'Jan 19-25',     s: '2026-01-19', e: '2026-01-25' },
   { key: 'Farmers Insurance', loc: 'San Diego, California',          course: 'Torrey Pines',         d: 'Jan 26-Feb 1',  s: '2026-01-26', e: '2026-02-01' },
   { key: 'WM Phoenix',        loc: 'Scottsdale, Arizona',            course: 'TPC Scottsdale',       d: 'Feb 2-8',       s: '2026-02-02', e: '2026-02-08' },
-  { key: 'Phoenix Open',      loc: 'Scottsdale, Arizona',            course: 'TPC Scottsdale',       d: 'Feb 2-8',       s: '2026-02-02', e: '2026-02-08' },
   { key: 'Pebble Beach',      loc: 'Pebble Beach, California',       course: 'Pebble Beach GL',      d: 'Feb 9-15',      s: '2026-02-09', e: '2026-02-15' },
   { key: 'Genesis',           loc: 'Pacific Palisades, California',  course: 'Riviera CC',           d: 'Feb 16-22',     s: '2026-02-16', e: '2026-02-22' },
   { key: 'Cognizant',         loc: 'Palm Beach Gardens, Florida',    course: 'PGA National',         d: 'Feb 23-Mar 1',  s: '2026-02-23', e: '2026-03-01' },
@@ -201,45 +199,36 @@ export const CHAR_MAP = {
 
 // ============================================================================
 // LIV GOLF ROSTER (2026 Season)
-// Updated manually from https://www.livgolf.com/teams
+// Updated from https://www.livgolf.com/teams — March 2026
+// Update at the start of each LIV season.
 // ============================================================================
 export const LIV_GOLF_ROSTER = [
   // 4Aces GC
-  'Dustin Johnson', 'Patrick Reed', 'Pat Perez', 'Peter Uihlein',
-  
+  'Dustin Johnson', 'Thomas Detry', 'Anthony Kim', 'Thomas Pieters',
   // Cleeks GC
-  'Martin Kaymer', 'Richard Bland', 'Kalle Samooja', 'Kieran Vincent',
-  
+  'Martin Kaymer', 'Richard Bland', 'Adrian Meronk', 'Victor Perez',
   // Crushers GC
-  'Bryson DeChambeau', 'Charles Howell III', 'Anirban Lahiri', 'Beau Hossler',
-  
+  'Bryson DeChambeau', 'Paul Casey', 'Charles Howell III', 'Anirban Lahiri',
   // Fireballs GC
-  'Sergio Garcia', 'Abraham Ancer', 'Eugenio Chacarra', 'David Puig',
-  
+  'Sergio Garcia', 'Josele Ballester', 'Luis Masaveu', 'David Puig',
   // HyFlyers GC
-  'Phil Mickelson', 'Andy Ogletree', 'Cameron Tringale', 'John Catlin',
-  
-  // Iron Heads GC
-  'Kevin Na', 'Danny Lee', 'Jinichiro Kozuma', 'Scott Vincent',
-  
+  'Phil Mickelson', 'Michael La Sasso', 'Brendan Steele', 'Cameron Tringale',
+  // Korean Golf Club
+  'Byeong Hun An', 'Minkyu Kim', 'Danny Lee', 'Younghan Song',
   // Legion XIII
-  'Jon Rahm', 'Tyrrell Hatton', 'Caleb Surratt', 'Kieran Shipley',
-  
+  'Jon Rahm', 'Tyrrell Hatton', 'Tom McKibbin', 'Caleb Surratt',
   // Majesticks GC
-  'Ian Poulter', 'Henrik Stenson', 'Sam Horsfield', 'Laurie Canter',
-  
+  'Ian Poulter', 'Lee Westwood', 'Laurie Canter', 'Sam Horsfield',
   // RangeGoats GC
-  'Bubba Watson', 'Thomas Pieters', 'Matthew Wolff', 'Peter McNealy',
-  
+  'Bubba Watson', 'Ben Campbell', 'Peter Uihlein', 'Matthew Wolff',
   // Ripper GC
-  'Cameron Smith', 'Matt Jones', 'Lucas Herbert', 'Jed Morgan',
-  
+  'Cameron Smith', 'Lucas Herbert', 'Marc Leishman', 'Elvis Smylie',
   // Smash GC
-  'Brooks Koepka', 'Talor Gooch', 'Jason Kokrak', 'Graeme McDowell',
-  
-  // Stinger GC
-  'Louis Oosthuizen', 'Charl Schwartzel', 'Branden Grace', 'Dean Burmester',
-  
+  'Talor Gooch', 'Jason Kokrak', 'Graeme McDowell', 'Harold Varner III',
+  // Southern Guards GC
+  'Louis Oosthuizen', 'Dean Burmester', 'Branden Grace', 'Charl Schwartzel',
   // Torque GC
-  'Joaquin Niemann', 'Sebastian Munoz', 'Carlos Ortiz', 'Matti Schmid',
+  'Joaquin Niemann', 'Abraham Ancer', 'Sebastian Munoz', 'Carlos Ortiz',
+  // Wild Card
+  'Yosuke Asaji', 'Bjorn Hellgren', 'Richard T. Lee', 'Miguel Tabuena', 'Scott Vincent',
 ];

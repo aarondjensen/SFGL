@@ -403,3 +403,13 @@ export const cardLiftHandlers = () => ({
     e.currentTarget.style.borderColor = 'rgba(180,160,100,0.15)';
   },
 });
+
+// ── Swing accent colors (single source of truth) ────────────────────────────
+export const SWING_COLORS = {
+  'West Coast Swing': 'rgba(220,190,100,0.85)',
+  'Spring Swing':     'rgba(80,200,120,0.85)',
+  'Summer Swing':     'rgba(120,180,255,0.85)',
+  'Fall Finish':      'rgba(230,150,80,0.85)',
+};
+
+export const getSwingColor = (swing) => SWING_COLORS[swing] || colors.textSecondary;

@@ -1,37 +1,129 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate } from '../utils/index.js';
-import { ROSTER_LIMIT, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER } from '../constants/index.js';
+import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../utils/index.js';
+// ROSTER_LIMIT and fees now come from leagueSettings prop
+import { playersApi } from '../api/firebase';
 import { theme, colors, fonts } from '../theme.js';
+
+// Current LIV Golf roster — updated from livgolf.com/teams March 2026.
+// Used as fallback filter when isLiv flag isn't set in DB.
+// Update at the start of each LIV season.
+const LIV_PLAYERS = new Set([
+  // 4Aces GC
+  'Dustin Johnson', 'Thomas Detry', 'Anthony Kim', 'Thomas Pieters',
+  // Cleeks GC
+  'Martin Kaymer', 'Richard Bland', 'Adrian Meronk', 'Victor Perez',
+  // Crushers GC
+  'Bryson DeChambeau', 'Paul Casey', 'Charles Howell III', 'Anirban Lahiri',
+  // Fireballs GC
+  'Sergio Garcia', 'Josele Ballester', 'Luis Masaveu', 'David Puig',
+  // HyFlyers GC
+  'Phil Mickelson', 'Michael La Sasso', 'Brendan Steele', 'Cameron Tringale',
+  // Korean Golf Club
+  'Byeong Hun An', 'Minkyu Kim', 'Danny Lee', 'Younghan Song',
+  // Legion XIII
+  'Jon Rahm', 'Tyrrell Hatton', 'Tom McKibbin', 'Caleb Surratt',
+  // Majesticks GC
+  'Ian Poulter', 'Lee Westwood', 'Laurie Canter', 'Sam Horsfield',
+  // RangeGoats GC
+  'Bubba Watson', 'Ben Campbell', 'Peter Uihlein', 'Matthew Wolff',
+  // Ripper GC
+  'Cameron Smith', 'Lucas Herbert', 'Marc Leishman', 'Elvis Smylie',
+  // Smash GC
+  'Talor Gooch', 'Jason Kokrak', 'Graeme McDowell', 'Harold Varner III',
+  // Southern Guards GC
+  'Louis Oosthuizen', 'Dean Burmester', 'Branden Grace', 'Charl Schwartzel',
+  // Torque GC
+  'Joaquin Niemann', 'Abraham Ancer', 'Sebastian Munoz', 'Carlos Ortiz',
+  // Wild Card
+  'Yosuke Asaji', 'Bjorn Hellgren', 'Richard T. Lee', 'Miguel Tabuena', 'Scott Vincent',
+]);
 
 const accentColor   = (waiver) => waiver ? colors.warning         : colors.success;
 const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.12)' : 'rgba(80,180,120,0.12)';
 const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,180,120,0.35)';
 
+// ── Headshot helpers ─────────────────────────────────────────────────────────────────────────────
+// Stored IDs are ESPN athlete IDs.
+const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
+  const val = headshotMap[playerName];
+  if (!val) return [];
+  if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
+  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
+};
+
+const getPlayerHeadshot = (playerName, headshotMap = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  if (urls.length > 0) return urls[0];
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`;
+};
+
+const makeHeadshotErrorHandler = (playerName, headshotMap) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  let attempt = 0;
+  return function handler(e) {
+    attempt++;
+    if (attempt < urls.length) {
+      e.target.src = urls[attempt];
+      e.target.onerror = handler;
+    } else {
+      e.target.onerror = null;
+      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`;
+    }
+  };
+};
+
 export const AddDropPlayerModal = ({
-  isOpen, onClose, team, currentRoster, allPlayers, teams,
+  isOpen, onClose, team, currentRoster, teams,
   updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
+  headshots, leagueSettings = {},
 }) => {
+  const ROSTER_LIMIT            = leagueSettings.rosterLimit ?? 13;
+  const TRANSACTION_FEE_FREE_AGENT = leagueSettings.feeFA    ?? 1;
+  const TRANSACTION_FEE_WAIVER  = leagueSettings.feeWaiver   ?? 2;
   const [searchTerm,           setSearchTerm]           = useState('');
   const [selectedPlayerToAdd,  setSelectedPlayerToAdd]  = useState(null);
   const [selectedPlayerToDrop, setSelectedPlayerToDrop] = useState(null);
   const [saving,               setSaving]               = useState(false);
+  const [topPlayers,           setTopPlayers]           = useState([]); // top 50 free agents by OWGR
+  const [searchResults,        setSearchResults]        = useState([]); // results from name search
+  const [loadingPlayers,       setLoadingPlayers]       = useState(false);
+  const [searching,            setSearching]            = useState(false);
   const bodyRef  = useRef(null);
+  const [localHeadshots, setLocalHeadshots] = useState({});
+  const searchTimerRef = useRef(null);
   const dialog   = useDialog();
+
+  // Load top 50 free agents when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    setLoadingPlayers(true);
+    playersApi.getTopRanked(50)
+      .then(players => setTopPlayers(players))
+      .catch(() => setTopPlayers([]))
+      .finally(() => setLoadingPlayers(false));
+  }, [isOpen]);
 
   // Pre-populate when editing an existing waiver claim
   useEffect(() => {
     if (editingWaiverData && isOpen) {
-      const toAdd = allPlayers.find(p => p.name === editingWaiverData.player);
-      if (toAdd) setSelectedPlayerToAdd(toAdd);
+      // Try to find in topPlayers, or fetch directly by name
+      const inTop = topPlayers.find(p => p.name === editingWaiverData.player);
+      if (inTop) {
+        setSelectedPlayerToAdd(inTop);
+      } else if (editingWaiverData.player) {
+        playersApi.getByName(editingWaiverData.player).then(p => {
+          if (p) setSelectedPlayerToAdd({ name: p.name, worldRank: p.world_rank, isLiv: p.is_liv });
+        }).catch(() => {});
+      }
       if (editingWaiverData.droppedPlayer) {
         const toDrop = currentRoster.find(p => p.name === editingWaiverData.droppedPlayer);
         if (toDrop) setSelectedPlayerToDrop(toDrop);
       }
     }
-  }, [editingWaiverData, isOpen, allPlayers, currentRoster]);
+  }, [editingWaiverData, isOpen, topPlayers, currentRoster]);
 
   // Scroll to top whenever drop selection changes (or add selection is made)
   useEffect(() => {
@@ -40,7 +132,52 @@ export const AddDropPlayerModal = ({
     }
   }, [selectedPlayerToDrop]);
 
+  // Fetch ESPN headshot IDs for top players not already in the headshots map
+  useEffect(() => {
+    if (!isOpen || !topPlayers.length) return;
+    const missing = topPlayers
+      .filter(p => p.name && !headshots?.[p.name])
+      .map(p => p.name)
+      .slice(0, 50);
+    if (!missing.length) return;
+    const encoded = missing.map(n => encodeURIComponent(n)).join(',');
+    fetch(`/api/headshots?names=${encoded}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.results) return;
+        setLocalHeadshots(prev => ({ ...prev, ...data.results }));
+      })
+      .catch(() => {});
+  }, [isOpen, topPlayers]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced search — fetch from Firestore when user types
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    const term = searchTerm.trim();
+    if (term.length < 2) { setSearchResults([]); return; }
+    searchTimerRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await playersApi.searchByName(term, 20);
+        setSearchResults(results);
+        // Fetch headshots for search results too
+        const missing = results.filter(p => !headshots?.[p.name] && !localHeadshots[p.name]).map(p => p.name);
+        if (missing.length) {
+          fetch(`/api/headshots?names=${missing.map(n => encodeURIComponent(n)).join(',')}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data?.results) setLocalHeadshots(prev => ({ ...prev, ...data.results })); })
+            .catch(() => {});
+        }
+      } catch { setSearchResults([]); }
+      finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(searchTimerRef.current);
+  }, [searchTerm]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!isOpen || !team) return null;
+
+  // Merge prop headshots with locally fetched ones
+  const mergedHeadshots = { ...localHeadshots, ...headshots };
 
   // ── Available players ──────────────────────────────────────────────────────
   // Build the effective roster for EVERY team by replaying processed transactions,
@@ -48,13 +185,13 @@ export const AddDropPlayerModal = ({
   // (who live in transactions but not in team.roster) from appearing as available.
   const rosteredPlayers = new Set(
     teams.flatMap(t => {
-      let roster = t.roster.map(p => p.name);
+      let roster = (t.roster || []).map(p => p.name);
       const rosterSet = new Set(roster);
       transactions
         .filter(tx =>
           tx.team === t.name &&
           tx.type !== 'mulligan' &&
-          tx.status === 'processed'
+          (tx.status === 'processed' || tx.status === 'completed')
         )
         .forEach(tx => {
           if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
@@ -71,7 +208,7 @@ export const AddDropPlayerModal = ({
   const limboPlayers = new Set(
     transactions
       .filter(tx => {
-        if (tx.status !== 'processed') return false;
+        if (tx.status !== 'processed' && tx.status !== 'completed') return false;
         if (tx.type === 'mulligan') return false;
         if (!tx.droppedPlayer) return false;
         // If we have a tournamentIndex, check if that tournament is completed
@@ -92,16 +229,37 @@ export const AddDropPlayerModal = ({
       .map(tx => tx.player)
   );
 
-  const availablePlayers = allPlayers.filter(p => {
+  // Use search results when searching, otherwise top 50 free agents
+  const playerPool = searchTerm.trim().length >= 2 ? searchResults : topPlayers;
+  const availablePlayers = playerPool.filter(p => {
     if (!p.name || typeof p.name !== 'string') return false;
-    if (/^\d+$/.test(p.name.trim())) return false;
-    if (rosteredPlayers.has(p.name)) return false;
+    if (p.isLiv || LIV_PLAYERS.has(p.name)) return false;
     if (thisTeamPendingClaims.has(p.name)) return false;
     return true;
   });
-  const filteredPlayers  = availablePlayers.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+
+  // Build ownership map: playerName → teamName
+  const ownerMap = new Map();
+  teams.forEach(t => {
+    const rosterSet = new Set((t.roster || []).map(p => p.name));
+    transactions
+      .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && (tx.status === 'processed' || tx.status === 'completed'))
+      .forEach(tx => {
+        if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
+        if (tx.player) rosterSet.add(tx.player);
+      });
+    rosterSet.forEach(name => ownerMap.set(name, t.name));
+  });
+
+  // Is the active tournament currently locked (Thu–Sun)?
+  const activeTournament = tournaments?.find(t => t.playing && !t.completed);
+  const tournamentIsLocked = isTournamentLocked(activeTournament);
+
+  // When browsing (no search): show only free agents from top 50
+  // When searching: show all results including rostered players (greyed out)
+  const displayPlayers = searchTerm.trim().length >= 2
+    ? availablePlayers                                         // search results — show all
+    : availablePlayers.filter(p => !rosteredPlayers.has(p.name) && !limboPlayers.has(p.name)); // browse: top free agents
 
   const rosterFull   = currentRoster.length >= ROSTER_LIMIT;
 
@@ -263,16 +421,39 @@ export const AddDropPlayerModal = ({
             {/* Adding tile */}
             <div style={{
               flex: 1, padding: '8px 12px',
-              background: accentBg(isWaiverMode),
-              border: `1px solid ${accentBorder(isWaiverMode)}`,
+              background: 'rgba(80,180,120,0.12)',
+              border: '1px solid rgba(80,180,120,0.35)',
               borderRadius: 3,
+              display: 'flex', alignItems: 'center', gap: 8,
             }}>
-              <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: accentColor(isWaiverMode), marginBottom: 3 }}>
-                Adding
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: colors.success, marginBottom: 3 }}>
+                  Adding
+                </div>
+                <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {selectedPlayerToAdd.name}
+                </div>
               </div>
-              <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {selectedPlayerToAdd.name}
-              </div>
+              <button
+                onClick={() => { setSelectedPlayerToAdd(null); setSelectedPlayerToDrop(null); }}
+                title="Remove selection"
+                style={{
+                  background: 'rgba(220,80,80,0.1)',
+                  border: `1px solid rgba(220,80,80,0.3)`,
+                  borderRadius: 3,
+                  width: 26, height: 26,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: 'rgba(230,90,90,0.8)',
+                  fontSize: 13, lineHeight: 1, fontWeight: 700,
+                  flexShrink: 0,
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,80,80,0.25)'; e.currentTarget.style.borderColor = 'rgba(220,80,80,0.5)'; e.currentTarget.style.color = 'rgba(240,100,100,1)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,80,80,0.1)'; e.currentTarget.style.borderColor = 'rgba(220,80,80,0.3)'; e.currentTarget.style.color = 'rgba(230,90,90,0.8)'; }}
+              >
+                ✕
+              </button>
             </div>
 
             {/* Drop tile — shows placeholder or selected player */}
@@ -282,14 +463,30 @@ export const AddDropPlayerModal = ({
                 background: selectedPlayerToDrop ? colors.dangerBg : 'rgba(255,255,255,0.02)',
                 border: `1px solid ${selectedPlayerToDrop ? colors.dangerBorder : 'rgba(255,255,255,0.06)'}`,
                 borderRadius: 3,
-                display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                display: 'flex', alignItems: 'center', gap: 8,
               }}>
-                <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: selectedPlayerToDrop ? colors.danger : colors.textMuted, marginBottom: 3 }}>
-                  Dropping
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: selectedPlayerToDrop ? colors.danger : colors.textMuted, marginBottom: 3 }}>
+                    Dropping
+                  </div>
+                  <div style={{ fontFamily: fonts.serif, fontSize: 13, color: selectedPlayerToDrop ? colors.danger : colors.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {selectedPlayerToDrop ? selectedPlayerToDrop.name : '← tap a player'}
+                  </div>
                 </div>
-                <div style={{ fontFamily: fonts.serif, fontSize: 13, color: selectedPlayerToDrop ? colors.danger : colors.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {selectedPlayerToDrop ? selectedPlayerToDrop.name : '← tap a player'}
-                </div>
+                {selectedPlayerToDrop && (
+                  <button
+                    onClick={() => setSelectedPlayerToDrop(null)}
+                    title="Clear drop selection"
+                    style={{
+                      background: 'rgba(220,80,80,0.1)',
+                      border: '1px solid rgba(220,80,80,0.3)',
+                      borderRadius: 3, width: 26, height: 26,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', color: 'rgba(230,90,90,0.8)',
+                      fontSize: 13, lineHeight: 1, fontWeight: 700, flexShrink: 0,
+                    }}
+                  >✕</button>
+                )}
               </div>
             )}
           </div>
@@ -302,50 +499,34 @@ export const AddDropPlayerModal = ({
           {needsDrop && (
             <div style={{ marginBottom: 16 }}>
               <p style={{ ...theme.smallText, marginBottom: 8, color: colors.textSecondary }}>
-                Roster full · select a player to drop (Limited players cannot be dropped)
+                Roster full · select a player to drop
               </p>
-              {currentRoster.map(player => {
+              {currentRoster.filter(player => !player.limited).map(player => {
                 const isSelected     = selectedPlayerToDrop?.name === player.name;
-                const canDrop        = !player.limited;
                 const inPendingDrop  = pendingDropNames.has(player.name);
                 return (
                   <div
                     key={player.name}
-                    onClick={() => canDrop && setSelectedPlayerToDrop(isSelected ? null : player)}
+                    onClick={() => setSelectedPlayerToDrop(isSelected ? null : player)}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '9px 12px', marginBottom: 6, borderRadius: 3,
                       background: isSelected ? colors.dangerBg : 'rgba(255,255,255,0.03)',
                       border: `1px solid ${isSelected ? colors.dangerBorder : colors.borderSubtle}`,
-                      cursor: canDrop ? 'pointer' : 'not-allowed',
-                      opacity: canDrop ? 1 : 0.4,
+                      cursor: 'pointer',
                       transition: 'all 0.15s',
                     }}
-                    onMouseEnter={e => { if (canDrop && !isSelected) e.currentTarget.style.background = 'rgba(180,60,60,0.08)'; }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(180,60,60,0.08)'; }}
                     onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {/* Limited badge or drop icon */}
-                      {player.limited ? (
-                        <span style={{
-                          fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
-                          letterSpacing: 0.8, textTransform: 'uppercase',
-                          color: 'rgba(245,197,24,0.75)',
-                          border: '1px solid rgba(245,197,24,0.3)',
-                          borderRadius: 2, padding: '2px 5px',
-                          flexShrink: 0,
-                        }}>
-                          LTD
-                        </span>
-                      ) : (
-                        <Trash2 style={{
-                          width: 14, height: 14, flexShrink: 0,
-                          color: isSelected ? colors.danger : 'rgba(220,80,80,0.55)',
-                        }} />
-                      )}
+                      <MinusCircle style={{
+                        width: 15, height: 15, flexShrink: 0,
+                        color: isSelected ? 'rgba(240,90,90,0.95)' : 'rgba(230,85,85,0.65)',
+                      }} />
                       <span style={{
                         fontFamily: fonts.serif, fontSize: 13,
-                        color: isSelected ? colors.danger : (player.limited ? colors.textGold : colors.textPrimary),
+                        color: isSelected ? colors.danger : colors.textPrimary,
                       }}>
                         {player.name}
                       </span>
@@ -399,12 +580,20 @@ export const AddDropPlayerModal = ({
             onBlur={e => { e.target.style.borderColor = colors.borderInput; e.target.style.background = colors.inputBg; }}
           />
 
-          {filteredPlayers.length === 0 ? (
-            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0' }}>No available players found</p>
+          {loadingPlayers ? (
+            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0', color: colors.textMuted }}>Loading players…</p>
+          ) : searching ? (
+            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0', color: colors.textMuted }}>Searching…</p>
+          ) : displayPlayers.length === 0 ? (
+            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0' }}>
+              {searchTerm.trim().length >= 2 ? 'No players found' : 'No free agents available'}
+            </p>
           ) : (
-            filteredPlayers.slice(0, 50).map(player => {
+            displayPlayers.slice(0, 50).map(player => {
               const isCurrentlySelected = selectedPlayerToAdd?.name === player.name;
               const isLimbo = limboPlayers.has(player.name);
+              const playerOwner = ownerMap.get(player.name);
+              const isRostered = !!playerOwner;
               return (
                 <div
                   key={player.name}
@@ -414,26 +603,45 @@ export const AddDropPlayerModal = ({
                     background: isCurrentlySelected ? accentBg(isWaiverMode) : colors.cardBg,
                     border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
                     transition: 'all 0.15s',
-                    cursor: isLimbo ? 'default' : 'pointer',
+                    cursor: (isLimbo || isRostered || tournamentIsLocked) ? 'default' : 'pointer',
                   }}
-                  onClick={() => { if (!isLimbo) selectPlayerToAdd(player); }}
-                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
-                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
+                  onClick={() => { if (!isLimbo && !isRostered && !tournamentIsLocked) selectPlayerToAdd(player); }}
+                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = colors.cardBgHover; e.currentTarget.style.borderColor = colors.borderInput; } }}
+                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = colors.cardBg; e.currentTarget.style.borderColor = colors.borderSubtle; } }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: '50%',
-                      background: colors.buttonNavy, border: `1px solid ${colors.borderSubtle}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontFamily: fonts.sans, fontSize: 10, color: colors.textSecondary, flexShrink: 0,
-                    }}>
-                      {player.worldRank === 999 ? 'NR' : `#${player.worldRank}`}
-                    </div>
+                    <img
+                      src={getPlayerHeadshot(player.name, mergedHeadshots)}
+                      onError={makeHeadshotErrorHandler(player.name, mergedHeadshots)}
+                      alt=""
+                      style={{
+                        width: 28, height: 28, borderRadius: '50%', objectFit: 'cover',
+                        border: `1px solid ${colors.borderSubtle}`,
+                        flexShrink: 0,
+                      }}
+                    />
                     <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
                       {player.name}
                     </span>
+                    {isRostered && (
+                      <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: colors.danger, textTransform: 'uppercase' }}>
+                        Unavailable
+                      </span>
+                    )}
                   </div>
-                  {isLimbo ? (
+                  {isRostered ? (
+                    <span style={{
+                      fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                      padding: '4px 8px', borderRadius: 3,
+                      letterSpacing: '0.5px',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      color: colors.textSecondary,
+                      flexShrink: 0,
+                    }}>
+                      {getTeamAbbreviation(playerOwner)}
+                    </span>
+                  ) : isLimbo ? (
                     <span style={{
                       fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
                       padding: '5px 0', borderRadius: 3,
@@ -445,6 +653,19 @@ export const AddDropPlayerModal = ({
                       display: 'inline-block',
                     }}>
                       On Waivers
+                    </span>
+                  ) : tournamentIsLocked ? (
+                    <span style={{
+                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      padding: '5px 0', borderRadius: 3,
+                      width: 90, textAlign: 'center', flexShrink: 0,
+                      background: 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${colors.borderSubtle}`,
+                      color: colors.textMuted,
+                      letterSpacing: '0.3px',
+                      display: 'inline-block',
+                    }}>
+                      Locked
                     </span>
                   ) : (
                     <button

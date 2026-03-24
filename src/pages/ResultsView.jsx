@@ -1,12 +1,21 @@
 import React, { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Trophy } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
-import { theme, colors, fonts, cardLiftHandlers } from '../theme.js';
+import { theme, colors, fonts, cardLiftHandlers, SWING_COLORS } from '../theme.js';
 
 const GOLD_BRIGHT = '#f5c518';
 const GOLD_DIM    = 'rgba(245,197,24,0.35)';
 const BLUE_BRIGHT = 'rgba(100,180,255,0.95)';
 const BLUE_DIM    = 'rgba(100,180,255,0.35)';
+
+const swingColors = (seg) => {
+  const accent = SWING_COLORS[seg] || 'rgba(120,180,255,0.85)';
+  return {
+    accent,
+    bg: accent.replace('0.85)', '0.07)'),
+    border: accent.replace('0.85)', '0.3)'),
+  };
+};
 
 const playerNameColor = (p, showEarnings) => {
   if (p.unlimited) return showEarnings ? (p.earnings > 0 ? BLUE_BRIGHT : BLUE_DIM) : BLUE_BRIGHT;
@@ -18,42 +27,48 @@ const playerNameColor = (p, showEarnings) => {
 
 // ── Player slot grid ──────────────────────────────────────────────────────────
 const PlayerSlotGrid = ({ players, showEarnings }) => {
-  // Use actual lineup length (up to 5 max), never pad beyond what was submitted
-  const count = Math.min(Math.max(players.length, 1), 5);
-  const slots = Array.from({ length: count }, (_, i) => players[i] || null);
+  // Always 5 columns — pad with nulls for empty slots
+  const slots = Array.from({ length: 5 }, (_, i) => players[i] || null);
   return (
-    <div style={{ marginLeft: 28, display: 'grid', gridTemplateColumns: `repeat(${count}, 1fr)`, gap: 4 }}>
+    <div style={{ marginLeft: 24, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 3 }}>
       {slots.map((p, idx) => (
-        <div key={idx} style={{ fontSize: 11, minWidth: 0, overflow: 'hidden' }}>
+        <div key={idx} style={{ fontSize: 10, minWidth: 0, overflow: 'hidden' }}>
           {p ? (
             <>
+              {/* Line 1: name + mulligan */}
               <div style={{
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 color: playerNameColor(p, showEarnings),
               }}>
                 {shortName(p.name)}
-                {showEarnings && p.roundsLed?.map((rl, ri) => (
-                  <span key={ri} style={{
-                    marginLeft: 2, padding: '0 4px',
-                    background: 'rgba(220,110,30,0.35)',
-                    color: 'rgba(255,165,80,0.95)',
-                    borderRadius: 2, fontSize: 9,
-                  }}>R{rl.round}</span>
-                ))}
+                {p.mulliganIn && (
+                  <span title={`Mulligan · ${p.replacedPlayer || '?'}`} style={{
+                    marginLeft: 2, fontSize: 9, lineHeight: 1, verticalAlign: 'middle',
+                  }}>🚨</span>
+                )}
               </div>
+              {/* Line 2: earnings (base + bonus combined) */}
               {showEarnings ? (
-                <div>
-                  <span style={{ ...theme.statNum, fontSize: 11, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
-                    ${(p.earnings || 0).toLocaleString()}
+                <div style={{ whiteSpace: 'nowrap' }}>
+                  <span style={{ ...theme.statNum, fontSize: 10, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
+                    ${((p.earnings || 0) + (p.bonus || 0)).toLocaleString()}
                   </span>
-                  {p.bonus > 0 && (
-                    <span style={{ color: 'rgba(255,150,60,0.9)', marginLeft: 2 }}>
-                      +{p.bonus.toLocaleString()}
-                    </span>
-                  )}
                 </div>
               ) : (
                 <div style={{ color: colors.textMuted }}>—</div>
+              )}
+              {/* Line 3: round leader badges (only if any) */}
+              {showEarnings && p.roundsLed?.length > 0 && (
+                <div style={{ display: 'flex', gap: 2, marginTop: 1 }}>
+                  {p.roundsLed.map((rl, ri) => (
+                    <span key={ri} style={{
+                      padding: '1px 3px',
+                      background: 'rgba(220,110,30,0.35)',
+                      color: 'rgba(255,165,80,0.95)',
+                      borderRadius: 2, fontSize: 8, lineHeight: 1.2,
+                    }}>R{rl.round}</span>
+                  ))}
+                </div>
               )}
             </>
           ) : (
@@ -99,12 +114,49 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
     return map;
   }, [teams]);
 
-  // Enrich a result player with live roster flags as fallback
-  const enrich = (p) => ({
-    ...p,
-    limited:   p.limited   ?? rosterFlagMap[p.name]?.limited   ?? false,
-    unlimited: p.unlimited ?? rosterFlagMap[p.name]?.unlimited ?? false,
-  });
+  // Build mulligan lookup: { tournamentIndex → { playerIn → droppedPlayer, droppedPlayer → playerIn } }
+  // We track both directions because tournament results may contain EITHER the original
+  // player (if the swap wasn't applied to results) or the replacement player (if it was).
+  const mulliganMap = useMemo(() => {
+    const map = {};
+    transactions.forEach(tx => {
+      if (tx.type !== 'mulligan' || !tx.player) return;
+      const idx = tx.tournamentIndex ?? -1;
+      if (!map[idx]) map[idx] = { ins: {}, outs: {} };
+      // tx.player = player IN, tx.droppedPlayer = player OUT
+      map[idx].ins[tx.player] = tx.droppedPlayer || '?';
+      if (tx.droppedPlayer) map[idx].outs[tx.droppedPlayer] = tx.player;
+    });
+    return map;
+  }, [transactions]);
+
+  // Enrich a result player with live roster flags + mulligan detection.
+  // When the original player (mulliganed OUT) still appears in results data,
+  // swap the display name to the replacement player (mulliganed IN).
+  const enrich = (p, tournamentIndex) => {
+    const tMap = mulliganMap[tournamentIndex];
+    // Player was mulliganed IN (replacement player appears in results)
+    const isMullIn = p.mulliganIn || !!tMap?.ins[p.name];
+    // Player was mulliganed OUT (original player still appears in results — swap wasn't applied)
+    const isMullOut = !!tMap?.outs[p.name];
+
+    // If the original player is still in results, swap to show the replacement
+    const displayName = isMullOut ? tMap.outs[p.name] : p.name;
+    const replacedPlayer = isMullIn
+      ? (p.replacedPlayer || tMap?.ins[p.name] || null)
+      : isMullOut
+        ? p.name  // the original player who was replaced
+        : null;
+
+    return {
+      ...p,
+      name: displayName,
+      limited:   rosterFlagMap[displayName]?.limited   ?? p.limited   ?? false,
+      unlimited: rosterFlagMap[displayName]?.unlimited ?? p.unlimited ?? false,
+      mulliganIn: isMullIn || isMullOut,
+      replacedPlayer,
+    };
+  };
   const [expandedTournament, setExpandedTournament] = useState(null);
 
   const completedTournaments = useMemo(() =>
@@ -172,6 +224,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
       {inProgressTournaments.map((tournament) => {
         const isExpanded = expandedTournament === tournament.name;
         const teamsWithLineups = teams.filter(t => t.lineup?.length > 0).sort((a, b) => a.name.localeCompare(b.name));
+        const tIdx = tournaments.indexOf(tournament);
 
         return (
           <div key={tournament.name} style={{
@@ -184,7 +237,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               aria-expanded={isExpanded}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '14px 20px',
+                padding: '10px 14px',
                 background: isExpanded ? 'rgba(40,120,80,0.1)' : 'linear-gradient(90deg, rgba(40,120,80,0.12) 0%, transparent 100%)',
                 border: 'none', borderBottom: `1px solid rgba(80,180,120,0.15)`,
                 cursor: 'pointer', transition: 'background 0.2s',
@@ -225,15 +278,15 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   const sortedLineup = getSortedRoster(lineupPlayers);
                   return (
                     <div key={team.id} style={{
-                      padding: '10px 20px',
+                      padding: '6px 14px',
                       borderBottom: `1px solid ${colors.borderSubtle}`,
                     }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                        <span style={{ ...theme.smallText, width: 20, textAlign: 'center' }}>—</span>
-                        <span style={{ ...theme.h3, fontSize: 13 }}>{team.name}</span>
-                        <span style={{ ...theme.smallText, fontStyle: 'italic', color: colors.textGoldDim }}>pending</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, width: 18, textAlign: 'center', fontFamily: fonts.serif, color: colors.textMuted }}>—</span>
+                        <span style={{ ...theme.h3, fontSize: 12 }}>{team.name}</span>
+                        <span style={{ fontFamily: fonts.sans, fontSize: 10, fontStyle: 'italic', color: colors.textGoldDim }}>pending</span>
                       </div>
-                      <PlayerSlotGrid players={sortedLineup.map(enrich)} showEarnings={false} />
+                      <PlayerSlotGrid players={sortedLineup.map(p => enrich(p, tIdx))} showEarnings={false} />
                     </div>
                   );
                 })}
@@ -270,14 +323,11 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
           }
         });
 
-        // All swing cards use gold
-        const RED = { accent: 'rgba(245,197,24,0.9)', bg: 'rgba(245,197,24,0.07)', border: 'rgba(245,197,24,0.3)' };
-
         return items.map(item => {
           if (item.type === 'swing') {
             const { summary } = item;
             const isExpanded = expandedTournament === ('swing:' + summary.seg);
-            const sc = RED;
+            const sc = swingColors(summary.seg);
             return (
               <div key={'swing:' + summary.seg} style={{
                 ...theme.cardLift,
@@ -289,7 +339,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   aria-expanded={isExpanded}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '14px 20px',
+                    padding: '10px 14px',
                     background: isExpanded ? sc.bg : `linear-gradient(90deg, ${sc.bg} 0%, transparent 100%)`,
                     border: 'none', borderBottom: isExpanded ? `1px solid ${sc.border}` : 'none',
                     cursor: 'pointer', transition: 'background 0.2s',
@@ -327,7 +377,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                     {summary.ranked.map((entry, rank) => (
                       <div key={entry.team.id}
                         style={{
-                          padding: '10px 20px',
+                          padding: '6px 14px',
                           borderBottom: `1px solid ${colors.borderSubtle}`,
                           background: rank === 0 ? sc.bg : 'transparent',
                           transition: 'background 0.15s',
@@ -335,21 +385,21 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                         onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'rgba(255,255,255,0.04)'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'transparent'; }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                           <span style={{
-                            fontSize: 11, fontWeight: 700, width: 20, textAlign: 'center',
+                            fontSize: 11, fontWeight: 700, width: 18, textAlign: 'center',
                             fontFamily: fonts.serif,
                             color: rank === 0 ? sc.accent : colors.textMuted,
                           }}>
                             {rank + 1}
                           </span>
-                          <span style={{ ...theme.h3, fontSize: 13, color: rank === 0 ? colors.textPrimary : colors.textSecondary }}>{entry.team.name}</span>
+                          <span style={{ ...theme.h3, fontSize: 12, color: rank === 0 ? colors.textPrimary : colors.textSecondary }}>{entry.team.name}</span>
                           <span style={{
                             ...theme.statNum,
-                            fontSize: rank === 0 ? 14 : 12,
+                            fontSize: rank === 0 ? 13 : 11,
                             fontWeight: rank === 0 ? 700 : 400,
                             color: rank === 0 ? colors.earningsGreen : 'rgba(80,180,120,0.5)',
-                            marginLeft: 4,
+                            marginLeft: 2,
                           }}>
                             ${entry.earnings.toLocaleString()}
                           </span>
@@ -369,6 +419,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
 
           // Regular tournament card
           const { tournament } = item;
+          const tIdx = tournaments.indexOf(tournament);
           const isExpanded = expandedTournament === tournament.name;
           const results = tournament.results;
           const rankedTeams = teams
@@ -383,7 +434,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               aria-expanded={isExpanded}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '14px 20px', background: isExpanded
+                padding: '10px 14px', background: isExpanded
                   ? 'rgba(18,46,82,0.3)'
                   : 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)',
                 border: 'none', borderBottom: isExpanded ? `1px solid ${colors.borderSubtle}` : 'none',
@@ -418,11 +469,13 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               <div>
                 {rankedTeams.map((team, rank) => {
                   const tr = team.result;
-                  const players = getSortedRoster(tr.players || []);
+                  const players = (tr.players || [])
+                    .map(p => enrich(p, tIdx))
+                    .sort((a, b) => (b.earnings || 0) - (a.earnings || 0));
                   return (
                     <div key={team.id}
                       style={{
-                        padding: '10px 20px',
+                        padding: '6px 14px',
                         borderBottom: `1px solid ${colors.borderSubtle}`,
                         background: rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent',
                         transition: 'background 0.15s',
@@ -430,24 +483,24 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                       onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.07)' : 'rgba(255,255,255,0.04)'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent'; }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                         <span style={{
-                          fontSize: 11, fontWeight: 700, width: 20, textAlign: 'center',
+                          fontSize: 11, fontWeight: 700, width: 18, textAlign: 'center',
                           fontFamily: fonts.serif,
                           color: rank === 0 ? colors.textGold : colors.textMuted,
                         }}>
                           {rank + 1}
                         </span>
-                        <span style={{ ...theme.h3, fontSize: 13 }}>{team.name}</span>
+                        <span style={{ ...theme.h3, fontSize: 12 }}>{team.name}</span>
                         <span style={{
-                          ...theme.statNum, fontSize: 13, fontWeight: 600,
+                          ...theme.statNum, fontSize: 12, fontWeight: 600,
                           color: (tr.totalEarnings || 0) > 0 ? colors.earningsGreen : colors.textMuted,
-                          marginLeft: 4,
+                          marginLeft: 2,
                         }}>
                           ${(tr.totalEarnings || 0).toLocaleString()}
                         </span>
                       </div>
-                      <PlayerSlotGrid players={players.map(enrich)} showEarnings />
+                      <PlayerSlotGrid players={players} showEarnings />
                     </div>
                   );
                 })}

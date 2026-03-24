@@ -1,20 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy, Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
+import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
-import { DialogProvider } from './components/DialogContext';
-import { ErrorBoundary }  from './components/ErrorBoundary';
-import { StandingsView }  from './components/StandingsView';
-import { ResultsView }    from './components/ResultsView';
-import { RostersView }    from './components/RostersView';
-import { TransactionsView } from './components/TransactionsView';
-import { TournamentsView }  from './components/TournamentsView';
-import { AdminView }        from './components/AdminView';
-import LoginPage            from './components/LoginPage';
+import { DialogProvider } from './pages/DialogContext';
+import { ErrorBoundary }  from './pages/ErrorBoundary';
+import { StandingsView }  from './pages/StandingsView';
+import { ResultsView }    from './pages/ResultsView';
+import { RostersView }    from './pages/RostersView';
+import { TransactionsView } from './pages/TransactionsView';
+import { TournamentsView }  from './pages/TournamentsView';
+import { AdminView }        from './pages/AdminView';
+import LoginPage            from './pages/LoginPage';
 
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
+import { getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi, sfglDataApi } from './api/supabase';
+import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
 
 
@@ -39,14 +40,13 @@ const FantasyGolfLeague = () => {
   const [adminPassword,         setAdminPassword]         = useState('');
   const [firstTeeTime,          setFirstTeeTime]          = useState(null);
   const [resultsHydrated,       setResultsHydrated]       = useState(false);
-  const [supabaseReady,         setSupabaseReady]         = useState(false);
 
   const league = useLeague(STORAGE_KEYS);
 
   const {
     teams, tournaments, transactions, settings, globalPlayerStats,
     allPlayers, rankingsLastUpdated, headshots, loading, isSyncing,
-    setTeams, setTournaments, setTransactions, setSettings, setGlobalPlayerStats, setHeadshots,
+    setTeams, setTournaments, setTransactions, setSettings, setGlobalPlayerStats, setHeadshots, setAllPlayers,
     updateTeams, updateTournaments, updateTransactions, updateSettings,
     updateGlobalStats, updateHeadshots, updateRankings,
   } = league;
@@ -123,42 +123,6 @@ const FantasyGolfLeague = () => {
     }).catch(() => {});
   }, [resolvedTeams]);
 
-  // ── Primary Supabase boot hydration ──────────────────────────────────────
-  // The app's storage layer reads/writes sfgl_data using STORAGE_KEYS as keys.
-  // On a fresh device (mobile/new browser) localStorage is empty so useLeague
-  // returns INITIAL_TEAMS. This effect reads the real data directly from the
-  // sfgl_data table and overwrites empty state before rendering begins.
-  useEffect(() => {
-    if (loading) return;
-    const hydrateFromSupabase = async () => {
-      try {
-        const rows = await sfglDataApi.getMany([
-          STORAGE_KEYS.TEAMS,
-          STORAGE_KEYS.TOURNAMENTS,
-          STORAGE_KEYS.TRANSACTIONS,
-          STORAGE_KEYS.SETTINGS,
-          STORAGE_KEYS.GLOBAL_PLAYER_STATS,
-        ]);
-        if (rows[STORAGE_KEYS.TEAMS]?.length > 0)
-          setTeams(rows[STORAGE_KEYS.TEAMS]);
-        if (rows[STORAGE_KEYS.TOURNAMENTS]?.length > 0)
-          setTournaments(rows[STORAGE_KEYS.TOURNAMENTS]);
-        if (rows[STORAGE_KEYS.TRANSACTIONS]?.length > 0)
-          setTransactions(rows[STORAGE_KEYS.TRANSACTIONS]);
-        if (rows[STORAGE_KEYS.SETTINGS])
-          setSettings(rows[STORAGE_KEYS.SETTINGS]);
-        if (rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS] &&
-            Object.keys(rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS]).length > 0)
-          setGlobalPlayerStats(rows[STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
-      } catch (e) {
-        console.warn('Supabase boot hydration failed:', e.message);
-      } finally {
-        setSupabaseReady(true);
-      }
-    };
-    hydrateFromSupabase();
-  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── Hydrate tournament results from Supabase ─────────────────────────────
   // Hydrate tournament results from Supabase once after load.
   // MERGE only — never overwrites a tournament that already has local results.
@@ -186,6 +150,8 @@ const FantasyGolfLeague = () => {
   const handleAdminLogin = async () => {
     const hashed = await hashPassword(adminPassword);
     if (hashed === COMMISSIONER_PASSWORD_HASH) {
+      // Blur input to dismiss keyboard and reset iOS zoom
+      if (document.activeElement) document.activeElement.blur();
       setIsCommissioner(true);
       setShowAdminLoginPopover(false);
       setAdminPassword('');
@@ -200,7 +166,15 @@ const FantasyGolfLeague = () => {
   const handleManagerLogin = (result) => {
     // result = { teamId } — resolve display name from loaded teams
     const team = resolvedTeams.find(t => t.id === result.teamId);
+    // Blur any focused input and reset iOS viewport zoom
+    if (document.activeElement) document.activeElement.blur();
+    const mv = document.querySelector('meta[name=viewport]');
+    if (mv) {
+      mv.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1');
+      setTimeout(() => mv.setAttribute('content', 'width=device-width, initial-scale=1'), 300);
+    }
     setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
+    setIsCommissioner(false);
     setShowLoginModal(false);
   };
 
@@ -211,7 +185,7 @@ const FantasyGolfLeague = () => {
     setIsCommissioner(false);
   };
 
-  if (loading || !supabaseReady) {
+  if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
         <style>{`
@@ -286,8 +260,7 @@ const FantasyGolfLeague = () => {
                     {loggedInUser}
                   </span>
                 )}
-                {loggedInUser
-                  ? (
+                {loggedInUser && !isCommissioner && (
                     <button onClick={handleLogout} style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
                       fontSize: 10,
@@ -303,7 +276,8 @@ const FantasyGolfLeague = () => {
                     }}>
                       Sign Out
                     </button>
-                  ) : (
+                )}
+                {!loggedInUser && (
                     <button onClick={() => setShowLoginModal(true)} style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
                       fontSize: 10,
@@ -319,8 +293,7 @@ const FantasyGolfLeague = () => {
                     }}>
                       Sign In
                     </button>
-                  )
-                }
+                )}
               </div>
             </div>
           </div>
@@ -329,39 +302,48 @@ const FantasyGolfLeague = () => {
         {/* ── Commissioner banner ── */}
         {isCommissioner && (
           <div style={{
-            background: 'repeating-linear-gradient(90deg, rgba(245,197,24,0.12) 0px, rgba(245,197,24,0.12) 12px, rgba(245,197,24,0.06) 12px, rgba(245,197,24,0.06) 24px)',
-            borderTop: '1px solid rgba(245,197,24,0.35)',
-            borderBottom: '1px solid rgba(245,197,24,0.35)',
+            background: 'rgba(245,197,24,0.85)',
             padding: '4px 16px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
           }}>
-            <span style={{ fontSize: 11, letterSpacing: '0.15em', fontWeight: 700, fontFamily: "'Raleway', system-ui, sans-serif", color: 'rgba(245,197,24,0.9)', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 11, letterSpacing: '0.15em', fontWeight: 700, fontFamily: "'Raleway', system-ui, sans-serif", color: '#0a1628', textTransform: 'uppercase' }}>
               ⚙ Commissioner Mode
             </span>
+            <button onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }} style={{
+              fontFamily: "'Raleway', system-ui, sans-serif",
+              fontSize: 9,
+              letterSpacing: 1.5,
+              textTransform: 'uppercase',
+              padding: '3px 10px',
+              background: '#dc2626',
+              border: '1px solid #b91c1c',
+              borderRadius: 2,
+              color: '#fff',
+              cursor: 'pointer',
+              fontWeight: 700,
+            }}>
+              Sign Out
+            </button>
           </div>
         )}
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
-            <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(255,255,255,0.82)', letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
+            <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
               {(() => {
                 const active = safeTournaments.find(t => t.playing);
-                if (active?.segment) return active.segment;
-                const next = safeTournaments.find(t => !t.completed && !t.playing);
-                if (next?.segment) return next.segment;
-                const lastDone = [...safeTournaments].reverse().find(t => t.completed);
-                if (lastDone?.segment) return lastDone.segment;
-                return getSegmentByDate();
+                const seg = active?.segment || safeTournaments.find(t => !t.completed && !t.playing)?.segment || [...safeTournaments].reverse().find(t => t.completed)?.segment || getSegmentByDate();
+                return <span style={{ color: getSwingColor(seg) }}>{seg}</span>;
               })()}
             </div>
             {currentTournament && (
-              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
                 <span>⛳</span> {currentTournament.name}
               </div>
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {currentTournament && (
-              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: 'rgba(210,190,130,0.95)', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
                 <span>⛳</span> {currentTournament.name}
               </div>
             )}
@@ -404,17 +386,17 @@ const FantasyGolfLeague = () => {
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   border: isActive
-                    ? '1px solid rgba(80,195,120,0.35)'
+                    ? '1px solid rgba(255,255,255,0.2)'
                     : '1px solid transparent',
                   background: isActive
-                    ? 'rgba(20,80,50,0.5)'
+                    ? 'rgba(255,255,255,0.08)'
                     : isAdminPopover
                       ? 'rgba(255,255,255,0.06)'
                       : 'rgba(255,255,255,0.04)',
                   color: isActive
-                    ? 'rgba(80,195,120,0.95)'
+                    ? 'rgba(255,255,255,0.95)'
                     : 'rgba(255,255,255,0.78)',
-                  boxShadow: isActive ? 'inset 0 1px 0 rgba(80,195,120,0.15)' : 'none',
+                  boxShadow: isActive ? 'inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
                 }}
               >
                 <tab.Icon style={{ width: 13, height: 13 }} />
@@ -444,6 +426,8 @@ const FantasyGolfLeague = () => {
           }}>
             <input
               type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
               autoFocus
               autoComplete="current-password"
               placeholder="Password"
@@ -455,7 +439,7 @@ const FantasyGolfLeague = () => {
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: 1,
                 padding: '7px 10px',
-                fontSize: 13,
+                fontSize: 16,
                 width: 160,
                 color: 'white',
                 outline: 'none',
@@ -482,7 +466,7 @@ const FantasyGolfLeague = () => {
       {/* ── Main content ── */}
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 80px" }}>
 
-        <ErrorBoundary>
+        <ErrorBoundary key={activeTab} tabName={activeTab}>
           {activeTab === 'standings' && (
             <StandingsView teams={resolvedTeams} tournaments={safeTournaments} transactions={safeTransactions} />
           )}
@@ -542,6 +526,7 @@ const FantasyGolfLeague = () => {
               transactions={safeTransactions}
               setTransactions={updateTransactions}
               allPlayers={allPlayers}
+              setAllPlayers={setAllPlayers}
               globalPlayerStats={globalPlayerStats}
               setGlobalPlayerStats={updateGlobalStats}
               headshots={resolvedHeadshots}
