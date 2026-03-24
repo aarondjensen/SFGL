@@ -996,7 +996,6 @@ export const RostersView = ({
         onClose={() => { setShowAddDropModal(false); setEditingWaiverData(null); setPendingAddPlayer(null); }}
         team={team}
         currentRoster={currentRoster}
-        {/* allPlayers no longer passed — modal fetches lazily */}
         teams={teams}
         updateTeams={updateTeams}
         transactions={transactions}
