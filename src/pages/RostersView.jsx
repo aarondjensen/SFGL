@@ -489,22 +489,26 @@ export const RostersView = ({
     return map;
   }, [team, tournaments, transactions]);
 
-  // Fetch current week's field from /api/field — polls every 30 min so tee times
-  // are picked up as soon as PGA Tour posts them (typically Wed morning)
+  // Fetch current week's field from /api/field — runs once on mount, polls every 30 min.
+  // We use a ref to track the last fetched tournament so re-renders don't re-trigger.
   const _fieldTournamentName = (
     tournaments.find(t => t.playing && !t.completed) ||
     tournaments.find(t => !t.completed)
   )?.name || null;
+  const _lastFetchedTournament = React.useRef(null);
   useEffect(() => {
     if (!_fieldTournamentName) return;
+    // Don't re-run if we already have tee times for this tournament
+    if (_lastFetchedTournament.current === _fieldTournamentName && Object.keys(teeTimeMap).length > 0) return;
     let cancelled = false;
     const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
 
     const fetchField = () => {
-      fetch('/api/field?t=' + Date.now()) // cache-bust so we always get fresh data
+      fetch('/api/field?t=' + Date.now())
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (cancelled || !data?.players?.length) return;
+          _lastFetchedTournament.current = _fieldTournamentName;
           setTournamentField(new Set(data.players.map(normalize)));
           if (data.teeTimes?.length) {
             const ttMap = {};
@@ -516,7 +520,6 @@ export const RostersView = ({
     };
 
     fetchField();
-    // Re-fetch every 30 min — picks up tee times when PGA Tour posts them
     const interval = setInterval(fetchField, 30 * 60 * 1000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
