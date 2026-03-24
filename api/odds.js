@@ -65,34 +65,60 @@ export default async function handler(req, res) {
     if (!oddsResp.ok) throw new Error(`Odds page ${oddsResp.status}`);
     const oddsNd = extractNextData(await oddsResp.text());
 
-    if (isDebug) {
-      const found = [];
-      if (oddsNd) {
-        walkAll(oddsNd, obj => {
-          if (obj.oddsEnabled !== undefined || obj.oddsToWinId !== undefined) {
-            found.push({
-              oddsEnabled: obj.oddsEnabled,
-              oddsToWinId: obj.oddsToWinId,
-              playerCount: obj.players?.length,
-              // Show first 3 player objects so we can see the field names
-              samplePlayers: obj.players?.slice(0, 3),
-            });
+    if (!oddsNd) throw new Error('No __NEXT_DATA__ on odds page');
+
+    // Step 3: build playerId → displayName map from field page
+    const fieldUrl = `https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/field`;
+    const fieldResp = await fetch(fieldUrl, { headers: HEADERS });
+    const playerIdMap = {};
+    if (fieldResp.ok) {
+      const fieldNd = extractNextData(await fieldResp.text());
+      if (fieldNd) {
+        walkAll(fieldNd, obj => {
+          if (obj.playerId && obj.displayName) {
+            playerIdMap[String(obj.playerId)] = obj.displayName.trim();
+          } else if (obj.playerId && obj.firstName && obj.lastName) {
+            playerIdMap[String(obj.playerId)] = `${obj.firstName.trim()} ${obj.lastName.trim()}`;
           }
         });
       }
-      return res.status(200).json({ oddsUrl, hasNextData: !!oddsNd, oddsObjects: found.slice(0, 3) });
     }
 
-    if (!oddsNd) throw new Error('No __NEXT_DATA__ on odds page');
+    if (isDebug) {
+      const found = [];
+      walkAll(oddsNd, obj => {
+        if (obj.oddsEnabled !== undefined || obj.oddsToWinId !== undefined) {
+          found.push({
+            oddsEnabled: obj.oddsEnabled,
+            oddsToWinId: obj.oddsToWinId,
+            playerCount: obj.players?.length,
+            samplePlayers: obj.players?.slice(0, 3).map(p => ({
+              ...p, resolvedName: playerIdMap[String(p.playerId)] || null
+            })),
+          });
+        }
+      });
+      return res.status(200).json({
+        oddsUrl,
+        playerIdMapSize: Object.keys(playerIdMap).length,
+        oddsObjects: found.slice(0, 3),
+        sampleMap: Object.entries(playerIdMap).slice(0, 5),
+      });
+    }
 
-    // Step 3: extract odds from the data
+    // Step 4: extract odds, joining playerId to name
     const odds = {};
     walkAll(oddsNd, obj => {
       if (obj.oddsEnabled === true && Array.isArray(obj.players) && obj.players.length) {
         obj.players.forEach(p => {
-          const name = p.displayName?.trim() || p.playerName?.trim();
+          const name = p.displayName?.trim()
+            || p.playerName?.trim()
+            || playerIdMap[String(p.playerId)];
           const raw = p.odds ?? p.currentOdds ?? p.americanOdds;
-          if (name && raw !== undefined && raw !== null) {
+          if (name && raw !== undefined && raw !== null && typeof raw === 'string') {
+            // Odds already formatted as "+3000" or "-150" strings
+            odds[name] = raw;
+          } else if (name && raw !== undefined && raw !== null) {
             const n = parseInt(raw, 10);
             if (!isNaN(n)) odds[name] = n > 0 ? `+${n}` : `${n}`;
           }
