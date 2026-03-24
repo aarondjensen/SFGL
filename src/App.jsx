@@ -1,21 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy,  Award, Users, DollarSign, Calendar, Settings, BarChart2 } from 'lucide-react';
+import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
-import { DialogProvider } from './pages/DialogContext';
-import { ErrorBoundary }  from './pages/ErrorBoundary';
-import { StandingsView }  from './pages/StandingsView';
-import { ResultsView }    from './pages/ResultsView';
-import { RostersView }    from './pages/RostersView';
-import { TransactionsView } from './pages/TransactionsView';
-import { TournamentsView }  from './pages/TournamentsView';
-import { AdminView }        from './pages/AdminView';
-import LoginPage            from './pages/LoginPage';
-import { StatsView }         from './pages/StatsView';
+import { DialogProvider } from './components/DialogContext';
+import { ErrorBoundary }  from './components/ErrorBoundary';
+import { StandingsView }  from './components/StandingsView';
+import { ResultsView }    from './components/ResultsView';
+import { RostersView }    from './components/RostersView';
+import { TransactionsView } from './components/TransactionsView';
+import { TournamentsView }  from './components/TournamentsView';
+import { AdminView }        from './components/AdminView';
+import LoginPage            from './components/LoginPage';
 
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
 import { getSwingColor } from './theme.js';
-import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS, BONUSES_REGULAR, BONUSES_MAJOR, TRANSACTION_FEE_FREE_AGENT, TRANSACTION_FEE_WAIVER, ROSTER_LIMIT, LINEUP_SIZE, MAX_LIMITED_STARTS } from './constants';
+import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
 import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
 
@@ -27,7 +26,6 @@ const TABS = [
   { id: 'results',      label: 'Results',      Icon: Award      },
   { id: 'transactions', label: 'Transactions', Icon: DollarSign },
   { id: 'tournaments',  label: 'Tournaments',  Icon: Calendar   },
-  { id: 'stats',        label: 'Stats',        Icon: BarChart2  },
   { id: 'admin',        label: 'Commish',      Icon: Settings   },
 ];
 
@@ -58,21 +56,6 @@ const FantasyGolfLeague = () => {
   const safeTournaments  = Array.isArray(tournaments)  ? tournaments  : [];
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
   const safeHeadshots    = headshots && typeof headshots === 'object' ? headshots : {};
-
-  // Merge Firebase settings with constant fallbacks — components read from here
-  const leagueSettings = {
-    bonusR1Regular:   settings?.bonusR1Regular   ?? BONUSES_REGULAR.round1,
-    bonusR2Regular:   settings?.bonusR2Regular   ?? BONUSES_REGULAR.round2,
-    bonusR3Regular:   settings?.bonusR3Regular   ?? BONUSES_REGULAR.round3,
-    bonusR1Major:     settings?.bonusR1Major     ?? BONUSES_MAJOR.round1,
-    bonusR2Major:     settings?.bonusR2Major     ?? BONUSES_MAJOR.round2,
-    bonusR3Major:     settings?.bonusR3Major     ?? BONUSES_MAJOR.round3,
-    feeFA:            settings?.feeFA            ?? TRANSACTION_FEE_FREE_AGENT,
-    feeWaiver:        settings?.feeWaiver        ?? TRANSACTION_FEE_WAIVER,
-    rosterLimit:      settings?.rosterLimit      ?? ROSTER_LIMIT,
-    lineupSize:       settings?.lineupSize       ?? LINEUP_SIZE,
-    maxLimitedStarts: settings?.maxLimitedStarts ?? MAX_LIMITED_STARTS,
-  };
 
   const resolvedTeams     = safeTeams.length > 0 ? safeTeams : INITIAL_TEAMS;
   const resolvedHeadshots = Object.keys(safeHeadshots).length > 0 ? safeHeadshots : PGA_TOUR_IDS;
@@ -183,6 +166,13 @@ const FantasyGolfLeague = () => {
   const handleManagerLogin = (result) => {
     // result = { teamId } — resolve display name from loaded teams
     const team = resolvedTeams.find(t => t.id === result.teamId);
+    // Blur any focused input and reset iOS viewport zoom
+    if (document.activeElement) document.activeElement.blur();
+    const mv = document.querySelector('meta[name=viewport]');
+    if (mv) {
+      mv.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1');
+      setTimeout(() => mv.setAttribute('content', 'width=device-width, initial-scale=1'), 300);
+    }
     setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
     setIsCommissioner(false);
     setShowLoginModal(false);
@@ -493,7 +483,7 @@ const FantasyGolfLeague = () => {
               allPlayers={allPlayers}
               transactions={safeTransactions}
               setTransactions={updateTransactions}
-              leagueSettings={leagueSettings}
+              settings={settings}
               loggedInUser={loggedInUser}
               isCommissioner={isCommissioner}
               globalPlayerStats={globalPlayerStats}
@@ -522,14 +512,6 @@ const FantasyGolfLeague = () => {
               firstTeeTime={firstTeeTime}
             />
           )}
-          {activeTab === 'stats' && (
-            <StatsView
-              teams={resolvedTeams}
-              tournaments={safeTournaments}
-              transactions={safeTransactions}
-              globalPlayerStats={globalPlayerStats}
-            />
-          )}
           {activeTab === 'admin' && isCommissioner && (
             <AdminView
               isCommissioner={isCommissioner}
@@ -537,7 +519,6 @@ const FantasyGolfLeague = () => {
               setActiveTab={setActiveTab}
               settings={settings}
               setSettings={updateSettings}
-              leagueSettings={leagueSettings}
               teams={resolvedTeams}
               updateTeams={updateTeams}
               tournaments={safeTournaments}
@@ -601,4 +582,3 @@ const App = () => (
 );
 
 export default App;
-
