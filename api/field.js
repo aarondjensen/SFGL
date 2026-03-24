@@ -72,7 +72,7 @@ function findUpcomingTournament(nd) {
   return { tournament: active || upcoming || fallback, allTournaments: unique };
 }
 
-// ── Step 2: fetch field + tee times ──────────────────────────────────────────
+// ── Step 2: fetch field + tee times + odds ───────────────────────────────────
 async function fetchField(tournament, year) {
   const slug = nameToSlug(tournament.name);
   const url = `https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/field`;
@@ -80,10 +80,10 @@ async function fetchField(tournament, year) {
   const nd = extractNextData(html);
 
   const playerNames = new Set();
-  // Map: normalized name → tee time string
   const teeTimeMap = {};
-  // Collect raw tee time objects for debug
   const rawTeeTimeObjs = [];
+  // Map: player name → American odds string e.g. "+2000"
+  const oddsMap = {};
 
   if (nd) {
     walkAll(nd, obj => {
@@ -91,20 +91,34 @@ async function fetchField(tournament, year) {
       const name = obj.displayName?.trim() || (obj.firstName && obj.lastName ? `${obj.firstName.trim()} ${obj.lastName.trim()}` : null);
       if (name && name.includes(' ')) {
         playerNames.add(name);
-        // Capture tee time if present on this same object
+        // Tee time on player object
         const tt = obj.teeTime || obj.teeTimeLocal || obj.startTime || obj.time;
         if (tt && typeof tt === 'string' && (tt.includes('T') || tt.includes(':'))) {
           teeTimeMap[name] = formatTeeTime(tt) || tt;
         }
       }
 
-      // Also look for tee time group objects: { teeTime, players: [...] }
+      // Tee time group objects: { teeTime, players: [...] }
       if ((obj.teeTime || obj.startTime) && Array.isArray(obj.players)) {
         const tt = formatTeeTime(obj.teeTime || obj.startTime);
         rawTeeTimeObjs.push({ tt, count: obj.players.length, sample: JSON.stringify(obj.players[0]).slice(0, 100) });
         obj.players.forEach(p => {
           const pname = p.displayName?.trim() || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
           if (pname && tt) teeTimeMap[pname] = tt;
+        });
+      }
+
+      // Odds objects: { oddsToWinId, oddsEnabled, players: [{ displayName, odds }] }
+      // PGA Tour embeds FanDuel-style American odds in __NEXT_DATA__
+      if (obj.oddsToWinId && obj.oddsEnabled && Array.isArray(obj.players)) {
+        obj.players.forEach(p => {
+          const pname = p.displayName?.trim() || p.playerName?.trim();
+          const oddsVal = p.odds || p.currentOdds || p.americanOdds || p.moneyline;
+          if (pname && oddsVal !== undefined && oddsVal !== null) {
+            // Format: positive → "+2000", negative → "-150"
+            const n = parseInt(oddsVal, 10);
+            if (!isNaN(n)) oddsMap[pname] = n > 0 ? `+${n}` : `${n}`;
+          }
         });
       }
     });
@@ -126,22 +140,29 @@ async function fetchField(tournament, year) {
     return first ? !playerNames.has(`${first} ${last}`) : true;
   });
 
+  // Normalize a "Last, First" key to "First Last"
+  const normalize = k => {
+    if (!k.includes(',')) return k;
+    const [last, first] = k.split(',').map(s => s.trim());
+    return first ? `${first} ${last}` : k;
+  };
+
   // Normalize teeTimeMap keys to "First Last" format
   const normTeeTimeMap = {};
-  Object.entries(teeTimeMap).forEach(([k, v]) => {
-    if (k.includes(',')) {
-      const [last, first] = k.split(',').map(s => s.trim());
-      if (first) normTeeTimeMap[`${first} ${last}`] = v;
-    } else {
-      normTeeTimeMap[k] = v;
-    }
-  });
+  Object.entries(teeTimeMap).forEach(([k, v]) => { normTeeTimeMap[normalize(k)] = v; });
 
   const teeTimes = players
     .filter(n => normTeeTimeMap[n])
     .map(n => ({ name: n, teeTime: normTeeTimeMap[n] }));
 
-  return { players, teeTimes, url, rawTeeTimeObjs };
+  // Normalize oddsMap keys and build odds array
+  const normOddsMap = {};
+  Object.entries(oddsMap).forEach(([k, v]) => { normOddsMap[normalize(k)] = v; });
+  const odds = players
+    .filter(n => normOddsMap[n])
+    .map(n => ({ name: n, odds: normOddsMap[n] }));
+
+  return { players, teeTimes, odds, url, rawTeeTimeObjs };
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -206,6 +227,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       players,
       teeTimes,
+      odds,
       tournament: tournament.name,
       count: players.length,
       source: 'pgatour',
