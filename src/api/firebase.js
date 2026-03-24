@@ -1,14 +1,18 @@
 /**
- * firebase.js  —  api/firebase.js
+ * firebase.js
  * ============================================================================
- * Firebase/Firestore backend for SFGL. Import from '../api/firebase'.
+ * Drop-in replacement for supabase.js. Exports the exact same API surface so
+ * no component code needs to change — only the import path.
+ *
+ * Import path to use everywhere (was '../api/firebase'):
+ *   import { ... } from '../api/firebase';
  *
  * Firebase services used:
- *   • Firestore  — all league data
- *   • No Firebase Auth — manager auth is localStorage-based (managerAuthApi)
- *   • No Firebase Storage — headshots served from ESPN CDN / manual overrides
+ *   • Firestore  — all league data (replaces every Supabase table)
+ *   • No Firebase Auth — manager auth stays localStorage-based (unchanged)
+ *   • No Firebase Storage — headshots still served from CDN / manual overrides
  *
- * Firestore collections:
+ * Firestore collections → former Supabase tables:
  *   players            → /players/{name}
  *   app_metadata       → /app_metadata/{key}
  *   liv_roster         → /liv_roster/{name}
@@ -37,6 +41,7 @@ import {
   query,
   orderBy,
   where,
+  limit,
   writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -99,6 +104,68 @@ export const playersApi = {
   async getByName(name) {
     const snap = await getDoc(doc(db, 'players', name));
     return snap.exists() ? { _id: snap.id, ...snap.data() } : null;
+  },
+
+  // Get top N players by world rank, excluding LIV players
+  async getTopRanked(n = 50) {
+    const q = query(
+      collection(db, 'players'),
+      where('is_liv', '==', false),
+      orderBy('world_rank', 'asc'),
+      limit(n)
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({
+      name:        d.id,
+      worldRank:   d.data().world_rank,
+      pgaTourId:   d.data().pga_tour_id,
+      headshotUrl: d.data().headshot_url,
+      isLiv:       d.data().is_liv,
+    }));
+  },
+
+  // Search players by name prefix (case-sensitive Firestore range query)
+  async searchByName(searchTerm, maxResults = 20) {
+    if (!searchTerm || searchTerm.length < 2) return [];
+    // Firestore doesn't support case-insensitive search, so we do a range query
+    // on the document ID (player name) which gives prefix matches
+    const start = searchTerm;
+    const end = searchTerm.slice(0, -1) + String.fromCharCode(searchTerm.charCodeAt(searchTerm.length - 1) + 1);
+    const q = query(
+      collection(db, 'players'),
+      orderBy('__name__'),
+      where('__name__', '>=', start),
+      where('__name__', '<', end),
+      limit(maxResults)
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({
+      name:        d.id,
+      worldRank:   d.data().world_rank,
+      pgaTourId:   d.data().pga_tour_id,
+      headshotUrl: d.data().headshot_url,
+      isLiv:       d.data().is_liv,
+    }));
+  },
+
+  // Get specific players by name (for rostered players)
+  async getByNames(names) {
+    if (!names?.length) return [];
+    // Firestore doesn't support IN queries on document IDs efficiently for large sets
+    // Fetch individually but in parallel
+    const results = await Promise.all(
+      names.map(name => getDoc(doc(db, 'players', name))
+        .then(snap => snap.exists() ? {
+          name:        snap.id,
+          worldRank:   snap.data().world_rank,
+          pgaTourId:   snap.data().pga_tour_id,
+          headshotUrl: snap.data().headshot_url,
+          isLiv:       snap.data().is_liv,
+        } : { name, worldRank: null, pgaTourId: null, headshotUrl: null, isLiv: false })
+        .catch(() => ({ name, worldRank: null, pgaTourId: null, headshotUrl: null, isLiv: false }))
+      )
+    );
+    return results;
   },
 
   async upsertMany(players) {
@@ -194,10 +261,36 @@ export const playersApi = {
 // ============================================================================
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
+const PLAYER_CACHE_KEY = 'sfgl_players_cache';
+const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
 export const playerRankingsApi = {
-  async getAll()           { return playersApi.getAllForApp(); },
+  async getAll() {
+    // Try localStorage cache first — avoids 10k Firestore reads on every load
+    try {
+      const cached = localStorage.getItem(PLAYER_CACHE_KEY);
+      if (cached) {
+        const { players, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < PLAYER_CACHE_TTL && players?.length) {
+          console.log(`[playerCache] Using cached ${players.length} players`);
+          return players;
+        }
+      }
+    } catch (_) {}
+
+    // Cache miss or expired — fetch from Firestore
+    const players = await playersApi.getAllForApp();
+    try {
+      localStorage.setItem(PLAYER_CACHE_KEY, JSON.stringify({ players, timestamp: Date.now() }));
+    } catch (_) {}
+    return players;
+  },
+  async invalidateCache() {
+    try { localStorage.removeItem(PLAYER_CACHE_KEY); } catch (_) {}
+  },
   async updateAll(players) { return playersApi.upsertMany(players); },
   async getLastUpdated()   { return playersApi.getLastUpdated(); },
+  async setLastUpdated(ts) { return playersApi.setLastUpdated(ts); },
 };
 
 export const headshotsApi = {
@@ -252,7 +345,9 @@ export const livRosterApi = {
 // ============================================================================
 export const teamsApi = {
   async getAll() {
-    return _getAllOrdered('teams', 'name');
+    const teams = await _getAllOrdered('teams', 'name');
+    // Ensure every team has a lineup array — older documents may not have one
+    return teams.map(t => ({ ...t, lineup: t.lineup || [] }));
   },
 
   async setAll(teams) {
@@ -394,19 +489,12 @@ export const transactionsApi = {
       }
     }
 
-    // Batched updates (preserving ids) — avoids serial round-trips
-    if (toUpdate.length > 0) {
-      const BATCH_SIZE = 499;
-      for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
-        const batch = writeBatch(db);
-        toUpdate.slice(i, i + BATCH_SIZE).forEach(tx => {
-          if (tx.id) {
-            const { id, ...rest } = tx;
-            batch.update(doc(db, 'transactions', id), rest);
-          }
-        });
-        await batch.commit().catch(e =>
-          console.error('[transactionsApi.sync] batch update error:', e)
+    // Individual updates (preserving ids)
+    for (const tx of toUpdate) {
+      if (tx.id) {
+        const { id, ...rest } = tx;
+        await updateDoc(doc(db, 'transactions', id), rest).catch(e =>
+          console.error('[transactionsApi.sync] update error:', e)
         );
       }
     }
@@ -500,10 +588,15 @@ export const managerAuthApi = {
     const passwordHash = await _hashPassword(password.trim());
     const entry = Object.entries(creds).find(([, c]) =>
       c.name.toLowerCase() === name.trim().toLowerCase() &&
-      c.passwordHash === passwordHash
+      (c.passwordHash === passwordHash || c.password === password.trim())
     );
     if (!entry) throw new Error('Invalid name or password');
-    const [teamId] = entry;
+    const [teamId, cred] = entry;
+    // Auto-migrate legacy plain-text → hashed
+    if (cred.password && !cred.passwordHash) {
+      creds[teamId] = { name: cred.name, passwordHash };
+      await sfglDataApi.set(CREDS_KEY, creds);
+    }
     localStorage.setItem('manager_team_id', teamId);
     localStorage.removeItem('is_commissioner');
     return { teamId };
@@ -679,4 +772,3 @@ export const globalPlayerStatsApi = {
   async get()         { return (await sfglDataApi.get('fantasy-golf-global-stats')) || {}; },
   async set(stats)    { await sfglDataApi.set('fantasy-golf-global-stats', stats); },
 };
-
