@@ -341,6 +341,8 @@ export const RostersView = ({
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
   const [tournamentField,   setTournamentField]   = useState(null);
+  const [teeTimeMap,        setTeeTimeMap]        = useState({}); // { playerName: '8:04 AM' }
+  const [liveData,          setLiveData]          = useState(null); // { players, round, state } from /api/live
   const dialog = useDialog();
 
   const activeTournament      = tournaments.find(t => t.playing);
@@ -479,14 +481,40 @@ export const RostersView = ({
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (cancelled || !data?.players?.length) return;
-        // Normalize accented characters so ESPN names match roster names
-        // e.g. "Rasmus Højgaard" → "Rasmus Hojgaard", "Ludvig Åberg" → "Ludvig Aberg"
         const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
         setTournamentField(new Set(data.players.map(normalize)));
+        if (data.teeTimes?.length) {
+          const ttMap = {};
+          data.teeTimes.forEach(({ name, teeTime }) => { ttMap[normalize(name)] = teeTime; });
+          setTeeTimeMap(ttMap);
+        }
       })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch live leaderboard from /api/live during tournament week
+  // Polls every 5 minutes while the tournament is in progress
+  useEffect(() => {
+    if (!activeTournament) return;
+    let cancelled = false;
+    let interval = null;
+
+    const fetchLive = () => {
+      fetch('/api/live')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (cancelled || !data?.players?.length) return;
+          setLiveData(data);
+        })
+        .catch(() => {});
+    };
+
+    fetchLive();
+    // Poll every 5 min if tournament is in progress
+    interval = setInterval(fetchLive, 5 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!team) return null;
 
@@ -677,7 +705,10 @@ export const RostersView = ({
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  {statsView === 'sfgl' ? 'Starts' : 'Events'}
+                  {liveData?.players?.length
+                    ? (liveData.state === 'in' ? 'Score' : 'Tee Time')
+                    : Object.keys(teeTimeMap).length > 0 ? 'Tee Time'
+                    : (statsView === 'sfgl' ? 'Starts' : 'Events')}
                 </th>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   {isMobile ? 'Cuts' : 'Cuts Made'}
@@ -813,8 +844,68 @@ export const RostersView = ({
                       </div>
                     </td>
 
-                    {/* Events / Starts */}
+                    {/* Live position / Tee Time / Starts — smart based on tournament state */}
                     {(() => {
+                      const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
+                      const normName = normalize(player.name);
+
+                      // Live data available — show position if started, tee time if not yet
+                      if (liveData?.players?.length) {
+                        const live = liveData.players.find(p => normalize(p.name) === normName);
+                        if (live) {
+                          if (live.cut) {
+                            return (
+                              <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>
+                                CUT
+                              </td>
+                            );
+                          }
+                          if (live.started) {
+                            // Show position + score + thru
+                            const posColor = live.score?.startsWith('-') ? colors.earningsGreen : live.score === 'E' ? colors.textPrimary : colors.danger;
+                            return (
+                              <td style={{ padding: isMobile ? '7px 4px' : '8px 8px', textAlign: 'center' }}>
+                                <div style={{ fontFamily: fonts.mono, fontSize: isMobile ? 12 : 11, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>
+                                  {live.score || '—'}
+                                </div>
+                                <div style={{ fontFamily: fonts.sans, fontSize: 9, color: isBenched ? dimColor : colors.textMuted, lineHeight: 1.2 }}>
+                                  {live.position ? `${live.position} · ` : ''}{live.thru === 'F' ? 'F' : live.thru ? `T${live.thru}` : ''}
+                                </div>
+                              </td>
+                            );
+                          }
+                          // Not yet started — show tee time
+                          if (live.teeTime) {
+                            return (
+                              <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: isBenched ? dimColor : colors.textSecondary }}>
+                                {live.teeTime.replace(' AM', 'a').replace(' PM', 'p')}
+                              </td>
+                            );
+                          }
+                        }
+                        // Player not in live data — not in this week's field
+                        return (
+                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center' }}>
+                            <span style={{ opacity: 0.25, fontSize: 12 }}>—</span>
+                          </td>
+                        );
+                      }
+
+                      // No live data — show tee time from field API if available
+                      const teeTime = teeTimeMap[normName];
+                      const hasTeeTimesThisWeek = Object.keys(teeTimeMap).length > 0;
+                      if (hasTeeTimesThisWeek) {
+                        return (
+                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: teeTime ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>
+                            {teeTime
+                              ? teeTime.replace(' AM', 'a').replace(' PM', 'p')
+                              : <span style={{ opacity: 0.25 }}>—</span>
+                            }
+                          </td>
+                        );
+                      }
+
+                      // Default: starts count
                       const events = statsView === 'sfgl' ? (sfglCutsMap[player.name]?.starts ?? player.starts ?? 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
                       return (
                         <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
