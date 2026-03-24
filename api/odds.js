@@ -107,27 +107,42 @@ export default async function handler(req, res) {
     }
 
     // Step 4: extract odds, joining playerId to name
+    // Try oddsEnabled=true first, then fall back to any player with odds data
     const odds = {};
+    let foundOddsObj = null;
+
     walkAll(oddsNd, obj => {
-      if (obj.oddsEnabled === true && Array.isArray(obj.players) && obj.players.length) {
-        obj.players.forEach(p => {
-          const name = p.displayName?.trim()
-            || p.playerName?.trim()
-            || playerIdMap[String(p.playerId)];
-          const raw = p.odds ?? p.currentOdds ?? p.americanOdds;
-          if (name && raw !== undefined && raw !== null && typeof raw === 'string') {
-            // Odds already formatted as "+3000" or "-150" strings
-            odds[name] = raw;
-          } else if (name && raw !== undefined && raw !== null) {
-            const n = parseInt(raw, 10);
-            if (!isNaN(n)) odds[name] = n > 0 ? `+${n}` : `${n}`;
-          }
-        });
+      if (Array.isArray(obj.players) && obj.players.length > 0 && obj.oddsToWinId) {
+        // Prefer oddsEnabled=true but accept any odds object with a valid ID
+        if (!foundOddsObj || obj.oddsEnabled === true) foundOddsObj = obj;
       }
     });
 
+    if (foundOddsObj) {
+      foundOddsObj.players.forEach(p => {
+        const name = p.displayName?.trim()
+          || p.playerName?.trim()
+          || playerIdMap[String(p.playerId)];
+        const raw = p.odds ?? p.currentOdds ?? p.americanOdds;
+        if (name && raw != null) {
+          if (typeof raw === 'string' && (raw.startsWith('+') || raw.startsWith('-'))) {
+            odds[name] = raw;
+          } else {
+            const n = parseInt(raw, 10);
+            if (!isNaN(n)) odds[name] = n > 0 ? `+${n}` : `${n}`;
+          }
+        }
+      });
+    }
+
     if (!Object.keys(odds).length) {
-      return res.status(200).json({ odds: {}, tournament: tournament.name, reason: 'oddsEnabled-false-or-no-players', oddsUrl });
+      return res.status(200).json({
+        odds: {},
+        tournament: tournament.name,
+        reason: foundOddsObj ? 'no-names-resolved' : 'no-odds-object-found',
+        playerIdMapSize: Object.keys(playerIdMap).length,
+        oddsUrl,
+      });
     }
 
     return res.status(200).json({
