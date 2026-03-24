@@ -338,6 +338,8 @@ export const RostersView = ({
   const isMobile            = useIsMobile();
   const [statsView,         setStatsView]         = useState('sfgl');
   const [infoView,          setInfoView]          = useState('info'); // 'info' | 'stats'
+  const [sortCol,           setSortCol]           = useState(null);  // null | 'teeTime' | 'odds' | 'starts' | 'cuts' | 'earnings'
+  const [sortDir,           setSortDir]           = useState('asc');
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
   const [lineupMode,        setLineupMode]        = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
@@ -587,6 +589,37 @@ export const RostersView = ({
   if (!team) return null;
 
   const lineupOpen    = windowStatus.lineupOpen;
+
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
+
+  const sortedRoster = React.useMemo(() => {
+    const roster = getSortedRoster(currentRoster);
+    if (!sortCol) return roster;
+    const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss');
+    return [...roster].sort((a, b) => {
+      let av, bv;
+      if (sortCol === 'teeTime') {
+        av = teeTimeMap[normalize(a.name)]; bv = teeTimeMap[normalize(b.name)];
+        // Parse tee times for proper chronological sort
+        const toMin = t => { if (!t) return sortDir === 'asc' ? 9999 : -1; const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 0; let h = parseInt(m[1]); if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12; if (m[3].toUpperCase() === 'AM' && h === 12) h = 0; return h * 60 + parseInt(m[2]); };
+        av = toMin(av); bv = toMin(bv);
+      } else if (sortCol === 'odds') {
+        const toNum = o => { if (!o) return sortDir === 'asc' ? 9999 : -9999; return parseInt(o.replace('+',''), 10); };
+        av = toNum(oddsMap[normalize(a.name)]); bv = toNum(oddsMap[normalize(b.name)]);
+      } else if (sortCol === 'starts') {
+        av = sfglCutsMap[a.name]?.starts ?? a.starts ?? 0; bv = sfglCutsMap[b.name]?.starts ?? b.starts ?? 0;
+      } else if (sortCol === 'cuts') {
+        av = sfglCutsMap[a.name]?.cuts ?? 0; bv = sfglCutsMap[b.name]?.cuts ?? 0;
+      } else if (sortCol === 'earnings') {
+        av = a.sfglEarnings || 0; bv = b.sfglEarnings || 0;
+      }
+      if (av === bv) return 0;
+      return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+    });
+  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglCutsMap]); // eslint-disable-line react-hooks/exhaustive-deps
   const canEditLineup = isCommissioner || (isOwnTeam && lineupOpen);
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
   const hasPendingWaivers = transactions.some(tx => tx.status === 'pending' && tx.type === 'waiver');
@@ -772,7 +805,7 @@ export const RostersView = ({
             <colgroup>
               <col />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? 56 : 80 }} /><col style={{ width: isMobile ? 56 : 80 }} /></>
+                <><col style={{ width: isMobile ? 56 : 120 }} /><col style={{ width: isMobile ? 56 : 100 }} /></>
               ) : (
                 <><col style={{ width: isMobile ? 48 : 80 }} /><col style={{ width: isMobile ? 62 : 90 }} /><col style={{ width: isMobile ? 68 : 120 }} /></>
               )}
@@ -781,28 +814,30 @@ export const RostersView = ({
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
                 {infoView === 'info' ? (<>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10 }}>
+                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, ...sortHeaderStyle('teeTime', sortCol, sortDir) }}>
                     {liveData?.players?.length
                       ? (liveData.state === 'in' ? 'Score' : (isMobile ? <>Tee<br/>Time</> : 'Tee Time'))
-                      : Object.keys(teeTimeMap).length > 0 ? (isMobile ? <>Tee<br/>Time</> : 'Tee Time')
+                      : Object.keys(teeTimeMap).length > 0 ? <>{isMobile ? <>Tee<br/>Time</> : 'Tee Time'}{sortArrow('teeTime', sortCol, sortDir)}</>
                       : 'Field'}
                   </th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>Odds</th>
+                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', sortCol, sortDir) }}>
+                    Odds{sortArrow('odds', sortCol, sortDir)}
+                  </th>
                 </>) : (<>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                    {statsView === 'sfgl' ? 'Starts' : 'Events'}
+                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', sortCol, sortDir) }}>
+                    {statsView === 'sfgl' ? 'Starts' : 'Events'}{sortArrow('starts', sortCol, sortDir)}
                   </th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                    {isMobile ? 'Cuts' : 'Cuts Made'}
+                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', sortCol, sortDir) }}>
+                    {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts', sortCol, sortDir)}
                   </th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8 }}>
-                    <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings</span>
+                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', sortCol, sortDir) }}>
+                    <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings{sortArrow('earnings', sortCol, sortDir)}</span>
                   </th>
                 </>)}
               </tr>
             </thead>
             <tbody>
-              {getSortedRoster(currentRoster).map(player => {
+              {sortedRoster.map(player => {
                 const isInLineup     = (team.lineup || []).includes(player.name);
                 const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
                 const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
