@@ -66,16 +66,21 @@ export default async function handler(req, res) {
     const oddsNd = extractNextData(await oddsResp.text());
 
     if (isDebug) {
-      // Scan for anything odds-related in the data
       const found = [];
       if (oddsNd) {
         walkAll(oddsNd, obj => {
           if (obj.oddsEnabled !== undefined || obj.oddsToWinId !== undefined) {
-            found.push({ oddsEnabled: obj.oddsEnabled, oddsToWinId: obj.oddsToWinId, playerCount: obj.players?.length });
+            found.push({
+              oddsEnabled: obj.oddsEnabled,
+              oddsToWinId: obj.oddsToWinId,
+              playerCount: obj.players?.length,
+              // Show first 3 player objects so we can see the field names
+              samplePlayers: obj.players?.slice(0, 3),
+            });
           }
         });
       }
-      return res.status(200).json({ oddsUrl, hasNextData: !!oddsNd, oddsObjects: found.slice(0, 5) });
+      return res.status(200).json({ oddsUrl, hasNextData: !!oddsNd, oddsObjects: found.slice(0, 3) });
     }
 
     if (!oddsNd) throw new Error('No __NEXT_DATA__ on odds page');
