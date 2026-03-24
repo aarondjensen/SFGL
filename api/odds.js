@@ -4,7 +4,7 @@
 //
 // GET /api/odds → { odds: { "Scottie Scheffler": "+350", ... }, tournament, cached }
 
-const API_KEY   = '5cbe0a4ee51da3443fad2aed008113dd';
+const API_KEY   = process.env.ODDS_API_KEY;
 const ODDS_URL  = 'https://api.the-odds-api.com/v4/sports/golf_pga/odds/';
 
 function getNowET() {
