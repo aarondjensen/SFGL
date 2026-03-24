@@ -18,22 +18,23 @@ import { STORAGE_KEYS } from '../constants';
 // ── Headshot helpers ─────────────────────────────────────────────────────────
 // Stored IDs are ESPN athlete IDs (e.g. 4696529 for McIlroy).
 // Image URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
-const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
-  const val = headshotMap[playerName];
+const getPlayerHeadshotUrls = (playerName, headshotMap = {}, fieldPlayerIds = {}) => {
+  // Prefer Firebase headshot override, then PGA Tour field page ID
+  const val = headshotMap[playerName] || fieldPlayerIds[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
   return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
 };
 
-const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}, fieldPlayerIds = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap, fieldPlayerIds);
   if (urls.length > 0) return urls[0];
   const bg = isLimited ? '8B6914' : '1c3a5e';
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
 };
 
-const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap, fieldPlayerIds = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap, fieldPlayerIds);
   let attempt = 0;
   return function handler(e) {
     attempt++;
@@ -268,8 +269,8 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
     >
       <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
         <img
-          src={getPlayerHeadshot(player.name, player.limited, headshots)}
-          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+          src={getPlayerHeadshot(player.name, player.limited, headshots, fieldPlayerIds)}
+          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots, fieldPlayerIds)}
           alt=""
           style={{
             width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
@@ -344,6 +345,7 @@ export const RostersView = ({
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
   const [tournamentField,   setTournamentField]   = useState(null);
   const [teeTimeMap,        setTeeTimeMap]        = useState({}); // { playerName: '8:04 AM' }
+  const [fieldPlayerIds,    setFieldPlayerIds]    = useState({}); // { playerName: pgaTourId }
   const [oddsMap,           setOddsMap]           = useState({}); // { playerName: '+2000' }
   const [liveData,          setLiveData]          = useState(null); // { players, round, state } from /api/live
   const dialog = useDialog();
@@ -515,6 +517,14 @@ export const RostersView = ({
             data.teeTimes.forEach(({ name, teeTime }) => { ttMap[normalize(name)] = teeTime; });
             setTeeTimeMap(ttMap);
           }
+          if (data.playerIds && Object.keys(data.playerIds).length) {
+            setFieldPlayerIds(data.playerIds);
+          }
+          if (data.odds?.length) {
+            const oMap = {};
+            data.odds.forEach(({ name, odds }) => { oMap[normalize(name)] = odds; });
+            setOddsMap(oMap);
+          }
         })
         .catch(() => {});
     };
@@ -524,22 +534,7 @@ export const RostersView = ({
     return () => { cancelled = true; clearInterval(interval); };
   }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch odds from /api/odds (Mon–Thu only, 1hr cache)
-  useEffect(() => {
-    if (!activeTournament) return;
-    let cancelled = false;
-    fetch('/api/odds')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (cancelled || !data?.odds || !Object.keys(data.odds).length) return;
-        const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
-        const oMap = {};
-        Object.entries(data.odds).forEach(([name, odds]) => { oMap[normalize(name)] = odds; });
-        setOddsMap(oMap);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Odds are now fetched as part of the field fetch above
 
   // Real-time lineup sync — polls Firebase every 30s so changes on desktop
   // appear on mobile without a manual refresh
@@ -841,8 +836,8 @@ export const RostersView = ({
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
-                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+                            src={getPlayerHeadshot(player.name, player.limited, headshots, fieldPlayerIds)}
+                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots, fieldPlayerIds)}
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
