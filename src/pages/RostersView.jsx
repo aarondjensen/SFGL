@@ -460,39 +460,60 @@ export const RostersView = ({
     });
     tournaments.forEach((t, tIdx) => {
       if (!t.completed || !t.results?.teams?.[team.id]) return;
-      const players = t.results.teams[team.id].players || [];
+      const teamResult = t.results.teams[team.id];
+      const players = teamResult.players || [];
       const excluded = mulliganedOut[tIdx] || new Set();
-      players.forEach(p => {
-        const name = p.name || p;
-        if (excluded.has(name)) return; // mulliganed out — not a start
+
+      // Also check fullLineups — captures players in lineup even if missing from players array
+      const fullLineup = t.results.fullLineups?.[team.id] || [];
+
+      // Union of players array names and fullLineup names
+      const allStarted = new Set([
+        ...players.map(p => p.name || p),
+        ...fullLineup,
+      ]);
+
+      // Build earnings lookup from players array
+      const earningsLookup = {};
+      players.forEach(p => { if (p.name) earningsLookup[p.name] = p.earnings || 0; });
+
+      allStarted.forEach(name => {
+        if (excluded.has(name)) return;
         if (!map[name]) map[name] = { cuts: 0, starts: 0 };
         map[name].starts += 1;
-        if ((p.earnings || 0) > 0) map[name].cuts += 1;
+        if ((earningsLookup[name] || 0) > 0) map[name].cuts += 1;
       });
     });
     return map;
   }, [team, tournaments, transactions]);
 
-  // Fetch current week's field from /api/field — re-runs only when tournament name changes
+  // Fetch current week's field from /api/field — polls every 30 min so tee times
+  // are picked up as soon as PGA Tour posts them (typically Wed morning)
   const _fieldTournamentName = (tournaments.find(t => t.playing) || tournaments.find(t => !t.completed))?.name || null;
   useEffect(() => {
     if (!_fieldTournamentName) return;
     let cancelled = false;
-    fetch('/api/field')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (cancelled || !data?.players?.length) return;
-        const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
-        setTournamentField(new Set(data.players.map(normalize)));
-        if (data.teeTimes?.length) {
-          const ttMap = {};
-          data.teeTimes.forEach(({ name, teeTime }) => { ttMap[normalize(name)] = teeTime; });
-          setTeeTimeMap(ttMap);
-        }
-        // odds come from /api/odds separately
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
+    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
+
+    const fetchField = () => {
+      fetch('/api/field?t=' + Date.now()) // cache-bust so we always get fresh data
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (cancelled || !data?.players?.length) return;
+          setTournamentField(new Set(data.players.map(normalize)));
+          if (data.teeTimes?.length) {
+            const ttMap = {};
+            data.teeTimes.forEach(({ name, teeTime }) => { ttMap[normalize(name)] = teeTime; });
+            setTeeTimeMap(ttMap);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchField();
+    // Re-fetch every 30 min — picks up tee times when PGA Tour posts them
+    const interval = setInterval(fetchField, 30 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch odds from /api/odds (Mon–Thu only, 1hr cache)
@@ -723,17 +744,17 @@ export const RostersView = ({
             <thead>
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10 }}>
                   {liveData?.players?.length
-                    ? (liveData.state === 'in' ? 'Score' : 'Tee Time')
-                    : Object.keys(teeTimeMap).length > 0 ? 'Tee Time'
+                    ? (liveData.state === 'in' ? 'Score' : (isMobile ? <>Tee<br/>Time</> : 'Tee Time'))
+                    : Object.keys(teeTimeMap).length > 0 ? (isMobile ? <>Tee<br/>Time</> : 'Tee Time')
                     : Object.keys(oddsMap).length > 0 ? 'Odds'
                     : (statsView === 'sfgl' ? 'Starts' : 'Events')}
                 </th>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   {isMobile ? 'Cuts' : 'Cuts Made'}
                 </th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 10 : 8 }}>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8, maxWidth: isMobile ? 80 : 'none' }}>
                   <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings</span>
                 </th>
               </tr>
@@ -981,7 +1002,7 @@ export const RostersView = ({
         onClose={() => { setShowAddDropModal(false); setEditingWaiverData(null); setPendingAddPlayer(null); }}
         team={team}
         currentRoster={currentRoster}
-        allPlayers={allPlayers}
+        {/* allPlayers no longer passed — modal fetches lazily */}
         teams={teams}
         updateTeams={updateTeams}
         transactions={transactions}
