@@ -75,10 +75,10 @@ export default async function handler(req, res) {
       const fieldNd = extractNextData(await fieldResp.text());
       if (fieldNd) {
         walkAll(fieldNd, obj => {
-          if (obj.playerId && obj.displayName) {
-            playerIdMap[String(obj.playerId)] = obj.displayName.trim();
-          } else if (obj.playerId && obj.firstName && obj.lastName) {
-            playerIdMap[String(obj.playerId)] = `${obj.firstName.trim()} ${obj.lastName.trim()}`;
+          if (obj.id && obj.displayName) {
+            playerIdMap[String(obj.id)] = obj.displayName.trim();
+          } else if (obj.id && obj.firstName && obj.lastName) {
+            playerIdMap[String(obj.id)] = `${obj.firstName.trim()} ${obj.lastName.trim()}`;
           }
         });
       }
