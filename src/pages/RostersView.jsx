@@ -12,6 +12,7 @@ import {
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
+import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers ─────────────────────────────────────────────────────────
@@ -417,8 +418,8 @@ export const RostersView = ({
 
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
-    const isInLineup = team.lineup.includes(player.name);
-    const activeLineupCount = team.lineup.filter(name => currentRoster.some(p => p.name === name)).length;
+    const isInLineup = (team.lineup || []).includes(player.name);
+    const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
     if (!isInLineup && activeLineupCount >= LINEUP_SIZE) {
       dialog.showToast(`You can only have ${LINEUP_SIZE} starters`, 'error'); return;
     }
@@ -540,15 +541,14 @@ export const RostersView = ({
     if (!team) return;
     let cancelled = false;
     const poll = () => {
-      import('../api/firebase').then(({ teamsApi }) => {
-        teamsApi.getAll().then(freshTeams => {
-          if (cancelled) return;
-          // Only update if lineup changed to avoid unnecessary re-renders
-          const fresh = freshTeams.find(t => t.id === team.id);
-          if (fresh && JSON.stringify(fresh.lineup) !== JSON.stringify(team.lineup)) {
-            updateTeams(freshTeams);
-          }
-        }).catch(() => {});
+      teamsApi.getAll().then(freshTeams => {
+        if (cancelled) return;
+        const fresh = freshTeams.find(t => t.id === team.id);
+        const freshLineup = fresh?.lineup || [];
+        const currentLineup = team.lineup || [];
+        if (fresh && JSON.stringify(freshLineup) !== JSON.stringify(currentLineup)) {
+          updateTeams(freshTeams.map(t => ({ ...t, lineup: t.lineup || [] })));
+        }
       }).catch(() => {});
     };
     const interval = setInterval(poll, 30000); // every 30s
@@ -649,7 +649,7 @@ export const RostersView = ({
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, paddingBottom: 6, minHeight: 72 }}>
           <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flexWrap: 'nowrap', overflow: 'visible' }}>
             {(() => {
-              const lineupPlayers = getSortedRoster(currentRoster).filter(p => team.lineup.includes(p.name));
+              const lineupPlayers = getSortedRoster(currentRoster).filter(p => (team.lineup || []).includes(p.name));
               const emptySlots = Math.max(0, LINEUP_SIZE - lineupPlayers.length);
               return (
                 <>
@@ -796,10 +796,10 @@ export const RostersView = ({
             </thead>
             <tbody>
               {getSortedRoster(currentRoster).map(player => {
-                const isInLineup     = team.lineup.includes(player.name);
-                const activeLineupCount = team.lineup.filter(name => currentRoster.some(p => p.name === name)).length;
+                const isInLineup     = (team.lineup || []).includes(player.name);
+                const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
                 const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
-                const hasLineup      = team.lineup.length > 0;
+                const hasLineup      = (team.lineup || []).length > 0;
                 const isEditing      = canEditLineup && lineupMode;
                 // Only dim benched players once the tournament week has actually begun —
                 // i.e. tee times are posted (firstTeeTime exists) or lineup window is open.
