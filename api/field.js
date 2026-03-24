@@ -1,25 +1,23 @@
 // api/field.js — Vercel serverless function
 // Returns the current/upcoming PGA Tour tournament field with tee times.
 //
-// Strategy:
-//   1. Fetch pgatour.com/schedule — read tournaments array from __NEXT_DATA__
-//   2. Find first UPCOMING or IN_PROGRESS tournament
-//   3. Fetch pgatour.com/tournaments/{year}/{slug}/{id}/field — extract players + tee times
+// Resolution order:
+//   1. statdata-api-prod.pgatour.com — PGA Tour's internal JSON API (fast, reliable)
+//   2. pgatour.com/schedule + /field page — HTML scrape (__NEXT_DATA__)
+//   3. ESPN leaderboard by event ID — last resort, may not have pre-tournament field
 //
-// GET /api/field          → { players: string[], teeTimes: {name, teeTime, group}[], tournament, count }
+// GET /api/field          → { players, teeTimes, tournament, count, source }
 // GET /api/field?debug=1  → diagnostic info
 
-const HEADERS = {
+const HEADERS_JSON = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'application/json',
+};
+const HEADERS_HTML = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.9',
 };
-
-async function fetchPage(url) {
-  const resp = await fetch(url, { headers: HEADERS });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
-  return resp.text();
-}
 
 function extractNextData(html) {
   const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
@@ -28,10 +26,7 @@ function extractNextData(html) {
 }
 
 function nameToSlug(name) {
-  return name.toLowerCase()
-    .replace(/['']/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+  return name.toLowerCase().replace(/['']/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 function walkAll(obj, collect) {
@@ -41,98 +36,116 @@ function walkAll(obj, collect) {
   else Object.values(obj).forEach(v => walkAll(v, collect));
 }
 
-// Format a tee time ISO string to "8:04 AM" in ET
-function formatTeeTime(isoStr) {
-  if (!isoStr) return null;
+function formatTeeTime(iso) {
+  if (!iso) return null;
   try {
-    const d = new Date(isoStr);
-    return d.toLocaleTimeString('en-US', {
+    return new Date(iso).toLocaleTimeString('en-US', {
       hour: 'numeric', minute: '2-digit', hour12: true,
       timeZone: 'America/New_York',
     });
   } catch { return null; }
 }
 
-// ── Step 1: find upcoming tournament ─────────────────────────────────────────
-function findUpcomingTournament(nd) {
-  const queries = nd?.props?.pageProps?.dehydratedState?.queries || [];
-  let allTournaments = [];
-  for (const query of queries) {
-    const data = query?.state?.data;
-    if (data?.tournaments && Array.isArray(data.tournaments)) {
-      allTournaments = allTournaments.concat(data.tournaments);
-    }
-  }
-  const seen = new Set();
-  const unique = allTournaments.filter(t => { if (seen.has(t.tournamentId)) return false; seen.add(t.tournamentId); return true; });
-  const DONE = ['COMPLETED', 'OFFICIAL', 'PAST', 'CANCELLED'];
-  const active = unique.find(t => t.status === 'IN_PROGRESS');
-  const upcoming = unique.find(t => t.status === 'UPCOMING');
-  const fallback = unique.find(t => !DONE.includes(t.status?.toUpperCase()));
-  return { tournament: active || upcoming || fallback, allTournaments: unique };
+// ── Source 1: statdata-api-prod.pgatour.com ───────────────────────────────────
+// Requires knowing T_NUM (e.g. "020" for Houston) and T_CODE ("R" = regular)
+// We get these from the schedule page __NEXT_DATA__ tournamentId: "R2026020"
+async function fetchFromStatsApi(tournamentId) {
+  // tournamentId format: "R2026020" → T_CODE=R, YEAR=2026, T_NUM=020
+  const m = tournamentId.match(/^([A-Z])(\d{4})(\d+)$/);
+  if (!m) throw new Error(`Unexpected tournament ID format: ${tournamentId}`);
+  const [, tCode, year, tNum] = m;
+  const url = `https://statdata-api-prod.pgatour.com/api/clientfile/Field?T_CODE=${tCode}&T_NUM=${tNum}&YEAR=${year}&format=json`;
+  const resp = await fetch(url, { headers: HEADERS_JSON });
+  if (!resp.ok) throw new Error(`Stats API ${resp.status}`);
+  const data = await resp.json();
+
+  // Response shape: { Tournament: { Players: { Player: [...] } } }
+  const playerList = data?.Tournament?.Players?.Player || data?.Players?.Player || [];
+  const arr = Array.isArray(playerList) ? playerList : [playerList];
+
+  const players = arr
+    .map(p => {
+      const first = p.FirstName || p.firstName || '';
+      const last = p.LastName || p.lastName || '';
+      const full = p.PlayerName || p.displayName || (first && last ? `${first} ${last}` : '');
+      return full.trim();
+    })
+    .filter(Boolean);
+
+  // Tee times if available
+  const teeTimes = arr
+    .filter(p => p.TeeTime || p.teeTime)
+    .map(p => {
+      const first = p.FirstName || p.firstName || '';
+      const last = p.LastName || p.lastName || '';
+      const name = p.PlayerName || p.displayName || `${first} ${last}`.trim();
+      const tt = formatTeeTime(p.TeeTime || p.teeTime);
+      return name && tt ? { name, teeTime: tt } : null;
+    })
+    .filter(Boolean);
+
+  return { players, teeTimes, source: 'pgatour-stats' };
 }
 
-// ── Step 2: fetch field + tee times + odds ───────────────────────────────────
-async function fetchField(tournament, year) {
+// ── Source 2: pgatour.com schedule + field HTML page ─────────────────────────
+async function fetchFromPGATourHtml(year) {
+  const schedResp = await fetch('https://www.pgatour.com/schedule', { headers: HEADERS_HTML });
+  if (!schedResp.ok) throw new Error(`Schedule page ${schedResp.status}`);
+  const schedHtml = await schedResp.text();
+  const nd = extractNextData(schedHtml);
+  if (!nd) throw new Error('No __NEXT_DATA__ on schedule page');
+
+  // Find upcoming tournament
+  const queries = nd?.props?.pageProps?.dehydratedState?.queries || [];
+  let tournaments = [];
+  for (const q of queries) {
+    if (q?.state?.data?.tournaments) tournaments = tournaments.concat(q.state.data.tournaments);
+  }
+  const seen = new Set();
+  const unique = tournaments.filter(t => { if (seen.has(t.tournamentId)) return false; seen.add(t.tournamentId); return true; });
+  const DONE = ['COMPLETED', 'OFFICIAL', 'PAST', 'CANCELLED'];
+  const tournament = unique.find(t => t.status === 'IN_PROGRESS')
+    || unique.find(t => t.status === 'UPCOMING')
+    || unique.find(t => !DONE.includes(t.status?.toUpperCase()));
+  if (!tournament) throw new Error('No upcoming tournament on schedule');
+
   const slug = nameToSlug(tournament.name);
-  const url = `https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/field`;
-  const html = await fetchPage(url);
-  const nd = extractNextData(html);
+  const fieldUrl = `https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/field`;
+  const fieldResp = await fetch(fieldUrl, { headers: HEADERS_HTML });
+  if (!fieldResp.ok) throw new Error(`Field page ${fieldResp.status}`);
+  const fieldHtml = await fieldResp.text();
+  const fieldNd = extractNextData(fieldHtml);
 
   const playerNames = new Set();
   const teeTimeMap = {};
-  const rawTeeTimeObjs = [];
-  // Map: player name → American odds string e.g. "+2000"
   const oddsMap = {};
 
-  if (nd) {
-    walkAll(nd, obj => {
-      // Player name extraction
+  if (fieldNd) {
+    walkAll(fieldNd, obj => {
       const name = obj.displayName?.trim() || (obj.firstName && obj.lastName ? `${obj.firstName.trim()} ${obj.lastName.trim()}` : null);
-      if (name && name.includes(' ')) {
+      if (name?.includes(' ')) {
         playerNames.add(name);
-        // Tee time on player object
-        const tt = obj.teeTime || obj.teeTimeLocal || obj.startTime || obj.time;
-        if (tt && typeof tt === 'string' && (tt.includes('T') || tt.includes(':'))) {
-          teeTimeMap[name] = formatTeeTime(tt) || tt;
-        }
+        const tt = obj.teeTime || obj.teeTimeLocal || obj.startTime;
+        if (tt && typeof tt === 'string') teeTimeMap[name] = formatTeeTime(tt) || tt;
       }
-
-      // Tee time group objects: { teeTime, players: [...] }
       if ((obj.teeTime || obj.startTime) && Array.isArray(obj.players)) {
         const tt = formatTeeTime(obj.teeTime || obj.startTime);
-        rawTeeTimeObjs.push({ tt, count: obj.players.length, sample: JSON.stringify(obj.players[0]).slice(0, 100) });
         obj.players.forEach(p => {
-          const pname = p.displayName?.trim() || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
-          if (pname && tt) teeTimeMap[pname] = tt;
+          const pn = p.displayName?.trim() || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
+          if (pn && tt) teeTimeMap[pn] = tt;
         });
       }
-
-      // Odds objects: { oddsToWinId, oddsEnabled, players: [{ displayName, odds }] }
-      // PGA Tour embeds FanDuel-style American odds in __NEXT_DATA__
       if (obj.oddsToWinId && obj.oddsEnabled && Array.isArray(obj.players)) {
         obj.players.forEach(p => {
-          const pname = p.displayName?.trim() || p.playerName?.trim();
-          const oddsVal = p.odds || p.currentOdds || p.americanOdds || p.moneyline;
-          if (pname && oddsVal !== undefined && oddsVal !== null) {
-            // Format: positive → "+2000", negative → "-150"
-            const n = parseInt(oddsVal, 10);
-            if (!isNaN(n)) oddsMap[pname] = n > 0 ? `+${n}` : `${n}`;
-          }
+          const pn = p.displayName?.trim() || p.playerName?.trim();
+          const n = parseInt(p.odds || p.currentOdds, 10);
+          if (pn && !isNaN(n)) oddsMap[pn] = n > 0 ? `+${n}` : `${n}`;
         });
       }
     });
   }
 
-  // Fallback scrape
-  if (playerNames.size < 10) {
-    for (const [, name] of html.matchAll(/\/players\/[^"]+">([A-Z][a-z]+ [A-Z][a-zA-Z\s'-]+)</g)) {
-      if (name.trim().split(' ').length >= 2) playerNames.add(name.trim());
-    }
-  }
-
-  // Deduplicate — PGA Tour returns both "First Last" and "Last, First" formats.
-  // Keep "First Last" and drop the "Last, First" duplicate if both exist.
+  // Deduplicate Last,First vs First Last
   const allNames = [...playerNames];
   const players = allNames.filter(name => {
     if (!name.includes(',')) return true;
@@ -140,33 +153,43 @@ async function fetchField(tournament, year) {
     return first ? !playerNames.has(`${first} ${last}`) : true;
   });
 
-  // Normalize a "Last, First" key to "First Last"
   const normalize = k => {
     if (!k.includes(',')) return k;
     const [last, first] = k.split(',').map(s => s.trim());
     return first ? `${first} ${last}` : k;
   };
-
-  // Normalize teeTimeMap keys to "First Last" format
   const normTeeTimeMap = {};
   Object.entries(teeTimeMap).forEach(([k, v]) => { normTeeTimeMap[normalize(k)] = v; });
+  const teeTimes = players.filter(n => normTeeTimeMap[n]).map(n => ({ name: n, teeTime: normTeeTimeMap[n] }));
 
-  const teeTimes = players
-    .filter(n => normTeeTimeMap[n])
-    .map(n => ({ name: n, teeTime: normTeeTimeMap[n] }));
+  return { players, teeTimes, tournament, source: 'pgatour-html' };
+}
 
-  // Normalize oddsMap keys and build odds array
-  const normOddsMap = {};
-  Object.entries(oddsMap).forEach(([k, v]) => { normOddsMap[normalize(k)] = v; });
-  const odds = players
-    .filter(n => normOddsMap[n])
-    .map(n => ({ name: n, odds: normOddsMap[n] }));
+// ── Source 3: ESPN event field ────────────────────────────────────────────────
+async function fetchFromESPN() {
+  // Find upcoming event ID
+  for (let offset = 0; offset <= 14; offset++) {
+    const d = new Date(); d.setDate(d.getDate() + offset);
+    const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?dates=${ds}`, { headers: HEADERS_JSON });
+    if (!r.ok) continue;
+    const data = await r.json();
+    const pga = (data?.events || []).filter(e => e.status?.type?.state !== 'post');
+    if (!pga.length) continue;
+    const event = pga.find(e => e.status?.type?.state === 'pre') || pga[0];
 
-  return { players, teeTimes, odds, url, rawTeeTimeObjs };
+    // Fetch full event field via leaderboard endpoint
+    const r2 = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${event.id}`, { headers: HEADERS_JSON });
+    if (!r2.ok) continue;
+    const ld = await r2.json();
+    const competitors = ld?.events?.[0]?.competitions?.[0]?.competitors || [];
+    const players = competitors.map(c => c.athlete?.displayName || '').filter(Boolean);
+    if (players.length) return { players, teeTimes: [], tournament: event.name, source: 'espn' };
+  }
+  throw new Error('No field found via ESPN');
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -176,64 +199,98 @@ export default async function handler(req, res) {
   const isDebug = req.query.debug === '1';
   const year = new Date().getFullYear().toString();
 
+  let result = null;
+  const errors = [];
+
+  // Try each source in order
+  // Source 1: Stats API (requires tournament ID — get from schedule first)
   try {
-    const scheduleHtml = await fetchPage('https://www.pgatour.com/schedule');
-    const nd = extractNextData(scheduleHtml);
-    if (!nd) throw new Error('No __NEXT_DATA__ on pgatour.com/schedule');
-
-    const { tournament, allTournaments } = findUpcomingTournament(nd);
-    if (!tournament) {
-      return res.status(404).json({
-        error: 'No upcoming tournament found',
-        statuses: [...new Set(allTournaments.map(t => t.status))],
-      });
-    }
-
-    const { players, teeTimes, url, rawTeeTimeObjs } = await fetchField(tournament, year);
-
-    if (isDebug) {
-      // Scan __NEXT_DATA__ for odds data
-      const fieldHtml = await fetchPage(`https://www.pgatour.com/tournaments/${year}/${nameToSlug(tournament.name)}/${tournament.tournamentId}/field`);
-      const fieldNd = extractNextData(fieldHtml);
-      const oddsKeys = [];
-      const oddsObjects = [];
-      if (fieldNd) {
-        const raw = JSON.stringify(fieldNd);
-        const matches = [...new Set((raw.match(/"(odds|moneyline|american|fanduel|draftkings|betmgm|americanOdds|openingOdds|currentOdds|wagerOdds)[^"]*":\s*[^,}]+/gi) || []))];
-        oddsKeys.push(...matches.slice(0, 20));
-        walkAll(fieldNd, obj => {
-          if (Object.keys(obj).some(k => /odds|moneyline|american|fanduel/i.test(k))) {
-            if (oddsObjects.length < 5) oddsObjects.push(JSON.stringify(obj).slice(0, 400));
-          }
-        });
+    const schedResp = await fetch('https://www.pgatour.com/schedule', { headers: HEADERS_HTML });
+    if (schedResp.ok) {
+      const nd = extractNextData(await schedResp.text());
+      const queries = nd?.props?.pageProps?.dehydratedState?.queries || [];
+      let tournaments = [];
+      for (const q of queries) {
+        if (q?.state?.data?.tournaments) tournaments = tournaments.concat(q.state.data.tournaments);
       }
-      return res.status(200).json({
-        tournament: { id: tournament.tournamentId, name: tournament.name, status: tournament.status },
-        fieldUrl: url,
-        playerCount: players.length,
-        teeTimeCount: teeTimes.length,
-        samplePlayers: players.slice(0, 10),
-        sampleTeeTimes: teeTimes.slice(0, 10),
-        oddsKeysFound: oddsKeys,
-        oddsObjectsFound: oddsObjects,
-        rawTeeTimeObjs: rawTeeTimeObjs.slice(0, 5),
-      });
+      const DONE = ['COMPLETED', 'OFFICIAL', 'PAST', 'CANCELLED'];
+      const seen = new Set();
+      const unique = tournaments.filter(t => { if (seen.has(t.tournamentId)) return false; seen.add(t.tournamentId); return true; });
+      const tournament = unique.find(t => t.status === 'IN_PROGRESS')
+        || unique.find(t => t.status === 'UPCOMING')
+        || unique.find(t => !DONE.includes(t.status?.toUpperCase()));
+
+      if (tournament?.tournamentId) {
+        try {
+          const statsResult = await fetchFromStatsApi(tournament.tournamentId);
+          if (statsResult.players.length) {
+            result = { ...statsResult, tournament: tournament.name };
+          }
+        } catch (e) { errors.push(`stats-api: ${e.message}`); }
+
+        // If stats API failed, try field HTML page (same schedule fetch)
+        if (!result) {
+          try {
+            const slug = nameToSlug(tournament.name);
+            const fieldResp = await fetch(`https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/field`, { headers: HEADERS_HTML });
+            if (fieldResp.ok) {
+              const fieldHtml = await fieldResp.text();
+              const fieldNd = extractNextData(fieldHtml);
+              if (fieldNd) {
+                const playerNames = new Set();
+                const teeTimeMap = {};
+                walkAll(fieldNd, obj => {
+                  const name = obj.displayName?.trim() || (obj.firstName && obj.lastName ? `${obj.firstName.trim()} ${obj.lastName.trim()}` : null);
+                  if (name?.includes(' ')) playerNames.add(name);
+                  if ((obj.teeTime || obj.startTime) && Array.isArray(obj.players)) {
+                    const tt = formatTeeTime(obj.teeTime || obj.startTime);
+                    obj.players.forEach(p => {
+                      const pn = p.displayName?.trim() || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
+                      if (pn && tt) teeTimeMap[pn] = tt;
+                    });
+                  }
+                });
+                const normalize = k => { if (!k.includes(',')) return k; const [last, first] = k.split(',').map(s => s.trim()); return first ? `${first} ${last}` : k; };
+                const players = [...playerNames].filter(n => !n.includes(',') || !playerNames.has(`${n.split(',')[1]?.trim()} ${n.split(',')[0]?.trim()}`));
+                const normMap = {}; Object.entries(teeTimeMap).forEach(([k, v]) => { normMap[normalize(k)] = v; });
+                const teeTimes = players.filter(n => normMap[n]).map(n => ({ name: n, teeTime: normMap[n] }));
+                if (players.length) result = { players, teeTimes, tournament: tournament.name, source: 'pgatour-html' };
+              }
+            }
+          } catch (e) { errors.push(`html: ${e.message}`); }
+        }
+      }
     }
+  } catch (e) { errors.push(`schedule: ${e.message}`); }
 
-    if (!players.length) {
-      return res.status(404).json({ error: `Field not yet posted for ${tournament.name}`, tournament: tournament.name });
-    }
-
-    return res.status(200).json({
-      players,
-      teeTimes,
-      odds,
-      tournament: tournament.name,
-      count: players.length,
-      source: 'pgatour',
-    });
-
-  } catch (err) {
-    return res.status(503).json({ error: err.message });
+  // Source 3: ESPN fallback
+  if (!result) {
+    try {
+      result = await fetchFromESPN();
+    } catch (e) { errors.push(`espn: ${e.message}`); }
   }
+
+  if (!result?.players?.length) {
+    return res.status(503).json({ error: 'All field sources failed', details: errors });
+  }
+
+  if (isDebug) {
+    return res.status(200).json({
+      source: result.source,
+      tournament: result.tournament,
+      playerCount: result.players.length,
+      teeTimeCount: result.teeTimes?.length || 0,
+      samplePlayers: result.players.slice(0, 10),
+      errors,
+    });
+  }
+
+  return res.status(200).json({
+    players: result.players,
+    teeTimes: result.teeTimes || [],
+    odds: result.odds || [],
+    tournament: result.tournament,
+    count: result.players.length,
+    source: result.source,
+  });
 }
