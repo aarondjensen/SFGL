@@ -694,7 +694,11 @@ export const RostersView = ({
                 const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
                 const hasLineup      = team.lineup.length > 0;
                 const isEditing      = canEditLineup && lineupMode;
-                const isBenched      = !!activeTournament && hasLineup && !isInLineup && !isEditing;
+                // Only dim benched players once the tournament week has actually begun —
+                // i.e. tee times are posted (firstTeeTime exists) or lineup window is open.
+                // Between events the lineup carries over from the prior week and should not dim.
+                const tournamentActive = !!(firstTeeTime || lineupOpen);
+                const isBenched      = tournamentActive && hasLineup && !isInLineup && !isEditing;
                 const dimColor       = 'rgba(255,255,255,0.45)';
                 const rowClickable   = isEditing && isOwnTeam && (isInLineup || canAddToLineup);
 
