@@ -98,7 +98,7 @@ const styles = `
     border-radius: 1px;
     padding: 12px 16px;
     font-family: 'Raleway', system-ui, sans-serif;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 400;
     color: #ffffff;
     outline: none;
@@ -349,4 +349,3 @@ export default function LoginPage({ onLogin }) {
     </>
   );
 }
-
