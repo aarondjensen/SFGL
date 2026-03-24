@@ -3,6 +3,7 @@ import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../utils/index.js';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
+import { playersApi } from '../api/firebase';
 import { theme, colors, fonts } from '../theme.js';
 
 // Current LIV Golf roster — updated from livgolf.com/teams March 2026.
@@ -74,7 +75,7 @@ const makeHeadshotErrorHandler = (playerName, headshotMap) => {
 };
 
 export const AddDropPlayerModal = ({
-  isOpen, onClose, team, currentRoster, allPlayers, teams,
+  isOpen, onClose, team, currentRoster, teams,
   updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
   headshots, leagueSettings = {},
@@ -86,21 +87,43 @@ export const AddDropPlayerModal = ({
   const [selectedPlayerToAdd,  setSelectedPlayerToAdd]  = useState(null);
   const [selectedPlayerToDrop, setSelectedPlayerToDrop] = useState(null);
   const [saving,               setSaving]               = useState(false);
+  const [topPlayers,           setTopPlayers]           = useState([]); // top 50 free agents by OWGR
+  const [searchResults,        setSearchResults]        = useState([]); // results from name search
+  const [loadingPlayers,       setLoadingPlayers]       = useState(false);
+  const [searching,            setSearching]            = useState(false);
   const bodyRef  = useRef(null);
   const [localHeadshots, setLocalHeadshots] = useState({});
+  const searchTimerRef = useRef(null);
   const dialog   = useDialog();
+
+  // Load top 50 free agents when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    setLoadingPlayers(true);
+    playersApi.getTopRanked(50)
+      .then(players => setTopPlayers(players))
+      .catch(() => setTopPlayers([]))
+      .finally(() => setLoadingPlayers(false));
+  }, [isOpen]);
 
   // Pre-populate when editing an existing waiver claim
   useEffect(() => {
     if (editingWaiverData && isOpen) {
-      const toAdd = allPlayers.find(p => p.name === editingWaiverData.player);
-      if (toAdd) setSelectedPlayerToAdd(toAdd);
+      // Try to find in topPlayers, or fetch directly by name
+      const inTop = topPlayers.find(p => p.name === editingWaiverData.player);
+      if (inTop) {
+        setSelectedPlayerToAdd(inTop);
+      } else if (editingWaiverData.player) {
+        playersApi.getByName(editingWaiverData.player).then(p => {
+          if (p) setSelectedPlayerToAdd({ name: p.name, worldRank: p.world_rank, isLiv: p.is_liv });
+        }).catch(() => {});
+      }
       if (editingWaiverData.droppedPlayer) {
         const toDrop = currentRoster.find(p => p.name === editingWaiverData.droppedPlayer);
         if (toDrop) setSelectedPlayerToDrop(toDrop);
       }
     }
-  }, [editingWaiverData, isOpen, allPlayers, currentRoster]);
+  }, [editingWaiverData, isOpen, topPlayers, currentRoster]);
 
   // Scroll to top whenever drop selection changes (or add selection is made)
   useEffect(() => {
@@ -109,24 +132,47 @@ export const AddDropPlayerModal = ({
     }
   }, [selectedPlayerToDrop]);
 
-  // Fetch ESPN headshot IDs for players not already in the headshots map
+  // Fetch ESPN headshot IDs for top players not already in the headshots map
   useEffect(() => {
-    if (!isOpen || !allPlayers?.length) return;
-    const missing = allPlayers
+    if (!isOpen || !topPlayers.length) return;
+    const missing = topPlayers
       .filter(p => p.name && !headshots?.[p.name])
       .map(p => p.name)
-      .slice(0, 150); // limit to avoid huge query string
+      .slice(0, 50);
     if (!missing.length) return;
     const encoded = missing.map(n => encodeURIComponent(n)).join(',');
     fetch(`/api/headshots?names=${encoded}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data?.results) return;
-        // results is { playerName: espnId }
         setLocalHeadshots(prev => ({ ...prev, ...data.results }));
       })
       .catch(() => {});
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, topPlayers]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced search — fetch from Firestore when user types
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    const term = searchTerm.trim();
+    if (term.length < 2) { setSearchResults([]); return; }
+    searchTimerRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await playersApi.searchByName(term, 20);
+        setSearchResults(results);
+        // Fetch headshots for search results too
+        const missing = results.filter(p => !headshots?.[p.name] && !localHeadshots[p.name]).map(p => p.name);
+        if (missing.length) {
+          fetch(`/api/headshots?names=${missing.map(n => encodeURIComponent(n)).join(',')}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data?.results) setLocalHeadshots(prev => ({ ...prev, ...data.results })); })
+            .catch(() => {});
+        }
+      } catch { setSearchResults([]); }
+      finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(searchTimerRef.current);
+  }, [searchTerm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen || !team) return null;
 
@@ -139,7 +185,7 @@ export const AddDropPlayerModal = ({
   // (who live in transactions but not in team.roster) from appearing as available.
   const rosteredPlayers = new Set(
     teams.flatMap(t => {
-      let roster = t.roster.map(p => p.name);
+      let roster = (t.roster || []).map(p => p.name);
       const rosterSet = new Set(roster);
       transactions
         .filter(tx =>
@@ -183,9 +229,10 @@ export const AddDropPlayerModal = ({
       .map(tx => tx.player)
   );
 
-  const availablePlayers = allPlayers.filter(p => {
+  // Use search results when searching, otherwise top 50 free agents
+  const playerPool = searchTerm.trim().length >= 2 ? searchResults : topPlayers;
+  const availablePlayers = playerPool.filter(p => {
     if (!p.name || typeof p.name !== 'string') return false;
-    if (/^\d+$/.test(p.name.trim())) return false;
     if (p.isLiv || LIV_PLAYERS.has(p.name)) return false;
     if (thisTeamPendingClaims.has(p.name)) return false;
     return true;
@@ -194,7 +241,7 @@ export const AddDropPlayerModal = ({
   // Build ownership map: playerName → teamName
   const ownerMap = new Map();
   teams.forEach(t => {
-    const rosterSet = new Set(t.roster.map(p => p.name));
+    const rosterSet = new Set((t.roster || []).map(p => p.name));
     transactions
       .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && (tx.status === 'processed' || tx.status === 'completed'))
       .forEach(tx => {
@@ -208,16 +255,11 @@ export const AddDropPlayerModal = ({
   const activeTournament = tournaments?.find(t => t.playing && !t.completed);
   const tournamentIsLocked = isTournamentLocked(activeTournament);
 
-  const filteredPlayers  = availablePlayers.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-
-  // When not searching, hide rostered players from the browse list so it starts
-  // with the highest-ranked available free agent.  When searching by name, show
-  // rostered players (greyed out with team badge) so the user can see who owns them.
-  const displayPlayers = searchTerm.trim()
-    ? filteredPlayers                                          // search: show all matches (rostered shown greyed)
-    : filteredPlayers.filter(p => !rosteredPlayers.has(p.name) && !limboPlayers.has(p.name)); // browse: free agents only
+  // When browsing (no search): show only free agents from top 50
+  // When searching: show all results including rostered players (greyed out)
+  const displayPlayers = searchTerm.trim().length >= 2
+    ? availablePlayers                                         // search results — show all
+    : availablePlayers.filter(p => !rosteredPlayers.has(p.name) && !limboPlayers.has(p.name)); // browse: top free agents
 
   const rosterFull   = currentRoster.length >= ROSTER_LIMIT;
 
@@ -538,8 +580,14 @@ export const AddDropPlayerModal = ({
             onBlur={e => { e.target.style.borderColor = colors.borderInput; e.target.style.background = colors.inputBg; }}
           />
 
-          {displayPlayers.length === 0 ? (
-            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0' }}>No players found</p>
+          {loadingPlayers ? (
+            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0', color: colors.textMuted }}>Loading players…</p>
+          ) : searching ? (
+            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0', color: colors.textMuted }}>Searching…</p>
+          ) : displayPlayers.length === 0 ? (
+            <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0' }}>
+              {searchTerm.trim().length >= 2 ? 'No players found' : 'No free agents available'}
+            </p>
           ) : (
             displayPlayers.slice(0, 50).map(player => {
               const isCurrentlySelected = selectedPlayerToAdd?.name === player.name;
