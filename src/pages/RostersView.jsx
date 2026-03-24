@@ -568,7 +568,12 @@ export const RostersView = ({
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (cancelled || !data?.players?.length) return;
-          setLiveData(data);
+          // Only use live data when tournament is actually in progress
+          // Pre-tournament ESPN returns players but state is 'pre' — we don't want
+          // that overriding the tee time display from /api/field
+          if (data.state === 'in' || data.state === 'post') {
+            setLiveData(data);
+          }
         })
         .catch(() => {});
     };
