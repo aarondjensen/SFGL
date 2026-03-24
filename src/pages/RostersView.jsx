@@ -491,7 +491,10 @@ export const RostersView = ({
 
   // Fetch current week's field from /api/field — polls every 30 min so tee times
   // are picked up as soon as PGA Tour posts them (typically Wed morning)
-  const _fieldTournamentName = (tournaments.find(t => t.playing) || tournaments.find(t => !t.completed))?.name || null;
+  const _fieldTournamentName = (
+    tournaments.find(t => t.playing && !t.completed) ||
+    tournaments.find(t => !t.completed)
+  )?.name || null;
   useEffect(() => {
     if (!_fieldTournamentName) return;
     let cancelled = false;
