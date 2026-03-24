@@ -1,4 +1,14 @@
 // api/field.js — Vercel serverless function
+// Returns the current/upcoming PGA Tour tournament field as an array of player names.
+//
+// Strategy:
+//   1. Fetch pgatour.com/schedule — read tournaments from __NEXT_DATA__
+//      path: .props.pageProps.dehydratedState.queries[*].state.data.tournaments
+//   2. Find first tournament with status UPCOMING or IN_PROGRESS
+//   3. Fetch pgatour.com/tournaments/{year}/{slug}/{id}/field and extract player names
+//
+// GET /api/field          → { players, tournament, count }
+// GET /api/field?debug=1  → diagnostic info
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
@@ -18,57 +28,126 @@ function extractNextData(html) {
   try { return JSON.parse(m[1]); } catch { return null; }
 }
 
-// Find the parent object containing a specific string value anywhere in the tree
-function findParentsWithString(obj, needle, path = '', results = []) {
-  if (!obj || typeof obj !== 'object') return results;
-  if (Array.isArray(obj)) {
-    obj.forEach((v, i) => findParentsWithString(v, needle, `${path}[${i}]`, results));
-  } else {
-    let found = false;
-    Object.entries(obj).forEach(([k, v]) => {
-      if (typeof v === 'string' && v.includes(needle)) found = true;
-    });
-    if (found && results.length < 5) {
-      results.push({ path, keys: Object.keys(obj), sample: JSON.stringify(obj).slice(0, 500) });
-    }
-    Object.entries(obj).forEach(([k, v]) => findParentsWithString(v, needle, `${path}.${k}`, results));
-  }
-  return results;
+function nameToSlug(name) {
+  return name.toLowerCase()
+    .replace(/['']/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }
+
+function walkAll(obj, collect) {
+  if (!obj || typeof obj !== 'object') return;
+  collect(obj);
+  if (Array.isArray(obj)) obj.forEach(o => walkAll(o, collect));
+  else Object.values(obj).forEach(v => walkAll(v, collect));
+}
+
+// ── Step 1: find upcoming tournament from schedule ────────────────────────────
+function findUpcomingTournament(nd) {
+  // Walk all queries looking for a tournaments array
+  const queries = nd?.props?.pageProps?.dehydratedState?.queries || [];
+  let allTournaments = [];
+
+  for (const query of queries) {
+    const data = query?.state?.data;
+    if (data?.tournaments && Array.isArray(data.tournaments)) {
+      allTournaments = allTournaments.concat(data.tournaments);
+    }
+  }
+
+  if (!allTournaments.length) return { tournament: null, allTournaments };
+
+  // Status priority: IN_PROGRESS > UPCOMING > anything else
+  const DONE = ['COMPLETED', 'OFFICIAL', 'PAST', 'CANCELLED'];
+  const active = allTournaments.find(t => t.status === 'IN_PROGRESS');
+  const upcoming = allTournaments.find(t => t.status === 'UPCOMING');
+  const fallback = allTournaments.find(t => !DONE.includes(t.status?.toUpperCase()));
+  const tournament = active || upcoming || fallback;
+
+  return { tournament, allTournaments };
+}
+
+// ── Step 2: fetch field page and extract player names ─────────────────────────
+async function fetchField(tournament, year) {
+  const slug = nameToSlug(tournament.name);
+  const url = `https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/field`;
+  const html = await fetchPage(url);
+  const nd = extractNextData(html);
+
+  const players = new Set();
+
+  if (nd) {
+    walkAll(nd, obj => {
+      if (obj.displayName && typeof obj.displayName === 'string' && obj.displayName.includes(' ')) {
+        players.add(obj.displayName.trim());
+      }
+      if (obj.firstName && obj.lastName && typeof obj.firstName === 'string') {
+        players.add(`${obj.firstName.trim()} ${obj.lastName.trim()}`);
+      }
+    });
+  }
+
+  // Fallback: scrape anchor tags linking to player profiles
+  if (players.size < 10) {
+    for (const [, name] of html.matchAll(/\/players\/[^"]+">([A-Z][a-z]+ [A-Z][a-zA-Z\s'-]+)</g)) {
+      if (name.trim().split(' ').length >= 2) players.add(name.trim());
+    }
+  }
+
+  return { players: [...players], url };
+}
+
+// ── Handler ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const isDebug = req.query.debug === '1';
   const year = new Date().getFullYear().toString();
 
   try {
-    const html = await fetchPage('https://www.pgatour.com/schedule');
-    const nd = extractNextData(html);
+    const scheduleHtml = await fetchPage('https://www.pgatour.com/schedule');
+    const nd = extractNextData(scheduleHtml);
+    if (!nd) throw new Error('No __NEXT_DATA__ on pgatour.com/schedule');
 
-    if (isDebug) {
-      if (!nd) return res.status(200).json({ error: 'No __NEXT_DATA__', htmlLength: html.length });
+    const { tournament, allTournaments } = findUpcomingTournament(nd);
 
-      // Find objects that contain "Houston" to understand the tournament data structure
-      const houstonParents = findParentsWithString(nd, 'Houston');
-      // Also look for R2026 pattern (tournament IDs) in the raw JSON string
-      const rawJson = JSON.stringify(nd);
-      const r2026Matches = [...new Set(rawJson.match(/R202[0-9][0-9]{3}/g) || [])];
-      // Find any key that looks like a tournament slug
-      const slugMatches = [...new Set(rawJson.match(/"texas-childrens[^"]+"/g) || [])];
-      const urlMatches = [...new Set(rawJson.match(/\/tournaments\/[^"]{5,80}/g) || [])].slice(0, 10);
-
-      return res.status(200).json({
-        houstonParents,
-        r2026IdsFound: r2026Matches,
-        slugsFound: slugMatches,
-        tournamentUrlsFound: urlMatches,
+    if (!tournament) {
+      return res.status(404).json({
+        error: 'No upcoming tournament found',
+        totalTournamentsFound: allTournaments.length,
+        statuses: [...new Set(allTournaments.map(t => t.status))],
       });
     }
 
-    return res.status(503).json({ error: 'Use ?debug=1 to diagnose' });
+    const { players, url } = await fetchField(tournament, year);
+
+    if (isDebug) {
+      return res.status(200).json({
+        tournament: { id: tournament.tournamentId, name: tournament.name, status: tournament.status, date: tournament.displayDate },
+        fieldUrl: url,
+        playerCount: players.length,
+        samplePlayers: players.slice(0, 15),
+        allStatuses: [...new Set(allTournaments.map(t => t.status))],
+      });
+    }
+
+    if (!players.length) {
+      return res.status(404).json({
+        error: `Field not yet posted for ${tournament.name}`,
+        tournament: tournament.name,
+      });
+    }
+
+    return res.status(200).json({
+      players,
+      tournament: tournament.name,
+      count: players.length,
+      source: 'pgatour',
+    });
 
   } catch (err) {
     return res.status(503).json({ error: err.message });
