@@ -68,13 +68,15 @@ export default async function handler(req, res) {
     }
 
     if (!resp.ok) {
-      return res.status(502).json({ error: `Odds API returned ${resp.status}` });
+      // No markets yet or API error — return empty rather than crashing
+      const body = await resp.text().catch(() => '');
+      return res.status(200).json({ odds: {}, tournament: null, reason: 'odds-api-' + resp.status });
     }
 
-    const data = await resp.json();
+    const data = await resp.json().catch(() => null);
 
-    if (!data.length) {
-      return res.status(200).json({ odds: {}, tournament: null });
+    if (!data || !data.length) {
+      return res.status(200).json({ odds: {}, tournament: null, reason: 'no-events' });
     }
 
     // Golf outrights — there's typically one event (the current week's tournament)
