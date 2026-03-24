@@ -108,20 +108,24 @@ export const playersApi = {
 
   // Get top N players by world rank, excluding LIV players
   async getTopRanked(n = 50) {
+    // Fetch more than needed since we filter LIV client-side
+    // (avoids requiring a composite Firestore index on is_liv + world_rank)
     const q = query(
       collection(db, 'players'),
-      where('is_liv', '==', false),
       orderBy('world_rank', 'asc'),
-      limit(n)
+      limit(n * 3) // fetch 3x to account for LIV players being filtered out
     );
     const snap = await getDocs(q);
-    return snap.docs.map(d => ({
-      name:        d.id,
-      worldRank:   d.data().world_rank,
-      pgaTourId:   d.data().pga_tour_id,
-      headshotUrl: d.data().headshot_url,
-      isLiv:       d.data().is_liv,
-    }));
+    return snap.docs
+      .map(d => ({
+        name:        d.id,
+        worldRank:   d.data().world_rank,
+        pgaTourId:   d.data().pga_tour_id,
+        headshotUrl: d.data().headshot_url,
+        isLiv:       d.data().is_liv,
+      }))
+      .filter(p => !p.isLiv)
+      .slice(0, n);
   },
 
   // Search players by name prefix (case-sensitive Firestore range query)
