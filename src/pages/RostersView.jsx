@@ -694,7 +694,7 @@ export const RostersView = ({
                 const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
                 const hasLineup      = team.lineup.length > 0;
                 const isEditing      = canEditLineup && lineupMode;
-                const isBenched      = hasLineup && !isInLineup && !isEditing;
+                const isBenched      = !!activeTournament && hasLineup && !isInLineup && !isEditing;
                 const dimColor       = 'rgba(255,255,255,0.45)';
                 const rowClickable   = isEditing && isOwnTeam && (isInLineup || canAddToLineup);
 
