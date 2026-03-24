@@ -489,15 +489,28 @@ export const RostersView = ({
           data.teeTimes.forEach(({ name, teeTime }) => { ttMap[normalize(name)] = teeTime; });
           setTeeTimeMap(ttMap);
         }
-        if (data.odds?.length) {
-          const oMap = {};
-          data.odds.forEach(({ name, odds }) => { oMap[normalize(name)] = odds; });
-          setOddsMap(oMap);
-        }
+        // odds come from /api/odds separately
       })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch odds from /api/odds (Mon–Thu only, 1hr cache)
+  useEffect(() => {
+    if (!activeTournament) return;
+    let cancelled = false;
+    fetch('/api/odds')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled || !data?.odds || !Object.keys(data.odds).length) return;
+        const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
+        const oMap = {};
+        Object.entries(data.odds).forEach(([name, odds]) => { oMap[normalize(name)] = odds; });
+        setOddsMap(oMap);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch live leaderboard from /api/live during tournament week
   // Polls every 5 minutes while the tournament is in progress
@@ -715,7 +728,7 @@ export const RostersView = ({
                     ? (liveData.state === 'in' ? 'Score' : 'Tee Time')
                     : Object.keys(teeTimeMap).length > 0 ? 'Tee Time'
                     : Object.keys(oddsMap).length > 0 ? 'Odds'
-                    : 'OWGR'}
+                    : (statsView === 'sfgl' ? 'Starts' : 'Events')}
                 </th>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   {isMobile ? 'Cuts' : 'Cuts Made'}
@@ -923,11 +936,11 @@ export const RostersView = ({
                         );
                       }
 
-                      // Default: OWGR world ranking
-                      const owgr = allPlayers.find(p => p.name === player.name)?.worldRank;
+                      // Default: starts count
+                      const events = statsView === 'sfgl' ? (sfglCutsMap[player.name]?.starts ?? player.starts ?? 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
                       return (
-                        <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 11, color: isBenched ? dimColor : (owgr <= 50 ? colors.textGold : owgr <= 100 ? colors.textPrimary : colors.textSecondary) }}>
-                          {owgr ? `#${owgr}` : <span style={{ opacity: 0.25 }}>—</span>}
+                        <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
+                          {events}
                         </td>
                       );
                     })()}
