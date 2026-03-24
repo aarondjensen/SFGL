@@ -70,6 +70,18 @@ export const shortName = (fullName) => {
   return parts[parts.length - 1];
 };
 
+/**
+ * "First Last" → "F. Last"
+ * Used by TransactionsView and RostersView (mobile) to abbreviate player names.
+ * Single-word names are returned unchanged.
+ */
+export const abbreviateName = (name) => {
+  if (!name) return '';
+  const parts = name.trim().split(' ');
+  if (parts.length < 2) return name;
+  return parts[0][0] + '. ' + parts[parts.length - 1];
+};
+
 export const getSortedRoster = (roster) => {
   const limited   = roster.filter(p => p.limited);
   const unlimited = roster.filter(p => !p.limited);
@@ -79,18 +91,62 @@ export const getSortedRoster = (roster) => {
 // ============================================================================
 // HEADSHOTS
 // ============================================================================
-export const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
-  const pgaId = headshotMap[playerName] || PGA_TOUR_IDS[playerName];
-  if (pgaId) {
-    return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96/headshots_${pgaId}`;
+// All headshots use ESPN CDN with ESPN athlete IDs.
+// IDs come from three sources (checked in order):
+//   1. headshotMap (database — set via AdminView Auto-Fetch or manual entry)
+//   2. PGA_TOUR_IDS constant (static fallback for common tour regulars)
+//   3. ui-avatars.com initials avatar (final fallback — always works)
+//
+// ESPN headshot URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
+// Note: PGA_TOUR_IDS values are ESPN athlete IDs despite the constant name.
+
+const ESPN_HEADSHOT_BASE = 'https://a.espncdn.com/i/headshots/golf/players/full';
+
+// Returns an ordered array of URLs to try for a player.
+export const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
+  const urls = [];
+  // 1. Database value (may be a full URL override or an ESPN ID)
+  const dbVal = headshotMap?.[playerName];
+  if (dbVal) {
+    if (typeof dbVal === 'string' && (dbVal.startsWith('http') || dbVal.startsWith('/'))) {
+      urls.push(dbVal);
+    } else {
+      urls.push(`${ESPN_HEADSHOT_BASE}/${dbVal}.png`);
+    }
   }
-  return getPlayerHeadshotFallback(playerName, isLimited);
+  // 2. Static constant fallback
+  const staticId = PGA_TOUR_IDS[playerName];
+  if (staticId && staticId !== dbVal) {
+    urls.push(`${ESPN_HEADSHOT_BASE}/${staticId}.png`);
+  }
+  return urls;
 };
 
 export const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
-  const encodedName = encodeURIComponent(playerName);
-  const background  = isLimited ? 'EAB308' : '059669';
-  return `https://ui-avatars.com/api/?name=${encodedName}&background=${background}&color=ffffff&size=400&bold=true&font-size=0.4`;
+  const bg = isLimited ? '8B6914' : '1c3a5e';
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
+};
+
+export const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  return urls.length > 0 ? urls[0] : getPlayerHeadshotFallback(playerName, isLimited);
+};
+
+// Returns an onError handler that walks through all fallback URLs before
+// settling on the initials avatar. Use as: onError={makeHeadshotErrorHandler(...)}
+export const makeHeadshotErrorHandler = (playerName, isLimited = false, headshotMap = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+  let attempt = 0;
+  return function handler(e) {
+    attempt++;
+    if (attempt < urls.length) {
+      e.target.src = urls[attempt];
+      e.target.onerror = handler;
+    } else {
+      e.target.onerror = null;
+      e.target.src = getPlayerHeadshotFallback(playerName, isLimited);
+    }
+  };
 };
 
 // ============================================================================
@@ -128,8 +184,14 @@ export const getETNow = () => {
 // ============================================================================
 // SEGMENT
 // ============================================================================
-export const getSegmentByDate = () => {
-  const month = new Date().getMonth() + 1;
+/**
+ * Returns the segment name for a given date (defaults to today).
+ * Accepts an optional Date object so callers like StandingsView can
+ * resolve the segment for a specific tournament start date rather than
+ * relying on the current wall-clock month.
+ */
+export const getSegmentByDate = (date) => {
+  const month = (date || new Date()).getMonth() + 1;
   if (month >= 1 && month <= 3) return 'West Coast Swing';
   if (month >= 4 && month <= 5) return 'Florida Swing';
   if (month >= 6 && month <= 8) return 'Summer Swing';
@@ -209,21 +271,31 @@ export const isLineupEditingOpen = (tournament) => {
 
 export const isFreeAgentWindowOpen = (tournament) => {
   if (isTournamentLocked(tournament)) return false;
+  // Free agency opens after Tue 8pm ET (when waiver period ends)
+  // Actual availability depends on whether pending waivers exist (checked in RostersView)
   const et      = getETNow();
   const day     = et.getDay();
   const timeVal = et.getHours() * 60 + et.getMinutes();
-  if (day === 2 && timeVal >= 20 * 60 + 1) return true; // Tue 8:01pm+
+  // Tue 8pm+ through Thursday lock
+  if (day === 2 && timeVal >= 20 * 60) return true;
   if (day === 3 || day === 4) return true;
   return false;
 };
 
-export const isWaiverWindowOpen = () => {
+export const isWaiverWindowOpen = (tournament) => {
+  if (!tournament) return false;
+  if (isTournamentLocked(tournament)) return false;
+  // Waiver window: tournament start through Tue 8pm ET
   const et      = getETNow();
   const day     = et.getDay();
   const timeVal = et.getHours() * 60 + et.getMinutes();
-  if (day === 0 && timeVal >= 21 * 60) return true;
-  if (day === 1) return true;
+  // Thu (after lock) through Tue 8pm — basically any time tournament is active and before Tue 8pm
+  // Sun, Mon, all day
+  if (day === 0 || day === 1) return true;
+  // Tue before 8pm
   if (day === 2 && timeVal < 20 * 60) return true;
+  // Thu after tournament starts, Fri, Sat
+  if (day >= 4 || day === 5 || day === 6) return true;
   return false;
 };
 
@@ -270,13 +342,13 @@ export const getFreeAgentWindowStatus = (tournament) => {
     return { open: true, label: `Open until Thu ${lockStr(h)} ET` };
   }
   if (isTournamentLocked(tournament)) return { open: false, label: 'Locked' };
-  return { open: false, label: 'Opens Tue 8:01pm ET' };
+  return { open: false, label: 'Opens after waivers processed' };
 };
 
-export const getWaiverWindowStatus = () =>
-  isWaiverWindowOpen()
-    ? { open: true,  label: 'Open' }
-    : { open: false, label: 'Opens Sun 9pm ET' };
+export const getWaiverWindowStatus = (tournament) =>
+  isWaiverWindowOpen(tournament)
+    ? { open: true,  label: 'Open — closes Tue 8pm ET' }
+    : { open: false, label: 'Closed' };
 
 // ============================================================================
 // SCORING ENGINE

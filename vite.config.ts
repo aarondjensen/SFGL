@@ -4,4 +4,15 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    proxy: {
+      // Proxy /api/* to the Vercel dev server in local development.
+      // Run `vercel dev` instead of `npm run dev` to use the serverless functions locally.
+      // If using `npm run dev`, requests to /api/ will fail — test on the deployed site instead.
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
+  },
 })

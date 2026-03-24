@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Trophy } from 'lucide-react';
-import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor } from '../theme.js';
+import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, SWING_COLORS } from '../theme.js';
+import { getSegmentByDate } from '../utils';
 
 // Inject once — consistent row height on mobile
 if (typeof document !== 'undefined' && !document.getElementById('sfgl-standings-styles')) {
@@ -26,7 +27,7 @@ const formatEarnings = (n) => {
 };
 
 const formatBehind = (n) => {
-  if (!n || n <= 0) return 'Leader';
+  if (!n || n <= 0) return '—';
   if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(2) + 'M';
   if (n >= 1_000)     return '$' + Math.round(n / 1_000) + 'k';
   return '$' + n;
@@ -34,26 +35,20 @@ const formatBehind = (n) => {
 
 const ALL_SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 
-const SWING_ACCENT = {
-  'West Coast Swing': 'rgba(100,160,255,0.85)',
-  'Spring Swing':     'rgba(80,200,120,0.85)',
-  'Summer Swing':     'rgba(220,180,60,0.85)',
-  'Fall Finish':      'rgba(220,120,60,0.85)',
-};
+const SWING_ACCENT = SWING_COLORS;
 
-const MONTH_ABBREVS = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+// Prefer the stored segment/swing, then derive from the tournament start date.
+// Keeps StandingsView in sync with getSegmentByDate used everywhere else.
 const getSegmentForTournament = (t) => {
   if (t.segment) return t.segment;
   if (t.swing) return t.swing;
   if (!t.dates) return null;
-  const match = t.dates.match(/^([A-Za-z]+)/);
+  const MONTHS = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+  const match = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
   if (!match) return null;
-  const month = MONTH_ABBREVS[match[1]];
+  const month = MONTHS[match[1]];
   if (!month) return null;
-  if (month >= 1 && month <= 3) return 'West Coast Swing';
-  if (month >= 4 && month <= 6) return 'Spring Swing';
-  if (month >= 7 && month <= 9) return 'Summer Swing';
-  return 'Fall Finish';
+  return getSegmentByDate(new Date(new Date().getFullYear(), month - 1, parseInt(match[2])));
 };
 
 export const StandingsView = ({ teams, tournaments = [], transactions = [] }) => {
@@ -160,14 +155,47 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
 
       {/* Header */}
       <div style={{ ...theme.cardHeader, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-        {/* Top row: title + toggle buttons — always one line */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <Trophy style={{ width: 16, height: 16, color: colors.earningsGreen }} />
-            <h2 style={theme.h2}>Standings</h2>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+          {/* Left: title + subtitle */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Trophy style={{ width: 20, height: 20, color: colors.textPrimary, flexShrink: 0 }} />
+              <h2 style={theme.h2}>Standings</h2>
+            </div>
+            {/* Subtitle — always reserve space to prevent layout shift */}
+            <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', minHeight: 18, display: 'flex', alignItems: 'center', lineHeight: 1.3 }}>
+              {showSwing && selectedSwing && (
+                swingsWithResults.length > 1 ? (
+                  <select
+                    value={selectedSwing || ''}
+                    onChange={e => setSelectedSwing(e.target.value)}
+                    style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '0px 8px', height: 18, color: accentColor, borderColor: accentColor.replace('0.85', '0.3'), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
+                  >
+                    {swingsWithResults.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span style={{
+                    fontWeight: 600, color: accentColor,
+                    border: `1px solid ${accentColor.replace('0.85', '0.4')}`,
+                    borderRadius: 4,
+                    padding: '1px 8px',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {selectedSwing}
+                  </span>
+                )
+              )}
+              {!showSwing && mostRecentTournament && (
+                <span style={{ color: 'rgba(255,255,255,0.55)' }}>
+                  through {mostRecentTournament.name}
+                </span>
+              )}
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            {/* Slider toggle */}
+          {/* Right: toggle + event count */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
             <div
               style={{
                 position: 'relative',
@@ -177,12 +205,10 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                 borderRadius: 4,
                 padding: 3,
                 gap: 0,
-                width: '44%',
                 minWidth: 140,
                 maxWidth: 200,
               }}
             >
-              {/* Sliding pill */}
               <div style={{
                 position: 'absolute',
                 top: 3, bottom: 3,
@@ -191,12 +217,11 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                 borderRadius: 2,
                 background: showSwing
                   ? accentColor.replace('0.85)', '0.18)')
-                  : 'rgba(180,160,100,0.14)',
-                border: `1px solid ${showSwing ? accentColor.replace('0.85)', '0.45)') : 'rgba(180,160,100,0.4)'}`,
+                  : 'rgba(255,255,255,0.1)',
+                border: `1px solid ${showSwing ? accentColor.replace('0.85)', '0.45)') : 'rgba(255,255,255,0.3)'}`,
                 transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
                 pointerEvents: 'none',
               }} />
-              {/* Overall */}
               <button
                 onClick={() => setView('overall')}
                 style={{
@@ -205,7 +230,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                   background: 'none', border: 'none',
                   fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
                   letterSpacing: '1px', textTransform: 'uppercase',
-                  color: !showSwing ? colors.textGold : colors.textMuted,
+                  color: !showSwing ? colors.textPrimary : colors.textMuted,
                   cursor: 'pointer',
                   transition: 'color 0.18s',
                   borderRadius: 2,
@@ -213,7 +238,6 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
               >
                 Overall
               </button>
-              {/* Swing */}
               <button
                 onClick={() => {
                   if (swingsWithResults.length === 0) return;
@@ -236,43 +260,23 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                 Swing
               </button>
             </div>
-            {/* Swing selector dropdown */}
-            {showSwing && swingsWithResults.length > 1 && (
-              <select
-                value={selectedSwing || ''}
-                onChange={e => setSelectedSwing(e.target.value)}
-                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '4px 8px', color: accentColor, borderColor: accentColor.replace('0.85', '0.3'), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
-              >
-                {swingsWithResults.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            )}
+            {/* Event count — always reserve space */}
+            <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, minWidth: 140, maxWidth: 200, width: '100%', minHeight: 16 }}>
+              {showSwing && swingEventCount > 0 && (
+                swingIsComplete ? (
+                  <>
+                    <span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', fontSize: 10 }}>Final</span>
+                    <span style={{ color: colors.textMuted }}>{swingEventCount} events</span>
+                  </>
+                ) : (
+                  <span style={{ color: accentColor.replace('0.85', '0.7') }}>
+                    {swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}
+                  </span>
+                )
+              )}
+            </div>
           </div>
         </div>
-        {/* Subtitle row */}
-        {!showSwing && mostRecentTournament && (
-          <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, letterSpacing: '0.3px' }}>
-            through {mostRecentTournament.name}
-          </div>
-        )}
-        {showSwing && swingEventCount > 0 && (
-          <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: 8 }}>
-            {swingIsComplete ? (
-              <>
-                <span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', fontSize: 10 }}>Final</span>
-                <span style={{ color: colors.textMuted }}>{swingEventCount} events</span>
-                {swingWinnerTx && (
-                  <span style={{ color: 'rgba(245,197,24,0.7)' }}>· 🏆 {swingWinnerTx.team} +${(swingWinnerTx.amount || 0).toLocaleString()}</span>
-                )}
-              </>
-            ) : (
-              <span style={{ color: accentColor.replace('0.85', '0.7') }}>
-                {swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Empty state for swing */}
@@ -286,13 +290,13 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
           <colgroup>
             <col style={{ width: 48 }} />
             <col />
-            <col style={{ width: '22%' }} />
-            <col style={{ width: '22%' }} />
+            <col style={{ width: '26%' }} />
+            <col style={{ width: '20%' }} />
           </colgroup>
           <thead>
             <tr>
               {['Pos', 'Team', earningsLabel, 'Behind'].map((h, i) => (
-                <th key={h} style={{ ...theme.tableHeaderCell, textAlign: i >= 2 ? 'right' : 'left' }}>{h}</th>
+                <th key={h} style={{ ...theme.tableHeaderCell, textAlign: i === 2 ? 'left' : i === 3 ? 'right' : 'left' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -303,30 +307,30 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
               const medal    = getMedalStyle(index);
               const isTop    = index === 0;
               const isSwingWinner = showSwing && swingIsComplete && isTop;
-              const rowBg = isSwingWinner ? 'rgba(245,197,24,0.08)' : isTop ? 'rgba(180,160,100,0.04)' : 'transparent';
+              const rowBg = isSwingWinner ? accentColor.replace('0.85)', '0.08)') : isTop ? 'rgba(180,160,100,0.04)' : 'transparent';
               return (
                 <tr key={team.id} className="sfgl-standings-row"
                   style={{ background: rowBg, transition: 'background 0.15s' }}
                   {...rowHoverHandlers(isTop)}
                 >
                   <td className="sfgl-standings-cell" style={theme.tableCell}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, background: isSwingWinner ? 'rgba(245,197,24,0.08)' : medal.bg, color: isSwingWinner ? 'rgba(245,197,24,0.9)' : medal.text, border: isSwingWinner ? '1px solid rgba(245,197,24,0.3)' : 'none', flexShrink: 0 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, background: isSwingWinner ? accentColor.replace('0.85)', '0.15)') : medal.bg, color: isSwingWinner ? accentColor.replace('0.85)', '1)') : medal.text, border: isSwingWinner ? `1px solid ${accentColor.replace('0.85)', '0.4)')}` : 'none', flexShrink: 0 }}>
                       {isSwingWinner ? '🏆' : team[posKey]}
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, overflow: 'hidden' }}>
-                    <div style={{ ...theme.h3, fontSize: 'clamp(13px,1.4vw,17px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isSwingWinner ? 'rgba(245,197,24,0.9)' : undefined }}>
+                    <div style={{ ...theme.h3, fontSize: 'clamp(13px,1.4vw,17px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isSwingWinner ? accentColor.replace('0.85)', '1)') : undefined }}>
                       {team.name}
                     </div>
                     <div className="sfgl-owner" style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
                   </td>
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
-                    <div style={{ ...theme.statNumLg, letterSpacing: 3, fontWeight: 300, color: earningsColor(earnings) }}>
+                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'left' }}>
+                    <div style={{ ...theme.statNumLg, letterSpacing: 3, fontWeight: 300, color: showSwing ? accentColor : (earnings > 0 ? colors.textPrimary : colors.textMuted) }}>
                       {formatEarnings(earnings)}
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
-                    <div style={{ ...theme.statNum, fontSize: 13, color: isSwingWinner ? 'rgba(245,197,24,0.9)' : behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
+                    <div style={{ ...theme.statNum, fontSize: 'clamp(11px, 1.2vw, 14px)', letterSpacing: 1.5, fontWeight: 300, color: isSwingWinner ? accentColor.replace('0.85)', '1)') : behind === 0 ? colors.earningsGreen : colors.textSecondary }}>
                       {isSwingWinner ? 'Winner' : formatBehind(behind)}
                     </div>
                   </td>

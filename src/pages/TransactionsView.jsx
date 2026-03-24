@@ -1,20 +1,23 @@
 import React, { useState, useMemo } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, makePlayer, getTeamAbbreviation } from '../utils/index.js';
+import { getSegmentByDate, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { storage } from '../api';
-import { sfglDataApi } from '../api/supabase';
+import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants/index.js';
-import { theme, colors, fonts } from '../theme.js';
+import { theme, colors, fonts, getSwingColor } from '../theme.js';
+
+// shortName imported from utils (see abbreviateName)
 
 // ── Inline edit modal ─────────────────────────────────────────────────────────
-const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, setTransactions, updateTeams, onClose }) => {
+const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, transactions, setTransactions, updateTeams, onClose }) => {
   const dialog = useDialog();
 
   // Derive initial values from the transaction
   const [editTeam,   setEditTeam]   = useState(tx.team);
   const [editAdd,    setEditAdd]    = useState(tx.player || '');
   const [editDrop,   setEditDrop]   = useState(tx.droppedPlayer || '');
+  const [editTourneyIdx, setEditTourneyIdx] = useState(tx.tournamentIndex != null ? String(tx.tournamentIndex) : '');
   const [addSearch,  setAddSearch]  = useState('');
   const [saving,     setSaving]     = useState(false);
 
@@ -30,13 +33,14 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
 
   const availableToAdd = useMemo(() => {
     return allPlayers.filter(p =>
-      !rosteredNames.has(p.name) || p.name === tx.player // keep original selectable
+      p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim()) &&
+      (!rosteredNames.has(p.name) || p.name === tx.player) // keep original selectable
     );
   }, [allPlayers, rosteredNames, tx.player]);
 
   const filteredAdd = addSearch.trim()
     ? availableToAdd.filter(p => p.name.toLowerCase().includes(addSearch.toLowerCase()))
-    : availableToAdd.slice(0, 30);
+    : [];
 
   const currentRoster = team?.roster || [];
   // Droppable: all roster players except Limited, plus the original dropped player
@@ -57,9 +61,10 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
     const newTeam = editTeam;
 
     // Update the transaction record
+    const newTourneyIdx = editTourneyIdx !== '' ? parseInt(editTourneyIdx) : tx.tournamentIndex;
     const updatedTx = transactions.map((t, i) =>
       i === txIndex
-        ? { ...t, team: newTeam, player: newAdd, droppedPlayer: newDrop || undefined }
+        ? { ...t, team: newTeam, player: newAdd, droppedPlayer: newDrop || undefined, tournamentIndex: newTourneyIdx, segment: tournaments[newTourneyIdx]?.segment || t.segment }
         : t
     );
 
@@ -94,6 +99,13 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
     updateTeams(updatedTeams);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, updatedTx);
     await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+    // Sync to Supabase
+    try {
+      const { transactionsApi } = await import('../api/firebase');
+      await transactionsApi.sync(updatedTx);
+    } catch (e) {
+      console.error('[EditTx] sync error:', e);
+    }
 
     setSaving(false);
     dialog.showToast('Transaction updated', 'success');
@@ -148,6 +160,21 @@ const EditTransactionModal = ({ tx, txIndex, teams, allPlayers, transactions, se
               onBlur={e => e.target.style.borderColor = colors.borderInput}
             >
               {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+            </select>
+          </div>
+
+          {/* Tournament selector */}
+          <div>
+            <label style={{ ...theme.label, display: 'block', marginBottom: 5 }}>Tournament</label>
+            <select
+              value={editTourneyIdx}
+              onChange={e => setEditTourneyIdx(e.target.value)}
+              style={{ ...theme.select, colorScheme: 'dark' }}
+              onFocus={e => e.target.style.borderColor = colors.borderFocus}
+              onBlur={e => e.target.style.borderColor = colors.borderInput}
+            >
+              <option value="">—</option>
+              {tournaments.map((t, i) => <option key={i} value={i}>{t.name}</option>)}
             </select>
           </div>
 
@@ -270,7 +297,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
   const [addTxOpen,        setAddTxOpen]        = useState(false);
   const [addTxTeam,        setAddTxTeam]        = useState('');
-  const [addTxType,        setAddTxType]        = useState('mulligan');
+  const [addTxType,        setAddTxType]        = useState('waiver');
   const [addTxPlayerIn,    setAddTxPlayerIn]    = useState(null);   // selected player object
   const [addTxPlayerOut,   setAddTxPlayerOut]   = useState(null);   // selected player object
   const [addTxTourney,     setAddTxTourney]     = useState('');
@@ -278,24 +305,24 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const [addTxSearchOut,   setAddTxSearchOut]   = useState('');
   const dialog = useDialog();
 
-  const teamFees = useMemo(() => {
-    const getSegForTourney = (t) => {
-      if (t.segment) return t.segment;
-      if (t.dates) {
-        const m = t.dates.match(/^([A-Za-z]+)/);
-        if (m) {
-          const mo = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12}[m[1]];
-          if (mo) {
-            if (mo <= 3) return 'West Coast Swing';
-            if (mo <= 6) return 'Spring Swing';
-            if (mo <= 9) return 'Summer Swing';
-            return 'Fall Finish';
-          }
+  const getSegForTourney = (t) => {
+    if (t.segment) return t.segment;
+    if (t.dates) {
+      const m = t.dates.match(/^([A-Za-z]+)/);
+      if (m) {
+        const mo = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12}[m[1]];
+        if (mo) {
+          if (mo <= 3) return 'West Coast Swing';
+          if (mo <= 6) return 'Spring Swing';
+          if (mo <= 9) return 'Summer Swing';
+          return 'Fall Finish';
         }
       }
-      return null;
-    };
+    }
+    return null;
+  };
 
+  const teamFees = useMemo(() => {
     // Determine current swing for the fee counter:
     // 1. Find the swing of the last completed tournament
     // 2. If that swing has been awarded (swing_winner tx exists), advance to the
@@ -340,7 +367,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     return Object.values(fees).sort((a, b) => b.seasonTotal - a.seasonTotal);
   }, [teams, transactions, tournaments]);
 
-  const TYPE_ORDER = { 'waiver': 0, 'fa': 0, 'free agent': 0, 'drop': 1, 'mulligan': 2, 'swing_winner': 99 };
+  const TYPE_ORDER = { 'fa': 0, 'free agent': 0, 'waiver': 1, 'mulligan': 2, 'drop': 3, 'swing_winner': 99 };
   // Build a map of segment → last tournamentIndex for sorting swing_winner records.
   const swingLastIndex = {};
   tournaments.forEach((t, i) => {
@@ -349,11 +376,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   });
 
   const sortedTransactions = [...transactions].sort((a, b) => {
-    // Resolve a float sort key:
-    // - Normal transactions: their tournamentIndex (integer)
-    // - swing_winner: last tournament of that swing + 0.5, so it sorts
-    //   AFTER all transactions from that final event but BEFORE any
-    //   transactions from the next swing's tournaments (higher index).
     const resolveKey = tx => {
       if (tx.type === 'swing_winner') {
         const lastIdx = tx.tournamentIndex ?? (tx.segment ? swingLastIndex[tx.segment] : undefined);
@@ -364,33 +386,49 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const ak = resolveKey(a);
     const bk = resolveKey(b);
     if (bk !== ak) return bk - ak;
-    // Same key: sort by timestamp/date, most recent first.
+    // Same tournament: sort by type order (waiver → FA → mulligan)
+    const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
+    const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
+    if (ta !== tb) return ta - tb;
+    // Within waivers: blocked before successful (blocked is the consequence)
+    if (a.type === 'waiver' && b.type === 'waiver') {
+      const sa = a.status === 'failed' ? 0 : 1;
+      const sb = b.status === 'failed' ? 0 : 1;
+      if (sa !== sb) return sa - sb;
+    }
+    // Final tiebreak: timestamp, most recent first
     const toMs = tx => {
       if (tx.timestamp) return typeof tx.timestamp === 'number' ? tx.timestamp : new Date(tx.timestamp).getTime();
       if (tx.date) return new Date(tx.date).getTime();
       return 0;
     };
-    if (toMs(b) !== toMs(a)) return toMs(b) - toMs(a);
-    // Final tiebreak: type order (swing_winner last within same key)
-    const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
-    const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
-    return ta - tb;
+    return toMs(b) - toMs(a);
   });
+  const getTxSegment = (tx) => {
+    if (tx.segment) return tx.segment;
+    if (tx.tournamentIndex !== undefined && tournaments[tx.tournamentIndex]) {
+      return getSegForTourney(tournaments[tx.tournamentIndex]);
+    }
+    return '';
+  };
+
   const filteredTransactions = sortedTransactions
     .filter(tx => filterTeam === 'all' || tx.team === filterTeam)
     .filter(tx => {
       if (filterSwing === 'all') return true;
-      return tx.segment === filterSwing;
+      return getTxSegment(tx) === filterSwing;
     });
 
-  const undoTransaction = async (tx) => {
+  const undoTransaction = async (tx, skipConfirm = false) => {
     if (tx.status !== 'processed') return; // only reverse completed transactions
-    const ok = await dialog.showConfirm(
-      'Undo Transaction',
-      'Undo ' + tx.type + ': ' + tx.team + ' added ' + tx.player + (tx.droppedPlayer ? ' / dropped ' + tx.droppedPlayer : '') + '?\n\nThis will reverse the roster change and refund the $' + tx.fee + ' fee.',
-      { type: 'danger', confirmText: 'Undo' },
-    );
-    if (!ok) return;
+    if (!skipConfirm) {
+      const ok = await dialog.showConfirm(
+        'Undo Transaction',
+        'Undo ' + tx.type + ': ' + tx.team + ' added ' + tx.player + (tx.droppedPlayer ? ' / dropped ' + tx.droppedPlayer : '') + '?\n\nThis will reverse the roster change and refund the $' + tx.fee + ' fee.',
+        { type: 'danger', confirmText: 'Undo' },
+      );
+      if (!ok) return;
+    }
     const team = teams.find(t => t.name === tx.team);
     if (!team) return;
 
@@ -459,6 +497,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const tournamentIndex = parseInt(addTxTourney);
     const isBlocked = addTxType === 'waiver blocked';
     const newTx = {
+      txId: `manual-${addTxTeam}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team: addTxTeam,
       type: isBlocked ? 'waiver' : addTxType,
       player: playerInName  || playerOutName || '—',
@@ -482,40 +521,107 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     , 0);
     copy.splice(insertAt, 0, newTx);
 
-    // For mulligans: adjust starts on limited players AND update stored tournament results
+    // For mulligans: swap lineup, decrement mulligan counter, update tournament results if already processed
     let updatedTeams = teams;
     let updatedTournaments = tournaments;
     if (addTxType === 'mulligan' && (playerInName || playerOutName)) {
       const mulliganTeam = teams.find(t => t.name === addTxTeam);
+      const tournament = tournaments[tournamentIndex];
+      const isSigOrMajor = tournament?.isSignature || tournament?.isMajor;
+      const mullKey = isSigOrMajor ? 'signatureMajor' : 'regular';
+      const alreadyProcessed = !!tournament?.completed;
+
       updatedTeams = teams.map(t => {
         if (t.name !== addTxTeam) return t;
         return {
           ...t,
-          roster: t.roster.map(p => {
-            if (p.name === playerOutName && p.limited)
-              return { ...p, starts: Math.max(0, (p.starts || 0) - 1) };
-            if (p.name === playerInName && p.limited)
-              return { ...p, starts: (p.starts || 0) + 1 };
-            return p;
-          }),
+          // Swap in the active lineup
+          lineup: playerOutName && playerInName
+            ? t.lineup.map(p => p === playerOutName ? playerInName : p)
+            : t.lineup,
+          // Only adjust limited starts if results were ALREADY processed
+          // (if not yet processed, processResults will handle starts via team.lineup)
+          roster: alreadyProcessed
+            ? t.roster.map(p => {
+                if (p.name === playerOutName && p.limited)
+                  return { ...p, starts: Math.max(0, (p.starts || 0) - 1) };
+                if (p.name === playerInName && p.limited)
+                  return { ...p, starts: (p.starts || 0) + 1 };
+                return p;
+              })
+            : t.roster,
+          // Decrement mulligan counter
+          mulligans: {
+            ...t.mulligans,
+            [mullKey]: Math.max(0, (t.mulligans?.[mullKey] ?? 1) - 1),
+          },
         };
       });
 
-      // Swap player in stored tournament results so live starts count reflects the mulligan
-      if (mulliganTeam && playerOutName && playerInName) {
+      // Swap player in stored tournament results (only if tournament already processed)
+      if (alreadyProcessed && mulliganTeam && playerOutName && playerInName) {
         updatedTournaments = tournaments.map((t, i) => {
           if (i !== tournamentIndex || !t.results?.teams?.[mulliganTeam.id]) return t;
           const teamResult = t.results.teams[mulliganTeam.id];
+
+          // Try to find IN player's actual earnings from the tournament earnings map
+          const earningsMap = t.results?.earningsMap || {};
+          let inPlayerEarnings = earningsMap[playerInName] ?? 0;
+          // Fuzzy match if exact name not found
+          if (inPlayerEarnings === 0) {
+            const fuzzyKey = Object.keys(earningsMap).find(k =>
+              k.toLowerCase().replace(/[^a-z]/g, '') === playerInName.toLowerCase().replace(/[^a-z]/g, '')
+            );
+            if (fuzzyKey) inPlayerEarnings = earningsMap[fuzzyKey];
+          }
+
           const updatedPlayers = (teamResult.players || []).map(p => {
             const name = p.name || p;
             if (name !== playerOutName) return p;
-            return typeof p === 'string' ? playerInName : { ...p, name: playerInName, earnings: 0 };
+            return typeof p === 'string'
+              ? { name: playerInName, earnings: inPlayerEarnings, mulliganIn: true, replacedPlayer: playerOutName }
+              : { ...p, name: playerInName, earnings: inPlayerEarnings, bonus: 0, roundsLed: [], wasRoundLeader: false, mulliganIn: true, replacedPlayer: playerOutName };
           });
-          return { ...t, results: { ...t.results, teams: { ...t.results.teams, [mulliganTeam.id]: { ...teamResult, players: updatedPlayers } } } };
+
+          // Recalculate team totalEarnings from updated players
+          const newTotal = updatedPlayers.reduce((sum, p) => sum + (p.earnings || 0) + (p.bonus || 0), 0);
+
+          return {
+            ...t,
+            results: {
+              ...t.results,
+              teams: {
+                ...t.results.teams,
+                [mulliganTeam.id]: { ...teamResult, players: updatedPlayers, totalEarnings: newTotal },
+              },
+            },
+          };
         });
         setTournaments(updatedTournaments);
         await storage.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments);
         try { await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments); } catch(e) { console.error('sfgl tournaments sync failed:', e); }
+
+        // Also adjust team earnings + roster sfglEarnings to reflect the swap
+        const oldResult = tournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
+        const newResult = updatedTournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
+        if (oldResult && newResult) {
+          const earningsDiff = (newResult.totalEarnings || 0) - (oldResult.totalEarnings || 0);
+          const outPlayerOldEarnings = (oldResult.players || []).find(p => (p.name || p) === playerOutName)?.earnings || 0;
+          const inPlayerNewEarnings = (newResult.players || []).find(p => (p.name || p) === playerInName)?.earnings || 0;
+          updatedTeams = updatedTeams.map(t => {
+            if (t.name !== addTxTeam) return t;
+            return {
+              ...t,
+              earnings: (t.earnings || 0) + earningsDiff,
+              segmentEarnings: (t.segmentEarnings || 0) + earningsDiff,
+              roster: t.roster.map(p => {
+                if (p.name === playerOutName) return { ...p, sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - outPlayerOldEarnings) };
+                if (p.name === playerInName) return { ...p, sfglEarnings: (p.sfglEarnings || 0) + inPlayerNewEarnings };
+                return p;
+              }),
+            };
+          });
+        }
       }
 
       updateTeams(updatedTeams);
@@ -529,7 +635,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
     dialog.showToast('Transaction added', 'success');
     setAddTxOpen(false);
-    setAddTxTeam(''); setAddTxType('mulligan');
+    setAddTxTeam(''); setAddTxType('waiver');
     setAddTxPlayerIn(null); setAddTxPlayerOut(null);
     setAddTxSearchIn(''); setAddTxSearchOut('');
     setAddTxTourney('');
@@ -563,6 +669,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           tx={editingTx.tx}
           txIndex={editingTx.txIndex}
           teams={teams}
+          tournaments={tournaments}
           allPlayers={allPlayers}
           transactions={transactions}
           setTransactions={setTransactions}
@@ -578,12 +685,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           <div style={{ ...theme.cardHeader, justifyContent: 'space-between' }}>
             <h2 style={theme.h2}>Transaction Fees</h2>
             {teamFees[0]?.currentSwing && (() => {
-              const swingColor =
-                teamFees[0].currentSwing === 'West Coast Swing' ? 'rgba(220,80,80,0.85)' :
-                teamFees[0].currentSwing === 'Spring Swing'     ? 'rgba(100,215,175,0.9)' :
-                teamFees[0].currentSwing === 'Summer Swing'     ? 'rgba(80,140,220,0.85)' :
-                teamFees[0].currentSwing === 'Fall Finish'      ? 'rgba(220,140,60,0.85)' :
-                'rgba(245,197,24,0.55)';
+              const swingColor = getSwingColor(teamFees[0].currentSwing);
               const swingPot = teamFees.reduce((sum, t) => sum + (t.swingTotal || 0), 0);
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -618,10 +720,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>
                       {abbr}
                     </div>
-                    <div style={{ ...theme.statNum, fontSize: 13, color: colors.earningsGreen, marginTop: 2 }}>
+                    <div style={{ ...theme.statNum, fontSize: 13, color: colors.textGold, marginTop: 2 }}>
                       ${team.seasonTotal}
                     </div>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: team.swingIsComplete ? 'rgba(245,197,24,0.65)' : 'rgba(180,180,200,0.7)', marginTop: 1 }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: getSwingColor(team.currentSwing), marginTop: 1 }}>
                       ${team.swingTotal} swing
                     </div>
                   </div>
@@ -633,19 +735,31 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
         {/* ── Commissioner: Add Manual Transaction ── */}
         {isCommissioner && (
-          <div style={theme.card}>
-            <div
-              style={{ ...theme.cardHeader, cursor: 'pointer', userSelect: 'none' }}
+          <>
+          <button
               onClick={() => setAddTxOpen(!addTxOpen)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 14px', borderRadius: 4,
+                fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                background: 'rgba(80,180,120,0.12)',
+                border: '1.5px solid rgba(80,180,120,0.5)',
+                color: 'rgba(80,180,120,0.9)',
+                letterSpacing: '0.2px',
+                marginBottom: addTxOpen ? 0 : 8,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.12)'; }}
             >
-              <h2 style={theme.h2}>+ Add Transaction</h2>
-              <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>
-                {addTxOpen ? '▲' : '▼'}
-              </span>
-            </div>
+              <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>{addTxOpen ? '−' : '+'}</span>
+              <span>Add Transaction</span>
+            </button>
 
             {addTxOpen && (
-              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={theme.card}>
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {/* Team */}
                 <div>
                   <div style={{ ...theme.label, marginBottom: 4 }}>Team</div>
@@ -698,7 +812,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 <div>
                   <div style={{ ...theme.label, marginBottom: 4 }}>Type</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {['mulligan', 'waiver', 'fa', 'drop', 'waiver blocked'].map(type => (
+                    {['waiver', 'waiver blocked', 'fa', 'mulligan'].map(type => (
                       <button key={type} onClick={() => {
                         setAddTxType(type);
                         // Always re-default tournament when type changes (commish can still override)
@@ -747,11 +861,13 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 {/* Player IN search */}
                 {(addTxType !== 'drop') && (() => {
                   const teamObj  = teams.find(t => t.name === addTxTeam);
+                  const validPlayer = p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim());
                   const pool = addTxType === 'mulligan'
                     ? (teamObj?.roster || [])
                     : addTxType === 'waiver blocked'
-                    ? allPlayers  // blocked waiver: show all players (player was claimed but lost tiebreaker)
+                    ? allPlayers.filter(validPlayer)
                     : allPlayers.filter(p => {
+                        if (!validPlayer(p)) return false;
                         const allRostered = new Set(teams.flatMap(t => t.roster.map(r => r.name)));
                         return !allRostered.has(p.name);
                       });
@@ -895,8 +1011,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   Add Transaction
                 </button>
               </div>
-            )}
           </div>
+            )}
+          </>
         )}
 
         {/* ── Transaction history ── */}
@@ -977,11 +1094,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
                       )}
                       {': '}
-                      <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : tx.player}</span>
+                      <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : shortName(tx.player)}</span>
                       {tx.droppedPlayer && !(tx.status === 'failed' && tx.type === 'waiver') && (
                         <>
                           <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ {tx.type === 'mulligan' ? 'out' : 'drop'}</span>
-                          <span style={{ color: colors.danger }}>{tx.droppedPlayer}</span>
+                          <span style={{ color: colors.danger }}>{shortName(tx.droppedPlayer)}</span>
                         </>
                       )}
                     </div>
@@ -1004,62 +1121,69 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       </span>
                     )}
 
-                    {isCommissioner && tx.type !== 'mulligan' && (
+                    {/* Commish actions */}
+                    {isCommissioner && (
                       <>
-                        {/* Edit button */}
-                        <button
-                          onClick={() => setEditingTx({ tx, txIndex: idx })}
-                          title="Edit transaction"
-                          style={{
-                            background: 'none', border: 'none', cursor: 'pointer',
-                            color: 'rgba(100,160,255,0.65)',
-                            padding: '3px 4px', borderRadius: 2,
-                            display: 'flex', alignItems: 'center',
-                            transition: 'color 0.15s',
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.color = 'rgba(150,190,255,0.9)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(100,160,255,0.65)'; }}
-                        >
-                          <Edit2 style={{ width: 13, height: 13 }} />
-                        </button>
-
-                        {/* Undo / Dismiss button — behavior depends on status */}
-                        {tx.status === 'processed' ? (
+                        {/* Edit button — only for FA/waiver/drop (not mulligan, swing_winner) */}
+                        {!['mulligan', 'swing_winner'].includes(tx.type) && (
                           <button
-                            onClick={() => undoTransaction(tx)}
-                            title="Undo transaction — reverses roster change"
+                            onClick={() => setEditingTx({ tx, txIndex: idx })}
+                            title="Edit transaction"
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
-                              fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
-                              letterSpacing: '0.5px', color: colors.danger,
-                              padding: '2px 0', transition: 'opacity 0.15s',
+                              color: 'rgba(100,160,255,0.65)',
+                              padding: '3px 4px', borderRadius: 2,
+                              display: 'flex', alignItems: 'center',
+                              transition: 'color 0.15s',
                             }}
-                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
-                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+                            onMouseEnter={e => { e.currentTarget.style.color = 'rgba(150,190,255,0.9)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(100,160,255,0.65)'; }}
                           >
-                            Undo
+                            <Edit2 style={{ width: 13, height: 13 }} />
                           </button>
-                        ) : tx.status === 'failed' ? (
-                          <button
-                            onClick={async () => {
+                        )}
+
+                        {/* Delete button — red ✕ for all types */}
+                        <button
+                          onClick={async () => {
+                            const label = tx.type === 'mulligan'
+                              ? `Delete mulligan for ${tx.team}?\n\n${tx.player} IN → ${tx.droppedPlayer} OUT`
+                              : tx.type === 'swing_winner'
+                                ? `Delete swing winner: ${tx.team}?`
+                                : tx.status === 'processed'
+                                  ? `Undo ${tx.type}: ${tx.team} added ${tx.player}${tx.droppedPlayer ? ' / dropped ' + tx.droppedPlayer : ''}?\n\nThis will reverse the roster change and refund the $${tx.fee} fee.`
+                                  : `Delete ${tx.type} record for ${tx.team}: ${tx.player}?`;
+                            const ok = await dialog.showConfirm(
+                              tx.status === 'processed' && !['mulligan', 'swing_winner'].includes(tx.type) ? 'Undo Transaction' : 'Delete Transaction',
+                              label,
+                              { type: 'danger', confirmText: tx.status === 'processed' && !['mulligan', 'swing_winner'].includes(tx.type) ? 'Undo' : 'Delete' },
+                            );
+                            if (!ok) return;
+                            // For processed FA/waiver/drop: full undo with roster reversal
+                            if (tx.status === 'processed' && !['mulligan', 'swing_winner'].includes(tx.type)) {
+                              undoTransaction(tx, true); // skipConfirm
+                            } else {
+                              // Simple delete for everything else
                               const newTx = transactions.filter(t => t !== tx);
                               setTransactions(newTx);
                               await storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
                               sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx).catch(() => {});
-                            }}
-                            title="Dismiss — removes this record, no roster change"
-                            style={{
-                              background: 'none', border: 'none', cursor: 'pointer',
-                              fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
-                              letterSpacing: '0.5px', color: colors.textMuted,
-                              padding: '2px 0', transition: 'opacity 0.15s',
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; }}
-                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-                          >
-                            Dismiss
-                          </button>
-                        ) : null}
+                              dialog.showToast('Transaction deleted', 'success');
+                            }
+                          }}
+                          title="Delete transaction"
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'rgba(220,80,80,0.6)',
+                            padding: '3px 4px', borderRadius: 2,
+                            display: 'flex', alignItems: 'center',
+                            transition: 'color 0.15s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.color = 'rgba(240,100,100,0.95)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(220,80,80,0.6)'; }}
+                        >
+                          <X style={{ width: 14, height: 14 }} />
+                        </button>
                       </>
                     )}
                   </div>
@@ -1072,3 +1196,4 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     </>
   );
 };
+
