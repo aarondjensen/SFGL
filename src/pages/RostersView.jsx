@@ -586,24 +586,14 @@ export const RostersView = ({
     return () => { cancelled = true; clearInterval(interval); };
   }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!team) return null;
-
-  const lineupOpen    = windowStatus.lineupOpen;
-
-  const toggleSort = (col) => {
-    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortCol(col); setSortDir('asc'); }
-  };
-
   const sortedRoster = React.useMemo(() => {
     const roster = getSortedRoster(currentRoster);
     if (!sortCol) return roster;
-    const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss');
+    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss');
     return [...roster].sort((a, b) => {
       let av, bv;
       if (sortCol === 'teeTime') {
         av = teeTimeMap[normalize(a.name)]; bv = teeTimeMap[normalize(b.name)];
-        // Parse tee times for proper chronological sort
         const toMin = t => { if (!t) return sortDir === 'asc' ? 9999 : -1; const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 0; let h = parseInt(m[1]); if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12; if (m[3].toUpperCase() === 'AM' && h === 12) h = 0; return h * 60 + parseInt(m[2]); };
         av = toMin(av); bv = toMin(bv);
       } else if (sortCol === 'odds') {
@@ -620,7 +610,16 @@ export const RostersView = ({
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
   }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglCutsMap]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!team) return null;
+
+  const lineupOpen    = windowStatus.lineupOpen;
   const canEditLineup = isCommissioner || (isOwnTeam && lineupOpen);
+
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
   const hasPendingWaivers = transactions.some(tx => tx.status === 'pending' && tx.type === 'waiver');
   const addDropBlocked = faStatus.open && hasPendingWaivers;
