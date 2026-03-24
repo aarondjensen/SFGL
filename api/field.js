@@ -171,6 +171,21 @@ export default async function handler(req, res) {
     const { players, teeTimes, url, rawTeeTimeObjs } = await fetchField(tournament, year);
 
     if (isDebug) {
+      // Scan __NEXT_DATA__ for odds data
+      const fieldHtml = await fetchPage(`https://www.pgatour.com/tournaments/${year}/${nameToSlug(tournament.name)}/${tournament.tournamentId}/field`);
+      const fieldNd = extractNextData(fieldHtml);
+      const oddsKeys = [];
+      const oddsObjects = [];
+      if (fieldNd) {
+        const raw = JSON.stringify(fieldNd);
+        const matches = [...new Set((raw.match(/"(odds|moneyline|american|fanduel|draftkings|betmgm|americanOdds|openingOdds|currentOdds|wagerOdds)[^"]*":\s*[^,}]+/gi) || []))];
+        oddsKeys.push(...matches.slice(0, 20));
+        walkAll(fieldNd, obj => {
+          if (Object.keys(obj).some(k => /odds|moneyline|american|fanduel/i.test(k))) {
+            if (oddsObjects.length < 5) oddsObjects.push(JSON.stringify(obj).slice(0, 400));
+          }
+        });
+      }
       return res.status(200).json({
         tournament: { id: tournament.tournamentId, name: tournament.name, status: tournament.status },
         fieldUrl: url,
@@ -178,6 +193,8 @@ export default async function handler(req, res) {
         teeTimeCount: teeTimes.length,
         samplePlayers: players.slice(0, 10),
         sampleTeeTimes: teeTimes.slice(0, 10),
+        oddsKeysFound: oddsKeys,
+        oddsObjectsFound: oddsObjects,
         rawTeeTimeObjs: rawTeeTimeObjs.slice(0, 5),
       });
     }
