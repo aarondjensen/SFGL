@@ -328,7 +328,7 @@ export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
   loggedInUser, isCommissioner, globalPlayerStats, headshots,
-  leagueSettings = {},
+  leagueSettings = {}, firstTeeTime,
 }) => {
   // Destructure with fallbacks to constants for safety
   const LINEUP_SIZE       = leagueSettings.lineupSize       ?? 5;
@@ -341,6 +341,9 @@ export const RostersView = ({
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
   const [tournamentField,   setTournamentField]   = useState(null);
+  const [teeTimeMap,        setTeeTimeMap]        = useState({}); // { playerName: '8:04 AM' }
+  const [oddsMap,           setOddsMap]           = useState({}); // { playerName: '+2000' }
+  const [liveData,          setLiveData]          = useState(null); // { players, round, state } from /api/live
   const dialog = useDialog();
 
   const activeTournament      = tournaments.find(t => t.playing);
@@ -479,14 +482,45 @@ export const RostersView = ({
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (cancelled || !data?.players?.length) return;
-        // Normalize accented characters so ESPN names match roster names
-        // e.g. "Rasmus Højgaard" → "Rasmus Hojgaard", "Ludvig Åberg" → "Ludvig Aberg"
         const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
         setTournamentField(new Set(data.players.map(normalize)));
+        if (data.teeTimes?.length) {
+          const ttMap = {};
+          data.teeTimes.forEach(({ name, teeTime }) => { ttMap[normalize(name)] = teeTime; });
+          setTeeTimeMap(ttMap);
+        }
+        if (data.odds?.length) {
+          const oMap = {};
+          data.odds.forEach(({ name, odds }) => { oMap[normalize(name)] = odds; });
+          setOddsMap(oMap);
+        }
       })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch live leaderboard from /api/live during tournament week
+  // Polls every 5 minutes while the tournament is in progress
+  useEffect(() => {
+    if (!activeTournament) return;
+    let cancelled = false;
+    let interval = null;
+
+    const fetchLive = () => {
+      fetch('/api/live')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (cancelled || !data?.players?.length) return;
+          setLiveData(data);
+        })
+        .catch(() => {});
+    };
+
+    fetchLive();
+    // Poll every 5 min if tournament is in progress
+    interval = setInterval(fetchLive, 5 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!team) return null;
 
@@ -677,7 +711,11 @@ export const RostersView = ({
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  {statsView === 'sfgl' ? 'Starts' : 'Events'}
+                  {liveData?.players?.length
+                    ? (liveData.state === 'in' ? 'Score' : 'Tee Time')
+                    : Object.keys(teeTimeMap).length > 0 ? 'Tee Time'
+                    : Object.keys(oddsMap).length > 0 ? 'Odds'
+                    : 'OWGR'}
                 </th>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   {isMobile ? 'Cuts' : 'Cuts Made'}
@@ -694,7 +732,11 @@ export const RostersView = ({
                 const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
                 const hasLineup      = team.lineup.length > 0;
                 const isEditing      = canEditLineup && lineupMode;
-                const isBenched      = hasLineup && !isInLineup && !isEditing;
+                // Only dim benched players once the tournament week has actually begun —
+                // i.e. tee times are posted (firstTeeTime exists) or lineup window is open.
+                // Between events the lineup carries over from the prior week and should not dim.
+                const tournamentActive = !!(firstTeeTime || lineupOpen);
+                const isBenched      = tournamentActive && hasLineup && !isInLineup && !isEditing;
                 const dimColor       = 'rgba(255,255,255,0.45)';
                 const rowClickable   = isEditing && isOwnTeam && (isInLineup || canAddToLineup);
 
@@ -809,12 +851,83 @@ export const RostersView = ({
                       </div>
                     </td>
 
-                    {/* Events / Starts */}
+                    {/* Live position / Tee Time / Starts — smart based on tournament state */}
                     {(() => {
-                      const events = statsView === 'sfgl' ? (sfglCutsMap[player.name]?.starts ?? player.starts ?? 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
+                      const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
+                      const normName = normalize(player.name);
+
+                      // Live data available — show position if started, tee time if not yet
+                      if (liveData?.players?.length) {
+                        const live = liveData.players.find(p => normalize(p.name) === normName);
+                        if (live) {
+                          if (live.cut) {
+                            return (
+                              <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>
+                                CUT
+                              </td>
+                            );
+                          }
+                          if (live.started) {
+                            // Show position + score + thru
+                            const posColor = live.score?.startsWith('-') ? colors.earningsGreen : live.score === 'E' ? colors.textPrimary : colors.danger;
+                            return (
+                              <td style={{ padding: isMobile ? '7px 4px' : '8px 8px', textAlign: 'center' }}>
+                                <div style={{ fontFamily: fonts.mono, fontSize: isMobile ? 12 : 11, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>
+                                  {live.score || '—'}
+                                </div>
+                                <div style={{ fontFamily: fonts.sans, fontSize: 9, color: isBenched ? dimColor : colors.textMuted, lineHeight: 1.2 }}>
+                                  {live.position ? `${live.position} · ` : ''}{live.thru === 'F' ? 'F' : live.thru ? `T${live.thru}` : ''}
+                                </div>
+                              </td>
+                            );
+                          }
+                          // Not yet started — show tee time
+                          if (live.teeTime) {
+                            return (
+                              <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: isBenched ? dimColor : colors.textSecondary }}>
+                                {live.teeTime.replace(' AM', 'a').replace(' PM', 'p')}
+                              </td>
+                            );
+                          }
+                        }
+                        // Player not in live data — not in this week's field
+                        return (
+                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center' }}>
+                            <span style={{ opacity: 0.25, fontSize: 12 }}>—</span>
+                          </td>
+                        );
+                      }
+
+                      // No live data — show tee time from field API if available
+                      const teeTime = teeTimeMap[normName];
+                      const hasTeeTimesThisWeek = Object.keys(teeTimeMap).length > 0;
+                      if (hasTeeTimesThisWeek) {
+                        return (
+                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: teeTime ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>
+                            {teeTime
+                              ? teeTime.replace(' AM', 'a').replace(' PM', 'p')
+                              : <span style={{ opacity: 0.25 }}>—</span>
+                            }
+                          </td>
+                        );
+                      }
+
+                      // Odds (available Mon–Wed before tee times post)
+                      const playerOdds = oddsMap[normName];
+                      const hasOdds = Object.keys(oddsMap).length > 0;
+                      if (hasOdds) {
+                        return (
+                          <td style={{ padding: isMobile ? '7px 4px' : '8px 8px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 11 : 11, color: playerOdds ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>
+                            {playerOdds || <span style={{ opacity: 0.25 }}>—</span>}
+                          </td>
+                        );
+                      }
+
+                      // Default: OWGR world ranking
+                      const owgr = allPlayers.find(p => p.name === player.name)?.worldRank;
                       return (
-                        <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
-                          {events}
+                        <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 11, color: isBenched ? dimColor : (owgr <= 50 ? colors.textGold : owgr <= 100 ? colors.textPrimary : colors.textSecondary) }}>
+                          {owgr ? `#${owgr}` : <span style={{ opacity: 0.25 }}>—</span>}
                         </td>
                       );
                     })()}
