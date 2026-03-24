@@ -87,7 +87,7 @@ export default async function handler(req, res) {
     if (isDebug) {
       const found = [];
       walkAll(oddsNd, obj => {
-        if (obj.oddsEnabled !== undefined || obj.oddsToWinId !== undefined) {
+        if (Array.isArray(obj.players) && obj.players.length > 0 && obj.oddsToWinId) {
           found.push({
             oddsEnabled: obj.oddsEnabled,
             oddsToWinId: obj.oddsToWinId,
@@ -98,11 +98,27 @@ export default async function handler(req, res) {
           });
         }
       });
+
+      // Scan field page for any object that has both an ID-like field and a name
+      const fieldSamples = [];
+      if (fieldResp.ok) {
+        const fieldNd2 = extractNextData(await (await fetch(fieldUrl, { headers: HEADERS })).text());
+        if (fieldNd2) {
+          walkAll(fieldNd2, obj => {
+            if (fieldSamples.length >= 5) return;
+            if ((obj.id || obj.playerId || obj.pid) && (obj.displayName || obj.firstName || obj.name)) {
+              fieldSamples.push({ id: obj.id, playerId: obj.playerId, pid: obj.pid, displayName: obj.displayName, firstName: obj.firstName, lastName: obj.lastName, name: obj.name });
+            }
+          });
+        }
+      }
+
       return res.status(200).json({
-        oddsUrl,
+        oddsUrl, fieldUrl,
         playerIdMapSize: Object.keys(playerIdMap).length,
         oddsObjects: found.slice(0, 3),
         sampleMap: Object.entries(playerIdMap).slice(0, 5),
+        fieldSamples,
       });
     }
 
