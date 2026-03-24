@@ -160,12 +160,49 @@ async function fetchFromPGATourHtml(year) {
   };
   const normTeeTimeMap = {};
   Object.entries(teeTimeMap).forEach(([k, v]) => { normTeeTimeMap[normalize(k)] = v; });
-  const teeTimes = players.filter(n => normTeeTimeMap[n]).map(n => ({ name: n, teeTime: normTeeTimeMap[n] }));
+  let teeTimes = players.filter(n => normTeeTimeMap[n]).map(n => ({ name: n, teeTime: normTeeTimeMap[n] }));
+
+  // If no tee times from field page, try the dedicated /tee-times page
+  if (!teeTimes.length && players.length) {
+    try {
+      const slug = nameToSlug(tournament.name);
+      const ttUrl = `https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/tee-times`;
+      const ttResp = await fetch(ttUrl, { headers: HEADERS_HTML });
+      if (ttResp.ok) {
+        const ttHtml = await ttResp.text();
+        const ttNd = extractNextData(ttHtml);
+        if (ttNd) {
+          const ttMapFromPage = {};
+          walkAll(ttNd, obj => {
+            // Tee time group: { teeTime/startTime, players: [...] }
+            if ((obj.teeTime || obj.startTime) && Array.isArray(obj.players) && obj.players.length) {
+              const tt = formatTeeTime(obj.teeTime || obj.startTime);
+              if (tt) obj.players.forEach(p => {
+                const pn = p.displayName?.trim() || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
+                if (pn) ttMapFromPage[normalize(pn)] = tt;
+              });
+            }
+            // Also check for player object with teeTime directly
+            const pn = obj.displayName?.trim() || (obj.firstName && obj.lastName ? `${obj.firstName.trim()} ${obj.lastName.trim()}` : null);
+            if (pn) {
+              const tt = obj.teeTime || obj.teeTimeLocal || obj.startTime;
+              if (tt && typeof tt === 'string' && (tt.includes('T') || tt.includes(':'))) {
+                ttMapFromPage[normalize(pn)] = formatTeeTime(tt) || tt;
+              }
+            }
+          });
+          teeTimes = players
+            .filter(n => ttMapFromPage[normalize(n)])
+            .map(n => ({ name: n, teeTime: ttMapFromPage[normalize(n)] }));
+        }
+      }
+    } catch (_) { /* tee times page failed — not critical */ }
+  }
 
   return { players, teeTimes, tournament, source: 'pgatour-html' };
 }
 
-// ── Source 3: ESPN event field ────────────────────────────────────────────────
+// ── Source 3: ESPN event field + tee times ───────────────────────────────────
 async function fetchFromESPN() {
   // Find upcoming event ID
   for (let offset = 0; offset <= 14; offset++) {
@@ -178,13 +215,29 @@ async function fetchFromESPN() {
     if (!pga.length) continue;
     const event = pga.find(e => e.status?.type?.state === 'pre') || pga[0];
 
-    // Fetch full event field via leaderboard endpoint
+    // Fetch full event field via leaderboard endpoint — includes teeTime on competitors
     const r2 = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${event.id}`, { headers: HEADERS_JSON });
     if (!r2.ok) continue;
     const ld = await r2.json();
     const competitors = ld?.events?.[0]?.competitions?.[0]?.competitors || [];
-    const players = competitors.map(c => c.athlete?.displayName || '').filter(Boolean);
-    if (players.length) return { players, teeTimes: [], tournament: event.name, source: 'espn' };
+    if (!competitors.length) continue;
+
+    const players = [];
+    const teeTimes = [];
+
+    competitors.forEach(c => {
+      const name = c.athlete?.displayName || c.athlete?.fullName || '';
+      if (!name) return;
+      players.push(name);
+      // ESPN stores tee time on the competitor or its status
+      const ttRaw = c.teeTime || c.status?.teeTime || c.startTime;
+      if (ttRaw) {
+        const tt = formatTeeTime(ttRaw);
+        if (tt) teeTimes.push({ name, teeTime: tt });
+      }
+    });
+
+    if (players.length) return { players, teeTimes, tournament: event.name, source: 'espn' };
   }
   throw new Error('No field found via ESPN');
 }
@@ -193,7 +246,7 @@ async function fetchFromESPN() {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
+  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const isDebug = req.query.debug === '1';
@@ -253,7 +306,31 @@ export default async function handler(req, res) {
                 const normalize = k => { if (!k.includes(',')) return k; const [last, first] = k.split(',').map(s => s.trim()); return first ? `${first} ${last}` : k; };
                 const players = [...playerNames].filter(n => !n.includes(',') || !playerNames.has(`${n.split(',')[1]?.trim()} ${n.split(',')[0]?.trim()}`));
                 const normMap = {}; Object.entries(teeTimeMap).forEach(([k, v]) => { normMap[normalize(k)] = v; });
-                const teeTimes = players.filter(n => normMap[n]).map(n => ({ name: n, teeTime: normMap[n] }));
+                let teeTimes = players.filter(n => normMap[n]).map(n => ({ name: n, teeTime: normMap[n] }));
+
+                // Try /tee-times page if field page had no tee times
+                if (!teeTimes.length && players.length) {
+                  try {
+                    const ttResp = await fetch(`https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/tee-times`, { headers: HEADERS_HTML });
+                    if (ttResp.ok) {
+                      const ttNd = extractNextData(await ttResp.text());
+                      if (ttNd) {
+                        const ttMap = {};
+                        walkAll(ttNd, obj => {
+                          if ((obj.teeTime || obj.startTime) && Array.isArray(obj.players) && obj.players.length) {
+                            const tt = formatTeeTime(obj.teeTime || obj.startTime);
+                            if (tt) obj.players.forEach(p => {
+                              const pn = p.displayName?.trim() || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
+                              if (pn) ttMap[normalize(pn)] = tt;
+                            });
+                          }
+                        });
+                        teeTimes = players.filter(n => ttMap[normalize(n)]).map(n => ({ name: n, teeTime: ttMap[normalize(n)] }));
+                      }
+                    }
+                  } catch (_) {}
+                }
+
                 if (players.length) result = { players, teeTimes, tournament: tournament.name, source: 'pgatour-html' };
               }
             }
@@ -263,11 +340,27 @@ export default async function handler(req, res) {
     }
   } catch (e) { errors.push(`schedule: ${e.message}`); }
 
-  // Source 3: ESPN fallback
+  // Source 3: ESPN fallback (full fallback if no result, or tee time supplement)
   if (!result) {
     try {
       result = await fetchFromESPN();
     } catch (e) { errors.push(`espn: ${e.message}`); }
+  } else if (result.players.length && !result.teeTimes?.length) {
+    // We have players from PGA Tour but no tee times — try ESPN to supplement
+    try {
+      const espn = await fetchFromESPN();
+      if (espn.teeTimes?.length) {
+        // Match ESPN tee times to our PGA Tour player names by normalized name
+        const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss')
+          .toLowerCase().replace(/[^a-z ]/g, '').trim();
+        const espnTTMap = {};
+        espn.teeTimes.forEach(({ name, teeTime }) => { espnTTMap[normalize(name)] = teeTime; });
+        result.teeTimes = result.players
+          .filter(n => espnTTMap[normalize(n)])
+          .map(n => ({ name: n, teeTime: espnTTMap[normalize(n)] }));
+      }
+    } catch (_) { /* tee time supplement failed — not critical */ }
   }
 
   if (!result?.players?.length) {
