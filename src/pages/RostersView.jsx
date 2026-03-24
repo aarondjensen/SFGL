@@ -231,7 +231,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 
 // ── Main RostersView ──────────────────────────────────────────────────────────
 // ── LineupHeadshot — shows ×-remove button on hover when editable ─────────────
-const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, onRemove }) => {
+const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayerIds = {}, canEdit, onRemove }) => {
   const [hovered, setHovered] = React.useState(false);
   const [tapped, setTapped]   = React.useState(false);
   const containerRef = React.useRef(null);
@@ -664,6 +664,7 @@ export const RostersView = ({
                         lastName={lastName}
                         nameFontSize={nameFontSize}
                         headshots={headshots}
+                        fieldPlayerIds={fieldPlayerIds}
                         canEdit={canEditLineup}
                         onRemove={() => togglePlayerInLineup(player)}
                       />
