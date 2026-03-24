@@ -335,6 +335,7 @@ export const RostersView = ({
   const MAX_LIMITED_STARTS = leagueSettings.maxLimitedStarts ?? 12;
   const isMobile            = useIsMobile();
   const [statsView,         setStatsView]         = useState('sfgl');
+  const [infoView,          setInfoView]          = useState('info'); // 'info' | 'stats'
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
   const [lineupMode,        setLineupMode]        = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
@@ -533,6 +534,27 @@ export const RostersView = ({
     return () => { cancelled = true; };
   }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Real-time lineup sync — polls Firebase every 30s so changes on desktop
+  // appear on mobile without a manual refresh
+  useEffect(() => {
+    if (!team) return;
+    let cancelled = false;
+    const poll = () => {
+      import('../api/firebase').then(({ teamsApi }) => {
+        teamsApi.getAll().then(freshTeams => {
+          if (cancelled) return;
+          // Only update if lineup changed to avoid unnecessary re-renders
+          const fresh = freshTeams.find(t => t.id === team.id);
+          if (fresh && JSON.stringify(fresh.lineup) !== JSON.stringify(team.lineup)) {
+            updateTeams(freshTeams);
+          }
+        }).catch(() => {});
+      }).catch(() => {});
+    };
+    const interval = setInterval(poll, 30000); // every 30s
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fetch live leaderboard from /api/live during tournament week
   // Polls every 5 minutes while the tournament is in progress
   useEffect(() => {
@@ -693,8 +715,22 @@ export const RostersView = ({
       {/* ── Action buttons + roster table ── */}
       <div style={{ ...theme.card }} onClick={() => { if (lineupMode) setLineupMode(false); }}>
 
-        {/* ── SFGL / PGAT slider — right-aligned above earnings column ── */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
+        {/* ── Info/Stats (left) + Done button (center) + SFGL/PGAT (right) ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
+
+          {/* Info / Stats toggle — left */}
+          {(() => {
+            const makeSlider = (leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor) => (
+              <div style={{ position: 'relative', display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width: 88 }}>
+                <div style={{ position: 'absolute', top: 2, bottom: 2, left: current === rightVal ? 'calc(50% + 1px)' : 2, width: 'calc(50% - 3px)', borderRadius: 2, background: current === leftVal ? 'rgba(100,180,255,0.1)' : 'rgba(80,180,120,0.1)', border: `1px solid ${current === leftVal ? 'rgba(100,180,255,0.35)' : 'rgba(80,180,120,0.35)'}`, transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none' }} />
+                <button onClick={() => setter(leftVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: current === leftVal ? leftColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{leftLabel}</button>
+                <button onClick={() => setter(rightVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: current === rightVal ? rightColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{rightLabel}</button>
+              </div>
+            );
+            return makeSlider('info', 'Info', 'stats', 'Stats', infoView, setInfoView, 'rgba(100,180,255,0.95)', colors.textGold);
+          })()}
+
+          {/* Done button — center, only in lineup mode */}
           {lineupMode && (
             <button
               onClick={(e) => { e.stopPropagation(); setLineupMode(false); }}
@@ -704,8 +740,7 @@ export const RostersView = ({
                 background: 'rgba(80,180,120,0.15)',
                 border: '1.5px solid rgba(80,180,120,0.5)',
                 fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
-                color: colors.success, cursor: 'pointer',
-                transition: 'all 0.15s',
+                color: colors.success, cursor: 'pointer', transition: 'all 0.15s',
               }}
               onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.25)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.15)'; }}
@@ -713,22 +748,14 @@ export const RostersView = ({
               ✓ Done
             </button>
           )}
-          <div style={{
-            position: 'relative', display: 'flex',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(180,160,100,0.2)',
-            borderRadius: 4, padding: 2, width: 92,
-          }}>
-            <div style={{
-              position: 'absolute', top: 2, bottom: 2,
-              left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2,
-              width: 'calc(50% - 3px)', borderRadius: 2,
-              background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)',
-              border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`,
-              transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none',
-            }} />
-            <button onClick={() => setStatsView('sfgl')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'sfgl' ? colors.textGold : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>SFGL</button>
-            <button onClick={() => setStatsView('pgat')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>PGAT</button>
+
+          {/* SFGL / PGAT toggle — right, only active in Stats mode */}
+          <div style={{ opacity: infoView === 'stats' ? 1 : 0.3, pointerEvents: infoView === 'stats' ? 'auto' : 'none', transition: 'opacity 0.18s' }}>
+            <div style={{ position: 'relative', display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(180,160,100,0.2)', borderRadius: 4, padding: 2, width: 92 }}>
+              <div style={{ position: 'absolute', top: 2, bottom: 2, left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2, width: 'calc(50% - 3px)', borderRadius: 2, background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)', border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`, transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none' }} />
+              <button onClick={() => setStatsView('sfgl')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'sfgl' ? colors.textGold : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>SFGL</button>
+              <button onClick={() => setStatsView('pgat')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>PGAT</button>
+            </div>
           </div>
         </div>
 
@@ -737,26 +764,34 @@ export const RostersView = ({
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
               <col />
-              <col style={{ width: isMobile ? 48 : 80 }} />
-              <col style={{ width: isMobile ? 62 : 90 }} />
-              <col style={{ width: isMobile ? 68 : 120 }} />
+              {infoView === 'info' ? (
+                <><col style={{ width: isMobile ? 56 : 80 }} /><col style={{ width: isMobile ? 56 : 80 }} /></>
+              ) : (
+                <><col style={{ width: isMobile ? 48 : 80 }} /><col style={{ width: isMobile ? 62 : 90 }} /><col style={{ width: isMobile ? 68 : 120 }} /></>
+              )}
             </colgroup>
             <thead>
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10 }}>
-                  {liveData?.players?.length
-                    ? (liveData.state === 'in' ? 'Score' : (isMobile ? <>Tee<br/>Time</> : 'Tee Time'))
-                    : Object.keys(teeTimeMap).length > 0 ? (isMobile ? <>Tee<br/>Time</> : 'Tee Time')
-                    : Object.keys(oddsMap).length > 0 ? 'Odds'
-                    : (statsView === 'sfgl' ? 'Starts' : 'Events')}
-                </th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  {isMobile ? 'Cuts' : 'Cuts Made'}
-                </th>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8, maxWidth: isMobile ? 80 : 'none' }}>
-                  <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings</span>
-                </th>
+                {infoView === 'info' ? (<>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10 }}>
+                    {liveData?.players?.length
+                      ? (liveData.state === 'in' ? 'Score' : (isMobile ? <>Tee<br/>Time</> : 'Tee Time'))
+                      : Object.keys(teeTimeMap).length > 0 ? (isMobile ? <>Tee<br/>Time</> : 'Tee Time')
+                      : 'Field'}
+                  </th>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>Odds</th>
+                </>) : (<>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    {statsView === 'sfgl' ? 'Starts' : 'Events'}
+                  </th>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    {isMobile ? 'Cuts' : 'Cuts Made'}
+                  </th>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8 }}>
+                    <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings</span>
+                  </th>
+                </>)}
               </tr>
             </thead>
             <tbody>
@@ -885,107 +920,66 @@ export const RostersView = ({
                       </div>
                     </td>
 
-                    {/* Live position / Tee Time / Starts — smart based on tournament state */}
-                    {(() => {
+                    {/* ── Info columns: Tee Time/Score + Odds ── */}
+                    {infoView === 'info' && (() => {
                       const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
                       const normName = normalize(player.name);
+                      const playerOdds = oddsMap[normName];
+                      const inField = tournamentField?.has(normName);
 
-                      // Live data available — show position if started, tee time if not yet
+                      // Col 1: Score (live) → Tee Time → ⛳ in field → —
+                      let col1;
                       if (liveData?.players?.length) {
                         const live = liveData.players.find(p => normalize(p.name) === normName);
-                        if (live) {
-                          if (live.cut) {
-                            return (
-                              <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>
-                                CUT
-                              </td>
-                            );
-                          }
-                          if (live.started) {
-                            // Show position + score + thru
-                            const posColor = live.score?.startsWith('-') ? colors.earningsGreen : live.score === 'E' ? colors.textPrimary : colors.danger;
-                            return (
-                              <td style={{ padding: isMobile ? '7px 4px' : '8px 8px', textAlign: 'center' }}>
-                                <div style={{ fontFamily: fonts.mono, fontSize: isMobile ? 12 : 11, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>
-                                  {live.score || '—'}
-                                </div>
-                                <div style={{ fontFamily: fonts.sans, fontSize: 9, color: isBenched ? dimColor : colors.textMuted, lineHeight: 1.2 }}>
-                                  {live.position ? `${live.position} · ` : ''}{live.thru === 'F' ? 'F' : live.thru ? `T${live.thru}` : ''}
-                                </div>
-                              </td>
-                            );
-                          }
-                          // Not yet started — show tee time
-                          if (live.teeTime) {
-                            return (
-                              <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: isBenched ? dimColor : colors.textSecondary }}>
-                                {live.teeTime.replace(' AM', 'a').replace(' PM', 'p')}
-                              </td>
-                            );
-                          }
+                        if (live?.cut) {
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>CUT</td>;
+                        } else if (live?.started) {
+                          const posColor = live.score?.startsWith('-') ? colors.earningsGreen : live.score === 'E' ? colors.textPrimary : colors.danger;
+                          col1 = (
+                            <td style={{ padding: '7px 4px', textAlign: 'center' }}>
+                              <div style={{ fontFamily: fonts.mono, fontSize: 12, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>{live.score || '—'}</div>
+                              <div style={{ fontFamily: fonts.sans, fontSize: 9, color: isBenched ? dimColor : colors.textMuted, lineHeight: 1.2 }}>
+                                {live.position ? `${live.position} · ` : ''}{live.thru === 'F' ? 'F' : live.thru ? `T${live.thru}` : ''}
+                              </div>
+                            </td>
+                          );
+                        } else {
+                          const tt = live?.teeTime;
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: tt ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>{tt ? tt.replace(' AM', 'a').replace(' PM', 'p') : <span style={{ opacity: 0.25 }}>—</span>}</td>;
                         }
-                        // Player not in live data — not in this week's field
-                        return (
-                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center' }}>
-                            <span style={{ opacity: 0.25, fontSize: 12 }}>—</span>
+                      } else {
+                        const teeTime = teeTimeMap[normName];
+                        col1 = (
+                          <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: teeTime ? (isBenched ? dimColor : colors.textSecondary) : inField ? colors.textMuted : 'transparent' }}>
+                            {teeTime ? teeTime.replace(' AM', 'a').replace(' PM', 'p') : inField ? '⛳' : '—'}
                           </td>
                         );
                       }
 
-                      // No live data — show tee time from field API if available
-                      const teeTime = teeTimeMap[normName];
-                      const hasTeeTimesThisWeek = Object.keys(teeTimeMap).length > 0;
-                      if (hasTeeTimesThisWeek) {
-                        return (
-                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: teeTime ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>
-                            {teeTime
-                              ? teeTime.replace(' AM', 'a').replace(' PM', 'p')
-                              : <span style={{ opacity: 0.25 }}>—</span>
-                            }
-                          </td>
-                        );
-                      }
+                      // Col 2: Odds
+                      const col2 = (
+                        <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: playerOdds ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>
+                          {playerOdds || <span style={{ opacity: 0.25 }}>—</span>}
+                        </td>
+                      );
 
-                      // Odds (available Mon–Wed before tee times post)
-                      const playerOdds = oddsMap[normName];
-                      const hasOdds = Object.keys(oddsMap).length > 0;
-                      if (hasOdds) {
-                        return (
-                          <td style={{ padding: isMobile ? '7px 4px' : '8px 8px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 11 : 11, color: playerOdds ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>
-                            {playerOdds || <span style={{ opacity: 0.25 }}>—</span>}
-                          </td>
-                        );
-                      }
+                      return <>{col1}{col2}</>;
+                    })()}
 
-                      // Default: starts count
+                    {/* ── Stats columns: Starts + Cuts + Earnings ── */}
+                    {infoView === 'stats' && (() => {
                       const events = statsView === 'sfgl' ? (sfglCutsMap[player.name]?.starts ?? player.starts ?? 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
-                      return (
-                        <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
-                          {events}
-                        </td>
-                      );
-                    })()}
-
-                    {/* Cuts Made (X/Y fraction) */}
-                    {(() => {
                       const sfglEntry = sfglCutsMap[player.name] || { cuts: 0, starts: 0 };
-                      const cuts   = statsView === 'sfgl' ? sfglEntry.cuts : (globalPlayerStats[player.name]?.cutsMade || 0);
-                      const events = statsView === 'sfgl' ? sfglEntry.starts : (globalPlayerStats[player.name]?.eventsPlayed || 0);
-                      return (
-                        <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: isBenched ? dimColor : colors.textSecondary }}>
-                          {cuts}/{events}
-                        </td>
-                      );
-                    })()}
-
-                    {/* $ — SFGL earnings or PGA Tour earnings depending on mode */}
-                    {(() => {
-                      const amount  = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0);
+                      const cuts = statsView === 'sfgl' ? sfglEntry.cuts : (globalPlayerStats[player.name]?.cutsMade || 0);
+                      const cutsEvents = statsView === 'sfgl' ? sfglEntry.starts : (globalPlayerStats[player.name]?.eventsPlayed || 0);
+                      const amount = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0);
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
-                        <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 12 : 12, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>
-                          ${amount.toLocaleString()}
-                        </td>
+                        <>
+                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>{events}</td>
+                          <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: isBenched ? dimColor : colors.textSecondary }}>{cuts}/{cutsEvents}</td>
+                          <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 12 : 12, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>${amount.toLocaleString()}</td>
+                        </>
                       );
                     })()}
                   </tr>
