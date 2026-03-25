@@ -173,32 +173,26 @@ export const playersApi = {
 
   async upsertMany(players) {
     const timestamp = Date.now();
-    // Chunk into batches of 499
-    const rows = players.map(p => ({
-      name: p.name,
-      world_rank: p.worldRank ?? null,
-      espn_id: p.espnId ?? null,
-      headshot_url: p.headshotUrl ?? null,
-      career_stats: p.stats ?? {},
-      is_liv: p.isLiv ?? false,
-    }));
-
     const BATCH_SIZE = 499;
-    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    for (let i = 0; i < players.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
-      rows.slice(i, i + BATCH_SIZE).forEach(row => {
+      players.slice(i, i + BATCH_SIZE).forEach(p => {
+        // Only write fields that are explicitly provided — never overwrite espn_id with null
+        const row = { name: p.name };
+        if (p.worldRank   !== undefined) row.world_rank   = p.worldRank ?? null;
+        if (p.espnId      !== undefined && p.espnId !== null) row.espn_id = p.espnId;
+        if (p.headshotUrl !== undefined) row.headshot_url = p.headshotUrl ?? null;
+        if (p.stats       !== undefined) row.career_stats = p.stats ?? {};
+        if (p.isLiv       !== undefined) row.is_liv       = p.isLiv ?? false;
         batch.set(doc(db, 'players', row.name), row, { merge: true });
       });
       await batch.commit();
     }
-
-    // Update metadata timestamp
     await setDoc(
       doc(db, 'app_metadata', 'players_last_updated'),
-      { key: 'players_last_updated', value: timestamp.toString() }
+      { key: 'players_last_updated', value: Date.now().toString() }
     );
-
-    return rows;
+    return players;
   },
 
   async update(name, updates) {
