@@ -248,6 +248,11 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
     return () => document.removeEventListener('touchstart', handler);
   }, [tapped]);
 
+  // Reset tapped when lineup edit mode is exited
+  React.useEffect(() => {
+    if (!canEdit) setTapped(false);
+  }, [canEdit]);
+
   // On mobile: first tap reveals the × badge, second tap (on the ×) removes.
   // Tapping elsewhere resets. On desktop: hover reveals ×.
   const showRemove = canEdit && (hovered || tapped);
@@ -430,12 +435,15 @@ export const RostersView = ({
     if (!isInLineup && player.limited && player.starts >= MAX_LIMITED_STARTS) {
       dialog.showToast('This player has reached their 12-start limit', 'error'); return;
     }
+    const lastName = player.name.split(' ').pop();
     const newTeams = teams.map(t => {
       if (t.id !== team.id) return t;
       const newLineup = isInLineup ? t.lineup.filter(p => p !== player.name) : [...t.lineup, player.name];
       return { ...t, lineup: newLineup };
     });
     updateTeams(newTeams); // writes to teamsApi (Firebase) + localStorage
+    if (!isInLineup) dialog.showToast(`${lastName} added to lineup`, 'success');
+    else dialog.showToast(`${lastName} removed from lineup`, 'info');
   }, [team, teams, updateTeams, dialog]);
 
 
@@ -799,46 +807,27 @@ export const RostersView = ({
           );
           return (
             <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
-              {/* All / Playing — far left */}
+              {/* All / Playing — far left, fixed width */}
               <Slider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="Playing"
                 current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
                 leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
-                disabled={!tournamentField?.size} width={isMobile ? 100 : 108} />
+                disabled={!tournamentField?.size} width={isMobile ? 84 : 108} />
 
-              {/* Info / Stats — centered over data columns (right 50% of table, so center = 75%) */}
-              <div style={{ position: 'absolute', left: '72.5%', transform: 'translateX(-50%)' }}>
+              {/* Info / Stats — flex centered between the two outer toggles */}
+              <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
                 <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
                   current={infoView} setter={setInfoView}
                   leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
-                  width={isMobile ? 100 : 108} />
+                  width={isMobile ? 84 : 108} />
               </div>
 
-              {/* Spacer to push SFGL/PGAT to far right */}
-              <div style={{ flex: 1 }} />
-
-              {/* SFGL / PGAT — far right */}
+              {/* SFGL / PGAT — far right, fixed width */}
               <Slider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
                 current={statsView} setter={setStatsView}
                 leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
                 disabled={infoView !== 'stats'}
-                width={isMobile ? 100 : 108} />
+                width={isMobile ? 84 : 108} />
 
-              {/* Done button — only in lineup mode */}
-              {lineupMode && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setLineupMode(false); }}
-                  style={{
-                    position: 'absolute', left: '50%', transform: 'translateX(-50%)',
-                    padding: '4px 16px', borderRadius: 4, zIndex: 10,
-                    background: 'rgba(80,180,120,0.15)',
-                    border: '1.5px solid rgba(80,180,120,0.5)',
-                    fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
-                    color: colors.success, cursor: 'pointer', transition: 'all 0.15s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.25)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.15)'; }}
-                >✓ Done</button>
-              )}
             </div>
           );
         })()}
@@ -847,11 +836,11 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '38%' : '45%' }} />
+              <col style={{ width: isMobile ? '38%' : '42%' }} />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? '31%' : '27.5%' }} /><col style={{ width: isMobile ? '31%' : '27.5%' }} /></>
+                <><col style={{ width: isMobile ? '31%' : '29%' }} /><col style={{ width: isMobile ? '31%' : '29%' }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 48 : '18%' }} /><col style={{ width: isMobile ? 56 : '19%' }} /><col style={{ width: isMobile ? 72 : '18%' }} /></>
+                <><col style={{ width: isMobile ? 48 : '19%' }} /><col style={{ width: isMobile ? 56 : '20%' }} /><col style={{ width: isMobile ? 72 : '19%' }} /></>
               )}
             </colgroup>
             <thead>
