@@ -630,6 +630,13 @@ export const RostersView = ({
     });
   }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglCutsMap, rosterView, tournamentField]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Build a name->worldRank lookup from allPlayers for the OWGR stats column
+  const worldRankMap = React.useMemo(() => {
+    const map = {};
+    (allPlayers || []).forEach(p => { if (p.worldRank) map[p.name] = p.worldRank; });
+    return map;
+  }, [allPlayers]);
+
   if (!team) return null;
 
   const lineupOpen    = windowStatus.lineupOpen;
@@ -645,13 +652,6 @@ export const RostersView = ({
     color: col === sortCol ? 'rgba(255,255,255,0.95)' : (baseColor || undefined),
   });
   const sortArrow = (col) => col === sortCol ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
-  // Build a name->worldRank lookup from allPlayers for the OWGR stats column
-  const worldRankMap = React.useMemo(() => {
-    const map = {};
-    (allPlayers || []).forEach(p => { if (p.worldRank) map[p.name] = p.worldRank; });
-    return map;
-  }, [allPlayers]);
-
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
   const hasPendingWaivers = transactions.some(tx => tx.status === 'pending' && tx.type === 'waiver');
   const addDropBlocked = faStatus.open && hasPendingWaivers;
