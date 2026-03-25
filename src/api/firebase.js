@@ -254,6 +254,8 @@ export const playersApi = {
     }
     invalidateAliasCache();
   },
+
+  async update(name, updates) {
     const updateData = {};
     if (updates.worldRank  !== undefined) updateData.world_rank   = updates.worldRank;
     if (updates.espnId  !== undefined) updateData.espn_id  = updates.espnId;
