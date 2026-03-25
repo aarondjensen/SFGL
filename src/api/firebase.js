@@ -119,7 +119,7 @@ export const playersApi = {
       .map(d => ({
         name:        d.id,
         worldRank:   d.data().world_rank,
-        pgaTourId:   d.data().pga_tour_id,
+        espnId:   d.data().espn_id,
         headshotUrl: d.data().headshot_url,
         isLiv:       d.data().is_liv,
       }))
@@ -145,7 +145,7 @@ export const playersApi = {
     return snap.docs.map(d => ({
       name:        d.id,
       worldRank:   d.data().world_rank,
-      pgaTourId:   d.data().pga_tour_id,
+      espnId:   d.data().espn_id,
       headshotUrl: d.data().headshot_url,
       isLiv:       d.data().is_liv,
     }));
@@ -161,11 +161,11 @@ export const playersApi = {
         .then(snap => snap.exists() ? {
           name:        snap.id,
           worldRank:   snap.data().world_rank,
-          pgaTourId:   snap.data().pga_tour_id,
+          espnId:   snap.data().espn_id,
           headshotUrl: snap.data().headshot_url,
           isLiv:       snap.data().is_liv,
-        } : { name, worldRank: null, pgaTourId: null, headshotUrl: null, isLiv: false })
-        .catch(() => ({ name, worldRank: null, pgaTourId: null, headshotUrl: null, isLiv: false }))
+        } : { name, worldRank: null, espnId: null, headshotUrl: null, isLiv: false })
+        .catch(() => ({ name, worldRank: null, espnId: null, headshotUrl: null, isLiv: false }))
       )
     );
     return results;
@@ -177,7 +177,7 @@ export const playersApi = {
     const rows = players.map(p => ({
       name: p.name,
       world_rank: p.worldRank ?? null,
-      pga_tour_id: p.pgaTourId ?? null,
+      espn_id: p.espnId ?? null,
       headshot_url: p.headshotUrl ?? null,
       career_stats: p.stats ?? {},
       is_liv: p.isLiv ?? false,
@@ -204,7 +204,7 @@ export const playersApi = {
   async update(name, updates) {
     const updateData = {};
     if (updates.worldRank  !== undefined) updateData.world_rank   = updates.worldRank;
-    if (updates.pgaTourId  !== undefined) updateData.pga_tour_id  = updates.pgaTourId;
+    if (updates.espnId  !== undefined) updateData.espn_id  = updates.espnId;
     if (updates.headshotUrl !== undefined) updateData.headshot_url = updates.headshotUrl;
     if (updates.stats      !== undefined) updateData.career_stats  = updates.stats;
     if (updates.isLiv      !== undefined) updateData.is_liv        = updates.isLiv;
@@ -217,7 +217,7 @@ export const playersApi = {
     return players.map(p => ({
       name:        p.name,
       worldRank:   p.world_rank,
-      pgaTourId:   p.pga_tour_id,
+      espnId:   p.espn_id,
       headshotUrl: p.headshot_url,
       stats:       p.career_stats,
       isLiv:       p.is_liv,
@@ -230,8 +230,8 @@ export const playersApi = {
     players.forEach(p => {
       if (p.headshot_url) {
         map[p.name] = p.headshot_url;
-      } else if (p.pga_tour_id) {
-        map[p.name] = String(p.pga_tour_id);
+      } else if (p.espn_id) {
+        map[p.name] = String(p.espn_id);
       }
     });
     return map;

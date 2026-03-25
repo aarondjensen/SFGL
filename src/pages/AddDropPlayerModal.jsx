@@ -47,11 +47,18 @@ const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,18
 // ── Headshot helpers ─────────────────────────────────────────────────────────────────────────────
 // Stored IDs are ESPN athlete IDs.
 const getPlayerHeadshotUrls = (playerName, headshotMap = {}, fieldPlayerIds = {}) => {
+  // Check for direct photo URL stored from field page
+  const directPhoto = fieldPlayerIds[`__photo_${playerName}`];
+  if (directPhoto) return [directPhoto];
+  // Firebase headshot override or field page ID
   const val = headshotMap[playerName] || fieldPlayerIds[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
+  // Try multiple CDN formats with the player ID
   return [
     `https://res.cloudinary.com/pgatour-prod/image/upload/f_auto,q_auto,w_160,c_fill,g_auto/players/hero/${val}.png`,
+    `https://res.cloudinary.com/pgatour-prod/image/upload/players/hero/${val}.png`,
+    `https://pga-tour-res.cloudinary.com/image/upload/c_fill,f_auto,g_face,h_160,q_auto,w_160/v1/pgatour/editorial/2024/headshots/${val}.jpg`,
     `https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`,
   ];
 };
