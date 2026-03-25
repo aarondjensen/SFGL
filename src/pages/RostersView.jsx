@@ -645,6 +645,13 @@ export const RostersView = ({
     color: col === sortCol ? 'rgba(255,255,255,0.95)' : (baseColor || undefined),
   });
   const sortArrow = (col) => col === sortCol ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+  // Build a name->worldRank lookup from allPlayers for the OWGR stats column
+  const worldRankMap = React.useMemo(() => {
+    const map = {};
+    (allPlayers || []).forEach(p => { if (p.worldRank) map[p.name] = p.worldRank; });
+    return map;
+  }, [allPlayers]);
+
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
   const hasPendingWaivers = transactions.some(tx => tx.status === 'pending' && tx.type === 'waiver');
   const addDropBlocked = faStatus.open && hasPendingWaivers;
@@ -857,7 +864,7 @@ export const RostersView = ({
                   </th>
                 </>) : (<>
                   <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
-                    {statsView === 'sfgl' ? 'Starts' : 'Events'}{sortArrow('starts')}
+                    {statsView === 'sfgl' ? 'Starts' : 'OWGR'}{sortArrow('starts')}
                   </th>
                   <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
                     {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts')}
@@ -1042,15 +1049,15 @@ export const RostersView = ({
 
                     {/* ── Stats columns: Starts + Cuts + Earnings ── */}
                     {infoView === 'stats' && (() => {
-                      const events = statsView === 'sfgl' ? (sfglCutsMap[player.name]?.starts ?? player.starts ?? 0) : (globalPlayerStats[player.name]?.eventsPlayed || 0);
+                      const events = statsView === 'sfgl' ? (sfglCutsMap[player.name]?.starts ?? player.starts ?? 0) : (worldRankMap[player.name] || null);
                       const sfglEntry = sfglCutsMap[player.name] || { cuts: 0, starts: 0 };
                       const cuts = statsView === 'sfgl' ? sfglEntry.cuts : (globalPlayerStats[player.name]?.cutsMade || 0);
-                      const cutsEvents = statsView === 'sfgl' ? sfglEntry.starts : (globalPlayerStats[player.name]?.eventsPlayed || 0);
+                      const cutsEvents = statsView === 'sfgl' ? sfglEntry.starts : (globalPlayerStats[player.name]?.cutsMade || 0);
                       const amount = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0);
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
                         <>
-                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>{events}</td>
+                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>{statsView === 'pgat' ? (events ? `#${events}` : '—') : events}</td>
                           <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: isBenched ? dimColor : colors.textSecondary }}>{cuts}/{cutsEvents}</td>
                           <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 12 : 12, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>${amount.toLocaleString()}</td>
                         </>
