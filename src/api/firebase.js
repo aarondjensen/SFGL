@@ -129,25 +129,46 @@ export const playersApi = {
   // Search players by name prefix (case-sensitive Firestore range query)
   async searchByName(searchTerm, maxResults = 20) {
     if (!searchTerm || searchTerm.length < 2) return [];
-    // Firestore doesn't support case-insensitive search, so we do a range query
-    // on the document ID (player name) which gives prefix matches
-    const start = searchTerm;
-    const end = searchTerm.slice(0, -1) + String.fromCharCode(searchTerm.charCodeAt(searchTerm.length - 1) + 1);
-    const q = query(
-      collection(db, 'players'),
-      orderBy('__name__'),
-      where('__name__', '>=', start),
-      where('__name__', '<', end),
-      limit(maxResults)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({
-      name:        d.id,
-      worldRank:   d.data().world_rank,
-      espnId:   d.data().espn_id,
-      headshotUrl: d.data().headshot_url,
-      isLiv:       d.data().is_liv,
-    }));
+    // Firestore prefix search is case-sensitive and only matches from the start of the doc ID.
+    // We run two queries: one for the raw term (handles first-name prefix like "Ror"),
+    // and one capitalized (handles "rory" -> "Rory"). Then we also fetch all ranked players
+    // and filter client-side for last-name / substring matches.
+    const capitalize = s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+    const makeRange = (term) => {
+      const end = term.slice(0, -1) + String.fromCharCode(term.charCodeAt(term.length - 1) + 1);
+      return query(collection(db, 'players'), orderBy('__name__'), where('__name__', '>=', term), where('__name__', '<', end), limit(maxResults));
+    };
+
+    const [snapRaw, snapCap] = await Promise.all([
+      getDocs(makeRange(searchTerm)),
+      getDocs(makeRange(capitalize(searchTerm))),
+    ]);
+
+    const seen = new Set();
+    const results = [];
+    const addDoc = d => {
+      const name = resolveAlias(d.id);
+      if (!seen.has(name)) {
+        seen.add(name);
+        results.push({ name, worldRank: d.data().world_rank, espnId: d.data().espn_id, headshotUrl: d.data().headshot_url, isLiv: d.data().is_liv });
+      }
+    };
+    snapRaw.docs.forEach(addDoc);
+    snapCap.docs.forEach(addDoc);
+
+    // Also search all ranked players client-side for substring/last-name matches
+    try {
+      const allRanked = await this.getTopRanked(700);
+      const lower = searchTerm.toLowerCase();
+      allRanked.forEach(p => {
+        if (!seen.has(p.name) && p.name.toLowerCase().includes(lower)) {
+          seen.add(p.name);
+          results.push(p);
+        }
+      });
+    } catch (_) {}
+
+    return results.slice(0, maxResults);
   },
 
   // Get specific players by name (for rostered players)
@@ -177,7 +198,7 @@ export const playersApi = {
       const batch = writeBatch(db);
       players.slice(i, i + BATCH_SIZE).forEach(p => {
         // Only write fields that are explicitly provided — never overwrite espn_id with null
-        const row = { name: p.name };
+        const row = { name: resolveAlias(p.name) };
         if (p.worldRank   !== undefined) row.world_rank   = p.worldRank ?? null;
         if (p.espnId      !== undefined && p.espnId !== null) row.espn_id = p.espnId;
         if (p.headshotUrl !== undefined) row.headshot_url = p.headshotUrl ?? null;
@@ -257,7 +278,22 @@ export const playersApi = {
 // ============================================================================
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
-const PLAYER_CACHE_KEY = 'sfgl_players_cache';
+// ── Name aliases — maps alternate spellings to canonical roster names ──────────
+// When OWGR or PGA Tour uses a different name than what's stored on rosters,
+// add an entry here. Key = alternate name, Value = canonical roster name.
+const NAME_ALIASES = {
+  'Nico Echavarria':    'Nicolas Echavarria',
+  'Samuel Stevens':     'Sam Stevens',
+  'Vincent Whaley':     'Vince Whaley',
+  'Rafa Cabrera Bello': 'Rafael Cabrera Bello',
+  'Si Woo Kim':         'Si-Woo Kim',
+  'Byeong Hun An':      'Byeong-Hun An',
+};
+// Reverse map — canonical name -> alternate (for lookups in both directions)
+const NAME_ALIASES_REVERSE = Object.fromEntries(Object.entries(NAME_ALIASES).map(([k,v]) => [v, k]));
+function resolveAlias(name) { return NAME_ALIASES[name] || name; }
+
+
 const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 export const playerRankingsApi = {
