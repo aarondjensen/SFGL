@@ -23,7 +23,11 @@ const getPlayerHeadshotUrls = (playerName, headshotMap = {}, fieldPlayerIds = {}
   const val = headshotMap[playerName] || fieldPlayerIds[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
-  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
+  // PGA Tour Cloudinary CDN — same IDs as field page
+  return [
+    `https://res.cloudinary.com/pgatour-prod/image/upload/f_auto,q_auto,w_160,c_fill,g_auto/players/hero/${val}.png`,
+    `https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`,
+  ];
 };
 
 const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}, fieldPlayerIds = {}) => {
@@ -337,6 +341,7 @@ export const RostersView = ({
   const MAX_LIMITED_STARTS = leagueSettings.maxLimitedStarts ?? 12;
   const isMobile            = useIsMobile();
   const [statsView,         setStatsView]         = useState('sfgl');
+  const [rosterView,        setRosterView]        = useState('full'); // 'full' | 'playing'
   const [infoView,          setInfoView]          = useState('info'); // 'info' | 'stats'
   const [sortCol,           setSortCol]           = useState(null);  // null | 'teeTime' | 'odds' | 'starts' | 'cuts' | 'earnings'
   const [sortDir,           setSortDir]           = useState('asc');
@@ -587,7 +592,12 @@ export const RostersView = ({
   }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sortedRoster = React.useMemo(() => {
-    const roster = getSortedRoster(currentRoster);
+    const baseRoster = rosterView === 'playing'
+      ? getSortedRoster(currentRoster).filter(p => tournamentField?.has(
+          p.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss')
+        ))
+      : getSortedRoster(currentRoster);
+    const roster = baseRoster;
     if (!sortCol) return roster;
     const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss');
     return [...roster].sort((a, b) => {
@@ -609,7 +619,7 @@ export const RostersView = ({
       if (av === bv) return 0;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
-  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglCutsMap]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglCutsMap, rosterView, tournamentField]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!team) return null;
 
@@ -760,49 +770,61 @@ export const RostersView = ({
       {/* ── Action buttons + roster table ── */}
       <div style={{ ...theme.card }} onClick={() => { if (lineupMode) setLineupMode(false); }}>
 
-        {/* ── Info/Stats (left) + Done button (center) + SFGL/PGAT (right) ── */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
-
-          {/* Info / Stats toggle — left */}
-          {(() => {
-            const makeSlider = (leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor) => (
-              <div style={{ position: 'relative', display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width: 88 }}>
+        {/* ── 3 slider toggles: Full/Playing · Info/Stats · SFGL/PGAT ── */}
+        {(() => {
+          const Slider = ({ leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor, disabled = false, width = 88 }) => (
+            <div style={{ opacity: disabled ? 0.3 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.18s' }}>
+              <div style={{ position: 'relative', display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width }}>
                 <div style={{ position: 'absolute', top: 2, bottom: 2, left: current === rightVal ? 'calc(50% + 1px)' : 2, width: 'calc(50% - 3px)', borderRadius: 2, background: current === leftVal ? 'rgba(100,180,255,0.1)' : 'rgba(80,180,120,0.1)', border: `1px solid ${current === leftVal ? 'rgba(100,180,255,0.35)' : 'rgba(80,180,120,0.35)'}`, transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none' }} />
-                <button onClick={() => setter(leftVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: current === leftVal ? leftColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{leftLabel}</button>
-                <button onClick={() => setter(rightVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: current === rightVal ? rightColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{rightLabel}</button>
+                <button onClick={() => setter(leftVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: current === leftVal ? leftColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{leftLabel}</button>
+                <button onClick={() => setter(rightVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: current === rightVal ? rightColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{rightLabel}</button>
               </div>
-            );
-            return makeSlider('info', 'Info', 'stats', 'Stats', infoView, setInfoView, 'rgba(100,180,255,0.95)', colors.textGold);
-          })()}
-
-          {/* Done button — center, only in lineup mode */}
-          {lineupMode && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setLineupMode(false); }}
-              style={{
-                position: 'absolute', left: '50%', transform: 'translateX(-50%)',
-                padding: '4px 16px', borderRadius: 4,
-                background: 'rgba(80,180,120,0.15)',
-                border: '1.5px solid rgba(80,180,120,0.5)',
-                fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
-                color: colors.success, cursor: 'pointer', transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.25)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.15)'; }}
-            >
-              ✓ Done
-            </button>
-          )}
-
-          {/* SFGL / PGAT toggle — right, only active in Stats mode */}
-          <div style={{ opacity: infoView === 'stats' ? 1 : 0.3, pointerEvents: infoView === 'stats' ? 'auto' : 'none', transition: 'opacity 0.18s' }}>
-            <div style={{ position: 'relative', display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(180,160,100,0.2)', borderRadius: 4, padding: 2, width: 92 }}>
-              <div style={{ position: 'absolute', top: 2, bottom: 2, left: statsView === 'pgat' ? 'calc(50% + 1px)' : 2, width: 'calc(50% - 3px)', borderRadius: 2, background: statsView === 'sfgl' ? 'rgba(245,197,24,0.12)' : 'rgba(100,180,255,0.12)', border: `1px solid ${statsView === 'sfgl' ? 'rgba(245,197,24,0.45)' : 'rgba(100,180,255,0.45)'}`, transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none' }} />
-              <button onClick={() => setStatsView('sfgl')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'sfgl' ? colors.textGold : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>SFGL</button>
-              <button onClick={() => setStatsView('pgat')} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: statsView === 'pgat' ? 'rgba(100,180,255,0.95)' : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>PGAT</button>
             </div>
-          </div>
-        </div>
+          );
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative', gap: isMobile ? 6 : 10 }}>
+              {/* Full / Playing — left */}
+              <Slider leftVal="full" leftLabel="Full" rightVal="playing" rightLabel="Playing"
+                current={rosterView} setter={setRosterView}
+                leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
+                disabled={!tournamentField?.size} width={isMobile ? 84 : 92} />
+
+              {/* Info / Stats — center, grows to fill */}
+              <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+                <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+                  current={infoView} setter={setInfoView}
+                  leftColor="rgba(100,180,255,0.95)" rightColor={colors.textGold}
+                  width={isMobile ? 84 : 92} />
+              </div>
+
+              {/* SFGL / PGAT — right, only active in Stats mode */}
+              <div style={{ position: 'relative' }}>
+                <Slider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
+                  current={statsView} setter={setStatsView}
+                  leftColor={colors.textGold} rightColor="rgba(100,180,255,0.95)"
+                  disabled={infoView !== 'stats'}
+                  width={isMobile ? 84 : 92} />
+              </div>
+
+              {/* Done button — only in lineup mode, overlaid in center */}
+              {lineupMode && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setLineupMode(false); }}
+                  style={{
+                    position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+                    padding: '4px 16px', borderRadius: 4, zIndex: 10,
+                    background: 'rgba(80,180,120,0.15)',
+                    border: '1.5px solid rgba(80,180,120,0.5)',
+                    fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                    color: colors.success, cursor: 'pointer', transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.25)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.15)'; }}
+                >✓ Done</button>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── Roster table ── */}
         <>
@@ -810,9 +832,9 @@ export const RostersView = ({
             <colgroup>
               <col />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? 56 : 120 }} /><col style={{ width: isMobile ? 56 : 100 }} /></>
+                <><col style={{ width: isMobile ? 72 : '20%' }} /><col style={{ width: isMobile ? 64 : '18%' }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 48 : 80 }} /><col style={{ width: isMobile ? 62 : 90 }} /><col style={{ width: isMobile ? 68 : 120 }} /></>
+                <><col style={{ width: isMobile ? 48 : '12%' }} /><col style={{ width: isMobile ? 56 : '14%' }} /><col style={{ width: isMobile ? 72 : '18%' }} /></>
               )}
             </colgroup>
             <thead>

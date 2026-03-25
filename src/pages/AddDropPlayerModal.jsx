@@ -50,7 +50,10 @@ const getPlayerHeadshotUrls = (playerName, headshotMap = {}, fieldPlayerIds = {}
   const val = headshotMap[playerName] || fieldPlayerIds[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
-  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
+  return [
+    `https://res.cloudinary.com/pgatour-prod/image/upload/f_auto,q_auto,w_160,c_fill,g_auto/players/hero/${val}.png`,
+    `https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`,
+  ];
 };
 
 const getPlayerHeadshot = (playerName, headshotMap = {}, fieldPlayerIds = {}) => {
