@@ -835,16 +835,16 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '52%' : '55%' }} />
+              <col style={{ width: isMobile ? '40%' : '45%' }} />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? '24%' : '22.5%' }} /><col style={{ width: isMobile ? '24%' : '22.5%' }} /></>
+                <><col style={{ width: isMobile ? '30%' : '27.5%' }} /><col style={{ width: isMobile ? '30%' : '27.5%' }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 48 : '15%' }} /><col style={{ width: isMobile ? 56 : '15%' }} /><col style={{ width: isMobile ? 72 : '15%' }} /></>
+                <><col style={{ width: isMobile ? 48 : '18%' }} /><col style={{ width: isMobile ? 56 : '18%' }} /><col style={{ width: isMobile ? 72 : '19%' }} /></>
               )}
             </colgroup>
             <thead>
               <tr>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left', color: 'rgba(255,255,255,0.6)' }}>Player</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
                 {infoView === 'info' ? (<>
                   <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, ...sortHeaderStyle('teeTime') }}>
                     {liveData?.players?.length
