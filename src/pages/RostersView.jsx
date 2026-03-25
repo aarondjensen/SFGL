@@ -801,13 +801,13 @@ export const RostersView = ({
               {/* Info / Stats — centered */}
               <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
                 current={infoView} setter={setInfoView}
-                leftColor="rgba(100,180,255,0.95)" rightColor={colors.textGold}
+                leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
                 width={isMobile ? 100 : 108} />
 
               {/* SFGL / PGAT — far right */}
               <Slider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
                 current={statsView} setter={setStatsView}
-                leftColor={colors.textGold} rightColor="rgba(100,180,255,0.95)"
+                leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
                 disabled={infoView !== 'stats'}
                 width={isMobile ? 100 : 108} />
 
@@ -835,34 +835,34 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '40%' : '45%' }} />
+              <col style={{ width: isMobile ? '38%' : '40%' }} />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? '30%' : '27.5%' }} /><col style={{ width: isMobile ? '30%' : '27.5%' }} /></>
+                <><col style={{ width: isMobile ? '31%' : '30%' }} /><col style={{ width: isMobile ? '31%' : '30%' }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 48 : '18%' }} /><col style={{ width: isMobile ? 56 : '18%' }} /><col style={{ width: isMobile ? 72 : '19%' }} /></>
+                <><col style={{ width: isMobile ? 48 : '20%' }} /><col style={{ width: isMobile ? 56 : '20%' }} /><col style={{ width: isMobile ? 72 : '20%' }} /></>
               )}
             </colgroup>
             <thead>
               <tr>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left', color: 'rgba(255,255,255,0.85)' }}>Player</th>
                 {infoView === 'info' ? (<>
-                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, ...sortHeaderStyle('teeTime') }}>
+                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, color: 'rgba(255,255,255,0.85)', ...sortHeaderStyle('teeTime') }}>
                     {liveData?.players?.length
                       ? (liveData.state === 'in' ? 'Score' : (isMobile ? <>Tee<br/>Time</> : 'Tee Time'))
                       : Object.keys(teeTimeMap).length > 0 ? <>{isMobile ? <>Tee<br/>Time</> : 'Tee Time'}{sortArrow('teeTime')}</>
                       : 'Field'}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds') }}>
+                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.85)', ...sortHeaderStyle('odds') }}>
                     Odds{sortArrow('odds')}
                   </th>
                 </>) : (<>
-                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts') }}>
+                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', color: 'rgba(100,180,255,0.9)', ...sortHeaderStyle('starts') }}>
                     {statsView === 'sfgl' ? 'Starts' : 'Events'}{sortArrow('starts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts') }}>
+                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', color: 'rgba(100,180,255,0.9)', ...sortHeaderStyle('cuts') }}>
                     {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings') }}>
+                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8, color: statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)', ...sortHeaderStyle('earnings') }}>
                     <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings{sortArrow('earnings')}</span>
                   </th>
                 </>)}
