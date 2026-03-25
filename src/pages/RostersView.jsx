@@ -640,9 +640,9 @@ export const RostersView = ({
     else { setSortCol(col); setSortDir('asc'); }
   };
 
-  const sortHeaderStyle = (col) => ({
+  const sortHeaderStyle = (col, baseColor) => ({
     cursor: 'pointer', userSelect: 'none',
-    color: col === sortCol ? 'rgba(255,255,255,0.9)' : undefined,
+    color: col === sortCol ? 'rgba(255,255,255,0.95)' : (baseColor || undefined),
   });
   const sortArrow = (col) => col === sortCol ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
@@ -846,23 +846,23 @@ export const RostersView = ({
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left', color: 'rgba(255,255,255,0.85)' }}>Player</th>
                 {infoView === 'info' ? (<>
-                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, color: 'rgba(255,255,255,0.85)', ...sortHeaderStyle('teeTime') }}>
+                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, color: 'rgba(255,255,255,0.85)', ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }>
                     {liveData?.players?.length
                       ? (liveData.state === 'in' ? 'Score' : (isMobile ? <>Tee<br/>Time</> : 'Tee Time'))
                       : Object.keys(teeTimeMap).length > 0 ? <>{isMobile ? <>Tee<br/>Time</> : 'Tee Time'}{sortArrow('teeTime')}</>
                       : 'Field'}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.85)', ...sortHeaderStyle('odds') }}>
+                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.85)', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }>
                     Odds{sortArrow('odds')}
                   </th>
                 </>) : (<>
-                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', color: 'rgba(100,180,255,0.9)', ...sortHeaderStyle('starts') }}>
+                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
                     {statsView === 'sfgl' ? 'Starts' : 'Events'}{sortArrow('starts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', color: 'rgba(100,180,255,0.9)', ...sortHeaderStyle('cuts') }}>
+                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
                     {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8, color: statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)', ...sortHeaderStyle('earnings') }}>
+                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)') }}>
                     <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings{sortArrow('earnings')}</span>
                   </th>
                 </>)}
