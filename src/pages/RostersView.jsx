@@ -798,18 +798,23 @@ export const RostersView = ({
             </div>
           );
           return (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
               {/* All / Playing — far left */}
               <Slider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="Playing"
                 current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
                 leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
                 disabled={!tournamentField?.size} width={isMobile ? 100 : 108} />
 
-              {/* Info / Stats — centered */}
-              <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
-                current={infoView} setter={setInfoView}
-                leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
-                width={isMobile ? 100 : 108} />
+              {/* Info / Stats — centered over data columns (right 50% of table, so center = 75%) */}
+              <div style={{ position: 'absolute', left: '75%', transform: 'translateX(-50%)' }}>
+                <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+                  current={infoView} setter={setInfoView}
+                  leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
+                  width={isMobile ? 100 : 108} />
+              </div>
+
+              {/* Spacer to push SFGL/PGAT to far right */}
+              <div style={{ flex: 1 }} />
 
               {/* SFGL / PGAT — far right */}
               <Slider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
@@ -842,11 +847,11 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '38%' : '48%' }} />
+              <col style={{ width: isMobile ? '38%' : '50%' }} />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? '31%' : '26%' }} /><col style={{ width: isMobile ? '31%' : '26%' }} /></>
+                <><col style={{ width: isMobile ? '31%' : '25%' }} /><col style={{ width: isMobile ? '31%' : '25%' }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 48 : '17%' }} /><col style={{ width: isMobile ? 56 : '17%' }} /><col style={{ width: isMobile ? 72 : '18%' }} /></>
+                <><col style={{ width: isMobile ? 48 : '17%' }} /><col style={{ width: isMobile ? 56 : '17%' }} /><col style={{ width: isMobile ? 72 : '16%' }} /></>
               )}
             </colgroup>
             <thead>
