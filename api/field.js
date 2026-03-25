@@ -37,6 +37,20 @@ function formatTeeTime(iso) {
   } catch { return null; }
 }
 
+// ── Known name aliases — maps API name variants to canonical names ──────────────
+// Add entries here when PGA Tour uses a different name than our Firebase records
+const NAME_ALIASES = {
+  'Nico Echavarria':    'Nicolas Echavarria',
+  'Rafa Cabrera Bello': 'Rafael Cabrera Bello',
+  'Si Woo Kim':         'Si-Woo Kim',
+  'Byeong-Hun An':      'Byeong Hun An',
+  'K.H. Lee':           'Kyoung-Hoon Lee',
+  'S.H. Kim':           'Sung-Hyun Kim',
+};
+function canonicalName(name) {
+  return NAME_ALIASES[name?.trim()] || name?.trim();
+}
+
 // ── Get upcoming tournament from schedule ─────────────────────────────────────
 async function getUpcomingTournament() {
   const resp = await fetch('https://www.pgatour.com/schedule', { headers: HEADERS });
@@ -72,9 +86,9 @@ function parseFieldPage(nd) {
       || (obj.firstName && obj.lastName ? `${obj.firstName.trim()} ${obj.lastName.trim()}` : null);
 
     if (name?.includes(' ')) {
-      playerNames.add(name);
+      playerNames.add(canonicalName(name) || name);
       // Store player ID (field page uses 'id')
-      if (obj.id) playerIdMap[name] = String(obj.id);
+      if (obj.id) playerIdMap[canonicalName(name) || name] = String(obj.id);
       // Individual tee time on player object
       const tt = obj.teeTime || obj.teeTimeLocal || obj.startTime;
       if (tt && typeof tt === 'string') {
