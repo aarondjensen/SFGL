@@ -108,12 +108,11 @@ export const playersApi = {
 
   // Get top N players by world rank, excluding LIV players
   async getTopRanked(n = 50) {
-    // Fetch more than needed since we filter LIV client-side
-    // (avoids requiring a composite Firestore index on is_liv + world_rank)
+    // Fetch more than needed since we filter LIV + numeric doc IDs client-side
     const q = query(
       collection(db, 'players'),
       orderBy('world_rank', 'asc'),
-      limit(n * 3) // fetch 3x to account for LIV players being filtered out
+      limit(n * 4)
     );
     const snap = await getDocs(q);
     return snap.docs
@@ -124,7 +123,7 @@ export const playersApi = {
         headshotUrl: d.data().headshot_url,
         isLiv:       d.data().is_liv,
       }))
-      .filter(p => !p.isLiv)
+      .filter(p => !p.isLiv && p.name && !/^\d+$/.test(p.name.trim()) && p.name.includes(' '))
       .slice(0, n);
   },
 
@@ -776,3 +775,4 @@ export const globalPlayerStatsApi = {
   async get()         { return (await sfglDataApi.get('fantasy-golf-global-stats')) || {}; },
   async set(stats)    { await sfglDataApi.set('fantasy-golf-global-stats', stats); },
 };
+
