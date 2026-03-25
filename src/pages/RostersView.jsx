@@ -18,22 +18,23 @@ import { STORAGE_KEYS } from '../constants';
 // ── Headshot helpers ─────────────────────────────────────────────────────────
 // Stored IDs are ESPN athlete IDs (e.g. 4696529 for McIlroy).
 // Image URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
-const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
-  const val = headshotMap[playerName];
+const getPlayerHeadshotUrls = (playerName, headshotMap = {}, fieldPlayerIds = {}) => {
+  // Prefer Firebase headshot override, then PGA Tour field page ID
+  const val = headshotMap[playerName] || fieldPlayerIds[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
   return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
 };
 
-const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}, fieldPlayerIds = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap, fieldPlayerIds);
   if (urls.length > 0) return urls[0];
   const bg = isLimited ? '8B6914' : '1c3a5e';
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
 };
 
-const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap, fieldPlayerIds = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap, fieldPlayerIds);
   let attempt = 0;
   return function handler(e) {
     attempt++;
@@ -230,7 +231,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 
 // ── Main RostersView ──────────────────────────────────────────────────────────
 // ── LineupHeadshot — shows ×-remove button on hover when editable ─────────────
-const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, onRemove }) => {
+const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayerIds = {}, canEdit, onRemove }) => {
   const [hovered, setHovered] = React.useState(false);
   const [tapped, setTapped]   = React.useState(false);
   const containerRef = React.useRef(null);
@@ -268,8 +269,8 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, on
     >
       <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
         <img
-          src={getPlayerHeadshot(player.name, player.limited, headshots)}
-          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+          src={getPlayerHeadshot(player.name, player.limited, headshots, fieldPlayerIds)}
+          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots, fieldPlayerIds)}
           alt=""
           style={{
             width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
@@ -337,6 +338,8 @@ export const RostersView = ({
   const isMobile            = useIsMobile();
   const [statsView,         setStatsView]         = useState('sfgl');
   const [infoView,          setInfoView]          = useState('info'); // 'info' | 'stats'
+  const [sortCol,           setSortCol]           = useState(null);  // null | 'teeTime' | 'odds' | 'starts' | 'cuts' | 'earnings'
+  const [sortDir,           setSortDir]           = useState('asc');
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
   const [lineupMode,        setLineupMode]        = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
@@ -344,6 +347,7 @@ export const RostersView = ({
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
   const [tournamentField,   setTournamentField]   = useState(null);
   const [teeTimeMap,        setTeeTimeMap]        = useState({}); // { playerName: '8:04 AM' }
+  const [fieldPlayerIds,    setFieldPlayerIds]    = useState({}); // { playerName: pgaTourId }
   const [oddsMap,           setOddsMap]           = useState({}); // { playerName: '+2000' }
   const [liveData,          setLiveData]          = useState(null); // { players, round, state } from /api/live
   const dialog = useDialog();
@@ -412,7 +416,7 @@ export const RostersView = ({
   }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
 
   const team          = teams.find(t => t.id === selectedTeam);
-  const currentRoster = useRoster(team, transactions, activeTournamentIndex);
+  const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
   const windowStatus  = useWindowStatus(activeTournament);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
@@ -489,54 +493,50 @@ export const RostersView = ({
     return map;
   }, [team, tournaments, transactions]);
 
-  // Fetch current week's field from /api/field — polls every 30 min so tee times
-  // are picked up as soon as PGA Tour posts them (typically Wed morning)
+  // Fetch current week's field from /api/field — runs once on mount, polls every 30 min.
+  // We use a ref to track the last fetched tournament so re-renders don't re-trigger.
   const _fieldTournamentName = (
     tournaments.find(t => t.playing && !t.completed) ||
     tournaments.find(t => !t.completed)
   )?.name || null;
+  const _lastFetchedTournament = React.useRef(null);
   useEffect(() => {
     if (!_fieldTournamentName) return;
+    // Don't re-run if we already have tee times for this tournament
+    if (_lastFetchedTournament.current === _fieldTournamentName && Object.keys(teeTimeMap).length > 0) return;
     let cancelled = false;
     const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
 
     const fetchField = () => {
-      fetch('/api/field?t=' + Date.now()) // cache-bust so we always get fresh data
+      fetch('/api/field?t=' + Date.now())
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (cancelled || !data?.players?.length) return;
+          _lastFetchedTournament.current = _fieldTournamentName;
           setTournamentField(new Set(data.players.map(normalize)));
           if (data.teeTimes?.length) {
             const ttMap = {};
             data.teeTimes.forEach(({ name, teeTime }) => { ttMap[normalize(name)] = teeTime; });
             setTeeTimeMap(ttMap);
           }
+          if (data.playerIds && Object.keys(data.playerIds).length) {
+            setFieldPlayerIds(data.playerIds);
+          }
+          if (data.odds?.length) {
+            const oMap = {};
+            data.odds.forEach(({ name, odds }) => { oMap[normalize(name)] = odds; });
+            setOddsMap(oMap);
+          }
         })
         .catch(() => {});
     };
 
     fetchField();
-    // Re-fetch every 30 min — picks up tee times when PGA Tour posts them
     const interval = setInterval(fetchField, 30 * 60 * 1000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch odds from /api/odds (Mon–Thu only, 1hr cache)
-  useEffect(() => {
-    if (!activeTournament) return;
-    let cancelled = false;
-    fetch('/api/odds')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (cancelled || !data?.odds || !Object.keys(data.odds).length) return;
-        const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
-        const oMap = {};
-        Object.entries(data.odds).forEach(([name, odds]) => { oMap[normalize(name)] = odds; });
-        setOddsMap(oMap);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Odds are now fetched as part of the field fetch above
 
   // Real-time lineup sync — polls Firebase every 30s so changes on desktop
   // appear on mobile without a manual refresh
@@ -570,7 +570,12 @@ export const RostersView = ({
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (cancelled || !data?.players?.length) return;
-          setLiveData(data);
+          // Only use live data when tournament is actually in progress
+          // Pre-tournament ESPN returns players but state is 'pre' — we don't want
+          // that overriding the tee time display from /api/field
+          if (data.state === 'in' || data.state === 'post') {
+            setLiveData(data);
+          }
         })
         .catch(() => {});
     };
@@ -581,10 +586,40 @@ export const RostersView = ({
     return () => { cancelled = true; clearInterval(interval); };
   }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const sortedRoster = React.useMemo(() => {
+    const roster = getSortedRoster(currentRoster);
+    if (!sortCol) return roster;
+    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss');
+    return [...roster].sort((a, b) => {
+      let av, bv;
+      if (sortCol === 'teeTime') {
+        av = teeTimeMap[normalize(a.name)]; bv = teeTimeMap[normalize(b.name)];
+        const toMin = t => { if (!t) return sortDir === 'asc' ? 9999 : -1; const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 0; let h = parseInt(m[1]); if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12; if (m[3].toUpperCase() === 'AM' && h === 12) h = 0; return h * 60 + parseInt(m[2]); };
+        av = toMin(av); bv = toMin(bv);
+      } else if (sortCol === 'odds') {
+        const toNum = o => { if (!o) return sortDir === 'asc' ? 9999 : -9999; return parseInt(o.replace('+',''), 10); };
+        av = toNum(oddsMap[normalize(a.name)]); bv = toNum(oddsMap[normalize(b.name)]);
+      } else if (sortCol === 'starts') {
+        av = sfglCutsMap[a.name]?.starts ?? a.starts ?? 0; bv = sfglCutsMap[b.name]?.starts ?? b.starts ?? 0;
+      } else if (sortCol === 'cuts') {
+        av = sfglCutsMap[a.name]?.cuts ?? 0; bv = sfglCutsMap[b.name]?.cuts ?? 0;
+      } else if (sortCol === 'earnings') {
+        av = a.sfglEarnings || 0; bv = b.sfglEarnings || 0;
+      }
+      if (av === bv) return 0;
+      return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+    });
+  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglCutsMap]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!team) return null;
 
   const lineupOpen    = windowStatus.lineupOpen;
   const canEditLineup = isCommissioner || (isOwnTeam && lineupOpen);
+
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
   const hasPendingWaivers = transactions.some(tx => tx.status === 'pending' && tx.type === 'waiver');
   const addDropBlocked = faStatus.open && hasPendingWaivers;
@@ -666,6 +701,7 @@ export const RostersView = ({
                         lastName={lastName}
                         nameFontSize={nameFontSize}
                         headshots={headshots}
+                        fieldPlayerIds={fieldPlayerIds}
                         canEdit={canEditLineup}
                         onRemove={() => togglePlayerInLineup(player)}
                       />
@@ -768,7 +804,7 @@ export const RostersView = ({
             <colgroup>
               <col />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? 56 : 80 }} /><col style={{ width: isMobile ? 56 : 80 }} /></>
+                <><col style={{ width: isMobile ? 56 : 120 }} /><col style={{ width: isMobile ? 56 : 100 }} /></>
               ) : (
                 <><col style={{ width: isMobile ? 48 : 80 }} /><col style={{ width: isMobile ? 62 : 90 }} /><col style={{ width: isMobile ? 68 : 120 }} /></>
               )}
@@ -777,28 +813,30 @@ export const RostersView = ({
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
                 {infoView === 'info' ? (<>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10 }}>
+                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, ...sortHeaderStyle('teeTime', sortCol, sortDir) }}>
                     {liveData?.players?.length
                       ? (liveData.state === 'in' ? 'Score' : (isMobile ? <>Tee<br/>Time</> : 'Tee Time'))
-                      : Object.keys(teeTimeMap).length > 0 ? (isMobile ? <>Tee<br/>Time</> : 'Tee Time')
+                      : Object.keys(teeTimeMap).length > 0 ? <>{isMobile ? <>Tee<br/>Time</> : 'Tee Time'}{sortArrow('teeTime', sortCol, sortDir)}</>
                       : 'Field'}
                   </th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>Odds</th>
+                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', sortCol, sortDir) }}>
+                    Odds{sortArrow('odds', sortCol, sortDir)}
+                  </th>
                 </>) : (<>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                    {statsView === 'sfgl' ? 'Starts' : 'Events'}
+                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', sortCol, sortDir) }}>
+                    {statsView === 'sfgl' ? 'Starts' : 'Events'}{sortArrow('starts', sortCol, sortDir)}
                   </th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                    {isMobile ? 'Cuts' : 'Cuts Made'}
+                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', sortCol, sortDir) }}>
+                    {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts', sortCol, sortDir)}
                   </th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8 }}>
-                    <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings</span>
+                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', sortCol, sortDir) }}>
+                    <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings{sortArrow('earnings', sortCol, sortDir)}</span>
                   </th>
                 </>)}
               </tr>
             </thead>
             <tbody>
-              {getSortedRoster(currentRoster).map(player => {
+              {sortedRoster.map(player => {
                 const isInLineup     = (team.lineup || []).includes(player.name);
                 const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
                 const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
@@ -838,8 +876,8 @@ export const RostersView = ({
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
-                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+                            src={getPlayerHeadshot(player.name, player.limited, headshots, fieldPlayerIds)}
+                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots, fieldPlayerIds)}
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
