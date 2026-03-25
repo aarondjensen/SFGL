@@ -611,7 +611,7 @@ export const RostersView = ({
   const sortedRoster = React.useMemo(() => {
     const baseRoster = rosterView === 'playing'
       ? getSortedRoster(currentRoster).filter(p => tournamentField?.has(
-          p.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss')
+          p.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss')
         ))
       : getSortedRoster(currentRoster);
     const roster = baseRoster;
