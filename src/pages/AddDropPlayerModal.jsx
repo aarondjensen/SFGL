@@ -258,8 +258,10 @@ export const AddDropPlayerModal = ({
   // When browsing (no search): show only free agents from top 50
   // When searching: show all results including rostered players (greyed out)
   const displayPlayers = searchTerm.trim().length >= 2
-    ? availablePlayers                                         // search results — show all
-    : availablePlayers.filter(p => !rosteredPlayers.has(p.name) && !limboPlayers.has(p.name)); // browse: top free agents
+    ? availablePlayers
+    : availablePlayers
+        .filter(p => !rosteredPlayers.has(p.name) && !limboPlayers.has(p.name))
+        .sort((a, b) => (a.worldRank ?? 9999) - (b.worldRank ?? 9999));
 
   const rosterFull   = currentRoster.length >= ROSTER_LIMIT;
 
@@ -623,6 +625,11 @@ export const AddDropPlayerModal = ({
                     <span style={{ fontFamily: fonts.serif, fontSize: 13, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
                       {player.name}
                     </span>
+                    {player.worldRank && !isRostered && (
+                      <span style={{ fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted, marginLeft: 4 }}>
+                        #{player.worldRank}
+                      </span>
+                    )}
                     {isRostered && (
                       <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: colors.danger, textTransform: 'uppercase' }}>
                         Unavailable
