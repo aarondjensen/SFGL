@@ -787,14 +787,14 @@ export const RostersView = ({
               <Slider leftVal="full" leftLabel="Full" rightVal="playing" rightLabel="Playing"
                 current={rosterView} setter={setRosterView}
                 leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
-                disabled={!tournamentField?.size} width={isMobile ? 84 : 92} />
+                disabled={!tournamentField?.size} width={isMobile ? 100 : 108} />
 
-              {/* Info / Stats — center, grows to fill */}
+              {/* Info / Stats — center, grows to fill, centered over data columns */}
               <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
                 <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
                   current={infoView} setter={setInfoView}
                   leftColor="rgba(100,180,255,0.95)" rightColor={colors.textGold}
-                  width={isMobile ? 84 : 92} />
+                  width={isMobile ? 100 : 108} />
               </div>
 
               {/* SFGL / PGAT — right, only active in Stats mode */}
@@ -803,7 +803,7 @@ export const RostersView = ({
                   current={statsView} setter={setStatsView}
                   leftColor={colors.textGold} rightColor="rgba(100,180,255,0.95)"
                   disabled={infoView !== 'stats'}
-                  width={isMobile ? 84 : 92} />
+                  width={isMobile ? 100 : 108} />
               </div>
 
               {/* Done button — only in lineup mode, overlaid in center */}
@@ -830,16 +830,16 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col />
+              <col style={{ width: isMobile ? 'auto' : '55%' }} />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? 72 : '20%' }} /><col style={{ width: isMobile ? 64 : '18%' }} /></>
+                <><col style={{ width: isMobile ? 72 : '22.5%' }} /><col style={{ width: isMobile ? 64 : '22.5%' }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 48 : '12%' }} /><col style={{ width: isMobile ? 56 : '14%' }} /><col style={{ width: isMobile ? 72 : '18%' }} /></>
+                <><col style={{ width: isMobile ? 48 : '15%' }} /><col style={{ width: isMobile ? 56 : '15%' }} /><col style={{ width: isMobile ? 72 : '15%' }} /></>
               )}
             </colgroup>
             <thead>
               <tr>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left', color: colors.textMuted }}>Player</th>
                 {infoView === 'info' ? (<>
                   <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, ...sortHeaderStyle('teeTime') }}>
                     {liveData?.players?.length
