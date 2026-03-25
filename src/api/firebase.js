@@ -61,6 +61,24 @@ const firebaseConfig = {
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
+// ── Alias cache — maps alternate player names to canonical doc IDs ────────────
+// Populated lazily from player docs that have an 'aliases' array field.
+// Invalidated whenever aliases are written or a player is deleted.
+let _aliasCache = null;
+async function getAliasMap() {
+  if (_aliasCache) return _aliasCache;
+  try {
+    const snap = await getDocs(query(collection(db, 'players'), where('aliases', '!=', null)));
+    const map = {};
+    snap.docs.forEach(d => {
+      (d.data().aliases || []).forEach(alias => { map[alias] = d.id; });
+    });
+    _aliasCache = map;
+    return map;
+  } catch (_) { return {}; }
+}
+function invalidateAliasCache() { _aliasCache = null; }
+
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 /** Return all documents from a collection as an array of plain objects. */
@@ -121,6 +139,7 @@ export const playersApi = {
         espnId:      d.data().espn_id,
         headshotUrl: d.data().headshot_url,
         isLiv:       d.data().is_liv,
+        aliases:     d.data().aliases || [],
       }))
       .filter(p => !p.isLiv && p.name && !/^\d+$/.test(p.name.trim()) && p.name.includes(' '))
       .slice(0, n);
@@ -193,18 +212,21 @@ export const playersApi = {
 
   async upsertMany(players) {
     const timestamp = Date.now();
+    // Check alias map — if a player name is an alias for a canonical doc, use that doc ID
+    const aliasMap = await getAliasMap(db);
     const BATCH_SIZE = 499;
     for (let i = 0; i < players.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       players.slice(i, i + BATCH_SIZE).forEach(p => {
-        // Only write fields that are explicitly provided — never overwrite espn_id with null
-        const row = { name: resolveAlias(p.name) };
+        // Resolve via static aliases first, then dynamic Firebase aliases
+        const canonicalName = aliasMap[p.name] || resolveAlias(p.name);
+        const row = { name: canonicalName };
         if (p.worldRank   !== undefined) row.world_rank   = p.worldRank ?? null;
         if (p.espnId      !== undefined && p.espnId !== null) row.espn_id = p.espnId;
         if (p.headshotUrl !== undefined) row.headshot_url = p.headshotUrl ?? null;
         if (p.stats       !== undefined) row.career_stats = p.stats ?? {};
         if (p.isLiv       !== undefined) row.is_liv       = p.isLiv ?? false;
-        batch.set(doc(db, 'players', row.name), row, { merge: true });
+        batch.set(doc(db, 'players', canonicalName), row, { merge: true });
       });
       await batch.commit();
     }
@@ -215,7 +237,23 @@ export const playersApi = {
     return players;
   },
 
-  async update(name, updates) {
+  async delete(name) {
+    await deleteDoc(doc(db, 'players', name));
+    invalidateAliasCache();
+  },
+
+  // Add an alias to a player doc — e.g. addAlias('Nicolas Echavarria', 'Nico Echavarria')
+  // After this, any OWGR sync writing 'Nico Echavarria' will update the 'Nicolas Echavarria' doc
+  async addAlias(canonicalName, aliasName) {
+    const ref = doc(db, 'players', canonicalName);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error(`Player "${canonicalName}" not found in Firebase`);
+    const existing = snap.data().aliases || [];
+    if (!existing.includes(aliasName)) {
+      await updateDoc(ref, { aliases: [...existing, aliasName] });
+    }
+    invalidateAliasCache();
+  },
     const updateData = {};
     if (updates.worldRank  !== undefined) updateData.world_rank   = updates.worldRank;
     if (updates.espnId  !== undefined) updateData.espn_id  = updates.espnId;
@@ -278,25 +316,7 @@ export const playersApi = {
 // ============================================================================
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
-// ── Name aliases — maps alternate spellings to canonical roster names ──────────
-// When OWGR or PGA Tour uses a different name than what's stored on rosters,
-// add an entry here. Key = alternate name, Value = canonical roster name.
-const NAME_ALIASES = {
-  'Nico Echavarria':       'Nicolas Echavarria',
-  'Samuel Stevens':        'Sam Stevens',
-  'Vincent Whaley':        'Vince Whaley',
-  'Rafa Cabrera Bello':    'Rafael Cabrera Bello',
-  'Si Woo Kim':            'Si-Woo Kim',
-  'Byeong Hun An':         'Byeong-Hun An',
-  'Jackson Koivun(Am)':    'Jackson Koivun',
-  'Daniel Brown(Oct1994)': 'Daniel Brown',
-  'Trace Crowe(Oct1996)':  'Trace Crowe',
-  'Tyler Duncan(Jul1989)': 'Tyler Duncan',
-  'Sanghyun Park(Apr1983)':'Sanghyun Park',
-};
-// Reverse map — canonical name -> alternate (for lookups in both directions)
-const NAME_ALIASES_REVERSE = Object.fromEntries(Object.entries(NAME_ALIASES).map(([k,v]) => [v, k]));
-function resolveAlias(name) { return NAME_ALIASES[name] || name; }
+import { NAME_ALIASES, NAME_ALIASES_REVERSE, resolveAlias, allNameVariants } from '../constants/nameAliases.js';
 
 
 const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
