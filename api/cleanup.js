@@ -1,10 +1,9 @@
-// api/cleanup.js — one-time admin endpoint to delete numeric player documents
-// Hit GET /api/cleanup?secret=YOUR_CRON_SECRET to run
+// api/cleanup.js — one-time endpoint to delete numeric player documents
 // DELETE THIS FILE after running
+// Visit: /api/cleanup?secret=YOUR_CRON_SECRET
 
-import { initializeApp, getApps } from 'firebase-admin/app';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { cert } from 'firebase-admin/app';
 
 function getAdminDb() {
   if (!getApps().length) {
@@ -24,24 +23,27 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const db = getAdminDb();
-  const snap = await db.collection('players').get();
-  const toDelete = snap.docs.filter(d => /^\d+$/.test(d.id.trim()));
+  try {
+    const db = getAdminDb();
+    const snap = await db.collection('players').get();
+    const toDelete = snap.docs.filter(d => /^\d+$/.test(d.id.trim()));
 
-  if (!toDelete.length) {
-    return res.status(200).json({ message: 'Nothing to delete', total: snap.docs.length });
+    if (!toDelete.length) {
+      return res.status(200).json({ message: 'Nothing to delete', total: snap.docs.length });
+    }
+
+    for (let i = 0; i < toDelete.length; i += 500) {
+      const batch = db.batch();
+      toDelete.slice(i, i + 500).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+
+    return res.status(200).json({
+      deleted: toDelete.length,
+      remaining: snap.docs.length - toDelete.length,
+      message: `Deleted ${toDelete.length} numeric player documents`,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message, stack: err.stack?.split('\n').slice(0, 5) });
   }
-
-  // Delete in batches of 500
-  for (let i = 0; i < toDelete.length; i += 500) {
-    const batch = db.batch();
-    toDelete.slice(i, i + 500).forEach(d => batch.delete(d.ref));
-    await batch.commit();
-  }
-
-  return res.status(200).json({
-    deleted: toDelete.length,
-    remaining: snap.docs.length - toDelete.length,
-    message: `Deleted ${toDelete.length} numeric player documents`,
-  });
 }
