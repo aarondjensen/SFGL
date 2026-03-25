@@ -507,7 +507,7 @@ export const RostersView = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Merge prop headshots with locally fetched ESPN IDs
-  const mergedHeadshots = { ...headshots, ...localHeadshots }; — runs once on mount, polls every 30 min.
+  const mergedHeadshots = { ...headshots, ...localHeadshots };
   // We use a ref to track the last fetched tournament so re-renders don't re-trigger.
   const _fieldTournamentName = (
     tournaments.find(t => t.playing && !t.completed) ||
