@@ -692,7 +692,11 @@ export const AdminView = ({
       const resp = await fetch('/api/owgr');
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'OWGR fetch failed');
-      const fetched = (data.players || []).slice(0, 250);
+      // Clean OWGR names — strip birth date/amateur suffixes like "(Oct1994)", "(Am)"
+      const cleanName = n => n.replace(/\s*\([^)]*\)\s*$/, '').trim();
+      const fetched = (data.players || [])
+        .map(({ name, worldRank }) => ({ name: cleanName(name), worldRank }))
+        .filter(p => p.name && p.name.includes(' ')); // skip single-word names
       if (!fetched.length) throw new Error('No ranking data returned');
 
       let updatedPlayers = [...allPlayers];
@@ -721,7 +725,7 @@ export const AdminView = ({
       await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
       await playerRankingsApi.invalidateCache().catch(() => {}); // force fresh load next page visit
       setOwgrStatus('done');
-      setOwgrSummary(`✓ Top 250 rankings synced · ${updated} updated · ${added} new`);
+      setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new`);
     } catch (err) {
       setOwgrStatus('error');
       setOwgrSummary(err.message || 'OWGR sync failed');
