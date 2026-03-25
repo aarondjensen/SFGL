@@ -620,6 +620,12 @@ export const RostersView = ({
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortCol(col); setSortDir('asc'); }
   };
+
+  const sortHeaderStyle = (col) => ({
+    cursor: 'pointer', userSelect: 'none',
+    color: col === sortCol ? 'rgba(255,255,255,0.9)' : undefined,
+  });
+  const sortArrow = (col) => col === sortCol ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
   const faStatus      = getFreeAgentWindowStatus(activeTournament);
   const hasPendingWaivers = transactions.some(tx => tx.status === 'pending' && tx.type === 'waiver');
   const addDropBlocked = faStatus.open && hasPendingWaivers;
@@ -813,24 +819,24 @@ export const RostersView = ({
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
                 {infoView === 'info' ? (<>
-                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, ...sortHeaderStyle('teeTime', sortCol, sortDir) }}>
+                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, ...sortHeaderStyle('teeTime') }}>
                     {liveData?.players?.length
                       ? (liveData.state === 'in' ? 'Score' : (isMobile ? <>Tee<br/>Time</> : 'Tee Time'))
-                      : Object.keys(teeTimeMap).length > 0 ? <>{isMobile ? <>Tee<br/>Time</> : 'Tee Time'}{sortArrow('teeTime', sortCol, sortDir)}</>
+                      : Object.keys(teeTimeMap).length > 0 ? <>{isMobile ? <>Tee<br/>Time</> : 'Tee Time'}{sortArrow('teeTime')}</>
                       : 'Field'}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', sortCol, sortDir) }}>
-                    Odds{sortArrow('odds', sortCol, sortDir)}
+                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds') }}>
+                    Odds{sortArrow('odds')}
                   </th>
                 </>) : (<>
-                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', sortCol, sortDir) }}>
-                    {statsView === 'sfgl' ? 'Starts' : 'Events'}{sortArrow('starts', sortCol, sortDir)}
+                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts') }}>
+                    {statsView === 'sfgl' ? 'Starts' : 'Events'}{sortArrow('starts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', sortCol, sortDir) }}>
-                    {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts', sortCol, sortDir)}
+                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts') }}>
+                    {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', sortCol, sortDir) }}>
-                    <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings{sortArrow('earnings', sortCol, sortDir)}</span>
+                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings') }}>
+                    <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Earnings{sortArrow('earnings')}</span>
                   </th>
                 </>)}
               </tr>
