@@ -108,18 +108,17 @@ export const playersApi = {
 
   // Get top N players by world rank, excluding LIV players
   async getTopRanked(n = 50) {
-    // Fetch more than needed since we filter LIV + numeric doc IDs client-side
-    const q = query(
+    const rankedQ = query(
       collection(db, 'players'),
       orderBy('world_rank', 'asc'),
-      limit(n * 4)
+      limit(700) // covers full OWGR list (~600) plus buffer
     );
-    const snap = await getDocs(q);
-    return snap.docs
+    const rankedSnap = await getDocs(rankedQ);
+    return rankedSnap.docs
       .map(d => ({
         name:        d.id,
         worldRank:   d.data().world_rank,
-        espnId:   d.data().espn_id,
+        espnId:      d.data().espn_id,
         headshotUrl: d.data().headshot_url,
         isLiv:       d.data().is_liv,
       }))
