@@ -282,12 +282,17 @@ export const playersApi = {
 // When OWGR or PGA Tour uses a different name than what's stored on rosters,
 // add an entry here. Key = alternate name, Value = canonical roster name.
 const NAME_ALIASES = {
-  'Nico Echavarria':    'Nicolas Echavarria',
-  'Samuel Stevens':     'Sam Stevens',
-  'Vincent Whaley':     'Vince Whaley',
-  'Rafa Cabrera Bello': 'Rafael Cabrera Bello',
-  'Si Woo Kim':         'Si-Woo Kim',
-  'Byeong Hun An':      'Byeong-Hun An',
+  'Nico Echavarria':       'Nicolas Echavarria',
+  'Samuel Stevens':        'Sam Stevens',
+  'Vincent Whaley':        'Vince Whaley',
+  'Rafa Cabrera Bello':    'Rafael Cabrera Bello',
+  'Si Woo Kim':            'Si-Woo Kim',
+  'Byeong Hun An':         'Byeong-Hun An',
+  'Jackson Koivun(Am)':    'Jackson Koivun',
+  'Daniel Brown(Oct1994)': 'Daniel Brown',
+  'Trace Crowe(Oct1996)':  'Trace Crowe',
+  'Tyler Duncan(Jul1989)': 'Tyler Duncan',
+  'Sanghyun Park(Apr1983)':'Sanghyun Park',
 };
 // Reverse map — canonical name -> alternate (for lookups in both directions)
 const NAME_ALIASES_REVERSE = Object.fromEntries(Object.entries(NAME_ALIASES).map(([k,v]) => [v, k]));
