@@ -1054,6 +1054,7 @@ export const RostersView = ({
         txSegment={tournaments[addDropTournamentIndex]?.segment || getSegmentByDate()}
         editingWaiverData={editingWaiverData}
         headshots={headshots}
+        fieldPlayerIds={fieldPlayerIds}
         leagueSettings={leagueSettings}
       />
     </div>

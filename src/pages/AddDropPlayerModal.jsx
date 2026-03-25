@@ -46,21 +46,21 @@ const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,18
 
 // ── Headshot helpers ─────────────────────────────────────────────────────────────────────────────
 // Stored IDs are ESPN athlete IDs.
-const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
-  const val = headshotMap[playerName];
+const getPlayerHeadshotUrls = (playerName, headshotMap = {}, fieldPlayerIds = {}) => {
+  const val = headshotMap[playerName] || fieldPlayerIds[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
   return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
 };
 
-const getPlayerHeadshot = (playerName, headshotMap = {}) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+const getPlayerHeadshot = (playerName, headshotMap = {}, fieldPlayerIds = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap, fieldPlayerIds);
   if (urls.length > 0) return urls[0];
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`;
 };
 
-const makeHeadshotErrorHandler = (playerName, headshotMap) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
+const makeHeadshotErrorHandler = (playerName, headshotMap, fieldPlayerIds = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap, fieldPlayerIds);
   let attempt = 0;
   return function handler(e) {
     attempt++;
@@ -78,7 +78,7 @@ export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, teams,
   updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
-  headshots, leagueSettings = {},
+  headshots, fieldPlayerIds = {}, leagueSettings = {},
 }) => {
   const ROSTER_LIMIT            = leagueSettings.rosterLimit ?? 13;
   const TRANSACTION_FEE_FREE_AGENT = leagueSettings.feeFA    ?? 1;
