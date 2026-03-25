@@ -268,8 +268,8 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
     >
       <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
         <img
-          src={getPlayerHeadshot(player.name, player.limited, mergedHeadshots)}
-          onError={makeHeadshotErrorHandler(player.name, player.limited, mergedHeadshots)}
+          src={getPlayerHeadshot(player.name, player.limited, headshots)}
+          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
           alt=""
           style={{
             width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
