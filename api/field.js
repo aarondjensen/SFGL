@@ -89,6 +89,11 @@ function parseFieldPage(nd) {
       playerNames.add(canonicalName(name) || name);
       // Store player ID (field page uses 'id')
       if (obj.id) playerIdMap[canonicalName(name) || name] = String(obj.id);
+      // Capture photo URL if present directly on player object
+      const photo = obj.photo || obj.headshot || obj.photoUrl || obj.imageUrl || obj.headShotUrl || obj.headshotUrl;
+      if (photo && typeof photo === 'string' && photo.startsWith('http')) {
+        playerIdMap[`__photo_${canonicalName(name) || name}`] = photo;
+      }
       // Individual tee time on player object
       const tt = obj.teeTime || obj.teeTimeLocal || obj.startTime;
       if (tt && typeof tt === 'string') {
@@ -304,17 +309,20 @@ export default async function handler(req, res) {
   }
 
   if (isDebug) {
+    const photoEntries = Object.entries(result.playerIds || {}).filter(([k]) => k.startsWith('__photo_'));
     return res.status(200).json({
       source: result.source,
       tournament: result.tournament,
       playerCount: result.players.length,
       teeTimeCount: result.teeTimes?.length || 0,
       oddsCount: result.odds?.length || 0,
-      playerIdCount: Object.keys(result.playerIds || {}).length,
+      playerIdCount: Object.keys(result.playerIds || {}).filter(k => !k.startsWith('__photo_')).length,
+      photoUrlCount: photoEntries.length,
       samplePlayers: result.players.slice(0, 5),
       sampleTeeTimes: result.teeTimes?.slice(0, 3),
       sampleOdds: result.odds?.slice(0, 3),
-      sampleIds: Object.entries(result.playerIds || {}).slice(0, 5),
+      sampleIds: Object.entries(result.playerIds || {}).filter(([k]) => !k.startsWith('__photo_')).slice(0, 5),
+      samplePhotos: photoEntries.slice(0, 3),
       errors,
     });
   }
