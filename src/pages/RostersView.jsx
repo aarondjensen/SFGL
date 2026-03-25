@@ -18,32 +18,22 @@ import { STORAGE_KEYS } from '../constants';
 // ── Headshot helpers ─────────────────────────────────────────────────────────
 // Stored IDs are ESPN athlete IDs (e.g. 4696529 for McIlroy).
 // Image URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
-const getPlayerHeadshotUrls = (playerName, headshotMap = {}, fieldPlayerIds = {}) => {
-  // Check for direct photo URL stored from field page
-  const directPhoto = fieldPlayerIds[`__photo_${playerName}`];
-  if (directPhoto) return [directPhoto];
-  // Firebase headshot override or field page ID
-  const val = headshotMap[playerName] || fieldPlayerIds[playerName];
+const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
+  const val = headshotMap[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
-  // Try multiple CDN formats with the player ID
-  return [
-    `https://res.cloudinary.com/pgatour-prod/image/upload/f_auto,q_auto,w_160,c_fill,g_auto/players/hero/${val}.png`,
-    `https://res.cloudinary.com/pgatour-prod/image/upload/players/hero/${val}.png`,
-    `https://pga-tour-res.cloudinary.com/image/upload/c_fill,f_auto,g_face,h_160,q_auto,w_160/v1/pgatour/editorial/2024/headshots/${val}.jpg`,
-    `https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`,
-  ];
+  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
 };
 
-const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}, fieldPlayerIds = {}) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap, fieldPlayerIds);
+const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
   if (urls.length > 0) return urls[0];
   const bg = isLimited ? '8B6914' : '1c3a5e';
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
 };
 
-const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap, fieldPlayerIds = {}) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap, fieldPlayerIds);
+const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) => {
+  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
   let attempt = 0;
   return function handler(e) {
     attempt++;
@@ -278,8 +268,8 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
     >
       <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
         <img
-          src={getPlayerHeadshot(player.name, player.limited, headshots, fieldPlayerIds)}
-          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots, fieldPlayerIds)}
+          src={getPlayerHeadshot(player.name, player.limited, mergedHeadshots)}
+          onError={makeHeadshotErrorHandler(player.name, player.limited, mergedHeadshots)}
           alt=""
           style={{
             width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
@@ -357,7 +347,7 @@ export const RostersView = ({
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
   const [tournamentField,   setTournamentField]   = useState(null);
   const [teeTimeMap,        setTeeTimeMap]        = useState({}); // { playerName: '8:04 AM' }
-  const [fieldPlayerIds,    setFieldPlayerIds]    = useState({}); // { playerName: pgaTourId }
+  const [fieldPlayerIds,    setFieldPlayerIds]    = useState({}); // { playerName: espnId }
   const [oddsMap,           setOddsMap]           = useState({}); // { playerName: '+2000' }
   const [liveData,          setLiveData]          = useState(null); // { players, round, state } from /api/live
   const dialog = useDialog();
@@ -503,7 +493,21 @@ export const RostersView = ({
     return map;
   }, [team, tournaments, transactions]);
 
-  // Fetch current week's field from /api/field — runs once on mount, polls every 30 min.
+  // Fetch ESPN IDs for all rostered players directly from /api/headshots
+  // This runs once on mount and supplements whatever headshots are in Firebase
+  const [localHeadshots, setLocalHeadshots] = useState({});
+  useEffect(() => {
+    const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
+    if (!allRostered.length) return;
+    const encoded = allRostered.map(n => encodeURIComponent(n)).join(',');
+    fetch(`/api/headshots?names=${encoded}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.results) setLocalHeadshots(data.results); })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Merge prop headshots with locally fetched ESPN IDs
+  const mergedHeadshots = { ...headshots, ...localHeadshots }; — runs once on mount, polls every 30 min.
   // We use a ref to track the last fetched tournament so re-renders don't re-trigger.
   const _fieldTournamentName = (
     tournaments.find(t => t.playing && !t.completed) ||
@@ -721,7 +725,7 @@ export const RostersView = ({
                         player={player}
                         lastName={lastName}
                         nameFontSize={nameFontSize}
-                        headshots={headshots}
+                        headshots={mergedHeadshots}
                         fieldPlayerIds={fieldPlayerIds}
                         canEdit={canEditLineup}
                         onRemove={() => togglePlayerInLineup(player)}
@@ -788,30 +792,29 @@ export const RostersView = ({
           );
           return (
             <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative', gap: isMobile ? 6 : 10 }}>
-              {/* Full / Playing — left */}
+              {/* Full / Playing — far left */}
               <Slider leftVal="full" leftLabel="Full" rightVal="playing" rightLabel="Playing"
                 current={rosterView} setter={setRosterView}
                 leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
                 disabled={!tournamentField?.size} width={isMobile ? 100 : 108} />
 
-              {/* Info / Stats — center, grows to fill, centered over data columns */}
-              <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
-                  current={infoView} setter={setInfoView}
-                  leftColor="rgba(100,180,255,0.95)" rightColor={colors.textGold}
-                  width={isMobile ? 100 : 108} />
-              </div>
+              {/* Spacer matching player column width — pushes Info/Stats to align with data columns */}
+              <div style={{ flex: isMobile ? 0.8 : 1.2 }} />
 
-              {/* SFGL / PGAT — right, only active in Stats mode */}
-              <div style={{ position: 'relative' }}>
-                <Slider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
-                  current={statsView} setter={setStatsView}
-                  leftColor={colors.textGold} rightColor="rgba(100,180,255,0.95)"
-                  disabled={infoView !== 'stats'}
-                  width={isMobile ? 100 : 108} />
-              </div>
+              {/* Info / Stats — sits over data columns */}
+              <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+                current={infoView} setter={setInfoView}
+                leftColor="rgba(100,180,255,0.95)" rightColor={colors.textGold}
+                width={isMobile ? 100 : 108} />
 
-              {/* Done button — only in lineup mode, overlaid in center */}
+              {/* SFGL / PGAT — far right */}
+              <Slider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
+                current={statsView} setter={setStatsView}
+                leftColor={colors.textGold} rightColor="rgba(100,180,255,0.95)"
+                disabled={infoView !== 'stats'}
+                width={isMobile ? 100 : 108} />
+
+              {/* Done button — only in lineup mode */}
               {lineupMode && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setLineupMode(false); }}
@@ -909,8 +912,8 @@ export const RostersView = ({
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
-                            src={getPlayerHeadshot(player.name, player.limited, headshots, fieldPlayerIds)}
-                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots, fieldPlayerIds)}
+                            src={getPlayerHeadshot(player.name, player.limited, mergedHeadshots)}
+                            onError={makeHeadshotErrorHandler(player.name, player.limited, mergedHeadshots)}
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
@@ -1080,7 +1083,7 @@ export const RostersView = ({
         nextTournamentIndex={addDropTournamentIndex}
         txSegment={tournaments[addDropTournamentIndex]?.segment || getSegmentByDate()}
         editingWaiverData={editingWaiverData}
-        headshots={headshots}
+        headshots={mergedHeadshots}
         fieldPlayerIds={fieldPlayerIds}
         leagueSettings={leagueSettings}
       />

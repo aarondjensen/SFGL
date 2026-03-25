@@ -703,8 +703,23 @@ export const AdminView = ({
         else { updatedPlayers.push({ name, worldRank }); added++; }
       });
       await playersApi.upsertMany(fetched.map(({ name, worldRank }) => ({ name, worldRank })));
+
+      // Fetch ESPN IDs for all rostered players and save them
+      try {
+        const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
+        if (allRostered.length) {
+          const encoded = allRostered.map(n => encodeURIComponent(n)).join(',');
+          const hsResp = await fetch(`/api/headshots?names=${encoded}`);
+          if (hsResp.ok) {
+            const hsData = await hsResp.json();
+            const toSave = Object.entries(hsData.results || {}).map(([name, espnId]) => ({ name, espnId }));
+            if (toSave.length) await playersApi.upsertMany(toSave);
+          }
+        }
+      } catch (_) { /* non-critical */ }
       setAllPlayers(updatedPlayers);
       await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
+      await playerRankingsApi.invalidateCache().catch(() => {}); // force fresh load next page visit
       setOwgrStatus('done');
       setOwgrSummary(`✓ Top 250 rankings synced · ${updated} updated · ${added} new`);
     } catch (err) {
