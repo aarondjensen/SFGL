@@ -791,17 +791,14 @@ export const RostersView = ({
             </div>
           );
           return (
-            <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative', gap: isMobile ? 6 : 10 }}>
-              {/* Full / Playing — far left */}
-              <Slider leftVal="full" leftLabel="Full" rightVal="playing" rightLabel="Playing"
-                current={rosterView} setter={setRosterView}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
+              {/* All / Playing — far left */}
+              <Slider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="Playing"
+                current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
                 leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
                 disabled={!tournamentField?.size} width={isMobile ? 100 : 108} />
 
-              {/* Spacer matching player column width — pushes Info/Stats to align with data columns */}
-              <div style={{ flex: isMobile ? 0.8 : 1.2 }} />
-
-              {/* Info / Stats — sits over data columns */}
+              {/* Info / Stats — centered */}
               <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
                 current={infoView} setter={setInfoView}
                 leftColor="rgba(100,180,255,0.95)" rightColor={colors.textGold}
@@ -847,7 +844,7 @@ export const RostersView = ({
             </colgroup>
             <thead>
               <tr>
-                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Player</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, textAlign: 'left', color: 'rgba(255,255,255,0.6)' }}>Player</th>
                 {infoView === 'info' ? (<>
                   <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, fontSize: isMobile ? 8 : 10, ...sortHeaderStyle('teeTime') }}>
                     {liveData?.players?.length
