@@ -806,7 +806,7 @@ export const RostersView = ({
                 disabled={!tournamentField?.size} width={isMobile ? 100 : 108} />
 
               {/* Info / Stats — centered over data columns (right 50% of table, so center = 75%) */}
-              <div style={{ position: 'absolute', left: '75%', transform: 'translateX(-50%)' }}>
+              <div style={{ position: 'absolute', left: '72.5%', transform: 'translateX(-50%)' }}>
                 <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
                   current={infoView} setter={setInfoView}
                   leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
@@ -847,11 +847,11 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '38%' : '50%' }} />
+              <col style={{ width: isMobile ? '38%' : '45%' }} />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? '31%' : '25%' }} /><col style={{ width: isMobile ? '31%' : '25%' }} /></>
+                <><col style={{ width: isMobile ? '31%' : '27.5%' }} /><col style={{ width: isMobile ? '31%' : '27.5%' }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 48 : '17%' }} /><col style={{ width: isMobile ? 56 : '17%' }} /><col style={{ width: isMobile ? 72 : '16%' }} /></>
+                <><col style={{ width: isMobile ? 48 : '18%' }} /><col style={{ width: isMobile ? 56 : '19%' }} /><col style={{ width: isMobile ? 72 : '18%' }} /></>
               )}
             </colgroup>
             <thead>
