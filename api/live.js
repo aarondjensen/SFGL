@@ -1,5 +1,4 @@
-// api/live.js — scrapes pgatour.com/leaderboard __NEXT_DATA__ → dehydratedState
-// Targets the "leaderboard" query key specifically.
+// api/live.js — pgatour.com/leaderboard → dehydratedState → leaderboard query → players[].scoringData
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
@@ -19,88 +18,52 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { debug } = req.query;
-
   try {
     const resp = await fetch('https://www.pgatour.com/leaderboard', { headers: HEADERS });
     if (!resp.ok) return res.status(502).json({ error: `pgatour.com ${resp.status}` });
 
     const html = await resp.text();
     const nd   = extractNextData(html);
-    if (!nd) return res.status(200).json({ state: 'pre', players: [], note: 'no __NEXT_DATA__' });
+    if (!nd) return res.status(200).json({ state: 'pre', players: [] });
 
     const queries = nd.props?.pageProps?.dehydratedState?.queries || [];
+    const lbQuery = queries.find(q => Array.isArray(q.queryKey) && q.queryKey[0] === 'leaderboard');
+    const lbData  = lbQuery?.state?.data;
 
-    // Find the leaderboard query
-    const lbQuery = queries.find(q =>
-      Array.isArray(q.queryKey) && q.queryKey[0] === 'leaderboard'
-    );
-
-    if (debug === '1') {
-      return res.status(200).json({
-        lbQueryFound: !!lbQuery,
-        lbDataKeys: lbQuery ? Object.keys(lbQuery.state?.data || {}) : [],
-        lbDataSample: lbQuery ? JSON.stringify(lbQuery.state?.data || {}).slice(0, 2000) : null,
-      });
+    if (!lbData?.players?.length) {
+      return res.status(200).json({ state: 'pre', players: [] });
     }
 
-    if (!lbQuery?.state?.data) {
-      return res.status(200).json({ state: 'pre', players: [], note: 'no leaderboard query data' });
-    }
+    const players = lbData.players.map(row => {
+      const name = row.player?.displayName;
+      if (!name) return null;
 
-    const lbData = lbQuery.state.data;
+      const sd = row.scoringData || {};
 
-    // Walk the leaderboard data to find player rows
-    const players = [];
-    const seen = new Set();
+      // Score: sd.total is "-5", "+2", "E", "0"
+      const totalRaw = sd.total ?? '0';
+      const totalScore = parseInt(totalRaw, 10) || 0;
+      const score = totalScore < 0 ? `${totalScore}` : totalScore > 0 ? `+${totalScore}` : 'E';
 
-    const normScore = (v) => {
-      if (v === null || v === undefined || v === 'E' || v === 0) return { totalScore: 0, score: 'E' };
-      const n = parseInt(v, 10);
-      if (isNaN(n)) return { totalScore: 0, score: 'E' };
-      return { totalScore: n, score: n < 0 ? `${n}` : `+${n}` };
-    };
+      // Position: sd.position is "T1", "1", "CUT" etc
+      const position = sd.position || '';
 
-    const walkForPlayers = (obj) => {
-      if (!obj || typeof obj !== 'object') return;
-      if (Array.isArray(obj)) { obj.forEach(walkForPlayers); return; }
-
-      const name = obj.player?.displayName || obj.player?.fullName ||
-                   obj.displayName || obj.fullName;
-
-      if (name && !seen.has(name)) {
-        const hasPosOrScore = 'total' in obj || 'scoreToPar' in obj || 'thru' in obj ||
-                              'position' in obj || 'currentPosition' in obj || 'status' in obj;
-        if (hasPosOrScore) {
-          seen.add(name);
-
-          const raw = obj.total ?? obj.scoreToPar ?? obj.player?.total ?? obj.player?.scoreToPar ?? 0;
-          const { totalScore, score } = normScore(raw);
-
-          const pos = (obj.position?.displayName || obj.currentPosition || obj.position || '').toString();
-          const statusStr = (obj.status || obj.roundStatus || '').toString().toUpperCase();
-          const isCut = statusStr.includes('CUT') || obj.isCut === true;
-          const isWD  = statusStr.includes('WD') || statusStr.includes('WITHDRAW');
-
-          const thruRaw = obj.thru ?? obj.thruHole ?? obj.currentHole;
-          let thru = '';
-          if (statusStr === 'F' || statusStr === 'FINISHED' || statusStr === 'COMPLETE' || thruRaw === 18) {
-            thru = 'F';
-          } else if (thruRaw != null) {
-            const n = parseInt(thruRaw, 10);
-            if (!isNaN(n) && n >= 0) thru = n.toString();
-          }
-
-          players.push({ name, score, totalScore, position: pos, thru, isCut, isWD });
-        }
+      // Thru: "F*" or "F" = finished, "9" = thru 9, "-" or "" = not started
+      const thruRaw = (sd.thru || '').replace('*', '').trim();
+      const playerState = (sd.playerState || '').toUpperCase();
+      let thru = '';
+      if (playerState === 'COMPLETE' || thruRaw === 'F') {
+        thru = 'F';
+      } else if (thruRaw && thruRaw !== '-') {
+        const n = parseInt(thruRaw, 10);
+        if (!isNaN(n)) thru = n.toString();
       }
 
-      for (const v of Object.values(obj)) {
-        if (v && typeof v === 'object') walkForPlayers(v);
-      }
-    };
+      const isCut = playerState === 'CUT' || position === 'CUT';
+      const isWD  = playerState === 'WD'  || position === 'WD';
 
-    walkForPlayers(lbData);
+      return { name, score, totalScore, position, thru, isCut, isWD };
+    }).filter(Boolean);
 
     const anyStarted = players.some(p => p.thru !== '' || p.isCut || p.isWD);
     const state = anyStarted ? 'in' : 'pre';
