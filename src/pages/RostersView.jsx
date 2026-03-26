@@ -1035,10 +1035,34 @@ export const RostersView = ({
                       // Col 1: Score (live) → Tee Time → ⛳ in field → —
                       let col1;
                       if (liveData?.players?.length) {
-                        const live = liveData.players.find(p => normalize(p.name) === normName);
+                        // Multi-strategy name matching from golfUtils pattern:
+                        // 1. exact normalized full name
+                        // 2. last name only (length > 3)
+                        // 3. partial — one contains the other
+                        // 4. initials+lastName e.g. "sw kim" for "Si Woo Kim"
+                        const buildInitialsKey = (name) => {
+                          const parts = normalize(name).split(' ');
+                          if (parts.length < 2) return null;
+                          const initials = parts.slice(0, -1).map(p => p[0]).join('');
+                          return `${initials} ${parts[parts.length - 1]}`;
+                        };
+                        const rosterLast = normName.split(' ').slice(-1)[0];
+                        const rosterInitialsKey = buildInitialsKey(player.name);
+                        const live = liveData.players.find(p => normalize(p.name) === normName)
+                          || liveData.players.find(p => {
+                            const ln = normalize(p.name).split(' ').slice(-1)[0];
+                            return ln === rosterLast && rosterLast.length > 3;
+                          })
+                          || liveData.players.find(p => {
+                            const ln = normalize(p.name);
+                            return ln.includes(normName) || normName.includes(ln);
+                          })
+                          || (rosterInitialsKey ? liveData.players.find(p => buildInitialsKey(p.name) === rosterInitialsKey) : null);
+                        // Show score whenever state is 'in' or 'post' and player was found
+                        const effectivelyStarted = !!live && (liveData.state === 'in' || liveData.state === 'post');
                         if (live?.cut) {
                           col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>CUT</td>;
-                        } else if (live?.started) {
+                        } else if (effectivelyStarted) {
                           const posColor = live.score?.startsWith('-') ? colors.earningsGreen : live.score === 'E' ? colors.textPrimary : colors.danger;
                           col1 = (
                             <td style={{ padding: '7px 4px', textAlign: 'center' }}>

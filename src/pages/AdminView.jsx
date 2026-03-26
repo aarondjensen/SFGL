@@ -709,6 +709,7 @@ export const AdminView = ({
   // ── Combined OWGR + LIV sync ─────────────────────────────────────────────
   const [owgrStatus, setOwgrStatus] = useState(null);
   const [owgrSummary, setOwgrSummary] = useState('');
+  const [owgrLastSynced, setOwgrLastSynced] = useState(null);
 
   // ── Merge Players ─────────────────────────────────────────────────────────
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -751,6 +752,7 @@ export const AdminView = ({
       setAllPlayers(updatedPlayers);
       await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
       await playerRankingsApi.invalidateCache().catch(() => {});
+      setOwgrLastSynced(new Date().toISOString());
       setOwgrStatus('done');
       setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new`);
     } catch (err) {
@@ -993,9 +995,9 @@ export const AdminView = ({
       {/* ── 3. Update OWGR Rankings ── */}
       <div style={S.section}>
         <div style={S.title}>🌍 Update OWGR Rankings</div>
-        {rankingsLastUpdated && (
+        {(owgrLastSynced || rankingsLastUpdated) && (
           <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Last synced: {new Date(rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            Last synced: {new Date(owgrLastSynced || rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </div>
         )}
         <button
