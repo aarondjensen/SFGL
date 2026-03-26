@@ -1065,13 +1065,10 @@ export const RostersView = ({
                         } else if (live?.isWD) {
                           col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>WD</td>;
                         } else if (hasStarted) {
-                          const posColor = live.score?.startsWith('-') ? colors.earningsGreen : live.score === 'E' ? colors.textPrimary : colors.danger;
+                          const scoreColor = live.score?.startsWith('-') ? colors.danger : colors.textPrimary;
                           col1 = (
-                            <td style={{ padding: '7px 4px', textAlign: 'center' }}>
-                              <div style={{ fontFamily: fonts.mono, fontSize: isMobile ? 13 : 15, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>{live.score || 'E'}</div>
-                              <div style={{ fontFamily: fonts.sans, fontSize: 9, color: isBenched ? dimColor : colors.textMuted, lineHeight: 1.2 }}>
-                                {live.position ? `${live.position} · ` : ''}{live.thru === 'F' ? 'F' : live.thru ? `T${live.thru}` : ''}
-                              </div>
+                            <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 13 : 15, color: isBenched ? dimColor : scoreColor, fontWeight: 600 }}>
+                              {live.score || 'E'}
                             </td>
                           );
                         } else {
