@@ -812,14 +812,15 @@ export const RostersView = ({
             <colgroup>
               <col />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? 80 : 120 }} /><col style={{ width: isMobile ? 72 : 100 }} /></>
+                <><col style={{ width: isMobile ? 90 : 120 }} /><col style={{ width: isMobile ? 80 : 110 }} /></>
               ) : (
                 <><col style={{ width: isMobile ? 52 : 80 }} /><col style={{ width: isMobile ? 68 : 90 }} /><col style={{ width: isMobile ? 80 : 110 }} /></>
               )}
             </colgroup>
             <thead>
-              {/* Row 1: toggles above their respective columns */}
+              {/* Row 1: all 3 toggles — always show all 3 */}
               <tr>
+                {/* All/⛳ — left, spans player col */}
                 <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'left' }}>
                   <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
                     current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
@@ -827,38 +828,25 @@ export const RostersView = ({
                     disabled={!tournamentField?.size} width={isMobile ? 84 : 108}
                     colors={colors} fonts={fonts} />
                 </th>
-                {infoView === 'info' ? (
-                  <>
-                    <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', justifyContent: 'center' }}>
-                        <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
-                          current={infoView} setter={setInfoView}
-                          leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
-                          width={isMobile ? 84 : 108} colors={colors} fonts={fonts} />
-                      </div>
-                    </th>
-                  </>
-                ) : (
-                  <>
-                    <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', justifyContent: 'center' }}>
-                        <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
-                          current={infoView} setter={setInfoView}
-                          leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
-                          width={isMobile ? 84 : 108} colors={colors} fonts={fonts} />
-                      </div>
-                    </th>
-                    <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
-                          current={statsView} setter={setStatsView}
-                          leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
-                          disabled={infoView !== 'stats'} width={isMobile ? 84 : 108}
-                          colors={colors} fonts={fonts} />
-                      </div>
-                    </th>
-                  </>
-                )}
+                {/* Info/Stats — center, spans data cols */}
+                <th colSpan={infoView === 'info' ? 1 : 2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+                      current={infoView} setter={setInfoView}
+                      leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
+                      width={isMobile ? 84 : 108} colors={colors} fonts={fonts} />
+                  </div>
+                </th>
+                {/* SFGL/PGAT — right, always visible, dimmed in Info mode */}
+                <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'right' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
+                      current={statsView} setter={setStatsView}
+                      leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
+                      disabled={infoView !== 'stats'} width={isMobile ? 84 : 108}
+                      colors={colors} fonts={fonts} />
+                  </div>
+                </th>
               </tr>
               {/* Row 2: column headers */}
               <tr>
