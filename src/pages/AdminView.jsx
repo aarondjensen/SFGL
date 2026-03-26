@@ -876,22 +876,17 @@ export const AdminView = ({
           const name = e.target.value;
           setSelectedTourney(name);
           const t = tournaments.find(t => t.name === name);
-          if (t?.completed && t.results?.earningsMap) {
-            const lines = Object.entries(t.results.earningsMap)
-              .sort((a, b) => b[1] - a[1])
-              .map(([player, amt]) => player + ', ' + amt)
-              .join('\n');
+          if (t?.completed && t.results) {
+            const lines = t.results.earningsMap
+              ? Object.entries(t.results.earningsMap).sort((a,b) => b[1]-a[1]).map(([p,a]) => `${p}, ${a}`).join('\n')
+              : '';
             const teamLineups = {};
-            if (t.results.fullLineups) {
-              Object.entries(t.results.fullLineups).forEach(([teamId, lineup]) => {
-                teamLineups[teamId] = [...lineup];
-              });
-            }
-            setManualEntry(prev => ({ ...prev, playerEarnings: lines,
+            if (t.results.fullLineups) Object.entries(t.results.fullLineups).forEach(([id, lu]) => { teamLineups[id] = [...lu]; });
+            setManualEntry(prev => ({
+              ...prev, playerEarnings: lines, teamLineups,
               round1Leaders: t.results.roundLeaders?.round1?.length ? t.results.roundLeaders.round1 : [''],
               round2Leaders: t.results.roundLeaders?.round2?.length ? t.results.roundLeaders.round2 : [''],
               round3Leaders: t.results.roundLeaders?.round3?.length ? t.results.roundLeaders.round3 : [''],
-              teamLineups,
             }));
           } else {
             setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
@@ -900,79 +895,39 @@ export const AdminView = ({
           <option value="">Choose tournament...</option>
           {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
         </select>
-        {/* Fetch button — discovers results automatically by tournament name */}
-        <button
-          onClick={handleFetchPGAResults}
-          disabled={pgaFetching || !selectedTourney}
-          style={{ ...S.btn, marginBottom: 12, ...(!selectedTourney || pgaFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
-        >
+
+        {/* Fetch button — auto-fills earnings + round leaders */}
+        <button onClick={handleFetchPGAResults} disabled={pgaFetching || !selectedTourney}
+          style={{ ...S.btn, marginBottom: 14, ...(!selectedTourney || pgaFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}>
           {pgaFetching ? '⏳ Fetching…' : selectedTourney ? `⛳ Get ${selectedTourney} Results` : '⛳ Get Tournament Results'}
         </button>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-          <RoundLeaderSelect label="R1 Leader" round={1} leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
-          <RoundLeaderSelect label="R2 Leader" round={2} leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
-          <RoundLeaderSelect label="R3 Leader" round={3} leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
-        </div>
-
-          {/* Lineup overrides (only for completed tournaments being reprocessed) */}
-          {tournaments.find(t => t.name === selectedTourney)?.completed && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ ...S.lbl, marginBottom: 6 }}>
-                Starting Lineups
-                <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>— correct if roster was edited</span>
-              </div>
-              {teams.map(team => {
-                const currentLineup = manualEntry.teamLineups[team.id] || [];
-                return (
-                  <div key={team.id} style={{ marginBottom: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, color: colors.textGold, marginBottom: 6, letterSpacing: '0.5px' }}>
-                      {team.name}
-                      <span style={{ color: colors.textMuted, fontWeight: 400, marginLeft: 8 }}>{currentLineup.length}/5 starters</span>
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                      {team.roster.map(p => {
-                        const inLineup = currentLineup.includes(p.name);
-                        return (
-                          <label key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none' }}>
-                            <input type="checkbox" checked={inLineup}
-                              onChange={e => {
-                                const updated = e.target.checked ? [...currentLineup, p.name] : currentLineup.filter(n => n !== p.name);
-                                setManualEntry(prev => ({ ...prev, teamLineups: { ...prev.teamLineups, [team.id]: updated } }));
-                              }}
-                              style={{ accentColor: colors.textGold, width: 13, height: 13 }}
-                            />
-                            <span style={{ fontFamily: fonts.sans, fontSize: 11, color: inLineup ? colors.textPrimary : colors.textMuted }}>
-                              {p.name}{p.limited && <span style={{ color: colors.textGoldDim, marginLeft: 3 }}>★</span>}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+        {/* Round leader overrides — auto-filled by fetch, commish can correct */}
+        {manualEntry.playerEarnings.trim() && (
+          <>
+            <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 8 }}>
+              Round leaders auto-detected — override if incorrect:
             </div>
-          )}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <RoundLeaderSelect label="R1 Leader" round={1} leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
+              <RoundLeaderSelect label="R2 Leader" round={2} leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
+              <RoundLeaderSelect label="R3 Leader" round={3} leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
+            </div>
 
-          <label style={{ ...S.lbl, color: colors.textMuted }}>Player Earnings <span style={{ ...theme.smallText, textTransform: 'none', letterSpacing: 0 }}>— auto-filled by fetch, or enter manually</span></label>
-          <textarea value={manualEntry.playerEarnings} onChange={e => setManualEntry({ ...manualEntry, playerEarnings: e.target.value })}
-            placeholder={'Scottie Scheffler, 3600000\nRory McIlroy, 2160000'} rows={3}
-            style={{ ...theme.input, fontFamily: fonts.mono, fontSize: 11, resize: 'vertical', marginBottom: 8, opacity: 0.75 }} />
-          <div style={{ display: 'flex', gap: 8 }}>
-            {!tournaments.find(t => t.name === selectedTourney)?.completed && (
-              <button onClick={handleManualEntry} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
-                style={{ ...S.btn, flex: 1, ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
-                Process Manual Entry
+            {/* Process / Reprocess */}
+            {!tournaments.find(t => t.name === selectedTourney)?.completed ? (
+              <button onClick={handleManualEntry} disabled={!selectedTourney}
+                style={{ ...S.btn, ...disabledBtn(!selectedTourney) }}>
+                ✅ Process Results
               </button>
-            )}
-            {tournaments.find(t => t.name === selectedTourney)?.completed && (
-              <button onClick={handleReprocess} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
-                style={{ ...S.btn, flex: 1, background: 'rgba(220,150,50,0.12)', border: '1px solid rgba(220,150,50,0.4)', color: 'rgba(220,180,80,0.9)', ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
+            ) : (
+              <button onClick={handleReprocess} disabled={!selectedTourney}
+                style={{ ...S.btn, background: 'rgba(220,150,50,0.12)', border: '1px solid rgba(220,150,50,0.4)', color: 'rgba(220,180,80,0.9)', ...disabledBtn(!selectedTourney) }}>
                 ✏️ Reprocess Tournament
               </button>
             )}
-        </div>
+          </>
+        )}
       </div>
 
       {/* ── 2. Process Waivers ── */}
