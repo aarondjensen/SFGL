@@ -806,27 +806,25 @@ export const RostersView = ({
             </div>
           );
           return (
-            <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
-              {/* All / Playing — far left, fixed width */}
-              <Slider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
-                current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
-                leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
-                disabled={!tournamentField?.size} width={isMobile ? 84 : 108} />
-
-              {/* Info / Stats — flex centered between the two outer toggles */}
-              <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
-                  current={infoView} setter={setInfoView}
-                  leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
+            {/* Toggle bar — outer sliders fixed, table carries Info/Stats alignment */}
+            <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px 0', position: 'relative' }}>
+              {/* All / ⛳ — far left */}
+              <div style={{ flexShrink: 0 }}>
+                <Slider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
+                  current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
+                  leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
+                  disabled={!tournamentField?.size} width={isMobile ? 84 : 108} />
+              </div>
+              {/* Spacer */}
+              <div style={{ flex: 1 }} />
+              {/* SFGL / PGAT — far right */}
+              <div style={{ flexShrink: 0 }}>
+                <Slider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
+                  current={statsView} setter={setStatsView}
+                  leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
+                  disabled={infoView !== 'stats'}
                   width={isMobile ? 84 : 108} />
               </div>
-
-              {/* SFGL / PGAT — far right, fixed width */}
-              <Slider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
-                current={statsView} setter={setStatsView}
-                leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
-                disabled={infoView !== 'stats'}
-                width={isMobile ? 84 : 108} />
 
             </div>
           );
@@ -836,7 +834,7 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? 'auto' : 'calc(100% - 210px)' }} />
+              <col />
               {infoView === 'info' ? (
                 <><col style={{ width: isMobile ? 80 : 105 }} /><col style={{ width: isMobile ? 72 : 105 }} /></>
               ) : (
@@ -844,8 +842,20 @@ export const RostersView = ({
               )}
             </colgroup>
             <thead>
+              {/* Info/Stats toggle row — spans data columns so it's perfectly aligned */}
               <tr>
-                <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)' }}>Player</th>
+                <th scope="col" style={{ padding: '6px 0 4px', borderBottom: 'none' }} />
+                <th scope="col" colSpan={infoView === 'info' ? 2 : 3} style={{ padding: '6px 0 4px', textAlign: 'center', borderBottom: 'none' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+                      current={infoView} setter={setInfoView}
+                      leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
+                      width={isMobile ? 84 : 108} />
+                  </div>
+                </th>
+              </tr>
+              <tr>
+                <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
                 {infoView === 'info' ? (<>
                   <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
                     {liveData?.players?.length
