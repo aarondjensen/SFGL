@@ -140,10 +140,23 @@ const TeamDropdown = ({ teams, value, onChange }) => {
 // ── Waiver Priority Manager ───────────────────────────────────────────────────
 const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor, disabled = false, width = 88, colors, fonts }) => (
   <div style={{ opacity: disabled ? 0.3 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.18s' }}>
-    <div style={{ position: 'relative', display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width }}>
-      <div style={{ position: 'absolute', top: 2, bottom: 2, left: current === rightVal ? 'calc(50% + 1px)' : 2, width: 'calc(50% - 3px)', borderRadius: 2, background: current === leftVal ? 'rgba(100,180,255,0.1)' : 'rgba(80,180,120,0.1)', border: `1px solid ${current === leftVal ? 'rgba(100,180,255,0.35)' : 'rgba(80,180,120,0.35)'}`, transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none' }} />
-      <button onClick={() => setter(leftVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: current === leftVal ? leftColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{leftLabel}</button>
-      <button onClick={() => setter(rightVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: current === rightVal ? rightColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{rightLabel}</button>
+    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width }}>
+      <button onClick={() => setter(leftVal)} style={{
+        flex: 1, padding: '3px 0', borderRadius: 2,
+        background: current === leftVal ? 'rgba(255,255,255,0.08)' : 'none',
+        border: current === leftVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
+        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+        color: current === leftVal ? leftColor : colors.textMuted,
+        cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
+      }}>{leftLabel}</button>
+      <button onClick={() => setter(rightVal)} style={{
+        flex: 1, padding: '3px 0', borderRadius: 2,
+        background: current === rightVal ? 'rgba(255,255,255,0.08)' : 'none',
+        border: current === rightVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
+        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+        color: current === rightVal ? rightColor : colors.textMuted,
+        cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
+      }}>{rightLabel}</button>
     </div>
   </div>
 );
