@@ -138,6 +138,29 @@ const TeamDropdown = ({ teams, value, onChange }) => {
 };
 
 // ── Waiver Priority Manager ───────────────────────────────────────────────────
+const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor, disabled = false, width = 88, colors, fonts }) => (
+  <div style={{ opacity: disabled ? 0.3 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.18s' }}>
+    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width }}>
+      <button onClick={() => setter(leftVal)} style={{
+        flex: 1, padding: '3px 0', borderRadius: 2,
+        background: current === leftVal ? 'rgba(255,255,255,0.08)' : 'none',
+        border: current === leftVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
+        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+        color: current === leftVal ? leftColor : colors.textMuted,
+        cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
+      }}>{leftLabel}</button>
+      <button onClick={() => setter(rightVal)} style={{
+        flex: 1, padding: '3px 0', borderRadius: 2,
+        background: current === rightVal ? 'rgba(255,255,255,0.08)' : 'none',
+        border: current === rightVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
+        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+        color: current === rightVal ? rightColor : colors.textMuted,
+        cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
+      }}>{rightLabel}</button>
+    </div>
+  </div>
+);
+
 const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam }) => {
   const dialog = useDialog();
 
@@ -247,6 +270,11 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
     document.addEventListener('touchstart', handler, { passive: true });
     return () => document.removeEventListener('touchstart', handler);
   }, [tapped]);
+
+  // Reset tapped when lineup edit mode is exited
+  React.useEffect(() => {
+    if (!canEdit) setTapped(false);
+  }, [canEdit]);
 
   // On mobile: first tap reveals the × badge, second tap (on the ×) removes.
   // Tapping elsewhere resets. On desktop: hover reveals ×.
@@ -430,12 +458,15 @@ export const RostersView = ({
     if (!isInLineup && player.limited && player.starts >= MAX_LIMITED_STARTS) {
       dialog.showToast('This player has reached their 12-start limit', 'error'); return;
     }
+    const lastName = player.name.split(' ').pop();
     const newTeams = teams.map(t => {
       if (t.id !== team.id) return t;
       const newLineup = isInLineup ? t.lineup.filter(p => p !== player.name) : [...t.lineup, player.name];
       return { ...t, lineup: newLineup };
     });
     updateTeams(newTeams); // writes to teamsApi (Firebase) + localStorage
+    if (!isInLineup) dialog.showToast(`${lastName} added to lineup`, 'success');
+    else dialog.showToast(`${lastName} removed from lineup`, 'info');
   }, [team, teams, updateTeams, dialog]);
 
 
@@ -603,7 +634,7 @@ export const RostersView = ({
   const sortedRoster = React.useMemo(() => {
     const baseRoster = rosterView === 'playing'
       ? getSortedRoster(currentRoster).filter(p => tournamentField?.has(
-          p.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss')
+          p.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss')
         ))
       : getSortedRoster(currentRoster);
     const roster = baseRoster;
@@ -786,96 +817,83 @@ export const RostersView = ({
       {/* ── Action buttons + roster table ── */}
       <div style={{ ...theme.card }} onClick={() => { if (lineupMode) setLineupMode(false); }}>
 
-        {/* ── 3 slider toggles: Full/Playing · Info/Stats · SFGL/PGAT ── */}
-        {(() => {
-          const Slider = ({ leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor, disabled = false, width = 88 }) => (
-            <div style={{ opacity: disabled ? 0.3 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.18s' }}>
-              <div style={{ position: 'relative', display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width }}>
-                <div style={{ position: 'absolute', top: 2, bottom: 2, left: current === rightVal ? 'calc(50% + 1px)' : 2, width: 'calc(50% - 3px)', borderRadius: 2, background: current === leftVal ? 'rgba(100,180,255,0.1)' : 'rgba(80,180,120,0.1)', border: `1px solid ${current === leftVal ? 'rgba(100,180,255,0.35)' : 'rgba(80,180,120,0.35)'}`, transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none' }} />
-                <button onClick={() => setter(leftVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: current === leftVal ? leftColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{leftLabel}</button>
-                <button onClick={() => setter(rightVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: current === rightVal ? rightColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{rightLabel}</button>
-              </div>
-            </div>
-          );
-          return (
-            <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
-              {/* All / Playing — far left */}
-              <Slider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="Playing"
-                current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
-                leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
-                disabled={!tournamentField?.size} width={isMobile ? 100 : 108} />
 
-              {/* Info / Stats — centered over data columns (right 50% of table, so center = 75%) */}
-              <div style={{ position: 'absolute', left: '72.5%', transform: 'translateX(-50%)' }}>
-                <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
-                  current={infoView} setter={setInfoView}
-                  leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
-                  width={isMobile ? 100 : 108} />
-              </div>
 
-              {/* Spacer to push SFGL/PGAT to far right */}
-              <div style={{ flex: 1 }} />
-
-              {/* SFGL / PGAT — far right */}
-              <Slider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
-                current={statsView} setter={setStatsView}
-                leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
-                disabled={infoView !== 'stats'}
-                width={isMobile ? 100 : 108} />
-
-              {/* Done button — only in lineup mode */}
-              {lineupMode && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setLineupMode(false); }}
-                  style={{
-                    position: 'absolute', left: '50%', transform: 'translateX(-50%)',
-                    padding: '4px 16px', borderRadius: 4, zIndex: 10,
-                    background: 'rgba(80,180,120,0.15)',
-                    border: '1.5px solid rgba(80,180,120,0.5)',
-                    fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
-                    color: colors.success, cursor: 'pointer', transition: 'all 0.15s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.25)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.15)'; }}
-                >✓ Done</button>
-              )}
-            </div>
-          );
-        })()}
+        {/* ── Mobile: all 3 toggles above the table in a flex row ── */}
+        {isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px 4px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+            <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
+              current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
+              leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
+              disabled={!tournamentField?.size} width={80} colors={colors} fonts={fonts} />
+            <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+              current={infoView} setter={setInfoView}
+              leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
+              width={80} colors={colors} fonts={fonts} />
+            <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
+              current={statsView} setter={setStatsView}
+              leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
+              disabled={infoView !== 'stats'} width={80} colors={colors} fonts={fonts} />
+          </div>
+        )}
 
         {/* ── Roster table ── */}
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '38%' : '45%' }} />
-              {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? '31%' : '27.5%' }} /><col style={{ width: isMobile ? '31%' : '27.5%' }} /></>
-              ) : (
-                <><col style={{ width: isMobile ? 48 : '18%' }} /><col style={{ width: isMobile ? 56 : '19%' }} /><col style={{ width: isMobile ? 72 : '18%' }} /></>
-              )}
+              <col style={{ width: isMobile ? '46%' : '50%' }} />
+              <col style={{ width: isMobile ? '17%' : '12.5%' }} />
+              <col style={{ width: isMobile ? '17%' : '12.5%' }} />
+              <col style={{ width: isMobile ? '20%' : '25%' }} />
             </colgroup>
             <thead>
+              {/* Row 1: desktop only — toggles in thead */}
+              {!isMobile && (
+                <tr>
+                  <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'left' }}>
+                    <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
+                      current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
+                      leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
+                      disabled={!tournamentField?.size} width={108} colors={colors} fonts={fonts} />
+                  </th>
+                  <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                      <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+                        current={infoView} setter={setInfoView}
+                        leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
+                        width={108} colors={colors} fonts={fonts} />
+                    </div>
+                  </th>
+                  <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'right' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
+                        current={statsView} setter={setStatsView}
+                        leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
+                        disabled={infoView !== 'stats'} width={108} colors={colors} fonts={fonts} />
+                    </div>
+                  </th>
+                </tr>
+              )}
+              {/* Row 2: column headers */}
               <tr>
-                <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)' }}>Player</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
                 {infoView === 'info' ? (<>
-                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
-                    {liveData?.players?.length
-                      ? (liveData.state === 'in' ? 'Score' : (isMobile ? <>Tee<br/>Time</> : 'Tee Time'))
-                      : Object.keys(teeTimeMap).length > 0 ? <>{isMobile ? <>Tee<br/>Time</> : 'Tee Time'}{sortArrow('teeTime')}</>
-                      : 'Field'}
+                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: isMobile ? 'right' : 'center', whiteSpace: 'nowrap', paddingRight: isMobile ? 4 : 0, ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
+                    {liveData?.players?.length ? (liveData.state === 'in' ? 'Score' : 'Tee Time') : Object.keys(teeTimeMap).length > 0 ? <>Tee Time{sortArrow('teeTime')}</> : 'Field'}
                   </th>
                   <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
                     Odds{sortArrow('odds')}
                   </th>
+                  <th scope="col" style={{ ...theme.tableHeaderCell }} />
                 </>) : (<>
                   <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
-                    {statsView === 'sfgl' ? 'Starts' : 'OWGR'}{sortArrow('starts')}
+                    OWGR{sortArrow('starts')}
                   </th>
                   <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
                     {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts')}
                   </th>
                   <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)') }}>
-                    Earnings{sortArrow('earnings')}
+                    {statsView === 'sfgl' ? 'Earnings' : 'PGA $'}{sortArrow('earnings')}
                   </th>
                 </>)}
               </tr>
@@ -972,10 +990,11 @@ export const RostersView = ({
                         </button>
 
                         {/* Name + metadata */}
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <span style={{
-                              fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, fontWeight: 500,
+                              fontFamily: fonts.sans, fontSize: isMobile ? 14 : 15, fontWeight: 500,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               color: player.limited
                                 ? (isBenched ? 'rgba(245,197,24,0.4)' : colors.textGold)
                                 : player.unlimited
@@ -984,6 +1003,9 @@ export const RostersView = ({
                             }}>
                               {displayName(player.name, isMobile)}
                             </span>
+                            {tournamentField?.has(player.name) && (
+                              <span title="In this week's field" style={{ fontSize: 11, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
+                            )}
                             {player.limited && (
                               <span style={{
                                 fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
@@ -993,10 +1015,7 @@ export const RostersView = ({
                               </span>
                             )}
                             {player.unlimited && (
-                              <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)' }}>♾️</span>
-                            )}
-                            {tournamentField?.has(player.name) && (
-                              <span title="In this week's field" style={{ fontSize: 11, lineHeight: 1, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
+                              <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)', flexShrink: 0 }}>♾️</span>
                             )}
                           </div>
                           <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
@@ -1006,7 +1025,7 @@ export const RostersView = ({
                       </div>
                     </td>
 
-                    {/* ── Info columns: Tee Time/Score + Odds ── */}
+                    {/* ── Info columns: Tee Time/Score + Odds + empty Earnings ── */}
                     {infoView === 'info' && (() => {
                       const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
                       const normName = normalize(player.name);
@@ -1023,7 +1042,7 @@ export const RostersView = ({
                           const posColor = live.score?.startsWith('-') ? colors.earningsGreen : live.score === 'E' ? colors.textPrimary : colors.danger;
                           col1 = (
                             <td style={{ padding: '7px 4px', textAlign: 'center' }}>
-                              <div style={{ fontFamily: fonts.mono, fontSize: 12, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>{live.score || '—'}</div>
+                              <div style={{ fontFamily: fonts.mono, fontSize: isMobile ? 13 : 15, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>{live.score || '—'}</div>
                               <div style={{ fontFamily: fonts.sans, fontSize: 9, color: isBenched ? dimColor : colors.textMuted, lineHeight: 1.2 }}>
                                 {live.position ? `${live.position} · ` : ''}{live.thru === 'F' ? 'F' : live.thru ? `T${live.thru}` : ''}
                               </div>
@@ -1031,12 +1050,12 @@ export const RostersView = ({
                           );
                         } else {
                           const tt = live?.teeTime;
-                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: tt ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>{tt ? tt.replace(' AM', 'a').replace(' PM', 'p') : <span style={{ opacity: 0.25 }}>—</span>}</td>;
+                          col1 = <td style={{ padding: '7px 4px', textAlign: isMobile ? 'right' : 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (tt ? colors.textPrimary : colors.textMuted) }}>{tt ? tt.replace(' AM', 'a').replace(' PM', 'p') : <span style={{ opacity: 0.25 }}>—</span>}</td>;
                         }
                       } else {
                         const teeTime = teeTimeMap[normName];
                         col1 = (
-                          <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: teeTime ? (isBenched ? dimColor : colors.textSecondary) : inField ? colors.textMuted : 'transparent' }}>
+                          <td style={{ padding: '7px 4px', textAlign: isMobile ? 'right' : 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (teeTime ? colors.textPrimary : inField ? colors.textMuted : 'transparent') }}>
                             {teeTime ? teeTime.replace(' AM', 'a').replace(' PM', 'p') : inField ? '⛳' : '—'}
                           </td>
                         );
@@ -1044,27 +1063,29 @@ export const RostersView = ({
 
                       // Col 2: Odds
                       const col2 = (
-                        <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: playerOdds ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>
+                        <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (playerOdds ? colors.textPrimary : colors.textMuted) }}>
                           {playerOdds || <span style={{ opacity: 0.25 }}>—</span>}
                         </td>
                       );
 
-                      return <>{col1}{col2}</>;
+                      return <>{col1}{col2}<td /></>;
                     })()}
 
-                    {/* ── Stats columns: Starts + Cuts + Earnings ── */}
+                    {/* ── Stats columns: OWGR + Cuts + Earnings ── */}
                     {infoView === 'stats' && (() => {
-                      const events = statsView === 'sfgl' ? (sfglCutsMap[player.name]?.starts ?? player.starts ?? 0) : (worldRankMap[player.name] || null);
+                      const owgr = worldRankMap[player.name] || null;
                       const sfglEntry = sfglCutsMap[player.name] || { cuts: 0, starts: 0 };
+                      // Cuts col: SFGL = cuts/starts ratio, PGAT = PGA Tour cuts made
                       const cuts = statsView === 'sfgl' ? sfglEntry.cuts : (globalPlayerStats[player.name]?.cutsMade || 0);
-                      const cutsEvents = statsView === 'sfgl' ? sfglEntry.starts : (globalPlayerStats[player.name]?.cutsMade || 0);
+                      const cutsOf = statsView === 'sfgl' ? sfglEntry.starts : (globalPlayerStats[player.name]?.eventsPlayed || 0);
+                      // Earnings col: SFGL = SFGL earnings, PGAT = PGA Tour earnings
                       const amount = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0);
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
                         <>
-                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, color: isBenched ? dimColor : colors.textSecondary }}>{statsView === 'pgat' ? (events ? `#${events}` : '—') : events}</td>
-                          <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: isBenched ? dimColor : colors.textSecondary }}>{cuts}/{cutsEvents}</td>
-                          <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 12 : 12, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>${amount.toLocaleString()}</td>
+                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{owgr ? `#${owgr}` : '—'}</td>
+                          <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{cuts}/{cutsOf}</td>
+                          <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 13 : 15, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>${amount.toLocaleString()}</td>
                         </>
                       );
                     })()}
