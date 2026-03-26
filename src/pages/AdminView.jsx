@@ -424,80 +424,6 @@ export const AdminView = ({
       return names.map(name => ({ name, team: team.name }));
     }).sort((a, b) => a.name.localeCompare(b.name));
 
-    const MergePickerComponent = ({ label, search, onSearch, selected, onSelect, onClear, filtered }) => (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <label style={S.lbl}>{label}</label>
-      <div style={{ position: 'relative' }}>
-        <input
-          value={selected || search}
-          onChange={e => { onSearch(e.target.value); onSelect(null); }}
-          placeholder="Search player..."
-          style={{ ...theme.input, width: '100%', fontSize: 13,
-            border: selected ? `1px solid ${colors.textGold}` : undefined }}
-        />
-        {!selected && filtered.length > 0 && (
-          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
-            background: '#0f1d35', border: `1px solid ${colors.border}`, borderRadius: 3,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
-            {filtered.map(name => (
-              <button key={name} onClick={() => { onSelect(name); onSearch(name); }}
-                style={{ display: 'block', width: '100%', textAlign: 'left',
-                  padding: '8px 12px', background: 'none', border: 'none',
-                  fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary,
-                  cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              >{name}</button>
-            ))}
-          </div>
-        )}
-      </div>
-      {selected && (
-        <button onClick={onClear}
-          style={{ ...theme.btnSecondary, marginTop: 4, padding: '2px 8px', fontSize: 10 }}>✕ Clear</button>
-      )}
-    </div>
-  );
-
-  const handleMergeAction = async () => {
-    if (!mergePlayer1 || !mergePlayer2) return;
-    if (mergePlayer1 === mergePlayer2) { setMergeError('Players must be different'); return; }
-    const confirmed = await dialog.showConfirm(
-      'Merge Players',
-      `Merge "${mergePlayer1}" into "${mergePlayer2}"?\n\nThis will:\n• Rename "${mergePlayer1}" to "${mergePlayer2}" on all rosters and transactions\n• Delete the "${mergePlayer1}" Firebase document\n\nThis cannot be undone.`,
-      { type: 'danger', confirmText: 'Merge' }
-    );
-    if (!confirmed) return;
-    setMergeStatus('merging');
-    setMergeError('');
-    try {
-      const updatedTeams = teams.map(t => ({
-        ...t,
-        roster: (t.roster || []).map(p => p.name === mergePlayer1 ? { ...p, name: mergePlayer2 } : p),
-        lineup: (t.lineup || []).map(n => n === mergePlayer1 ? mergePlayer2 : n),
-      }));
-      const updatedTx = transactions.map(tx => ({
-        ...tx,
-        ...(tx.player === mergePlayer1 && { player: mergePlayer2 }),
-        ...(tx.droppedPlayer === mergePlayer1 && { droppedPlayer: mergePlayer2 }),
-      }));
-      await Promise.all([
-        ...updatedTeams.map(t => teamsApi.update(t.id, t)),
-        sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, updatedTx),
-        playersApi.addAlias(mergePlayer2, mergePlayer1).catch(() => {}),
-        playersApi.delete(mergePlayer1).catch(() => {}),
-      ]);
-      updateTeams(updatedTeams);
-      setTransactions(updatedTx);
-      setMergeStatus('done');
-      dialog.showToast(`Merged "${mergePlayer1}" → "${mergePlayer2}"`, 'success');
-      setMergePlayer1(null); setMergePlayer2(null);
-      setMergeSearch1(''); setMergeSearch2('');
-    } catch (err) {
-      setMergeStatus('error');
-      setMergeError(err.message || 'Merge failed');
-    }
-  };
 
   return (
       <div style={{ flex: 1 }}>
@@ -1234,49 +1160,81 @@ export const AdminView = ({
 
 
       {/* ── 7. Merge Players ── */}
-      {(() => {
-        const allNames = [...new Set([
-          ...allPlayers.map(p => p.name),
-          ...teams.flatMap(t => (t.roster || []).map(p => p.name)),
-        ])].sort();
-        const filtered1 = mergeSearch1.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(mergeSearch1.toLowerCase())).slice(0, 8) : [];
-        const filtered2 = mergeSearch2.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(mergeSearch2.toLowerCase())).slice(0, 8) : [];
-
-        const MergePicker = MergePickerComponent;
-
-        return (
-          <div style={S.section}>
-            <button onClick={() => setMergeOpen(o => !o)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              <div style={S.title}>🔀 Merge Players</div>
-              <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{mergeOpen ? '▲' : '▼'}</span>
-            </button>
-            {mergeOpen && (
-              <>
-                <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-                  Combine two player records when a name mismatch exists (e.g. "Nico" vs "Nicolas"). The first player will be renamed to the second everywhere — rosters, transactions, and Firebase.
+      <div style={S.section}>
+        <button onClick={() => setMergeOpen(o => !o)}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          <div style={S.title}>🔀 Merge Players</div>
+          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{mergeOpen ? '▲' : '▼'}</span>
+        </button>
+        {mergeOpen && (() => {
+          const allNames = [...new Set([
+            ...allPlayers.map(p => p.name),
+            ...teams.flatMap(t => (t.roster || []).map(p => p.name)),
+          ])].sort();
+          const filtered1 = mergeSearch1.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(mergeSearch1.toLowerCase())).slice(0, 8) : [];
+          const filtered2 = mergeSearch2.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(mergeSearch2.toLowerCase())).slice(0, 8) : [];
+          const pickerStyle = (selected) => ({ ...theme.input, width: '100%', fontSize: 13, border: selected ? `1px solid ${colors.textGold}` : undefined });
+          const dropdownStyle = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#0f1d35', border: `1px solid ${colors.border}`, borderRadius: 3, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' };
+          const optionStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` };
+          return (
+            <>
+              <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
+                Combine two player records when a name mismatch exists (e.g. "Nico" vs "Nicolas"). The first player will be renamed to the second everywhere — rosters, transactions, and Firebase.
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                {/* Picker 1 */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <label style={S.lbl}>Rename this player...</label>
+                  <div style={{ position: 'relative' }}>
+                    <input value={mergePlayer1 || mergeSearch1} onChange={e => { setMergeSearch1(e.target.value); setMergePlayer1(null); }} placeholder="Search player..." style={pickerStyle(mergePlayer1)} />
+                    {!mergePlayer1 && filtered1.length > 0 && (
+                      <div style={dropdownStyle}>
+                        {filtered1.map(name => <button key={name} onClick={() => { setMergePlayer1(name); setMergeSearch1(name); }} style={optionStyle} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>{name}</button>)}
+                      </div>
+                    )}
+                  </div>
+                  {mergePlayer1 && <button onClick={() => { setMergePlayer1(null); setMergeSearch1(''); }} style={{ ...theme.btnSecondary, marginTop: 4, padding: '2px 8px', fontSize: 10 }}>✕ Clear</button>}
                 </div>
-                <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-                  <MergePicker label="Rename this player..." search={mergeSearch1} onSearch={setMergeSearch1}
-                    selected={mergePlayer1} onSelect={setMergePlayer1} onClear={() => { setMergePlayer1(null); setMergeSearch1(''); }} filtered={filtered1} />
-                  <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20, color: colors.textMuted, fontSize: 16 }}>→</div>
-                  <MergePicker label="...to this name" search={mergeSearch2} onSearch={setMergeSearch2}
-                    selected={mergePlayer2} onSelect={setMergePlayer2} onClear={() => { setMergePlayer2(null); setMergeSearch2(''); }} filtered={filtered2} />
+                <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20, color: colors.textMuted, fontSize: 16 }}>→</div>
+                {/* Picker 2 */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <label style={S.lbl}>...to this name</label>
+                  <div style={{ position: 'relative' }}>
+                    <input value={mergePlayer2 || mergeSearch2} onChange={e => { setMergeSearch2(e.target.value); setMergePlayer2(null); }} placeholder="Search player..." style={pickerStyle(mergePlayer2)} />
+                    {!mergePlayer2 && filtered2.length > 0 && (
+                      <div style={dropdownStyle}>
+                        {filtered2.map(name => <button key={name} onClick={() => { setMergePlayer2(name); setMergeSearch2(name); }} style={optionStyle} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>{name}</button>)}
+                      </div>
+                    )}
+                  </div>
+                  {mergePlayer2 && <button onClick={() => { setMergePlayer2(null); setMergeSearch2(''); }} style={{ ...theme.btnSecondary, marginTop: 4, padding: '2px 8px', fontSize: 10 }}>✕ Clear</button>}
                 </div>
-                {mergeError && <div style={{ ...theme.smallText, color: colors.danger, marginBottom: 8 }}>{mergeError}</div>}
-                <button
-                  onClick={handleMerge}
-                  disabled={!mergePlayer1 || !mergePlayer2 || mergeStatus === 'merging'}
-                  style={{ ...S.btn, background: 'rgba(180,100,100,0.15)', border: '1px solid rgba(200,80,80,0.4)',
-                    color: 'rgba(220,120,120,0.95)',
-                    ...disabledBtn(!mergePlayer1 || !mergePlayer2 || mergeStatus === 'merging') }}>
-                  {mergeStatus === 'merging' ? '⏳ Merging…' : '🔀 Merge Players'}
-                </button>
-              </>
-            )}
-          </div>
-        );
-      })()}
+              </div>
+              {mergeError && <div style={{ ...theme.smallText, color: colors.danger, marginBottom: 8 }}>{mergeError}</div>}
+              <button
+                onClick={async () => {
+                  if (!mergePlayer1 || !mergePlayer2) return;
+                  if (mergePlayer1 === mergePlayer2) { setMergeError('Players must be different'); return; }
+                  const confirmed = await dialog.showConfirm('Merge Players', `Merge "${mergePlayer1}" into "${mergePlayer2}"?\n\nThis will:\n• Rename "${mergePlayer1}" to "${mergePlayer2}" on all rosters and transactions\n• Delete the "${mergePlayer1}" Firebase document\n\nThis cannot be undone.`, { type: 'danger', confirmText: 'Merge' });
+                  if (!confirmed) return;
+                  setMergeStatus('merging'); setMergeError('');
+                  try {
+                    const updatedTeams = teams.map(t => ({ ...t, roster: (t.roster || []).map(p => p.name === mergePlayer1 ? { ...p, name: mergePlayer2 } : p), lineup: (t.lineup || []).map(n => n === mergePlayer1 ? mergePlayer2 : n) }));
+                    const updatedTx = transactions.map(tx => ({ ...tx, ...(tx.player === mergePlayer1 && { player: mergePlayer2 }), ...(tx.droppedPlayer === mergePlayer1 && { droppedPlayer: mergePlayer2 }) }));
+                    await Promise.all([...updatedTeams.map(t => teamsApi.update(t.id, t)), sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, updatedTx), playersApi.addAlias(mergePlayer2, mergePlayer1).catch(() => {}), playersApi.delete(mergePlayer1).catch(() => {})]);
+                    updateTeams(updatedTeams); setTransactions(updatedTx);
+                    setMergeStatus('done');
+                    dialog.showToast(`Merged "${mergePlayer1}" → "${mergePlayer2}"`, 'success');
+                    setMergePlayer1(null); setMergePlayer2(null); setMergeSearch1(''); setMergeSearch2('');
+                  } catch (err) { setMergeStatus('error'); setMergeError(err.message || 'Merge failed'); }
+                }}
+                disabled={!mergePlayer1 || !mergePlayer2 || mergeStatus === 'merging'}
+                style={{ ...S.btn, background: 'rgba(180,100,100,0.15)', border: '1px solid rgba(200,80,80,0.4)', color: 'rgba(220,120,120,0.95)', ...disabledBtn(!mergePlayer1 || !mergePlayer2 || mergeStatus === 'merging') }}>
+                {mergeStatus === 'merging' ? '⏳ Merging…' : '🔀 Merge Players'}
+              </button>
+            </>
+          );
+        })()}
 
       {/* ── 8. Season Settings ── */}
       <div style={S.section}>
