@@ -810,13 +810,18 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '35%' : '34%' }} />
-              <col style={{ width: isMobile ? '20%' : '22%' }} />
-              <col style={{ width: isMobile ? '20%' : '22%' }} />
-              <col style={{ width: isMobile ? '25%' : '22%' }} />
+              <col style={{ width: isMobile ? '40%' : '50%' }} />
+              {infoView === 'info' ? (<>
+                <col style={{ width: isMobile ? '30%' : '25%' }} />
+                <col style={{ width: isMobile ? '30%' : '25%' }} />
+              </>) : (<>
+                <col style={{ width: isMobile ? '20%' : '17%' }} />
+                <col style={{ width: isMobile ? '20%' : '17%' }} />
+                <col style={{ width: isMobile ? '20%' : '16%' }} />
+              </>)}
             </colgroup>
             <thead>
-              {/* Row 1: all 3 toggles — always 4 cols: player | info/stats(x2) | sfgl/pgat */}
+              {/* Row 1: all 3 toggles always visible */}
               <tr>
                 <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'left' }}>
                   <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
@@ -825,7 +830,7 @@ export const RostersView = ({
                     disabled={!tournamentField?.size} width={isMobile ? 84 : 108}
                     colors={colors} fonts={fonts} />
                 </th>
-                <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
+                <th colSpan={infoView === 'info' ? 1 : 2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
                     <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
                       current={infoView} setter={setInfoView}
@@ -852,9 +857,6 @@ export const RostersView = ({
                   </th>
                   <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
                     Odds{sortArrow('odds')}
-                  </th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, color: 'rgba(255,255,255,0.2)', borderTop: `1px solid ${colors.borderSubtle}` }}>
-                    Earnings
                   </th>
                 </>) : (<>
                   <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
@@ -1039,7 +1041,7 @@ export const RostersView = ({
                         </td>
                       );
 
-                      return <>{col1}{col2}<td /></>;
+                      return <>{col1}{col2}</>;
                     })()}
 
                     {/* ── Stats columns: OWGR + Cuts + Earnings ── */}
