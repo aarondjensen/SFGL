@@ -139,34 +139,38 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
 
 const MergePlayersPanel = ({
   allPlayers, teams, transactions,
-  mergeSearch1, setMergeSearch1, mergeSearch2, setMergeSearch2,
-  mergePlayer1, setMergePlayer1, mergePlayer2, setMergePlayer2,
-  mergeStatus, setMergeStatus, mergeError, setMergeError,
   dialog, updateTeams, setTransactions,
   theme, colors, fonts, S, teamsApi, sfglDataApi, playersApi, STORAGE_KEYS, disabledBtn,
 }) => {
+  const [search1, setSearch1] = React.useState('');
+  const [search2, setSearch2] = React.useState('');
+  const [player1, setPlayer1] = React.useState(null);
+  const [player2, setPlayer2] = React.useState(null);
+  const [status,  setStatus]  = React.useState('');
+  const [error,   setError]   = React.useState('');
+
   const allNames = React.useMemo(() =>
     [...new Set([...allPlayers.map(p => p.name), ...teams.flatMap(t => (t.roster||[]).map(p => p.name))])].sort(),
     [allPlayers, teams]
   );
-  const f1 = mergeSearch1.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(mergeSearch1.toLowerCase())).slice(0, 8) : [];
-  const f2 = mergeSearch2.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(mergeSearch2.toLowerCase())).slice(0, 8) : [];
+  const f1 = search1.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(search1.toLowerCase())).slice(0, 8) : [];
+  const f2 = search2.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(search2.toLowerCase())).slice(0, 8) : [];
   const iStyle = (sel) => ({ ...theme.input, width: '100%', fontSize: 13, border: sel ? `1px solid ${colors.textGold}` : undefined });
   const dStyle = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#0f1d35', border: `1px solid ${colors.border}`, borderRadius: 3, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' };
   const oStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` };
 
   const doMerge = async () => {
-    if (!mergePlayer1 || !mergePlayer2 || mergePlayer1 === mergePlayer2) { setMergeError('Select two different players'); return; }
-    if (!await dialog.showConfirm('Merge Players', `Rename "${mergePlayer1}" → "${mergePlayer2}" everywhere?`, { type: 'danger', confirmText: 'Merge' })) return;
-    setMergeStatus('merging'); setMergeError('');
+    if (!player1 || !player2 || player1 === player2) { setError('Select two different players'); return; }
+    if (!await dialog.showConfirm('Merge Players', `Rename "${player1}" → "${player2}" everywhere?`, { type: 'danger', confirmText: 'Merge' })) return;
+    setStatus('merging'); setError('');
     try {
-      const uTeams = teams.map(t => ({ ...t, roster: (t.roster||[]).map(p => p.name===mergePlayer1?{...p,name:mergePlayer2}:p), lineup: (t.lineup||[]).map(n=>n===mergePlayer1?mergePlayer2:n) }));
-      const uTx = transactions.map(tx => ({ ...tx, ...(tx.player===mergePlayer1&&{player:mergePlayer2}), ...(tx.droppedPlayer===mergePlayer1&&{droppedPlayer:mergePlayer2}) }));
-      await Promise.all([...uTeams.map(t=>teamsApi.update(t.id,t)), sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS,uTx), playersApi.addAlias(mergePlayer2,mergePlayer1).catch(()=>{}), playersApi.delete(mergePlayer1).catch(()=>{})]);
-      updateTeams(uTeams); setTransactions(uTx); setMergeStatus('done');
-      dialog.showToast(`Merged "${mergePlayer1}" → "${mergePlayer2}"`, 'success');
-      setMergePlayer1(null); setMergePlayer2(null); setMergeSearch1(''); setMergeSearch2('');
-    } catch (err) { setMergeStatus('error'); setMergeError(err.message||'Merge failed'); }
+      const uTeams = teams.map(t => ({ ...t, roster: (t.roster||[]).map(p => p.name===player1?{...p,name:player2}:p), lineup: (t.lineup||[]).map(n=>n===player1?player2:n) }));
+      const uTx = transactions.map(tx => ({ ...tx, ...(tx.player===player1&&{player:player2}), ...(tx.droppedPlayer===player1&&{droppedPlayer:player2}) }));
+      await Promise.all([...uTeams.map(t=>teamsApi.update(t.id,t)), sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS,uTx), playersApi.addAlias(player2,player1).catch(()=>{}), playersApi.delete(player1).catch(()=>{})]);
+      updateTeams(uTeams); setTransactions(uTx); setStatus('done');
+      dialog.showToast(`Merged "${player1}" → "${player2}"`, 'success');
+      setPlayer1(null); setPlayer2(null); setSearch1(''); setSearch2('');
+    } catch (err) { setStatus('error'); setError(err.message||'Merge failed'); }
   };
 
   return (
@@ -176,25 +180,25 @@ const MergePlayersPanel = ({
         <div style={{ flex: 1, minWidth: 0 }}>
           <label style={S.lbl}>Rename this player...</label>
           <div style={{ position: 'relative' }}>
-            <input value={mergePlayer1||mergeSearch1} onChange={e=>{setMergeSearch1(e.target.value);setMergePlayer1(null);}} placeholder="Search..." style={iStyle(mergePlayer1)} />
-            {!mergePlayer1&&f1.length>0&&<div style={dStyle}>{f1.map(n=><button key={n} onClick={()=>{setMergePlayer1(n);setMergeSearch1(n);}} style={oStyle} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.07)'} onMouseLeave={e=>e.currentTarget.style.background='none'}>{n}</button>)}</div>}
+            <input value={player1||search1} onChange={e=>{setSearch1(e.target.value);setPlayer1(null);}} placeholder="Search..." style={iStyle(player1)} />
+            {!player1&&f1.length>0&&<div style={dStyle}>{f1.map(n=><button key={n} onClick={()=>{setPlayer1(n);setSearch1(n);}} style={oStyle} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.07)'} onMouseLeave={e=>e.currentTarget.style.background='none'}>{n}</button>)}</div>}
           </div>
-          {mergePlayer1&&<button onClick={()=>{setMergePlayer1(null);setMergeSearch1('');}} style={{...theme.btnSecondary,marginTop:4,padding:'2px 8px',fontSize:10}}>✕ Clear</button>}
+          {player1&&<button onClick={()=>{setPlayer1(null);setSearch1('');}} style={{...theme.btnSecondary,marginTop:4,padding:'2px 8px',fontSize:10}}>✕ Clear</button>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20, color: colors.textMuted, fontSize: 16 }}>→</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <label style={S.lbl}>...to this name</label>
           <div style={{ position: 'relative' }}>
-            <input value={mergePlayer2||mergeSearch2} onChange={e=>{setMergeSearch2(e.target.value);setMergePlayer2(null);}} placeholder="Search..." style={iStyle(mergePlayer2)} />
-            {!mergePlayer2&&f2.length>0&&<div style={dStyle}>{f2.map(n=><button key={n} onClick={()=>{setMergePlayer2(n);setMergeSearch2(n);}} style={oStyle} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.07)'} onMouseLeave={e=>e.currentTarget.style.background='none'}>{n}</button>)}</div>}
+            <input value={player2||search2} onChange={e=>{setSearch2(e.target.value);setPlayer2(null);}} placeholder="Search..." style={iStyle(player2)} />
+            {!player2&&f2.length>0&&<div style={dStyle}>{f2.map(n=><button key={n} onClick={()=>{setPlayer2(n);setSearch2(n);}} style={oStyle} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.07)'} onMouseLeave={e=>e.currentTarget.style.background='none'}>{n}</button>)}</div>}
           </div>
-          {mergePlayer2&&<button onClick={()=>{setMergePlayer2(null);setMergeSearch2('');}} style={{...theme.btnSecondary,marginTop:4,padding:'2px 8px',fontSize:10}}>✕ Clear</button>}
+          {player2&&<button onClick={()=>{setPlayer2(null);setSearch2('');}} style={{...theme.btnSecondary,marginTop:4,padding:'2px 8px',fontSize:10}}>✕ Clear</button>}
         </div>
       </div>
-      {mergeError&&<div style={{...theme.smallText,color:colors.danger,marginBottom:8}}>{mergeError}</div>}
-      <button onClick={doMerge} disabled={!mergePlayer1||!mergePlayer2||mergeStatus==='merging'}
-        style={{...S.btn,background:'rgba(180,100,100,0.15)',border:'1px solid rgba(200,80,80,0.4)',color:'rgba(220,120,120,0.95)',...disabledBtn(!mergePlayer1||!mergePlayer2||mergeStatus==='merging')}}>
-        {mergeStatus==='merging'?'⏳ Merging…':'🔀 Merge Players'}
+      {error&&<div style={{...theme.smallText,color:colors.danger,marginBottom:8}}>{error}</div>}
+      <button onClick={doMerge} disabled={!player1||!player2||status==='merging'}
+        style={{...S.btn,background:'rgba(180,100,100,0.15)',border:'1px solid rgba(200,80,80,0.4)',color:'rgba(220,120,120,0.95)',...disabledBtn(!player1||!player2||status==='merging')}}>
+        {status==='merging'?'⏳ Merging…':'🔀 Merge Players'}
       </button>
     </>
   );
@@ -707,13 +711,7 @@ export const AdminView = ({
   const [owgrSummary, setOwgrSummary] = useState('');
 
   // ── Merge Players ─────────────────────────────────────────────────────────
-  const [mergeOpen,    setMergeOpen]    = useState(false);
-  const [mergeSearch1, setMergeSearch1] = useState('');
-  const [mergeSearch2, setMergeSearch2] = useState('');
-  const [mergePlayer1, setMergePlayer1] = useState(null);
-  const [mergePlayer2, setMergePlayer2] = useState(null);
-  const [mergeStatus,  setMergeStatus]  = useState('');
-  const [mergeError,   setMergeError]   = useState('');
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   const handleSyncData = async () => {
     setOwgrStatus('fetching');
@@ -1166,12 +1164,6 @@ export const AdminView = ({
         </button>
         {mergeOpen && <MergePlayersPanel
           allPlayers={allPlayers} teams={teams} transactions={transactions}
-          mergeSearch1={mergeSearch1} setMergeSearch1={setMergeSearch1}
-          mergeSearch2={mergeSearch2} setMergeSearch2={setMergeSearch2}
-          mergePlayer1={mergePlayer1} setMergePlayer1={setMergePlayer1}
-          mergePlayer2={mergePlayer2} setMergePlayer2={setMergePlayer2}
-          mergeStatus={mergeStatus} setMergeStatus={setMergeStatus}
-          mergeError={mergeError} setMergeError={setMergeError}
           dialog={dialog} updateTeams={updateTeams} setTransactions={setTransactions}
           theme={theme} colors={colors} fonts={fonts} S={S}
           teamsApi={teamsApi} sfglDataApi={sfglDataApi} playersApi={playersApi}
