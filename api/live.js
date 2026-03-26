@@ -1,4 +1,5 @@
 // api/live.js — scrapes pgatour.com/leaderboard __NEXT_DATA__ → dehydratedState
+// Targets the "leaderboard" query key specifically.
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
@@ -28,35 +29,36 @@ export default async function handler(req, res) {
     const nd   = extractNextData(html);
     if (!nd) return res.status(200).json({ state: 'pre', players: [], note: 'no __NEXT_DATA__' });
 
-    const dehydrated = nd.props?.pageProps?.dehydratedState;
+    const queries = nd.props?.pageProps?.dehydratedState?.queries || [];
+
+    // Find the leaderboard query
+    const lbQuery = queries.find(q =>
+      Array.isArray(q.queryKey) && q.queryKey[0] === 'leaderboard'
+    );
 
     if (debug === '1') {
-      // Show the structure of dehydratedState so we can find players
-      const queries = dehydrated?.queries || [];
       return res.status(200).json({
-        queryCount: queries.length,
-        queryKeys: queries.map(q => JSON.stringify(q.queryKey)).slice(0, 20),
-        // Show first query that has substantial data
-        firstBigQuery: queries.find(q => JSON.stringify(q.state?.data || {}).length > 500)
-          ? {
-              key: queries.find(q => JSON.stringify(q.state?.data || {}).length > 500).queryKey,
-              dataKeys: Object.keys(queries.find(q => JSON.stringify(q.state?.data || {}).length > 500).state?.data || {}),
-              dataSample: JSON.stringify(queries.find(q => JSON.stringify(q.state?.data || {}).length > 500).state?.data || {}).slice(0, 1000),
-            }
-          : null,
+        lbQueryFound: !!lbQuery,
+        lbDataKeys: lbQuery ? Object.keys(lbQuery.state?.data || {}) : [],
+        lbDataSample: lbQuery ? JSON.stringify(lbQuery.state?.data || {}).slice(0, 2000) : null,
       });
     }
 
-    // Walk dehydratedState queries to find leaderboard players
-    const queries = dehydrated?.queries || [];
+    if (!lbQuery?.state?.data) {
+      return res.status(200).json({ state: 'pre', players: [], note: 'no leaderboard query data' });
+    }
+
+    const lbData = lbQuery.state.data;
+
+    // Walk the leaderboard data to find player rows
     const players = [];
     const seen = new Set();
 
     const normScore = (v) => {
-      if (v === null || v === undefined || v === 'E') return { totalScore: 0, score: 'E' };
+      if (v === null || v === undefined || v === 'E' || v === 0) return { totalScore: 0, score: 'E' };
       const n = parseInt(v, 10);
       if (isNaN(n)) return { totalScore: 0, score: 'E' };
-      return { totalScore: n, score: n < 0 ? `${n}` : n > 0 ? `+${n}` : 'E' };
+      return { totalScore: n, score: n < 0 ? `${n}` : `+${n}` };
     };
 
     const walkForPlayers = (obj) => {
@@ -64,23 +66,25 @@ export default async function handler(req, res) {
       if (Array.isArray(obj)) { obj.forEach(walkForPlayers); return; }
 
       const name = obj.player?.displayName || obj.player?.fullName ||
-                   obj.displayName || obj.fullName || obj.playerName;
+                   obj.displayName || obj.fullName;
 
       if (name && !seen.has(name)) {
-        const hasRelevantField = 'total' in obj || 'scoreToPar' in obj || 'thru' in obj ||
-                                  'position' in obj || 'status' in obj || obj.player;
-        if (hasRelevantField) {
+        const hasPosOrScore = 'total' in obj || 'scoreToPar' in obj || 'thru' in obj ||
+                              'position' in obj || 'currentPosition' in obj || 'status' in obj;
+        if (hasPosOrScore) {
           seen.add(name);
-          const raw = obj.total ?? obj.scoreToPar ?? obj.score ?? obj.player?.total ?? obj.player?.scoreToPar ?? 0;
+
+          const raw = obj.total ?? obj.scoreToPar ?? obj.player?.total ?? obj.player?.scoreToPar ?? 0;
           const { totalScore, score } = normScore(raw);
-          const pos = (obj.position?.displayName || obj.position || obj.currentPosition || '').toString();
-          const statusStr = (obj.status || obj.roundStatus || '').toString().toLowerCase();
-          const isCut = statusStr.includes('cut') || obj.isCut === true;
-          const isWD  = statusStr.includes('wd') || statusStr.includes('withdraw');
+
+          const pos = (obj.position?.displayName || obj.currentPosition || obj.position || '').toString();
+          const statusStr = (obj.status || obj.roundStatus || '').toString().toUpperCase();
+          const isCut = statusStr.includes('CUT') || obj.isCut === true;
+          const isWD  = statusStr.includes('WD') || statusStr.includes('WITHDRAW');
 
           const thruRaw = obj.thru ?? obj.thruHole ?? obj.currentHole;
           let thru = '';
-          if (statusStr === 'f' || statusStr === 'finished' || statusStr === 'complete' || thruRaw === 18) {
+          if (statusStr === 'F' || statusStr === 'FINISHED' || statusStr === 'COMPLETE' || thruRaw === 18) {
             thru = 'F';
           } else if (thruRaw != null) {
             const n = parseInt(thruRaw, 10);
@@ -96,9 +100,7 @@ export default async function handler(req, res) {
       }
     };
 
-    for (const q of queries) {
-      walkForPlayers(q.state?.data);
-    }
+    walkForPlayers(lbData);
 
     const anyStarted = players.some(p => p.thru !== '' || p.isCut || p.isWD);
     const state = anyStarted ? 'in' : 'pre';
