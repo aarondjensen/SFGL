@@ -35,15 +35,8 @@ const getRosterForTournament = (team, tournamentIndex, allTransactions) => {
  * Core tournament processing. Mirrors the original processTournamentResults logic.
  * Returns { newTeams, newStats, resultsData }.
  */
-const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = [], leagueSettings = {}) => {
-  // Bonuses come from leagueSettings (passed as param) with constant fallbacks
-  const bonuses = tournament.isMajor
-    ? { round1: leagueSettings?.bonusR1Major    ?? BONUSES_MAJOR.round1,
-        round2: leagueSettings?.bonusR2Major    ?? BONUSES_MAJOR.round2,
-        round3: leagueSettings?.bonusR3Major    ?? BONUSES_MAJOR.round3 }
-    : { round1: leagueSettings?.bonusR1Regular  ?? BONUSES_REGULAR.round1,
-        round2: leagueSettings?.bonusR2Regular  ?? BONUSES_REGULAR.round2,
-        round3: leagueSettings?.bonusR3Regular  ?? BONUSES_REGULAR.round3 };
+const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = []) => {
+  const bonuses = tournament.isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
 
   // Build earningsMap from the tournamentData
   const earningsMap = {};
@@ -146,7 +139,7 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
 
 export const AdminView = ({
   isCommissioner, setIsCommissioner, setActiveTab,
-  settings, setSettings, leagueSettings = {},
+  settings, setSettings,
   teams, updateTeams,
   tournaments, setTournaments,
   transactions, setTransactions,
@@ -279,7 +272,7 @@ export const AdminView = ({
         earningsMap, isManualEntry: true,
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));
-      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names, transactions, leagueSettings);
+      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names, transactions);
       // Mark tournament completed, advance playing to next non-alternate
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
       const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
@@ -379,7 +372,7 @@ export const AdminView = ({
         earningsMap, isManualEntry: true,
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));
-      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions, leagueSettings);
+      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions);
 
       // Mark tournament with new results (keep completed, don't change playing)
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
@@ -424,8 +417,7 @@ export const AdminView = ({
       return names.map(name => ({ name, team: team.name }));
     }).sort((a, b) => a.name.localeCompare(b.name));
 
-
-  return (
+    return (
       <div style={{ flex: 1 }}>
         <div style={S.lbl}>{label}</div>
         {leaders.map((leader, idx) => (
@@ -534,50 +526,6 @@ export const AdminView = ({
     await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
     sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
     dialog.showToast('Processed ' + p + (f ? ' · ' + f + ' failed' : ''), p > 0 ? 'success' : 'error');
-  };
-
-  // ── Season Settings ──────────────────────────────────────────────────────
-  const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);  // collapsed by default
-
-  // ── Merge Players state ──────────────────────────────────────────────────
-  const [mergeOpen,    setMergeOpen]    = useState(false);
-  const [mergeSearch1, setMergeSearch1] = useState('');
-  const [mergeSearch2, setMergeSearch2] = useState('');
-  const [mergePlayer1, setMergePlayer1] = useState(null);
-  const [mergePlayer2, setMergePlayer2] = useState(null);
-  const [mergeStatus,  setMergeStatus]  = useState('');
-  const [mergeError,   setMergeError]   = useState('');
-  const [settingsDraft, setSettingsDraft] = useState(null);    // null = no edits, object = editing
-
-  // Initialize draft from current settings + constant fallbacks
-  const getSettingsDraft = () => ({
-    bonusR1Regular:  settings?.bonusR1Regular  ?? 20000,
-    bonusR2Regular:  settings?.bonusR2Regular  ?? 40000,
-    bonusR3Regular:  settings?.bonusR3Regular  ?? 60000,
-    bonusR1Major:    settings?.bonusR1Major    ?? 40000,
-    bonusR2Major:    settings?.bonusR2Major    ?? 80000,
-    bonusR3Major:    settings?.bonusR3Major    ?? 120000,
-    feeFA:           settings?.feeFA           ?? 1,
-    feeWaiver:       settings?.feeWaiver       ?? 2,
-    rosterLimit:     settings?.rosterLimit     ?? 13,
-    lineupSize:      settings?.lineupSize      ?? 5,
-    maxLimitedStarts:settings?.maxLimitedStarts?? 12,
-  });
-
-  const handleSaveSettings = async () => {
-    if (!settingsDraft) return;
-    setSettingsSaving(true);
-    try {
-      const newSettings = { ...settings, ...settingsDraft };
-      await setSettings(newSettings);
-      setSettingsDraft(null); // keep open after save
-      dialog.showToast('✓ Season settings saved', 'success');
-    } catch (err) {
-      dialog.showToast('Error: ' + err.message, 'error');
-    } finally {
-      setSettingsSaving(false);
-    }
   };
 
   // ── Manager Login ────────────────────────────────────────────────────────
@@ -691,23 +639,28 @@ export const AdminView = ({
     setSwingAwardSeg('');
   };
 
-  // ── OWGR sync ────────────────────────────────────────────────────────────
+  // ── Combined OWGR + LIV sync ─────────────────────────────────────────────
   const [owgrStatus, setOwgrStatus] = useState(null);
   const [owgrSummary, setOwgrSummary] = useState('');
 
-  const handleSyncOwgr = async () => {
+  // ── Merge Players ─────────────────────────────────────────────────────────
+  const [mergeOpen,    setMergeOpen]    = useState(false);
+  const [mergeSearch1, setMergeSearch1] = useState('');
+  const [mergeSearch2, setMergeSearch2] = useState('');
+  const [mergePlayer1, setMergePlayer1] = useState(null);
+  const [mergePlayer2, setMergePlayer2] = useState(null);
+  const [mergeStatus,  setMergeStatus]  = useState('');
+  const [mergeError,   setMergeError]   = useState('');
+
+  const handleSyncData = async () => {
     setOwgrStatus('fetching');
     setOwgrSummary('');
     try {
-      const resp = await fetch('/api/owgr');
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'OWGR fetch failed');
-      // Clean OWGR names — strip birth date/amateur suffixes like "(Oct1994)", "(Am)"
-      const cleanName = n => n.replace(/\s*\([^)]*\)\s*$/, '').trim();
-      const fetched = (data.players || [])
-        .map(({ name, worldRank }) => ({ name: cleanName(name), worldRank }))
-        .filter(p => p.name && p.name.includes(' ')); // skip single-word names
-      if (!fetched.length) throw new Error('No ranking data returned');
+      const owgrResp = await fetch('/api/owgr');
+      const owgrData = await owgrResp.json();
+      if (!owgrResp.ok) throw new Error(owgrData.error || 'OWGR fetch failed');
+      const { players: fetched } = owgrData;
+      if (!fetched?.length) throw new Error('No ranking data returned');
 
       let updatedPlayers = [...allPlayers];
       let updated = 0, added = 0;
@@ -716,92 +669,52 @@ export const AdminView = ({
         if (idx >= 0) { updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank }; updated++; }
         else { updatedPlayers.push({ name, worldRank }); added++; }
       });
+
       await playersApi.upsertMany(fetched.map(({ name, worldRank }) => ({ name, worldRank })));
 
-      // Fetch ESPN IDs for all rostered players and save them
+      // Fetch ESPN IDs for rostered players after OWGR sync
       try {
         const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
         if (allRostered.length) {
-          const encoded = allRostered.map(n => encodeURIComponent(n)).join(',');
-          const hsResp = await fetch(`/api/headshots?names=${encoded}`);
+          const hsResp = await fetch(`/api/headshots?names=${allRostered.map(n => encodeURIComponent(n)).join(',')}`);
           if (hsResp.ok) {
             const hsData = await hsResp.json();
             const toSave = Object.entries(hsData.results || {}).map(([name, espnId]) => ({ name, espnId }));
             if (toSave.length) await playersApi.upsertMany(toSave);
           }
         }
-      } catch (_) { /* non-critical */ }
-      setAllPlayers(updatedPlayers);
-      await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
-      await playerRankingsApi.invalidateCache().catch(() => {}); // force fresh load next page visit
-      setOwgrStatus('done');
-      setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new`);
-    } catch (err) {
-      setOwgrStatus('error');
-      setOwgrSummary(err.message || 'OWGR sync failed');
-    }
-  };
+      } catch (_) {}
 
-  // ── LIV roster sync ───────────────────────────────────────────────────────
-  const [livSyncStatus, setLivSyncStatus] = useState(null);
-  const [livSyncSummary, setLivSyncSummary] = useState('');
-  const [livLastSynced, setLivLastSynced] = useState(() => settings?.livRosterLastSynced || null);
-
-  const handleSyncLiv = async () => {
-    setLivSyncStatus('fetching');
-    setLivSyncSummary('');
-    try {
-      // Compare DB state against the authoritative LIV_GOLF_ROSTER constant.
-      // Note: LIV_GOLF_ROSTER must be kept current in constants/index.js.
       const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
-
-      // Players in roster not yet flagged in DB
-      const toFlag = LIV_GOLF_ROSTER.filter(name =>
-        !allPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
-      );
-      // Players flagged in DB but no longer in current roster (returned to PGA Tour)
-      const toUnflag = allPlayers.filter(p =>
-        p.isLiv && !livRosterLower.has(p.name.toLowerCase())
-      );
-
-      if (toFlag.length === 0 && toUnflag.length === 0) {
-        setLivSyncStatus('done');
-        setLivSyncSummary('✓ LIV roster already matches DB — no changes needed');
-        return;
-      }
-
+      const toFlag   = LIV_GOLF_ROSTER.filter(name => !updatedPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv);
+      const toUnflag = updatedPlayers.filter(p => p.isLiv && !livRosterLower.has(p.name.toLowerCase()));
       const livWrites = [
         ...toFlag.map(name => ({ name, isLiv: true })),
         ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
       ];
-      await playersApi.upsertMany(livWrites);
-
-      setAllPlayers(prev => {
-        const updated = [...prev];
+      if (livWrites.length > 0) {
+        await playersApi.upsertMany(livWrites);
         toFlag.forEach(name => {
-          const idx = updated.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: true };
-          else updated.push({ name, isLiv: true, worldRank: null });
+          const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+          if (idx >= 0) updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: true };
+          else updatedPlayers.push({ name, isLiv: true, worldRank: null });
         });
-        toUnflag.forEach(u => {
-          const idx = updated.findIndex(p => p.name === u.name);
-          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: false };
+        toUnflag.forEach(p => {
+          const idx = updatedPlayers.findIndex(x => x.name === p.name);
+          if (idx >= 0) updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: false };
         });
-        return updated;
-      });
+      }
 
-      const parts = [
-        toFlag.length   > 0 ? `${toFlag.length} tagged (${toFlag.slice(0,3).join(', ')}${toFlag.length > 3 ? '…' : ''})` : '',
-        toUnflag.length > 0 ? `${toUnflag.length} unflagged (${toUnflag.slice(0,3).map(p=>p.name).join(', ')}${toUnflag.length > 3 ? '…' : ''})` : '',
-      ].filter(Boolean).join(' · ');
-      const livTs = new Date().toISOString();
-      setLivLastSynced(livTs);
-      setSettings({ ...settings, livRosterLastSynced: livTs }).catch(() => {});
-      setLivSyncStatus('done');
-      setLivSyncSummary(`✓ LIV roster synced · ${parts}`);
+      setAllPlayers(updatedPlayers);
+      await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
+
+      const livMsg    = toFlag.length   > 0 ? ` · ${toFlag.length} LIV tagged`  : ' · LIV up to date';
+      const unflagMsg = toUnflag.length > 0 ? ` · ${toUnflag.length} unflagged` : '';
+      setOwgrStatus('done');
+      setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new${livMsg}${unflagMsg}`);
     } catch (err) {
-      setLivSyncStatus('error');
-      setLivSyncSummary(err.message || 'LIV sync failed');
+      setOwgrStatus('error');
+      setOwgrSummary(err.message || 'Sync failed');
     }
   };
 
@@ -905,7 +818,7 @@ export const AdminView = ({
             {!tournaments.find(t => t.name === selectedTourney)?.completed && (
               <button onClick={handleManualEntry} disabled={!selectedTourney || !manualEntry.playerEarnings.trim()}
                 style={{ ...S.btn, flex: 1, ...disabledBtn(!selectedTourney || !manualEntry.playerEarnings.trim()) }}>
-                {selectedTourney ? `Process ${selectedTourney} Results` : 'Process Tournament Results'}
+                Process Manual Entry
               </button>
             )}
             {tournaments.find(t => t.name === selectedTourney)?.completed && (
@@ -982,8 +895,37 @@ export const AdminView = ({
         )}
       </div>
 
+      {/* ── 3. Sync Rankings & LIV Roster ── */}
+      <div style={S.section}>
+        <div style={S.title}>🔄 Sync Rankings & LIV Roster</div>
+        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 10 }}>
+          Fetches the latest OWGR world rankings and syncs the current LIV Golf roster — tagging ineligible players and clearing stale flags in one step.
+        </div>
+        {rankingsLastUpdated && (
+          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+            Last synced: {new Date(rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
+        <button
+          onClick={handleSyncData}
+          disabled={owgrStatus === 'fetching'}
+          style={{ ...S.btn, ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+        >
+          {owgrStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync Rankings & LIV Roster'}
+        </button>
+        {owgrSummary && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+            background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+            color: owgrStatus === 'error' ? colors.danger : colors.success,
+          }}>
+            {owgrSummary}
+          </div>
+        )}
+      </div>
 
-      {/* ── 5. Award Swing Winner ── */}
+      {/* ── 4. Award Swing Winner ── */}
       <div style={S.section}>
         <div style={S.title}>🏆 Award Swing Winner</div>
         <label style={S.lbl}>Swing</label>
@@ -1021,78 +963,29 @@ export const AdminView = ({
         </button>
       </div>
 
-      {/* ── 3. Update OWGR Rankings ── */}
-      <div style={S.section}>
-        <div style={S.title}>🌍 Update OWGR Rankings</div>
-        {rankingsLastUpdated && (
-          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Last synced: {new Date(rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
-        <button
-          onClick={handleSyncOwgr}
-          disabled={owgrStatus === 'fetching'}
-          style={{ ...S.btn, ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-        >
-          {owgrStatus === 'fetching' ? '⏳ Fetching…' : '🌍 Sync Top 250 Rankings'}
-        </button>
-        {owgrSummary && (
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
-            background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-            border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-            color: owgrStatus === 'error' ? colors.danger : colors.success,
-          }}>
-            {owgrSummary}
-          </div>
-        )}
-      </div>
 
-      {/* ── 4. LIV Golf — Ineligible Players ── */}
+      {/* ── 6. LIV Golf Ineligible Players ── */}
       <div style={S.section}>
         <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
-        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 10 }}>
-          Players flagged as LIV are hidden from the add/drop modal. Sync against livgolf.com/teams, or manually add/remove flags below.
+        <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
+          Players flagged as LIV are hidden from the add/drop modal and waiver system.
         </div>
-
-        {/* Sync button */}
-        {(livLastSynced || settings?.livRosterLastSynced) && (
-          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 8 }}>
-            Last synced: {new Date(livLastSynced || settings?.livRosterLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
-        <button
-          onClick={handleSyncLiv}
-          disabled={livSyncStatus === 'fetching'}
-          style={{ ...S.btn, marginBottom: 8, ...(livSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-        >
-          {livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync LIV Roster from livgolf.com'}
-        </button>
-        {livSyncSummary && (
-          <div style={{
-            marginBottom: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
-            background: livSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-            border: `1px solid ${livSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-            color: livSyncStatus === 'error' ? colors.danger : colors.success,
-          }}>
-            {livSyncSummary}
-          </div>
-        )}
-
-        {/* Manual search/add */}
-        <input type="text" placeholder="Search to manually add/remove LIV flag…"
+        <input type="text" placeholder="Search players to add/remove LIV flag…"
           value={livSearch} onChange={e => setLivSearch(e.target.value)}
           style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
         />
         {(() => {
           const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
+          // Search: show non-LIV players from allPlayers, plus LIV_GOLF_ROSTER names not yet in DB
           const searchResults = livSearch.trim().length >= 2
             ? (() => {
                 const q = livSearch.toLowerCase();
                 const livNames = new Set(allPlayers.filter(p => p.isLiv).map(p => p.name));
+                // Players in allPlayers that aren't LIV
                 const fromAll = allPlayers
                   .filter(p => p.name && p.name.toLowerCase().includes(q) && !p.isLiv)
                   .map(p => ({ name: p.name, worldRank: p.worldRank }));
+                // LIV_GOLF_ROSTER names not yet in allPlayers at all
                 const existingNames = new Set(allPlayers.map(p => p.name));
                 const fromConst = LIV_GOLF_ROSTER
                   .filter(name => name.toLowerCase().includes(q) && !existingNames.has(name) && !livNames.has(name))
@@ -1102,50 +995,78 @@ export const AdminView = ({
             : [];
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {/* Search results — players to add to LIV list */}
               {searchResults.length > 0 && (
                 <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>Add to LIV list</div>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+                    Add to LIV list
+                  </div>
                   {searchResults.map(p => (
-                    <div key={p.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', marginBottom: 2, borderRadius: 3, background: 'rgba(80,180,120,0.06)', border: `1px solid rgba(80,180,120,0.2)` }}>
+                    <div key={p.name} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '6px 10px', marginBottom: 2, borderRadius: 3,
+                      background: 'rgba(80,180,120,0.06)', border: `1px solid rgba(80,180,120,0.2)`,
+                    }}>
                       <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
-                        {p.name}{p.worldRank && <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>#{p.worldRank}</span>}
+                        {p.name}
+                        {p.worldRank && <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>#{p.worldRank}</span>}
                       </span>
-                      <button disabled={livSaving[p.name]} onClick={async () => {
-                        setLivSaving(prev => ({ ...prev, [p.name]: true }));
-                        try {
-                          await playersApi.upsertMany([{ name: p.name, isLiv: true }]);
-                          setAllPlayers(prev => { const exists = prev.some(x => x.name === p.name); if (exists) return prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x); return [...prev, { name: p.name, worldRank: p.worldRank || null, isLiv: true }]; });
-                          dialog.showToast('Flagged ' + p.name + ' as LIV', 'success');
-                          setLivSearch('');
-                        } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
-                        finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
-                      }} style={{ fontFamily: fonts.sans, fontSize: 10, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}>
+                      <button
+                        disabled={livSaving[p.name]}
+                        onClick={async () => {
+                          setLivSaving(prev => ({ ...prev, [p.name]: true }));
+                          try {
+                            await playersApi.upsertMany([{ name: p.name, isLiv: true }]);
+                            setAllPlayers(prev => {
+                              const exists = prev.some(x => x.name === p.name);
+                              if (exists) return prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x);
+                              return [...prev, { name: p.name, worldRank: p.worldRank || null, isLiv: true }];
+                            });
+                            dialog.showToast('Flagged ' + p.name + ' as LIV', 'success');
+                            setLivSearch('');
+                          } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
+                          finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
+                        }}
+                        style={{ fontFamily: fonts.sans, fontSize: 10, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}
+                      >
                         {livSaving[p.name] ? '…' : '+ Flag LIV'}
                       </button>
                     </div>
                   ))}
                 </div>
               )}
+
+              {/* Current LIV roster */}
               <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
                 {livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}
               </div>
               {livPlayers.length === 0 ? (
-                <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.textMuted }}>No LIV players flagged — run Sync above</div>
+                <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.textMuted }}>No LIV players flagged</div>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {livPlayers.map(p => (
-                    <div key={p.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 3, background: 'rgba(220,60,60,0.08)', border: `1px solid rgba(220,60,60,0.2)`, fontSize: 11, fontFamily: fonts.sans, color: colors.textSecondary }}>
+                    <div key={p.name} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '4px 8px', borderRadius: 3,
+                      background: 'rgba(220,60,60,0.08)', border: `1px solid rgba(220,60,60,0.2)`,
+                      fontSize: 11, fontFamily: fonts.sans, color: colors.textSecondary,
+                    }}>
                       {p.name}
-                      <button disabled={livSaving[p.name]} onClick={async () => {
-                        setLivSaving(prev => ({ ...prev, [p.name]: true }));
-                        try {
-                          await playersApi.update(p.name, { isLiv: false });
-                          setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: false } : x));
-                          dialog.showToast('Removed LIV flag from ' + p.name, 'success');
-                        } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
-                        finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
-                      }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textMuted, fontSize: 11, padding: '0 2px', lineHeight: 1 }}>
-                        {livSaving[p.name] ? '…' : '×'}
+                      <button
+                        disabled={livSaving[p.name]}
+                        onClick={async () => {
+                          setLivSaving(prev => ({ ...prev, [p.name]: true }));
+                          try {
+                            await playersApi.update(p.name, { isLiv: false });
+                            setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: false } : x));
+                            dialog.showToast('Removed LIV flag from ' + p.name, 'success');
+                          } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
+                          finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
+                        }}
+                        style={{ background: 'none', border: 'none', color: 'rgba(220,100,80,0.7)', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}
+                        title={'Remove LIV flag from ' + p.name}
+                      >
+                        ✕
                       </button>
                     </div>
                   ))}
@@ -1156,186 +1077,7 @@ export const AdminView = ({
         })()}
       </div>
 
-
-
-
-      {/* ── 7. Merge Players ── */}
-      <div style={S.section}>
-        <button onClick={() => setMergeOpen(o => !o)}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          <div style={S.title}>🔀 Merge Players</div>
-          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{mergeOpen ? '▲' : '▼'}</span>
-        </button>
-        {mergeOpen && (() => {
-          const allNames = [...new Set([
-            ...allPlayers.map(p => p.name),
-            ...teams.flatMap(t => (t.roster || []).map(p => p.name)),
-          ])].sort();
-          const filtered1 = mergeSearch1.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(mergeSearch1.toLowerCase())).slice(0, 8) : [];
-          const filtered2 = mergeSearch2.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(mergeSearch2.toLowerCase())).slice(0, 8) : [];
-          const pickerStyle = (selected) => ({ ...theme.input, width: '100%', fontSize: 13, border: selected ? `1px solid ${colors.textGold}` : undefined });
-          const dropdownStyle = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#0f1d35', border: `1px solid ${colors.border}`, borderRadius: 3, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' };
-          const optionStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` };
-          return (
-            <>
-              <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-                Combine two player records when a name mismatch exists (e.g. "Nico" vs "Nicolas"). The first player will be renamed to the second everywhere — rosters, transactions, and Firebase.
-              </div>
-              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-                {/* Picker 1 */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <label style={S.lbl}>Rename this player...</label>
-                  <div style={{ position: 'relative' }}>
-                    <input value={mergePlayer1 || mergeSearch1} onChange={e => { setMergeSearch1(e.target.value); setMergePlayer1(null); }} placeholder="Search player..." style={pickerStyle(mergePlayer1)} />
-                    {!mergePlayer1 && filtered1.length > 0 && (
-                      <div style={dropdownStyle}>
-                        {filtered1.map(name => <button key={name} onClick={() => { setMergePlayer1(name); setMergeSearch1(name); }} style={optionStyle} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>{name}</button>)}
-                      </div>
-                    )}
-                  </div>
-                  {mergePlayer1 && <button onClick={() => { setMergePlayer1(null); setMergeSearch1(''); }} style={{ ...theme.btnSecondary, marginTop: 4, padding: '2px 8px', fontSize: 10 }}>✕ Clear</button>}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20, color: colors.textMuted, fontSize: 16 }}>→</div>
-                {/* Picker 2 */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <label style={S.lbl}>...to this name</label>
-                  <div style={{ position: 'relative' }}>
-                    <input value={mergePlayer2 || mergeSearch2} onChange={e => { setMergeSearch2(e.target.value); setMergePlayer2(null); }} placeholder="Search player..." style={pickerStyle(mergePlayer2)} />
-                    {!mergePlayer2 && filtered2.length > 0 && (
-                      <div style={dropdownStyle}>
-                        {filtered2.map(name => <button key={name} onClick={() => { setMergePlayer2(name); setMergeSearch2(name); }} style={optionStyle} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>{name}</button>)}
-                      </div>
-                    )}
-                  </div>
-                  {mergePlayer2 && <button onClick={() => { setMergePlayer2(null); setMergeSearch2(''); }} style={{ ...theme.btnSecondary, marginTop: 4, padding: '2px 8px', fontSize: 10 }}>✕ Clear</button>}
-                </div>
-              </div>
-              {mergeError && <div style={{ ...theme.smallText, color: colors.danger, marginBottom: 8 }}>{mergeError}</div>}
-              <button
-                onClick={async () => {
-                  if (!mergePlayer1 || !mergePlayer2) return;
-                  if (mergePlayer1 === mergePlayer2) { setMergeError('Players must be different'); return; }
-                  const confirmed = await dialog.showConfirm('Merge Players', `Merge "${mergePlayer1}" into "${mergePlayer2}"?\n\nThis will:\n• Rename "${mergePlayer1}" to "${mergePlayer2}" on all rosters and transactions\n• Delete the "${mergePlayer1}" Firebase document\n\nThis cannot be undone.`, { type: 'danger', confirmText: 'Merge' });
-                  if (!confirmed) return;
-                  setMergeStatus('merging'); setMergeError('');
-                  try {
-                    const updatedTeams = teams.map(t => ({ ...t, roster: (t.roster || []).map(p => p.name === mergePlayer1 ? { ...p, name: mergePlayer2 } : p), lineup: (t.lineup || []).map(n => n === mergePlayer1 ? mergePlayer2 : n) }));
-                    const updatedTx = transactions.map(tx => ({ ...tx, ...(tx.player === mergePlayer1 && { player: mergePlayer2 }), ...(tx.droppedPlayer === mergePlayer1 && { droppedPlayer: mergePlayer2 }) }));
-                    await Promise.all([...updatedTeams.map(t => teamsApi.update(t.id, t)), sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, updatedTx), playersApi.addAlias(mergePlayer2, mergePlayer1).catch(() => {}), playersApi.delete(mergePlayer1).catch(() => {})]);
-                    updateTeams(updatedTeams); setTransactions(updatedTx);
-                    setMergeStatus('done');
-                    dialog.showToast(`Merged "${mergePlayer1}" → "${mergePlayer2}"`, 'success');
-                    setMergePlayer1(null); setMergePlayer2(null); setMergeSearch1(''); setMergeSearch2('');
-                  } catch (err) { setMergeStatus('error'); setMergeError(err.message || 'Merge failed'); }
-                }}
-                disabled={!mergePlayer1 || !mergePlayer2 || mergeStatus === 'merging'}
-                style={{ ...S.btn, background: 'rgba(180,100,100,0.15)', border: '1px solid rgba(200,80,80,0.4)', color: 'rgba(220,120,120,0.95)', ...disabledBtn(!mergePlayer1 || !mergePlayer2 || mergeStatus === 'merging') }}>
-                {mergeStatus === 'merging' ? '⏳ Merging…' : '🔀 Merge Players'}
-              </button>
-            </>
-          );
-        })()}
-
-      {/* ── 8. Season Settings ── */}
-      <div style={S.section}>
-        {/* Collapsed header — click to expand */}
-        <button
-          onClick={() => { setSettingsOpen(o => !o); setSettingsDraft(null); }}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-        >
-          <div style={S.title}>⚙️ Season Settings</div>
-          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>
-            {settingsOpen ? '▲ close' : '▼ edit'}
-          </span>
-        </button>
-
-        {/* Content — only shown when expanded (settingsDraft !== false) */}
-        {settingsOpen && (() => {
-          const isEditing = settingsDraft !== null && typeof settingsDraft === 'object';
-          const draft = settingsDraft || getSettingsDraft();
-          const set = (key, val) => setSettingsDraft({ ...(settingsDraft || getSettingsDraft()), [key]: val });
-          const numInput = (key, label, min = 0) => (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <label style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</label>
-              <input
-                type="number" min={min} value={draft[key]}
-                onChange={e => set(key, Number(e.target.value))}
-                style={{ ...theme.input, marginBottom: 0, fontSize: 13, textAlign: 'center', width: '100%',
-                  border: isEditing ? `1px solid rgba(220,170,60,0.5)` : undefined }}
-              />
-            </div>
-          );
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4 }}>
-              <div style={{ ...theme.smallText, color: colors.textMuted }}>
-                ⚠️ Changes apply immediately to all league calculations. Click a field to edit, then confirm before saving.
-              </div>
-
-              {/* Round Leader Bonuses */}
-              <div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Round Leader Bonuses</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                  {numInput('bonusR1Regular', 'R1 — Regular')}
-                  {numInput('bonusR2Regular', 'R2 — Regular')}
-                  {numInput('bonusR3Regular', 'R3 — Regular')}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  {numInput('bonusR1Major', 'R1 — Major')}
-                  {numInput('bonusR2Major', 'R2 — Major')}
-                  {numInput('bonusR3Major', 'R3 — Major')}
-                </div>
-              </div>
-
-              {/* Transaction Fees */}
-              <div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Transaction Fees ($)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {numInput('feeFA', 'Free Agent')}
-                  {numInput('feeWaiver', 'Waiver Claim')}
-                </div>
-              </div>
-
-              {/* Roster Rules */}
-              <div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Roster Rules</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  {numInput('rosterLimit', 'Roster Size', 1)}
-                  {numInput('lineupSize', 'Lineup Size', 1)}
-                  {numInput('maxLimitedStarts', 'Max ★ Starts', 1)}
-                </div>
-              </div>
-
-              {/* Save / cancel — only shown when edits have been made */}
-              {isEditing && (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    onClick={async () => {
-                      const ok = await dialog.showConfirm(
-                        'Save Season Settings',
-                        'These changes affect all league calculations immediately. Are you sure?',
-                        { confirmText: 'Yes, Save', type: 'warning' }
-                      );
-                      if (ok) handleSaveSettings();
-                    }}
-                    disabled={settingsSaving}
-                    style={{ ...S.btn, flex: 1, ...(settingsSaving ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-                  >
-                    {settingsSaving ? '⏳ Saving…' : '✓ Save Season Settings'}
-                  </button>
-                  <button
-                    onClick={() => setSettingsDraft(null)}
-                    style={{ ...S.btnSec, flex: 0, padding: '10px 16px', whiteSpace: 'nowrap' }}
-                  >
-                    Discard
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-      </div>
-
-      {/* ── 9. Manager Login Credentials ── */}
+      {/* ── 7. Manager Login Credentials ── */}
       <div style={S.section}>
         <div style={S.title}>🔑 Manager Login Credentials</div>
         <label style={S.lbl}>Team</label>
@@ -1351,7 +1093,66 @@ export const AdminView = ({
         </button>
       </div>
 
-      {/* ── 9. Draft ── */}
+      {/* ── 7. Draft ── */}
+      {/* ── Merge Players ── */}
+      <div style={S.section}>
+        <button onClick={() => setMergeOpen(o => !o)}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          <div style={S.title}>🔀 Merge Players</div>
+          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{mergeOpen ? '▲' : '▼'}</span>
+        </button>
+        {mergeOpen && (() => {
+          const allNames = [...new Set([...allPlayers.map(p => p.name), ...teams.flatMap(t => (t.roster || []).map(p => p.name))])].sort();
+          const f1 = mergeSearch1.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(mergeSearch1.toLowerCase())).slice(0, 8) : [];
+          const f2 = mergeSearch2.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(mergeSearch2.toLowerCase())).slice(0, 8) : [];
+          const iStyle = (sel) => ({ ...theme.input, width: '100%', fontSize: 13, border: sel ? `1px solid ${colors.textGold}` : undefined });
+          const dStyle = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#0f1d35', border: `1px solid ${colors.border}`, borderRadius: 3, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' };
+          const oStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` };
+          const doMerge = async () => {
+            if (!mergePlayer1 || !mergePlayer2 || mergePlayer1 === mergePlayer2) { setMergeError('Select two different players'); return; }
+            if (!await dialog.showConfirm('Merge Players', `Rename "${mergePlayer1}" → "${mergePlayer2}" everywhere?`, { type: 'danger', confirmText: 'Merge' })) return;
+            setMergeStatus('merging'); setMergeError('');
+            try {
+              const uTeams = teams.map(t => ({ ...t, roster: (t.roster||[]).map(p => p.name===mergePlayer1?{...p,name:mergePlayer2}:p), lineup: (t.lineup||[]).map(n=>n===mergePlayer1?mergePlayer2:n) }));
+              const uTx = transactions.map(tx => ({ ...tx, ...(tx.player===mergePlayer1&&{player:mergePlayer2}), ...(tx.droppedPlayer===mergePlayer1&&{droppedPlayer:mergePlayer2}) }));
+              await Promise.all([...uTeams.map(t=>teamsApi.update(t.id,t)), sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS,uTx), playersApi.addAlias(mergePlayer2,mergePlayer1).catch(()=>{}), playersApi.delete(mergePlayer1).catch(()=>{})]);
+              updateTeams(uTeams); setTransactions(uTx); setMergeStatus('done');
+              dialog.showToast(`Merged "${mergePlayer1}" → "${mergePlayer2}"`, 'success');
+              setMergePlayer1(null); setMergePlayer2(null); setMergeSearch1(''); setMergeSearch2('');
+            } catch (err) { setMergeStatus('error'); setMergeError(err.message||'Merge failed'); }
+          };
+          return (
+            <>
+              <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>Fix name mismatches — renames a player everywhere in rosters, transactions and Firebase.</div>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <label style={S.lbl}>Rename this player...</label>
+                  <div style={{ position: 'relative' }}>
+                    <input value={mergePlayer1||mergeSearch1} onChange={e=>{setMergeSearch1(e.target.value);setMergePlayer1(null);}} placeholder="Search..." style={iStyle(mergePlayer1)} />
+                    {!mergePlayer1&&f1.length>0&&<div style={dStyle}>{f1.map(n=><button key={n} onClick={()=>{setMergePlayer1(n);setMergeSearch1(n);}} style={oStyle} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.07)'} onMouseLeave={e=>e.currentTarget.style.background='none'}>{n}</button>)}</div>}
+                  </div>
+                  {mergePlayer1&&<button onClick={()=>{setMergePlayer1(null);setMergeSearch1('');}} style={{...theme.btnSecondary,marginTop:4,padding:'2px 8px',fontSize:10}}>✕ Clear</button>}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20, color: colors.textMuted, fontSize: 16 }}>→</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <label style={S.lbl}>...to this name</label>
+                  <div style={{ position: 'relative' }}>
+                    <input value={mergePlayer2||mergeSearch2} onChange={e=>{setMergeSearch2(e.target.value);setMergePlayer2(null);}} placeholder="Search..." style={iStyle(mergePlayer2)} />
+                    {!mergePlayer2&&f2.length>0&&<div style={dStyle}>{f2.map(n=><button key={n} onClick={()=>{setMergePlayer2(n);setMergeSearch2(n);}} style={oStyle} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.07)'} onMouseLeave={e=>e.currentTarget.style.background='none'}>{n}</button>)}</div>}
+                  </div>
+                  {mergePlayer2&&<button onClick={()=>{setMergePlayer2(null);setMergeSearch2('');}} style={{...theme.btnSecondary,marginTop:4,padding:'2px 8px',fontSize:10}}>✕ Clear</button>}
+                </div>
+              </div>
+              {mergeError&&<div style={{...theme.smallText,color:colors.danger,marginBottom:8}}>{mergeError}</div>}
+              <button onClick={doMerge} disabled={!mergePlayer1||!mergePlayer2||mergeStatus==='merging'}
+                style={{...S.btn,background:'rgba(180,100,100,0.15)',border:'1px solid rgba(200,80,80,0.4)',color:'rgba(220,120,120,0.95)',...disabledBtn(!mergePlayer1||!mergePlayer2||mergeStatus==='merging')}}>
+                {mergeStatus==='merging'?'⏳ Merging…':'🔀 Merge Players'}
+              </button>
+            </>
+          );
+        })()}
+      </div>
+
       <div style={S.section}>
         <div style={S.title}>🎯 Draft</div>
         <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
