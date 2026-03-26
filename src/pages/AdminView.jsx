@@ -1040,6 +1040,46 @@ export const AdminView = ({
         )}
       </div>
 
+      {/* ── 4. Award Swing Winner ── */}
+      <div style={S.section}>
+        <div style={S.title}>🏆 Award Swing Winner</div>
+        <label style={S.lbl}>Swing</label>
+        <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
+          <option value="">Select swing...</option>
+          {SWINGS.map(s => {
+            const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+            const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
+            return (
+              <option key={s} value={s} disabled={alreadyAwarded}>
+                {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
+              </option>
+            );
+          })}
+        </select>
+        {swingAwardSeg && (() => {
+          const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+          const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
+          const byTeam = {};
+          swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
+          const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+          const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
+          return (
+            <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
+              {leader
+                ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
+                : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
+              }
+            </div>
+          );
+        })()}
+        <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
+          style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
+          🏆 Award Swing Winner
+        </button>
+      </div>
+
+
+
       {/* ── 3. Update OWGR Rankings ── */}
       <div style={S.section}>
         <div style={S.title}>🌍 Update OWGR Rankings</div>
@@ -1093,45 +1133,6 @@ export const AdminView = ({
           </div>
         )}
       </div>
-
-      {/* ── 4. Award Swing Winner ── */}
-      <div style={S.section}>
-        <div style={S.title}>🏆 Award Swing Winner</div>
-        <label style={S.lbl}>Swing</label>
-        <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
-          <option value="">Select swing...</option>
-          {SWINGS.map(s => {
-            const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
-            const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
-            return (
-              <option key={s} value={s} disabled={alreadyAwarded}>
-                {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
-              </option>
-            );
-          })}
-        </select>
-        {swingAwardSeg && (() => {
-          const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
-          const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
-          const byTeam = {};
-          swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
-          const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
-          const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
-          return (
-            <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
-              {leader
-                ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
-                : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
-              }
-            </div>
-          );
-        })()}
-        <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
-          style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
-          🏆 Award Swing Winner
-        </button>
-      </div>
-
 
       {/* ── 6. LIV Golf Ineligible Players ── */}
       <div style={S.section}>
@@ -1290,11 +1291,14 @@ export const AdminView = ({
           const isEditing = settingsDraft !== null && typeof settingsDraft === 'object';
           const draft = settingsDraft || getSettingsDraft();
           const set = (key, val) => setSettingsDraft({ ...(settingsDraft || getSettingsDraft()), [key]: val });
-          const numInput = (key, label, min = 0) => (
+          const numInput = (key, label, min = 0, dollar = false) => (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <label style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</label>
-              <input type="number" min={min} value={draft[key]} onChange={e => set(key, Number(e.target.value))}
-                style={{ ...theme.input, marginBottom: 0, fontSize: 13, textAlign: 'center', width: '100%', border: isEditing ? '1px solid rgba(220,170,60,0.5)' : undefined }} />
+              <div style={{ position: 'relative' }}>
+                {dollar && <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontFamily: fonts.mono, fontSize: 13, color: colors.textMuted, pointerEvents: 'none' }}>$</span>}
+                <input type="number" min={min} value={draft[key]} onChange={e => set(key, Number(e.target.value))}
+                  style={{ ...theme.input, marginBottom: 0, fontSize: 13, textAlign: dollar ? 'right' : 'center', paddingLeft: dollar ? 18 : undefined, width: '100%', border: isEditing ? '1px solid rgba(220,170,60,0.5)' : undefined }} />
+              </div>
             </div>
           );
           return (
@@ -1303,21 +1307,21 @@ export const AdminView = ({
               <div>
                 <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Round Leader Bonuses</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                  {numInput('bonusR1Regular', 'R1 — Regular')}
-                  {numInput('bonusR2Regular', 'R2 — Regular')}
-                  {numInput('bonusR3Regular', 'R3 — Regular')}
+                  {numInput('bonusR1Regular', 'R1 — Regular', 0, true)}
+                  {numInput('bonusR2Regular', 'R2 — Regular', 0, true)}
+                  {numInput('bonusR3Regular', 'R3 — Regular', 0, true)}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  {numInput('bonusR1Major', 'R1 — Major')}
-                  {numInput('bonusR2Major', 'R2 — Major')}
-                  {numInput('bonusR3Major', 'R3 — Major')}
+                  {numInput('bonusR1Major', 'R1 — Major', 0, true)}
+                  {numInput('bonusR2Major', 'R2 — Major', 0, true)}
+                  {numInput('bonusR3Major', 'R3 — Major', 0, true)}
                 </div>
               </div>
               <div>
                 <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Transaction Fees ($)</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {numInput('feeFA', 'Free Agent')}
-                  {numInput('feeWaiver', 'Waiver Claim')}
+                  {numInput('feeFA', 'Free Agent', 0, true)}
+                  {numInput('feeWaiver', 'Waiver Claim', 0, true)}
                 </div>
               </div>
               <div>
