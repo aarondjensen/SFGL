@@ -819,6 +819,17 @@ export const RostersView = ({
 
 
 
+        {/* ── Mobile All/⛳ toggle — sits above table on mobile only ── */}
+        {isMobile && (
+          <div style={{ display: 'flex', padding: '6px 10px 2px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+            <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
+              current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
+              leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
+              disabled={!tournamentField?.size} width={84}
+              colors={colors} fonts={fonts} />
+          </div>
+        )}
+
         {/* ── Roster table ── */}
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
@@ -829,14 +840,16 @@ export const RostersView = ({
               <col style={{ width: isMobile ? '20%' : '25%' }} />
             </colgroup>
             <thead>
-              {/* Row 1: all 3 toggles always visible */}
+              {/* Row 1: toggles — desktop shows All/⛳ in player col, mobile shows it above table */}
               <tr>
-                <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'left' }}>
-                  <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
-                    current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
-                    leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
-                    disabled={!tournamentField?.size} width={isMobile ? 84 : 108}
-                    colors={colors} fonts={fonts} />
+                <th style={{ padding: isMobile ? '4px 8px' : '6px 8px 4px', borderBottom: 'none', textAlign: 'left' }}>
+                  {!isMobile && (
+                    <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
+                      current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
+                      leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
+                      disabled={!tournamentField?.size} width={108}
+                      colors={colors} fonts={fonts} />
+                  )}
                 </th>
                 <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
