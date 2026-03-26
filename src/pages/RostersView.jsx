@@ -138,6 +138,16 @@ const TeamDropdown = ({ teams, value, onChange }) => {
 };
 
 // ── Waiver Priority Manager ───────────────────────────────────────────────────
+const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor, disabled = false, width = 88, colors, fonts }) => (
+  <div style={{ opacity: disabled ? 0.3 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.18s' }}>
+    <div style={{ position: 'relative', display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width }}>
+      <div style={{ position: 'absolute', top: 2, bottom: 2, left: current === rightVal ? 'calc(50% + 1px)' : 2, width: 'calc(50% - 3px)', borderRadius: 2, background: current === leftVal ? 'rgba(100,180,255,0.1)' : 'rgba(80,180,120,0.1)', border: `1px solid ${current === leftVal ? 'rgba(100,180,255,0.35)' : 'rgba(80,180,120,0.35)'}`, transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none' }} />
+      <button onClick={() => setter(leftVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: current === leftVal ? leftColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{leftLabel}</button>
+      <button onClick={() => setter(rightVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: current === rightVal ? rightColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{rightLabel}</button>
+    </div>
+  </div>
+);
+
 const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam }) => {
   const dialog = useDialog();
 
@@ -794,41 +804,20 @@ export const RostersView = ({
       {/* ── Action buttons + roster table ── */}
       <div style={{ ...theme.card }} onClick={() => { if (lineupMode) setLineupMode(false); }}>
 
-        {/* ── 3 slider toggles: Full/Playing · Info/Stats · SFGL/PGAT ── */}
-        {(() => {
-          const Slider = ({ leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor, disabled = false, width = 88 }) => (
-            <div style={{ opacity: disabled ? 0.3 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.18s' }}>
-              <div style={{ position: 'relative', display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width }}>
-                <div style={{ position: 'absolute', top: 2, bottom: 2, left: current === rightVal ? 'calc(50% + 1px)' : 2, width: 'calc(50% - 3px)', borderRadius: 2, background: current === leftVal ? 'rgba(100,180,255,0.1)' : 'rgba(80,180,120,0.1)', border: `1px solid ${current === leftVal ? 'rgba(100,180,255,0.35)' : 'rgba(80,180,120,0.35)'}`, transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)', pointerEvents: 'none' }} />
-                <button onClick={() => setter(leftVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: current === leftVal ? leftColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{leftLabel}</button>
-                <button onClick={() => setter(rightVal)} style={{ flex: 1, position: 'relative', zIndex: 1, padding: '3px 0', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: current === rightVal ? rightColor : colors.textMuted, cursor: 'pointer', transition: 'color 0.18s' }}>{rightLabel}</button>
-              </div>
-            </div>
-          );
-          return (
-            {/* Toggle bar — outer sliders fixed, table carries Info/Stats alignment */}
-            <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px 0', position: 'relative' }}>
-              {/* All / ⛳ — far left */}
-              <div style={{ flexShrink: 0 }}>
-                <Slider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
-                  current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
-                  leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
-                  disabled={!tournamentField?.size} width={isMobile ? 84 : 108} />
-              </div>
-              {/* Spacer */}
-              <div style={{ flex: 1 }} />
-              {/* SFGL / PGAT — far right */}
-              <div style={{ flexShrink: 0 }}>
-                <Slider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
-                  current={statsView} setter={setStatsView}
-                  leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
-                  disabled={infoView !== 'stats'}
-                  width={isMobile ? 84 : 108} />
-              </div>
-
-            </div>
-          );
-        })()}
+        {/* ── Toggle bar: All/⛳ · SFGL/PGAT — Info/Stats lives in table thead ── */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px 0', position: 'relative' }}>
+          <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
+            current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
+            leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
+            disabled={!tournamentField?.size} width={isMobile ? 84 : 108}
+            colors={colors} fonts={fonts} />
+          <div style={{ flex: 1 }} />
+          <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
+            current={statsView} setter={setStatsView}
+            leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
+            disabled={infoView !== 'stats'} width={isMobile ? 84 : 108}
+            colors={colors} fonts={fonts} />
+        </div>
 
         {/* ── Roster table ── */}
         <>
@@ -847,10 +836,11 @@ export const RostersView = ({
                 <th scope="col" style={{ padding: '6px 0 4px', borderBottom: 'none' }} />
                 <th scope="col" colSpan={infoView === 'info' ? 2 : 3} style={{ padding: '6px 0 4px', textAlign: 'center', borderBottom: 'none' }}>
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <Slider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+                    <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
                       current={infoView} setter={setInfoView}
                       leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
-                      width={isMobile ? 84 : 108} />
+                      width={isMobile ? 84 : 108}
+                      colors={colors} fonts={fonts} />
                   </div>
                 </th>
               </tr>
