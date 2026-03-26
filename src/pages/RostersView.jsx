@@ -819,14 +819,21 @@ export const RostersView = ({
 
 
 
-        {/* ── Mobile All/⛳ toggle — sits above table on mobile only ── */}
+        {/* ── Mobile: all 3 toggles above the table in a flex row ── */}
         {isMobile && (
-          <div style={{ display: 'flex', padding: '6px 10px 2px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px 4px', borderBottom: `1px solid ${colors.borderSubtle}` }}>
             <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
               current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
               leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
-              disabled={!tournamentField?.size} width={84}
-              colors={colors} fonts={fonts} />
+              disabled={!tournamentField?.size} width={80} colors={colors} fonts={fonts} />
+            <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+              current={infoView} setter={setInfoView}
+              leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
+              width={80} colors={colors} fonts={fonts} />
+            <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
+              current={statsView} setter={setStatsView}
+              leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
+              disabled={infoView !== 'stats'} width={80} colors={colors} fonts={fonts} />
           </div>
         )}
 
@@ -840,35 +847,33 @@ export const RostersView = ({
               <col style={{ width: isMobile ? '20%' : '25%' }} />
             </colgroup>
             <thead>
-              {/* Row 1: toggles — desktop shows All/⛳ in player col, mobile shows it above table */}
-              <tr>
-                <th style={{ padding: isMobile ? '4px 8px' : '6px 8px 4px', borderBottom: 'none', textAlign: 'left' }}>
-                  {!isMobile && (
+              {/* Row 1: desktop only — toggles in thead */}
+              {!isMobile && (
+                <tr>
+                  <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'left' }}>
                     <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
                       current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
                       leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
-                      disabled={!tournamentField?.size} width={108}
-                      colors={colors} fonts={fonts} />
-                  )}
-                </th>
-                <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
-                      current={infoView} setter={setInfoView}
-                      leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
-                      width={isMobile ? 84 : 108} colors={colors} fonts={fonts} />
-                  </div>
-                </th>
-                <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'right' }}>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
-                      current={statsView} setter={setStatsView}
-                      leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
-                      disabled={infoView !== 'stats'} width={isMobile ? 84 : 108}
-                      colors={colors} fonts={fonts} />
-                  </div>
-                </th>
-              </tr>
+                      disabled={!tournamentField?.size} width={108} colors={colors} fonts={fonts} />
+                  </th>
+                  <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                      <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+                        current={infoView} setter={setInfoView}
+                        leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
+                        width={108} colors={colors} fonts={fonts} />
+                    </div>
+                  </th>
+                  <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'right' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
+                        current={statsView} setter={setStatsView}
+                        leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
+                        disabled={infoView !== 'stats'} width={108} colors={colors} fonts={fonts} />
+                    </div>
+                  </th>
+                </tr>
+              )}
               {/* Row 2: column headers */}
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
