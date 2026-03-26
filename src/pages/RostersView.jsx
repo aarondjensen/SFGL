@@ -804,46 +804,63 @@ export const RostersView = ({
       {/* ── Action buttons + roster table ── */}
       <div style={{ ...theme.card }} onClick={() => { if (lineupMode) setLineupMode(false); }}>
 
-        {/* ── Toggle bar: All/⛳ · SFGL/PGAT — Info/Stats lives in table thead ── */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px 0', position: 'relative' }}>
-          <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
-            current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
-            leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
-            disabled={!tournamentField?.size} width={isMobile ? 84 : 108}
-            colors={colors} fonts={fonts} />
-          <div style={{ flex: 1 }} />
-          <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
-            current={statsView} setter={setStatsView}
-            leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
-            disabled={infoView !== 'stats'} width={isMobile ? 84 : 108}
-            colors={colors} fonts={fonts} />
-        </div>
+
 
         {/* ── Roster table ── */}
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? 'auto' : '55%' }} />
+              <col />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? 80 : '22.5%' }} /><col style={{ width: isMobile ? 72 : '22.5%' }} /></>
+                <><col style={{ width: isMobile ? 80 : 120 }} /><col style={{ width: isMobile ? 72 : 100 }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 52 : '15%' }} /><col style={{ width: isMobile ? 68 : '15%' }} /><col style={{ width: isMobile ? 80 : '15%' }} /></>
+                <><col style={{ width: isMobile ? 52 : 80 }} /><col style={{ width: isMobile ? 68 : 90 }} /><col style={{ width: isMobile ? 80 : 110 }} /></>
               )}
             </colgroup>
             <thead>
-              {/* Info/Stats toggle row — spans data columns so it's perfectly aligned */}
+              {/* Row 1: toggles above their respective columns */}
               <tr>
-                <th scope="col" style={{ padding: '6px 0 4px', borderBottom: 'none' }} />
-                <th scope="col" colSpan={infoView === 'info' ? 2 : 3} style={{ padding: '6px 0 4px', textAlign: 'center', borderBottom: 'none' }}>
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
-                      current={infoView} setter={setInfoView}
-                      leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
-                      width={isMobile ? 84 : 108}
-                      colors={colors} fonts={fonts} />
-                  </div>
+                <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'left' }}>
+                  <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
+                    current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
+                    leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
+                    disabled={!tournamentField?.size} width={isMobile ? 84 : 108}
+                    colors={colors} fonts={fonts} />
                 </th>
+                {infoView === 'info' ? (
+                  <>
+                    <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+                          current={infoView} setter={setInfoView}
+                          leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
+                          width={isMobile ? 84 : 108} colors={colors} fonts={fonts} />
+                      </div>
+                    </th>
+                  </>
+                ) : (
+                  <>
+                    <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
+                          current={infoView} setter={setInfoView}
+                          leftColor="rgba(255,255,255,0.95)" rightColor="rgba(100,180,255,0.9)"
+                          width={isMobile ? 84 : 108} colors={colors} fonts={fonts} />
+                      </div>
+                    </th>
+                    <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
+                          current={statsView} setter={setStatsView}
+                          leftColor="rgba(245,197,24,0.9)" rightColor="rgba(80,180,120,0.9)"
+                          disabled={infoView !== 'stats'} width={isMobile ? 84 : 108}
+                          colors={colors} fonts={fonts} />
+                      </div>
+                    </th>
+                  </>
+                )}
               </tr>
+              {/* Row 2: column headers */}
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
                 {infoView === 'info' ? (<>
