@@ -823,15 +823,10 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '60%' : '50%' }} />
-              {infoView === 'info' ? (<>
-                <col style={{ width: isMobile ? '20%' : '25%' }} />
-                <col style={{ width: isMobile ? '20%' : '25%' }} />
-              </>) : (<>
-                <col style={{ width: isMobile ? '13%' : '17%' }} />
-                <col style={{ width: isMobile ? '13%' : '17%' }} />
-                <col style={{ width: isMobile ? '14%' : '16%' }} />
-              </>)}
+              <col style={{ width: isMobile ? '55%' : '50%' }} />
+              <col style={{ width: isMobile ? '12%' : '12.5%' }} />
+              <col style={{ width: isMobile ? '13%' : '12.5%' }} />
+              <col style={{ width: isMobile ? '20%' : '25%' }} />
             </colgroup>
             <thead>
               {/* Row 1: all 3 toggles always visible */}
@@ -843,7 +838,7 @@ export const RostersView = ({
                     disabled={!tournamentField?.size} width={isMobile ? 84 : 108}
                     colors={colors} fonts={fonts} />
                 </th>
-                <th colSpan={infoView === 'info' ? 1 : 2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
+                <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
                     <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
                       current={infoView} setter={setInfoView}
@@ -871,6 +866,7 @@ export const RostersView = ({
                   <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
                     Odds{sortArrow('odds')}
                   </th>
+                  <th scope="col" style={{ ...theme.tableHeaderCell }} />
                 </>) : (<>
                   <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
                     OWGR{sortArrow('starts')}
@@ -1036,12 +1032,12 @@ export const RostersView = ({
                           );
                         } else {
                           const tt = live?.teeTime;
-                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: tt ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>{tt ? tt.replace(' AM', 'a').replace(' PM', 'p') : <span style={{ opacity: 0.25 }}>—</span>}</td>;
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (tt ? colors.textPrimary : colors.textMuted) }}>{tt ? tt.replace(' AM', 'a').replace(' PM', 'p') : <span style={{ opacity: 0.25 }}>—</span>}</td>;
                         }
                       } else {
                         const teeTime = teeTimeMap[normName];
                         col1 = (
-                          <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: teeTime ? (isBenched ? dimColor : colors.textSecondary) : inField ? colors.textMuted : 'transparent' }}>
+                          <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (teeTime ? colors.textPrimary : inField ? colors.textMuted : 'transparent') }}>
                             {teeTime ? teeTime.replace(' AM', 'a').replace(' PM', 'p') : inField ? '⛳' : '—'}
                           </td>
                         );
@@ -1049,12 +1045,12 @@ export const RostersView = ({
 
                       // Col 2: Odds
                       const col2 = (
-                        <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: playerOdds ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>
+                        <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (playerOdds ? colors.textPrimary : colors.textMuted) }}>
                           {playerOdds || <span style={{ opacity: 0.25 }}>—</span>}
                         </td>
                       );
 
-                      return <>{col1}{col2}</>;
+                      return <>{col1}{col2}<td /></>;
                     })()}
 
                     {/* ── Stats columns: OWGR + Cuts + Earnings ── */}
@@ -1069,8 +1065,8 @@ export const RostersView = ({
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
                         <>
-                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textSecondary }}>{owgr ? `#${owgr}` : '—'}</td>
-                          <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textSecondary }}>{cuts}/{cutsOf}</td>
+                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{owgr ? `#${owgr}` : '—'}</td>
+                          <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{cuts}/{cutsOf}</td>
                           <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 13 : 15, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>${amount.toLocaleString()}</td>
                         </>
                       );
