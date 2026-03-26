@@ -713,15 +713,18 @@ export const AdminView = ({
   // ── Merge Players ─────────────────────────────────────────────────────────
   const [mergeOpen, setMergeOpen] = useState(false);
 
-  const handleSyncData = async () => {
+  const handleSyncOwgr = async () => {
     setOwgrStatus('fetching');
     setOwgrSummary('');
     try {
-      const owgrResp = await fetch('/api/owgr');
-      const owgrData = await owgrResp.json();
-      if (!owgrResp.ok) throw new Error(owgrData.error || 'OWGR fetch failed');
-      const { players: fetched } = owgrData;
-      if (!fetched?.length) throw new Error('No ranking data returned');
+      const resp = await fetch('/api/owgr');
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'OWGR fetch failed');
+      const cleanName = n => n.replace(/\s*\([^)]*\)\s*$/, '').trim();
+      const fetched = (data.players || [])
+        .map(({ name, worldRank }) => ({ name: cleanName(name), worldRank }))
+        .filter(p => p.name && p.name.includes(' '));
+      if (!fetched.length) throw new Error('No ranking data returned');
 
       let updatedPlayers = [...allPlayers];
       let updated = 0, added = 0;
@@ -730,10 +733,9 @@ export const AdminView = ({
         if (idx >= 0) { updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank }; updated++; }
         else { updatedPlayers.push({ name, worldRank }); added++; }
       });
-
       await playersApi.upsertMany(fetched.map(({ name, worldRank }) => ({ name, worldRank })));
 
-      // Fetch ESPN IDs for rostered players after OWGR sync
+      // Fetch ESPN IDs for all rostered players and save them
       try {
         const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
         if (allRostered.length) {
@@ -744,38 +746,70 @@ export const AdminView = ({
             if (toSave.length) await playersApi.upsertMany(toSave);
           }
         }
-      } catch (_) {}
+      } catch (_) { /* non-critical */ }
 
+      setAllPlayers(updatedPlayers);
+      await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
+      await playerRankingsApi.invalidateCache().catch(() => {});
+      setOwgrStatus('done');
+      setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new`);
+    } catch (err) {
+      setOwgrStatus('error');
+      setOwgrSummary(err.message || 'OWGR sync failed');
+    }
+  };
+
+  // ── LIV roster sync ───────────────────────────────────────────────────────
+  const [livSyncStatus, setLivSyncStatus] = useState(null);
+  const [livSyncSummary, setLivSyncSummary] = useState('');
+  const [livLastSynced, setLivLastSynced] = useState(() => settings?.livRosterLastSynced || null);
+
+  const handleSyncLiv = async () => {
+    setLivSyncStatus('fetching');
+    setLivSyncSummary('');
+    try {
       const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
-      const toFlag   = LIV_GOLF_ROSTER.filter(name => !updatedPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv);
-      const toUnflag = updatedPlayers.filter(p => p.isLiv && !livRosterLower.has(p.name.toLowerCase()));
+      const toFlag = LIV_GOLF_ROSTER.filter(name =>
+        !allPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
+      );
+      const toUnflag = allPlayers.filter(p =>
+        p.isLiv && !livRosterLower.has(p.name.toLowerCase())
+      );
+      if (toFlag.length === 0 && toUnflag.length === 0) {
+        setLivSyncStatus('done');
+        setLivSyncSummary('✓ LIV roster already matches DB — no changes needed');
+        return;
+      }
       const livWrites = [
         ...toFlag.map(name => ({ name, isLiv: true })),
         ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
       ];
-      if (livWrites.length > 0) {
-        await playersApi.upsertMany(livWrites);
+      await playersApi.upsertMany(livWrites);
+      setAllPlayers(prev => {
+        const updated = [...prev];
         toFlag.forEach(name => {
-          const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-          if (idx >= 0) updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: true };
-          else updatedPlayers.push({ name, isLiv: true, worldRank: null });
+          const idx = updated.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: true };
+          else updated.push({ name, isLiv: true, worldRank: null });
         });
-        toUnflag.forEach(p => {
-          const idx = updatedPlayers.findIndex(x => x.name === p.name);
-          if (idx >= 0) updatedPlayers[idx] = { ...updatedPlayers[idx], isLiv: false };
+        toUnflag.forEach(u => {
+          const idx = updated.findIndex(p => p.name === u.name);
+          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: false };
         });
-      }
-
-      setAllPlayers(updatedPlayers);
-      await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
-
-      const livMsg    = toFlag.length   > 0 ? ` · ${toFlag.length} LIV tagged`  : ' · LIV up to date';
-      const unflagMsg = toUnflag.length > 0 ? ` · ${toUnflag.length} unflagged` : '';
-      setOwgrStatus('done');
-      setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new${livMsg}${unflagMsg}`);
+        return updated;
+      });
+      const parts = [
+        toFlag.length   > 0 ? `${toFlag.length} tagged` : '',
+        toUnflag.length > 0 ? `${toUnflag.length} unflagged` : '',
+      ].filter(Boolean).join(' · ');
+      const livTs = new Date().toISOString();
+      setLivLastSynced(livTs);
+      setSettings({ ...settings, livRosterLastSynced: livTs }).catch(() => {});
+      setLivSyncStatus('done');
+      setLivSyncSummary(`✓ LIV roster synced · ${parts}`);
     } catch (err) {
-      setOwgrStatus('error');
-      setOwgrSummary(err.message || 'Sync failed');
+      setLivSyncStatus('error');
+      setLivSyncSummary(err.message || 'LIV sync failed');
     }
   };
 
@@ -956,23 +990,20 @@ export const AdminView = ({
         )}
       </div>
 
-      {/* ── 3. Sync Rankings & LIV Roster ── */}
+      {/* ── 3. Update OWGR Rankings ── */}
       <div style={S.section}>
-        <div style={S.title}>🔄 Sync Rankings & LIV Roster</div>
-        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 10 }}>
-          Fetches the latest OWGR world rankings and syncs the current LIV Golf roster — tagging ineligible players and clearing stale flags in one step.
-        </div>
+        <div style={S.title}>🌍 Update OWGR Rankings</div>
         {rankingsLastUpdated && (
           <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
             Last synced: {new Date(rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </div>
         )}
         <button
-          onClick={handleSyncData}
+          onClick={handleSyncOwgr}
           disabled={owgrStatus === 'fetching'}
           style={{ ...S.btn, ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
         >
-          {owgrStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync Rankings & LIV Roster'}
+          {owgrStatus === 'fetching' ? '⏳ Fetching…' : '🔄 Sync OWGR Rankings'}
         </button>
         {owgrSummary && (
           <div style={{
@@ -982,6 +1013,33 @@ export const AdminView = ({
             color: owgrStatus === 'error' ? colors.danger : colors.success,
           }}>
             {owgrSummary}
+          </div>
+        )}
+      </div>
+
+      {/* ── 4. LIV Golf Sync ── */}
+      <div style={S.section}>
+        <div style={S.title}>🚫 LIV Golf — Sync Roster</div>
+        {(livLastSynced || settings?.livRosterLastSynced) && (
+          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+            Last synced: {new Date(livLastSynced || settings?.livRosterLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
+        <button
+          onClick={handleSyncLiv}
+          disabled={livSyncStatus === 'fetching'}
+          style={{ ...S.btn, ...(livSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+        >
+          {livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync LIV Roster'}
+        </button>
+        {livSyncSummary && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+            background: livSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${livSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+            color: livSyncStatus === 'error' ? colors.danger : colors.success,
+          }}>
+            {livSyncSummary}
           </div>
         )}
       </div>
