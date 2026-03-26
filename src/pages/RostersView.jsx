@@ -838,9 +838,9 @@ export const RostersView = ({
             <colgroup>
               <col />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? 80 : 110 }} /><col style={{ width: isMobile ? 72 : 100 }} /></>
+                <><col style={{ width: isMobile ? 80 : 105 }} /><col style={{ width: isMobile ? 72 : 105 }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 52 : 80 }} /><col style={{ width: isMobile ? 68 : 100 }} /><col style={{ width: isMobile ? 80 : 120 }} /></>
+                <><col style={{ width: isMobile ? 52 : 70 }} /><col style={{ width: isMobile ? 68 : 70 }} /><col style={{ width: isMobile ? 80 : 70 }} /></>
               )}
             </colgroup>
             <thead>
