@@ -705,42 +705,40 @@ export const RostersView = ({
             />
           </div>
 
-          {/* Add Player button — always green */}
-          {isOwnTeam && !addDropBlocked && (
-            <button
-              onClick={() => {
-                setIsWaiverMode(isWaiverWindowOpen(activeTournament));
-                setShowAddDropModal(true);
-              }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '7px 14px', borderRadius: 4, flexShrink: 0,
-                fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-                background: 'rgba(80,180,120,0.12)',
-                border: '1.5px solid rgba(80,180,120,0.5)',
-                color: 'rgba(80,180,120,0.9)',
-                letterSpacing: '0.2px',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.12)'; }}
-            >
-              <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>+</span>
-              <span>Add Player</span>
-            </button>
-          )}
-          {isOwnTeam && addDropBlocked && (
-            <div style={{
-              padding: '8px 14px', borderRadius: 4,
-              fontFamily: fonts.sans, fontSize: 11,
-              background: 'rgba(220,170,60,0.08)',
-              border: '1.5px solid rgba(220,170,60,0.3)',
-              color: 'rgba(220,190,80,0.9)',
-            }}>
-              Free agency is unavailable until the Commish processes waivers
-            </div>
-          )}
+          {/* Search/Add Player button — search always available, add gated by tournament state */}
+          {isOwnTeam && (() => {
+            // Tournament locked = in-progress (no adds until waiver window opens Tuesday 8pm ET)
+            const tournLocked = isTournamentLocked(activeTournament);
+            // Waiver window open but pending waivers exist — free agency blocked until processed
+            const waiverPending = addDropBlocked;
+            // Can add: not locked, not waiver-pending
+            const canAdd = !tournLocked && !waiverPending;
+
+            return (
+              <button
+                onClick={() => {
+                  setIsWaiverMode(isWaiverWindowOpen(activeTournament));
+                  setShowAddDropModal(true);
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '7px 14px', borderRadius: 4, flexShrink: 0,
+                  fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                  background: canAdd ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)',
+                  border: canAdd ? '1.5px solid rgba(80,180,120,0.5)' : '1.5px solid rgba(255,255,255,0.12)',
+                  color: canAdd ? 'rgba(80,180,120,0.9)' : 'rgba(255,255,255,0.4)',
+                  letterSpacing: '0.2px',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = canAdd ? 'rgba(80,180,120,0.22)' : 'rgba(255,255,255,0.08)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = canAdd ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)'; }}
+                title={tournLocked ? 'Adds unavailable during tournament — opens Tuesday 8pm ET' : waiverPending ? 'Waiver claims pending — free agency opens after Commish processes' : 'Add or drop a player'}
+              >
+                {canAdd && <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>+</span>}
+                <span>{canAdd ? 'Add Player' : '🔍 Search'}</span>
+              </button>
+            );
+          })()}
           </div>
 
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders */}
