@@ -3,7 +3,7 @@ import { useDialog } from './DialogContext';
 import { getSegmentByDate, normalizePlayerName } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi, playerRankingsApi } from '../api/firebase';
+import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi, playerRankingsApi, teamsApi } from '../api/firebase';
 import { theme, colors, fonts } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
 
@@ -140,7 +140,7 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
 const MergePlayersPanel = ({
   allPlayers, teams, transactions,
   dialog, updateTeams, setTransactions,
-  theme, colors, fonts, S, teamsApi, sfglDataApi, playersApi, STORAGE_KEYS, disabledBtn,
+  theme, colors, fonts, S, sfglDataApi, playersApi, STORAGE_KEYS, disabledBtn,
 }) => {
   const [search1, setSearch1] = React.useState('');
   const [search2, setSearch2] = React.useState('');
@@ -1166,7 +1166,7 @@ export const AdminView = ({
           allPlayers={allPlayers} teams={teams} transactions={transactions}
           dialog={dialog} updateTeams={updateTeams} setTransactions={setTransactions}
           theme={theme} colors={colors} fonts={fonts} S={S}
-          teamsApi={teamsApi} sfglDataApi={sfglDataApi} playersApi={playersApi}
+          sfglDataApi={sfglDataApi} playersApi={playersApi}
           STORAGE_KEYS={STORAGE_KEYS} disabledBtn={disabledBtn}
         />}
       </div>
