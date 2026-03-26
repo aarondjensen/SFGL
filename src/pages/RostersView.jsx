@@ -879,7 +879,9 @@ export const RostersView = ({
                 <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
                 {infoView === 'info' ? (<>
                   <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: isMobile ? 'right' : 'center', whiteSpace: 'nowrap', paddingRight: isMobile ? 4 : 0, ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
-                    {liveData?.players?.length ? (liveData.state === 'in' ? 'Score' : 'Tee Time') : Object.keys(teeTimeMap).length > 0 ? <>Tee Time{sortArrow('teeTime')}</> : 'Field'}
+                    {liveData?.players?.length
+                      ? (liveData.players.some(p => p.thru === 'F' || (!isNaN(parseInt(p.thru, 10)) && parseInt(p.thru, 10) >= 0)) ? 'Score' : 'Tee Time')
+                      : Object.keys(teeTimeMap).length > 0 ? <>Tee Time{sortArrow('teeTime')}</> : 'Field'}
                   </th>
                   <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
                     Odds{sortArrow('odds')}
@@ -1035,11 +1037,7 @@ export const RostersView = ({
                       // Col 1: Score (live) → Tee Time → ⛳ in field → —
                       let col1;
                       if (liveData?.players?.length) {
-                        // Multi-strategy name matching from golfUtils pattern:
-                        // 1. exact normalized full name
-                        // 2. last name only (length > 3)
-                        // 3. partial — one contains the other
-                        // 4. initials+lastName e.g. "sw kim" for "Si Woo Kim"
+                        // Multi-strategy name matching from golfUtils pattern
                         const buildInitialsKey = (name) => {
                           const parts = normalize(name).split(' ');
                           if (parts.length < 2) return null;
@@ -1058,22 +1056,30 @@ export const RostersView = ({
                             return ln.includes(normName) || normName.includes(ln);
                           })
                           || (rosterInitialsKey ? liveData.players.find(p => buildInitialsKey(p.name) === rosterInitialsKey) : null);
-                        // Show score whenever state is 'in' or 'post' and player was found
-                        const effectivelyStarted = !!live && (liveData.state === 'in' || liveData.state === 'post');
-                        if (live?.cut) {
+
+                        // Determine display mode from thru field (golfUtils pattern):
+                        // "F" or numeric → player has started, show score
+                        // tee time string or empty → not started, show tee time
+                        const thruNum = live?.thru ? parseInt(live.thru, 10) : NaN;
+                        const hasStarted = live && (live.thru === 'F' || (!isNaN(thruNum) && thruNum >= 0) || live.isCut || live.isWD);
+
+                        if (live?.isCut) {
                           col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>CUT</td>;
-                        } else if (effectivelyStarted) {
+                        } else if (live?.isWD) {
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>WD</td>;
+                        } else if (hasStarted) {
                           const posColor = live.score?.startsWith('-') ? colors.earningsGreen : live.score === 'E' ? colors.textPrimary : colors.danger;
                           col1 = (
                             <td style={{ padding: '7px 4px', textAlign: 'center' }}>
-                              <div style={{ fontFamily: fonts.mono, fontSize: isMobile ? 13 : 15, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>{live.score || '—'}</div>
+                              <div style={{ fontFamily: fonts.mono, fontSize: isMobile ? 13 : 15, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>{live.score || 'E'}</div>
                               <div style={{ fontFamily: fonts.sans, fontSize: 9, color: isBenched ? dimColor : colors.textMuted, lineHeight: 1.2 }}>
                                 {live.position ? `${live.position} · ` : ''}{live.thru === 'F' ? 'F' : live.thru ? `T${live.thru}` : ''}
                               </div>
                             </td>
                           );
                         } else {
-                          const tt = live?.teeTime;
+                          // Not started — show tee time from live data or teeTimeMap
+                          const tt = live?.thru || teeTimeMap[normName];
                           col1 = <td style={{ padding: '7px 4px', textAlign: isMobile ? 'right' : 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (tt ? colors.textPrimary : colors.textMuted) }}>{tt ? tt.replace(' AM', 'a').replace(' PM', 'p') : <span style={{ opacity: 0.25 }}>—</span>}</td>;
                         }
                       } else {
