@@ -966,7 +966,7 @@ export const RostersView = ({
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <span style={{
-                              fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, fontWeight: 500,
+                              fontFamily: fonts.sans, fontSize: isMobile ? 14 : 15, fontWeight: 500,
                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               color: player.limited
                                 ? (isBenched ? 'rgba(245,197,24,0.4)' : colors.textGold)
@@ -1015,7 +1015,7 @@ export const RostersView = ({
                           const posColor = live.score?.startsWith('-') ? colors.earningsGreen : live.score === 'E' ? colors.textPrimary : colors.danger;
                           col1 = (
                             <td style={{ padding: '7px 4px', textAlign: 'center' }}>
-                              <div style={{ fontFamily: fonts.mono, fontSize: 12, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>{live.score || '—'}</div>
+                              <div style={{ fontFamily: fonts.mono, fontSize: isMobile ? 13 : 15, color: isBenched ? dimColor : posColor, fontWeight: 600, lineHeight: 1.2 }}>{live.score || '—'}</div>
                               <div style={{ fontFamily: fonts.sans, fontSize: 9, color: isBenched ? dimColor : colors.textMuted, lineHeight: 1.2 }}>
                                 {live.position ? `${live.position} · ` : ''}{live.thru === 'F' ? 'F' : live.thru ? `T${live.thru}` : ''}
                               </div>
@@ -1023,12 +1023,12 @@ export const RostersView = ({
                           );
                         } else {
                           const tt = live?.teeTime;
-                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: tt ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>{tt ? tt.replace(' AM', 'a').replace(' PM', 'p') : <span style={{ opacity: 0.25 }}>—</span>}</td>;
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: tt ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>{tt ? tt.replace(' AM', 'a').replace(' PM', 'p') : <span style={{ opacity: 0.25 }}>—</span>}</td>;
                         }
                       } else {
                         const teeTime = teeTimeMap[normName];
                         col1 = (
-                          <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: teeTime ? (isBenched ? dimColor : colors.textSecondary) : inField ? colors.textMuted : 'transparent' }}>
+                          <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: teeTime ? (isBenched ? dimColor : colors.textSecondary) : inField ? colors.textMuted : 'transparent' }}>
                             {teeTime ? teeTime.replace(' AM', 'a').replace(' PM', 'p') : inField ? '⛳' : '—'}
                           </td>
                         );
@@ -1036,7 +1036,7 @@ export const RostersView = ({
 
                       // Col 2: Odds
                       const col2 = (
-                        <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: 11, color: playerOdds ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>
+                        <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: playerOdds ? (isBenched ? dimColor : colors.textSecondary) : colors.textMuted }}>
                           {playerOdds || <span style={{ opacity: 0.25 }}>—</span>}
                         </td>
                       );
@@ -1056,9 +1056,9 @@ export const RostersView = ({
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
                         <>
-                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 12, color: isBenched ? dimColor : colors.textSecondary }}>{owgr ? `#${owgr}` : '—'}</td>
-                          <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 12, color: isBenched ? dimColor : colors.textSecondary }}>{cuts}/{cutsOf}</td>
-                          <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 12 : 12, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>${amount.toLocaleString()}</td>
+                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textSecondary }}>{owgr ? `#${owgr}` : '—'}</td>
+                          <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textSecondary }}>{cuts}/{cutsOf}</td>
+                          <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 13 : 15, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>${amount.toLocaleString()}</td>
                         </>
                       );
                     })()}
