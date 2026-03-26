@@ -810,11 +810,11 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col />
+              <col style={{ width: '34%' }} />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? 90 : 120 }} /><col style={{ width: isMobile ? 80 : 110 }} /></>
+                <><col style={{ width: isMobile ? 90 : '33%' }} /><col style={{ width: isMobile ? 80 : '33%' }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 52 : 80 }} /><col style={{ width: isMobile ? 68 : 90 }} /><col style={{ width: isMobile ? 80 : 110 }} /></>
+                <><col style={{ width: isMobile ? 52 : '22%' }} /><col style={{ width: isMobile ? 68 : '22%' }} /><col style={{ width: isMobile ? 80 : '22%' }} /></>
               )}
             </colgroup>
             <thead>
