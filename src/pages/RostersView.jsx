@@ -810,17 +810,14 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: '34%' }} />
-              {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? 90 : '33%' }} /><col style={{ width: isMobile ? 80 : '33%' }} /></>
-              ) : (
-                <><col style={{ width: isMobile ? 52 : '22%' }} /><col style={{ width: isMobile ? 68 : '22%' }} /><col style={{ width: isMobile ? 80 : '22%' }} /></>
-              )}
+              <col style={{ width: isMobile ? '35%' : '34%' }} />
+              <col style={{ width: isMobile ? '20%' : '22%' }} />
+              <col style={{ width: isMobile ? '20%' : '22%' }} />
+              <col style={{ width: isMobile ? '25%' : '22%' }} />
             </colgroup>
             <thead>
-              {/* Row 1: all 3 toggles — always show all 3 */}
+              {/* Row 1: all 3 toggles — always 4 cols: player | info/stats(x2) | sfgl/pgat */}
               <tr>
-                {/* All/⛳ — left, spans player col */}
                 <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'left' }}>
                   <RosterSlider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
                     current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
@@ -828,8 +825,7 @@ export const RostersView = ({
                     disabled={!tournamentField?.size} width={isMobile ? 84 : 108}
                     colors={colors} fonts={fonts} />
                 </th>
-                {/* Info/Stats — center, spans data cols */}
-                <th colSpan={infoView === 'info' ? 1 : 2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
+                <th colSpan={2} style={{ padding: '6px 0 4px', borderBottom: 'none', textAlign: 'center' }}>
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
                     <RosterSlider leftVal="info" leftLabel="Info" rightVal="stats" rightLabel="Stats"
                       current={infoView} setter={setInfoView}
@@ -837,7 +833,6 @@ export const RostersView = ({
                       width={isMobile ? 84 : 108} colors={colors} fonts={fonts} />
                   </div>
                 </th>
-                {/* SFGL/PGAT — right, always visible, dimmed in Info mode */}
                 <th style={{ padding: '6px 8px 4px', borderBottom: 'none', textAlign: 'right' }}>
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <RosterSlider leftVal="sfgl" leftLabel="SFGL" rightVal="pgat" rightLabel="PGAT"
@@ -853,20 +848,20 @@ export const RostersView = ({
                 <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
                 {infoView === 'info' ? (<>
                   <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
-                    {liveData?.players?.length
-                      ? (liveData.state === 'in' ? 'Score' : 'Tee Time')
-                      : Object.keys(teeTimeMap).length > 0 ? <>Tee Time{sortArrow('teeTime')}</>
-                      : 'Field'}
+                    {liveData?.players?.length ? (liveData.state === 'in' ? 'Score' : 'Tee Time') : Object.keys(teeTimeMap).length > 0 ? <>Tee Time{sortArrow('teeTime')}</> : 'Field'}
                   </th>
                   <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
                     Odds{sortArrow('odds')}
+                  </th>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, color: 'rgba(255,255,255,0.2)', borderTop: `1px solid ${colors.borderSubtle}` }}>
+                    Earnings
                   </th>
                 </>) : (<>
                   <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
                     OWGR{sortArrow('starts')}
                   </th>
                   <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
-                    {statsView === 'sfgl' ? (isMobile ? 'Cuts' : 'Cuts Made') : (isMobile ? 'Cuts' : 'Cuts Made')}{sortArrow('cuts')}
+                    {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts')}
                   </th>
                   <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)') }}>
                     {statsView === 'sfgl' ? 'Earnings' : 'PGA $'}{sortArrow('earnings')}
@@ -1001,7 +996,7 @@ export const RostersView = ({
                       </div>
                     </td>
 
-                    {/* ── Info columns: Tee Time/Score + Odds ── */}
+                    {/* ── Info columns: Tee Time/Score + Odds + empty Earnings ── */}
                     {infoView === 'info' && (() => {
                       const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
                       const normName = normalize(player.name);
@@ -1044,7 +1039,7 @@ export const RostersView = ({
                         </td>
                       );
 
-                      return <>{col1}{col2}</>;
+                      return <>{col1}{col2}<td /></>;
                     })()}
 
                     {/* ── Stats columns: OWGR + Cuts + Earnings ── */}
