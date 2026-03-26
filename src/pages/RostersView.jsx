@@ -836,7 +836,7 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col />
+              <col style={{ width: isMobile ? 'auto' : 'calc(100% - 210px)' }} />
               {infoView === 'info' ? (
                 <><col style={{ width: isMobile ? 80 : 105 }} /><col style={{ width: isMobile ? 72 : 105 }} /></>
               ) : (
