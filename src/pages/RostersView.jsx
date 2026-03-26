@@ -808,7 +808,7 @@ export const RostersView = ({
           return (
             <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px 6px', borderBottom: `1px solid ${colors.borderSubtle}`, position: 'relative' }}>
               {/* All / Playing — far left, fixed width */}
-              <Slider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="Playing"
+              <Slider leftVal="full" leftLabel="All" rightVal="playing" rightLabel="⛳"
                 current={rosterView} setter={(val) => { setRosterView(val); if (val === 'full') { setSortCol(null); setSortDir('asc'); } }}
                 leftColor="rgba(100,180,255,0.95)" rightColor="rgba(80,180,120,0.95)"
                 disabled={!tournamentField?.size} width={isMobile ? 84 : 108} />
@@ -836,21 +836,21 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '38%' : '42%' }} />
+              <col />
               {infoView === 'info' ? (
-                <><col style={{ width: isMobile ? '31%' : '29%' }} /><col style={{ width: isMobile ? '31%' : '29%' }} /></>
+                <><col style={{ width: isMobile ? 80 : 110 }} /><col style={{ width: isMobile ? 72 : 100 }} /></>
               ) : (
-                <><col style={{ width: isMobile ? 48 : '19%' }} /><col style={{ width: isMobile ? 56 : '20%' }} /><col style={{ width: isMobile ? 72 : '19%' }} /></>
+                <><col style={{ width: isMobile ? 52 : 80 }} /><col style={{ width: isMobile ? 68 : 100 }} /><col style={{ width: isMobile ? 80 : 120 }} /></>
               )}
             </colgroup>
             <thead>
               <tr>
                 <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)' }}>Player</th>
                 {infoView === 'info' ? (<>
-                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'normal', lineHeight: 1.2, ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
+                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
                     {liveData?.players?.length
-                      ? (liveData.state === 'in' ? 'Score' : (isMobile ? <>Tee<br/>Time</> : 'Tee Time'))
-                      : Object.keys(teeTimeMap).length > 0 ? <>{isMobile ? <>Tee<br/>Time</> : 'Tee Time'}{sortArrow('teeTime')}</>
+                      ? (liveData.state === 'in' ? 'Score' : 'Tee Time')
+                      : Object.keys(teeTimeMap).length > 0 ? <>Tee Time{sortArrow('teeTime')}</>
                       : 'Field'}
                   </th>
                   <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
@@ -961,10 +961,11 @@ export const RostersView = ({
                         </button>
 
                         {/* Name + metadata */}
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <span style={{
                               fontFamily: fonts.sans, fontSize: isMobile ? 13 : 12, fontWeight: 500,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               color: player.limited
                                 ? (isBenched ? 'rgba(245,197,24,0.4)' : colors.textGold)
                                 : player.unlimited
@@ -973,6 +974,9 @@ export const RostersView = ({
                             }}>
                               {displayName(player.name, isMobile)}
                             </span>
+                            {tournamentField?.has(player.name) && (
+                              <span title="In this week's field" style={{ fontSize: 11, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
+                            )}
                             {player.limited && (
                               <span style={{
                                 fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
@@ -982,10 +986,7 @@ export const RostersView = ({
                               </span>
                             )}
                             {player.unlimited && (
-                              <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)' }}>♾️</span>
-                            )}
-                            {tournamentField?.has(player.name) && (
-                              <span title="In this week's field" style={{ fontSize: 11, lineHeight: 1, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
+                              <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)', flexShrink: 0 }}>♾️</span>
                             )}
                           </div>
                           <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
