@@ -981,7 +981,25 @@ export const AdminView = ({
                 </div>
               ))}
             </div>
-            <button onClick={() => setWaiverRevealed(true)} style={{ ...S.btnSec, fontSize: 11 }}>Reveal Claims</button>
+            {(() => {
+              const now = new Date();
+              const etOffset = -4;
+              const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
+              const etMin  = now.getUTCMinutes();
+              const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay();
+              const wd = waiverDay ?? 2;
+              const wh = waiverHour ?? 20;
+              const wm = waiverMinute ?? 0;
+              const ready = etDay === wd && (etHour * 60 + etMin) >= (wh * 60 + wm);
+              return (
+                <button onClick={() => setWaiverRevealed(true)} style={ready
+                  ? { ...S.btn, fontSize: 13, fontWeight: 700, padding: '12px 20px', background: 'rgba(220,170,60,0.2)', border: '2px solid rgba(220,170,60,0.7)', color: 'rgba(255,220,80,1)', boxShadow: '0 0 12px rgba(220,170,60,0.25)' }
+                  : { ...S.btnSec, fontSize: 11 }
+                }>
+                  {ready ? `⚡ Process Claims (${pending.length})` : `Process Claims (${pending.length})`}
+                </button>
+              );
+            })()}
           </>
         ) : (
           <>
