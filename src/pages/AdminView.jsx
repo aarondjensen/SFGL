@@ -549,7 +549,9 @@ export const AdminView = ({
     tx2[winner._idx] = { ...tx2[winner._idx], status: 'processed', processedDate: new Date().toLocaleDateString() };
     // Mark losers as blocked
     losers.forEach(l => {
-      tx2[l._idx] = { ...tx2[l._idx], status: 'failed', failReason: 'Waiver blocked — lost tiebreaker to ' + winner.team, processedDate: new Date().toLocaleDateString() };
+      const winEarn = '$' + (earningsMap[winner.team] || 0).toLocaleString();
+      const loseEarn = '$' + (earningsMap[l.team] || 0).toLocaleString();
+      tx2[l._idx] = { ...tx2[l._idx], status: 'failed', failReason: `Lost tiebreaker to ${winner.team} (${winEarn} vs ${loseEarn})`, processedDate: new Date().toLocaleDateString() };
     });
 
     // Only apply the winner's roster change
@@ -566,6 +568,7 @@ export const AdminView = ({
   const handleProcessAll = async (pending) => {
     if (!pending.length) return;
     if (!await dialog.showConfirm('Process All Waivers', 'Process ' + pending.length + ' pending claim' + (pending.length !== 1 ? 's' : '') + '?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims.', { confirmText: 'Process All' })) return;
+    const em = {}; teams.forEach(t => { em[t.name] = t.earnings || 0; });
     const pm = {}; [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
     let nextLastPlace = teams.length; // counter for pushing winners to back of priority
     const byTeam = {}; pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
@@ -585,7 +588,11 @@ export const AdminView = ({
         if (w.claim.droppedPlayer) { allR.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
         allR.add(player); done.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() }; applied.push(w.claim); p++;
         pm[w.tn] = nextLastPlace++; // winner moves to back of priority line
-        cs.slice(1).forEach(l => { failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: 'Waiver blocked — lost tiebreaker to ' + w.tn, processedDate: new Date().toLocaleDateString() }; f++; }); more = true;
+        const winEarn = '$' + (em[w.tn] || 0).toLocaleString();
+        cs.slice(1).forEach(l => {
+          const loseEarn = '$' + (em[l.tn] || 0).toLocaleString();
+          failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: `Lost tiebreaker to ${w.tn} (${winEarn} vs ${loseEarn})`, processedDate: new Date().toLocaleDateString() }; f++;
+        }); more = true;
       });
     }
     let t2 = [...teams]; applied.forEach(w => { t2 = t2.map(t => applyWaiver(t, w)); });
@@ -1003,6 +1010,64 @@ export const AdminView = ({
           </>
         ) : (
           <>
+            {/* Tiebreaker summary — show competing claims */}
+            {(() => {
+              // Group claims by player to find conflicts
+              const byPlayer = {};
+              pending.forEach(w => {
+                if (!byPlayer[w.player]) byPlayer[w.player] = [];
+                byPlayer[w.player].push(w);
+              });
+              const conflicts = Object.entries(byPlayer).filter(([, claims]) => claims.length > 1);
+              if (conflicts.length === 0) return null;
+
+              const earningsMap = {};
+              teams.forEach(t => { earningsMap[t.name] = t.earnings || 0; });
+              const fmtEarnings = (n) => '$' + (n || 0).toLocaleString();
+
+              return (
+                <div style={{
+                  background: 'rgba(220,100,60,0.08)', border: '1px solid rgba(220,100,60,0.35)',
+                  borderRadius: 3, padding: '10px 14px', marginBottom: 10,
+                }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(220,140,80,0.9)', marginBottom: 8 }}>
+                    ⚠️ Competing Claims ({conflicts.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {conflicts.map(([player, claims]) => {
+                      const sorted = [...claims].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
+                      return (
+                        <div key={player} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 2, padding: '8px 10px' }}>
+                          <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary, marginBottom: 4 }}>
+                            {player} — {claims.length} teams competing
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {sorted.map((c, i) => (
+                              <div key={c.team} style={{ fontFamily: fonts.sans, fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{
+                                  fontSize: 9, fontWeight: 700, width: 14, textAlign: 'center',
+                                  color: i === 0 ? colors.earningsGreen : colors.textMuted,
+                                }}>{i + 1}.</span>
+                                <span style={{ color: i === 0 ? colors.textPrimary : colors.textMuted, fontWeight: i === 0 ? 600 : 400 }}>
+                                  {c.team}
+                                </span>
+                                <span style={{ color: colors.textMuted, fontSize: 10 }}>
+                                  {fmtEarnings(earningsMap[c.team])}
+                                </span>
+                                {i === 0 && <span style={{ color: colors.earningsGreen, fontSize: 10, fontWeight: 600 }}>← wins</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ ...theme.smallText, color: colors.textMuted, marginTop: 6 }}>
+                    Tiebreaker: lowest total SFGL earnings wins. Winner moves to back of line.
+                  </div>
+                </div>
+              );
+            })()}
             <button onClick={() => handleProcessAll(pending)} style={{ ...S.btn, marginBottom: 8 }}>⚡ Process All ({pending.length})</button>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {pending.map(w => (

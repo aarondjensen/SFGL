@@ -1102,6 +1102,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         </>
                       )}
                     </div>
+                    {tx.status === 'failed' && tx.failReason && (
+                      <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.7vw, 10px)', color: colors.textMuted, marginTop: 1 }}>
+                        {tx.failReason}
+                      </div>
+                    )}
                   </div>
 
                   {/* Fee + commish actions */}
