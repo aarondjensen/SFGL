@@ -252,8 +252,9 @@ export const AddDropPlayerModal = ({
   });
 
   // Is the active tournament currently locked (Thu–Sun)?
+  // In waiver mode, players can still be selected (that's the whole point of waivers during a locked tournament)
   const activeTournament = tournaments?.find(t => t.playing && !t.completed);
-  const tournamentIsLocked = isTournamentLocked(activeTournament);
+  const tournamentIsLocked = isWaiverMode ? false : isTournamentLocked(activeTournament);
 
   // When browsing (no search): show only free agents from top 50
   // When searching: show all results including rostered players (greyed out)
