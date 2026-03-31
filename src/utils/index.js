@@ -270,8 +270,8 @@ export const isLineupEditingOpen = (tournament) => {
 };
 
 export const isFreeAgentWindowOpen = (tournament, settings) => {
-  if (isTournamentLocked(tournament)) return false;
-  // Free agency opens after waiver cutoff (when waiver period ends)
+  if (!tournament) return false;
+  // Free agency opens after waiver cutoff (when waiver period ends) through Thursday lock
   const wDay  = settings?.waiverDay    ?? 2;  // default Tue
   const wHour = settings?.waiverHour   ?? 20; // default 8pm
   const wMin  = settings?.waiverMinute ?? 0;
@@ -291,7 +291,6 @@ export const isFreeAgentWindowOpen = (tournament, settings) => {
 
 export const isWaiverWindowOpen = (tournament, settings) => {
   if (!tournament) return false;
-  if (isTournamentLocked(tournament)) return false;
   // Waiver window: tournament start through configurable cutoff (default Tue 8pm ET)
   const wDay  = settings?.waiverDay    ?? 2;  // default Tue
   const wHour = settings?.waiverHour   ?? 20; // default 8pm
@@ -350,15 +349,6 @@ export const getLineupStatus = (tournament) => {
   return { open: false, label: '🔴 until Sun 9pm ET' };
 };
 
-export const getFreeAgentWindowStatus = (tournament, settings) => {
-  if (isFreeAgentWindowOpen(tournament, settings)) {
-    const h = getTournamentLockHourET(tournament);
-    return { open: true, label: `Open until Thu ${lockStr(h)} ET` };
-  }
-  if (isTournamentLocked(tournament)) return { open: false, label: 'Locked' };
-  return { open: false, label: 'Opens after waivers processed' };
-};
-
 const DAY_ABBRS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const fmtWaiverCutoff = (settings) => {
   const d = settings?.waiverDay ?? 2;
@@ -368,6 +358,16 @@ const fmtWaiverCutoff = (settings) => {
   const ampm = h < 12 ? 'am' : 'pm';
   const min = m > 0 ? `:${String(m).padStart(2, '0')}` : '';
   return `${DAY_ABBRS[d]} ${hr}${min}${ampm}`;
+};
+
+export const getFreeAgentWindowStatus = (tournament, settings) => {
+  if (isFreeAgentWindowOpen(tournament, settings)) {
+    const h = getTournamentLockHourET(tournament);
+    return { open: true, label: `Open until Thu ${lockStr(h)} ET` };
+  }
+  if (isWaiverWindowOpen(tournament, settings)) return { open: false, label: `Opens after waivers · ${fmtWaiverCutoff(settings)} ET` };
+  if (isTournamentLocked(tournament)) return { open: false, label: 'Locked' };
+  return { open: false, label: 'Opens after waivers processed' };
 };
 
 export const getWaiverWindowStatus = (tournament, settings) =>
