@@ -163,6 +163,8 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
 
 const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam, settings }) => {
   const dialog = useDialog();
+  const txRef = React.useRef(transactions);
+  txRef.current = transactions; // always up to date
 
   const persistTransactions = (newTx) => {
     setTransactions(newTx);
@@ -170,9 +172,26 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
     sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx).catch(() => {});
   };
 
+  const deleteWaiver = (waiver) => {
+    const current = txRef.current;
+    // Match by fields to find the right transaction regardless of index shifts
+    let removed = false;
+    const newTx = current.filter(tx => {
+      if (!removed && tx.team === team.name && tx.player === waiver.player && tx.droppedPlayer === waiver.droppedPlayer && tx.status === 'pending' && tx.type === 'waiver') {
+        removed = true;
+        return false;
+      }
+      return true;
+    });
+    if (!removed) return; // nothing matched
+    const newTeams = teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - (waiver.fee || 0) } : t);
+    persistTransactions(newTx);
+    updateTeams(newTeams);
+  };
+
   const swapPriority = (fromIdx, toIdx) => {
     if (toIdx < 0 || toIdx >= pendingWaivers.length) return;
-    const updated   = [...transactions];
+    const updated   = [...txRef.current];
     const fromTxIdx = pendingWaivers[fromIdx]._txIdx;
     const toTxIdx   = pendingWaivers[toIdx]._txIdx;
     const fromPri   = pendingWaivers[fromIdx].priority || fromIdx + 1;
@@ -248,19 +267,12 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
             </div>
             {isOwnTeam && (
               <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={() => {
-                  const newTx = transactions.filter((_, i) => i !== waiver._txIdx);
-                  const newTeams = teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t);
-                  persistTransactions(newTx);
-                  updateTeams(newTeams);
-                }} style={{ ...theme.btnSecondary, padding: '4px 8px', fontSize: 10 }}>✏️</button>
+                <button onClick={() => deleteWaiver(waiver)}
+                  style={{ ...theme.btnSecondary, padding: '4px 8px', fontSize: 10 }}>✏️</button>
                 <button onClick={async () => {
                   const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
                   if (!ok) return;
-                  const newTx = transactions.filter((_, i) => i !== waiver._txIdx);
-                  const newTeams = teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - waiver.fee } : t);
-                  persistTransactions(newTx);
-                  updateTeams(newTeams);
+                  deleteWaiver(waiver);
                 }} style={{ ...theme.btnDanger, padding: '4px 8px', fontSize: 10 }}>✕</button>
               </div>
             )}
