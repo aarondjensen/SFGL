@@ -748,15 +748,22 @@ export const AdminView = ({
   // ── Waiver Schedule ────────────────────────────────────────────────────────
   const [waiverDay,    setWaiverDay]    = useState(() => settings?.waiverDay    ?? 2); // 0=Sun…6=Sat, default Tue=2
   const [waiverHour,   setWaiverHour]   = useState(() => settings?.waiverHour   ?? 20); // 24h ET, default 20=8pm
+  const [waiverMinute, setWaiverMinute] = useState(() => settings?.waiverMinute ?? 0);  // 0–59, default :00
   const [waiverSaving, setWaiverSaving] = useState(false);
 
   const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const fmtWaiverTime = (h, m) => {
+    const hr = h % 12 || 12;
+    const ampm = h < 12 ? 'AM' : 'PM';
+    const min = String(m).padStart(2, '0');
+    return `${hr}:${min} ${ampm}`;
+  };
 
   const handleSaveWaiverSchedule = async () => {
     setWaiverSaving(true);
     try {
-      await setSettings({ ...settings, waiverDay, waiverHour });
-      dialog.showToast(`✓ Waivers process ${DAY_NAMES[waiverDay]} at ${waiverHour % 12 || 12}${waiverHour < 12 ? 'am' : 'pm'} ET`, 'success');
+      await setSettings({ ...settings, waiverDay, waiverHour, waiverMinute });
+      dialog.showToast(`✓ Waivers process ${DAY_NAMES[waiverDay]} at ${fmtWaiverTime(waiverHour, waiverMinute)} ET`, 'success');
     } catch (err) {
       dialog.showToast('Error: ' + err.message, 'error');
     } finally { setWaiverSaving(false); }
@@ -1305,7 +1312,7 @@ export const AdminView = ({
       <div style={S.section}>
         <div style={S.title}>🗓️ Waiver Schedule</div>
         <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-          Set the day and time (ET) that waiver claims are processed each week. Default is Tuesday at 8pm ET.
+          Set the day and time (ET) that waiver claims are processed each week. Default is Tuesday at 8:00 PM ET.
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 12 }}>
           <div style={{ flex: 1 }}>
@@ -1315,17 +1322,25 @@ export const AdminView = ({
             </select>
           </div>
           <div style={{ flex: 1 }}>
-            <label style={S.lbl}>Time (ET)</label>
+            <label style={S.lbl}>Hour (ET)</label>
             <select value={waiverHour} onChange={e => setWaiverHour(Number(e.target.value))} style={S.select}>
               {Array.from({ length: 24 }, (_, i) => (
-                <option key={i} value={i}>{i === 0 ? '12:00 AM' : i < 12 ? `${i}:00 AM` : i === 12 ? '12:00 PM' : `${i - 12}:00 PM`}</option>
+                <option key={i} value={i}>{i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: '0 0 80px' }}>
+            <label style={S.lbl}>Minute</label>
+            <select value={waiverMinute} onChange={e => setWaiverMinute(Number(e.target.value))} style={S.select}>
+              {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => (
+                <option key={m} value={m}>:{String(m).padStart(2, '0')}</option>
               ))}
             </select>
           </div>
         </div>
         <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-          Current: waivers process {DAY_NAMES[waiverDay]} at {waiverHour === 0 ? '12:00 AM' : waiverHour < 12 ? `${waiverHour}:00 AM` : waiverHour === 12 ? '12:00 PM' : `${waiverHour - 12}:00 PM`} ET
-          {settings?.waiverDay !== undefined && (settings.waiverDay !== waiverDay || settings.waiverHour !== waiverHour) && (
+          Current: waivers process {DAY_NAMES[waiverDay]} at {fmtWaiverTime(waiverHour, waiverMinute)} ET
+          {settings?.waiverDay !== undefined && (settings.waiverDay !== waiverDay || settings.waiverHour !== waiverHour || (settings.waiverMinute ?? 0) !== waiverMinute) && (
             <span style={{ color: colors.warning }}> · unsaved changes</span>
           )}
         </div>

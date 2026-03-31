@@ -269,33 +269,47 @@ export const isLineupEditingOpen = (tournament) => {
   return false;
 };
 
-export const isFreeAgentWindowOpen = (tournament) => {
+export const isFreeAgentWindowOpen = (tournament, settings) => {
   if (isTournamentLocked(tournament)) return false;
-  // Free agency opens after Tue 8pm ET (when waiver period ends)
-  // Actual availability depends on whether pending waivers exist (checked in RostersView)
+  // Free agency opens after waiver cutoff (when waiver period ends)
+  const wDay  = settings?.waiverDay    ?? 2;  // default Tue
+  const wHour = settings?.waiverHour   ?? 20; // default 8pm
+  const wMin  = settings?.waiverMinute ?? 0;
+  const cutoff = wDay * 24 * 60 + wHour * 60 + wMin;
   const et      = getETNow();
   const day     = et.getDay();
   const timeVal = et.getHours() * 60 + et.getMinutes();
-  // Tue 8pm+ through Thursday lock
-  if (day === 2 && timeVal >= 20 * 60) return true;
-  if (day === 3 || day === 4) return true;
+  const nowVal  = day * 24 * 60 + timeVal;
+  // Open from waiver cutoff through Thursday lock
+  // Must be past the cutoff and before tournament locks (Thu)
+  if (day === 4 || day === 3) return true;
+  if (day === wDay && timeVal >= wHour * 60 + wMin) return true;
+  // If waiver day is before Wed and we're between cutoff and Thu
+  if (nowVal >= cutoff && day < 4) return true;
   return false;
 };
 
-export const isWaiverWindowOpen = (tournament) => {
+export const isWaiverWindowOpen = (tournament, settings) => {
   if (!tournament) return false;
   if (isTournamentLocked(tournament)) return false;
-  // Waiver window: tournament start through Tue 8pm ET
+  // Waiver window: tournament start through configurable cutoff (default Tue 8pm ET)
+  const wDay  = settings?.waiverDay    ?? 2;  // default Tue
+  const wHour = settings?.waiverHour   ?? 20; // default 8pm
+  const wMin  = settings?.waiverMinute ?? 0;
   const et      = getETNow();
   const day     = et.getDay();
   const timeVal = et.getHours() * 60 + et.getMinutes();
-  // Thu (after lock) through Tue 8pm — basically any time tournament is active and before Tue 8pm
-  // Sun, Mon, all day
-  if (day === 0 || day === 1) return true;
-  // Tue before 8pm
-  if (day === 2 && timeVal < 20 * 60) return true;
-  // Thu after tournament starts, Fri, Sat
-  if (day >= 4 || day === 5 || day === 6) return true;
+  // Before waiver cutoff day: open on Thu(4), Fri(5), Sat(6), Sun(0), Mon(1), and any day before cutoff day
+  // On waiver cutoff day: open only before the cutoff time
+  // After cutoff through Wed: closed (free agency takes over)
+  if (day === wDay) return timeVal < wHour * 60 + wMin;
+  // Days after cutoff but before Thursday are closed
+  // We need to check if current day is between cutoff day and Thu
+  // Thu(4) Fri(5) Sat(6) Sun(0) Mon(1) are always open (tournament active, before cutoff)
+  if (day >= 4) return true; // Thu, Fri, Sat
+  if (day === 0 || day === 1) return true; // Sun, Mon
+  // Day 2 (Tue) or 3 (Wed): only open if before the cutoff
+  if (day < wDay) return true;
   return false;
 };
 
@@ -336,8 +350,8 @@ export const getLineupStatus = (tournament) => {
   return { open: false, label: '🔴 until Sun 9pm ET' };
 };
 
-export const getFreeAgentWindowStatus = (tournament) => {
-  if (isFreeAgentWindowOpen(tournament)) {
+export const getFreeAgentWindowStatus = (tournament, settings) => {
+  if (isFreeAgentWindowOpen(tournament, settings)) {
     const h = getTournamentLockHourET(tournament);
     return { open: true, label: `Open until Thu ${lockStr(h)} ET` };
   }
@@ -345,9 +359,20 @@ export const getFreeAgentWindowStatus = (tournament) => {
   return { open: false, label: 'Opens after waivers processed' };
 };
 
-export const getWaiverWindowStatus = (tournament) =>
-  isWaiverWindowOpen(tournament)
-    ? { open: true,  label: 'Open — closes Tue 8pm ET' }
+const DAY_ABBRS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const fmtWaiverCutoff = (settings) => {
+  const d = settings?.waiverDay ?? 2;
+  const h = settings?.waiverHour ?? 20;
+  const m = settings?.waiverMinute ?? 0;
+  const hr = h % 12 || 12;
+  const ampm = h < 12 ? 'am' : 'pm';
+  const min = m > 0 ? `:${String(m).padStart(2, '0')}` : '';
+  return `${DAY_ABBRS[d]} ${hr}${min}${ampm}`;
+};
+
+export const getWaiverWindowStatus = (tournament, settings) =>
+  isWaiverWindowOpen(tournament, settings)
+    ? { open: true,  label: `Open — closes ${fmtWaiverCutoff(settings)} ET` }
     : { open: false, label: 'Closed' };
 
 // ============================================================================

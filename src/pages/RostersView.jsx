@@ -357,11 +357,13 @@ export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
   loggedInUser, isCommissioner, globalPlayerStats, headshots,
-  leagueSettings = {}, firstTeeTime,
+  leagueSettings = {}, settings, firstTeeTime,
 }) => {
+  // leagueSettings may come from either prop name (App passes settings=)
+  const resolvedSettings = settings || leagueSettings;
   // Destructure with fallbacks to constants for safety
-  const LINEUP_SIZE       = leagueSettings.lineupSize       ?? 5;
-  const MAX_LIMITED_STARTS = leagueSettings.maxLimitedStarts ?? 12;
+  const LINEUP_SIZE       = resolvedSettings.lineupSize       ?? 5;
+  const MAX_LIMITED_STARTS = resolvedSettings.maxLimitedStarts ?? 12;
   const isMobile            = useIsMobile();
   const [statsView,         setStatsView]         = useState('sfgl');
   const [rosterView,        setRosterView]        = useState('full'); // 'full' | 'playing'
@@ -680,7 +682,7 @@ export const RostersView = ({
     color: col === sortCol ? 'rgba(255,255,255,0.95)' : (baseColor || undefined),
   });
   const sortArrow = (col) => col === sortCol ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
-  const faStatus      = getFreeAgentWindowStatus(activeTournament);
+  const faStatus      = getFreeAgentWindowStatus(activeTournament, resolvedSettings);
   const hasPendingWaivers = transactions.some(tx => tx.status === 'pending' && tx.type === 'waiver');
   const addDropBlocked = faStatus.open && hasPendingWaivers;
 
@@ -717,7 +719,7 @@ export const RostersView = ({
             return (
               <button
                 onClick={() => {
-                  setIsWaiverMode(isWaiverWindowOpen(activeTournament));
+                  setIsWaiverMode(isWaiverWindowOpen(activeTournament, resolvedSettings));
                   setShowAddDropModal(true);
                 }}
                 style={{
@@ -1137,7 +1139,7 @@ export const RostersView = ({
         editingWaiverData={editingWaiverData}
         headshots={mergedHeadshots}
         fieldPlayerIds={fieldPlayerIds}
-        leagueSettings={leagueSettings}
+        leagueSettings={resolvedSettings}
       />
     </div>
   );
