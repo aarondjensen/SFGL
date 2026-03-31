@@ -939,13 +939,17 @@ export const AdminView = ({
 
       {/* ── 2. Process Waivers ── */}
       <div style={S.section}>
-        {/* Tuesday night reminder */}
+        {/* Waiver processing reminder — uses configurable schedule */}
         {(() => {
           const now = new Date();
           const etOffset = -4;
           const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
+          const etMin  = now.getUTCMinutes();
           const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay();
-          const isReadyToProcess = etDay === 2 && etHour >= 20 && pending.length > 0;
+          const wd = waiverDay ?? 2;
+          const wh = waiverHour ?? 20;
+          const wm = waiverMinute ?? 0;
+          const isReadyToProcess = etDay === wd && (etHour * 60 + etMin) >= (wh * 60 + wm) && pending.length > 0;
           if (!isReadyToProcess) return null;
           return (
             <div style={{
@@ -954,7 +958,7 @@ export const AdminView = ({
             }}>
               <span style={{ fontSize: 14 }}>⏰</span>
               <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,190,80,0.9)', fontWeight: 600 }}>
-                Past 8pm ET Tuesday — process now!
+                Past {fmtWaiverTime(wh, wm)} ET {DAY_NAMES[wd]} — process now!
               </div>
             </div>
           );
