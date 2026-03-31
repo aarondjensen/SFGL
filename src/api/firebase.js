@@ -513,12 +513,12 @@ export const transactionsApi = {
     localTransactions.forEach(tx => {
       if (tx.txId && remoteByTxId.has(tx.txId)) {
         const r = remoteByTxId.get(tx.txId);
-        if (tx.status !== r.status || tx.failReason !== r.failReason) {
+        if (tx.status !== r.status || tx.failReason !== r.failReason || tx.priority !== r.priority) {
           toUpdate.push({ ...tx, id: r.id });
         }
       } else if (tx.id && remoteById.has(tx.id)) {
         const r = remoteById.get(tx.id);
-        if (tx.status !== r.status || tx.failReason !== r.failReason) {
+        if (tx.status !== r.status || tx.failReason !== r.failReason || tx.priority !== r.priority) {
           toUpdate.push(tx);
         }
       } else if (!tx.id) {
@@ -528,11 +528,13 @@ export const transactionsApi = {
       }
     });
 
+    // Detect remote transactions that were deleted locally and remove them from Firebase
     const localTxIds = new Set(localTransactions.filter(t => t.txId).map(t => t.txId));
     const localIds   = new Set(localTransactions.filter(t => t.id).map(t => t.id));
-    const fromRemoteOnly = remote.filter(tx => {
-      if (tx.txId && localTxIds.has(tx.txId)) return false;
-      if (tx.id   && localIds.has(tx.id))     return false;
+    const toDelete = remote.filter(tx => {
+      if (tx.txId && localTxIds.has(tx.txId)) return false; // still exists locally
+      if (tx.id   && localIds.has(tx.id))     return false; // still exists locally
+      // If remote tx has neither txId nor id match in local, it was deleted
       return true;
     });
 
@@ -558,7 +560,21 @@ export const transactionsApi = {
       }
     }
 
-    return [...localTransactions, ...fromRemoteOnly];
+    // Delete removed transactions from Firebase
+    if (toDelete.length > 0) {
+      const BATCH_SIZE = 499;
+      for (let i = 0; i < toDelete.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db);
+        toDelete.slice(i, i + BATCH_SIZE).forEach(tx => {
+          batch.delete(doc(db, 'transactions', tx.id));
+        });
+        await batch.commit();
+      }
+      console.log(`[transactionsApi.sync] Deleted ${toDelete.length} removed transaction(s) from Firebase`);
+    }
+
+    // Return only what the local state should have (no more merging back deleted items)
+    return localTransactions;
   },
 };
 

@@ -377,13 +377,13 @@ export const useRoster = (team, transactions, activeTournamentIndex) => {
 // useWindowStatus
 // Returns live-computed window open/closed status, re-evaluated every minute.
 // ============================================================================
-export const useWindowStatus = (tournament) => {
+export const useWindowStatus = (tournament, settings) => {
   const compute = useCallback(() => ({
     lineupOpen:       isLineupEditingOpen(tournament),
     tournamentLocked: isTournamentLocked(tournament),
-    faOpen:           isFreeAgentWindowOpen(tournament),
-    waiverOpen:       isWaiverWindowOpen(),
-  }), [tournament]);
+    faOpen:           isFreeAgentWindowOpen(tournament, settings),
+    waiverOpen:       isWaiverWindowOpen(tournament, settings),
+  }), [tournament, settings]);
 
   const [status, setStatus] = useState(compute);
 
