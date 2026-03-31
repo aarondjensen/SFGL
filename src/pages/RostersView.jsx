@@ -12,7 +12,7 @@ import {
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts } from '../theme.js';
 import { storage } from '../api';
-import { teamsApi } from '../api/firebase';
+import { teamsApi, sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers ─────────────────────────────────────────────────────────
@@ -161,12 +161,13 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
   </div>
 );
 
-const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam }) => {
+const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam, settings }) => {
   const dialog = useDialog();
 
   const persistTransactions = (newTx) => {
     setTransactions(newTx);
     storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx).catch(() => {});
   };
 
   const swapPriority = (fromIdx, toIdx) => {
@@ -183,6 +184,25 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 
   if (pendingWaivers.length === 0) return null;
 
+  // Build dynamic waiver cutoff label from settings
+  const wDay  = settings?.waiverDay    ?? 2;
+  const wHour = settings?.waiverHour   ?? 20;
+  const wMin  = settings?.waiverMinute ?? 0;
+  const dayAbbrs = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const hr12 = wHour % 12 || 12;
+  const ampm = wHour < 12 ? 'am' : 'pm';
+  const minStr = wMin > 0 ? `:${String(wMin).padStart(2, '0')}` : '';
+  const cutoffLabel = `${dayAbbrs[wDay]} ${hr12}${minStr}${ampm}`;
+
+  const waiverStatusLabel = (() => {
+    const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const d = et.getDay();
+    const t = et.getHours() * 60 + et.getMinutes();
+    const cutoffMinutes = wHour * 60 + wMin;
+    if (d < wDay || (d === wDay && t < cutoffMinutes)) return `Waiver window closes ${cutoffLabel} ET`;
+    return 'Pending commish processing';
+  })();
+
   return (
     <div style={{
       background: 'rgba(180,160,60,0.08)',
@@ -193,7 +213,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
         <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: 11 }}>
           ⏰ Pending Waiver Claims ({pendingWaivers.length})
         </h3>
-        <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>{(() => { const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })); const d = et.getDay(); const t = et.getHours() * 60 + et.getMinutes(); return (d < 2 || (d === 2 && t < 20 * 60)) ? 'Waiver window closes Tue 8pm ET' : 'Pending commish processing'; })()}</span>
+        <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>{waiverStatusLabel}</span>
       </div>
       {pendingWaivers.length > 1 && isOwnTeam && (
         <p style={{ ...theme.smallText, marginBottom: 8 }}>↕ Use arrows to set priority — #1 processes first</p>
@@ -807,7 +827,7 @@ export const RostersView = ({
         <WaiverQueue
           team={team} pendingWaivers={pendingWaivers} transactions={transactions}
           setTransactions={setTransactions} updateTeams={updateTeams} teams={teams}
-          isOwnTeam={isOwnTeam}
+          isOwnTeam={isOwnTeam} settings={resolvedSettings}
         />
       )}
 
