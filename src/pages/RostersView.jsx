@@ -318,7 +318,8 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, overflow: 'visible' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setTapped(false); }}
-      onClick={() => {
+      onClick={(e) => {
+        e.stopPropagation();
         if (!canEdit) return;
         if (isMobileDevice) {
           if (tapped) { onRemove(); setTapped(false); }
@@ -777,8 +778,7 @@ export const RostersView = ({
           </div>
 
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders */}
-        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, paddingBottom: 6, minHeight: 72 }}
-          onClick={e => e.stopPropagation()}>
+        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, paddingBottom: 6, minHeight: 72 }}>
           <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flexWrap: 'nowrap', overflow: 'visible' }}>
             {(() => {
               const lineupPlayers = getSortedRoster(currentRoster).filter(p => (team.lineup || []).includes(p.name));
@@ -805,7 +805,7 @@ export const RostersView = ({
                     <div
                       key={`empty-${i}`}
                       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, cursor: canEditLineup ? 'pointer' : 'default' }}
-                      onClick={() => { if (canEditLineup) setLineupMode(true); }}
+                      onClick={(e) => { e.stopPropagation(); if (canEditLineup) setLineupMode(true); }}
                     >
                       <div style={{
                         width: 44, height: 44, borderRadius: '50%',

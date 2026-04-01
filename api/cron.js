@@ -75,7 +75,7 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam)
 }
 
 function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
-  return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">⛳ Lineups Lock Soon</h2><p style="font-size:13px;color:rgba(255,255,255,0.75);margin:0 0 8px;">${tournamentName}</p><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 20px;">Lineups lock <strong style="color:#ffffff;">Thursday at ${lockTime} ET</strong>. Make sure your lineup is set!</p><a href="https://sfglgolf.com" style="display:inline-block;padding:10px 24px;background:rgba(196,162,78,0.15);border:1px solid rgba(196,162,78,0.5);border-radius:4px;color:#c4a24e;text-decoration:none;font-weight:600;font-size:13px;">Set Lineup →</a>`);
+  return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">⛳ Lineups Lock Tomorrow</h2><p style="font-size:13px;color:rgba(255,255,255,0.75);margin:0 0 8px;">${tournamentName}</p><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 20px;">Lineups lock <strong style="color:#ffffff;">Thursday at ${lockTime} ET</strong>. Make sure your lineup is set!</p><a href="https://sfglgolf.com" style="display:inline-block;padding:10px 24px;background:rgba(196,162,78,0.15);border:1px solid rgba(196,162,78,0.5);border-radius:4px;color:#c4a24e;text-decoration:none;font-weight:600;font-size:13px;">Set Lineup →</a>`);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -246,7 +246,7 @@ async function handleWaivers(res) {
 
 async function handleLineupReminder(res) {
   const et = getETNow();
-  if (et.getDay() !== 4) return res.json({ status: 'not_thursday' });
+  if (et.getDay() !== 3) return res.json({ status: 'not_wednesday' });
 
   const today = et.toLocaleDateString('en-US');
   const metaSnap = await db.collection('sfgl_data').doc('last_lineup_reminder').get();
@@ -300,6 +300,217 @@ async function handleNotifyResults(req, res) {
   return res.json({ status: 'sent', emailsSent: results.filter(r => r.success).length, results });
 }
 
+// ── Action: auto-process tournament results ─────────────────────────────────
+
+// Name normalization for fuzzy matching (strip accents, lowercase)
+function normalizeName(name) {
+  return (name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+function matchName(a, b) {
+  const na = normalizeName(a), nb = normalizeName(b);
+  if (na === nb) return true;
+  const wa = na.split(' '), wb = nb.split(' ');
+  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
+  return false;
+}
+
+async function handleProcessResults(res) {
+  const et = getETNow();
+  // Only run on Monday
+  if (et.getDay() !== 1) return res.json({ status: 'not_monday' });
+
+  const today = et.toLocaleDateString('en-US');
+  const metaSnap = await db.collection('sfgl_data').doc('last_auto_results').get();
+  if (metaSnap.exists && metaSnap.data().value === today) {
+    return res.json({ status: 'already_run', message: 'Results already processed today' });
+  }
+
+  // Load all data
+  const settings = await loadSettings();
+  const teams = await loadTeams();
+  const tournamentsSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
+  const tournaments = tournamentsSnap.exists ? tournamentsSnap.data().value : [];
+  const statsSnap = await db.collection('sfgl_data').doc('fantasy-golf-global-stats').get();
+  const globalStats = statsSnap.exists ? statsSnap.data().value : {};
+
+  // Find active tournament
+  const ti = tournaments.findIndex(t => t.playing && !t.completed);
+  if (ti === -1) {
+    await db.collection('sfgl_data').doc('last_auto_results').set({ key: 'last_auto_results', value: today });
+    return res.json({ status: 'no_active_tournament' });
+  }
+  const tournament = tournaments[ti];
+
+  // Fetch results from ESPN via the existing pga-results API
+  // Since we're server-side, call our own API endpoint
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : 'https://sfglgolf.com';
+  const params = new URLSearchParams({ name: tournament.name, year: '2026' });
+
+  let pgaData;
+  try {
+    const pgaResp = await fetch(`${baseUrl}/api/pga-results?${params.toString()}`);
+    pgaData = await pgaResp.json();
+    if (!pgaResp.ok || !pgaData.players?.length) {
+      return res.json({ status: 'no_results', message: pgaData.error || 'No results available yet for ' + tournament.name });
+    }
+  } catch (err) {
+    return res.json({ status: 'fetch_error', message: 'Failed to fetch results: ' + err.message });
+  }
+
+  const { players, roundLeaders: rl } = pgaData;
+
+  // Build earnings map
+  const earningsMap = {};
+  players.forEach(p => { if (p.name && p.earnings >= 0) earningsMap[p.name] = p.earnings; });
+
+  // Filter round leaders to only those in SFGL lineups
+  const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
+  const filterToStarted = (names) => {
+    if (!names?.length) return [];
+    return names.filter(n => startedPlayers.has(n));
+  };
+  const roundLeaders = {
+    round1: filterToStarted(rl?.round1) || [],
+    round2: filterToStarted(rl?.round2) || [],
+    round3: filterToStarted(rl?.round3) || [],
+  };
+
+  // Build bonus amounts from settings
+  const BONUSES_REG = { round1: 20000, round2: 40000, round3: 60000 };
+  const BONUSES_MAJ = { round1: 40000, round2: 80000, round3: 120000 };
+  const bonuses = tournament.isMajor
+    ? { round1: settings.bonusR1Major ?? BONUSES_MAJ.round1, round2: settings.bonusR2Major ?? BONUSES_MAJ.round2, round3: settings.bonusR3Major ?? BONUSES_MAJ.round3 }
+    : { round1: settings.bonusR1Regular ?? BONUSES_REG.round1, round2: settings.bonusR2Regular ?? BONUSES_REG.round2, round3: settings.bonusR3Regular ?? BONUSES_REG.round3 };
+
+  // Process each team — mirrors processTournamentData exactly
+  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders, fullLineups: {} };
+  const newStats = { ...globalStats };
+
+  // Update global player stats
+  Object.entries(earningsMap).forEach(([name, earnings]) => {
+    if (!newStats[name]) newStats[name] = { eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0 };
+    newStats[name] = {
+      ...newStats[name],
+      eventsPlayed: newStats[name].eventsPlayed + 1,
+      cutsMade: newStats[name].cutsMade + (earnings > 0 ? 1 : 0),
+      pgaTourEarnings: newStats[name].pgaTourEarnings + earnings,
+    };
+  });
+
+  const updatedTeams = teams.map(team => {
+    if (!team.lineup || team.lineup.length === 0) return team;
+
+    resultsData.fullLineups[team.id] = [...team.lineup];
+
+    const starterResults = team.lineup.map(playerName => {
+      let earnings = earningsMap[playerName];
+      if (earnings === undefined) {
+        const mk = Object.keys(earningsMap).find(k => matchName(k, playerName));
+        earnings = mk !== undefined ? earningsMap[mk] : 0;
+      }
+      return { playerName, earnings: earnings || 0 };
+    });
+
+    const topStarters = [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5);
+    let totalEarnings = topStarters.reduce((s, p) => s + p.earnings, 0);
+    const bonusEarnings = { round1: 0, round2: 0, round3: 0 };
+    const playersWithBonuses = {};
+
+    ['round1', 'round2', 'round3'].forEach(round => {
+      const leaders = Array.isArray(roundLeaders[round]) ? roundLeaders[round] : (roundLeaders[round] ? [roundLeaders[round]] : []);
+      leaders.forEach(leaderName => {
+        if (!leaderName) return;
+        const actual = team.lineup.find(pn => normalizeName(pn) === normalizeName(leaderName));
+        if (actual) {
+          bonusEarnings[round] = bonuses[round];
+          totalEarnings += bonuses[round];
+          if (!playersWithBonuses[actual]) playersWithBonuses[actual] = { total: 0, rounds: [] };
+          playersWithBonuses[actual].total += bonuses[round];
+          playersWithBonuses[actual].rounds.push({ round: round.replace('round', ''), bonus: bonuses[round] });
+        }
+      });
+    });
+
+    resultsData.teams[team.id] = {
+      totalEarnings,
+      bonuses: bonusEarnings,
+      players: topStarters.map(s => ({
+        name: s.playerName,
+        earnings: s.earnings,
+        limited: team.roster.find(p => p.name === s.playerName)?.limited || false,
+        bonus: playersWithBonuses[s.playerName]?.total || 0,
+        roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
+        wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
+      })),
+    };
+
+    const updatedRoster = team.roster.map(player => {
+      if (!team.lineup.includes(player.name)) return player;
+      let pe = earningsMap[player.name];
+      if (pe === undefined) { const mk = Object.keys(earningsMap).find(k => matchName(k, player.name)); if (mk) pe = earningsMap[mk]; }
+      return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + (pe || 0) };
+    });
+
+    return {
+      ...team,
+      roster: updatedRoster,
+      earnings: (team.earnings || 0) + totalEarnings,
+      segmentEarnings: (team.segmentEarnings || 0) + totalEarnings,
+      lineup: [],
+    };
+  });
+
+  // Mark tournament completed, advance to next
+  const newTournaments = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
+  const nx = newTournaments.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
+  if (nx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nx].playing = true; }
+
+  // Write everything to Firebase
+  const batch = db.batch();
+
+  // Update teams
+  for (const team of updatedTeams) {
+    batch.update(db.collection('teams').doc(team.id), {
+      roster: team.roster,
+      earnings: team.earnings,
+      segmentEarnings: team.segmentEarnings,
+      lineup: team.lineup,
+    });
+  }
+
+  // Update tournaments and stats in sfgl_data
+  batch.set(db.collection('sfgl_data').doc('fantasy-golf-tournaments'), { key: 'fantasy-golf-tournaments', value: newTournaments });
+  batch.set(db.collection('sfgl_data').doc('fantasy-golf-global-stats'), { key: 'fantasy-golf-global-stats', value: newStats });
+  batch.set(db.collection('sfgl_data').doc('last_auto_results'), { key: 'last_auto_results', value: today });
+
+  await batch.commit();
+
+  // Email results to all managers
+  const managerEmails = getEmailMap(settings, teams);
+  const teamResultsForEmail = updatedTeams
+    .filter(t => resultsData.teams[t.id])
+    .map(t => ({ team: t.name, totalEarnings: resultsData.teams[t.id].totalEarnings || 0 }));
+
+  const emailResults = [];
+  for (const [teamName, email] of Object.entries(managerEmails)) {
+    try {
+      await sendEmail(email, `🏆 ${tournament.name} — SFGL Results`, buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName));
+      emailResults.push({ team: teamName, success: true });
+    } catch (err) { emailResults.push({ team: teamName, error: err.message }); }
+  }
+
+  return res.json({
+    status: 'processed',
+    tournament: tournament.name,
+    teamsScored: Object.keys(resultsData.teams).length,
+    playersLoaded: players.length,
+    emailsSent: emailResults.filter(r => r.success).length,
+  });
+}
+
 // ── Router ──────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -314,10 +525,11 @@ export default async function handler(req, res) {
 
   try {
     switch (action) {
-      case 'waivers':          return await handleWaivers(res);
-      case 'lineup-reminder':  return await handleLineupReminder(res);
-      case 'notify-results':   return await handleNotifyResults(req, res);
-      default:                 return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|notify-results' });
+      case 'waivers':           return await handleWaivers(res);
+      case 'lineup-reminder':   return await handleLineupReminder(res);
+      case 'process-results':   return await handleProcessResults(res);
+      case 'notify-results':    return await handleNotifyResults(req, res);
+      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);
