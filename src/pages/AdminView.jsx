@@ -1022,16 +1022,19 @@ export const AdminView = ({
       {openGroup === 'data' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingLeft: 4 }}>
           <div style={S.section}>
-            <div style={S.title}>🌍 Update OWGR Rankings</div>
-            {(owgrLastSynced || settings?.rankingsLastUpdated) && <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>Last synced: {new Date(owgrLastSynced || settings?.rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>}
-            <button onClick={handleSyncOwgr} disabled={owgrStatus === 'fetching'} style={{ ...S.btn, ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>{owgrStatus === 'fetching' ? '⏳ Fetching…' : '🔄 Sync OWGR Rankings'}</button>
-            {owgrSummary && <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans, background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)', border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`, color: owgrStatus === 'error' ? colors.danger : colors.success }}>{owgrSummary}</div>}
-          </div>
-          <div style={S.section}>
-            <div style={S.title}>🚫 LIV Golf — Sync Roster</div>
-            {(livLastSynced || settings?.livRosterLastSynced) && <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>Last synced: {new Date(livLastSynced || settings?.livRosterLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>}
-            <button onClick={handleSyncLiv} disabled={livSyncStatus === 'fetching'} style={{ ...S.btn, ...(livSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>{livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync LIV Roster'}</button>
-            {livSyncSummary && <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans, background: livSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)', border: `1px solid ${livSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`, color: livSyncStatus === 'error' ? colors.danger : colors.success }}>{livSyncSummary}</div>}
+            <div style={S.title}>🔄 Sync Data</div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <button onClick={handleSyncOwgr} disabled={owgrStatus === 'fetching'} style={{ ...S.btnSec, fontSize: 11, padding: '8px 14px', width: '100%', ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>{owgrStatus === 'fetching' ? '⏳ Fetching…' : '🌍 Sync OWGR'}</button>
+                {(owgrLastSynced || settings?.rankingsLastUpdated) && <div style={{ ...theme.smallText, color: colors.textMuted, marginTop: 4, textAlign: 'center', fontSize: 9 }}>Synced {new Date(owgrLastSynced || settings?.rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>}
+              </div>
+              <div style={{ flex: 1 }}>
+                <button onClick={handleSyncLiv} disabled={livSyncStatus === 'fetching'} style={{ ...S.btnSec, fontSize: 11, padding: '8px 14px', width: '100%', ...(livSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>{livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🚫 Sync LIV'}</button>
+                {(livLastSynced || settings?.livRosterLastSynced) && <div style={{ ...theme.smallText, color: colors.textMuted, marginTop: 4, textAlign: 'center', fontSize: 9 }}>Synced {new Date(livLastSynced || settings?.livRosterLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>}
+              </div>
+            </div>
+            {owgrSummary && <div style={{ marginTop: 4, padding: '6px 10px', borderRadius: 3, fontSize: 11, fontFamily: fonts.sans, background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)', border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`, color: owgrStatus === 'error' ? colors.danger : colors.success }}>{owgrSummary}</div>}
+            {livSyncSummary && <div style={{ marginTop: 4, padding: '6px 10px', borderRadius: 3, fontSize: 11, fontFamily: fonts.sans, background: livSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)', border: `1px solid ${livSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`, color: livSyncStatus === 'error' ? colors.danger : colors.success }}>{livSyncSummary}</div>}
           </div>
           <div style={S.section}>
             <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
