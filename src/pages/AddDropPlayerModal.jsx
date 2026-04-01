@@ -78,7 +78,7 @@ export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, teams,
   updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
-  headshots, fieldPlayerIds = {}, leagueSettings = {},
+  headshots, fieldPlayerIds = {}, leagueSettings = {}, onHeadshotsFound,
 }) => {
   const ROSTER_LIMIT            = leagueSettings.rosterLimit ?? 13;
   const TRANSACTION_FEE_FREE_AGENT = leagueSettings.feeFA    ?? 1;
@@ -146,6 +146,7 @@ export const AddDropPlayerModal = ({
       .then(data => {
         if (!data?.results) return;
         setLocalHeadshots(prev => ({ ...prev, ...data.results }));
+        onHeadshotsFound?.(data.results);
       })
       .catch(() => {});
   }, [isOpen, topPlayers]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -165,7 +166,7 @@ export const AddDropPlayerModal = ({
         if (missing.length) {
           fetch(`/api/headshots?names=${missing.map(n => encodeURIComponent(n)).join(',')}`)
             .then(r => r.ok ? r.json() : null)
-            .then(data => { if (data?.results) setLocalHeadshots(prev => ({ ...prev, ...data.results })); })
+            .then(data => { if (data?.results) { setLocalHeadshots(prev => ({ ...prev, ...data.results })); onHeadshotsFound?.(data.results); } })
             .catch(() => {});
         }
       } catch { setSearchResults([]); }
