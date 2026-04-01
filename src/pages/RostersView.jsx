@@ -721,8 +721,9 @@ export const RostersView = ({
 
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'hidden' }}>
-      {/* ── Team selector + lineup headshots ── */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'hidden' }}
+      onClick={() => { if (lineupMode) setLineupMode(false); }}
+    >      {/* ── Team selector + lineup headshots ── */}
       <div style={{
         ...theme.card,
         padding: 12,
@@ -776,7 +777,8 @@ export const RostersView = ({
           </div>
 
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders */}
-        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, paddingBottom: 6, minHeight: 72 }}>
+        <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, paddingBottom: 6, minHeight: 72 }}
+          onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flexWrap: 'nowrap', overflow: 'visible' }}>
             {(() => {
               const lineupPlayers = getSortedRoster(currentRoster).filter(p => (team.lineup || []).includes(p.name));
@@ -1172,6 +1174,7 @@ export const RostersView = ({
         headshots={mergedHeadshots}
         fieldPlayerIds={fieldPlayerIds}
         leagueSettings={resolvedSettings}
+        onHeadshotsFound={found => setLocalHeadshots(prev => ({ ...prev, ...found }))}
       />
     </div>
   );
