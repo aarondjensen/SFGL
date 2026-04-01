@@ -356,7 +356,7 @@ export const AdminView = ({
           team: t.name,
           totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
         }));
-        await fetch('/api/notify-results', {
+        await fetch('/api/cron?action=notify-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
