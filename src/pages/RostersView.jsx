@@ -736,7 +736,7 @@ export const RostersView = ({
             <TeamDropdown
               teams={teams}
               value={selectedTeam || ''}
-              onChange={id => { setSelectedTeam(id); setLineupMode(false); }}
+              onChange={id => { setSelectedTeam(id); setLineupMode(false); setRosterView('full'); }}
             />
           </div>
 
