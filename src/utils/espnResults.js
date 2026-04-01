@@ -138,7 +138,7 @@ function getLeadersAfterRound(competitors, roundIndex) {
 // ── Earnings extraction ───────────────────────────────────────────────────────
 function extractEarnings(competitor) {
   if (competitor.earnings !== undefined && competitor.earnings !== null) {
-    const n = parseInt(competitor.earnings, 10);
+    const n = Math.round(Number(competitor.earnings));
     if (!isNaN(n) && n > 0) return n;
   }
   if (Array.isArray(competitor.statistics)) {
@@ -147,12 +147,12 @@ function extractEarnings(competitor) {
       (s.abbreviation || '').toLowerCase().includes('earn')
     );
     if (earnStat) {
-      const n = parseInt((earnStat.displayValue || '').replace(/[^0-9]/g, ''), 10);
+      const n = Math.round(Number((earnStat.displayValue || '').replace(/[^0-9.]/g, '')));
       if (!isNaN(n) && n > 0) return n;
     }
     for (const stat of competitor.statistics) {
       const raw = (stat.displayValue || '').replace(/[$,]/g, '');
-      const n   = parseInt(raw, 10);
+      const n   = Math.round(Number(raw));
       if (!isNaN(n) && n >= 10000) return n;
     }
   }
