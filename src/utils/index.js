@@ -388,9 +388,11 @@ export const getWaiverWindowStatus = (tournament, settings) =>
  *  - Bonus splits are Math.round()ed to avoid fractional-dollar storage values.
  *  - cutsMade keyed off earnings > 0 (unchanged, but documented).
  */
-export const processTournamentData = (tournament, apiPlayers, currentTeams, currentStats, allPlayerNames) => {
+export const processTournamentData = (tournament, apiPlayers, currentTeams, currentStats, allPlayerNames, leagueSettings = {}) => {
   const isMajor = tournament.isMajor;
-  const bonuses = isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
+  const bonuses = isMajor
+    ? { round1: leagueSettings.bonusR1Major ?? BONUSES_MAJOR.round1, round2: leagueSettings.bonusR2Major ?? BONUSES_MAJOR.round2, round3: leagueSettings.bonusR3Major ?? BONUSES_MAJOR.round3 }
+    : { round1: leagueSettings.bonusR1Regular ?? BONUSES_REGULAR.round1, round2: leagueSettings.bonusR2Regular ?? BONUSES_REGULAR.round2, round3: leagueSettings.bonusR3Regular ?? BONUSES_REGULAR.round3 };
 
   // ── Round leaders ─────────────────────────────────────────────────────────
   let r1Leaders = [], r2Leaders = [], r3Leaders = [];
