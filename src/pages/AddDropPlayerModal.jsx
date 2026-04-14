@@ -5,74 +5,20 @@ import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../ut
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { theme, colors, fonts } from '../theme.js';
+import { LIV_GOLF_ROSTER } from '../constants';
 
-// Current LIV Golf roster — updated from livgolf.com/teams March 2026.
-// Used as fallback filter when isLiv flag isn't set in DB.
-// Update at the start of each LIV season.
-const LIV_PLAYERS = new Set([
-  // 4Aces GC
-  'Dustin Johnson', 'Thomas Detry', 'Anthony Kim', 'Thomas Pieters',
-  // Cleeks GC
-  'Martin Kaymer', 'Richard Bland', 'Adrian Meronk', 'Victor Perez',
-  // Crushers GC
-  'Bryson DeChambeau', 'Paul Casey', 'Charles Howell III', 'Anirban Lahiri',
-  // Fireballs GC
-  'Sergio Garcia', 'Josele Ballester', 'Luis Masaveu', 'David Puig',
-  // HyFlyers GC
-  'Phil Mickelson', 'Michael La Sasso', 'Brendan Steele', 'Cameron Tringale',
-  // Korean Golf Club
-  'Byeong Hun An', 'Minkyu Kim', 'Danny Lee', 'Younghan Song',
-  // Legion XIII
-  'Jon Rahm', 'Tyrrell Hatton', 'Tom McKibbin', 'Caleb Surratt',
-  // Majesticks GC
-  'Ian Poulter', 'Lee Westwood', 'Laurie Canter', 'Sam Horsfield',
-  // RangeGoats GC
-  'Bubba Watson', 'Ben Campbell', 'Peter Uihlein', 'Matthew Wolff',
-  // Ripper GC
-  'Cameron Smith', 'Lucas Herbert', 'Marc Leishman', 'Elvis Smylie',
-  // Smash GC
-  'Talor Gooch', 'Jason Kokrak', 'Graeme McDowell', 'Harold Varner III',
-  // Southern Guards GC
-  'Louis Oosthuizen', 'Dean Burmester', 'Branden Grace', 'Charl Schwartzel',
-  // Torque GC
-  'Joaquin Niemann', 'Abraham Ancer', 'Sebastian Munoz', 'Carlos Ortiz',
-  // Wild Card
-  'Yosuke Asaji', 'Bjorn Hellgren', 'Richard T. Lee', 'Miguel Tabuena', 'Scott Vincent',
-]);
+// Use shared LIV roster from constants instead of local duplicate
+const LIV_PLAYERS = new Set(LIV_GOLF_ROSTER);
 
 const accentColor   = (waiver) => waiver ? colors.warning         : colors.success;
 const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.12)' : 'rgba(80,180,120,0.12)';
 const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)' : 'rgba(80,180,120,0.35)';
 
-// ── Headshot helpers ─────────────────────────────────────────────────────────────────────────────
-// Stored IDs are ESPN athlete IDs.
-const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
-  const val = headshotMap[playerName];
-  if (!val) return [];
-  if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
-  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
-};
-
-const getPlayerHeadshot = (playerName, headshotMap = {}) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
-  if (urls.length > 0) return urls[0];
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`;
-};
-
-const makeHeadshotErrorHandler = (playerName, headshotMap) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
-  let attempt = 0;
-  return function handler(e) {
-    attempt++;
-    if (attempt < urls.length) {
-      e.target.src = urls[attempt];
-      e.target.onerror = handler;
-    } else {
-      e.target.onerror = null;
-      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=1c3a5e&color=ffffff&size=96&bold=true&font-size=0.38`;
-    }
-  };
-};
+// ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
+import {
+  getPlayerHeadshot,
+  makeHeadshotErrorHandler,
+} from '../utils/headshotUtils';
 
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, teams,

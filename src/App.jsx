@@ -1,15 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
 import { DialogProvider } from './pages/DialogContext';
 import { ErrorBoundary }  from './pages/ErrorBoundary';
+
+// ── Eagerly loaded views (shown on first visit / lightweight) ──────────────
 import { StandingsView }  from './pages/StandingsView';
 import { ResultsView }    from './pages/ResultsView';
 import { RostersView }    from './pages/RostersView';
-import { TransactionsView } from './pages/TransactionsView';
 import { TournamentsView }  from './pages/TournamentsView';
-import { AdminView }        from './pages/AdminView';
 import LoginPage            from './pages/LoginPage';
+
+// ── Lazy-loaded views (heavy, rarely visited on initial load) ──────────────
+// AdminView (1,507 LOC), TransactionsView (1,204 LOC), and their transitive
+// deps (DraftModal 722 LOC, ScheduleImportModal 336 LOC) are deferred until
+// the user actually navigates to those tabs. This removes ~3,800 lines of JS
+// from the initial bundle.
+const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m => ({ default: m.AdminView })));
+const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
@@ -18,6 +26,18 @@ import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS }
 import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
 
+// ── Lazy-load fallback spinner ─────────────────────────────────────────────
+const LazyFallback = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+    <div style={{
+      fontSize: 11, letterSpacing: 3, textTransform: 'uppercase',
+      color: 'rgba(255,255,255,0.2)', fontWeight: 400,
+      fontFamily: "'Raleway', system-ui, sans-serif",
+    }}>
+      Loading…
+    </div>
+  </div>
+);
 
 // ── Pull-to-refresh ──────────────────────────────────────────────────────────
 const PullToRefresh = ({ children }) => {
@@ -139,54 +159,19 @@ const FantasyGolfLeague = () => {
   const resolvedHeadshots = Object.keys(safeHeadshots).length > 0 ? safeHeadshots : PGA_TOUR_IDS;
   const currentTournament = safeTournaments.find(t => t.playing);
 
-  // ── Inject Google Fonts (Raleway only) once on mount ────────────────────────
+  // ── Inject Google Fonts once on mount ────────────────────────────────────
+  // NOTE: Tab styles, select styles, standings styles, and body font are now
+  // in app-global.css (loaded statically). Only the Google Fonts <link> is
+  // still injected here because it points to an external CDN URL.
+  // TODO: Move this to index.html <head> with rel="preconnect" for even faster
+  // font loading — the <link> would start downloading before JS even parses.
   useEffect(() => {
-    if (document.getElementById('sfgl-google-fonts')) return; // already injected
+    if (document.getElementById('sfgl-google-fonts')) return;
     const link = document.createElement('link');
     link.id   = 'sfgl-google-fonts';
     link.rel  = 'stylesheet';
     link.href = 'https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap';
     document.head.appendChild(link);
-    // Set Raleway on body so everything inherits it — overrides Tailwind preflight
-    document.body.style.fontFamily = "'Raleway', system-ui, sans-serif";
-    document.body.style.fontVariantNumeric = 'tabular-nums lining-nums';
-    // Responsive tab styles
-    const style = document.createElement('style');
-    style.id = 'sfgl-tab-styles';
-    if (!document.getElementById('sfgl-tab-styles')) {
-      style.textContent = `
-        .sfgl-nav-row { justify-content: space-between; }
-        .sfgl-tab { flex: 1; }
-        .sfgl-tab-label { display: none; }
-        .sfgl-tournament-desktop { display: none !important; }
-        .sfgl-tournament-mobile { display: flex !important; }
-        @media (min-width: 640px) {
-          .sfgl-nav-row { justify-content: flex-start; }
-          .sfgl-tab { flex: 1; }
-          .sfgl-tab-label { display: inline; }
-          .sfgl-tournament-desktop { display: flex !important; }
-          .sfgl-tournament-mobile { display: none !important; }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-    // Force dark background on all select dropdowns — browser default is white
-    if (!document.getElementById('sfgl-select-styles')) {
-      const selStyle = document.createElement('style');
-      selStyle.id = 'sfgl-select-styles';
-      selStyle.textContent = `
-        select { color-scheme: dark; }
-        select option {
-          background: #1a2744;
-          color: rgba(255,255,255,0.88);
-        }
-        select option:checked,
-        select option:hover {
-          background: #243660;
-        }
-      `;
-      document.head.appendChild(selStyle);
-    }
   }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
@@ -475,6 +460,7 @@ const FantasyGolfLeague = () => {
                     ? 'rgba(255,255,255,0.95)'
                     : 'rgba(255,255,255,0.78)',
                   boxShadow: isActive ? 'inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
+                  outline: 'none', // focus-visible handled by CSS class in app-global.css
                 }}
               >
                 <tab.Icon style={{ width: 13, height: 13 }} />
@@ -570,17 +556,19 @@ const FantasyGolfLeague = () => {
             />
           )}
           {activeTab === 'transactions' && (
-            <TransactionsView
-              transactions={safeTransactions}
-              tournaments={safeTournaments}
-              teams={resolvedTeams}
-              allPlayers={allPlayers}
-              setTransactions={updateTransactions}
-              updateTeams={updateTeams}
-              setTournaments={updateTournaments}
-              isCommissioner={isCommissioner}
-              STORAGE_KEYS={STORAGE_KEYS}
-            />
+            <Suspense fallback={<LazyFallback />}>
+              <LazyTransactionsView
+                transactions={safeTransactions}
+                tournaments={safeTournaments}
+                teams={resolvedTeams}
+                allPlayers={allPlayers}
+                setTransactions={updateTransactions}
+                updateTeams={updateTeams}
+                setTournaments={updateTournaments}
+                isCommissioner={isCommissioner}
+                STORAGE_KEYS={STORAGE_KEYS}
+              />
+            </Suspense>
           )}
           {activeTab === 'tournaments' && (
             <TournamentsView
@@ -591,28 +579,30 @@ const FantasyGolfLeague = () => {
             />
           )}
           {activeTab === 'admin' && isCommissioner && (
-            <AdminView
-              isCommissioner={isCommissioner}
-              setIsCommissioner={setIsCommissioner}
-              setActiveTab={setActiveTab}
-              settings={settings}
-              setSettings={updateSettings}
-              teams={resolvedTeams}
-              updateTeams={updateTeams}
-              tournaments={safeTournaments}
-              setTournaments={updateTournaments}
-              transactions={safeTransactions}
-              setTransactions={updateTransactions}
-              allPlayers={allPlayers}
-              setAllPlayers={setAllPlayers}
-              globalPlayerStats={globalPlayerStats}
-              setGlobalPlayerStats={updateGlobalStats}
-              headshots={resolvedHeadshots}
-              setHeadshots={updateHeadshots}
-              updateRankings={updateRankings}
-              rankingsLastUpdated={rankingsLastUpdated}
-              STORAGE_KEYS={STORAGE_KEYS}
-            />
+            <Suspense fallback={<LazyFallback />}>
+              <LazyAdminView
+                isCommissioner={isCommissioner}
+                setIsCommissioner={setIsCommissioner}
+                setActiveTab={setActiveTab}
+                settings={settings}
+                setSettings={updateSettings}
+                teams={resolvedTeams}
+                updateTeams={updateTeams}
+                tournaments={safeTournaments}
+                setTournaments={updateTournaments}
+                transactions={safeTransactions}
+                setTransactions={updateTransactions}
+                allPlayers={allPlayers}
+                setAllPlayers={setAllPlayers}
+                globalPlayerStats={globalPlayerStats}
+                setGlobalPlayerStats={updateGlobalStats}
+                headshots={resolvedHeadshots}
+                setHeadshots={updateHeadshots}
+                updateRankings={updateRankings}
+                rankingsLastUpdated={rankingsLastUpdated}
+                STORAGE_KEYS={STORAGE_KEYS}
+              />
+            </Suspense>
           )}
         </ErrorBoundary>
       </main>

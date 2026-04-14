@@ -1,0 +1,66 @@
+/* ============================================================================
+ * app-global.css
+ * Static CSS consolidating styles previously injected at runtime via
+ * document.createElement('style') in App.jsx and StandingsView.jsx.
+ *
+ * WHAT WAS MOVED HERE:
+ * 1. Tab responsive styles (from App.jsx useEffect — sfgl-tab-styles)
+ * 2. Select dropdown dark theme (from App.jsx useEffect — sfgl-select-styles)
+ * 3. Standings row styles (from StandingsView.jsx module-level injection)
+ * 4. Body font (from App.jsx useEffect — document.body.style assignment)
+ *
+ * WHY: Runtime style injection causes unnecessary style recalculation after
+ * first paint. Static CSS loads in parallel with the JS bundle and is parsed
+ * before any React rendering begins.
+ *
+ * IMPORT: Add `import './app-global.css'` in main.tsx (after index.css).
+ * ============================================================================
+ */
+
+/* ── Body defaults (was: document.body.style.fontFamily in App.jsx) ── */
+body {
+  font-family: 'Raleway', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* ── Tab responsive styles (was: sfgl-tab-styles in App.jsx) ── */
+.sfgl-nav-row { justify-content: space-between; }
+.sfgl-tab { flex: 1; }
+.sfgl-tab-label { display: none; }
+.sfgl-tournament-desktop { display: none !important; }
+.sfgl-tournament-mobile { display: flex !important; }
+
+@media (min-width: 640px) {
+  .sfgl-nav-row { justify-content: flex-start; }
+  .sfgl-tab { flex: 1; }
+  .sfgl-tab-label { display: inline; }
+  .sfgl-tournament-desktop { display: flex !important; }
+  .sfgl-tournament-mobile { display: none !important; }
+}
+
+/* ── Select dropdown dark theme (was: sfgl-select-styles in App.jsx) ── */
+select { color-scheme: dark; }
+select option {
+  background: #1a2744;
+  color: rgba(255,255,255,0.88);
+}
+select option:checked,
+select option:hover {
+  background: #243660;
+}
+
+/* ── Standings row styles (was: sfgl-standings-styles in StandingsView.jsx) ── */
+.sfgl-standings-row { height: 56px; }
+.sfgl-standings-cell { vertical-align: middle !important; }
+.sfgl-owner { display: inline; }
+
+@media (max-width: 639px) {
+  .sfgl-standings-row { height: 52px; }
+  .sfgl-owner { display: none; }
+}
+
+/* ── Tab focus-visible for keyboard accessibility (Fix 5) ── */
+.sfgl-tab:focus-visible {
+  outline: 2px solid rgba(180,160,100,0.6);
+  outline-offset: -2px;
+}
