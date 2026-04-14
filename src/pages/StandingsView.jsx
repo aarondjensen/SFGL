@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Trophy } from 'lucide-react';
-import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, SWING_COLORS } from '../theme.js';
+import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, SWINGS, SWING_COLORS } from '../theme.js';
 import { getSegmentByDate } from '../utils';
 
 // Standings row styles (.sfgl-standings-row, .sfgl-standings-cell, .sfgl-owner)
@@ -20,7 +20,7 @@ const formatBehind = (n) => {
   return '$' + n;
 };
 
-const ALL_SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
+const ALL_SWINGS = SWINGS;
 
 const SWING_ACCENT = SWING_COLORS;
 

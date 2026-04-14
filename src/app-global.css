@@ -64,3 +64,59 @@ select option:hover {
   outline: 2px solid rgba(180,160,100,0.6);
   outline-offset: -2px;
 }
+
+/* ── Body scroll lock — applied by modals when open ── */
+body.sfgl-modal-open {
+  overflow: hidden;
+  /* Prevent iOS Safari rubber-band bounce on body while modal is open */
+  position: fixed;
+  width: 100%;
+}
+
+/* ============================================================================
+ * MOBILE POLISH
+ * ============================================================================ */
+
+/* ── Kill iOS tap highlight flash on all interactive elements ── */
+button, a, [role="button"], input, select, label {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Remove 300ms tap delay on iOS — allow pinch-zoom but not double-tap zoom ── */
+html {
+  touch-action: manipulation;
+}
+
+/* ── Prevent overscroll chaining on modal scroll areas ── */
+.sfgl-modal-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Safe area padding for notched phones (iPhone X+) ── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  /* Bottom-sheet modals (AddDropPlayerModal) */
+  .sfgl-bottom-sheet {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Main content area — already has padding-bottom: 80px, add safe area on top */
+  .sfgl-main-content {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ── Toast + confirm dialog animations (was: inline <style> in DialogContext.jsx) ── */
+html { scrollbar-gutter: stable; }
+
+@keyframes sfgl-slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes sfgl-slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes sfgl-scaleIn {
+  from { transform: scale(0.96); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}

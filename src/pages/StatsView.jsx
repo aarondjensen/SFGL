@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { colors, fonts, theme } from '../theme.js';
+import { colors, fonts, theme, SWINGS } from '../theme.js';
 import { getSegmentByDate } from '../utils';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ const getSegmentForTournament = (t) => {
   return getSegmentByDate(new Date());
 };
 
-const ALL_SEGMENTS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
+const ALL_SEGMENTS = SWINGS;
 
 const SEGMENT_COLORS = {
   'West Coast Swing': 'rgba(100,180,255,0.85)',

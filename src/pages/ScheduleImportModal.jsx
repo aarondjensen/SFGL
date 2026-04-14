@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { slashGolfFetch } from '../utils';
 import { FALLBACK_SCHEDULE_DATA } from '../constants';
+import { theme, colors, fonts, SWINGS, SWING_COLORS } from '../theme.js';
 
 export const ScheduleImportModal = ({ onImport, onCancel }) => {
   const [loading, setLoading] = useState(false);
@@ -10,6 +11,17 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
   useEffect(() => {
     loadSchedule();
   }, []);
+
+  // ── Escape key + body scroll lock ─────────────────────────────────────────
+  useEffect(() => {
+    document.body.classList.add('sfgl-modal-open');
+    const handler = (e) => { if (e.key === 'Escape') onCancel(); };
+    document.addEventListener('keydown', handler);
+    return () => {
+      document.body.classList.remove('sfgl-modal-open');
+      document.removeEventListener('keydown', handler);
+    };
+  }, [onCancel]);
 
   const parseDate = (dateObj) => {
     if (!dateObj) return null;
@@ -61,37 +73,33 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
     }
   };
 
-  const getSwingColor = (swing) => {
-    const colors = {
-      'West Coast Swing': 'bg-blue-600/20 text-blue-300',
-      'Spring Swing': 'bg-green-600/20 text-green-300',
-      'Summer Swing': 'bg-yellow-600/20 text-yellow-300',
-      'Fall Finish': 'bg-red-600/20 text-red-300',
+  const getSwingBadgeStyle = (swing) => {
+    const accent = SWING_COLORS[swing] || 'rgba(255,255,255,0.4)';
+    return {
+      display: 'inline-block',
+      padding: '2px 8px',
+      borderRadius: 2,
+      fontSize: 11,
+      fontWeight: 600,
+      fontFamily: fonts.sans,
+      background: accent.replace('0.85)', '0.12)'),
+      color: accent,
     };
-    return colors[swing] || 'bg-gray-600/20 text-gray-300';
   };
 
   const loadSchedule = async () => {
     setLoading(true);
     try {
-      console.log('Fetching schedule from SlashGolf API...');
       let data = await slashGolfFetch('schedule', { orgId: '1', year: '2026' });
-      console.log('2026 schedule response:', data);
       
       if (!data?.schedule?.length) {
-        console.log('No 2026 data, trying 2025...');
         data = await slashGolfFetch('schedule', { orgId: '1', year: '2025' });
-        console.log('2025 schedule response:', data);
       }
       
       if (!data?.schedule?.length) {
-        console.error('No schedule data found in API response');
         setLoading(false);
         return;
       }
-      
-      console.log(`Processing ${data.schedule.length} tournaments...`);
-      console.log('First tournament raw data:', data.schedule[0]);
       
       let tournaments = (data?.schedule || []).map((event, idx) => {
         // API structure: event.date.start and event.date.end
@@ -118,7 +126,6 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
         
         // If API didn't provide location/course, use fallback data
         if ((location === 'TBD' || courseName === 'TBD') && event.name) {
-          // Find matching fallback entry by partial name match
           const fallback = FALLBACK_SCHEDULE_DATA.find(fb => 
             event.name.toLowerCase().includes(fb.key.toLowerCase()) ||
             fb.key.toLowerCase().includes(event.name.toLowerCase().split(' ')[0])
@@ -128,12 +135,6 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
             if (location === 'TBD') location = fallback.loc;
             if (courseName === 'TBD') courseName = fallback.course;
           }
-        }
-        
-        if (idx === 0) {
-          console.log('First event:', event.name);
-          console.log('Final location:', location);
-          console.log('Final course:', courseName);
         }
         
         // Auto-detect majors and signatures
@@ -165,20 +166,16 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
         t.name.toLowerCase().includes('tour championship')
       );
       if (tourChampIndex !== -1) {
-        console.log(`Truncating at TOUR Championship (position ${tourChampIndex + 1})`);
         tournaments = tournaments.slice(0, tourChampIndex + 1);
       }
       
       // Auto-assign swings evenly across the season
-      const swingNames = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
-      const tournamentsPerSwing = Math.ceil(tournaments.length / swingNames.length);
+      const tournamentsPerSwing = Math.ceil(tournaments.length / SWINGS.length);
       
       tournaments.forEach((t, idx) => {
-        const swingIndex = Math.min(Math.floor(idx / tournamentsPerSwing), swingNames.length - 1);
-        t.swing = swingNames[swingIndex];
+        const swingIndex = Math.min(Math.floor(idx / tournamentsPerSwing), SWINGS.length - 1);
+        t.swing = SWINGS[swingIndex];
       });
-      
-      console.log(`Assigned ${tournamentsPerSwing} tournaments per swing`);
       
       // Set first non-excluded tournament as active
       const firstActive = tournaments.findIndex(t => !t.excluded);
@@ -186,10 +183,9 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
         tournaments[firstActive].playing = true;
       }
       
-      console.log('Processed tournaments:', tournaments);
       setEditedSchedule(tournaments);
     } catch (e) {
-      console.error('Failed to load schedule:', e);
+      // Schedule load failed — user will see empty state
     }
     setLoading(false);
   };
@@ -197,14 +193,14 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
   const toggleSignature = (idx) => {
     const updated = [...editedSchedule];
     updated[idx].isSignature = !updated[idx].isSignature;
-    if (updated[idx].isSignature) updated[idx].isMajor = false; // Can't be both
+    if (updated[idx].isSignature) updated[idx].isMajor = false;
     setEditedSchedule(updated);
   };
 
   const toggleMajor = (idx) => {
     const updated = [...editedSchedule];
     updated[idx].isMajor = !updated[idx].isMajor;
-    if (updated[idx].isMajor) updated[idx].isSignature = false; // Can't be both
+    if (updated[idx].isMajor) updated[idx].isSignature = false;
     setEditedSchedule(updated);
   };
 
@@ -220,87 +216,138 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
     setEditedSchedule(updated);
   };
 
+  const included = editedSchedule.filter(t => !t.excluded);
+
+  // ── Inline styles using theme system ──────────────────────────────────────
+  const badgeBtn = (active, accentBg, accentHover) => ({
+    width: 28, height: 28, borderRadius: 2,
+    fontSize: 11, fontWeight: 700,
+    fontFamily: fonts.sans,
+    border: 'none', cursor: 'pointer',
+    transition: 'background 0.15s',
+    background: active ? accentBg : 'rgba(255,255,255,0.06)',
+    color: active ? '#fff' : colors.textMuted,
+  });
+
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-      <div className="bg-gray-800 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+    <div style={{
+      position: 'fixed', inset: 0,
+      background: 'rgba(5,10,25,0.85)', backdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 16, zIndex: 60,
+    }}>
+      <div style={{
+        background: '#0f1d35',
+        border: `1px solid ${colors.border}`,
+        borderRadius: 3,
+        maxWidth: 1100, width: '100%',
+        maxHeight: '90vh',
+        overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '16px 20px',
+          borderBottom: `1px solid ${colors.borderSubtle}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
           <div>
-            <h2 className="text-xl font-bold">Import 2026 Schedule</h2>
-            <p className="text-sm text-gray-400 mt-1">Configure tournament badges and swings before importing</p>
+            <h2 style={{ ...theme.h2, marginBottom: 4 }}>Import 2026 Schedule</h2>
+            <p style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary }}>
+              Configure tournament badges and swings before importing
+            </p>
           </div>
-          <button onClick={onCancel} className="text-gray-400 hover:text-white">
-            <X className="w-6 h-6" />
+          <button onClick={onCancel} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: colors.textSecondary, padding: 4, display: 'flex',
+            transition: 'color 0.15s',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.color = colors.textPrimary; }}
+            onMouseLeave={e => { e.currentTarget.style.color = colors.textSecondary; }}
+          >
+            <X style={{ width: 22, height: 22 }} />
           </button>
         </div>
         
-        <div className="flex-1 overflow-auto p-4">
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {loading ? (
-            <div className="text-center py-12 text-gray-400">Loading PGA Tour schedule...</div>
+            <div style={{ ...theme.emptyState, padding: '48px 20px' }}>Loading PGA Tour schedule...</div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-gray-800 z-10">
-                <tr className="border-b border-gray-700">
-                  <th className="text-left p-2 font-semibold">Include</th>
-                  <th className="text-left p-2 font-semibold">Sig/Maj</th>
-                  <th className="text-left p-2 font-semibold">Tournament</th>
-                  <th className="text-left p-2 font-semibold">Dates</th>
-                  <th className="text-left p-2 font-semibold">Location & Course</th>
-                  <th className="text-left p-2 font-semibold">Swing</th>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: fonts.sans }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                  {['Include', 'Sig/Maj', 'Tournament', 'Dates', 'Location & Course', 'Swing'].map(h => (
+                    <th key={h} style={{ ...theme.tableHeaderCell, textAlign: 'left', padding: '8px 10px', position: 'sticky', top: 0, background: '#0f1d35', zIndex: 1 }}>
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {editedSchedule.map((t, idx) => (
-                  <tr key={idx} className={`border-b border-gray-700/50 hover:bg-gray-700/30 ${t.excluded ? 'opacity-40' : ''}`}>
-                    <td className="p-2">
+                  <tr key={idx} style={{
+                    borderBottom: `1px solid ${colors.borderSubtle}`,
+                    opacity: t.excluded ? 0.35 : 1,
+                    transition: 'background 0.15s, opacity 0.15s',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    {/* Include checkbox */}
+                    <td style={{ padding: '8px 10px' }}>
                       <input
                         type="checkbox"
                         checked={!t.excluded}
                         onChange={() => toggleExclude(idx)}
-                        className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-green-600 focus:ring-green-500 focus:ring-2 cursor-pointer"
+                        style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'rgba(80,180,120,0.9)' }}
                       />
                     </td>
-                    <td className="p-2">
-                      <div className="flex gap-1">
+
+                    {/* Sig/Maj badges */}
+                    <td style={{ padding: '8px 10px' }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
                         <button
                           onClick={() => toggleSignature(idx)}
-                          className={`w-7 h-7 rounded text-xs font-bold transition-colors ${
-                            t.isSignature ? 'bg-purple-600 hover:bg-purple-500' : 'bg-gray-600 hover:bg-gray-500'
-                          }`}
+                          style={badgeBtn(t.isSignature, 'rgba(160,110,240,0.7)', 'rgba(160,110,240,0.5)')}
                           title="Signature Event"
-                        >
-                          S
-                        </button>
+                        >S</button>
                         <button
                           onClick={() => toggleMajor(idx)}
-                          className={`w-7 h-7 rounded text-xs font-bold transition-colors ${
-                            t.isMajor ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-gray-600 hover:bg-gray-500'
-                          }`}
+                          style={badgeBtn(t.isMajor, 'rgba(220,170,60,0.7)', 'rgba(220,170,60,0.5)')}
                           title="Major Championship"
-                        >
-                          M
-                        </button>
+                        >M</button>
                       </div>
                     </td>
-                    <td className="p-2 font-medium">{t.name}</td>
-                    <td className="p-2">
-                      <div className={`inline-block px-2 py-1 rounded text-xs font-medium ${getSwingColor(t.swing)}`}>
-                        {t.dates}
-                      </div>
+
+                    {/* Tournament name */}
+                    <td style={{ padding: '8px 10px', fontWeight: 500, color: colors.textPrimary }}>{t.name}</td>
+
+                    {/* Dates with swing color badge */}
+                    <td style={{ padding: '8px 10px' }}>
+                      <span style={getSwingBadgeStyle(t.swing)}>{t.dates}</span>
                     </td>
-                    <td className="p-2 text-xs text-gray-400">
-                      <div>{t.location}</div>
-                      <div className="text-gray-500">{t.courseName}</div>
+
+                    {/* Location & Course */}
+                    <td style={{ padding: '8px 10px', fontSize: 12 }}>
+                      <div style={{ color: colors.textSecondary }}>{t.location}</div>
+                      <div style={{ color: colors.textMuted }}>{t.courseName}</div>
                     </td>
-                    <td className="p-2">
+
+                    {/* Swing selector */}
+                    <td style={{ padding: '8px 10px' }}>
                       <select
                         value={t.swing}
                         onChange={(e) => setSwing(idx, e.target.value)}
-                        className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500"
+                        style={{
+                          ...theme.select,
+                          width: 'auto',
+                          padding: '4px 8px',
+                          fontSize: 12,
+                        }}
                       >
-                        <option>West Coast Swing</option>
-                        <option>Spring Swing</option>
-                        <option>Summer Swing</option>
-                        <option>Fall Finish</option>
+                        {SWINGS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
                   </tr>
@@ -310,21 +357,28 @@ export const ScheduleImportModal = ({ onImport, onCancel }) => {
           )}
         </div>
         
-        <div className="p-4 border-t border-gray-700 flex justify-between items-center">
-          <div className="text-sm text-gray-400">
-            {editedSchedule.filter(t => !t.excluded).length} tournaments • {editedSchedule.filter(t => t.isMajor && !t.excluded).length} majors • {editedSchedule.filter(t => t.isSignature && !t.excluded).length} signature events
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium transition-colors"
-            >
+        {/* Footer */}
+        <div style={{
+          padding: '12px 20px',
+          borderTop: `1px solid ${colors.borderSubtle}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary }}>
+            {included.length} tournaments · {included.filter(t => t.isMajor).length} majors · {included.filter(t => t.isSignature).length} signature events
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onCancel} style={{ ...theme.btnSecondary, padding: '9px 18px' }}>
               Cancel
             </button>
             <button
-              onClick={() => onImport(editedSchedule.filter(t => !t.excluded))}
-              disabled={editedSchedule.filter(t => !t.excluded).length === 0}
-              className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => onImport(included)}
+              disabled={included.length === 0}
+              style={{
+                ...theme.btnPrimary,
+                padding: '9px 18px',
+                opacity: included.length === 0 ? 0.4 : 1,
+                cursor: included.length === 0 ? 'not-allowed' : 'pointer',
+              }}
             >
               Import Schedule
             </button>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
@@ -6,12 +6,16 @@ import { storage } from '../api';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
+import { useModalBehaviorAlways } from '../utils/modalUtils';
 
 // shortName imported from utils (see abbreviateName)
 
 // ── Inline edit modal ─────────────────────────────────────────────────────────
 const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, transactions, setTransactions, updateTeams, onClose }) => {
   const dialog = useDialog();
+
+  // ── Escape key + body scroll lock (shared) ────────────────────────────────
+  useModalBehaviorAlways(onClose);
 
   // Derive initial values from the transaction
   const [editTeam,   setEditTeam]   = useState(tx.team);
@@ -99,7 +103,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
     updateTeams(updatedTeams);
     await storage.set(STORAGE_KEYS.TRANSACTIONS, updatedTx);
     await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
-    // Sync to Supabase
+    // Sync to Firebase
     try {
       const { transactionsApi } = await import('../api/firebase');
       await transactionsApi.sync(updatedTx);

@@ -321,6 +321,7 @@ export const playersApi = {
 import { NAME_ALIASES, NAME_ALIASES_REVERSE, resolveAlias, allNameVariants } from '../constants/nameAliases.js';
 
 
+const PLAYER_CACHE_KEY = 'sfgl-player-cache';
 const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 export const playerRankingsApi = {
@@ -331,7 +332,6 @@ export const playerRankingsApi = {
       if (cached) {
         const { players, timestamp } = JSON.parse(cached);
         if (Date.now() - timestamp < PLAYER_CACHE_TTL && players?.length) {
-          console.log(`[playerCache] Using cached ${players.length} players`);
           return players;
         }
       }
@@ -570,7 +570,6 @@ export const transactionsApi = {
         });
         await batch.commit();
       }
-      console.log(`[transactionsApi.sync] Deleted ${toDelete.length} removed transaction(s) from Firebase`);
     }
 
     // Return only what the local state should have (no more merging back deleted items)

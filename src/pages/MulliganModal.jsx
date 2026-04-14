@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDialog } from './DialogContext';
 import { theme, colors, fonts } from '../theme.js';
+import { useModalBehavior } from '../utils/modalUtils';
 
 /**
  * MulliganModal — top-level component (not defined inside RostersView render)
@@ -20,6 +21,9 @@ export const MulliganModal = ({
   const [playerIn,   setPlayerIn]   = useState('');
   const [afterRound, setAfterRound] = useState('2');
   const dialog = useDialog();
+
+  // ── Escape key + body scroll lock (shared) ────────────────────────────────
+  useModalBehavior(isOpen, onClose);
 
   if (!isOpen || !activeTournament) return null;
 
@@ -59,7 +63,7 @@ export const MulliganModal = ({
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
       onClick={handleClose}
     >
       <div

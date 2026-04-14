@@ -6,6 +6,7 @@ import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../ut
 import { playersApi } from '../api/firebase';
 import { theme, colors, fonts } from '../theme.js';
 import { LIV_GOLF_ROSTER } from '../constants';
+import { useModalBehavior } from '../utils/modalUtils';
 
 // Use shared LIV roster from constants instead of local duplicate
 const LIV_PLAYERS = new Set(LIV_GOLF_ROSTER);
@@ -51,6 +52,9 @@ export const AddDropPlayerModal = ({
       .catch(() => setTopPlayers([]))
       .finally(() => setLoadingPlayers(false));
   }, [isOpen]);
+
+  // ── Escape key + body scroll lock (shared) ─────────────────────────────────
+  useModalBehavior(isOpen, onClose);
 
   // Pre-populate when editing an existing waiver claim
   useEffect(() => {
@@ -264,7 +268,7 @@ export const AddDropPlayerModal = ({
 
     const newTransactions = [newTx, ...transactions];
     updateTeams(updatedTeams);
-    setTransactions(newTransactions); // setTransactions IS updateTransactions — persists to Supabase + localStorage
+    setTransactions(newTransactions); // setTransactions IS updateTransactions — persists to Firebase + localStorage
 
     setSaving(false);
     dialog.showToast(
@@ -323,15 +327,15 @@ export const AddDropPlayerModal = ({
       alignItems: isMobile ? 'flex-end' : 'center',
       justifyContent: 'center',
       padding: isMobile ? 0 : 16,
-      zIndex: 50,
+      zIndex: 60,
     }}>
       <div style={{
         background: '#0f1d35',
         border: `2px solid ${isWaiverMode ? colors.warning : colors.success}`,
         borderRadius: isMobile ? '12px 12px 0 0' : 4,
         width: '100%', maxWidth: isMobile ? '100%' : 480,
-        height: isMobile ? '80vh' : 'auto',
-        maxHeight: isMobile ? '80vh' : '82vh',
+        height: isMobile ? '90vh' : 'auto',
+        maxHeight: isMobile ? '90vh' : '82vh',
         display: 'flex', flexDirection: 'column',
       }}>
 
@@ -443,7 +447,7 @@ export const AddDropPlayerModal = ({
         )}
 
         {/* ── Body ── */}
-        <div ref={bodyRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', minHeight: 0 }}>
+        <div ref={bodyRef} className="sfgl-modal-scroll" style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', minHeight: 0 }}>
 
           {/* ── Drop list — shown when add player is selected and roster full ── */}
           {needsDrop && (
@@ -460,7 +464,7 @@ export const AddDropPlayerModal = ({
                     onClick={() => setSelectedPlayerToDrop(isSelected ? null : player)}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '9px 12px', marginBottom: 6, borderRadius: 3,
+                      padding: '12px 14px', marginBottom: 6, borderRadius: 3,
                       background: isSelected ? colors.dangerBg : 'rgba(255,255,255,0.03)',
                       border: `1px solid ${isSelected ? colors.dangerBorder : colors.borderSubtle}`,
                       cursor: 'pointer',
@@ -549,7 +553,7 @@ export const AddDropPlayerModal = ({
                   key={player.name}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '9px 12px', marginBottom: 6, borderRadius: 3,
+                    padding: '12px 14px', marginBottom: 6, borderRadius: 3,
                     background: isCurrentlySelected ? accentBg(isWaiverMode) : colors.cardBg,
                     border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
                     transition: 'all 0.15s',
