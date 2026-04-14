@@ -3,21 +3,8 @@ import { Trophy } from 'lucide-react';
 import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, SWING_COLORS } from '../theme.js';
 import { getSegmentByDate } from '../utils';
 
-// Inject once — consistent row height on mobile
-if (typeof document !== 'undefined' && !document.getElementById('sfgl-standings-styles')) {
-  const s = document.createElement('style');
-  s.id = 'sfgl-standings-styles';
-  s.textContent = `
-    .sfgl-standings-row { height: 56px; }
-    .sfgl-standings-cell { vertical-align: middle !important; }
-    .sfgl-owner { display: inline; }
-    @media (max-width: 639px) {
-      .sfgl-standings-row { height: 52px; }
-      .sfgl-owner { display: none; }
-    }
-  `;
-  document.head.appendChild(s);
-}
+// Standings row styles (.sfgl-standings-row, .sfgl-standings-cell, .sfgl-owner)
+// are now in app-global.css — no runtime injection needed.
 
 const formatEarnings = (n) => {
   n = n || 0;

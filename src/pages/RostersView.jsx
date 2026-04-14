@@ -15,43 +15,20 @@ import { storage } from '../api';
 import { teamsApi, sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
-// ── Headshot helpers ─────────────────────────────────────────────────────────
-// Stored IDs are ESPN athlete IDs (e.g. 4696529 for McIlroy).
-// Image URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
-const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
-  const val = headshotMap[playerName];
-  if (!val) return [];
-  if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
-  return [`https://a.espncdn.com/i/headshots/golf/players/full/${val}.png`];
-};
+// ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
+// Thin wrappers preserve the (name, isLimited, headshotMap) call signature
+// used throughout this file — headshotUtils uses (name, headshotMap, isLimited).
+import {
+  getPlayerHeadshot as _getPlayerHeadshot,
+  makeHeadshotErrorHandler as _makeHeadshotErrorHandler,
+  getPlayerHeadshotFallback,
+} from '../utils/headshotUtils';
 
-const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
-  if (urls.length > 0) return urls[0];
-  const bg = isLimited ? '8B6914' : '1c3a5e';
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
-};
+const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) =>
+  _getPlayerHeadshot(playerName, headshotMap, isLimited);
 
-const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) => {
-  const urls = getPlayerHeadshotUrls(playerName, headshotMap);
-  let attempt = 0;
-  return function handler(e) {
-    attempt++;
-    if (attempt < urls.length) {
-      e.target.src = urls[attempt];
-      e.target.onerror = handler;
-    } else {
-      e.target.onerror = null;
-      const bg = isLimited ? '8B6914' : '1c3a5e';
-      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
-    }
-  };
-};
-
-const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
-  const bg = isLimited ? '8B6914' : '1c3a5e';
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
-};
+const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) =>
+  _makeHeadshotErrorHandler(playerName, headshotMap, isLimited);
 
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
