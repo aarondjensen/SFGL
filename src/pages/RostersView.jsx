@@ -641,6 +641,9 @@ export const RostersView = ({
   // Fetch live leaderboard from /api/live during tournament week
   // Polls every 5 minutes while the tournament is in progress
   useEffect(() => {
+    // Clear stale data from previous tournament immediately
+    setLiveData(null);
+
     if (!activeTournament) return;
     let cancelled = false;
     let interval = null;
@@ -649,9 +652,9 @@ export const RostersView = ({
       fetch('/api/live')
         .then(r => r.ok ? r.json() : null)
         .then(data => {
-          if (cancelled || !data?.players?.length) return;
-          // Always set liveData when players are returned — the per-player
-          // thru field determines whether to show score vs tee time
+          if (cancelled) return;
+          // If no players returned, or tournament just advanced and hasn't started yet, clear
+          if (!data?.players?.length) { setLiveData(null); return; }
           setLiveData(data);
         })
         .catch(() => {});
@@ -673,14 +676,17 @@ export const RostersView = ({
     if (!sortCol) return roster;
     const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss');
     return [...roster].sort((a, b) => {
-      let av, bv;
+      let av, bv, aHasData = true, bHasData = true;
       if (sortCol === 'teeTime') {
-        av = teeTimeMap[normalize(a.name)]; bv = teeTimeMap[normalize(b.name)];
-        const toMin = t => { if (!t) return sortDir === 'asc' ? 9999 : -1; const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 0; let h = parseInt(m[1]); if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12; if (m[3].toUpperCase() === 'AM' && h === 12) h = 0; return h * 60 + parseInt(m[2]); };
-        av = toMin(av); bv = toMin(bv);
+        const rawA = teeTimeMap[normalize(a.name)]; const rawB = teeTimeMap[normalize(b.name)];
+        aHasData = !!rawA; bHasData = !!rawB;
+        const toMin = t => { if (!t) return 0; const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 0; let h = parseInt(m[1]); if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12; if (m[3].toUpperCase() === 'AM' && h === 12) h = 0; return h * 60 + parseInt(m[2]); };
+        av = toMin(rawA); bv = toMin(rawB);
       } else if (sortCol === 'odds') {
-        const toNum = o => { if (!o) return sortDir === 'asc' ? 9999 : -9999; return parseInt(o.replace('+',''), 10); };
-        av = toNum(oddsMap[normalize(a.name)]); bv = toNum(oddsMap[normalize(b.name)]);
+        const rawA = oddsMap[normalize(a.name)]; const rawB = oddsMap[normalize(b.name)];
+        aHasData = !!rawA; bHasData = !!rawB;
+        const toNum = o => { if (!o) return 0; const n = parseInt(String(o).replace('+',''), 10); return isNaN(n) ? 0 : n; };
+        av = toNum(rawA); bv = toNum(rawB);
       } else if (sortCol === 'starts') {
         av = sfglCutsMap[a.name]?.starts ?? a.starts ?? 0; bv = sfglCutsMap[b.name]?.starts ?? b.starts ?? 0;
       } else if (sortCol === 'cuts') {
@@ -688,6 +694,10 @@ export const RostersView = ({
       } else if (sortCol === 'earnings') {
         av = a.sfglEarnings || 0; bv = b.sfglEarnings || 0;
       }
+      // Always push players without data to the bottom
+      if (!aHasData && !bHasData) return 0;
+      if (!aHasData) return 1;
+      if (!bHasData) return -1;
       if (av === bv) return 0;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
