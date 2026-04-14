@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { X, Check, AlertCircle, Clock } from 'lucide-react';
 import { theme, colors, fonts } from '../theme.js';
 
@@ -33,6 +33,14 @@ export const DialogProvider = ({ children }) => {
     setConfirm(null);
   }, []);
 
+  // ── Escape key closes confirm dialog ──────────────────────────────────────
+  useEffect(() => {
+    if (!confirm) return;
+    const handler = (e) => { if (e.key === 'Escape') handleResult(false); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [confirm, handleResult]);
+
   // Toast accent colors
   const toastAccent = (type) => {
     if (type === 'success') return { bg: 'rgba(40,100,60,0.95)',  border: 'rgba(80,180,120,0.4)',  icon: colors.success };
@@ -49,9 +57,11 @@ export const DialogProvider = ({ children }) => {
 
       {/* ── Toasts ── */}
       <div style={{
-        position: 'fixed', top: 16, right: 16, zIndex: 100,
+        position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+        zIndex: 100,
         display: 'flex', flexDirection: 'column', gap: 8,
         pointerEvents: 'none',
+        width: '100%', maxWidth: 360, padding: '0 16px',
       }}>
         {toasts.map(toast => {
           const accent = toastAccent(toast.type);
@@ -67,7 +77,7 @@ export const DialogProvider = ({ children }) => {
               pointerEvents: 'auto',
               boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
               backdropFilter: 'blur(8px)',
-              animation: 'sfgl-slideIn 0.25s ease-out',
+              animation: 'sfgl-slideUp 0.25s ease-out',
             }}>
               <Icon style={{ width: 14, height: 14, color: accent.icon, flexShrink: 0 }} />
               <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary, flex: 1 }}>
@@ -156,17 +166,7 @@ export const DialogProvider = ({ children }) => {
         </div>
       )}
 
-      <style>{`
-        html { scrollbar-gutter: stable; }
-        @keyframes sfgl-slideIn {
-          from { transform: translateX(100%); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
-        }
-        @keyframes sfgl-scaleIn {
-          from { transform: scale(0.96); opacity: 0; }
-          to   { transform: scale(1);    opacity: 1; }
-        }
-      `}</style>
+      {/* Animations now in app-global.css — no inline <style> needed */}
     </DialogContext.Provider>
   );
 };

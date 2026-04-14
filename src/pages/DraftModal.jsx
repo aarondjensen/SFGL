@@ -3,6 +3,7 @@ import { X, Search, RotateCcw, Flag } from 'lucide-react';
 import { draftStateApi } from '../api';
 import { useDialog } from './DialogContext';
 import { theme, colors, fonts } from '../theme.js';
+import { useModalBehaviorAlways } from '../utils/modalUtils';
 
 // ── Shared modal shell ────────────────────────────────────────────────────────
 const Shell = ({ children, wide }) => (
@@ -10,7 +11,7 @@ const Shell = ({ children, wide }) => (
     position: 'fixed', inset: 0,
     background: 'rgba(5,10,25,0.88)', backdropFilter: 'blur(6px)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: 16, zIndex: 50,
+    padding: 16, zIndex: 60,
   }}>
     <div style={{
       background: '#0f1d35',
@@ -208,6 +209,9 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const [draggedIndex, setDraggedIndex]       = useState(null);
   const [confirmDraft, setConfirmDraft]       = useState(null);
   const dialog = useDialog();
+
+  // ── Escape key + body scroll lock (shared) ────────────────────────────────
+  useModalBehaviorAlways(onClose);
 
   // ── On mount: use initialPhase from parent if provided ──
   useEffect(() => {

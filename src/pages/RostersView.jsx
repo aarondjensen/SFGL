@@ -30,6 +30,9 @@ const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) =>
 const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) =>
   _makeHeadshotErrorHandler(playerName, headshotMap, isLimited);
 
+// ── Nordic name normalization (single definition, used throughout) ────────────
+const normalizeNordic = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
+
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
   player.limited   ? 'rgba(245,197,24,0.9)' :
@@ -88,13 +91,14 @@ const TeamDropdown = ({ teams, value, onChange }) => {
         <div style={{
           position: 'absolute', top: '100%', left: 0, zIndex: 100, marginTop: 2,
           minWidth: '100%', width: 'max-content',
+          maxHeight: '60vh', overflowY: 'auto',
           background: '#0f1d35', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 2,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
-        }}>
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+        }} className="sfgl-modal-scroll">
           {teams.map(t => (
             <button key={t.id} onClick={() => { onChange(t.id); setOpen(false); }}
               style={{
-                display: 'block', width: '100%', padding: '9px 12px', textAlign: 'left', cursor: 'pointer',
+                display: 'block', width: '100%', padding: '11px 14px', textAlign: 'left', cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 background: t.id === value ? 'rgba(245,197,24,0.12)' : 'transparent',
                 border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)',
@@ -119,7 +123,7 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
   <div style={{ opacity: disabled ? 0.3 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.18s' }}>
     <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width }}>
       <button onClick={() => setter(leftVal)} style={{
-        flex: 1, padding: '3px 0', borderRadius: 2,
+        flex: 1, padding: '6px 0', borderRadius: 2,
         background: current === leftVal ? 'rgba(255,255,255,0.08)' : 'none',
         border: current === leftVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
         fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
@@ -127,7 +131,7 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
         cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
       }}>{leftLabel}</button>
       <button onClick={() => setter(rightVal)} style={{
-        flex: 1, padding: '3px 0', borderRadius: 2,
+        flex: 1, padding: '6px 0', borderRadius: 2,
         background: current === rightVal ? 'rgba(255,255,255,0.08)' : 'none',
         border: current === rightVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
         fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
@@ -222,14 +226,14 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
             display: 'flex', alignItems: 'center', gap: 8,
           }}>
             {isOwnTeam && pendingWaivers.length > 1 && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                 <button onClick={() => swapPriority(index, index - 1)} disabled={index === 0}
                   style={{ background: 'none', border: 'none', cursor: index === 0 ? 'not-allowed' : 'pointer',
-                    color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 11, padding: '0 2px' }}>▲</button>
+                    color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 14, padding: '6px 10px', lineHeight: 1 }}>▲</button>
                 <span style={{ fontSize: 10, color: 'rgba(220,200,80,0.8)', fontWeight: 700 }}>{index + 1}</span>
                 <button onClick={() => swapPriority(index, index + 1)} disabled={index === pendingWaivers.length - 1}
                   style={{ background: 'none', border: 'none', cursor: index === pendingWaivers.length - 1 ? 'not-allowed' : 'pointer',
-                    color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 11, padding: '0 2px' }}>▼</button>
+                    color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 14, padding: '6px 10px', lineHeight: 1 }}>▼</button>
               </div>
             )}
             <div style={{ flex: 1 }}>
@@ -243,14 +247,14 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
               <div style={{ ...theme.smallText, marginTop: 2 }}>${waiver.fee} fee · {waiver.segment || 'Current Swing'}</div>
             </div>
             {isOwnTeam && (
-              <div style={{ display: 'flex', gap: 4 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => deleteWaiver(waiver)}
-                  style={{ ...theme.btnSecondary, padding: '4px 8px', fontSize: 10 }}>✏️</button>
+                  style={{ ...theme.btnSecondary, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✏️</button>
                 <button onClick={async () => {
                   const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
                   if (!ok) return;
                   deleteWaiver(waiver);
-                }} style={{ ...theme.btnDanger, padding: '4px 8px', fontSize: 10 }}>✕</button>
+                }} style={{ ...theme.btnDanger, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✕</button>
               </div>
             )}
           </div>
@@ -562,7 +566,7 @@ export const RostersView = ({
     // Don't re-run if we already have tee times for this tournament
     if (_lastFetchedTournament.current === _fieldTournamentName && Object.keys(teeTimeMap).length > 0) return;
     let cancelled = false;
-    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
+    const normalize = normalizeNordic;
 
     const fetchField = () => {
       fetch('/api/field?t=' + Date.now())
@@ -611,7 +615,7 @@ export const RostersView = ({
         }
       }).catch(() => {});
     };
-    const interval = setInterval(poll, 30000); // every 30s
+    const interval = setInterval(poll, 90000); // every 90s (was 30s — reduces Firebase reads)
     return () => { cancelled = true; clearInterval(interval); };
   }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -646,12 +650,12 @@ export const RostersView = ({
   const sortedRoster = React.useMemo(() => {
     const baseRoster = rosterView === 'playing'
       ? getSortedRoster(currentRoster).filter(p => tournamentField?.has(
-          p.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss')
+          normalizeNordic(p.name)
         ))
       : getSortedRoster(currentRoster);
     const roster = baseRoster;
     if (!sortCol) return roster;
-    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g,'o').replace(/Ø/g,'O').replace(/æ/g,'ae').replace(/Æ/g,'Ae').replace(/ß/g,'ss');
+    const normalize = normalizeNordic;
     return [...roster].sort((a, b) => {
       let av, bv, aHasData = true, bHasData = true;
       if (sortCol === 'teeTime') {
@@ -1047,7 +1051,7 @@ export const RostersView = ({
 
                     {/* ── Info columns: Tee Time/Score + Odds + empty Earnings ── */}
                     {infoView === 'info' && (() => {
-                      const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
+                      const normalize = normalizeNordic;
                       const normName = normalize(player.name);
                       const playerOdds = oddsMap[normName];
                       const inField = tournamentField?.has(normName);

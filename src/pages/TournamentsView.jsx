@@ -2,10 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Trophy, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
 
-// SWINGS defined locally (4 swings only)
-const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
-import { theme, colors, fonts } from '../theme.js';
-import { SWING_COLORS } from '../theme.js';
+import { theme, colors, fonts, SWINGS, SWING_COLORS } from '../theme.js';
 import { storage } from '../api';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';

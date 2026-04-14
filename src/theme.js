@@ -404,7 +404,9 @@ export const cardLiftHandlers = () => ({
   },
 });
 
-// ── Swing accent colors (single source of truth) ────────────────────────────
+// ── Swing names + accent colors (single source of truth) ────────────────
+export const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
+
 export const SWING_COLORS = {
   'West Coast Swing': 'rgba(220,190,100,0.85)',
   'Spring Swing':     'rgba(80,200,120,0.85)',

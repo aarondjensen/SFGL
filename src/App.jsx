@@ -20,7 +20,7 @@ const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 
 import { useLeague }       from './hooks';
-import { hashPassword, getSegmentByDate, fetchFirstTeeTime } from './utils';
+import { hashPassword, getSegmentByDate } from './utils';
 import { getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
 import { managerAuthApi, tournamentResultsApi } from './api/firebase';
@@ -136,7 +136,6 @@ const FantasyGolfLeague = () => {
   const [showLoginModal,        setShowLoginModal]        = useState(false);
   const [showAdminLoginPopover, setShowAdminLoginPopover] = useState(false);
   const [adminPassword,         setAdminPassword]         = useState('');
-  const [firstTeeTime,          setFirstTeeTime]          = useState(null);
   const [resultsHydrated,       setResultsHydrated]       = useState(false);
 
   const league = useLeague(STORAGE_KEYS);
@@ -144,12 +143,12 @@ const FantasyGolfLeague = () => {
   const {
     teams, tournaments, transactions, settings, globalPlayerStats,
     allPlayers, rankingsLastUpdated, headshots, loading, isSyncing,
-    setTeams, setTournaments, setTransactions, setSettings, setGlobalPlayerStats, setHeadshots, setAllPlayers,
+    setTournaments, setAllPlayers,
     updateTeams, updateTournaments, updateTransactions, updateSettings,
     updateGlobalStats, updateHeadshots, updateRankings,
   } = league;
 
-  // Guard against useLeague returning null/undefined when Supabase load fails
+  // Guard against useLeague returning null/undefined when Firebase load fails
   const safeTeams        = Array.isArray(teams)        ? teams        : [];
   const safeTournaments  = Array.isArray(tournaments)  ? tournaments  : [];
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
@@ -186,24 +185,24 @@ const FantasyGolfLeague = () => {
     }).catch(() => {});
   }, [resolvedTeams]);
 
-  // ── Hydrate tournament results from Supabase ─────────────────────────────
-  // Hydrate tournament results from Supabase once after load.
+  // ── Hydrate tournament results from Firebase ──────────────────────────────
+  // Hydrate tournament results from Firebase once after load.
   // MERGE only — never overwrites a tournament that already has local results.
   // Remote results win only when the local tournament has none.
   useEffect(() => {
     if (loading || resultsHydrated || tournaments.length === 0) return;
-    tournamentResultsApi.getAllForSeason().then(supabaseResults => {
-      if (!supabaseResults || supabaseResults.length === 0) { setResultsHydrated(true); return; }
+    tournamentResultsApi.getAllForSeason().then(remoteResults => {
+      if (!remoteResults || remoteResults.length === 0) { setResultsHydrated(true); return; }
       setTournaments(prev => prev.map(t => {
         // Keep local results if they already exist — don't overwrite with remote
         if (t.completed && t.results) return t;
-        const remote = supabaseResults.find(r => r.tournamentName === t.name);
+        const remote = remoteResults.find(r => r.tournamentName === t.name);
         if (!remote) return t;
         return { ...t, completed: true, results: remote.results };
       }));
       setResultsHydrated(true);
     }).catch(e => {
-      console.warn('Could not load results from Supabase:', e.message);
+      console.warn('Could not load results from Firebase:', e.message);
       setResultsHydrated(true);
     });
   }, [loading, tournaments.length, resultsHydrated]);
@@ -329,7 +328,7 @@ const FantasyGolfLeague = () => {
                       fontSize: 10,
                       letterSpacing: 1.5,
                       textTransform: 'uppercase',
-                      padding: '5px 12px',
+                      padding: '8px 14px',
                       background: 'rgba(180,60,60,0.12)',
                       border: '1px solid rgba(180,60,60,0.3)',
                       borderRadius: 1,
@@ -346,7 +345,7 @@ const FantasyGolfLeague = () => {
                       fontSize: 10,
                       letterSpacing: 1.5,
                       textTransform: 'uppercase',
-                      padding: '5px 12px',
+                      padding: '8px 14px',
                       background: 'rgba(40,120,80,0.15)',
                       border: '1px solid rgba(80,195,120,0.35)',
                       borderRadius: 1,
@@ -377,7 +376,7 @@ const FantasyGolfLeague = () => {
               fontSize: 9,
               letterSpacing: 1.5,
               textTransform: 'uppercase',
-              padding: '3px 10px',
+              padding: '6px 12px',
               background: '#dc2626',
               border: '1px solid #b91c1c',
               borderRadius: 2,
@@ -528,7 +527,7 @@ const FantasyGolfLeague = () => {
       </div>{/* end sticky shell */}
 
       {/* ── Main content ── */}
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 80px" }}>
+      <main className="sfgl-main-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 80px" }}>
 
         <ErrorBoundary key={activeTab} tabName={activeTab}>
           {activeTab === 'standings' && (
@@ -552,7 +551,6 @@ const FantasyGolfLeague = () => {
               isCommissioner={isCommissioner}
               globalPlayerStats={globalPlayerStats}
               headshots={resolvedHeadshots}
-              firstTeeTime={firstTeeTime}
             />
           )}
           {activeTab === 'transactions' && (
@@ -575,7 +573,6 @@ const FantasyGolfLeague = () => {
               tournaments={safeTournaments}
               isCommissioner={isCommissioner}
               setTournaments={updateTournaments}
-              firstTeeTime={firstTeeTime}
             />
           )}
           {activeTab === 'admin' && isCommissioner && (
@@ -614,7 +611,7 @@ const FantasyGolfLeague = () => {
           background: 'rgba(5, 10, 25, 0.88)',
           backdropFilter: 'blur(6px)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 50, padding: 16,
+          zIndex: 60, padding: 16,
         }}>
           <div style={{ position: 'relative' }}>
             <LoginPage onLogin={handleManagerLogin} />
@@ -628,7 +625,9 @@ const FantasyGolfLeague = () => {
                 fontSize: 20, cursor: 'pointer',
                 lineHeight: 1, zIndex: 51,
                 transition: 'color 0.2s',
-                padding: 4,
+                padding: 10,
+                minWidth: 44, minHeight: 44,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
               onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.7)'}
               onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.3)'}
