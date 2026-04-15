@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { Trophy } from 'lucide-react';
 import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, SWINGS, SWING_COLORS } from '../theme.js';
 import { getSegmentByDate } from '../utils';
 
@@ -143,12 +142,8 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
       {/* Header */}
       <div style={{ ...theme.cardHeader, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-          {/* Left: title + subtitle */}
+          {/* Left: subtitle */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Trophy style={{ width: 20, height: 20, color: colors.textPrimary, flexShrink: 0 }} />
-              <h2 style={theme.h2}>Standings</h2>
-            </div>
             {/* Subtitle — always reserve space to prevent layout shift */}
             <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', minHeight: 18, display: 'flex', alignItems: 'center', lineHeight: 1.3 }}>
               {showSwing && selectedSwing && (
