@@ -344,12 +344,9 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* ── Page header ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        <div>
-          <h2 style={theme.h1}>2026 Season Schedule</h2>
-        </div>
-        {isCommissioner && (
+      {/* ── Edit button (commissioner only) ── */}
+      {isCommissioner && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button
             onClick={() => editMode ? saveChanges() : setEditMode(true)}
             style={{
@@ -363,8 +360,8 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               : <><Edit2 style={{ width: 12, height: 12 }} /> Edit Schedule</>
             }
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ── Upcoming ── */}
       <div style={theme.card}>
@@ -388,4 +385,3 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
     </div>
   );
 };
-
