@@ -208,6 +208,40 @@ const FantasyGolfLeague = () => {
   }, [loading, tournaments.length, resultsHydrated]);
 
 
+  // ── Auto-fetch headshots for all rostered players on app load ────────────
+  // Runs once after league data loads. Calls /api/headshots with every rostered
+  // player name, merges results into the headshots map so every component
+  // (Rosters, AddDrop, etc.) has headshots immediately without its own fetch.
+  const [headshotsFetched, setHeadshotsFetched] = useState(false);
+  useEffect(() => {
+    if (loading || headshotsFetched) return;
+    const allRostered = [...new Set(
+      resolvedTeams.flatMap(t => (t.roster || []).map(p => p.name))
+    )].filter(Boolean);
+    if (!allRostered.length) { setHeadshotsFetched(true); return; }
+
+    // Only fetch names not already in the headshots map
+    const missing = allRostered.filter(n => !safeHeadshots[n] && !PGA_TOUR_IDS[n]);
+    if (!missing.length) { setHeadshotsFetched(true); return; }
+
+    const encoded = missing.map(n => encodeURIComponent(n)).join(',');
+    fetch(`/api/headshots?names=${encoded}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.results && Object.keys(data.results).length > 0) {
+          updateHeadshots(prev => ({ ...(prev || {}), ...data.results }));
+          // Also persist to player documents for future loads
+          import('./api/firebase').then(({ playersApi }) => {
+            const toSave = Object.entries(data.results).map(([name, espnId]) => ({ name, espnId }));
+            if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
+          }).catch(() => {});
+        }
+      })
+      .catch(() => {})
+      .finally(() => setHeadshotsFetched(true));
+  }, [loading, resolvedTeams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
   // ── Admin login ────────────────────────────────────────────────────────────
   const handleAdminLogin = async () => {
     const hashed = await hashPassword(adminPassword);
