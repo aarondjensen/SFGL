@@ -139,125 +139,113 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   return (
     <div style={theme.card}>
 
-      {/* Header */}
-      <div style={{ ...theme.cardHeader, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-          {/* Left: subtitle */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
-            {/* Subtitle — always reserve space to prevent layout shift */}
-            <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', minHeight: 18, display: 'flex', alignItems: 'center', lineHeight: 1.3 }}>
-              {showSwing && selectedSwing && (
-                swingsWithResults.length > 1 ? (
-                  <select
-                    value={selectedSwing || ''}
-                    onChange={e => setSelectedSwing(e.target.value)}
-                    style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '0px 8px', height: 18, color: accentColor, borderColor: accentColor.replace('0.85', '0.3'), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
-                  >
-                    {swingsWithResults.map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <span style={{
-                    fontWeight: 600, color: accentColor,
-                    border: `1px solid ${accentColor.replace('0.85', '0.4')}`,
-                    borderRadius: 4,
-                    padding: '1px 8px',
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    {selectedSwing}
-                  </span>
-                )
-              )}
-              {!showSwing && mostRecentTournament && (
-                <span style={{ color: 'rgba(255,255,255,0.55)' }}>
-                  through {mostRecentTournament.name}
-                </span>
-              )}
-            </div>
-          </div>
-          {/* Right: toggle + event count */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-            <div
-              style={{
-                position: 'relative',
-                display: 'flex',
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(180,160,100,0.2)',
+      {/* Header — single row: subtitle left, toggle right */}
+      <div style={{ ...theme.cardHeader, alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        {/* Left: subtitle / swing selector */}
+        <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', lineHeight: 1.3, minHeight: 28, minWidth: 0, flex: 1 }}>
+          {showSwing && selectedSwing && (
+            swingsWithResults.length > 1 ? (
+              <select
+                value={selectedSwing || ''}
+                onChange={e => setSelectedSwing(e.target.value)}
+                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '0px 8px', height: 22, color: accentColor, borderColor: accentColor.replace('0.85', '0.3'), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
+              >
+                {swingsWithResults.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            ) : (
+              <span style={{
+                fontWeight: 600, color: accentColor,
+                border: `1px solid ${accentColor.replace('0.85', '0.4')}`,
                 borderRadius: 4,
-                padding: 3,
-                gap: 0,
-                minWidth: 140,
-                maxWidth: 200,
-              }}
-            >
-              <div style={{
-                position: 'absolute',
-                top: 3, bottom: 3,
-                left: showSwing ? 'calc(50% + 1px)' : 3,
-                width: 'calc(50% - 4px)',
-                borderRadius: 2,
-                background: showSwing
-                  ? accentColor.replace('0.85)', '0.18)')
-                  : 'rgba(255,255,255,0.1)',
-                border: `1px solid ${showSwing ? accentColor.replace('0.85)', '0.45)') : 'rgba(255,255,255,0.3)'}`,
-                transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
-                pointerEvents: 'none',
-              }} />
-              <button
-                onClick={() => setView('overall')}
-                style={{
-                  flex: 1, position: 'relative', zIndex: 1,
-                  padding: '5px 0',
-                  background: 'none', border: 'none',
-                  fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
-                  letterSpacing: '1px', textTransform: 'uppercase',
-                  color: !showSwing ? colors.textPrimary : colors.textMuted,
-                  cursor: 'pointer',
-                  transition: 'color 0.18s',
-                  borderRadius: 2,
-                }}
-              >
-                Overall
-              </button>
-              <button
-                onClick={() => {
-                  if (swingsWithResults.length === 0) return;
-                  setView('swing');
-                  if (!selectedSwing && swingsWithResults.length) setSelectedSwing(swingsWithResults[swingsWithResults.length - 1]);
-                }}
-                style={{
-                  flex: 1, position: 'relative', zIndex: 1,
-                  padding: '5px 0',
-                  background: 'none', border: 'none',
-                  fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
-                  letterSpacing: '1px', textTransform: 'uppercase',
-                  color: showSwing ? accentColor : swingsWithResults.length === 0 ? 'rgba(255,255,255,0.15)' : colors.textMuted,
-                  cursor: swingsWithResults.length === 0 ? 'default' : 'pointer',
-                  transition: 'color 0.18s',
-                  borderRadius: 2,
-                  opacity: swingsWithResults.length === 0 ? 0.4 : 1,
-                }}
-              >
-                Swing
-              </button>
-            </div>
-            {/* Event count — always reserve space */}
-            <div style={{ fontFamily: fonts.sans, fontSize: 11, letterSpacing: '0.3px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, minWidth: 140, maxWidth: 200, width: '100%', minHeight: 16 }}>
-              {showSwing && swingEventCount > 0 && (
-                swingIsComplete ? (
-                  <>
-                    <span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', fontSize: 10 }}>Final</span>
-                    <span style={{ color: colors.textMuted }}>{swingEventCount} events</span>
-                  </>
-                ) : (
-                  <span style={{ color: accentColor.replace('0.85', '0.7') }}>
-                    {swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}
-                  </span>
-                )
-              )}
-            </div>
-          </div>
+                padding: '1px 8px',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {selectedSwing}
+              </span>
+            )
+          )}
+          {showSwing && swingEventCount > 0 && (
+            <span style={{ marginLeft: 8, fontSize: 10, color: swingIsComplete ? colors.textMuted : accentColor.replace('0.85', '0.7') }}>
+              {swingIsComplete
+                ? <><span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 4 }}>Final</span>{swingEventCount} events</>
+                : <>{swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}</>
+              }
+            </span>
+          )}
+          {!showSwing && mostRecentTournament && (
+            <span style={{ color: 'rgba(255,255,255,0.55)' }}>
+              through {mostRecentTournament.name}
+            </span>
+          )}
+        </div>
+
+        {/* Right: toggle */}
+        <div
+          style={{
+            position: 'relative',
+            display: 'flex',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(180,160,100,0.2)',
+            borderRadius: 4,
+            padding: 3,
+            gap: 0,
+            minWidth: 140,
+            maxWidth: 200,
+            flexShrink: 0,
+          }}
+        >
+          <div style={{
+            position: 'absolute',
+            top: 3, bottom: 3,
+            left: showSwing ? 'calc(50% + 1px)' : 3,
+            width: 'calc(50% - 4px)',
+            borderRadius: 2,
+            background: showSwing
+              ? accentColor.replace('0.85)', '0.18)')
+              : 'rgba(255,255,255,0.1)',
+            border: `1px solid ${showSwing ? accentColor.replace('0.85)', '0.45)') : 'rgba(255,255,255,0.3)'}`,
+            transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
+            pointerEvents: 'none',
+          }} />
+          <button
+            onClick={() => setView('overall')}
+            style={{
+              flex: 1, position: 'relative', zIndex: 1,
+              padding: '5px 0',
+              background: 'none', border: 'none',
+              fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
+              letterSpacing: '1px', textTransform: 'uppercase',
+              color: !showSwing ? colors.textPrimary : colors.textMuted,
+              cursor: 'pointer',
+              transition: 'color 0.18s',
+              borderRadius: 2,
+            }}
+          >
+            Overall
+          </button>
+          <button
+            onClick={() => {
+              if (swingsWithResults.length === 0) return;
+              setView('swing');
+              if (!selectedSwing && swingsWithResults.length) setSelectedSwing(swingsWithResults[swingsWithResults.length - 1]);
+            }}
+            style={{
+              flex: 1, position: 'relative', zIndex: 1,
+              padding: '5px 0',
+              background: 'none', border: 'none',
+              fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
+              letterSpacing: '1px', textTransform: 'uppercase',
+              color: showSwing ? accentColor : swingsWithResults.length === 0 ? 'rgba(255,255,255,0.15)' : colors.textMuted,
+              cursor: swingsWithResults.length === 0 ? 'default' : 'pointer',
+              transition: 'color 0.18s',
+              borderRadius: 2,
+              opacity: swingsWithResults.length === 0 ? 0.4 : 1,
+            }}
+          >
+            Swing
+          </button>
         </div>
       </div>
 
