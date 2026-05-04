@@ -768,7 +768,7 @@ export const RostersView = ({
               return (
                 <div style={{
                   display: 'flex', flexDirection: 'column', justifyContent: 'center',
-                  gap: 1, flexShrink: 0, height: 36,
+                  gap: 3, flexShrink: 0, height: 36,
                 }}>
                   {[
                     { label: 'Reg', used: regUsed },
@@ -776,7 +776,7 @@ export const RostersView = ({
                   ].map(({ label, used }) => (
                     <div key={label} style={{
                       display: 'flex', alignItems: 'center', gap: 3,
-                      opacity: used ? 0.35 : 1,
+                      opacity: used ? 0.5 : 1,
                       transition: 'opacity 0.2s',
                     }}>
                       <span style={{
