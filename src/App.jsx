@@ -142,6 +142,45 @@ const FantasyGolfLeague = () => {
   }, [loading, tournaments.length, resultsHydrated]);
 
 
+  // ── Wave 6 hotfix: defensive direct-from-Firebase tournament recovery ─────
+  // Symptom this fixes: after ?reset=1 cleared localStorage on mobile,
+  // useLeague was leaving `tournaments` as [] indefinitely instead of fetching
+  // from Firebase. Result: Standings / Results / Tournaments views all blank
+  // because they iterate over `tournaments`. (Rosters/Transactions partially
+  // worked because they have other data sources or polls.)
+  //
+  // This effect runs once after `loading` flips to false. If `tournaments`
+  // is empty, it fetches directly from Firebase and seeds state. Defensive:
+  // does not write back to Firebase (only reads), so it's safe even if
+  // Firebase has data and useLeague is misbehaving.
+  const [tournamentsRecovered, setTournamentsRecovered] = useState(false);
+  useEffect(() => {
+    if (loading || tournamentsRecovered) return;
+    if (tournaments.length > 0) {
+      setTournamentsRecovered(true);
+      return;
+    }
+    console.log('[App] tournaments empty after load — recovering from Firebase');
+    import('./api/firebase').then(({ tournamentsApi }) => {
+      tournamentsApi.getAll().then(remote => {
+        if (remote && remote.length > 0) {
+          console.log(`[App] recovered ${remote.length} tournaments from Firebase`);
+          setTournaments(remote);
+        } else {
+          console.warn('[App] Firebase tournaments fetch returned empty — Firebase data may be missing');
+        }
+        setTournamentsRecovered(true);
+      }).catch(err => {
+        console.error('[App] Firebase tournaments fetch failed:', err);
+        setTournamentsRecovered(true);
+      });
+    }).catch(err => {
+      console.error('[App] Firebase module import failed:', err);
+      setTournamentsRecovered(true);
+    });
+  }, [loading, tournaments.length, tournamentsRecovered]);
+
+
   // ── Auto-fetch headshots for all rostered players on app load ────────────
   // Runs once after league data loads. Calls /api/headshots with every rostered
   // player name, merges results into the headshots map so every component
