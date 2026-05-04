@@ -829,6 +829,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {['waiver', 'waiver blocked', 'fa', 'mulligan'].map(type => (
                       <button key={type} onClick={() => {
+                        // Only reset tournament/players when type ACTUALLY changes
+                        if (type === addTxType) return;
                         setAddTxType(type);
                         setAddTxPlayerIn(null); setAddTxSearchIn('');
                         setAddTxPlayerOut(null); setAddTxSearchOut('');
