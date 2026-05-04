@@ -620,7 +620,11 @@ export const RostersView = ({
   }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch live leaderboard from /api/live during tournament week
-  // Polls every 5 minutes while the tournament is in progress
+  // Polls every 5 minutes while the tournament is in progress.
+  // IMPORTANT: if the commish is behind on processing, the app's activeTournament
+  // may differ from the real-world current event. We compare the tournament name
+  // from /api/live against activeTournament.name and discard mismatched data
+  // so we never show scores from the wrong event.
   useEffect(() => {
     // Clear stale data from previous tournament immediately
     setLiveData(null);
@@ -629,13 +633,36 @@ export const RostersView = ({
     let cancelled = false;
     let interval = null;
 
+    // Fuzzy match: normalize both names and check if one contains the other's
+    // significant words. Handles "RBC Heritage" vs "RBC Heritage presented by Boeing" etc.
+    const fuzzyMatch = (liveName, appName) => {
+      if (!liveName || !appName) return false;
+      const norm = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+      const a = norm(liveName);
+      const b = norm(appName);
+      if (a === b) return true;
+      if (a.includes(b) || b.includes(a)) return true;
+      // Compare significant words (skip short ones like "the", "at", "of")
+      const sig = s => s.split(/\s+/).filter(w => w.length > 2);
+      const aw = sig(a);
+      const bw = sig(b);
+      const overlap = bw.filter(w => aw.includes(w)).length;
+      return overlap >= Math.min(2, bw.length);
+    };
+
     const fetchLive = () => {
       fetch('/api/live')
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (cancelled) return;
-          // If no players returned, or tournament just advanced and hasn't started yet, clear
           if (!data?.players?.length) { setLiveData(null); return; }
+          // Guard: discard live data if it's from a different tournament
+          const liveTournament = data.tournamentName || data.eventName || '';
+          if (liveTournament && !fuzzyMatch(liveTournament, activeTournament.name)) {
+            console.log(`[Rosters] Live data is for "${liveTournament}" but active tournament is "${activeTournament.name}" — skipping`);
+            setLiveData(null);
+            return;
+          }
           setLiveData(data);
         })
         .catch(() => {});
