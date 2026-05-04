@@ -4,36 +4,36 @@ import { playerRankingsApi } from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
 
 // ============================================================================
-// usePersistentState
-// Keeps a state value in sync with a storage backend.
-// If the storage write fails, the error is surfaced via onError rather than
-// silently diverging from in-memory state.
+// useLeague — central state manager for all league data
 // ============================================================================
-export const usePersistentState = (storageKey, initialValue, onError) => {
-  const [value, setValue] = useState(initialValue);
-  const keyRef = useRef(storageKey);
-
-  const setPersistent = useCallback(
-    async (updater) => {
-      setValue(prev => {
-        const next = typeof updater === 'function' ? updater(prev) : updater;
-        // Fire-and-forget write; errors surfaced via onError
-        storage.set(keyRef.current, next).catch(err => {
-          console.error(`[usePersistentState] Failed to write "${keyRef.current}":`, err);
-          onError?.(err);
-        });
-        return next;
-      });
-    },
-    [onError],
-  );
-
-  return [value, setValue, setPersistent];
-};
-
-// ============================================================================
-// useLeague
-// Central state manager for all league data.
+//
+// Wave 7 architecture (compared to original):
+//
+// 1. INITIAL LOAD with retry: each Firebase call retries once on null before
+//    falling through to the local fallback chain. This catches transient
+//    cold-start Firestore failures (especially common on mobile Safari) that
+//    used to silently leave a client on stale localStorage.
+//
+// 2. REFETCH on focus: when the tab becomes visible after >5 minutes of being
+//    hidden, we re-pull all collections from Firebase. Fixes the mobile/
+//    desktop divergence where one client modifies state and the other never
+//    sees it until reload.
+//
+// 3. EXPLICIT refetch(): exposed via the hook return so consumers (e.g. the
+//    pull-to-refresh gesture, or a manual "refresh" button) can force a
+//    reload without window.location.reload().
+//
+// 4. PARTIAL-FAILURE TRACKING: loadErrors state tracks which collections
+//    failed to load from Firebase, so the UI can surface a banner instead of
+//    silently masking the failure.
+//
+// What we deliberately did NOT change:
+//   - localStorage cascade still exists as a third-tier fallback
+//   - sfgl_data middle tier (Firestore key-value) still queried
+//   - update*() writers still write Firebase + localStorage
+//
+// What we removed:
+//   - usePersistentState (was exported but not used anywhere)
 // ============================================================================
 export const useLeague = (STORAGE_KEYS) => {
   const [teams,               setTeams]               = useState([]);
@@ -46,134 +46,197 @@ export const useLeague = (STORAGE_KEYS) => {
   const [headshots,           setHeadshots]           = useState({});
   const [loading,             setLoading]             = useState(true);
   const [isSyncing,           setIsSyncing]           = useState(false);
+  const [loadErrors,          setLoadErrors]          = useState([]); // Wave 7: list of collection names that failed
 
-  // ── Loader ────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const load = async () => {
+  // Track visibility for refetch-on-focus
+  const lastFetchTimeRef = useRef(Date.now());
+  const REFETCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+  // ── Load helper with one retry on null ──────────────────────────────────
+  // Wave 7: retries Firebase calls once with a 1s delay before declaring
+  // failure. Mobile Safari Firestore SDK has known cold-start race conditions
+  // that resolve with a brief retry.
+  const fetchWithRetry = useCallback(async (apiCall, label) => {
+    try {
+      const first = await apiCall();
+      if (first !== null && first !== undefined) {
+        // Treat empty arrays/objects as valid responses (collection exists, just empty)
+        if (Array.isArray(first) && first.length === 0) return first;
+        if (typeof first === 'object' && Object.keys(first).length === 0) return first;
+        return first;
+      }
+      // Null result — retry once
+      console.warn(`[useLeague] ${label} returned null on first try, retrying...`);
+      await new Promise(r => setTimeout(r, 1000));
+      return await apiCall();
+    } catch (err) {
+      console.error(`[useLeague] ${label} threw:`, err);
+      // One retry on exception too
       try {
-        const {
-          teamsApi,
-          tournamentsApi,
-          transactionsApi,
-          settingsApi,
-          playerStatsApi,
-          headshotsApi,
-          playerRankingsApi,
-          sfglDataApi,
-        } = await import('../api/firebase');
+        await new Promise(r => setTimeout(r, 1000));
+        return await apiCall();
+      } catch (err2) {
+        console.error(`[useLeague] ${label} also failed on retry:`, err2);
+        return null;
+      }
+    }
+  }, []);
 
-        console.log('[useLeague] Loading all data from Firebase...');
+  // ── Core loader (extracted as useCallback so refetch() can call it) ──────
+  const loadFromFirebase = useCallback(async (isRefetch = false) => {
+    const errors = [];
+    try {
+      const {
+        teamsApi,
+        tournamentsApi,
+        transactionsApi,
+        settingsApi,
+        playerStatsApi,
+        headshotsApi,
+        playerRankingsApi: prApi,
+        sfglDataApi,
+      } = await import('../api/firebase');
 
+      console.log(`[useLeague] ${isRefetch ? 'Refetching' : 'Loading'} from Firebase...`);
+
+      const [
+        firebaseTeams,
+        firebaseTournaments,
+        firebaseTransactions,
+        firebaseSettings,
+        firebaseStats,
+        firebaseHeadshots,
+        firebaseRankings,
+      ] = await Promise.all([
+        fetchWithRetry(() => teamsApi.getAll(),         'teams'),
+        fetchWithRetry(() => tournamentsApi.getAll(),   'tournaments'),
+        fetchWithRetry(() => transactionsApi.getAll(),  'transactions'),
+        fetchWithRetry(() => settingsApi.getAll(),      'settings'),
+        fetchWithRetry(() => playerStatsApi.getAll(),   'playerStats'),
+        fetchWithRetry(() => headshotsApi.getAll(),     'headshots'),
+        fetchWithRetry(() => prApi.getAll(),            'rankings'),
+      ]);
+
+      // sfgl_data middle tier — kept for backward compatibility with older
+      // installations that wrote there. New writes go to dedicated collections only.
+      const sfglFallback = await sfglDataApi.getMany([
+        STORAGE_KEYS.TEAMS,
+        STORAGE_KEYS.TOURNAMENTS,
+        STORAGE_KEYS.TRANSACTIONS,
+        STORAGE_KEYS.SETTINGS,
+        STORAGE_KEYS.GLOBAL_PLAYER_STATS,
+      ]).catch(() => ({}));
+
+      // ── Apply each collection with cascade: Firebase → sfgl_data → localStorage ──
+
+      if (firebaseTeams?.length > 0) {
+        setTeams(firebaseTeams);
+        console.log(`✓ Loaded ${firebaseTeams.length} teams from Firebase`);
+      } else if (sfglFallback[STORAGE_KEYS.TEAMS]?.length > 0) {
+        setTeams(sfglFallback[STORAGE_KEYS.TEAMS]);
+        console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TEAMS].length} teams from sfgl_data`);
+        if (firebaseTeams === null) errors.push('teams');
+      } else {
+        const localTeams = await storage.get(STORAGE_KEYS.TEAMS, null);
+        if (localTeams) {
+          // Only apply localStorage on initial load. On refetch, an empty Firebase
+          // result probably means a real network failure and we shouldn't overwrite
+          // current good state with potentially stale localStorage.
+          if (!isRefetch) setTeams(localTeams);
+          if (firebaseTeams === null) errors.push('teams');
+        }
+      }
+
+      if (firebaseTournaments?.length > 0) {
+        setTournaments(firebaseTournaments);
+        console.log(`✓ Loaded ${firebaseTournaments.length} tournaments from Firebase`);
+      } else if (sfglFallback[STORAGE_KEYS.TOURNAMENTS]?.length > 0) {
+        setTournaments(sfglFallback[STORAGE_KEYS.TOURNAMENTS]);
+        console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TOURNAMENTS].length} tournaments from sfgl_data`);
+        if (firebaseTournaments === null) errors.push('tournaments');
+      } else {
+        const localTournaments = await storage.get(STORAGE_KEYS.TOURNAMENTS, null);
+        if (localTournaments) {
+          if (!isRefetch) setTournaments(localTournaments);
+          if (firebaseTournaments === null) errors.push('tournaments');
+        }
+      }
+
+      if (firebaseTransactions?.length > 0) {
+        setTransactions(firebaseTransactions);
+        console.log(`✓ Loaded ${firebaseTransactions.length} transactions from Firebase`);
+      } else if (sfglFallback[STORAGE_KEYS.TRANSACTIONS]?.length > 0) {
+        setTransactions(sfglFallback[STORAGE_KEYS.TRANSACTIONS]);
+        console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TRANSACTIONS].length} transactions from sfgl_data`);
+        if (firebaseTransactions === null) errors.push('transactions');
+      } else {
+        const localTransactions = await storage.get(STORAGE_KEYS.TRANSACTIONS, null);
+        if (localTransactions) {
+          if (!isRefetch) setTransactions(localTransactions);
+          if (firebaseTransactions === null) errors.push('transactions');
+        }
+      }
+
+      if (firebaseSettings && Object.keys(firebaseSettings).length > 0) {
+        setSettings(firebaseSettings);
+        console.log(`✓ Loaded settings from Firebase`);
+      } else if (sfglFallback[STORAGE_KEYS.SETTINGS] && Object.keys(sfglFallback[STORAGE_KEYS.SETTINGS]).length > 0) {
+        setSettings(sfglFallback[STORAGE_KEYS.SETTINGS]);
+        console.log(`✓ Loaded settings from sfgl_data`);
+        if (firebaseSettings === null) errors.push('settings');
+      } else {
+        const localSettings = await storage.get(STORAGE_KEYS.SETTINGS, null);
+        if (localSettings) {
+          if (!isRefetch) setSettings(localSettings);
+          if (firebaseSettings === null) errors.push('settings');
+        }
+      }
+
+      if (firebaseStats && Object.keys(firebaseStats).length > 0) {
+        setGlobalPlayerStats(firebaseStats);
+        console.log(`✓ Loaded ${Object.keys(firebaseStats).length} player stats from Firebase`);
+      } else if (sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS] && Object.keys(sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS]).length > 0) {
+        setGlobalPlayerStats(sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
+        console.log(`✓ Loaded player stats from sfgl_data`);
+      } else {
+        const localStats = await storage.get(STORAGE_KEYS.GLOBAL_PLAYER_STATS, null);
+        if (localStats && !isRefetch) setGlobalPlayerStats(localStats);
+      }
+
+      if (firebaseHeadshots && Object.keys(firebaseHeadshots).length > 0) {
+        setHeadshots(firebaseHeadshots);
+        console.log(`✓ Loaded ${Object.keys(firebaseHeadshots).length} headshots from Firebase`);
+      } else {
+        const localHeadshots = await storage.get(STORAGE_KEYS.HEADSHOTS, null);
+        if (localHeadshots && !isRefetch) setHeadshots(localHeadshots);
+      }
+
+      if (firebaseRankings?.length > 0) {
+        setAllPlayers(firebaseRankings);
+        const lastUpdated = await prApi.getLastUpdated().catch(() => null);
+        setRankingsLastUpdated(lastUpdated);
+        console.log(`✓ Loaded ${firebaseRankings.length} players from Firebase`);
+      } else {
+        const localRankings = await storage.get(STORAGE_KEYS.PLAYER_RANKINGS, null);
+        if (localRankings?.players && !isRefetch) {
+          setAllPlayers(localRankings.players);
+          setRankingsLastUpdated(localRankings.lastUpdated);
+        }
+      }
+
+      setLoadErrors(errors);
+      lastFetchTimeRef.current = Date.now();
+
+      if (errors.length === 0) {
+        console.log('[useLeague] ✓ All data loaded successfully');
+      } else {
+        console.warn(`[useLeague] ⚠ Failed to load from Firebase: ${errors.join(', ')} (used local fallback)`);
+      }
+    } catch (e) {
+      console.error('[useLeague] Catastrophic load error:', e);
+      // Complete fallback to localStorage — only on initial load, not refetch
+      if (!isRefetch) {
         try {
-          const [
-            firebaseTeams,
-            firebaseTournaments,
-            firebaseTransactions,
-            firebaseSettings,
-            firebaseStats,
-            firebaseHeadshots,
-            firebaseRankings,
-          ] = await Promise.all([
-            teamsApi.getAll().catch(() => null),
-            tournamentsApi.getAll().catch(() => null),
-            transactionsApi.getAll().catch(() => null),
-            settingsApi.getAll().catch(() => null),
-            playerStatsApi.getAll().catch(() => null),
-            headshotsApi.getAll().catch(() => null),
-            playerRankingsApi.getAll().catch(() => []),
-          ]);
-
-          // Load sfgl_data fallbacks in parallel (key-value store)
-          const sfglFallback = await sfglDataApi.getMany([
-            STORAGE_KEYS.TEAMS,
-            STORAGE_KEYS.TOURNAMENTS,
-            STORAGE_KEYS.TRANSACTIONS,
-            STORAGE_KEYS.SETTINGS,
-            STORAGE_KEYS.GLOBAL_PLAYER_STATS,
-          ]).catch(() => ({}));
-
-          // Set data: dedicated collection → sfgl_data fallback → localStorage fallback
-          if (firebaseTeams?.length > 0) {
-            setTeams(firebaseTeams);
-            console.log(`✓ Loaded ${firebaseTeams.length} teams from Firebase`);
-          } else if (sfglFallback[STORAGE_KEYS.TEAMS]?.length > 0) {
-            setTeams(sfglFallback[STORAGE_KEYS.TEAMS]);
-            console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TEAMS].length} teams from sfgl_data`);
-          } else {
-            const localTeams = await storage.get(STORAGE_KEYS.TEAMS, null);
-            if (localTeams) setTeams(localTeams);
-          }
-
-          if (firebaseTournaments?.length > 0) {
-            setTournaments(firebaseTournaments);
-            console.log(`✓ Loaded ${firebaseTournaments.length} tournaments from Firebase`);
-          } else if (sfglFallback[STORAGE_KEYS.TOURNAMENTS]?.length > 0) {
-            setTournaments(sfglFallback[STORAGE_KEYS.TOURNAMENTS]);
-            console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TOURNAMENTS].length} tournaments from sfgl_data`);
-          } else {
-            const localTournaments = await storage.get(STORAGE_KEYS.TOURNAMENTS, null);
-            if (localTournaments) setTournaments(localTournaments);
-          }
-
-          if (firebaseTransactions?.length > 0) {
-            setTransactions(firebaseTransactions);
-            console.log(`✓ Loaded ${firebaseTransactions.length} transactions from Firebase`);
-          } else if (sfglFallback[STORAGE_KEYS.TRANSACTIONS]?.length > 0) {
-            setTransactions(sfglFallback[STORAGE_KEYS.TRANSACTIONS]);
-            console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TRANSACTIONS].length} transactions from sfgl_data`);
-          } else {
-            const localTransactions = await storage.get(STORAGE_KEYS.TRANSACTIONS, null);
-            if (localTransactions) setTransactions(localTransactions);
-          }
-
-          if (firebaseSettings && Object.keys(firebaseSettings).length > 0) {
-            setSettings(firebaseSettings);
-            console.log(`✓ Loaded settings from Firebase`);
-          } else if (sfglFallback[STORAGE_KEYS.SETTINGS] && Object.keys(sfglFallback[STORAGE_KEYS.SETTINGS]).length > 0) {
-            setSettings(sfglFallback[STORAGE_KEYS.SETTINGS]);
-            console.log(`✓ Loaded settings from sfgl_data`);
-          } else {
-            const localSettings = await storage.get(STORAGE_KEYS.SETTINGS, null);
-            if (localSettings) setSettings(localSettings);
-          }
-
-          if (firebaseStats && Object.keys(firebaseStats).length > 0) {
-            setGlobalPlayerStats(firebaseStats);
-            console.log(`✓ Loaded ${Object.keys(firebaseStats).length} player stats from Firebase`);
-          } else if (sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS] && Object.keys(sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS]).length > 0) {
-            setGlobalPlayerStats(sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
-            console.log(`✓ Loaded player stats from sfgl_data`);
-          } else {
-            const localStats = await storage.get(STORAGE_KEYS.GLOBAL_PLAYER_STATS, null);
-            if (localStats) setGlobalPlayerStats(localStats);
-          }
-
-          if (firebaseHeadshots && Object.keys(firebaseHeadshots).length > 0) {
-            setHeadshots(firebaseHeadshots);
-            console.log(`✓ Loaded ${Object.keys(firebaseHeadshots).length} headshots from Firebase`);
-          } else {
-            const localHeadshots = await storage.get(STORAGE_KEYS.HEADSHOTS, null);
-            if (localHeadshots) setHeadshots(localHeadshots);
-          }
-
-          if (firebaseRankings.length > 0) {
-            setAllPlayers(firebaseRankings);
-            const lastUpdated = await playerRankingsApi.getLastUpdated();
-            setRankingsLastUpdated(lastUpdated);
-            console.log(`✓ Loaded ${firebaseRankings.length} players from Firebase`);
-          } else {
-            const localRankings = await storage.get(STORAGE_KEYS.PLAYER_RANKINGS, null);
-            if (localRankings?.players) {
-              setAllPlayers(localRankings.players);
-              setRankingsLastUpdated(localRankings.lastUpdated);
-            }
-          }
-
-          console.log('[useLeague] ✓ All data loaded successfully');
-        } catch (firebaseError) {
-          console.error('[useLeague] Firebase load failed, using localStorage:', firebaseError);
-
-          // Complete fallback to localStorage
           const [teamsData, tournamentsData, transactionsData, settingsData, statsData, headshotsData, rankingsData] =
             await Promise.all([
               storage.get(STORAGE_KEYS.TEAMS, null),
@@ -195,15 +258,36 @@ export const useLeague = (STORAGE_KEYS) => {
             setAllPlayers(rankingsData.players);
             setRankingsLastUpdated(rankingsData.lastUpdated);
           }
+          // Mark all as failed since we couldn't reach Firebase at all
+          setLoadErrors(['teams', 'tournaments', 'transactions', 'settings']);
+        } catch (innerErr) {
+          console.error('[useLeague] localStorage fallback also failed:', innerErr);
         }
-      } catch (e) {
-        console.error('[useLeague] Load error:', e);
-      } finally {
-        setLoading(false);
+      }
+    }
+  }, [STORAGE_KEYS, fetchWithRetry]);
+
+  // ── Initial load ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    loadFromFirebase(false).finally(() => setLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Refetch on tab focus after >5 min hidden ─────────────────────────────
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden) return;
+      const elapsed = Date.now() - lastFetchTimeRef.current;
+      if (elapsed > REFETCH_THRESHOLD_MS) {
+        console.log(`[useLeague] Tab visible after ${Math.round(elapsed / 1000)}s — refetching from Firebase`);
+        loadFromFirebase(true);
       }
     };
-    load();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [loadFromFirebase]);
+
+  // ── Manual refetch — exposed via hook return for pull-to-refresh etc. ────
+  const refetch = useCallback(() => loadFromFirebase(true), [loadFromFirebase]);
 
   // ── Refs for stable callback dependencies ───────────────────────────────
   const teamsRef        = useRef(teams);
@@ -274,6 +358,8 @@ export const useLeague = (STORAGE_KEYS) => {
     setSettings(resolved);
     try {
       const { settingsApi } = await import('../api/firebase');
+      // Wave 7 still writes one key at a time (no batch API in settingsApi).
+      // TODO future: add settingsApi.setMany() for batched writes.
       for (const [key, value] of Object.entries(resolved)) {
         await settingsApi.set(key, value);
       }
@@ -335,12 +421,15 @@ export const useLeague = (STORAGE_KEYS) => {
     // state
     teams, tournaments, transactions, settings, globalPlayerStats,
     allPlayers, rankingsLastUpdated, headshots, loading, isSyncing,
+    loadErrors, // Wave 7: list of collection names that failed to load
     // raw setters (for bulk import)
     setTeams, setTournaments, setTransactions, setSettings,
     setGlobalPlayerStats, setHeadshots, setAllPlayers, setRankingsLastUpdated,
     // persisted updaters
     updateTeams, updateTournaments, updateTransactions,
     updateSettings, updateGlobalStats, updateHeadshots, updateRankings,
+    // Wave 7: explicit refetch
+    refetch,
   };
 };
 
@@ -348,6 +437,8 @@ export const useLeague = (STORAGE_KEYS) => {
 // useRoster
 // Computes a team's effective current roster by replaying approved transactions
 // on top of the base roster. Returns a stable memoised array.
+// Mulligans are intentionally excluded — they affect a single tournament's
+// lineup, not the long-term roster.
 // ============================================================================
 export const useRoster = (team, transactions, activeTournamentIndex) => {
   if (!team) return [];
@@ -376,6 +467,8 @@ export const useRoster = (team, transactions, activeTournamentIndex) => {
 // ============================================================================
 // useWindowStatus
 // Returns live-computed window open/closed status, re-evaluated every minute.
+// IMPORTANT: callers must pass `settings` as the second argument or the
+// configured waiver/FA cutoffs will be ignored (defaults to Tue 8pm ET).
 // ============================================================================
 export const useWindowStatus = (tournament, settings) => {
   const compute = useCallback(() => ({

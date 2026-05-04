@@ -458,7 +458,11 @@ export const RostersView = ({
 
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
-  const windowStatus  = useWindowStatus(activeTournament);
+  // Wave 7 fix: pass resolvedSettings so the configurable waiver/FA cutoffs
+  // (set in AdminView's "Waiver Schedule" panel) actually take effect.
+  // Previously this was useWindowStatus(activeTournament) without settings,
+  // which always used the hardcoded Tue 8pm ET defaults.
+  const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
   const togglePlayerInLineup = useCallback(async (player) => {

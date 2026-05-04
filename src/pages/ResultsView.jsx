@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Trophy } from 'lucide-react';
-import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
+import { getSortedRoster, shortName, isTournamentLocked, getSegmentForTournament } from '../utils/index.js';
 import { theme, colors, fonts, cardLiftHandlers, SWING_COLORS } from '../theme.js';
 import { TournamentBadges } from './TournamentBadges';
 
@@ -159,24 +159,8 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
     [tournaments],
   );
 
-  // ── Swing segment helper (mirrors AdminView logic) ────────────────────────
-  const getTournamentSegment = (t) => {
-    if (t.segment) return t.segment;
-    if (t.dates) {
-      const m = t.dates.match(/^([A-Za-z]+)/);
-      if (m) {
-        const months = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
-        const mo = months[m[1]];
-        if (mo) {
-          if (mo >= 1 && mo <= 3) return 'West Coast Swing';
-          if (mo >= 4 && mo <= 6) return 'Spring Swing';
-          if (mo >= 7 && mo <= 9) return 'Summer Swing';
-          return 'Fall Finish';
-        }
-      }
-    }
-    return null;
-  };
+  // ── Swing segment helper ─────────────────────────────────────────────────
+  // Wave 7: now uses canonical getSegmentForTournament from utils.
 
   // Build swing summary cards from swing_winner transactions
   const swingSummaries = useMemo(() => {
@@ -184,7 +168,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
     return awarded.map(tx => {
       const seg = tx.segment;
       // Sum earnings per team across all completed tournaments in this swing
-      const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === seg && t.results?.teams);
+      const swingTourneys = tournaments.filter(t => t.completed && getSegmentForTournament(t) === seg && t.results?.teams);
       const byTeam = {};
       swingTourneys.forEach(t => {
         Object.entries(t.results.teams).forEach(([id, tr]) => {
@@ -292,7 +276,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
         const renderedSwings = new Set();
         const items = [];
         completedTournaments.forEach((tournament) => {
-          const seg = getTournamentSegment(tournament);
+          const seg = getSegmentForTournament(tournament);
           // If this is the first time we see this swing, prepend the swing card
           if (seg && !renderedSwings.has(seg)) {
             const summary = swingSummaries.find(s => s.seg === seg);

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useDialog } from './DialogContext';
-import { normalizePlayerName } from '../utils';
+import { normalizePlayerName, getSegmentForTournament } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi, sfglDataApi, playersApi, playerRankingsApi, teamsApi } from '../api/firebase';
 import { theme, colors, fonts } from '../theme.js';
-import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
+import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER, SWINGS } from '../constants';
 
 
 // ── Tournament processing helpers ────────────────────────────────────────────
@@ -715,35 +715,18 @@ export const AdminView = ({
   };
 
   // ── Award Swing Winner ──────────────────────────────────────────────────
-  const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
+  // Wave 7: SWINGS now imported from ../constants (single source of truth).
+  // Local copy removed.
 
-  // Get the swing a tournament belongs to, using t.segment if set,
-  // otherwise infer from the tournament's own dates field (not today's date)
-  const getTournamentSegment = (t) => {
-    if (t.segment) return t.segment;
-    // Parse month from dates: "Feb 9-15" → month=2
-    if (t.dates) {
-      const m = t.dates.match(/^([A-Za-z]+)/);
-      if (m) {
-        const months = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
-        const mo = months[m[1]];
-        if (mo) {
-          if (mo >= 1 && mo <= 3) return 'West Coast Swing';
-          if (mo >= 4 && mo <= 6) return 'Spring Swing';
-          if (mo >= 7 && mo <= 9) return 'Summer Swing';
-          return 'Fall Finish';
-        }
-      }
-    }
-    return null;
-  };
+  // Wave 7: getTournamentSegment removed — now uses canonical getSegmentForTournament
+  // imported from ../utils (single source of truth for the 4-swing mapping).
 
   const handleSwingWinner = async () => {
     if (!swingAwardSeg) return;
 
     // Sum all transaction fees for this swing using tournamentIndex range,
     // matching the same logic as TransactionsView's fee counter.
-    const swingTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
+    const swingTournaments = tournaments.filter(t => t.completed && getSegmentForTournament(t) === swingAwardSeg && t.results?.teams);
     if (!swingTournaments.length) {
       dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
       return;
@@ -1227,7 +1210,7 @@ export const AdminView = ({
           </select>
           {swingAwardSeg && (() => {
             const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
-            const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
+            const swingTourneys = tournaments.filter(t => t.completed && getSegmentForTournament(t) === swingAwardSeg && t.results?.teams);
             const byTeam = {};
             swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
             const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];

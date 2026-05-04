@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
+import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 
@@ -297,22 +297,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const [addTxSearchOut,   setAddTxSearchOut]   = useState('');
   const dialog = useDialog();
 
-  const getSegForTourney = (t) => {
-    if (t.segment) return t.segment;
-    if (t.dates) {
-      const m = t.dates.match(/^([A-Za-z]+)/);
-      if (m) {
-        const mo = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12}[m[1]];
-        if (mo) {
-          if (mo <= 3) return 'West Coast Swing';
-          if (mo <= 6) return 'Spring Swing';
-          if (mo <= 9) return 'Summer Swing';
-          return 'Fall Finish';
-        }
-      }
-    }
-    return null;
-  };
+  // Wave 7: getSegForTourney removed — now uses canonical getSegmentForTournament from utils.
 
   const teamFees = useMemo(() => {
     // Determine current swing for the fee counter:
@@ -321,14 +306,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     //    next swing — the one containing the next upcoming non-alternate tournament
     // 3. This resets the counter to $0 as soon as the commish awards the pot
     const lastCompleted = [...(tournaments || [])].reverse().find(t => t.completed && t.results?.teams);
-    const lastSeg = lastCompleted ? getSegForTourney(lastCompleted) : getSegmentByDate();
+    const lastSeg = lastCompleted ? getSegmentForTournament(lastCompleted) : getSegmentByDate();
     const lastSwingAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === lastSeg);
 
     let currentSwing = lastSeg;
     if (lastSwingAwarded) {
       // Advance to next swing: find first non-alternate upcoming tournament
       const nextTourney = (tournaments || []).find(t => !t.completed && !t.isAlternate);
-      currentSwing = nextTourney ? (getSegForTourney(nextTourney) || lastSeg) : lastSeg;
+      currentSwing = nextTourney ? (getSegmentForTournament(nextTourney) || lastSeg) : lastSeg;
     }
 
     const fees = {};
@@ -338,7 +323,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const currentSwingIndexes = new Set(
       (tournaments || [])
         .map((t, i) => ({ t, i }))
-        .filter(({ t }) => getSegForTourney(t) === currentSwing)
+        .filter(({ t }) => getSegmentForTournament(t) === currentSwing)
         .map(({ i }) => i)
     );
 
@@ -398,7 +383,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const getTxSegment = (tx) => {
     if (tx.segment) return tx.segment;
     if (tx.tournamentIndex !== undefined && tournaments[tx.tournamentIndex]) {
-      return getSegForTourney(tournaments[tx.tournamentIndex]);
+      return getSegmentForTournament(tournaments[tx.tournamentIndex]);
     }
     return '';
   };

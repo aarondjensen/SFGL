@@ -1,9 +1,11 @@
 // pages/PullToRefresh.jsx
-// Wave 5: extracted from App.jsx for cleaner separation. Behavior unchanged.
+// Wave 7: now accepts an onRefresh callback so we can refetch from Firebase
+// instead of doing a full page reload. Falls back to window.location.reload()
+// if no callback provided so this component still works in isolation.
 //
 // Wraps content with a touch-driven pull-to-refresh gesture. When the user
-// pulls down past the threshold while at the top of the page, the page
-// reloads. Pure visual feedback while pulling (no refresh until release).
+// pulls down past the threshold while at the top of the page, onRefresh fires.
+// Pure visual feedback while pulling (no refresh until release).
 //
 // On non-touch devices the touch handlers are silent — no negative impact.
 
@@ -11,7 +13,7 @@ import React from 'react';
 
 const THRESHOLD = 80;
 
-export const PullToRefresh = ({ children }) => {
+export const PullToRefresh = ({ children, onRefresh }) => {
   const [pulling, setPulling] = React.useState(false);
   const [pullY, setPullY] = React.useState(0);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -42,13 +44,23 @@ export const PullToRefresh = ({ children }) => {
     if (pullY >= THRESHOLD && !refreshing) {
       setRefreshing(true);
       setPullY(THRESHOLD * 0.5);
-      // Reload after a brief visual delay
-      setTimeout(() => window.location.reload(), 400);
+      // Wave 7: prefer the onRefresh callback (refetches data without bundle reload)
+      // and fall back to the old reload behavior if no callback was passed.
+      if (typeof onRefresh === 'function') {
+        Promise.resolve(onRefresh())
+          .catch(err => console.error('[PullToRefresh] onRefresh failed:', err))
+          .finally(() => {
+            setPullY(0);
+            setRefreshing(false);
+          });
+      } else {
+        setTimeout(() => window.location.reload(), 400);
+      }
     } else {
       setPullY(0);
     }
     setPulling(false);
-  }, [pulling, pullY, refreshing]);
+  }, [pulling, pullY, refreshing, onRefresh]);
 
   return (
     <div
