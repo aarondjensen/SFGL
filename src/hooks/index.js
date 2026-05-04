@@ -56,9 +56,15 @@ export const useLeague = (STORAGE_KEYS) => {
   // Wave 7: retries Firebase calls once with a 1s delay before declaring
   // failure. Mobile Safari Firestore SDK has known cold-start race conditions
   // that resolve with a brief retry.
-  const fetchWithRetry = useCallback(async (apiCall, label) => {
+  // Wave 7.1: each attempt is wrapped in an 8-second timeout so a hung
+  // network connection on mobile cellular doesn't stall the whole loader.
+  const fetchWithRetry = useCallback(async (apiCall, label, timeoutMs = 8000) => {
+    const withTimeout = (p) => Promise.race([
+      p,
+      new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs)),
+    ]);
     try {
-      const first = await apiCall();
+      const first = await withTimeout(apiCall());
       if (first !== null && first !== undefined) {
         // Treat empty arrays/objects as valid responses (collection exists, just empty)
         if (Array.isArray(first) && first.length === 0) return first;
@@ -68,15 +74,15 @@ export const useLeague = (STORAGE_KEYS) => {
       // Null result — retry once
       console.warn(`[useLeague] ${label} returned null on first try, retrying...`);
       await new Promise(r => setTimeout(r, 1000));
-      return await apiCall();
+      return await withTimeout(apiCall());
     } catch (err) {
-      console.error(`[useLeague] ${label} threw:`, err);
+      console.error(`[useLeague] ${label} threw:`, err.message || err);
       // One retry on exception too
       try {
         await new Promise(r => setTimeout(r, 1000));
-        return await apiCall();
+        return await withTimeout(apiCall());
       } catch (err2) {
-        console.error(`[useLeague] ${label} also failed on retry:`, err2);
+        console.error(`[useLeague] ${label} also failed on retry:`, err2.message || err2);
         return null;
       }
     }
@@ -97,7 +103,7 @@ export const useLeague = (STORAGE_KEYS) => {
         sfglDataApi,
       } = await import('../api/firebase');
 
-      console.log(`[useLeague] ${isRefetch ? 'Refetching' : 'Loading'} from Firebase...`);
+      console.log(`[useLeague v7.1] ${isRefetch ? 'Refetching' : 'Loading'} from Firebase...`);
 
       const [
         firebaseTeams,
@@ -119,13 +125,21 @@ export const useLeague = (STORAGE_KEYS) => {
 
       // sfgl_data middle tier — kept for backward compatibility with older
       // installations that wrote there. New writes go to dedicated collections only.
-      const sfglFallback = await sfglDataApi.getMany([
-        STORAGE_KEYS.TEAMS,
-        STORAGE_KEYS.TOURNAMENTS,
-        STORAGE_KEYS.TRANSACTIONS,
-        STORAGE_KEYS.SETTINGS,
-        STORAGE_KEYS.GLOBAL_PLAYER_STATS,
-      ]).catch(() => ({}));
+      // Wave 7.1: also wrapped in a timeout so a hung sfgl_data query doesn't
+      // stall the loader.
+      const sfglFallback = await Promise.race([
+        sfglDataApi.getMany([
+          STORAGE_KEYS.TEAMS,
+          STORAGE_KEYS.TOURNAMENTS,
+          STORAGE_KEYS.TRANSACTIONS,
+          STORAGE_KEYS.SETTINGS,
+          STORAGE_KEYS.GLOBAL_PLAYER_STATS,
+        ]),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('sfgl_data timed out')), 5000)),
+      ]).catch((e) => {
+        console.warn('[useLeague] sfgl_data fallback unavailable:', e.message || e);
+        return {};
+      });
 
       // ── Apply each collection with cascade: Firebase → sfgl_data → localStorage ──
 
@@ -268,8 +282,23 @@ export const useLeague = (STORAGE_KEYS) => {
   }, [STORAGE_KEYS, fetchWithRetry]);
 
   // ── Initial load ──────────────────────────────────────────────────────────
+  // Wave 7.1: hard 20-second watchdog so the loading spinner can never hang
+  // forever even if every Firebase call stalls. After 20s we force the
+  // loading flag off; views render with whatever data we have (even if empty)
+  // and the user can pull-to-refresh to retry.
   useEffect(() => {
-    loadFromFirebase(false).finally(() => setLoading(false));
+    let watchdogFired = false;
+    const watchdog = setTimeout(() => {
+      watchdogFired = true;
+      console.warn('[useLeague] Load watchdog fired after 20s — forcing loading=false');
+      setLoading(false);
+      setLoadErrors(prev => prev.includes('timeout') ? prev : [...prev, 'timeout']);
+    }, 20000);
+    loadFromFirebase(false).finally(() => {
+      clearTimeout(watchdog);
+      if (!watchdogFired) setLoading(false);
+    });
+    return () => clearTimeout(watchdog);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Refetch on tab focus after >5 min hidden ─────────────────────────────
