@@ -819,6 +819,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     {['waiver', 'waiver blocked', 'fa', 'mulligan'].map(type => (
                       <button key={type} onClick={() => {
                         setAddTxType(type);
+                        setAddTxPlayerIn(null); setAddTxSearchIn('');
+                        setAddTxPlayerOut(null); setAddTxSearchOut('');
                         // Always re-default tournament when type changes (commish can still override)
                         {
                           if (type === 'mulligan') {
@@ -862,13 +864,42 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   </div>
                 </div>
 
-                {/* Player IN search */}
+                {/* Player IN — dropdown for mulligan (roster is small), search for others */}
                 {(addTxType !== 'drop') && (() => {
                   const teamObj  = teams.find(t => t.name === addTxTeam);
                   const validPlayer = p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim());
-                  const pool = addTxType === 'mulligan'
-                    ? (teamObj?.roster || [])
-                    : addTxType === 'waiver blocked'
+
+                  // Mulligan: show a simple dropdown of the team's roster
+                  if (addTxType === 'mulligan') {
+                    const roster = (teamObj?.roster || []).filter(validPlayer);
+                    // For mulligan IN, show roster players NOT in the current lineup
+                    // (the player coming IN is the one who wasn't starting)
+                    const lineup = new Set(teamObj?.lineup || []);
+                    const benchPlayers = roster.filter(p => !lineup.has(p.name));
+                    // But also include all roster players as a fallback in case lineup is empty
+                    const pool = benchPlayers.length > 0 ? benchPlayers : roster;
+                    return (
+                      <div>
+                        <div style={{ ...theme.label, marginBottom: 4 }}>Player IN (from bench)</div>
+                        <select
+                          value={addTxPlayerIn?.name || ''}
+                          onChange={e => {
+                            const name = e.target.value;
+                            setAddTxPlayerIn(name ? { name } : null);
+                          }}
+                          style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4, cursor: 'pointer' }}
+                        >
+                          <option value="">— select player —</option>
+                          {pool.sort((a, b) => a.name.localeCompare(b.name)).map(p => (
+                            <option key={p.name} value={p.name}>{p.name}{p.limited ? ' ⭐' : ''}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  }
+
+                  // Non-mulligan: search UI for free agents / all players
+                  const pool = addTxType === 'waiver blocked'
                     ? allPlayers.filter(validPlayer)
                     : allPlayers.filter(p => {
                         if (!validPlayer(p)) return false;
@@ -878,8 +909,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   const filtered = pool.filter(p =>
                     (p.name || p).toLowerCase().includes(addTxSearchIn.toLowerCase())
                   );
-                  const label = addTxType === 'mulligan' ? 'Player IN (from roster)'
-                              : addTxType === 'waiver blocked' ? 'Player Claimed (blocked)'
+                  const label = addTxType === 'waiver blocked' ? 'Player Claimed (blocked)'
                               : 'Player Added';
                   return (
                     <div>
@@ -898,7 +928,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         <>
                           <input
                             type="text"
-                            placeholder={'Search ' + (addTxType === 'mulligan' ? 'roster' : 'free agents') + '…'}
+                            placeholder="Search free agents…"
                             value={addTxSearchIn}
                             onChange={e => setAddTxSearchIn(e.target.value)}
                             style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4 }}
@@ -941,16 +971,43 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   );
                 })()}
 
-                {/* Player OUT search (mulligan only) */}
-                {addTxType === 'mulligan' && (() => {
+                {/* Player OUT / Dropped — dropdown for mulligan, search for fa/waiver */}
+                {(addTxType === 'mulligan' || addTxType === 'fa' || addTxType === 'waiver') && (() => {
                   const teamObj = teams.find(t => t.name === addTxTeam);
+
+                  // Mulligan: simple dropdown of lineup players (the one being swapped out)
+                  if (addTxType === 'mulligan') {
+                    const lineup = teamObj?.lineup || [];
+                    const rosterMap = {};
+                    (teamObj?.roster || []).forEach(p => { rosterMap[p.name] = p; });
+                    return (
+                      <div>
+                        <div style={{ ...theme.label, marginBottom: 4 }}>Player OUT (from lineup)</div>
+                        <select
+                          value={addTxPlayerOut?.name || ''}
+                          onChange={e => {
+                            const name = e.target.value;
+                            setAddTxPlayerOut(name ? { name } : null);
+                          }}
+                          style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4, cursor: 'pointer' }}
+                        >
+                          <option value="">— select player —</option>
+                          {lineup.sort((a, b) => a.localeCompare(b)).map(name => (
+                            <option key={name} value={name}>{name}{rosterMap[name]?.limited ? ' ⭐' : ''}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  }
+
+                  // FA / Waiver: search the team's roster for who to drop
                   const pool = teamObj?.roster || [];
                   const filtered = pool.filter(p =>
                     (p.name || p).toLowerCase().includes(addTxSearchOut.toLowerCase())
                   );
                   return (
                     <div>
-                      <div style={{ ...theme.label, marginBottom: 4 }}>Player OUT (from lineup)</div>
+                      <div style={{ ...theme.label, marginBottom: 4 }}>Player Dropped</div>
                       {addTxPlayerOut ? (
                         <div style={{
                           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
