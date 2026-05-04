@@ -312,8 +312,8 @@ const FantasyGolfLeague = () => {
                 <span style={{
                   fontFamily: "'Raleway', system-ui, sans-serif",
                   fontSize: 16,
-                  fontWeight: 300,
-                  color: 'rgba(255,255,255,0.45)',
+                  fontWeight: 400,
+                  color: 'rgba(255,255,255,0.7)',
                   letterSpacing: 4,
                 }}>2026</span>
               </div>
@@ -330,6 +330,36 @@ const FantasyGolfLeague = () => {
                   }}>
                     {loggedInUser}
                   </span>
+                )}
+                {/* Commissioner pill — replaces the old full-width yellow banner.
+                    Click signs out of commish mode and returns to standings. */}
+                {isCommissioner && (
+                  <button
+                    onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }}
+                    title="Click to exit Commissioner mode"
+                    style={{
+                      fontFamily: "'Raleway', system-ui, sans-serif",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: 1.5,
+                      textTransform: 'uppercase',
+                      padding: '8px 12px',
+                      background: 'rgba(245,197,24,0.18)',
+                      border: '1px solid rgba(245,197,24,0.55)',
+                      borderRadius: 1,
+                      color: 'rgba(245,197,24,0.95)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.28)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.18)'; }}
+                  >
+                    <span style={{ fontSize: 11 }}>⚙</span>
+                    <span>Commish</span>
+                  </button>
                 )}
                 {loggedInUser && !isCommissioner && (
                     <button onClick={handleLogout} style={{
@@ -348,7 +378,7 @@ const FantasyGolfLeague = () => {
                       Sign Out
                     </button>
                 )}
-                {!loggedInUser && (
+                {!loggedInUser && !isCommissioner && (
                     <button onClick={() => setShowLoginModal(true)} style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
                       fontSize: 10,
@@ -370,33 +400,9 @@ const FantasyGolfLeague = () => {
           </div>
         </header>
 
-        {/* ── Commissioner banner ── */}
-        {isCommissioner && (
-          <div style={{
-            background: 'rgba(245,197,24,0.85)',
-            padding: '4px 16px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
-          }}>
-            <span style={{ fontSize: 11, letterSpacing: '0.15em', fontWeight: 700, fontFamily: "'Raleway', system-ui, sans-serif", color: '#0a1628', textTransform: 'uppercase' }}>
-              ⚙ Commissioner Mode
-            </span>
-            <button onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }} style={{
-              fontFamily: "'Raleway', system-ui, sans-serif",
-              fontSize: 9,
-              letterSpacing: 1.5,
-              textTransform: 'uppercase',
-              padding: '6px 12px',
-              background: '#dc2626',
-              border: '1px solid #b91c1c',
-              borderRadius: 2,
-              color: '#fff',
-              cursor: 'pointer',
-              fontWeight: 700,
-            }}>
-              Sign Out
-            </button>
-          </div>
-        )}
+        {/* (Old full-width yellow Commissioner banner removed in Wave 3 — replaced
+            by the gold "⚙ Commish" pill in the header right side above. Saves
+            ~30px of vertical real-estate on every commish screen.) */}
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
             <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>

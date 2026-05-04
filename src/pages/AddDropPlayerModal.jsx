@@ -615,12 +615,13 @@ export const AddDropPlayerModal = ({
                     </span>
                   ) : tournamentIsLocked ? (
                     <span style={{
-                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      fontFamily: fonts.sans, fontSize: 10.5, fontWeight: 400,
+                      fontStyle: 'italic',
                       padding: '5px 0', borderRadius: 3,
                       width: 90, textAlign: 'center', flexShrink: 0,
-                      background: 'rgba(255,255,255,0.04)',
-                      border: `1px solid ${colors.borderSubtle}`,
-                      color: colors.textMuted,
+                      background: 'transparent',
+                      border: `1px dashed ${colors.borderSubtle}`,
+                      color: 'rgba(255,255,255,0.35)',
                       letterSpacing: '0.3px',
                       display: 'inline-block',
                     }}>

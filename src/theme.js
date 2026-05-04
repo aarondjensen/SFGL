@@ -43,6 +43,8 @@ export const colors = {
   dangerBg:      'rgba(180,60,60,0.12)',
   dangerBorder:  'rgba(180,60,60,0.3)',
   warning:       'rgba(220,170,60,0.85)',
+  warningBg:     'rgba(220,170,60,0.1)',
+  warningBorder: 'rgba(220,170,60,0.4)',
 
   // Medal positions
   medal1:        { bg: 'rgba(180,160,100,0.9)',  text: '#111d2e' },
@@ -279,6 +281,21 @@ export const theme = {
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
     color: colors.danger,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+
+  btnWarning: {
+    background: colors.warningBg,
+    border: `1px solid ${colors.warningBorder}`,
+    borderRadius: shape.btnRadius,
+    padding: '9px 18px',
+    fontFamily: fonts.sans,
+    fontSize: "clamp(11px, 0.9vw, 13px)",
+    fontWeight: 600,
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    color: colors.warning,
     cursor: 'pointer',
     transition: 'all 0.2s',
   },

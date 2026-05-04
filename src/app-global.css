@@ -55,9 +55,18 @@ select option:hover {
 .sfgl-standings-cell { vertical-align: middle !important; }
 .sfgl-owner { display: inline; }
 
+/* Leader marker: "—" on tight mobile screens, 🏆 on desktop where there's space (Wave 3) */
+.sfgl-leader-mobile  { display: inline; }
+.sfgl-leader-desktop { display: none; }
+
 @media (max-width: 639px) {
   .sfgl-standings-row { height: 52px; }
   .sfgl-owner { display: none; }
+}
+
+@media (min-width: 640px) {
+  .sfgl-leader-mobile  { display: none; }
+  .sfgl-leader-desktop { display: inline; }
 }
 
 /* ── Tab focus-visible for keyboard accessibility ── */
@@ -150,3 +159,15 @@ html { scrollbar-gutter: stable; }
 }
 .sfgl-dot:nth-child(2) { animation-delay: 0.2s; }
 .sfgl-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ============================================================================
+ * BUTTON PULSE — for action-ready buttons that want subtle attention
+ * (e.g. the Process All button in AdminView when waivers are ready to process).
+ * ============================================================================ */
+@keyframes sfgl-button-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(80,180,120,0.0); }
+  50%      { box-shadow: 0 0 0 6px rgba(80,180,120,0.18); }
+}
+.sfgl-pulse-ready {
+  animation: sfgl-button-pulse 2.2s ease-in-out infinite;
+}
