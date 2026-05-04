@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Trophy } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked } from '../utils/index.js';
 import { theme, colors, fonts, cardLiftHandlers, SWING_COLORS } from '../theme.js';
+import { TournamentBadges } from './TournamentBadges';
 
 const GOLD_BRIGHT = '#f5c518';
 const GOLD_DIM    = 'rgba(245,197,24,0.35)';
@@ -81,16 +82,8 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
 };
 
 // ── Tournament type badges ────────────────────────────────────────────────────
-const TournamentBadges = ({ tournament }) => (
-  <>
-    {tournament.isMajor && (
-      <span style={{ width: 20, height: 20, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 800, letterSpacing: 0, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</span>
-    )}
-    {tournament.isSignature && !tournament.isMajor && (
-      <span style={{ width: 20, height: 20, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 600, letterSpacing: 0, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</span>
-    )}
-  </>
-);
+// Now imported from ./TournamentBadges (Wave 1 cleanup — was inlined here AND
+// in TournamentsView, plus 3 more inline copies inside this file's render).
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 const EmptyState = () => (
@@ -247,12 +240,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
                 <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
-                  {tournament.isMajor
-                    ? <span style={{ width: 20, height: 20, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 800, letterSpacing: 0, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</span>
-                    : tournament.isSignature
-                      ? <span style={{ width: 20, height: 20, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 600, letterSpacing: 0, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</span>
-                      : null
-                  }
+                  <TournamentBadges tournament={tournament} />
                 </div>
                 <h3 style={{ ...theme.h3, color: colors.success, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.name}</h3>
               </div>
@@ -444,14 +432,9 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)'; }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                {/* Badge column — Sig/Major or plain dot */}
+                {/* Badge column — Sig/Major or empty */}
                 <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
-                  {tournament.isMajor
-                    ? <span style={{ width: 20, height: 20, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 800, letterSpacing: 0, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</span>
-                    : tournament.isSignature
-                      ? <span style={{ width: 20, height: 20, borderRadius: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1, fontSize: 9, fontWeight: 600, letterSpacing: 0, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</span>
-                      : null
-                  }
+                  <TournamentBadges tournament={tournament} />
                 </div>
                 <div style={{ textAlign: 'left', minWidth: 0 }}>
                   <h3 style={{ ...theme.h3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.name}</h3>

@@ -12,10 +12,9 @@ import { TournamentsView }  from './pages/TournamentsView';
 import LoginPage            from './pages/LoginPage';
 
 // ── Lazy-loaded views (heavy, rarely visited on initial load) ──────────────
-// AdminView (1,507 LOC), TransactionsView (1,204 LOC), and their transitive
-// deps (DraftModal 722 LOC, ScheduleImportModal 336 LOC) are deferred until
-// the user actually navigates to those tabs. This removes ~3,800 lines of JS
-// from the initial bundle.
+// AdminView and TransactionsView (and their transitive deps like DraftModal)
+// are deferred until the user actually navigates to those tabs. This removes
+// thousands of lines of JS from the initial bundle.
 const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m => ({ default: m.AdminView })));
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 
@@ -158,20 +157,8 @@ const FantasyGolfLeague = () => {
   const resolvedHeadshots = Object.keys(safeHeadshots).length > 0 ? safeHeadshots : PGA_TOUR_IDS;
   const currentTournament = safeTournaments.find(t => t.playing);
 
-  // ── Inject Google Fonts once on mount ────────────────────────────────────
-  // NOTE: Tab styles, select styles, standings styles, and body font are now
-  // in app-global.css (loaded statically). Only the Google Fonts <link> is
-  // still injected here because it points to an external CDN URL.
-  // TODO: Move this to index.html <head> with rel="preconnect" for even faster
-  // font loading — the <link> would start downloading before JS even parses.
-  useEffect(() => {
-    if (document.getElementById('sfgl-google-fonts')) return;
-    const link = document.createElement('link');
-    link.id   = 'sfgl-google-fonts';
-    link.rel  = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap';
-    document.head.appendChild(link);
-  }, []);
+  // ── Google Fonts is now loaded statically from index.html (Wave 1 cleanup) ──
+  // Loading-screen styles + body font are in app-global.css.
 
   // ── Restore session on page load ──────────────────────────────────────────
   useEffect(() => {
@@ -212,6 +199,7 @@ const FantasyGolfLeague = () => {
   // Runs once after league data loads. Calls /api/headshots with every rostered
   // player name, merges results into the headshots map so every component
   // (Rosters, AddDrop, etc.) has headshots immediately without its own fetch.
+  // NOTE: RostersView's own duplicate fetch was removed in Wave 1.
   const [headshotsFetched, setHeadshotsFetched] = useState(false);
   useEffect(() => {
     if (loading || headshotsFetched) return;
@@ -284,25 +272,12 @@ const FantasyGolfLeague = () => {
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
-        <style>{`
-          @keyframes sfgl-pulse {
-            0%, 100% { opacity: 0.9; transform: scale(1); }
-            50% { opacity: 0.4; transform: scale(0.97); }
-          }
-          @keyframes sfgl-dot {
-            0%, 80%, 100% { opacity: 0.15; transform: translateY(0); }
-            40% { opacity: 1; transform: translateY(-5px); }
-          }
-          .sfgl-logo-load { animation: sfgl-pulse 2s ease-in-out infinite; }
-          .sfgl-dot { display: inline-block; animation: sfgl-dot 1.2s ease-in-out infinite; }
-          .sfgl-dot:nth-child(2) { animation-delay: 0.2s; }
-          .sfgl-dot:nth-child(3) { animation-delay: 0.4s; }
-        `}</style>
+        {/* Loading-screen animations are now in app-global.css (Wave 1 cleanup) */}
         <div className="sfgl-logo-load" style={{ fontSize: 32, fontWeight: 600, letterSpacing: 10, color: 'rgba(255,255,255,0.9)' }}>SFGL</div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
-          <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
-          <span className="sfgl-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(245,197,24,0.8)', display: 'inline-block' }} />
+          <span className="sfgl-dot" />
+          <span className="sfgl-dot" />
+          <span className="sfgl-dot" />
         </div>
         <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading 2026 League</div>
       </div>
@@ -585,6 +560,7 @@ const FantasyGolfLeague = () => {
               isCommissioner={isCommissioner}
               globalPlayerStats={globalPlayerStats}
               headshots={resolvedHeadshots}
+              updateHeadshots={updateHeadshots}
             />
           )}
           {activeTab === 'transactions' && (

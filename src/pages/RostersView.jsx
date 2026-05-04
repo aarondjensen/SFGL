@@ -367,7 +367,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
 export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
-  loggedInUser, isCommissioner, globalPlayerStats, headshots,
+  loggedInUser, isCommissioner, globalPlayerStats, headshots, updateHeadshots,
   leagueSettings = {}, settings, firstTeeTime,
 }) => {
   // leagueSettings may come from either prop name (App passes settings=)
@@ -537,21 +537,12 @@ export const RostersView = ({
     return map;
   }, [team, tournaments, transactions]);
 
-  // Fetch ESPN IDs for all rostered players directly from /api/headshots
-  // This runs once on mount and supplements whatever headshots are in Firebase
-  const [localHeadshots, setLocalHeadshots] = useState({});
-  useEffect(() => {
-    const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
-    if (!allRostered.length) return;
-    const encoded = allRostered.map(n => encodeURIComponent(n)).join(',');
-    fetch(`/api/headshots?names=${encoded}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.results) setLocalHeadshots(data.results); })
-      .catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Merge prop headshots with locally fetched ESPN IDs
-  const mergedHeadshots = { ...headshots, ...localHeadshots };
+  // ── Headshot fetching is now centralized in App.jsx ──────────────────────
+  // Wave 1 cleanup: removed the redundant `/api/headshots?names=...` fetch
+  // that ran here on mount. App.jsx already does this for all rostered players
+  // and pipes the result down via the `headshots` prop + `updateHeadshots` setter.
+  // AddDropPlayerModal's `onHeadshotsFound` callback now writes straight to
+  // the global state via updateHeadshots.
   // We use a ref to track the last fetched tournament so re-renders don't re-trigger.
   const _fieldTournamentName = (
     tournaments.find(t => t.playing && !t.completed) ||
@@ -846,7 +837,7 @@ export const RostersView = ({
                         player={player}
                         lastName={lastName}
                         nameFontSize={nameFontSize}
-                        headshots={mergedHeadshots}
+                        headshots={headshots}
                         fieldPlayerIds={fieldPlayerIds}
                         canEdit={canEditLineup}
                         onRemove={() => togglePlayerInLineup(player)}
@@ -1024,8 +1015,8 @@ export const RostersView = ({
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
-                            src={getPlayerHeadshot(player.name, player.limited, mergedHeadshots)}
-                            onError={makeHeadshotErrorHandler(player.name, player.limited, mergedHeadshots)}
+                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
+                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
@@ -1088,7 +1079,7 @@ export const RostersView = ({
                             }}>
                               {displayName(player.name, isMobile)}
                             </span>
-                            {tournamentField?.has(player.name) && (
+                            {tournamentField?.has(normalizeNordic(player.name)) && (
                               <span title="In this week's field" style={{ fontSize: 11, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
                             )}
                             {player.limited && (
@@ -1223,10 +1214,10 @@ export const RostersView = ({
         nextTournamentIndex={addDropTournamentIndex}
         txSegment={tournaments[addDropTournamentIndex]?.segment || getSegmentByDate()}
         editingWaiverData={editingWaiverData}
-        headshots={mergedHeadshots}
+        headshots={headshots}
         fieldPlayerIds={fieldPlayerIds}
         leagueSettings={resolvedSettings}
-        onHeadshotsFound={found => setLocalHeadshots(prev => ({ ...prev, ...found }))}
+        onHeadshotsFound={found => updateHeadshots && updateHeadshots(prev => ({ ...(prev || {}), ...found }))}
       />
     </div>
   );
