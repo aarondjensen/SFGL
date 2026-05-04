@@ -20,7 +20,11 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   // Cache for 2 minutes on Vercel CDN during live play
-  res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
+  // Wave 5: cache aligned to the 5-minute client poll interval. With 5 managers
+  // polling out-of-sync, the previous 2-minute CDN cache forced a re-fetch from
+  // pgatour.com on most polls. 300s matches the poll cadence so most polls
+  // serve from the CDN, with a 600s stale-while-revalidate window for safety.
+  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {

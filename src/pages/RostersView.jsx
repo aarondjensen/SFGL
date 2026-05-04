@@ -581,8 +581,16 @@ export const RostersView = ({
     };
 
     fetchField();
-    const interval = setInterval(fetchField, 30 * 60 * 1000);
-    return () => { cancelled = true; clearInterval(interval); };
+    // Wave 5: pause while tab hidden, refetch on return
+    const tick = () => { if (!document.hidden) fetchField(); };
+    const interval = setInterval(tick, 30 * 60 * 1000);
+    const onVis = () => { if (!document.hidden) fetchField(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Odds are now fetched as part of the field fetch above
@@ -603,8 +611,18 @@ export const RostersView = ({
         }
       }).catch(() => {});
     };
-    const interval = setInterval(poll, 90000); // every 90s (was 30s — reduces Firebase reads)
-    return () => { cancelled = true; clearInterval(interval); };
+    // Wave 5: pause while tab hidden, refetch on return — saves ~40 Firebase reads/hour
+    // when a phone is in pocket but app is still mounted.
+    poll(); // initial fetch always runs
+    const tick = () => { if (!document.hidden) poll(); };
+    const interval = setInterval(tick, 90000);
+    const onVis = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch live leaderboard from /api/live during tournament week
@@ -657,9 +675,16 @@ export const RostersView = ({
     };
 
     fetchLive();
-    // Poll every 5 min if tournament is in progress
-    interval = setInterval(fetchLive, 5 * 60 * 1000);
-    return () => { cancelled = true; clearInterval(interval); };
+    // Wave 5: pause while tab hidden, refetch on return
+    const tick = () => { if (!document.hidden) fetchLive(); };
+    interval = setInterval(tick, 5 * 60 * 1000);
+    const onVis = () => { if (!document.hidden) fetchLive(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sortedRoster = React.useMemo(() => {
