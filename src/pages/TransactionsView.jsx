@@ -535,102 +535,112 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       const mullKey = isSigOrMajor ? 'signatureMajor' : 'regular';
       const alreadyProcessed = !!tournament?.completed;
 
-      updatedTeams = teams.map(t => {
-        if (t.name !== addTxTeam) return t;
-        return {
-          ...t,
-          // Swap in the active lineup
-          lineup: playerOutName && playerInName
-            ? t.lineup.map(p => p === playerOutName ? playerInName : p)
-            : t.lineup,
-          // Only adjust limited starts if results were ALREADY processed
-          // (if not yet processed, processResults will handle starts via team.lineup)
-          roster: alreadyProcessed
-            ? t.roster.map(p => {
-                if (p.name === playerOutName && p.limited)
-                  return { ...p, starts: Math.max(0, (p.starts || 0) - 1) };
-                if (p.name === playerInName && p.limited)
-                  return { ...p, starts: (p.starts || 0) + 1 };
-                return p;
-              })
-            : t.roster,
-          // Decrement mulligan counter
-          mulligans: {
-            ...t.mulligans,
-            [mullKey]: Math.max(0, (t.mulligans?.[mullKey] ?? 1) - 1),
-          },
-        };
-      });
+      // Detect if this mulligan was already applied (e.g. re-adding a lost transaction record).
+      // If the IN player is already in the stored results for this team, skip re-application.
+      const storedPlayers = tournament?.results?.teams?.[mulliganTeam?.id]?.players || [];
+      const alreadyApplied = playerInName && storedPlayers.some(p => (p.name || p) === playerInName);
 
-      // Swap player in stored tournament results (only if tournament already processed)
-      if (alreadyProcessed && mulliganTeam && playerOutName && playerInName) {
-        updatedTournaments = tournaments.map((t, i) => {
-          if (i !== tournamentIndex || !t.results?.teams?.[mulliganTeam.id]) return t;
-          const teamResult = t.results.teams[mulliganTeam.id];
-
-          // Try to find IN player's actual earnings from the tournament earnings map
-          const earningsMap = t.results?.earningsMap || {};
-          let inPlayerEarnings = earningsMap[playerInName] ?? 0;
-          // Fuzzy match if exact name not found
-          if (inPlayerEarnings === 0) {
-            const fuzzyKey = Object.keys(earningsMap).find(k =>
-              k.toLowerCase().replace(/[^a-z]/g, '') === playerInName.toLowerCase().replace(/[^a-z]/g, '')
-            );
-            if (fuzzyKey) inPlayerEarnings = earningsMap[fuzzyKey];
-          }
-
-          const updatedPlayers = (teamResult.players || []).map(p => {
-            const name = p.name || p;
-            if (name !== playerOutName) return p;
-            return typeof p === 'string'
-              ? { name: playerInName, earnings: inPlayerEarnings, mulliganIn: true, replacedPlayer: playerOutName }
-              : { ...p, name: playerInName, earnings: inPlayerEarnings, bonus: 0, roundsLed: [], wasRoundLeader: false, mulliganIn: true, replacedPlayer: playerOutName };
-          });
-
-          // Recalculate team totalEarnings from updated players
-          const newTotal = updatedPlayers.reduce((sum, p) => sum + (p.earnings || 0) + (p.bonus || 0), 0);
-
+      if (alreadyApplied) {
+        console.log(`[Mulligan] Already applied: ${playerInName} is already in ${addTxTeam}'s results for ${tournament?.name}. Recording transaction only.`);
+        dialog.showToast('Mulligan already applied — recording transaction only', 'info');
+      } else {
+        updatedTeams = teams.map(t => {
+          if (t.name !== addTxTeam) return t;
           return {
             ...t,
-            results: {
-              ...t.results,
-              teams: {
-                ...t.results.teams,
-                [mulliganTeam.id]: { ...teamResult, players: updatedPlayers, totalEarnings: newTotal },
-              },
+            // Swap in the active lineup
+            lineup: playerOutName && playerInName
+              ? t.lineup.map(p => p === playerOutName ? playerInName : p)
+              : t.lineup,
+            // Only adjust limited starts if results were ALREADY processed
+            // (if not yet processed, processResults will handle starts via team.lineup)
+            roster: alreadyProcessed
+              ? t.roster.map(p => {
+                  if (p.name === playerOutName && p.limited)
+                    return { ...p, starts: Math.max(0, (p.starts || 0) - 1) };
+                  if (p.name === playerInName && p.limited)
+                    return { ...p, starts: (p.starts || 0) + 1 };
+                  return p;
+                })
+              : t.roster,
+            // Decrement mulligan counter
+            mulligans: {
+              ...t.mulligans,
+              [mullKey]: Math.max(0, (t.mulligans?.[mullKey] ?? 1) - 1),
             },
           };
         });
-        setTournaments(updatedTournaments);
-        await storage.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments);
-        try { await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments); } catch(e) { console.error('sfgl tournaments sync failed:', e); }
 
-        // Also adjust team earnings + roster sfglEarnings to reflect the swap
-        const oldResult = tournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
-        const newResult = updatedTournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
-        if (oldResult && newResult) {
-          const earningsDiff = (newResult.totalEarnings || 0) - (oldResult.totalEarnings || 0);
-          const outPlayerOldEarnings = (oldResult.players || []).find(p => (p.name || p) === playerOutName)?.earnings || 0;
-          const inPlayerNewEarnings = (newResult.players || []).find(p => (p.name || p) === playerInName)?.earnings || 0;
-          updatedTeams = updatedTeams.map(t => {
-            if (t.name !== addTxTeam) return t;
+        // Swap player in stored tournament results (only if tournament already processed)
+        if (alreadyProcessed && mulliganTeam && playerOutName && playerInName) {
+          updatedTournaments = tournaments.map((t, i) => {
+            if (i !== tournamentIndex || !t.results?.teams?.[mulliganTeam.id]) return t;
+            const teamResult = t.results.teams[mulliganTeam.id];
+
+            // Try to find IN player's actual earnings from the tournament earnings map
+            const earningsMap = t.results?.earningsMap || {};
+            let inPlayerEarnings = earningsMap[playerInName] ?? 0;
+            // Fuzzy match if exact name not found
+            if (inPlayerEarnings === 0) {
+              const fuzzyKey = Object.keys(earningsMap).find(k =>
+                k.toLowerCase().replace(/[^a-z]/g, '') === playerInName.toLowerCase().replace(/[^a-z]/g, '')
+              );
+              if (fuzzyKey) inPlayerEarnings = earningsMap[fuzzyKey];
+            }
+
+            const updatedPlayers = (teamResult.players || []).map(p => {
+              const name = p.name || p;
+              if (name !== playerOutName) return p;
+              return typeof p === 'string'
+                ? { name: playerInName, earnings: inPlayerEarnings, mulliganIn: true, replacedPlayer: playerOutName }
+                : { ...p, name: playerInName, earnings: inPlayerEarnings, bonus: 0, roundsLed: [], wasRoundLeader: false, mulliganIn: true, replacedPlayer: playerOutName };
+            });
+
+            // Recalculate team totalEarnings from updated players
+            const newTotal = updatedPlayers.reduce((sum, p) => sum + (p.earnings || 0) + (p.bonus || 0), 0);
+
             return {
               ...t,
-              earnings: (t.earnings || 0) + earningsDiff,
-              segmentEarnings: (t.segmentEarnings || 0) + earningsDiff,
-              roster: t.roster.map(p => {
-                if (p.name === playerOutName) return { ...p, sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - outPlayerOldEarnings) };
-                if (p.name === playerInName) return { ...p, sfglEarnings: (p.sfglEarnings || 0) + inPlayerNewEarnings };
-                return p;
-              }),
+              results: {
+                ...t.results,
+                teams: {
+                  ...t.results.teams,
+                  [mulliganTeam.id]: { ...teamResult, players: updatedPlayers, totalEarnings: newTotal },
+                },
+              },
             };
           });
-        }
-      }
+          setTournaments(updatedTournaments);
+          await storage.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments);
+          try { await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments); } catch(e) { console.error('sfgl tournaments sync failed:', e); }
 
-      updateTeams(updatedTeams);
-      await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
-      try { await sfglDataApi.set(STORAGE_KEYS.TEAMS, updatedTeams); } catch(e) { console.error('sfgl teams sync failed:', e); }
+          // Also adjust team earnings + roster sfglEarnings to reflect the swap
+          const oldResult = tournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
+          const newResult = updatedTournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
+          if (oldResult && newResult) {
+            const earningsDiff = (newResult.totalEarnings || 0) - (oldResult.totalEarnings || 0);
+            const outPlayerOldEarnings = (oldResult.players || []).find(p => (p.name || p) === playerOutName)?.earnings || 0;
+            const inPlayerNewEarnings = (newResult.players || []).find(p => (p.name || p) === playerInName)?.earnings || 0;
+            updatedTeams = updatedTeams.map(t => {
+              if (t.name !== addTxTeam) return t;
+              return {
+                ...t,
+                earnings: (t.earnings || 0) + earningsDiff,
+                segmentEarnings: (t.segmentEarnings || 0) + earningsDiff,
+                roster: t.roster.map(p => {
+                  if (p.name === playerOutName) return { ...p, sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - outPlayerOldEarnings) };
+                  if (p.name === playerInName) return { ...p, sfglEarnings: (p.sfglEarnings || 0) + inPlayerNewEarnings };
+                  return p;
+                }),
+              };
+            });
+          }
+        }
+
+        updateTeams(updatedTeams);
+        await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
+        try { await sfglDataApi.set(STORAGE_KEYS.TEAMS, updatedTeams); } catch(e) { console.error('sfgl teams sync failed:', e); }
+      }
     }
 
     setTransactions(copy);
