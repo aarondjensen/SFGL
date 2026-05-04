@@ -1,8 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
-import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 
@@ -332,9 +331,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       currentSwing = nextTourney ? (getSegForTourney(nextTourney) || lastSeg) : lastSeg;
     }
 
-    const swingIsComplete = false; // new swing just started — never "complete" yet
     const fees = {};
-    teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, swingIsComplete, teamId: t.id, teamName: t.name }; });
+    teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, teamId: t.id, teamName: t.name }; });
 
     // Build the set of tournamentIndexes that belong to the current swing
     const currentSwingIndexes = new Set(
@@ -690,11 +688,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   {swingPot > 0 && (
                     <span style={{ fontFamily: fonts.mono, fontSize: 12, fontWeight: 700, color: swingColor }}>
                       ${swingPot}
-                    </span>
-                  )}
-                  {teamFees[0].swingIsComplete && (
-                    <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(245,197,24,0.8)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 2, padding: '1px 4px' }}>
-                      Final
                     </span>
                   )}
                 </div>
