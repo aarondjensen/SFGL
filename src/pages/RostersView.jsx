@@ -757,6 +757,43 @@ export const RostersView = ({
               value={selectedTeam || ''}
               onChange={id => { setSelectedTeam(id); setLineupMode(false); setRosterView('full'); }}
             />
+            {/* Mulligan status — stacked Reg + Sig/Maj indicators */}
+            {team && (() => {
+              const regRemaining = team.mulligans?.regular ?? 1;
+              const sigRemaining = team.mulligans?.signatureMajor ?? 1;
+              const regUsed = regRemaining <= 0;
+              const sigUsed = sigRemaining <= 0;
+              const activeColor = 'rgba(220,60,60,0.85)';
+              const usedColor = 'rgba(255,255,255,0.18)';
+              return (
+                <div style={{
+                  display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                  gap: 1, flexShrink: 0, height: 36,
+                }}>
+                  {[
+                    { label: 'Reg', used: regUsed },
+                    { label: 'Sig', used: sigUsed },
+                  ].map(({ label, used }) => (
+                    <div key={label} style={{
+                      display: 'flex', alignItems: 'center', gap: 3,
+                      opacity: used ? 0.35 : 1,
+                      transition: 'opacity 0.2s',
+                    }}>
+                      <span style={{
+                        fontSize: 11, lineHeight: 1,
+                        filter: used ? 'grayscale(1)' : 'none',
+                      }}>🚨</span>
+                      <span style={{
+                        fontFamily: fonts.sans, fontSize: 8, fontWeight: 700,
+                        letterSpacing: '0.3px', textTransform: 'uppercase',
+                        color: used ? usedColor : activeColor,
+                        textDecoration: used ? 'line-through' : 'none',
+                      }}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Search/Add Player button — search always available, add gated by tournament state */}
