@@ -1,6 +1,27 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
+// ── Wave 6: ?reset=1 cache flush ──────────────────────────────────────────
+// Mobile devices can get stuck on stale localStorage data while desktop has
+// fresh state from Firebase. Visiting any URL with ?reset=1 (e.g.
+// https://sfglgolf.com/?reset=1) clears all SFGL-namespaced localStorage keys
+// and reloads. This runs at module-load time so it fires BEFORE any useState
+// initializers read from localStorage.
+if (typeof window !== 'undefined') {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('reset')) {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('sfgl-'))
+        .forEach(k => localStorage.removeItem(k));
+      // Navigate to the URL without ?reset — replace() also reloads
+      window.location.replace(window.location.pathname);
+    }
+  } catch (e) {
+    console.warn('Cache reset failed:', e);
+  }
+}
+
 import { DialogProvider } from './pages/DialogContext';
 import { ErrorBoundary }  from './pages/ErrorBoundary';
 import { PullToRefresh }  from './pages/PullToRefresh';
@@ -507,6 +528,7 @@ const FantasyGolfLeague = () => {
                 setTournaments={updateTournaments}
                 isCommissioner={isCommissioner}
                 STORAGE_KEYS={STORAGE_KEYS}
+                settings={settings}
               />
             </Suspense>
           )}

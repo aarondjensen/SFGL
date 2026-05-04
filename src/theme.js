@@ -408,8 +408,13 @@ export const segmentEarningsColor = (amount) =>
   (amount || 0) > 0 ? colors.earningsGreenLight : colors.textMuted;
 
 // ── Helper: card lift hover handlers ─────────────────────────────────────────
-export const cardLiftHandlers = () => ({
+// Pass `{ disabled: true }` to suppress the lift effect (e.g. when the card is
+// already expanded — hovering an open card shouldn't visually shift it).
+// onMouseLeave still resets styles even when disabled, so a card that was
+// already lifted at the moment of expansion gets reset cleanly.
+export const cardLiftHandlers = ({ disabled = false } = {}) => ({
   onMouseEnter: (e) => {
+    if (disabled) return;
     e.currentTarget.style.transform = 'translateY(-2px)';
     e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
     e.currentTarget.style.borderColor = 'rgba(180,160,100,0.3)';
