@@ -283,7 +283,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
-export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner, STORAGE_KEYS }) => {
+export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner, STORAGE_KEYS, settings = {} }) => {
   const [filterTeam,   setFilterTeam]   = useState('all');
   const [filterSwing,  setFilterSwing]  = useState('all');
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
@@ -483,6 +483,15 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
     const tournamentIndex = parseInt(addTxTourney);
     const isBlocked = addTxType === 'waiver blocked';
+    // Wave 6: auto-calculate fee based on transaction type, defaulting to the
+    // league settings (feeFA: 1, feeWaiver: 2). Previous code hardcoded 0 for
+    // every type, so manually-added FA transactions never charged the $1 fee.
+    const feeFA     = settings?.feeFA     ?? 1;
+    const feeWaiver = settings?.feeWaiver ?? 2;
+    const computedFee = isBlocked       ? 0
+                      : addTxType === 'fa'        ? feeFA
+                      : addTxType === 'waiver'    ? feeWaiver
+                      : 0; // mulligan, drop, etc. — no fee
     const newTx = {
       txId: `manual-${addTxTeam}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team: addTxTeam,
@@ -491,7 +500,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       droppedPlayer: addTxType === 'mulligan' ? playerOutName || undefined
                    : addTxType === 'drop'     ? undefined
                    : playerOutName || undefined,
-      fee: isBlocked ? 0 : 0,
+      fee: computedFee,
       segment: tournaments[tournamentIndex]?.segment || '',
       date: new Date().toLocaleDateString(),
       timestamp: Date.now(),
@@ -642,6 +651,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   // Human-readable label for transaction type
   const txTypeLabel = (type) => {
     if (type === 'swing_winner') return 'swing winner';
+    if (type === 'fa')           return 'free agent';
     return type;
   };
 
@@ -721,30 +731,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           </div>
         </div>
 
-        {/* ── Commissioner: Add Manual Transaction ── */}
+        {/* ── Commissioner: Add Manual Transaction (form only — toggle moved
+            inline with the Transaction History header below) ── */}
         {isCommissioner && (
           <>
-          <button
-              onClick={() => setAddTxOpen(!addTxOpen)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '7px 14px', borderRadius: 4,
-                fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-                background: 'rgba(80,180,120,0.12)',
-                border: '1.5px solid rgba(80,180,120,0.5)',
-                color: 'rgba(80,180,120,0.9)',
-                letterSpacing: '0.2px',
-                marginBottom: addTxOpen ? 0 : 8,
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.12)'; }}
-            >
-              <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>{addTxOpen ? '−' : '+'}</span>
-              <span>Add Transaction</span>
-            </button>
-
             {addTxOpen && (
           <div style={theme.card}>
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1089,7 +1079,33 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         {/* ── Transaction history ── */}
         <div style={theme.card}>
           <div style={{ ...theme.cardHeader, justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={theme.h2}>Transaction History</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+              <h2 style={theme.h2}>Transaction History</h2>
+              {isCommissioner && (
+                <button
+                  onClick={() => setAddTxOpen(!addTxOpen)}
+                  title={addTxOpen ? 'Close add transaction form' : 'Add manual transaction'}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '3px 9px', borderRadius: 3,
+                    fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                    letterSpacing: '0.4px', textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    background: addTxOpen ? 'rgba(80,180,120,0.22)' : 'rgba(80,180,120,0.1)',
+                    border: '1px solid rgba(80,180,120,0.45)',
+                    color: 'rgba(80,180,120,0.9)',
+                    flexShrink: 0,
+                    lineHeight: 1.2,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = addTxOpen ? 'rgba(80,180,120,0.22)' : 'rgba(80,180,120,0.1)'; }}
+                >
+                  <span style={{ fontSize: 12, lineHeight: 1, fontWeight: 800 }}>{addTxOpen ? '−' : '+'}</span>
+                  <span>Add</span>
+                </button>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
               <select
                 value={filterSwing}

@@ -43,8 +43,10 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
               }}>
                 {shortName(p.name)}
                 {p.mulliganIn && (
-                  <span title={`Mulligan · ${p.replacedPlayer || '?'}`} style={{
-                    marginLeft: 2, fontSize: 9, lineHeight: 1, verticalAlign: 'middle',
+                  <span title={`Mulligan · replaced ${p.replacedPlayer || '?'}`} style={{
+                    marginLeft: 3, fontSize: 11, lineHeight: 1, verticalAlign: 'middle',
+                    display: 'inline-block',
+                    filter: 'drop-shadow(0 0 2px rgba(255,80,80,0.6))',
                   }}>🚨</span>
                 )}
               </div>
@@ -318,7 +320,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               <div key={'swing:' + summary.seg} style={{
                 ...theme.cardLift,
                 border: `1px solid ${sc.border}`,
-              }} {...cardLiftHandlers()}>
+              }} {...cardLiftHandlers({ disabled: isExpanded })}>
                 {/* Header — same padding/height as tournament cards */}
                 <button
                   onClick={() => toggle('swing:' + summary.seg)}
@@ -414,7 +416,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
             .sort((a, b) => (b.result.totalEarnings || 0) - (a.result.totalEarnings || 0));
 
           return (
-          <div key={tournament.name} style={theme.cardLift} {...cardLiftHandlers()}>
+          <div key={tournament.name} style={theme.cardLift} {...cardLiftHandlers({ disabled: isExpanded })}>
             <button
               onClick={() => toggle(tournament.name)}
               aria-expanded={isExpanded}
