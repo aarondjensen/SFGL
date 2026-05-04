@@ -1,4 +1,7 @@
 // api/live.js — pgatour.com/leaderboard → dehydratedState → leaderboard query → players[].scoringData
+// Returns: { state, players, tournamentName }
+// The tournamentName field is used by RostersView to verify the live data matches
+// the app's active tournament (prevents showing wrong scores when commish is behind).
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
@@ -16,6 +19,8 @@ function extractNextData(html) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  // Cache for 2 minutes on Vercel CDN during live play
+  res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
@@ -24,14 +29,45 @@ export default async function handler(req, res) {
 
     const html = await resp.text();
     const nd   = extractNextData(html);
-    if (!nd) return res.status(200).json({ state: 'pre', players: [] });
+    if (!nd) return res.status(200).json({ state: 'pre', players: [], tournamentName: '' });
 
     const queries = nd.props?.pageProps?.dehydratedState?.queries || [];
-    const lbQuery = queries.find(q => Array.isArray(q.queryKey) && q.queryKey[0] === 'leaderboard');
+
+    // ── Extract tournament name from the "tournaments" or "tournament" query ──
+    let tournamentName = '';
+    const tournamentsQuery = queries.find(q =>
+      Array.isArray(q.queryKey) && q.queryKey[0] === 'tournaments'
+    );
+    if (tournamentsQuery?.state?.data) {
+      // The tournaments query returns an array; the first one with IN_PROGRESS or NOT_STARTED is current
+      const tourns = Array.isArray(tournamentsQuery.state.data)
+        ? tournamentsQuery.state.data
+        : Object.values(tournamentsQuery.state.data);
+      const current = tourns.find(t =>
+        t.tournamentStatus === 'IN_PROGRESS' || t.tournamentStatus === 'NOT_STARTED'
+      ) || tourns[0];
+      tournamentName = current?.tournamentName || '';
+    }
+    // Fallback: check the single "tournament" query
+    if (!tournamentName) {
+      const tournQuery = queries.find(q =>
+        Array.isArray(q.queryKey) && q.queryKey[0] === 'tournament'
+      );
+      tournamentName = tournQuery?.state?.data?.tournamentName || '';
+    }
+    // Fallback: pageProps.tournament
+    if (!tournamentName) {
+      tournamentName = nd.props?.pageProps?.tournament?.tournamentName || '';
+    }
+
+    // ── Extract leaderboard players ──
+    const lbQuery = queries.find(q =>
+      Array.isArray(q.queryKey) && q.queryKey[0] === 'leaderboard'
+    );
     const lbData  = lbQuery?.state?.data;
 
     if (!lbData?.players?.length) {
-      return res.status(200).json({ state: 'pre', players: [] });
+      return res.status(200).json({ state: 'pre', players: [], tournamentName });
     }
 
     const players = lbData.players.map(row => {
@@ -55,8 +91,14 @@ export default async function handler(req, res) {
       if (playerState === 'COMPLETE' || thruRaw === 'F') {
         thru = 'F';
       } else if (thruRaw && thruRaw !== '-') {
+        // Could be a hole number OR a tee time ("1:30 PM")
         const n = parseInt(thruRaw, 10);
-        if (!isNaN(n)) thru = n.toString();
+        if (/^\d+$/.test(thruRaw) && !isNaN(n)) {
+          thru = n.toString();
+        } else {
+          // Tee time — pass through as-is
+          thru = thruRaw;
+        }
       }
 
       const isCut = playerState === 'CUT' || position === 'CUT';
@@ -65,10 +107,12 @@ export default async function handler(req, res) {
       return { name, score, totalScore, position, thru, isCut, isWD };
     }).filter(Boolean);
 
-    const anyStarted = players.some(p => p.thru !== '' || p.isCut || p.isWD);
+    const anyStarted = players.some(p =>
+      p.thru === 'F' || /^\d+$/.test(p.thru) || p.isCut || p.isWD
+    );
     const state = anyStarted ? 'in' : 'pre';
 
-    return res.status(200).json({ state, players });
+    return res.status(200).json({ state, players, tournamentName });
 
   } catch (err) {
     return res.status(500).json({ error: err.message });
