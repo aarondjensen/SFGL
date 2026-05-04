@@ -872,11 +872,18 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   // Mulligan: show a simple dropdown of the team's roster
                   if (addTxType === 'mulligan') {
                     const roster = (teamObj?.roster || []).filter(validPlayer);
-                    // For mulligan IN, show roster players NOT in the current lineup
-                    // (the player coming IN is the one who wasn't starting)
-                    const lineup = new Set(teamObj?.lineup || []);
+                    // Determine the lineup for the selected tournament:
+                    // If results already processed, lineup was cleared — pull from stored results.
+                    // Otherwise use the current live lineup.
+                    const tournIdx = addTxTourney ? parseInt(addTxTourney) : -1;
+                    const tournament = tournIdx >= 0 ? tournaments[tournIdx] : null;
+                    const storedPlayers = tournament?.results?.teams?.[teamObj?.id]?.players || [];
+                    const storedLineup = storedPlayers.map(p => p.name || p).filter(Boolean);
+                    const currentLineup = teamObj?.lineup || [];
+                    const lineup = new Set(storedLineup.length > 0 ? storedLineup : currentLineup);
+                    // For mulligan IN, show roster players NOT in the lineup (the bench)
                     const benchPlayers = roster.filter(p => !lineup.has(p.name));
-                    // But also include all roster players as a fallback in case lineup is empty
+                    // Fallback: show all roster players if bench is empty
                     const pool = benchPlayers.length > 0 ? benchPlayers : roster;
                     return (
                       <div>
@@ -977,7 +984,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
                   // Mulligan: simple dropdown of lineup players (the one being swapped out)
                   if (addTxType === 'mulligan') {
-                    const lineup = teamObj?.lineup || [];
+                    // Determine lineup: if results already processed, pull from stored results;
+                    // otherwise use the current live lineup.
+                    const tournIdx = addTxTourney ? parseInt(addTxTourney) : -1;
+                    const tournament = tournIdx >= 0 ? tournaments[tournIdx] : null;
+                    const storedPlayers = tournament?.results?.teams?.[teamObj?.id]?.players || [];
+                    const storedLineup = storedPlayers.map(p => p.name || p).filter(Boolean);
+                    const currentLineup = teamObj?.lineup || [];
+                    const lineup = storedLineup.length > 0 ? storedLineup : currentLineup;
                     const rosterMap = {};
                     (teamObj?.roster || []).forEach(p => { rosterMap[p.name] = p; });
                     return (
