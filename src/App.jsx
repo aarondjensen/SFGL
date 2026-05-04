@@ -123,8 +123,16 @@ const FantasyGolfLeague = () => {
   // Hydrate tournament results from Firebase once after load.
   // MERGE only — never overwrites a tournament that already has local results.
   // Remote results win only when the local tournament has none.
+  //
+  // Wave 6 hotfix: previously this effect would set `resultsHydrated = true`
+  // even when `tournaments.length === 0` (e.g. when ?reset=1 had cleared
+  // localStorage and the tournament-recovery effect hadn't seeded state yet).
+  // That meant once recovery DID populate tournaments, this effect never
+  // re-ran — leaving every team's earnings at $0 because results were never
+  // merged in. Fix: bail without latching when tournaments is empty.
   useEffect(() => {
-    if (loading || resultsHydrated || tournaments.length === 0) return;
+    if (loading || resultsHydrated) return;
+    if (tournaments.length === 0) return; // wait for tournaments to populate, don't latch
     tournamentResultsApi.getAllForSeason().then(remoteResults => {
       if (!remoteResults || remoteResults.length === 0) { setResultsHydrated(true); return; }
       setTournaments(prev => prev.map(t => {
