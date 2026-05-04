@@ -634,8 +634,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     }
 
     setTransactions(copy);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, copy);
-    try { await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, copy); } catch(e) { console.error('sfgl tx sync failed:', e); }
+    // setTransactions is updateTransactions from useLeague — it handles
+    // both local state, localStorage, and Firebase sync internally.
+    // No separate sfglDataApi.set needed (that caused race conditions).
 
     dialog.showToast('Transaction added', 'success');
     setAddTxOpen(false);
