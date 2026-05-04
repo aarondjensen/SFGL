@@ -773,10 +773,12 @@ export const AdminView = ({
       });
     });
 
-    // Debug: log what we found so issues are visible in console
-    console.log('[SwingWinner] Swing:', swingAwardSeg);
-    console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
-    console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
+    // Wave 5: gate debug logs to dev mode only — production console stays quiet.
+    if (import.meta.env?.DEV) {
+      console.log('[SwingWinner] Swing:', swingAwardSeg);
+      console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
+      console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
+    }
 
     const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
     if (!winnerEntry) { dialog.showToast('Could not determine winner', 'error'); return; }

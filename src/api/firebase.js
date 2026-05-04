@@ -45,6 +45,8 @@ import {
   writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
+// Wave 5: hoisted from mid-file (was line 323) so all imports live at the top.
+import { NAME_ALIASES, NAME_ALIASES_REVERSE, resolveAlias, allNameVariants } from '../constants/nameAliases.js';
 
 // ── Firebase config — values come from environment variables ─────────────────
 // Vite exposes env vars prefixed with VITE_
@@ -165,15 +167,17 @@ export const playersApi = {
 
     const seen = new Set();
     const results = [];
-    const addDoc = d => {
+    // Wave 5: renamed from `addDoc` to avoid shadowing the imported `addDoc`
+    // from firebase/firestore at the top of this file.
+    const pushResult = d => {
       const name = resolveAlias(d.id);
       if (!seen.has(name)) {
         seen.add(name);
         results.push({ name, worldRank: d.data().world_rank, espnId: d.data().espn_id, headshotUrl: d.data().headshot_url, isLiv: d.data().is_liv });
       }
     };
-    snapRaw.docs.forEach(addDoc);
-    snapCap.docs.forEach(addDoc);
+    snapRaw.docs.forEach(pushResult);
+    snapCap.docs.forEach(pushResult);
 
     // Also search all ranked players client-side for substring/last-name matches
     try {
@@ -318,8 +322,6 @@ export const playersApi = {
 // ============================================================================
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
-import { NAME_ALIASES, NAME_ALIASES_REVERSE, resolveAlias, allNameVariants } from '../constants/nameAliases.js';
-
 
 const PLAYER_CACHE_KEY = 'sfgl-player-cache';
 const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
