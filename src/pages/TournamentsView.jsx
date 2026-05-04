@@ -3,7 +3,6 @@ import { Calendar, Trophy, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
 
 import { theme, colors, fonts, SWINGS, SWING_COLORS } from '../theme.js';
-import { TournamentBadges } from './TournamentBadges';
 import { storage } from '../api';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
@@ -288,7 +287,12 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
             >
               {/* Badge column */}
               <td style={{ padding: '8px 2px 8px 8px', verticalAlign: 'middle' }}>
-                <TournamentBadges tournament={t} size="sm" />
+                {t.isMajor && (
+                  <div style={{ width: 18, height: 18, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</div>
+                )}
+                {t.isSignature && !t.isMajor && (
+                  <div style={{ width: 18, height: 18, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 600, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</div>
+                )}
               </td>
 
               {/* Tournament name */}

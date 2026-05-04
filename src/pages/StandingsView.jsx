@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, SWINGS, SWING_COLORS } from '../theme.js';
-import { getSegmentByDate } from '../utils';
+import { getSegmentByDate, getSegmentForTournament } from '../utils';
 
 // Standings row styles (.sfgl-standings-row, .sfgl-standings-cell, .sfgl-owner)
 // are now in app-global.css — no runtime injection needed.
@@ -23,19 +23,8 @@ const ALL_SWINGS = SWINGS;
 
 const SWING_ACCENT = SWING_COLORS;
 
-// Prefer the stored segment/swing, then derive from the tournament start date.
-// Keeps StandingsView in sync with getSegmentByDate used everywhere else.
-const getSegmentForTournament = (t) => {
-  if (t.segment) return t.segment;
-  if (t.swing) return t.swing;
-  if (!t.dates) return null;
-  const MONTHS = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
-  const match = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
-  if (!match) return null;
-  const month = MONTHS[match[1]];
-  if (!month) return null;
-  return getSegmentByDate(new Date(new Date().getFullYear(), month - 1, parseInt(match[2])));
-};
+// Wave 7: getSegmentForTournament now imported from ../utils (single source of truth).
+// Local copy removed to align with the canonical 4-swing mapping.
 
 export const StandingsView = ({ teams, tournaments = [], transactions = [] }) => {
 

@@ -182,8 +182,22 @@ export const getETNow = () => {
 };
 
 // ============================================================================
-// SEGMENT
+// SEGMENT — CANONICAL 4-SWING MAPPING (Wave 7)
 // ============================================================================
+// SFGL uses 4 swings, evenly distributed across the year:
+//   West Coast Swing  Jan – Mar
+//   Spring Swing      Apr – Jun
+//   Summer Swing      Jul – Sep
+//   Fall Finish       Oct – Dec
+//
+// Previously this codebase had SIX competing month-to-segment helpers that
+// disagreed about whether May was "Florida Swing" or "Spring Swing" and about
+// whether SWINGS was a 4-element or 5-element array. This is now the single
+// source of truth — all consumers (AdminView, StandingsView, ResultsView,
+// TransactionsView, App.jsx, etc.) import getSegmentByDate / getSegmentForTournament
+// from here.
+// ============================================================================
+
 /**
  * Returns the segment name for a given date (defaults to today).
  * Accepts an optional Date object so callers like StandingsView can
@@ -192,10 +206,38 @@ export const getETNow = () => {
  */
 export const getSegmentByDate = (date) => {
   const month = (date || new Date()).getMonth() + 1;
-  if (month >= 1 && month <= 3) return 'West Coast Swing';
-  if (month >= 4 && month <= 5) return 'Florida Swing';
-  if (month >= 6 && month <= 8) return 'Summer Swing';
+  if (month >= 1  && month <= 3)  return 'West Coast Swing';
+  if (month >= 4  && month <= 6)  return 'Spring Swing';
+  if (month >= 7  && month <= 9)  return 'Summer Swing';
   return 'Fall Finish';
+};
+
+/**
+ * Returns the segment for a tournament. Honors an explicit `tournament.segment`
+ * field (set by AdminView when uploading the schedule) and falls back to
+ * date-based inference. Replaces the local copies in AdminView, ResultsView,
+ * TransactionsView, and StandingsView.
+ */
+export const getSegmentForTournament = (tournament) => {
+  if (!tournament) return null;
+  if (tournament.segment) return tournament.segment;
+  if (tournament.swing)   return tournament.swing;
+  // Try startDate first
+  if (tournament.startDate) {
+    return getSegmentByDate(new Date(tournament.startDate));
+  }
+  // Fall back to parsing dates string ("Apr 6-12")
+  if (tournament.dates) {
+    const m = tournament.dates.match(/^([A-Za-z]+)\s+(\d+)/);
+    if (m) {
+      const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
+      const mo = months[m[1]];
+      if (mo !== undefined) {
+        return getSegmentByDate(new Date(new Date().getFullYear(), mo, parseInt(m[2])));
+      }
+    }
+  }
+  return null;
 };
 
 // ============================================================================
@@ -271,6 +313,10 @@ export const isLineupEditingOpen = (tournament) => {
 
 export const isFreeAgentWindowOpen = (tournament, settings) => {
   if (!tournament) return false;
+  // Wave 7: also coordinate with tournament lock — once first-tee Thursday
+  // arrives, FA closes regardless of day-of-week math below.
+  if (isTournamentLocked(tournament)) return false;
+
   // Free agency opens after waiver cutoff (when waiver period ends) through Thursday lock
   const wDay  = settings?.waiverDay    ?? 2;  // default Tue
   const wHour = settings?.waiverHour   ?? 20; // default 8pm
@@ -500,25 +546,25 @@ export const slashGolfFetch = async (endpoint, params = {}) => {
 // ── Fetch First Tee Time ──────────────────────────────────────────────────
 export const fetchFirstTeeTime = async (tournament) => {
   if (!tournament?.slashGolfId) return null;
-  
+
   try {
-    const data = await slashGolfFetch('leaderboard', { 
-      tournId: tournament.slashGolfId, 
-      year: '2026' 
+    const data = await slashGolfFetch('leaderboard', {
+      tournId: tournament.slashGolfId,
+      year: '2026'
     });
-    
+
     const players = data.leaderboardRows || data.leaderboard || [];
     if (!players.length) return null;
-    
+
     // Find earliest tee time from all players
     let earliestTime = null;
-    
+
     for (const player of players) {
       const timeStr = player.teeTime || player.teeTimeTimestamp;
       if (!timeStr) continue;
-      
+
       let teeDate;
-      
+
       // Handle timestamp format { $date: { $numberLong: "..." } }
       if (typeof timeStr === 'object' && timeStr.$date) {
         const timestamp = timeStr.$date.$numberLong || timeStr.$date;
@@ -527,14 +573,14 @@ export const fetchFirstTeeTime = async (tournament) => {
         // Try parsing as date string
         teeDate = new Date(timeStr);
       }
-      
+
       if (teeDate && !isNaN(teeDate.getTime())) {
         if (!earliestTime || teeDate < earliestTime) {
           earliestTime = teeDate;
         }
       }
     }
-    
+
     return earliestTime;
   } catch (error) {
     console.error('Failed to fetch tee time:', error);

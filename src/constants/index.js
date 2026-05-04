@@ -38,9 +38,13 @@ export const COMMISSIONER_PASSWORD_HASH =
 // ============================================================================
 // SWINGS / SEGMENTS
 // ============================================================================
+// SFGL canonical: 4 swings, evenly distributed across the year.
+// Wave 7: removed 'Florida Swing' which was an outlier in this file but never
+// actually used by any month-to-segment mapping in the codebase. The 4-swing
+// model matches theme.js, AdminView, ResultsView, TransactionsView, and (after
+// Wave 7) utils/getSegmentByDate.
 export const SWINGS = [
   'West Coast Swing',
-  'Florida Swing',
   'Spring Swing',
   'Summer Swing',
   'Fall Finish',

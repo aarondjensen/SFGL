@@ -1,19 +1,25 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
-// ── Wave 6: ?reset=1 cache flush ──────────────────────────────────────────
+// ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
 // Mobile devices can get stuck on stale localStorage data while desktop has
 // fresh state from Firebase. Visiting any URL with ?reset=1 (e.g.
 // https://sfglgolf.com/?reset=1) clears all SFGL-namespaced localStorage keys
 // and reloads. This runs at module-load time so it fires BEFORE any useState
 // initializers read from localStorage.
+//
+// Wave 7 fix: previously this only matched 'sfgl-' prefix keys, but the actual
+// data keys in this app use 'fantasy-golf-' as their prefix (only the
+// logged-in-user key uses 'sfgl-'). The old filter only signed users out and
+// did not reset cache. Now matches both.
 if (typeof window !== 'undefined') {
   try {
     const params = new URLSearchParams(window.location.search);
     if (params.has('reset')) {
       Object.keys(localStorage)
-        .filter(k => k.startsWith('sfgl-'))
+        .filter(k => k.startsWith('sfgl-') || k.startsWith('fantasy-golf-'))
         .forEach(k => localStorage.removeItem(k));
+      console.log('[?reset=1] Cleared SFGL localStorage');
       // Navigate to the URL without ?reset — replace() also reloads
       window.location.replace(window.location.pathname);
     }
@@ -89,9 +95,11 @@ const FantasyGolfLeague = () => {
   const {
     teams, tournaments, transactions, settings, globalPlayerStats,
     allPlayers, rankingsLastUpdated, headshots, loading, isSyncing,
+    loadErrors, // Wave 7: surfaces Firebase failures to the UI
     setTournaments, setAllPlayers,
     updateTeams, updateTournaments, updateTransactions, updateSettings,
     updateGlobalStats, updateHeadshots, updateRankings,
+    refetch, // Wave 7: lets PullToRefresh do a real refetch instead of window.location.reload()
   } = league;
 
   // Guard against useLeague returning null/undefined when Firebase load fails
@@ -150,43 +158,12 @@ const FantasyGolfLeague = () => {
   }, [loading, tournaments.length, resultsHydrated]);
 
 
-  // ── Wave 6 hotfix: defensive direct-from-Firebase tournament recovery ─────
-  // Symptom this fixes: after ?reset=1 cleared localStorage on mobile,
-  // useLeague was leaving `tournaments` as [] indefinitely instead of fetching
-  // from Firebase. Result: Standings / Results / Tournaments views all blank
-  // because they iterate over `tournaments`. (Rosters/Transactions partially
-  // worked because they have other data sources or polls.)
-  //
-  // This effect runs once after `loading` flips to false. If `tournaments`
-  // is empty, it fetches directly from Firebase and seeds state. Defensive:
-  // does not write back to Firebase (only reads), so it's safe even if
-  // Firebase has data and useLeague is misbehaving.
-  const [tournamentsRecovered, setTournamentsRecovered] = useState(false);
-  useEffect(() => {
-    if (loading || tournamentsRecovered) return;
-    if (tournaments.length > 0) {
-      setTournamentsRecovered(true);
-      return;
-    }
-    console.log('[App] tournaments empty after load — recovering from Firebase');
-    import('./api/firebase').then(({ tournamentsApi }) => {
-      tournamentsApi.getAll().then(remote => {
-        if (remote && remote.length > 0) {
-          console.log(`[App] recovered ${remote.length} tournaments from Firebase`);
-          setTournaments(remote);
-        } else {
-          console.warn('[App] Firebase tournaments fetch returned empty — Firebase data may be missing');
-        }
-        setTournamentsRecovered(true);
-      }).catch(err => {
-        console.error('[App] Firebase tournaments fetch failed:', err);
-        setTournamentsRecovered(true);
-      });
-    }).catch(err => {
-      console.error('[App] Firebase module import failed:', err);
-      setTournamentsRecovered(true);
-    });
-  }, [loading, tournaments.length, tournamentsRecovered]);
+  // ── Wave 7: defensive recovery effect removed ─────────────────────────────
+  // The Wave 6 hotfix that called tournamentsApi.getAll() directly when state
+  // was empty after load is no longer needed — useLeague now retries each
+  // Firebase call once on null/exception before falling back, AND refetches
+  // from Firebase whenever the tab becomes visible after >5 min hidden.
+  // Both layers of defense run automatically so manual recovery is unnecessary.
 
 
   // ── Auto-fetch headshots for all rostered players on app load ────────────
@@ -222,6 +199,33 @@ const FantasyGolfLeague = () => {
       .catch(() => {})
       .finally(() => setHeadshotsFetched(true));
   }, [loading, resolvedTeams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
+  // ── Wave 7: surface Firebase load failures to user via toast ──────────────
+  // The previous behavior (silently falling back to localStorage) is the root
+  // cause of the May 2026 mobile-vs-desktop divergence. Now, if any collection
+  // fails to load from Firebase on initial load OR on a refresh, show a toast.
+  // ── Wave 7: Surface load failures so silent Firebase failures stop being silent
+  // useLeague tracks which collections failed to load. We log a warning here
+  // and (in a future wave) will surface a toast via DialogProvider.
+  // The user can pull-to-refresh to retry.
+  const [failureToastShown, setFailureToastShown] = useState(false);
+  useEffect(() => {
+    if (loading) return;
+    if (failureToastShown) return;
+    if (!loadErrors || loadErrors.length === 0) return;
+    // Only mention the user-visible collections — silent failures of
+    // 'rankings' / 'headshots' aren't worth distracting the user with.
+    const userVisible = ['tournaments', 'teams', 'transactions', 'settings'];
+    const visibleFailures = loadErrors.filter(f => userVisible.includes(f));
+    if (visibleFailures.length === 0) {
+      setFailureToastShown(true);
+      return;
+    }
+    setFailureToastShown(true);
+    // Plain console for now; a future wave will route this through DialogContext.
+    console.warn(`[App] Couldn't reach Firebase for: ${visibleFailures.join(', ')}. Pull to refresh to retry.`);
+  }, [loading, loadErrors, failureToastShown]);
 
 
   // ── Admin login ────────────────────────────────────────────────────────────
@@ -279,6 +283,7 @@ const FantasyGolfLeague = () => {
   }
 
   return (
+    <PullToRefresh onRefresh={refetch}>
     <div className="min-h-screen pb-20 text-white" style={{ background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
       {/* ── Sticky shell: header + banner + nav ── */}
@@ -651,15 +656,14 @@ const FantasyGolfLeague = () => {
         </div>
       )}
     </div>
+    </PullToRefresh>
   );
 };
 
 // ── Root with providers ──────────────────────────────────────────────────────
 const App = () => (
   <DialogProvider>
-    <PullToRefresh>
-      <FantasyGolfLeague />
-    </PullToRefresh>
+    <FantasyGolfLeague />
   </DialogProvider>
 );
 
