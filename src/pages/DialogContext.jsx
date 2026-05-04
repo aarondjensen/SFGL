@@ -110,7 +110,11 @@ export const DialogProvider = ({ children }) => {
           <div
             style={{
               background: '#0f1d35',
-              border: `1px solid ${confirm.type === 'danger' ? colors.dangerBorder : colors.border}`,
+              border: `1px solid ${
+                confirm.type === 'danger'  ? colors.dangerBorder  :
+                confirm.type === 'warning' ? colors.warningBorder :
+                colors.border
+              }`,
               borderRadius: 3,
               boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
               maxWidth: 420, width: '100%',
@@ -124,7 +128,10 @@ export const DialogProvider = ({ children }) => {
             <h3 style={{
               ...theme.h2,
               marginBottom: 10,
-              color: confirm.type === 'danger' ? colors.danger : colors.textPrimary,
+              color:
+                confirm.type === 'danger'  ? colors.danger  :
+                confirm.type === 'warning' ? colors.warning :
+                colors.textPrimary,
             }}>
               {confirm.title}
             </h3>
@@ -153,7 +160,11 @@ export const DialogProvider = ({ children }) => {
                 onClick={() => handleResult(true)}
                 autoFocus
                 style={{
-                  ...(confirm.type === 'danger' ? theme.btnDanger : theme.btnPrimary),
+                  ...(
+                    confirm.type === 'danger'  ? theme.btnDanger  :
+                    confirm.type === 'warning' ? theme.btnWarning :
+                    theme.btnPrimary
+                  ),
                   padding: '10px 16px',
                 }}
                 onMouseEnter={e => { e.currentTarget.style.opacity = '0.8'; }}

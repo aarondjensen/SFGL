@@ -745,26 +745,29 @@ export const RostersView = ({
               value={selectedTeam || ''}
               onChange={id => { setSelectedTeam(id); setLineupMode(false); setRosterView('full'); }}
             />
-            {/* Mulligan status — stacked Reg + Sig/Maj indicators */}
+            {/* Mulligan status — stacked Reg + Sig/Maj indicators (Wave 3: count format)
+                Total is always 1 per league rules. Show "1/1" remaining vs "0/1" used.
+                The 🚨 icon stays visible (greyscale when count is 0) so a glance still
+                says "this is mulligan info" — the digit tells you usage, not the cross-out. */}
             {team && (() => {
               const regRemaining = team.mulligans?.regular ?? 1;
               const sigRemaining = team.mulligans?.signatureMajor ?? 1;
               const regUsed = regRemaining <= 0;
               const sigUsed = sigRemaining <= 0;
               const activeColor = 'rgba(220,60,60,0.85)';
-              const usedColor = 'rgba(255,255,255,0.18)';
+              const usedColor   = 'rgba(255,255,255,0.32)';
               return (
                 <div style={{
                   display: 'flex', flexDirection: 'column', justifyContent: 'center',
                   gap: 3, flexShrink: 0, height: 36,
                 }}>
                   {[
-                    { label: 'Reg', used: regUsed },
-                    { label: 'Sig', used: sigUsed },
-                  ].map(({ label, used }) => (
+                    { label: 'Reg', used: regUsed, remaining: Math.max(0, regRemaining) },
+                    { label: 'Sig', used: sigUsed, remaining: Math.max(0, sigRemaining) },
+                  ].map(({ label, used, remaining }) => (
                     <div key={label} style={{
-                      display: 'flex', alignItems: 'center', gap: 3,
-                      opacity: used ? 0.5 : 1,
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      opacity: used ? 0.55 : 1,
                       transition: 'opacity 0.2s',
                     }}>
                       <span style={{
@@ -775,8 +778,12 @@ export const RostersView = ({
                         fontFamily: fonts.sans, fontSize: 8, fontWeight: 700,
                         letterSpacing: '0.3px', textTransform: 'uppercase',
                         color: used ? usedColor : activeColor,
-                        textDecoration: used ? 'line-through' : 'none',
                       }}>{label}</span>
+                      <span style={{
+                        fontFamily: fonts.mono, fontSize: 9, fontWeight: 700,
+                        color: used ? usedColor : activeColor,
+                        marginLeft: 1,
+                      }}>{remaining}/1</span>
                     </div>
                   ))}
                 </div>
