@@ -11,8 +11,7 @@ import {
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts } from '../theme.js';
-import { storage } from '../api';
-import { teamsApi, sfglDataApi } from '../api/firebase';
+import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
@@ -149,8 +148,6 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 
   const persistTransactions = (newTx) => {
     setTransactions(newTx);
-    storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
-    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx).catch(() => {});
   };
 
   const deleteWaiver = (waiver) => {

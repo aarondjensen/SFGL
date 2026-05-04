@@ -166,7 +166,7 @@ const MergePlayersPanel = ({
     try {
       const uTeams = teams.map(t => ({ ...t, roster: (t.roster||[]).map(p => p.name===player1?{...p,name:player2}:p), lineup: (t.lineup||[]).map(n=>n===player1?player2:n) }));
       const uTx = transactions.map(tx => ({ ...tx, ...(tx.player===player1&&{player:player2}), ...(tx.droppedPlayer===player1&&{droppedPlayer:player2}) }));
-      await Promise.all([...uTeams.map(t=>teamsApi.update(t.id,t)), sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS,uTx), playersApi.addAlias(player2,player1).catch(()=>{}), playersApi.delete(player1).catch(()=>{})]);
+      await Promise.all([playersApi.addAlias(player2,player1).catch(()=>{}), playersApi.delete(player1).catch(()=>{})]);
       updateTeams(uTeams); setTransactions(uTx); setStatus('done');
       dialog.showToast(`Merged "${player1}" → "${player2}"`, 'success');
       setPlayer1(null); setPlayer2(null); setSearch1(''); setSearch2('');
@@ -345,10 +345,6 @@ export const AdminView = ({
       const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
       if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
       updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
-      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
-      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
-      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
       dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
       // Send results email to all managers
       try {
@@ -460,10 +456,6 @@ export const AdminView = ({
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
 
       updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
-      await storage.set(STORAGE_KEYS.TOURNAMENTS, newT);
-      await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats);
-      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
-      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
       dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
@@ -539,12 +531,12 @@ export const AdminView = ({
     const allRostered = new Set(); teams.forEach(t => t.roster.forEach(p => allRostered.add(p.name)));
     if (allRostered.has(w.player)) {
       const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() } : tx);
-      setTransactions(tx2); await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
+      setTransactions(tx2);
       dialog.showToast(w.player + ' already rostered', 'error'); return;
     }
     if (w.droppedPlayer && !teams.find(t => t.name === w.team)?.roster.some(p => p.name === w.droppedPlayer)) {
       const tx2 = transactions.map((tx, i) => i === w._idx ? { ...tx, status: 'failed', failReason: w.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() } : tx);
-      setTransactions(tx2); await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
+      setTransactions(tx2);
       dialog.showToast(w.droppedPlayer + ' already dropped', 'error'); return;
     }
 
@@ -572,8 +564,6 @@ export const AdminView = ({
     // Only apply the winner's roster change
     const t2 = teams.map(t => applyWaiver(t, winner));
     setTransactions(tx2); updateTeams(t2);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2);
-    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
     if (losers.length) {
       dialog.showToast(winner.team + ' wins claim · ' + losers.map(l => l.team).join(', ') + ' blocked', 'success');
     } else {
@@ -612,8 +602,6 @@ export const AdminView = ({
     }
     let t2 = [...teams]; applied.forEach(w => { t2 = t2.map(t => applyWaiver(t, w)); });
     setTransactions(tx2); updateTeams(t2);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
-    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
     dialog.showToast('Processed ' + p + (f ? ' · ' + f + ' failed' : ''), p > 0 ? 'success' : 'error');
   };
 
@@ -716,8 +704,6 @@ export const AdminView = ({
 
     updateTeams(newTeams);
     setTransactions(prev => [...prev, newTx]);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]);
-    await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(e => console.error('sfgl tx:', e));
 
     dialog.showToast('🏆 ' + winnerTeam.name + ' awarded $' + pot.toLocaleString() + ' for ' + swingAwardSeg, 'success');
     setSwingAwardSeg('');

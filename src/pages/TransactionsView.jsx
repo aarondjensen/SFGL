@@ -2,8 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
-import { storage } from '../api';
-import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
@@ -101,15 +99,6 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
 
     setTransactions(updatedTx);
     updateTeams(updatedTeams);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, updatedTx);
-    await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
-    // Sync to Firebase
-    try {
-      const { transactionsApi } = await import('../api/firebase');
-      await transactionsApi.sync(updatedTx);
-    } catch (e) {
-      console.error('[EditTx] sync error:', e);
-    }
 
     setSaving(false);
     dialog.showToast('Transaction updated', 'success');
@@ -474,10 +463,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
     updateTeams(newTeams);
     setTransactions(newTransactions);
-    await storage.set(STORAGE_KEYS.TEAMS, newTeams);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, newTransactions);
-    sfglDataApi.set(STORAGE_KEYS.TEAMS, newTeams).catch(() => {});
-    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTransactions).catch(() => {});
     dialog.showToast('Undone: ' + tx.player + ' removed from ' + tx.team, 'success');
   };
 
@@ -511,15 +496,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       fee: isBlocked ? 0 : 0,
       segment: tournaments[tournamentIndex]?.segment || '',
       date: new Date().toLocaleDateString(),
+      timestamp: Date.now(),
       tournamentIndex,
       status: isBlocked ? 'failed' : 'completed',
       ...(isBlocked ? { failReason: 'Manually voided by commissioner' } : {}),
       manualEntry: true,
     };
 
-    const fresh = await storage.get(STORAGE_KEYS.TRANSACTIONS, []);
-    const base = Array.isArray(fresh) && fresh.length >= transactions.length ? fresh : transactions;
-    const copy = [...base];
+    const copy = [...transactions];
     const insertAt = copy.reduce((last, tx, i) =>
       (tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex) ? i + 1 : last
     , 0);
@@ -611,8 +595,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
             };
           });
           setTournaments(updatedTournaments);
-          await storage.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments);
-          try { await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, updatedTournaments); } catch(e) { console.error('sfgl tournaments sync failed:', e); }
 
           // Also adjust team earnings + roster sfglEarnings to reflect the swap
           const oldResult = tournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
@@ -638,8 +620,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         }
 
         updateTeams(updatedTeams);
-        await storage.set(STORAGE_KEYS.TEAMS, updatedTeams);
-        try { await sfglDataApi.set(STORAGE_KEYS.TEAMS, updatedTeams); } catch(e) { console.error('sfgl teams sync failed:', e); }
       }
     }
 
@@ -1268,8 +1248,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                               // Simple delete for everything else
                               const newTx = transactions.filter(t => t !== tx);
                               setTransactions(newTx);
-                              await storage.set(STORAGE_KEYS.TRANSACTIONS, newTx);
-                              sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTx).catch(() => {});
                               dialog.showToast('Transaction deleted', 'success');
                             }
                           }}
