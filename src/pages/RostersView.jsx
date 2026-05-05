@@ -395,6 +395,12 @@ export const RostersView = ({
 
   const activeTournament      = tournaments.find(t => t.playing);
   const activeTournamentIndex = activeTournament ? tournaments.findIndex(t => t.name === activeTournament.name) : -1;
+  // Wave 8: when activeTournament is locked (Thursday morning has passed), any
+  // lineup edits actually affect the NEXT tournament, not the locked one. So
+  // for window-status calculations (lineupOpen, faOpen, waiverOpen), use the
+  // next non-locked tournament. Falls back to activeTournament if everything
+  // is locked (end of season).
+  const editingTournament = tournaments.find(t => !t.completed && !isTournamentLocked(t)) || activeTournament;
   // ── Date-based tournament week resolution ────────────────────────────────
   // Add/drop/waiver belong to whichever tournament's week we're currently in,
   // based on calendar date — regardless of whether that tournament is "playing" yet.
@@ -458,13 +464,11 @@ export const RostersView = ({
 
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
-  const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
+  const windowStatus  = useWindowStatus(editingTournament, resolvedSettings);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
   const togglePlayerInLineup = useCallback(async (player) => {
-    console.log('[Lineup] togglePlayerInLineup called', { player: player?.name, team: team?.name, isCommissioner, lineupOpen: windowStatus.lineupOpen });
-    if (!team) { console.warn('[Lineup] No team — aborting'); return; }
-    if (!player?.name) { console.warn('[Lineup] No player name — aborting'); return; }
+    if (!team || !player?.name) return;
     const currentLineup = Array.isArray(team.lineup) ? team.lineup : [];
     const isInLineup = currentLineup.includes(player.name);
     const activeLineupCount = currentLineup.filter(name => currentRoster.some(p => p.name === name)).length;
@@ -481,18 +485,16 @@ export const RostersView = ({
       const newLineup = isInLineup ? tLineup.filter(p => p !== player.name) : [...tLineup, player.name];
       return { ...t, lineup: newLineup };
     });
-    console.log('[Lineup] writing new lineup to Firebase…');
     try {
       await updateTeams(newTeams);
-      console.log('[Lineup] ✓ updated');
     } catch (e) {
       console.error('[Lineup] write failed:', e);
-      dialog.showToast('Failed to update lineup — see console', 'error');
+      dialog.showToast('Failed to update lineup', 'error');
       return;
     }
     if (!isInLineup) dialog.showToast(`${lastName} added to lineup`, 'success');
     else dialog.showToast(`${lastName} removed from lineup`, 'info');
-  }, [team, teams, updateTeams, dialog, currentRoster, LINEUP_SIZE, MAX_LIMITED_STARTS, isCommissioner, windowStatus.lineupOpen]);
+  }, [team, teams, updateTeams, dialog, currentRoster, LINEUP_SIZE, MAX_LIMITED_STARTS]);
 
 
   const pendingWaivers = useMemo(() => {
@@ -914,11 +916,7 @@ export const RostersView = ({
                     <div
                       key={`empty-${i}`}
                       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, cursor: canEditLineup ? 'pointer' : 'default' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        console.log('[Lineup] empty slot clicked', { canEditLineup, isCommissioner, isOwnTeam, lineupOpen });
-                        if (canEditLineup) setLineupMode(true);
-                      }}
+                      onClick={(e) => { e.stopPropagation(); if (canEditLineup) setLineupMode(true); }}
                     >
                       <div style={{
                         width: 44, height: 44, borderRadius: '50%',
@@ -1072,19 +1070,13 @@ export const RostersView = ({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            console.log('[Lineup] headshot clicked', { player: player.name, canEditLineup, isOwnTeam, lineupMode, isInLineup, canAddToLineup, isCommissioner });
                             if (canEditLineup && isOwnTeam) {
                               if (!lineupMode) {
                                 setLineupMode(true);
-                                // If clicking a non-lineup player with room, add them
                                 if (!isInLineup && canAddToLineup) togglePlayerInLineup(player);
                               } else if (isInLineup || canAddToLineup) {
                                 togglePlayerInLineup(player);
-                              } else {
-                                console.warn('[Lineup] click ignored — neither isInLineup nor canAddToLineup');
                               }
-                            } else {
-                              console.warn('[Lineup] click ignored — canEditLineup or isOwnTeam is false');
                             }
                           }}
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
