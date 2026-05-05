@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Trophy, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
 
-import { theme, colors, fonts, SWINGS, SWING_COLORS } from '../theme.js';
+import { theme, colors, fonts, SWINGS, SWING_COLORS, getSwingColor } from '../theme.js';
+import { getSegmentForTournament } from '../utils';
 import { storage } from '../api';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
@@ -14,16 +15,9 @@ const isAlternate = (t) => {
   return ALTERNATE_KEYWORDS.some(kw => t.name.includes(kw));
 };
 
-// Swing → accent color
-const swingColor = (swing, dateStr) => {
-  if (swing && SWING_COLORS[swing]) return SWING_COLORS[swing];
-  if (!dateStr) return colors.textSecondary;
-  const month = dateStr.split(' ')[0];
-  if (['Jan', 'Feb', 'Mar'].includes(month))  return SWING_COLORS['West Coast Swing'];
-  if (['Apr', 'May', 'Jun'].includes(month))  return SWING_COLORS['Spring Swing'];
-  if (['Jul', 'Aug', 'Sep'].includes(month))  return SWING_COLORS['Summer Swing'];
-  return SWING_COLORS['Fall Finish'];
-};
+// Wave 8: local swingColor() removed. We now use getSegmentForTournament(t)
+// from utils + getSwingColor(seg) from theme — same source of truth as
+// AdminView, ResultsView, StandingsView, TransactionsView.
 
 export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, firstTeeTime }) => {
   const [editMode,         setEditMode]         = useState(false);
@@ -315,7 +309,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 {t.playing && !t.completed ? (
                   <StatusBadge tournament={t} />
                 ) : (
-                  <span style={{ fontFamily: fonts.sans, fontSize: 11, color: alt ? colors.textMuted : swingColor(t.segment, t.dates) }}>
+                  <span style={{ fontFamily: fonts.sans, fontSize: 11, color: alt ? colors.textMuted : getSwingColor(getSegmentForTournament(t)) }}>
                     {t.dates}
                   </span>
                 )}

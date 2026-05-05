@@ -430,15 +430,30 @@ export const teamsApi = {
 // ============================================================================
 // TOURNAMENTS API
 // ============================================================================
+// Parse a "Mon DD-DD" or "Mon DD-Mon DD" tournament dates string to a sortable
+// Date for client-side ordering. Returns far-future for unparseable strings so
+// docs without a usable `dates` field sort to the end. Uses the current year
+// since tournament docs don't store year separately.
+const _SWING_MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+function _parseTournamentDate(datesStr) {
+  if (!datesStr) return new Date(9999, 11, 31);
+  const m = String(datesStr).match(/^([A-Za-z]+)\s+(\d+)/);
+  if (!m) return new Date(9999, 11, 31);
+  const month = _SWING_MONTHS[m[1].slice(0, 3)];
+  const day = parseInt(m[2], 10);
+  if (month === undefined || isNaN(day)) return new Date(9999, 11, 31);
+  return new Date(new Date().getFullYear(), month, day);
+}
+
 export const tournamentsApi = {
-  // No orderBy: tournament docs use a `dates` string field (e.g. "Apr 6-12"),
-  // not a queryable `start_date`. Firestore's orderBy silently filters out
-  // docs that lack the field — using 'start_date' here would (and did)
-  // return zero results for fresh clients with no localStorage cache.
-  // The consumer sorts client-side anyway.
+  // Tournament docs use a `dates` string field (e.g. "Apr 6-12"), not a
+  // queryable `start_date`. Firestore's orderBy silently filters out docs
+  // that lack the indexed field, so we fetch unordered and sort client-side
+  // by parsing the `dates` string.
   async getAll() {
     const snap = await getDocs(collection(db, 'tournaments'));
-    return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+    const tournaments = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+    return tournaments.sort((a, b) => _parseTournamentDate(a.dates) - _parseTournamentDate(b.dates));
   },
 
   async setAll(tournaments) {
