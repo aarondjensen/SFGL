@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Trophy } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked, getSegmentForTournament } from '../utils/index.js';
-import { theme, colors, fonts, cardLiftHandlers, SWING_COLORS, getSwingColor, getSwingColorAt } from '../theme.js';
+import { theme, colors, fonts, fontSize, cardLiftHandlers, SWING_COLORS, getSwingColor, getSwingColorAt } from '../theme.js';
 import { TournamentBadges } from './TournamentBadges';
 
 const GOLD_BRIGHT = '#f5c518';
@@ -34,7 +34,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
   return (
     <div style={{ marginLeft: 24, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 3 }}>
       {slots.map((p, idx) => (
-        <div key={idx} style={{ fontSize: 10, minWidth: 0, overflow: 'hidden' }}>
+        <div key={idx} style={{ fontSize: fontSize.sm, minWidth: 0, overflow: 'hidden' }}>
           {p ? (
             <>
               {/* Line 1: name + mulligan */}
@@ -45,7 +45,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                 {shortName(p.name)}
                 {p.mulliganIn && (
                   <span title={`Mulligan · replaced ${p.replacedPlayer || '?'}`} style={{
-                    marginLeft: 3, fontSize: 11, lineHeight: 1, verticalAlign: 'middle',
+                    marginLeft: 3, fontSize: fontSize.base, lineHeight: 1, verticalAlign: 'middle',
                     display: 'inline-block',
                     filter: 'drop-shadow(0 0 2px rgba(255,80,80,0.6))',
                   }}>🚨</span>
@@ -54,7 +54,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
               {/* Line 2: earnings (base + bonus combined) */}
               {showEarnings ? (
                 <div style={{ whiteSpace: 'nowrap' }}>
-                  <span style={{ ...theme.statNum, fontSize: 10, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
+                  <span style={{ ...theme.statNum, fontSize: fontSize.sm, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
                     ${((p.earnings || 0) + (p.bonus || 0)).toLocaleString()}
                   </span>
                 </div>
@@ -69,7 +69,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                       padding: '1px 3px',
                       background: 'rgba(220,110,30,0.35)',
                       color: 'rgba(255,165,80,0.95)',
-                      borderRadius: 2, fontSize: 8, lineHeight: 1.2,
+                      borderRadius: 2, fontSize: fontSize.xs, lineHeight: 1.2,
                     }}>R{rl.round}</span>
                   ))}
                 </div>
@@ -91,7 +91,7 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
 // ── Empty state ───────────────────────────────────────────────────────────────
 const EmptyState = () => (
   <div style={{ ...theme.card, ...theme.emptyState, padding: '52px 20px' }}>
-    <div style={{ fontSize: 40, margin: '0 auto 16px', textAlign: 'center' }}>🏌️</div>
+    <div style={{ fontSize: fontSize.xxl, margin: '0 auto 16px', textAlign: 'center' }}>🏌️</div>
     <h3 style={{ ...theme.h2, marginBottom: 8 }}>No Completed Tournaments Yet</h3>
     <p style={theme.bodyText}>Results will appear here after processing</p>
   </div>
@@ -255,9 +255,9 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                       borderBottom: `1px solid ${colors.borderSubtle}`,
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, width: 18, textAlign: 'center', fontFamily: fonts.serif, color: colors.textMuted }}>—</span>
-                        <span style={{ ...theme.h3, fontSize: 12 }}>{team.name}</span>
-                        <span style={{ fontFamily: fonts.sans, fontSize: 10, fontStyle: 'italic', color: colors.textGoldDim }}>pending</span>
+                        <span style={{ fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center', fontFamily: fonts.serif, color: colors.textMuted }}>—</span>
+                        <span style={{ ...theme.bodyText, color: colors.textPrimary }}>{team.name}</span>
+                        <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontStyle: 'italic', color: colors.textGoldDim }}>pending</span>
                       </div>
                       <PlayerSlotGrid players={sortedLineup.map(p => enrich(p, tIdx))} showEarnings={false} />
                     </div>
@@ -360,16 +360,16 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                           <span style={{
-                            fontSize: 11, fontWeight: 700, width: 18, textAlign: 'center',
+                            fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center',
                             fontFamily: fonts.serif,
                             color: rank === 0 ? sc.accent : colors.textMuted,
                           }}>
                             {rank + 1}
                           </span>
-                          <span style={{ ...theme.h3, fontSize: 12, color: rank === 0 ? colors.textPrimary : colors.textSecondary }}>{entry.team.name}</span>
+                          <span style={{ ...theme.bodyText, color: rank === 0 ? colors.textPrimary : colors.textSecondary }}>{entry.team.name}</span>
                           <span style={{
                             ...theme.statNum,
-                            fontSize: rank === 0 ? 13 : 11,
+                            fontSize: rank === 0 ? fontSize.md : fontSize.base,
                             fontWeight: rank === 0 ? 700 : 400,
                             color: rank === 0 ? colors.earningsGreen : 'rgba(80,180,120,0.5)',
                             marginLeft: 2,
@@ -377,7 +377,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                             ${entry.earnings.toLocaleString()}
                           </span>
                           {rank === 0 && (
-                            <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, color: sc.accent, marginLeft: 2 }}>
+                            <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, color: sc.accent, marginLeft: 2 }}>
                               +${summary.pot.toLocaleString()} pot
                             </span>
                           )}
@@ -453,15 +453,15 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                         <span style={{
-                          fontSize: 11, fontWeight: 700, width: 18, textAlign: 'center',
+                          fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center',
                           fontFamily: fonts.serif,
                           color: rank === 0 ? colors.textGold : colors.textMuted,
                         }}>
                           {rank + 1}
                         </span>
-                        <span style={{ ...theme.h3, fontSize: 12 }}>{team.name}</span>
+                        <span style={{ ...theme.bodyText, color: colors.textPrimary }}>{team.name}</span>
                         <span style={{
-                          ...theme.statNum, fontSize: 12, fontWeight: 600,
+                          ...theme.statNum, fontSize: fontSize.base, fontWeight: 600,
                           color: (tr.totalEarnings || 0) > 0 ? colors.earningsGreen : colors.textMuted,
                           marginLeft: 2,
                         }}>

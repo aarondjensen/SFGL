@@ -72,6 +72,32 @@ export const shape = {
   btnRadius:   1,
 };
 
+// ── Font size scale ───────────────────────────────────────────────────────────
+// Wave 8: single source of truth for every font size in the app.
+// Consumers should use these instead of inline `fontSize: 11` values.
+//
+//   xs   → 9-10px   — micro accents, badges (use sparingly)
+//   sm   → 10-12px  — labels, table headers, button text, badges
+//   base → 11-13px  — small UI text — DEFAULT for most secondary text
+//   md   → 13-15px  — body text, names in lists, primary content
+//   lg   → 15-18px  — sub-headings, large names, big stat numbers
+//   xl   → 17-22px  — section titles
+//   xxl  → 24-30px  — page titles
+//
+// Three visual tiers map to the scale:
+//   SMALL  = xs / sm / base
+//   MEDIUM = md
+//   LARGE  = lg / xl / xxl
+export const fontSize = {
+  xs:   'clamp(9px, 0.7vw, 10px)',
+  sm:   'clamp(10px, 0.85vw, 12px)',
+  base: 'clamp(11px, 0.95vw, 13px)',
+  md:   'clamp(13px, 1.1vw, 15px)',
+  lg:   'clamp(15px, 1.3vw, 18px)',
+  xl:   'clamp(17px, 1.5vw, 22px)',
+  xxl:  'clamp(24px, 2.2vw, 30px)',
+};
+
 // ── Reusable style objects ────────────────────────────────────────────────────
 // Use these directly on JSX elements: <div style={theme.card}>
 
@@ -124,7 +150,7 @@ export const theme = {
   // ── Typography ──
   h1: {
     fontFamily: fonts.serif,
-    fontSize: "clamp(24px, 2.2vw, 30px)",
+    fontSize: fontSize.xxl,
     fontWeight: 400,
     color: colors.textPrimary,
     letterSpacing: '0.3px',
@@ -132,7 +158,7 @@ export const theme = {
 
   h2: {
     fontFamily: fonts.serif,
-    fontSize: "clamp(17px, 1.5vw, 22px)",
+    fontSize: fontSize.xl,
     fontWeight: 400,
     color: colors.textPrimary,
     letterSpacing: '0.5px',
@@ -140,7 +166,7 @@ export const theme = {
 
   h3: {
     fontFamily: fonts.serif,
-    fontSize: "clamp(15px, 1.3vw, 18px)",
+    fontSize: fontSize.lg,
     fontWeight: 400,
     color: colors.textPrimary,
     letterSpacing: '0.3px',
@@ -148,7 +174,7 @@ export const theme = {
 
   label: {
     fontFamily: fonts.sans,
-    fontSize: "clamp(10px, 0.85vw, 12px)",
+    fontSize: fontSize.sm,
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
@@ -157,13 +183,13 @@ export const theme = {
 
   bodyText: {
     fontFamily: fonts.sans,
-    fontSize: "clamp(13px, 1.1vw, 15px)",
+    fontSize: fontSize.md,
     color: colors.textSecondary,
   },
 
   smallText: {
     fontFamily: fonts.sans,
-    fontSize: "clamp(11px, 0.95vw, 13px)",
+    fontSize: fontSize.base,
     color: colors.textMuted,
   },
 
@@ -177,7 +203,7 @@ export const theme = {
   statNumLg: {
     fontFamily: fonts.mono,
     fontVariantNumeric: 'tabular-nums lining-nums',
-    fontSize: "clamp(15px, 1.3vw, 18px)",
+    fontSize: fontSize.lg,
     fontWeight: 500,
     letterSpacing: '-0.5px',
   },
@@ -190,7 +216,7 @@ export const theme = {
   // ── Table ──
   tableHeaderCell: {
     padding: '8px 16px',
-    fontSize: "clamp(10px, 0.85vw, 12px)",
+    fontSize: fontSize.sm,
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
@@ -246,7 +272,7 @@ export const theme = {
     borderRadius: shape.btnRadius,
     padding: '9px 18px',
     fontFamily: fonts.sans,
-    fontSize: "clamp(11px, 0.9vw, 13px)",
+    fontSize: fontSize.base,
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
@@ -261,7 +287,7 @@ export const theme = {
     borderRadius: shape.btnRadius,
     padding: '9px 18px',
     fontFamily: fonts.sans,
-    fontSize: "clamp(11px, 0.9vw, 13px)",
+    fontSize: fontSize.base,
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
@@ -276,7 +302,7 @@ export const theme = {
     borderRadius: shape.btnRadius,
     padding: '9px 18px',
     fontFamily: fonts.sans,
-    fontSize: "clamp(11px, 0.9vw, 13px)",
+    fontSize: fontSize.base,
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
@@ -291,7 +317,7 @@ export const theme = {
     borderRadius: shape.btnRadius,
     padding: '9px 18px',
     fontFamily: fonts.sans,
-    fontSize: "clamp(11px, 0.9vw, 13px)",
+    fontSize: fontSize.base,
     fontWeight: 600,
     letterSpacing: '1.5px',
     textTransform: 'uppercase',

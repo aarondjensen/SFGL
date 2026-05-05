@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Trophy, Edit2, Save } from 'lucide-react';
 import { useDialog } from './DialogContext';
 
-import { theme, colors, fonts, SWINGS, SWING_COLORS, getSwingColor } from '../theme.js';
+import { theme, colors, fonts, fontSize, SWINGS, SWING_COLORS, getSwingColor } from '../theme.js';
 import { getSegmentForTournament } from '../utils';
 import { storage } from '../api';
 import { sfglDataApi } from '../api/firebase';
@@ -67,7 +67,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
     return (
       <span style={{
         display: 'inline-flex', alignItems: 'center', gap: 3,
-        fontSize: 9, fontFamily: fonts.sans, fontWeight: 600,
+        fontSize: fontSize.xs, fontFamily: fonts.sans, fontWeight: 600,
         padding: '2px 6px', borderRadius: 3,
         background: 'rgba(80,200,120,0.15)',
         border: '1px solid rgba(80,200,120,0.4)',
@@ -93,7 +93,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
         <tr>
           {editMode ? (
             ['Active', 'Type', 'Tournament', 'Dates', 'Location / Course', 'Swing', 'Lock'].map(h => (
-              <th key={h} style={{ ...theme.tableHeaderCell, fontSize: 10 }}>{h}</th>
+              <th key={h} style={{ ...theme.tableHeaderCell, fontSize: fontSize.sm }}>{h}</th>
             ))
           ) : (
             [{ label: '' }, { label: 'Tournament' }, { label: 'Dates' }, { label: 'Location' }].map(({ label }) => (
@@ -142,7 +142,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                           style={{
                             width: badge === 'Alt' ? 28 : 22, height: 22,
                             borderRadius: 2, fontFamily: fonts.sans,
-                            fontSize: 9, fontWeight: 700, cursor: 'pointer',
+                            fontSize: fontSize.xs, fontWeight: 700, cursor: 'pointer',
                             transition: 'all 0.15s',
                             background: active ? `rgba(${activeColor}, 0.15)` : 'rgba(255,255,255,0.04)',
                             border: `1px solid ${active ? activeBorder : colors.borderSubtle}`,
@@ -164,7 +164,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     style={{
                       background: 'transparent',
                       border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
-                      width: '100%', fontFamily: fonts.sans, fontSize: 12,
+                      width: '100%', fontFamily: fonts.sans, fontSize: fontSize.base,
                       color: colors.textPrimary, outline: 'none', padding: '2px 0',
                     }}
                     onFocus={e => { e.target.style.borderBottomColor = colors.borderFocus; }}
@@ -181,7 +181,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     style={{
                       background: 'transparent',
                       border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
-                      width: '100%', fontFamily: fonts.sans, fontSize: 11,
+                      width: '100%', fontFamily: fonts.sans, fontSize: fontSize.base,
                       color: colors.textPrimary, outline: 'none', padding: '2px 0',
                       minWidth: 80,
                     }}
@@ -199,7 +199,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     style={{
                       background: 'transparent',
                       border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
-                      width: '100%', fontFamily: fonts.sans, fontSize: 11,
+                      width: '100%', fontFamily: fonts.sans, fontSize: fontSize.base,
                       color: colors.textPrimary, outline: 'none', padding: '2px 0',
                       minWidth: 100,
                     }}
@@ -213,7 +213,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     style={{
                       background: 'transparent',
                       border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
-                      width: '100%', fontFamily: fonts.sans, fontSize: 10,
+                      width: '100%', fontFamily: fonts.sans, fontSize: fontSize.sm,
                       color: colors.textSecondary, outline: 'none', padding: '2px 0',
                       marginTop: 3,
                     }}
@@ -229,7 +229,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     onChange={e => updateLocal(realIndex, { segment: e.target.value || null })}
                     style={{
                       ...theme.select,
-                      fontSize: 11,
+                      fontSize: fontSize.base,
                       padding: '5px 8px',
                       background: '#0d1b2e',
                       color: colors.textPrimary,
@@ -250,7 +250,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                     onChange={e => updateLocal(realIndex, { lockHour: parseInt(e.target.value) })}
                     style={{
                       ...theme.select,
-                      fontSize: 11,
+                      fontSize: fontSize.base,
                       padding: '5px 8px',
                       background: '#0d1b2e',
                       color: colors.textPrimary,
@@ -282,24 +282,24 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               {/* Badge column */}
               <td style={{ padding: '8px 2px 8px 8px', verticalAlign: 'middle' }}>
                 {t.isMajor && (
-                  <div style={{ width: 18, height: 18, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</div>
+                  <div style={{ width: 18, height: 18, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.xs, fontWeight: 800, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</div>
                 )}
                 {t.isSignature && !t.isMajor && (
-                  <div style={{ width: 18, height: 18, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 600, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</div>
+                  <div style={{ width: 18, height: 18, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.xs, fontWeight: 600, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</div>
                 )}
               </td>
 
               {/* Tournament name */}
               <td style={{ padding: '8px 8px' }}>
                 <span style={{
-                  fontFamily: fonts.serif, fontSize: 13,
+                  fontFamily: fonts.serif, fontSize: fontSize.md,
                   color: alt ? colors.textMuted : colors.textPrimary,
                   display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                   overflow: 'hidden', lineHeight: 1.35,
                 }}>
                   {t.name}
                   {t.completed && (
-                    <span style={{ fontSize: 12, color: colors.textMuted, marginLeft: 4 }}>✓</span>
+                    <span style={{ fontSize: fontSize.base, color: colors.textMuted, marginLeft: 4 }}>✓</span>
                   )}
                 </span>
               </td>
@@ -309,7 +309,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
                 {t.playing && !t.completed ? (
                   <StatusBadge tournament={t} />
                 ) : (
-                  <span style={{ fontFamily: fonts.sans, fontSize: 11, color: alt ? colors.textMuted : getSwingColor(getSegmentForTournament(t)) }}>
+                  <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: alt ? colors.textMuted : getSwingColor(getSegmentForTournament(t)) }}>
                     {t.dates}
                   </span>
                 )}
@@ -318,7 +318,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               {/* Location + course */}
               <td style={{ padding: '8px 8px 8px 6px' }}>
                 <div style={{
-                  fontFamily: fonts.sans, fontSize: 10, color: alt ? colors.textMuted : colors.textSecondary,
+                  fontFamily: fonts.sans, fontSize: fontSize.sm, color: alt ? colors.textMuted : colors.textSecondary,
                   display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                   overflow: 'hidden', lineHeight: 1.4,
                 }}>
