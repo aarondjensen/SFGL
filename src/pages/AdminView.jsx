@@ -366,8 +366,15 @@ export const AdminView = ({
         .join('\n');
 
       // Only keep leaders who were actually in an SFGL starting lineup —
-      // same rule as the manual dropdown. Filter against current team lineups.
-      const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
+      // same rule as the manual dropdown. Wave 8: when reprocessing a completed
+      // tournament, team.lineup has been cleared (set to []), so deriving from
+      // current state gives an empty set and filters out every leader. Pull
+      // from the tournament's stored fullLineups snapshot instead, falling
+      // back to current lineups for first-time processing.
+      const storedFullLineups = t.results?.fullLineups;
+      const startedPlayers = storedFullLineups && Object.keys(storedFullLineups).length > 0
+        ? new Set(Object.values(storedFullLineups).flat())
+        : new Set(teams.flatMap(t2 => t2.lineup || []));
       const filterToStarted = (names) => {
         if (!names?.length) return [''];
         const filtered = names.filter(n => startedPlayers.has(n));
