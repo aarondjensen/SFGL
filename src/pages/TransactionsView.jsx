@@ -827,31 +827,29 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   const teamObj  = teams.find(t => t.name === addTxTeam);
                   const validPlayer = p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim());
 
-                  // Mulligan: show a simple dropdown of the team's roster
+                  // Mulligan: show a simple dropdown of the team's full roster.
+                  // Wave 8: previously filtered to bench-only (roster minus lineup),
+                  // but commish wanted the full roster visible — use roster directly.
+                  // Annotates each name with "(in lineup)" so the original distinction
+                  // is still visible without restricting the choice.
                   if (addTxType === 'mulligan') {
                     const roster = (teamObj?.roster || []).filter(validPlayer);
-                    // Determine the ORIGINAL lineup for the selected tournament:
-                    // If results already processed, lineup was cleared — pull from stored results.
-                    // If a mulligan was already applied to results, reconstruct the original
-                    // lineup by undoing the swap (replacedPlayer → original starter).
+                    // Determine the ORIGINAL lineup for the selected tournament for
+                    // the annotation. If results already processed, lineup was cleared
+                    // — pull from stored results. If a mulligan was already applied,
+                    // reconstruct the original lineup by undoing the swap.
                     const tournIdx = addTxTourney ? parseInt(addTxTourney) : -1;
                     const tournament = tournIdx >= 0 ? tournaments[tournIdx] : null;
                     const storedPlayers = tournament?.results?.teams?.[teamObj?.id]?.players || [];
-                    // Reconstruct original lineup: for any player with mulliganIn/replacedPlayer,
-                    // use the replacedPlayer (original starter) instead of the swapped-in player.
                     const originalLineup = storedPlayers.map(p => {
                       if (p.mulliganIn && p.replacedPlayer) return p.replacedPlayer;
                       return p.name || p;
                     }).filter(Boolean);
                     const currentLineup = teamObj?.lineup || [];
                     const lineup = new Set(originalLineup.length > 0 ? originalLineup : currentLineup);
-                    // For mulligan IN, show roster players NOT in the original lineup (the bench)
-                    const benchPlayers = roster.filter(p => !lineup.has(p.name));
-                    // Fallback: show all roster players if bench is empty
-                    const pool = benchPlayers.length > 0 ? benchPlayers : roster;
                     return (
                       <div>
-                        <div style={{ ...theme.label, marginBottom: 4 }}>Player IN (from bench)</div>
+                        <div style={{ ...theme.label, marginBottom: 4 }}>Player IN</div>
                         <select
                           value={addTxPlayerIn?.name || ''}
                           onChange={e => {
@@ -861,8 +859,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4, cursor: 'pointer' }}
                         >
                           <option value="">— select player —</option>
-                          {pool.sort((a, b) => a.name.localeCompare(b.name)).map(p => (
-                            <option key={p.name} value={p.name}>{p.name}{p.limited ? ' ⭐' : ''}</option>
+                          {roster.sort((a, b) => a.name.localeCompare(b.name)).map(p => (
+                            <option key={p.name} value={p.name}>
+                              {p.name}{p.limited ? ' ⭐' : ''}{lineup.has(p.name) ? ' (in lineup)' : ''}
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -946,10 +946,13 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 {(addTxType === 'mulligan' || addTxType === 'fa' || addTxType === 'waiver') && (() => {
                   const teamObj = teams.find(t => t.name === addTxTeam);
 
-                  // Mulligan: simple dropdown of lineup players (the one being swapped out)
+                  // Mulligan: dropdown of the team's full roster.
+                  // Wave 8: previously restricted to lineup-only — commish wanted
+                  // full roster visible. Annotate each non-lineup player with
+                  // "(on bench)" so the distinction is still clear.
                   if (addTxType === 'mulligan') {
-                    // Determine ORIGINAL lineup: if results already processed, pull from stored results.
-                    // If a mulligan was already applied, reconstruct original by undoing the swap.
+                    const roster = (teamObj?.roster || []).filter(p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim()));
+                    // Determine ORIGINAL lineup for annotation (same logic as Player IN).
                     const tournIdx = addTxTourney ? parseInt(addTxTourney) : -1;
                     const tournament = tournIdx >= 0 ? tournaments[tournIdx] : null;
                     const storedPlayers = tournament?.results?.teams?.[teamObj?.id]?.players || [];
@@ -958,12 +961,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       return p.name || p;
                     }).filter(Boolean);
                     const currentLineup = teamObj?.lineup || [];
-                    const lineup = originalLineup.length > 0 ? originalLineup : currentLineup;
-                    const rosterMap = {};
-                    (teamObj?.roster || []).forEach(p => { rosterMap[p.name] = p; });
+                    const lineup = new Set(originalLineup.length > 0 ? originalLineup : currentLineup);
                     return (
                       <div>
-                        <div style={{ ...theme.label, marginBottom: 4 }}>Player OUT (from lineup)</div>
+                        <div style={{ ...theme.label, marginBottom: 4 }}>Player OUT</div>
                         <select
                           value={addTxPlayerOut?.name || ''}
                           onChange={e => {
@@ -973,8 +974,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4, cursor: 'pointer' }}
                         >
                           <option value="">— select player —</option>
-                          {lineup.sort((a, b) => a.localeCompare(b)).map(name => (
-                            <option key={name} value={name}>{name}{rosterMap[name]?.limited ? ' ⭐' : ''}</option>
+                          {roster.sort((a, b) => a.name.localeCompare(b.name)).map(p => (
+                            <option key={p.name} value={p.name}>
+                              {p.name}{p.limited ? ' ⭐' : ''}{lineup.has(p.name) ? '' : ' (on bench)'}
+                            </option>
                           ))}
                         </select>
                       </div>
