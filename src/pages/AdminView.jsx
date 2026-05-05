@@ -4,7 +4,7 @@ import { normalizePlayerName, getSegmentForTournament } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi, sfglDataApi, playersApi, playerRankingsApi, teamsApi } from '../api/firebase';
-import { theme, colors, fonts } from '../theme.js';
+import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER, SWINGS } from '../constants';
 
 
@@ -1218,7 +1218,7 @@ export const AdminView = ({
             return (
               <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
                 {leader
-                  ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
+                  ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} · <span style={{ color: getSwingColor(swingAwardSeg) }}>Pot: ${pot.toLocaleString()}</span></span>
                   : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
                 }
               </div>
