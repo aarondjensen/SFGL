@@ -66,12 +66,59 @@ function buildWaiverResultsEmail(processed, recipientTeam) {
 }
 
 function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam) {
-  const sorted = [...teamResults].sort((a, b) => b.totalEarnings - a.totalEarnings);
-  const rows = sorted.map((tr, i) => {
+  // Wave 8: rebuilt to show all teams (including those with no lineup) and
+  // each team's full lineup with per-player earnings. Sorts by total earnings
+  // desc; teams without a lineup sort to the bottom and show a "no lineup"
+  // notice instead of player rows.
+  const sorted = [...teamResults].sort((a, b) => {
+    // Teams that submitted a lineup outrank those that didn't, regardless of $0
+    if (a.submitted && !b.submitted) return -1;
+    if (!a.submitted && b.submitted) return 1;
+    return (b.totalEarnings || 0) - (a.totalEarnings || 0);
+  });
+
+  const teamBlocks = sorted.map((tr, i) => {
     const isMe = tr.team === recipientTeam;
-    return `<div style="padding:8px 12px;background:${isMe ? 'rgba(196,162,78,0.1)' : 'rgba(255,255,255,0.02)'};border-radius:3px;margin-bottom:4px;${isMe ? 'border-left:3px solid #c4a24e;' : ''}"><span style="font-size:14px;font-weight:700;color:rgba(255,255,255,0.3);display:inline-block;width:20px;">${i + 1}</span><span style="font-size:13px;font-weight:${isMe ? '700' : '500'};color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.75)'};">${tr.team}</span><span style="float:right;font-size:13px;font-weight:600;color:#50b478;">$${(tr.totalEarnings || 0).toLocaleString()}</span></div>`;
+    const rank = i + 1;
+    const totalLabel = (tr.totalEarnings || 0).toLocaleString();
+
+    // Header row: rank, team name, total
+    const totalColor = (tr.totalEarnings || 0) > 0 ? '#50b478' : 'rgba(255,255,255,0.35)';
+    const headerBg = isMe ? 'rgba(196,162,78,0.12)' : 'rgba(255,255,255,0.025)';
+    const headerBorder = isMe ? 'border-left:3px solid #c4a24e;' : 'border-left:3px solid transparent;';
+    const headerNameColor = isMe ? '#ffffff' : 'rgba(255,255,255,0.9)';
+
+    let lineupRows = '';
+    if (!tr.submitted) {
+      lineupRows = `<div style="padding:10px 14px;font-family:-apple-system,sans-serif;font-size:12px;color:rgba(255,255,255,0.4);font-style:italic;">No lineup submitted</div>`;
+    } else if (tr.players && tr.players.length > 0) {
+      // Sort players by earnings descending
+      const playersSorted = [...tr.players].sort((a, b) => (b.earnings || 0) - (a.earnings || 0));
+      lineupRows = playersSorted.map(p => {
+        const limited = p.limited ? '<span style="color:#c4a24e;margin-left:4px;font-size:10px;">⭐</span>' : '';
+        const bonusBadge = p.wasRoundLeader && p.roundsLed && p.roundsLed.length > 0
+          ? `<span style="margin-left:6px;font-family:-apple-system,sans-serif;font-size:10px;color:#c4a24e;background:rgba(196,162,78,0.12);padding:1px 5px;border-radius:2px;">${p.roundsLed.map(r => 'R' + r.round).join(', ')} leader</span>`
+          : '';
+        const earningsColor = (p.earnings || 0) > 0 ? '#50b478' : 'rgba(255,255,255,0.3)';
+        const playerLabel = (p.earnings || 0).toLocaleString();
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px;font-family:-apple-system,sans-serif;font-size:12px;border-top:1px solid rgba(255,255,255,0.04);"><span style="color:rgba(255,255,255,0.78);">${p.name || '—'}${limited}${bonusBadge}</span><span style="color:${earningsColor};font-weight:500;">$${playerLabel}</span></div>`;
+      }).join('');
+    } else {
+      lineupRows = `<div style="padding:10px 14px;font-family:-apple-system,sans-serif;font-size:12px;color:rgba(255,255,255,0.4);font-style:italic;">No starters scored</div>`;
+    }
+
+    return `<div style="margin-bottom:10px;background:${headerBg};border-radius:3px;${headerBorder}overflow:hidden;border:1px solid rgba(255,255,255,0.06);">
+      <div style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <span style="font-family:Georgia,serif;font-size:14px;color:${headerNameColor};font-weight:${isMe ? '700' : '600'};">
+          <span style="display:inline-block;width:22px;color:rgba(255,255,255,0.35);font-weight:400;">${rank}</span>${tr.team}
+        </span>
+        <span style="font-family:-apple-system,sans-serif;font-size:14px;font-weight:600;color:${totalColor};">$${totalLabel}</span>
+      </div>
+      ${lineupRows}
+    </div>`;
   }).join('');
-  return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">🏆 ${tournamentName}</h2><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 16px;">Tournament Results</p>${rows}`);
+
+  return wrap(`<h2 style="font-family:Georgia,serif;font-size:18px;color:#c4a24e;margin:0 0 4px;letter-spacing:0.3px;">🏆 ${tournamentName}</h2><p style="font-family:-apple-system,sans-serif;font-size:11px;color:rgba(255,255,255,0.45);margin:0 0 18px;letter-spacing:1px;text-transform:uppercase;">Tournament Results</p>${teamBlocks}`);
 }
 
 function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
@@ -560,9 +607,14 @@ async function handleProcessResults(res, dryRun = false) {
 
   // Email results to all managers
   const managerEmails = getEmailMap(settings, teams);
-  const teamResultsForEmail = updatedTeams
-    .filter(t => resultsData.teams[t.id])
-    .map(t => ({ team: t.name, totalEarnings: resultsData.teams[t.id].totalEarnings || 0 }));
+  // Wave 8: include all teams (even those without lineups) and per-team
+  // lineup details so the email can render player breakdowns.
+  const teamResultsForEmail = updatedTeams.map(t => ({
+    team: t.name,
+    totalEarnings: resultsData.teams[t.id]?.totalEarnings || 0,
+    players: resultsData.teams[t.id]?.players || [],
+    submitted: !!resultsData.teams[t.id],
+  }));
 
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
