@@ -30,6 +30,7 @@
 import { initializeApp, getApps } from 'firebase/app';
 import {
   getFirestore,
+  initializeFirestore,
   collection,
   doc,
   getDoc,
@@ -45,8 +46,6 @@ import {
   writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
-// Wave 5: hoisted from mid-file (was line 323) so all imports live at the top.
-import { NAME_ALIASES, NAME_ALIASES_REVERSE, resolveAlias, allNameVariants } from '../constants/nameAliases.js';
 
 // ── Firebase config — values come from environment variables ─────────────────
 // Vite exposes env vars prefixed with VITE_
@@ -61,7 +60,32 @@ const firebaseConfig = {
 
 // Avoid re-initialising on hot reload
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+
+// ── Firestore init: auto-detect long-polling (Wave 7.2) ──────────────────────
+// Default Firestore SDK uses WebSockets which are blocked or unstable on many
+// mobile carriers, corporate proxies, and aggressive firewalls. The
+// `experimentalAutoDetectLongPolling` flag tells the SDK to detect when the
+// WebSocket connection is unhealthy and fall back to HTTP long-polling
+// transparently. This is the canonical fix for "Firestore works on desktop
+// but hangs/times out on mobile" — the exact symptom we were hitting.
+//
+// The SDK still tries WebSockets first (faster). Long-polling is only used
+// when the SDK detects the WebSocket isn't getting a response. No code changes
+// elsewhere are needed.
+//
+// Wrapped in try/catch because initializeFirestore throws if a Firestore
+// instance was already created via getFirestore(). This guards against
+// double-init in dev tools / hot reload.
+let _db;
+try {
+  _db = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+  });
+} catch (e) {
+  console.warn('[firebase] initializeFirestore failed, falling back to getFirestore:', e.message);
+  _db = getFirestore(app);
+}
+export const db = _db;
 
 // ── Alias cache — maps alternate player names to canonical doc IDs ────────────
 // Populated lazily from player docs that have an 'aliases' array field.
@@ -167,17 +191,15 @@ export const playersApi = {
 
     const seen = new Set();
     const results = [];
-    // Wave 5: renamed from `addDoc` to avoid shadowing the imported `addDoc`
-    // from firebase/firestore at the top of this file.
-    const pushResult = d => {
+    const addDoc = d => {
       const name = resolveAlias(d.id);
       if (!seen.has(name)) {
         seen.add(name);
         results.push({ name, worldRank: d.data().world_rank, espnId: d.data().espn_id, headshotUrl: d.data().headshot_url, isLiv: d.data().is_liv });
       }
     };
-    snapRaw.docs.forEach(pushResult);
-    snapCap.docs.forEach(pushResult);
+    snapRaw.docs.forEach(addDoc);
+    snapCap.docs.forEach(addDoc);
 
     // Also search all ranked players client-side for substring/last-name matches
     try {
@@ -322,6 +344,8 @@ export const playersApi = {
 // ============================================================================
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
+import { NAME_ALIASES, NAME_ALIASES_REVERSE, resolveAlias, allNameVariants } from '../constants/nameAliases.js';
+
 
 const PLAYER_CACHE_KEY = 'sfgl-player-cache';
 const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
