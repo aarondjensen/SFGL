@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, SWINGS, SWING_COLORS } from '../theme.js';
+import { theme, colors, fonts, getMedalStyle, rowHoverHandlers, earningsColor, SWINGS, SWING_COLORS, getSwingColorAt } from '../theme.js';
 import { getSegmentByDate, getSegmentForTournament } from '../utils';
 
 // Standings row styles (.sfgl-standings-row, .sfgl-standings-cell, .sfgl-owner)
@@ -137,7 +137,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
               <select
                 value={selectedSwing || ''}
                 onChange={e => setSelectedSwing(e.target.value)}
-                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '0px 8px', height: 22, color: accentColor, borderColor: accentColor.replace('0.85', '0.3'), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
+                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '0px 8px', height: 22, color: accentColor, borderColor: getSwingColorAt(selectedSwing, 0.3), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
               >
                 {swingsWithResults.map(s => (
                   <option key={s} value={s}>{s}</option>
@@ -146,7 +146,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
             ) : (
               <span style={{
                 fontWeight: 600, color: accentColor,
-                border: `1px solid ${accentColor.replace('0.85', '0.4')}`,
+                border: `1px solid ${getSwingColorAt(selectedSwing, 0.4)}`,
                 borderRadius: 4,
                 padding: '1px 8px',
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -156,7 +156,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
             )
           )}
           {showSwing && swingEventCount > 0 && (
-            <span style={{ marginLeft: 8, fontSize: 10, color: swingIsComplete ? colors.textMuted : accentColor.replace('0.85', '0.7') }}>
+            <span style={{ marginLeft: 8, fontSize: 10, color: swingIsComplete ? colors.textMuted : getSwingColorAt(selectedSwing, 0.7) }}>
               {swingIsComplete
                 ? <><span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 4 }}>Final</span>{swingEventCount} events</>
                 : <>{swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}</>
@@ -192,9 +192,9 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
             width: 'calc(50% - 4px)',
             borderRadius: 2,
             background: showSwing
-              ? accentColor.replace('0.85)', '0.18)')
+              ? getSwingColorAt(selectedSwing, 0.18)
               : 'rgba(255,255,255,0.1)',
-            border: `1px solid ${showSwing ? accentColor.replace('0.85)', '0.45)') : 'rgba(255,255,255,0.3)'}`,
+            border: `1px solid ${showSwing ? getSwingColorAt(selectedSwing, 0.45) : 'rgba(255,255,255,0.3)'}`,
             transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
             pointerEvents: 'none',
           }} />
@@ -266,19 +266,19 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
               const medal    = getMedalStyle(index);
               const isTop    = index === 0;
               const isSwingWinner = showSwing && swingIsComplete && isTop;
-              const rowBg = isSwingWinner ? accentColor.replace('0.85)', '0.08)') : isTop ? 'rgba(180,160,100,0.04)' : 'transparent';
+              const rowBg = isSwingWinner ? getSwingColorAt(selectedSwing, 0.08) : isTop ? 'rgba(180,160,100,0.04)' : 'transparent';
               return (
                 <tr key={team.id} className="sfgl-standings-row"
                   style={{ background: rowBg, transition: 'background 0.15s' }}
                   {...rowHoverHandlers(isTop)}
                 >
                   <td className="sfgl-standings-cell" style={theme.tableCell}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, background: isSwingWinner ? accentColor.replace('0.85)', '0.15)') : medal.bg, color: isSwingWinner ? accentColor.replace('0.85)', '1)') : medal.text, border: isSwingWinner ? `1px solid ${accentColor.replace('0.85)', '0.4)')}` : 'none', flexShrink: 0 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, background: isSwingWinner ? getSwingColorAt(selectedSwing, 0.15) : medal.bg, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : medal.text, border: isSwingWinner ? `1px solid ${getSwingColorAt(selectedSwing, 0.4)}` : 'none', flexShrink: 0 }}>
                       {isSwingWinner ? '🏆' : team[posKey]}
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, overflow: 'hidden' }}>
-                    <div style={{ ...theme.h3, fontSize: 'clamp(13px,1.4vw,17px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isSwingWinner ? accentColor.replace('0.85)', '1)') : undefined }}>
+                    <div style={{ ...theme.h3, fontSize: 'clamp(13px,1.4vw,17px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : undefined }}>
                       {team.name}
                     </div>
                     <div className="sfgl-owner" style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
@@ -289,7 +289,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
-                    <div style={{ ...theme.statNum, fontSize: 'clamp(11px, 1.2vw, 14px)', letterSpacing: 1.5, fontWeight: 300, color: isSwingWinner ? accentColor.replace('0.85)', '1)') : behind === 0 ? (showSwing ? accentColor : colors.earningsGreen) : colors.textSecondary }}>
+                    <div style={{ ...theme.statNum, fontSize: 'clamp(11px, 1.2vw, 14px)', letterSpacing: 1.5, fontWeight: 300, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : behind === 0 ? (showSwing ? accentColor : colors.earningsGreen) : colors.textSecondary }}>
                       {isSwingWinner
                         ? 'Winner'
                         : behind === 0

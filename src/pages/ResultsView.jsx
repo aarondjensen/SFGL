@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Trophy } from 'lucide-react';
 import { getSortedRoster, shortName, isTournamentLocked, getSegmentForTournament } from '../utils/index.js';
-import { theme, colors, fonts, cardLiftHandlers, SWING_COLORS, getSwingColor } from '../theme.js';
+import { theme, colors, fonts, cardLiftHandlers, SWING_COLORS, getSwingColor, getSwingColorAt } from '../theme.js';
 import { TournamentBadges } from './TournamentBadges';
 
 const GOLD_BRIGHT = '#f5c518';
@@ -9,27 +9,15 @@ const GOLD_DIM    = 'rgba(245,197,24,0.35)';
 const BLUE_BRIGHT = 'rgba(100,180,255,0.95)';
 const BLUE_DIM    = 'rgba(100,180,255,0.35)';
 
-// Wave 8: routes accent color through canonical getSwingColor() so unrecognized
-// segments fall back to neutral (textSecondary) instead of silently rendering
-// in Summer-Swing blue. bg/border are derived from the accent's alpha channel.
-const swingColors = (seg) => {
-  const accent = getSwingColor(seg);
-  // Only do the alpha-replacement trick when we got back a known SWING_COLOR
-  // (which has the 0.85 alpha pattern). For unknown fallback colors, use static
-  // muted derivatives so we don't produce broken color strings.
-  if (accent.includes('0.85)')) {
-    return {
-      accent,
-      bg:     accent.replace('0.85)', '0.07)'),
-      border: accent.replace('0.85)', '0.3)'),
-    };
-  }
-  return {
-    accent,
-    bg:     'rgba(180,180,180,0.05)',
-    border: 'rgba(180,180,180,0.2)',
-  };
-};
+// Wave 8: thin wrapper around theme's getSwingColorAt that returns the
+// {accent, bg, border} triplet used by swing cards on the Results page.
+// Kept local because the specific alphas (0.07, 0.3) are this view's choice;
+// other views compose their own variants via getSwingColorAt directly.
+const swingColors = (seg) => ({
+  accent: getSwingColor(seg),
+  bg:     getSwingColorAt(seg, 0.07),
+  border: getSwingColorAt(seg, 0.3),
+});
 
 const playerNameColor = (p, showEarnings) => {
   if (p.unlimited) return showEarnings ? (p.earnings > 0 ? BLUE_BRIGHT : BLUE_DIM) : BLUE_BRIGHT;

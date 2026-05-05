@@ -437,3 +437,18 @@ export const SWING_COLORS = {
 };
 
 export const getSwingColor = (swing) => SWING_COLORS[swing] || colors.textSecondary;
+
+// Get a swing's accent color at a custom alpha. Centralises the previous
+// pattern of consumers doing `accentColor.replace('0.85)', '0.18)')` inline.
+// Falls back to colors.textSecondary at the requested alpha when the swing
+// isn't recognised.
+//
+// Examples:
+//   getSwingColorAt('Spring Swing', 0.18)   → 'rgba(80,200,120,0.18)'
+//   getSwingColorAt('Spring Swing', 1)      → 'rgba(80,200,120,1)'
+//   getSwingColorAt(null, 0.18)             → 'rgba(255,255,255,0.18)'
+export const getSwingColorAt = (swing, alpha) => {
+  const c = getSwingColor(swing);
+  // Replace the trailing alpha in the rgba(...) string. Tolerant of spaces.
+  return c.replace(/,\s*[\d.]+\s*\)\s*$/, `,${alpha})`);
+};
