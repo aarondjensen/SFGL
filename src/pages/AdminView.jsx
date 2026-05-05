@@ -447,9 +447,14 @@ export const AdminView = ({
       dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
       // Send results email to all managers
       try {
-        const teamResultsForEmail = newTeams.filter(t => resultsData.teams[t.id]).map(t => ({
+        // Wave 8: send richer payload — include ALL teams (even those that
+        // didn't submit a lineup), and per-team lineup with player earnings
+        // and round-leader info so the email can render details.
+        const teamResultsForEmail = newTeams.map(t => ({
           team: t.name,
-          totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
+          totalEarnings: resultsData.teams[t.id]?.totalEarnings || 0,
+          players: resultsData.teams[t.id]?.players || [],
+          submitted: !!resultsData.teams[t.id],
         }));
         // Wave 8: corrected URL — was '/api/notify-results' which 404s silently
         // because that endpoint doesn't exist. The notify-results action is
@@ -578,9 +583,11 @@ export const AdminView = ({
       // without telling anyone, which made testing the email pipeline via
       // reprocess impossible.
       try {
-        const teamResultsForEmail = newTeams.filter(t => resultsData.teams[t.id]).map(t => ({
+        const teamResultsForEmail = newTeams.map(t => ({
           team: t.name,
-          totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
+          totalEarnings: resultsData.teams[t.id]?.totalEarnings || 0,
+          players: resultsData.teams[t.id]?.players || [],
+          submitted: !!resultsData.teams[t.id],
         }));
         const resp = await fetch('/api/cron?action=notify-results', {
           method: 'POST',
