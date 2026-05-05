@@ -140,7 +140,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                 style={{ ...theme.select, width: 'auto', fontSize: fontSize.base, padding: '0px 8px', height: 22, color: accentColor, borderColor: getSwingColorAt(selectedSwing, 0.3), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
               >
                 {swingsWithResults.map(s => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>{s.replace(/\s+Swing$/, '')}</option>
                 ))}
               </select>
             ) : (
@@ -151,7 +151,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                 padding: '1px 8px',
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                {selectedSwing}
+                {selectedSwing?.replace(/\s+Swing$/, '') || ''}
               </span>
             )
           )}

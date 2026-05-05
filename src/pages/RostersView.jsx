@@ -458,7 +458,7 @@ export const RostersView = ({
 
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
-  const windowStatus  = useWindowStatus(activeTournament);
+  const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
   const togglePlayerInLineup = useCallback(async (player) => {
