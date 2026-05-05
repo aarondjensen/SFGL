@@ -779,36 +779,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         setAddTxType(type);
                         setAddTxPlayerIn(null); setAddTxSearchIn('');
                         setAddTxPlayerOut(null); setAddTxSearchOut('');
-                        // Always re-default tournament when type changes (commish can still override)
-                        {
-                          if (type === 'mulligan') {
-                            // Mulligan → current playing tournament
-                            const idx = tournaments.findIndex(t => t.playing);
-                            if (idx >= 0) setAddTxTourney(String(idx));
-                          } else {
-                            // FA/waiver/drop → date-based current tournament week
-                            const parseStart = (t) => {
-                              if (!t?.dates) return null;
-                              const m = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
-                              if (!m) return null;
-                              const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
-                              const mo = months[m[1]];
-                              if (mo === undefined) return null;
-                              return new Date(2026, mo, parseInt(m[2]));
-                            };
-                            const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-                            const now = new Date(etStr);
-                            let found = -1;
-                            tournaments.forEach((t, i) => {
-                              const start = parseStart(t);
-                              if (!start) return;
-                              const end = new Date(start); end.setDate(end.getDate() + 13);
-                              if (now >= start && now <= end) found = i;
-                            });
-                            if (found < 0) found = tournaments.findIndex(t => !t.completed);
-                            if (found >= 0) setAddTxTourney(String(found));
-                          }
-                        }
+                        // Wave 8: removed auto-set of the tournament field when
+                        // type changes. Commish always picks tournament explicitly
+                        // — nothing in this form should change without a click.
                       }} style={{
                         flex: 1, padding: '7px 4px', borderRadius: 2, fontSize: fontSize.base,
                         fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
@@ -993,8 +966,15 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     );
                   }
 
-                  // FA / Waiver: search the team's roster for who to drop
-                  const pool = teamObj?.roster || [];
+                  // FA / Waiver: search ALL players for the dropped slot.
+                  // Wave 8: previously restricted to the selected team's current
+                  // roster, which blocked retroactive transactions where the
+                  // dropped player has since been removed. Now we show every
+                  // player and annotate which team (if any) currently has them
+                  // — same pattern as the Player Added search above.
+                  const pool = allPlayers.filter(p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim()));
+                  const rosterByPlayer = new Map();
+                  teams.forEach(t => t.roster.forEach(r => { rosterByPlayer.set(r.name, t.name); }));
                   const filtered = pool.filter(p =>
                     (p.name || p).toLowerCase().includes(addTxSearchOut.toLowerCase())
                   );
@@ -1015,7 +995,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         <>
                           <input
                             type="text"
-                            placeholder="Search roster…"
+                            placeholder="Search players…"
                             value={addTxSearchOut}
                             onChange={e => setAddTxSearchOut(e.target.value)}
                             style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4 }}
@@ -1026,6 +1006,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid ' + colors.borderSubtle, borderRadius: 3, marginBottom: 4 }}>
                               {filtered.slice(0, 20).map(p => {
                                 const name = p.name || p;
+                                const rosteredOn = rosterByPlayer.get(name);
                                 return (
                                   <div key={name}
                                     onClick={() => { setAddTxPlayerOut({ name }); setAddTxSearchOut(''); }}
@@ -1038,7 +1019,17 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                                     onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
                                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                                   >
+                                    {p.worldRank && (
+                                      <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, minWidth: 26 }}>
+                                        {p.worldRank === 999 ? 'NR' : '#' + p.worldRank}
+                                      </span>
+                                    )}
                                     <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>{name}</span>
+                                    {rosteredOn && (
+                                      <span style={{ marginLeft: 'auto', fontFamily: fonts.sans, fontSize: fontSize.sm, fontStyle: 'italic', color: colors.textGoldDim }}>
+                                        on {rosteredOn}
+                                      </span>
+                                    )}
                                   </div>
                                 );
                               })}
