@@ -773,10 +773,32 @@ export const RostersView = ({
             {/* Mulligan status — stacked Reg + Sig/Maj indicators (Wave 3: count format)
                 Total is always 1 per league rules. Show "1/1" remaining vs "0/1" used.
                 The 🚨 icon stays visible (greyscale when count is 0) so a glance still
-                says "this is mulligan info" — the digit tells you usage, not the cross-out. */}
+                says "this is mulligan info" — the digit tells you usage, not the cross-out.
+                Wave 8: derive remaining count from transactions array (the single source of
+                truth) rather than the stored team.mulligans counter. Previously, manually
+                added mulligan transactions in Firestore wouldn't decrement the counter
+                because team.mulligans only updates via TransactionsView.handleAddTx. */}
             {team && (() => {
-              const regRemaining = team.mulligans?.regular ?? 1;
-              const sigRemaining = team.mulligans?.signatureMajor ?? 1;
+              // Count this team's used mulligans by tournament type. A mulligan tx is
+              // "used" when its status isn't 'failed'. We split between Signature/Major
+              // tournaments and regular events using the tx's tournamentIndex.
+              const usedReg = transactions.filter(tx =>
+                tx.type === 'mulligan' &&
+                tx.team === team.name &&
+                tx.status !== 'failed' &&
+                tx.tournamentIndex != null &&
+                !(tournaments[tx.tournamentIndex]?.isSignature || tournaments[tx.tournamentIndex]?.isMajor)
+              ).length;
+              const usedSig = transactions.filter(tx =>
+                tx.type === 'mulligan' &&
+                tx.team === team.name &&
+                tx.status !== 'failed' &&
+                tx.tournamentIndex != null &&
+                (tournaments[tx.tournamentIndex]?.isSignature || tournaments[tx.tournamentIndex]?.isMajor)
+              ).length;
+              // Each team gets 1 of each type per season per league rules.
+              const regRemaining = Math.max(0, 1 - usedReg);
+              const sigRemaining = Math.max(0, 1 - usedSig);
               const regUsed = regRemaining <= 0;
               const sigUsed = sigRemaining <= 0;
               const activeColor = 'rgba(220,60,60,0.85)';
