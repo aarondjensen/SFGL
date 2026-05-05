@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
-import { theme, colors, fonts, getSwingColor } from '../theme.js';
+import { theme, colors, fonts, fontSize, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 
 // shortName imported from utils (see abbreviateName)
@@ -126,7 +126,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
           flexShrink: 0,
         }}>
           <div>
-            <h2 style={{ fontFamily: fonts.serif, fontSize: 15, color: 'rgba(150,190,255,0.9)', margin: 0 }}>
+            <h2 style={{ fontFamily: fonts.serif, fontSize: fontSize.lg, color: 'rgba(150,190,255,0.9)', margin: 0 }}>
               ✏️ Edit Transaction
             </h2>
             <p style={{ ...theme.smallText, marginTop: 2 }}>
@@ -196,7 +196,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                       padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                       background: sel ? 'rgba(80,180,120,0.15)' : 'rgba(255,255,255,0.03)',
                       border: `1px solid ${sel ? 'rgba(80,180,120,0.4)' : colors.borderSubtle}`,
-                      fontFamily: fonts.serif, fontSize: 12,
+                      fontFamily: fonts.serif, fontSize: fontSize.base,
                       color: sel ? colors.success : colors.textPrimary,
                       transition: 'all 0.1s',
                     }}
@@ -224,7 +224,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                     padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                     background: !editDrop ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
                     border: `1px solid ${!editDrop ? colors.borderInput : colors.borderSubtle}`,
-                    fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
+                    fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted,
                   }}
                 >
                   — None —
@@ -239,7 +239,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                         padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                         background: sel ? colors.dangerBg : 'rgba(255,255,255,0.03)',
                         border: `1px solid ${sel ? colors.dangerBorder : colors.borderSubtle}`,
-                        fontFamily: fonts.serif, fontSize: 12,
+                        fontFamily: fonts.serif, fontSize: fontSize.base,
                         color: sel ? colors.danger : colors.textPrimary,
                         transition: 'all 0.1s',
                       }}
@@ -677,11 +677,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               const swingPot = teamFees.reduce((sum, t) => sum + (t.swingTotal || 0), 0);
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.3px', color: swingColor }}>
+                  <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, letterSpacing: '0.3px', color: swingColor }}>
                     {teamFees[0].currentSwing}
                   </span>
                   {swingPot > 0 && (
-                    <span style={{ fontFamily: fonts.mono, fontSize: 12, fontWeight: 700, color: swingColor }}>
+                    <span style={{ fontFamily: fonts.mono, fontSize: fontSize.base, fontWeight: 700, color: swingColor }}>
                       ${swingPot}
                     </span>
                   )}
@@ -700,13 +700,13 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     border: `1px solid ${colors.borderSubtle}`,
                     borderRadius: 2, padding: '8px 6px', textAlign: 'center', minWidth: 0,
                   }}>
-                    <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>
+                    <div style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>
                       {abbr}
                     </div>
-                    <div style={{ ...theme.statNum, fontSize: 13, color: colors.textGold, marginTop: 2 }}>
+                    <div style={{ ...theme.statNum, fontSize: fontSize.md, color: colors.textGold, marginTop: 2 }}>
                       ${team.seasonTotal}
                     </div>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: getSwingColor(team.currentSwing), marginTop: 1 }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: getSwingColor(team.currentSwing), marginTop: 1 }}>
                       ${team.swingTotal} swing
                     </div>
                   </div>
@@ -813,7 +813,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           }
                         }
                       }} style={{
-                        flex: 1, padding: '7px 4px', borderRadius: 2, fontSize: 11,
+                        flex: 1, padding: '7px 4px', borderRadius: 2, fontSize: fontSize.base,
                         fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
                         background: addTxType === type ? colors.buttonNavy : 'transparent',
                         border: '1px solid ' + (addTxType === type ? colors.border : colors.borderInput),
@@ -894,9 +894,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           padding: '8px 12px', borderRadius: 3, marginBottom: 4,
                           background: 'rgba(80,180,120,0.12)', border: '1px solid rgba(80,180,120,0.35)',
                         }}>
-                          <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.success }}>{addTxPlayerIn.name}</span>
+                          <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.success }}>{addTxPlayerIn.name}</span>
                           <button onClick={() => { setAddTxPlayerIn(null); setAddTxSearchIn(''); }}
-                            style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 12, padding: '0 2px' }}>✕</button>
+                            style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: fontSize.base, padding: '0 2px' }}>✕</button>
                         </div>
                       ) : (
                         <>
@@ -926,16 +926,16 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                                   >
                                     {p.worldRank && (
-                                      <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, minWidth: 26 }}>
+                                      <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, minWidth: 26 }}>
                                         {p.worldRank === 999 ? 'NR' : '#' + p.worldRank}
                                       </span>
                                     )}
-                                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>{name}</span>
+                                    <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>{name}</span>
                                   </div>
                                 );
                               })}
                               {filtered.length === 0 && (
-                                <div style={{ padding: '10px 12px', fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>No players found</div>
+                                <div style={{ padding: '10px 12px', fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted }}>No players found</div>
                               )}
                             </div>
                           )}
@@ -998,9 +998,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           padding: '8px 12px', borderRadius: 3, marginBottom: 4,
                           background: colors.dangerBg, border: '1px solid ' + colors.dangerBorder,
                         }}>
-                          <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.danger }}>{addTxPlayerOut.name}</span>
+                          <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.danger }}>{addTxPlayerOut.name}</span>
                           <button onClick={() => { setAddTxPlayerOut(null); setAddTxSearchOut(''); }}
-                            style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 12, padding: '0 2px' }}>✕</button>
+                            style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: fontSize.base, padding: '0 2px' }}>✕</button>
                         </div>
                       ) : (
                         <>
@@ -1029,12 +1029,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                                     onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
                                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                                   >
-                                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>{name}</span>
+                                    <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>{name}</span>
                                   </div>
                                 );
                               })}
                               {filtered.length === 0 && (
-                                <div style={{ padding: '10px 12px', fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>No players found</div>
+                                <div style={{ padding: '10px 12px', fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted }}>No players found</div>
                               )}
                             </div>
                           )}
@@ -1073,7 +1073,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 4,
                     padding: '3px 9px', borderRadius: 3,
-                    fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                    fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700,
                     letterSpacing: '0.4px', textTransform: 'uppercase',
                     cursor: 'pointer',
                     transition: 'all 0.15s',
@@ -1086,7 +1086,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = addTxOpen ? 'rgba(80,180,120,0.22)' : 'rgba(80,180,120,0.1)'; }}
                 >
-                  <span style={{ fontSize: 12, lineHeight: 1, fontWeight: 800 }}>{addTxOpen ? '−' : '+'}</span>
+                  <span style={{ fontSize: fontSize.base, lineHeight: 1, fontWeight: 800 }}>{addTxOpen ? '−' : '+'}</span>
                   <span>Add</span>
                 </button>
               )}
@@ -1095,7 +1095,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               <select
                 value={filterSwing}
                 onChange={e => setFilterSwing(e.target.value)}
-                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
+                style={{ ...theme.select, width: 'auto', fontSize: fontSize.base, padding: '5px 10px' }}
                 onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
@@ -1108,7 +1108,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               <select
                 value={filterTeam}
                 onChange={e => setFilterTeam(e.target.value)}
-                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
+                style={{ ...theme.select, width: 'auto', fontSize: fontSize.base, padding: '5px 10px' }}
                 onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
@@ -1137,21 +1137,21 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   <div style={{ minWidth: 0, flex: 1 }}>
                     {/* Team name + tournament or swing name */}
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
-                      <span style={{ fontFamily: fonts.serif, fontSize: 'clamp(13px, 1.1vw, 15px)', color: colors.textPrimary }}>
+                      <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>
                         {tx.team}
                       </span>
                       {(() => {
                         // swing_winner: show swing name; others: show tournament name
                         if (tx.type === 'swing_winner') {
                           return tx.segment
-                            ? <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: getSwingColor(tx.segment) }}>{tx.segment}</span>
+                            ? <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: getSwingColor(tx.segment) }}>{tx.segment}</span>
                             : null;
                         }
                         const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
                         const name = t?.name || tx.tournament || null;
                         if (!name) return null;
                         return (
-                          <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>
+                          <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: 'rgba(255,255,255,0.45)' }}>
                             {name}
                           </span>
                         );
@@ -1159,10 +1159,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     </div>
 
                     {/* Transaction detail */}
-                    <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(11px, 0.9vw, 13px)', color: colors.textSecondary }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textSecondary }}>
                       <span style={{ color: txTypeColor(tx.type) }}>{txTypeLabel(tx.type)}</span>
                       {tx.status === 'failed' && tx.type === 'waiver' && (
-                        <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
+                        <span style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
                       )}
                       {': '}
                       <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : shortName(tx.player)}</span>
@@ -1174,7 +1174,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       )}
                     </div>
                     {tx.status === 'failed' && tx.failReason && (
-                      <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.7vw, 10px)', color: colors.textMuted, marginTop: 1 }}>
+                      <div style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 }}>
                         {tx.failReason}
                       </div>
                     )}
@@ -1185,12 +1185,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     {tx.type === 'mulligan' ? (
                       <span style={{ fontSize: 14, lineHeight: 1 }}>🚨</span>
                     ) : tx.type === 'swing_winner' ? (
-                      <span style={{ ...theme.statNum, fontSize: 13, fontWeight: 600, color: colors.textGold }}>
+                      <span style={{ ...theme.statNum, fontSize: fontSize.md, fontWeight: 600, color: colors.textGold }}>
                         +${(tx.amount || 0).toLocaleString()}
                       </span>
                     ) : (
                       <span style={{
-                        ...theme.statNum, fontSize: 13, fontWeight: 600,
+                        ...theme.statNum, fontSize: fontSize.md, fontWeight: 600,
                         color: tx.status === 'failed' ? colors.textMuted : (tx.fee > 0 ? colors.earningsGreen : colors.textMuted),
                       }}>
                         {tx.status === 'failed' ? '—' : `$${tx.fee}`}

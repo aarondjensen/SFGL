@@ -4,7 +4,7 @@ import { normalizePlayerName, getSegmentForTournament } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi, sfglDataApi, playersApi, playerRankingsApi, teamsApi } from '../api/firebase';
-import { theme, colors, fonts, getSwingColor } from '../theme.js';
+import { theme, colors, fonts, fontSize, getSwingColor } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER, SWINGS } from '../constants';
 
 
@@ -185,10 +185,10 @@ const AdminGroup = ({ id, title, icon, badge, defaultOpen = false, children }) =
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
-          <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>{icon}</span>
+          <span style={{ fontSize: fontSize.lg, lineHeight: 1, flexShrink: 0 }}>{icon}</span>
           <span style={{
             fontFamily: fonts.sans,
-            fontSize: 12.5, fontWeight: 700, letterSpacing: '1.5px',
+            fontSize: fontSize.base, fontWeight: 700, letterSpacing: '1.5px',
             textTransform: 'uppercase',
             color: open ? colors.sectionHeaderBlue : colors.textPrimary,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -197,7 +197,7 @@ const AdminGroup = ({ id, title, icon, badge, defaultOpen = false, children }) =
         </div>
         <span style={{
           fontFamily: fonts.sans,
-          fontSize: 11,
+          fontSize: fontSize.base,
           color: open ? colors.sectionHeaderBlue : colors.textMuted,
           letterSpacing: 1,
           flexShrink: 0,
@@ -243,9 +243,9 @@ const MergePlayersPanel = ({
   );
   const f1 = search1.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(search1.toLowerCase())).slice(0, 8) : [];
   const f2 = search2.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(search2.toLowerCase())).slice(0, 8) : [];
-  const iStyle = (sel) => ({ ...theme.input, width: '100%', fontSize: 13, border: sel ? `1px solid ${colors.textGold}` : undefined });
+  const iStyle = (sel) => ({ ...theme.input, width: '100%', fontSize: fontSize.md, border: sel ? `1px solid ${colors.textGold}` : undefined });
   const dStyle = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#0f1d35', border: `1px solid ${colors.border}`, borderRadius: 3, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' };
-  const oStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` };
+  const oStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textPrimary, cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` };
 
   const doMerge = async () => {
     if (!player1 || !player2 || player1 === player2) { setError('Select two different players'); return; }
@@ -273,7 +273,7 @@ const MergePlayersPanel = ({
           </div>
           {player1&&<button onClick={()=>{setPlayer1(null);setSearch1('');}} style={{...theme.btnSecondary,marginTop:4,padding:'2px 8px',fontSize:10}}>✕ Clear</button>}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20, color: colors.textMuted, fontSize: 16 }}>→</div>
+        <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20, color: colors.textMuted, fontSize: fontSize.lg }}>→</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <label style={S.lbl}>...to this name</label>
           <div style={{ position: 'relative' }}>
@@ -326,7 +326,7 @@ export const AdminView = ({
 
   const S = {
     section: { background: colors.cardBg, border: `1px solid ${colors.border}`, borderRadius: 4, padding: '16px 18px', marginBottom: 12 },
-    title: { fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '1.8px', textTransform: 'uppercase', color: colors.sectionHeaderBlue, marginBottom: 12 },
+    title: { fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700, letterSpacing: '1.8px', textTransform: 'uppercase', color: colors.sectionHeaderBlue, marginBottom: 12 },
     btn: { ...theme.btnPrimary, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
     btnSec: { ...theme.btnSecondary, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
     btnDgr: { ...theme.btnDanger, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
@@ -593,16 +593,16 @@ export const AdminView = ({
         {leaders.map((leader, idx) => (
           <div key={idx} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
             <select value={leader} onChange={e => { const n = [...leaders]; n[idx] = e.target.value; onChange(n); }}
-              style={{ ...theme.select, flex: 1, marginBottom: 0, fontSize: 12, padding: '7px 8px' }}>
+              style={{ ...theme.select, flex: 1, marginBottom: 0, fontSize: fontSize.base, padding: '7px 8px' }}>
               <option value="">(none)</option>
               {players.map(p => <option key={p.name + p.team} value={p.name}>{p.name} — {p.team}</option>)}
             </select>
             {idx > 0 && <button onClick={() => onChange(leaders.filter((_, i) => i !== idx))}
-              style={{ background: 'none', border: `1px solid ${colors.dangerBorder}`, color: colors.danger, borderRadius: 2, padding: '4px 7px', cursor: 'pointer', fontSize: 11 }}>✕</button>}
+              style={{ background: 'none', border: `1px solid ${colors.dangerBorder}`, color: colors.danger, borderRadius: 2, padding: '4px 7px', cursor: 'pointer', fontSize: fontSize.base }}>✕</button>}
           </div>
         ))}
         <button onClick={() => onChange([...leaders, ''])}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: colors.textGoldDim, padding: 0 }}>+ co-leader</button>
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: fontSize.base, color: colors.textGoldDim, padding: 0 }}>+ co-leader</button>
       </div>
     );
   };
@@ -1061,8 +1061,8 @@ export const AdminView = ({
                 display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 10, borderRadius: 3,
                 background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.45)',
               }}>
-                <span style={{ fontSize: 14 }}>⏰</span>
-                <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,190,80,0.9)', fontWeight: 600 }}>
+                <span style={{ fontSize: fontSize.md }}>⏰</span>
+                <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: fontSize.base, color: 'rgba(220,190,80,0.9)', fontWeight: 600 }}>
                   Past {fmtWaiverTime(wh, wm)} ET {DAY_NAMES[wd]} — process now!
                 </div>
               </div>
@@ -1079,10 +1079,10 @@ export const AdminView = ({
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
                 {pending.map(w => (
                   <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '6px 12px' }}>
-                    <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
+                    <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.xs, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
+                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
                     <div style={{ flex: 1 }} />
-                    <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>claim pending</span>
+                    <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted }}>claim pending</span>
                   </div>
                 ))}
               </div>
@@ -1098,8 +1098,8 @@ export const AdminView = ({
                 const ready = etDay === wd && (etHour * 60 + etMin) >= (wh * 60 + wm);
                 return (
                   <button onClick={() => setWaiverRevealed(true)} style={ready
-                    ? { ...S.btn, fontSize: 13, fontWeight: 700, padding: '12px 20px', background: 'rgba(220,170,60,0.2)', border: '2px solid rgba(220,170,60,0.7)', color: 'rgba(255,220,80,1)', boxShadow: '0 0 12px rgba(220,170,60,0.25)' }
-                    : { ...S.btnSec, fontSize: 11 }
+                    ? { ...S.btn, fontSize: fontSize.md, fontWeight: 700, padding: '12px 20px', background: 'rgba(220,170,60,0.2)', border: '2px solid rgba(220,170,60,0.7)', color: 'rgba(255,220,80,1)', boxShadow: '0 0 12px rgba(220,170,60,0.25)' }
+                    : { ...S.btnSec, fontSize: fontSize.base }
                   }>
                     {ready ? `⚡ Process Claims (${pending.length})` : `Process Claims (${pending.length})`}
                   </button>
@@ -1128,7 +1128,7 @@ export const AdminView = ({
                     background: 'rgba(220,100,60,0.08)', border: '1px solid rgba(220,100,60,0.35)',
                     borderRadius: 3, padding: '10px 14px', marginBottom: 10,
                   }}>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(220,140,80,0.9)', marginBottom: 8 }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(220,140,80,0.9)', marginBottom: 8 }}>
                       ⚠️ Competing Claims ({conflicts.length})
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1136,23 +1136,23 @@ export const AdminView = ({
                         const sorted = [...claims].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
                         return (
                           <div key={player} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 2, padding: '8px 10px' }}>
-                            <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary, marginBottom: 4 }}>
+                            <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600, color: colors.textPrimary, marginBottom: 4 }}>
                               {player} — {claims.length} teams competing
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                               {sorted.map((c, i) => (
-                                <div key={c.team} style={{ fontFamily: fonts.sans, fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div key={c.team} style={{ fontFamily: fonts.sans, fontSize: fontSize.base, display: 'flex', alignItems: 'center', gap: 6 }}>
                                   <span style={{
-                                    fontSize: 9, fontWeight: 700, width: 14, textAlign: 'center',
+                                    fontSize: fontSize.xs, fontWeight: 700, width: 14, textAlign: 'center',
                                     color: i === 0 ? colors.earningsGreen : colors.textMuted,
                                   }}>{i + 1}.</span>
                                   <span style={{ color: i === 0 ? colors.textPrimary : colors.textMuted, fontWeight: i === 0 ? 600 : 400 }}>
                                     {c.team}
                                   </span>
-                                  <span style={{ color: colors.textMuted, fontSize: 10 }}>
+                                  <span style={{ color: colors.textMuted, fontSize: fontSize.sm }}>
                                     {fmtEarnings(earningsMap[c.team])}
                                   </span>
-                                  {i === 0 && <span style={{ color: colors.earningsGreen, fontSize: 10, fontWeight: 600 }}>← wins</span>}
+                                  {i === 0 && <span style={{ color: colors.earningsGreen, fontSize: fontSize.sm, fontWeight: 600 }}>← wins</span>}
                                 </div>
                               ))}
                             </div>
@@ -1176,19 +1176,19 @@ export const AdminView = ({
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {pending.map(w => (
                   <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
-                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
+                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.sm, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
-                      <div style={{ fontSize: 11 }}>
+                      <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
+                      <div style={{ fontSize: fontSize.base }}>
                         <span style={{ color: colors.earningsGreen }}>+{w.player}</span>
                         {w.droppedPlayer && <span style={{ color: colors.danger }}> / -{w.droppedPlayer}</span>}
                       </div>
                     </div>
-                    <button onClick={() => handleProcessSingle(w)} style={{ ...theme.btnSecondary, padding: '5px 10px', fontSize: 11, flexShrink: 0 }}>Process</button>
+                    <button onClick={() => handleProcessSingle(w)} style={{ ...theme.btnSecondary, padding: '5px 10px', fontSize: fontSize.base, flexShrink: 0 }}>Process</button>
                   </div>
                 ))}
               </div>
-              <button onClick={() => setWaiverRevealed(false)} style={{ ...theme.btnSecondary, marginTop: 8, fontSize: 10, padding: '4px 12px', width: 'auto', display: 'inline-block' }}>Hide Claims</button>
+              <button onClick={() => setWaiverRevealed(false)} style={{ ...theme.btnSecondary, marginTop: 8, fontSize: fontSize.sm, padding: '4px 12px', width: 'auto', display: 'inline-block' }}>Hide Claims</button>
             </>
           )}
         </div>
@@ -1258,7 +1258,7 @@ export const AdminView = ({
           </button>
           {owgrSummary && (
             <div style={{
-              marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+              marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: fontSize.base, fontFamily: fonts.sans,
               background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
               border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
               color: owgrStatus === 'error' ? colors.danger : colors.success,
@@ -1284,7 +1284,7 @@ export const AdminView = ({
           </button>
           {livSyncSummary && (
             <div style={{
-              marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+              marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: fontSize.base, fontFamily: fonts.sans,
               background: livSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
               border: `1px solid ${livSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
               color: livSyncStatus === 'error' ? colors.danger : colors.success,
@@ -1301,7 +1301,7 @@ export const AdminView = ({
           </div>
           <input type="text" placeholder="Search players to add/remove LIV flag…"
             value={livSearch} onChange={e => setLivSearch(e.target.value)}
-            style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
+            style={{ ...theme.input, marginBottom: 10, fontSize: fontSize.base }}
           />
           {(() => {
             const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
@@ -1327,7 +1327,7 @@ export const AdminView = ({
                 {/* Search results — players to add to LIV list */}
                 {searchResults.length > 0 && (
                   <div style={{ marginBottom: 8 }}>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
                       Add to LIV list
                     </div>
                     {searchResults.map(p => (
@@ -1336,9 +1336,9 @@ export const AdminView = ({
                         padding: '6px 10px', marginBottom: 2, borderRadius: 3,
                         background: 'rgba(80,180,120,0.06)', border: `1px solid rgba(80,180,120,0.2)`,
                       }}>
-                        <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+                        <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textPrimary }}>
                           {p.name}
-                          {p.worldRank && <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>#{p.worldRank}</span>}
+                          {p.worldRank && <span style={{ color: colors.textMuted, fontSize: fontSize.sm, marginLeft: 6 }}>#{p.worldRank}</span>}
                         </span>
                         <button
                           disabled={livSaving[p.name]}
@@ -1356,7 +1356,7 @@ export const AdminView = ({
                             } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
                             finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
                           }}
-                          style={{ fontFamily: fonts.sans, fontSize: 10, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}
+                          style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}
                         >
                           {livSaving[p.name] ? '…' : '+ Flag LIV'}
                         </button>
@@ -1366,7 +1366,7 @@ export const AdminView = ({
                 )}
 
                 {/* Current LIV roster */}
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+                <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
                   {livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}
                 </div>
                 {livPlayers.length === 0 ? (
@@ -1378,7 +1378,7 @@ export const AdminView = ({
                         display: 'inline-flex', alignItems: 'center', gap: 6,
                         padding: '4px 8px', borderRadius: 3,
                         background: 'rgba(220,60,60,0.08)', border: `1px solid rgba(220,60,60,0.2)`,
-                        fontSize: 11, fontFamily: fonts.sans, color: colors.textSecondary,
+                        fontSize: fontSize.base, fontFamily: fonts.sans, color: colors.textSecondary,
                       }}>
                         {p.name}
                         <button
@@ -1392,7 +1392,7 @@ export const AdminView = ({
                             } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
                             finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
                           }}
-                          style={{ background: 'none', border: 'none', color: 'rgba(220,100,80,0.7)', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}
+                          style={{ background: 'none', border: 'none', color: 'rgba(220,100,80,0.7)', cursor: 'pointer', fontSize: fontSize.base, padding: 0, lineHeight: 1 }}
                           title={'Remove LIV flag from ' + p.name}
                         >
                           ✕
@@ -1410,7 +1410,7 @@ export const AdminView = ({
           <button onClick={() => setMergeOpen(o => !o)}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
             <div style={S.title}>🔀 Merge Players</div>
-            <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{mergeOpen ? '▲' : '▼'}</span>
+            <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted, paddingBottom: 12 }}>{mergeOpen ? '▲' : '▼'}</span>
           </button>
           {mergeOpen && <MergePlayersPanel
             allPlayers={allPlayers} teams={teams} transactions={transactions}
@@ -1440,7 +1440,7 @@ export const AdminView = ({
           <button onClick={() => { setSettingsOpen(o => !o); setSettingsDraft(null); }}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
             <div style={S.title}>⚙️ Season Settings</div>
-            <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{settingsOpen ? '▲ close' : '▼ edit'}</span>
+            <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted, paddingBottom: 12 }}>{settingsOpen ? '▲ close' : '▼ edit'}</span>
           </button>
           {settingsOpen && (() => {
             const isEditing = settingsDraft !== null && typeof settingsDraft === 'object';
@@ -1448,11 +1448,11 @@ export const AdminView = ({
             const set = (key, val) => setSettingsDraft({ ...(settingsDraft || getSettingsDraft()), [key]: val });
             const numInput = (key, label, min = 0, dollar = false) => (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                <label style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</label>
+                <label style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</label>
                 <div style={{ position: 'relative' }}>
-                  {dollar && <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontFamily: fonts.mono, fontSize: 13, color: colors.textMuted, pointerEvents: 'none' }}>$</span>}
+                  {dollar && <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontFamily: fonts.mono, fontSize: fontSize.md, color: colors.textMuted, pointerEvents: 'none' }}>$</span>}
                   <input type="number" min={min} value={draft[key]} onChange={e => set(key, Number(e.target.value))}
-                    style={{ ...theme.input, marginBottom: 0, fontSize: 13, textAlign: dollar ? 'right' : 'center', paddingLeft: dollar ? 18 : undefined, width: '100%', border: isEditing ? '1px solid rgba(220,170,60,0.5)' : undefined }} />
+                    style={{ ...theme.input, marginBottom: 0, fontSize: fontSize.md, textAlign: dollar ? 'right' : 'center', paddingLeft: dollar ? 18 : undefined, width: '100%', border: isEditing ? '1px solid rgba(220,170,60,0.5)' : undefined }} />
                 </div>
               </div>
             );
@@ -1460,7 +1460,7 @@ export const AdminView = ({
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4 }}>
                 <div style={{ ...theme.smallText, color: colors.textMuted }}>⚠️ Changes apply immediately to all league calculations.</div>
                 <div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Round Leader Bonuses</div>
+                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Round Leader Bonuses</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
                     {numInput('bonusR1Regular', 'R1 — Regular', 0, true)}
                     {numInput('bonusR2Regular', 'R2 — Regular', 0, true)}
@@ -1473,14 +1473,14 @@ export const AdminView = ({
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Transaction Fees ($)</div>
+                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Transaction Fees ($)</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     {numInput('feeFA', 'Free Agent', 0, true)}
                     {numInput('feeWaiver', 'Waiver Claim', 0, true)}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Roster Rules</div>
+                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Roster Rules</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                     {numInput('rosterLimit', 'Roster Size', 1)}
                     {numInput('lineupSize', 'Lineup Size', 1)}
@@ -1578,7 +1578,7 @@ export const AdminView = ({
               const isValid = !draftValue.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draftValue.trim());
               return (
                 <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary, width: 120, flexShrink: 0 }}>{t.name}</span>
+                  <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600, color: colors.textPrimary, width: 120, flexShrink: 0 }}>{t.name}</span>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <input
                       type="email"
@@ -1586,12 +1586,12 @@ export const AdminView = ({
                       value={draftValue}
                       onChange={e => setEmailDraft(prev => ({ ...(prev || {}), [t.id]: e.target.value }))}
                       style={{
-                        ...theme.input, fontSize: 12, padding: '7px 10px',
+                        ...theme.input, fontSize: fontSize.base, padding: '7px 10px',
                         borderColor: !isValid ? colors.dangerBorder : colors.borderInput,
                       }}
                     />
                     {!isValid && (
-                      <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.danger, paddingLeft: 2 }}>
+                      <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.danger, paddingLeft: 2 }}>
                         ⚠ Invalid email
                       </span>
                     )}

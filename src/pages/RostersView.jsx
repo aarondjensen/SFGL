@@ -10,7 +10,7 @@ import {
   isWaiverWindowOpen,
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
-import { theme, colors, fonts } from '../theme.js';
+import { theme, colors, fonts, fontSize } from '../theme.js';
 import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
@@ -76,7 +76,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
           padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
           background: '#0f1d35', border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
-          fontFamily: fonts.serif, fontSize: 14, fontWeight: 700,
+          fontFamily: fonts.serif, fontSize: fontSize.md, fontWeight: 700,
           color: 'rgba(255,255,255,0.9)', textAlign: 'left',
           transition: 'border-color 0.15s', whiteSpace: 'nowrap',
         }}
@@ -84,7 +84,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {selected?.name ?? '—'}
         </span>
-        <span style={{ fontSize: 9, opacity: 0.6, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
+        <span style={{ fontSize: fontSize.xs, opacity: 0.6, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
         <div style={{
@@ -101,7 +101,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
                 whiteSpace: 'nowrap',
                 background: t.id === value ? 'rgba(245,197,24,0.12)' : 'transparent',
                 border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)',
-                fontFamily: fonts.serif, fontSize: 13, fontWeight: t.id === value ? 700 : 400,
+                fontFamily: fonts.serif, fontSize: fontSize.md, fontWeight: t.id === value ? 700 : 400,
                 color: t.id === value ? colors.textGold : 'rgba(255,255,255,0.85)',
                 transition: 'background 0.1s',
               }}
@@ -125,7 +125,7 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
         flex: 1, padding: '6px 0', borderRadius: 2,
         background: current === leftVal ? 'rgba(255,255,255,0.08)' : 'none',
         border: current === leftVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
-        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+        fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
         color: current === leftVal ? leftColor : colors.textMuted,
         cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
       }}>{leftLabel}</button>
@@ -133,7 +133,7 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
         flex: 1, padding: '6px 0', borderRadius: 2,
         background: current === rightVal ? 'rgba(255,255,255,0.08)' : 'none',
         border: current === rightVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
-        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+        fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
         color: current === rightVal ? rightColor : colors.textMuted,
         cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
       }}>{rightLabel}</button>
@@ -207,7 +207,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
       borderRadius: 3, padding: 12,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: 11 }}>
+        <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: fontSize.base }}>
           ⏰ Pending Waiver Claims ({pendingWaivers.length})
         </h3>
         <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>{waiverStatusLabel}</span>
@@ -226,19 +226,19 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                 <button onClick={() => swapPriority(index, index - 1)} disabled={index === 0}
                   style={{ background: 'none', border: 'none', cursor: index === 0 ? 'not-allowed' : 'pointer',
-                    color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 14, padding: '6px 10px', lineHeight: 1 }}>▲</button>
-                <span style={{ fontSize: 10, color: 'rgba(220,200,80,0.8)', fontWeight: 700 }}>{index + 1}</span>
+                    color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: fontSize.md, padding: '6px 10px', lineHeight: 1 }}>▲</button>
+                <span style={{ fontSize: fontSize.sm, color: 'rgba(220,200,80,0.8)', fontWeight: 700 }}>{index + 1}</span>
                 <button onClick={() => swapPriority(index, index + 1)} disabled={index === pendingWaivers.length - 1}
                   style={{ background: 'none', border: 'none', cursor: index === pendingWaivers.length - 1 ? 'not-allowed' : 'pointer',
-                    color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 14, padding: '6px 10px', lineHeight: 1 }}>▼</button>
+                    color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: fontSize.md, padding: '6px 10px', lineHeight: 1 }}>▼</button>
               </div>
             )}
             <div style={{ flex: 1 }}>
-              <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: 12, fontWeight: 500 }}>Add: {waiver.player}</span>
+              <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 500 }}>Add: {waiver.player}</span>
               {waiver.droppedPlayer && (
                 <>
                   <span style={{ color: colors.textMuted, margin: '0 4px' }}>→</span>
-                  <span style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 12 }}>Drop: {waiver.droppedPlayer}</span>
+                  <span style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: fontSize.base }}>Drop: {waiver.droppedPlayer}</span>
                 </>
               )}
               <div style={{ ...theme.smallText, marginTop: 2 }}>${waiver.fee} fee · {waiver.segment || 'Current Swing'}</div>
@@ -246,12 +246,12 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
             {isOwnTeam && (
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => deleteWaiver(waiver)}
-                  style={{ ...theme.btnSecondary, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✏️</button>
+                  style={{ ...theme.btnSecondary, padding: '8px 12px', fontSize: fontSize.base, minHeight: 36 }}>✏️</button>
                 <button onClick={async () => {
                   const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
                   if (!ok) return;
                   deleteWaiver(waiver);
-                }} style={{ ...theme.btnDanger, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✕</button>
+                }} style={{ ...theme.btnDanger, padding: '8px 12px', fontSize: fontSize.base, minHeight: 36 }}>✕</button>
               </div>
             )}
           </div>
@@ -326,7 +326,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
               background: 'rgba(220,60,60,0.92)',
               border: '1.5px solid rgba(255,255,255,0.25)',
               color: '#fff',
-              fontSize: 11, fontWeight: 700, lineHeight: 1,
+              fontSize: fontSize.base, fontWeight: 700, lineHeight: 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer',
               boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
@@ -346,7 +346,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
             position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
             background: 'rgba(15,25,45,0.88)', borderRadius: 6,
             padding: '0px 3px', lineHeight: 1, zIndex: 5,
-            fontSize: 8, letterSpacing: 1,
+            fontSize: fontSize.xs, letterSpacing: 1,
           }}>
             {'⭐'.repeat(player.stars || 1)}
           </div>
@@ -458,11 +458,7 @@ export const RostersView = ({
 
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
-  // Wave 7 fix: pass resolvedSettings so the configurable waiver/FA cutoffs
-  // (set in AdminView's "Waiver Schedule" panel) actually take effect.
-  // Previously this was useWindowStatus(activeTournament) without settings,
-  // which always used the hardcoded Tue 8pm ET defaults.
-  const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
+  const windowStatus  = useWindowStatus(activeTournament);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
   const togglePlayerInLineup = useCallback(async (player) => {
@@ -800,16 +796,16 @@ export const RostersView = ({
                       transition: 'opacity 0.2s',
                     }}>
                       <span style={{
-                        fontSize: 11, lineHeight: 1,
+                        fontSize: fontSize.base, lineHeight: 1,
                         filter: used ? 'grayscale(1)' : 'none',
                       }}>🚨</span>
                       <span style={{
-                        fontFamily: fonts.sans, fontSize: 8, fontWeight: 700,
+                        fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700,
                         letterSpacing: '0.3px', textTransform: 'uppercase',
                         color: used ? usedColor : activeColor,
                       }}>{label}</span>
                       <span style={{
-                        fontFamily: fonts.mono, fontSize: 9, fontWeight: 700,
+                        fontFamily: fonts.mono, fontSize: fontSize.xs, fontWeight: 700,
                         color: used ? usedColor : activeColor,
                         marginLeft: 1,
                       }}>{remaining}/1</span>
@@ -838,7 +834,7 @@ export const RostersView = ({
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '7px 14px', borderRadius: 4, flexShrink: 0,
-                  fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
+                  fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
                   cursor: 'pointer', transition: 'all 0.15s',
                   background: canAdd ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)',
                   border: canAdd ? '1.5px solid rgba(80,180,120,0.5)' : '1.5px solid rgba(255,255,255,0.12)',
@@ -849,7 +845,7 @@ export const RostersView = ({
                 onMouseLeave={e => { e.currentTarget.style.background = canAdd ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)'; }}
                 title={tournLocked ? 'Adds unavailable during tournament — opens Tuesday 8pm ET' : waiverPending ? 'Waiver claims pending — free agency opens after Commish processes' : 'Add or drop a player'}
               >
-                {canAdd && <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>+</span>}
+                {canAdd && <span style={{ fontSize: fontSize.lg, lineHeight: 1, fontWeight: 800 }}>+</span>}
                 <span>{canAdd ? 'Add Player' : '🔍 Search'}</span>
               </button>
             );
@@ -894,12 +890,12 @@ export const RostersView = ({
                         transition: 'all 0.15s',
                       }}>
                         <span style={{
-                          fontSize: 20, fontWeight: 300, lineHeight: 1,
+                          fontSize: fontSize.lg, fontWeight: 300, lineHeight: 1,
                           color: canEditLineup ? (lineupMode ? 'rgba(80,180,120,0.8)' : 'rgba(80,180,120,0.45)') : 'rgba(255,255,255,0.15)',
                         }}>+</span>
                       </div>
                       <div style={{
-                        fontSize: 9, fontFamily: fonts.sans, marginTop: 3,
+                        fontSize: fontSize.xs, fontFamily: fonts.sans, marginTop: 3,
                         textAlign: 'center', width: '100%',
                         color: canEditLineup ? 'rgba(80,180,120,0.5)' : 'rgba(255,255,255,0.15)',
                         letterSpacing: '0.3px',
@@ -986,25 +982,25 @@ export const RostersView = ({
               )}
               {/* Row 2: column headers */}
               <tr>
-                <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
                 {infoView === 'info' ? (<>
-                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: isMobile ? 'right' : 'center', whiteSpace: 'nowrap', paddingRight: isMobile ? 4 : 0, ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
+                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: isMobile ? 'right' : 'center', whiteSpace: 'nowrap', paddingRight: isMobile ? 4 : 0, ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
                     {liveData?.players?.length
                       ? (liveData.players.some(p => p.thru === 'F' || (!isNaN(parseInt(p.thru, 10)) && parseInt(p.thru, 10) >= 0)) ? 'Score' : 'Tee Time')
                       : Object.keys(teeTimeMap).length > 0 ? <>Tee Time{sortArrow('teeTime')}</> : 'Field'}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
+                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
                     Odds{sortArrow('odds')}
                   </th>
                   <th scope="col" style={{ ...theme.tableHeaderCell }} />
                 </>) : (<>
-                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
+                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
                     OWGR{sortArrow('starts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
+                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
                     {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)') }}>
+                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)') }}>
                     {statsView === 'sfgl' ? 'Earnings' : 'PGA $'}{sortArrow('earnings')}
                   </th>
                 </>)}
@@ -1074,7 +1070,7 @@ export const RostersView = ({
                               background: 'rgba(220,60,60,0.9)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>
-                              <span style={{ color: '#fff', fontSize: 9, fontWeight: 900 }}>✕</span>
+                              <span style={{ color: '#fff', fontSize: fontSize.xs, fontWeight: 900 }}>✕</span>
                             </div>
                           )}
                           {isEditing && !isInLineup && canAddToLineup && (
@@ -1084,7 +1080,7 @@ export const RostersView = ({
                               background: 'rgba(80,195,120,0.9)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>
-                              <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>+</span>
+                              <span style={{ color: '#fff', fontSize: fontSize.sm, fontWeight: 900, lineHeight: 1 }}>+</span>
                             </div>
                           )}
                           {player.limited && (player.stars || 1) > 0 && (
@@ -1092,7 +1088,7 @@ export const RostersView = ({
                               position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
                               background: 'rgba(15,25,45,0.88)', borderRadius: 6,
                               padding: '0px 3px', lineHeight: 1, zIndex: 5,
-                              fontSize: 7, letterSpacing: 0.5,
+                              fontSize: fontSize.xs, letterSpacing: 0.5,
                               pointerEvents: 'none',
                               opacity: isBenched ? 0.35 : 1,
                             }}>
@@ -1116,21 +1112,21 @@ export const RostersView = ({
                               {displayName(player.name, isMobile)}
                             </span>
                             {tournamentField?.has(normalizeNordic(player.name)) && (
-                              <span title="In this week's field" style={{ fontSize: 11, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
+                              <span title="In this week's field" style={{ fontSize: fontSize.base, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
                             )}
                             {player.limited && (
                               <span style={{
-                                fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
+                                fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 600,
                                 color: isBenched ? 'rgba(245,197,24,0.35)' : colors.textGoldDim,
                               }}>
                                 {sfglCutsMap[player.name]?.starts ?? player.starts}/{MAX_LIMITED_STARTS}
                               </span>
                             )}
                             {player.unlimited && (
-                              <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)', flexShrink: 0 }}>♾️</span>
+                              <span style={{ fontSize: fontSize.sm, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)', flexShrink: 0 }}>♾️</span>
                             )}
                           </div>
-                          <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
+                          <div style={{ fontSize: fontSize.sm, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
                             {player.yearsOfService > 1 && <span>(Yr {player.yearsOfService})</span>}
                           </div>
                         </div>
@@ -1174,9 +1170,9 @@ export const RostersView = ({
                         const hasStarted = live && (live.thru === 'F' || (!isNaN(thruNum) && thruNum >= 0) || live.isCut || live.isWD);
 
                         if (live?.isCut) {
-                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>CUT</td>;
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted }}>CUT</td>;
                         } else if (live?.isWD) {
-                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>WD</td>;
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted }}>WD</td>;
                         } else if (hasStarted) {
                           const scoreColor = live.score?.startsWith('-') ? colors.danger : colors.textPrimary;
                           col1 = (

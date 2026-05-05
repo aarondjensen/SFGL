@@ -51,7 +51,7 @@ const LazyLoginPage        = React.lazy(() => import('./pages/LoginPage'));
 
 import { useLeague }       from './hooks';
 import { hashPassword, getSegmentByDate } from './utils';
-import { getSwingColor } from './theme.js';
+import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
 import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
@@ -60,7 +60,7 @@ import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 const LazyFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
     <div style={{
-      fontSize: 11, letterSpacing: 3, textTransform: 'uppercase',
+      fontSize: fontSize.sm, letterSpacing: 3, textTransform: 'uppercase',
       color: 'rgba(255,255,255,0.2)', fontWeight: 400,
       fontFamily: "'Raleway', system-ui, sans-serif",
     }}>
@@ -303,13 +303,13 @@ const FantasyGolfLeague = () => {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
         {/* Loading-screen animations are now in app-global.css (Wave 1 cleanup) */}
-        <div className="sfgl-logo-load" style={{ fontSize: 32, fontWeight: 600, letterSpacing: 10, color: 'rgba(255,255,255,0.9)' }}>SFGL</div>
+        <div className="sfgl-logo-load" style={{ fontSize: fontSize.xxl, fontWeight: 600, letterSpacing: 10, color: 'rgba(255,255,255,0.9)' }}>SFGL</div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span className="sfgl-dot" />
           <span className="sfgl-dot" />
           <span className="sfgl-dot" />
         </div>
-        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading 2026 League</div>
+        <div style={{ fontSize: fontSize.sm, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading 2026 League</div>
       </div>
     );
   }
@@ -335,14 +335,14 @@ const FantasyGolfLeague = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span style={{
                   fontFamily: "'Raleway', system-ui, sans-serif",
-                  fontSize: 22, fontWeight: 600, letterSpacing: 5,
+                  fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5,
                   color: 'rgba(255,255,255,0.93)',
                   whiteSpace: 'nowrap', userSelect: 'none',
                 }}>SFGL</span>
                 <div style={{ width: 1, height: 22, background: 'rgba(180,160,100,0.25)' }} />
                 <span style={{
                   fontFamily: "'Raleway', system-ui, sans-serif",
-                  fontSize: 16,
+                  fontSize: fontSize.lg,
                   fontWeight: 400,
                   color: 'rgba(255,255,255,0.7)',
                   letterSpacing: 4,
@@ -353,7 +353,7 @@ const FantasyGolfLeague = () => {
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {loggedInUser && (
                   <span style={{
-                    fontSize: 11,
+                    fontSize: fontSize.base,
                     color: 'rgba(255,255,255,0.45)',
                     letterSpacing: 1,
                     textTransform: 'uppercase',
@@ -370,7 +370,7 @@ const FantasyGolfLeague = () => {
                     title="Click to exit Commissioner mode"
                     style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
-                      fontSize: 10,
+                      fontSize: fontSize.sm,
                       fontWeight: 700,
                       letterSpacing: 1.5,
                       textTransform: 'uppercase',
@@ -388,14 +388,14 @@ const FantasyGolfLeague = () => {
                     onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.28)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.18)'; }}
                   >
-                    <span style={{ fontSize: 11 }}>⚙</span>
+                    <span style={{ fontSize: fontSize.base }}>⚙</span>
                     <span>Commish</span>
                   </button>
                 )}
                 {loggedInUser && !isCommissioner && (
                     <button onClick={handleLogout} style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
-                      fontSize: 10,
+                      fontSize: fontSize.sm,
                       letterSpacing: 1.5,
                       textTransform: 'uppercase',
                       padding: '8px 14px',
@@ -412,7 +412,7 @@ const FantasyGolfLeague = () => {
                 {!loggedInUser && !isCommissioner && (
                     <button onClick={() => setShowLoginModal(true)} style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
-                      fontSize: 10,
+                      fontSize: fontSize.sm,
                       letterSpacing: 1.5,
                       textTransform: 'uppercase',
                       padding: '8px 14px',
@@ -436,7 +436,7 @@ const FantasyGolfLeague = () => {
             ~30px of vertical real-estate on every commish screen.) */}
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
-            <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: 'clamp(13px, 1.1vw, 15px)', letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
+            <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
               {(() => {
                 const active = safeTournaments.find(t => t.playing);
                 const seg = active?.segment || safeTournaments.find(t => !t.completed && !t.playing)?.segment || [...safeTournaments].reverse().find(t => t.completed)?.segment || getSegmentByDate();
@@ -444,19 +444,19 @@ const FantasyGolfLeague = () => {
               })()}
             </div>
             {currentTournament && (
-              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
                 <span>⛳</span> {currentTournament.name}
               </div>
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {currentTournament && (
-              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: 'clamp(13px, 1.1vw, 15px)', color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
+              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
                 <span>⛳</span> {currentTournament.name}
               </div>
             )}
             {isSyncing && (
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="animate-pulse">
+              <span style={{ fontSize: fontSize.sm, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="animate-pulse">
                 Saving…
               </span>
             )}
@@ -488,7 +488,7 @@ const FantasyGolfLeague = () => {
                   gap: 6,
                   padding: '10px 12px',
                   borderRadius: 2,
-                  fontSize: 'clamp(12px, 1vw, 14px)',
+                  fontSize: fontSize.md,
                   fontWeight: 400,
                   letterSpacing: 0.5,
                   cursor: 'pointer',
@@ -511,7 +511,7 @@ const FantasyGolfLeague = () => {
                 <tab.Icon style={{ width: 13, height: 13 }} />
                 <span className="sfgl-tab-label" style={{
                   fontFamily: "'Raleway', system-ui, sans-serif",
-                  fontSize: 'clamp(12px, 1vw, 14px)',
+                  fontSize: fontSize.md,
                   fontWeight: 500,
                   letterSpacing: '1px',
                 }}>{tab.label}</span>
@@ -559,7 +559,7 @@ const FantasyGolfLeague = () => {
               border: '1px solid rgba(180,160,100,0.25)',
               borderRadius: 1,
               padding: '7px 14px',
-              fontSize: 12,
+              fontSize: fontSize.base,
               fontWeight: 600,
               color: 'rgba(180,160,100,0.9)',
               cursor: 'pointer',
