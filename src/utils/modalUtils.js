@@ -1,6 +1,6 @@
 // src/utils/modalUtils.js
 // Shared utilities for modal behavior: scroll lock + Escape key.
-// Used by AddDropPlayerModal, DraftModal, MulliganModal, EditTransactionModal, etc.
+// Used by AddDropPlayerModal, DraftModal, EditTransactionModal, etc.
 
 import { useEffect } from 'react';
 
