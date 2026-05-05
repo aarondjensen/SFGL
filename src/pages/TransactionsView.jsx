@@ -507,8 +507,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     if (addTxType === 'mulligan' && (playerInName || playerOutName)) {
       const mulliganTeam = teams.find(t => t.name === addTxTeam);
       const tournament = tournaments[tournamentIndex];
-      const isSigOrMajor = tournament?.isSignature || tournament?.isMajor;
-      const mullKey = isSigOrMajor ? 'signatureMajor' : 'regular';
       const alreadyProcessed = !!tournament?.completed;
 
       // Detect if this mulligan was already applied (e.g. re-adding a lost transaction record).
@@ -539,11 +537,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   return p;
                 })
               : t.roster,
-            // Decrement mulligan counter
-            mulligans: {
-              ...t.mulligans,
-              [mullKey]: Math.max(0, (t.mulligans?.[mullKey] ?? 1) - 1),
-            },
+            // Wave 8: no longer write to team.mulligans. RostersView now derives
+            // remaining mulligans from the transactions array (single source of
+            // truth), so a manually-added mulligan tx in Firestore correctly
+            // counts against the team's quota — same as one added via this UI.
           };
         });
 
