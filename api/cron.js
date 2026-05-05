@@ -321,12 +321,28 @@ async function handleNotifyResults(req, res) {
 
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName));
-      results.push({ team: teamName, success: true });
+      const sendResult = await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName));
+      // Wave 8: sendEmail returns { skipped: true } if BREVO_API_KEY is missing.
+      // Don't count those as successes. Distinguish so the caller can tell
+      // "all sent" from "all skipped/errored".
+      if (sendResult?.skipped) {
+        results.push({ team: teamName, skipped: true, reason: 'BREVO_API_KEY missing' });
+      } else {
+        results.push({ team: teamName, success: true });
+      }
     } catch (err) { results.push({ team: teamName, error: err.message }); }
   }
 
-  return res.json({ status: 'sent', emailsSent: results.filter(r => r.success).length, results });
+  const sent    = results.filter(r => r.success).length;
+  const errored = results.filter(r => r.error).length;
+  const skipped = results.filter(r => r.skipped).length;
+  const total   = results.length;
+
+  // If no manager emails configured, also a problem worth surfacing
+  if (total === 0) return res.status(500).json({ status: 'no_recipients', message: 'No manager emails configured', sent: 0, errored: 0, skipped: 0, results });
+  // If everything failed, return non-2xx so the client surfaces the failure
+  if (sent === 0)  return res.status(502).json({ status: 'all_failed',   message: skipped === total ? 'BREVO_API_KEY not configured' : 'All sends errored', sent, errored, skipped, results });
+  return res.json({ status: 'sent', emailsSent: sent, errored, skipped, results });
 }
 
 // ── Action: auto-process tournament results ─────────────────────────────────
