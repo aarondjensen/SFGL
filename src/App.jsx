@@ -158,12 +158,44 @@ const FantasyGolfLeague = () => {
   }, [loading, tournaments.length, resultsHydrated]);
 
 
-  // ── Wave 7: defensive recovery effect removed ─────────────────────────────
-  // The Wave 6 hotfix that called tournamentsApi.getAll() directly when state
-  // was empty after load is no longer needed — useLeague now retries each
-  // Firebase call once on null/exception before falling back, AND refetches
-  // from Firebase whenever the tab becomes visible after >5 min hidden.
-  // Both layers of defense run automatically so manual recovery is unnecessary.
+  // ── Wave 7-rollback: defensive direct-from-Firebase tournament recovery ──
+  // After useLeague finishes its initial load, if `tournaments` is still
+  // empty we try once more to fetch directly from Firebase. This is a
+  // belt-and-suspenders backup for the case where useLeague's main loader
+  // failed silently. It does NOT use any timeout — it waits as long as the
+  // call needs and applies the result if successful.
+  //
+  // This was originally added in Wave 6 to recover mobile from a wedged
+  // state. Wave 7 removed it under the (incorrect) assumption that the
+  // rewritten useLeague would handle the case. After Wave 7's timeouts
+  // proved harmful, we reverted useLeague to its original behaviour and
+  // restored this effect as a safety net.
+  const [tournamentsRecovered, setTournamentsRecovered] = useState(false);
+  useEffect(() => {
+    if (loading || tournamentsRecovered) return;
+    if (tournaments.length > 0) {
+      setTournamentsRecovered(true);
+      return;
+    }
+    console.log('[App] tournaments empty after load — recovering from Firebase');
+    import('./api/firebase').then(({ tournamentsApi }) => {
+      tournamentsApi.getAll().then(remote => {
+        if (remote && remote.length > 0) {
+          console.log(`[App] recovered ${remote.length} tournaments from Firebase`);
+          setTournaments(remote);
+        } else {
+          console.warn('[App] Firebase tournaments fetch returned empty — Firebase data may be missing');
+        }
+        setTournamentsRecovered(true);
+      }).catch(err => {
+        console.error('[App] Firebase tournaments fetch failed:', err);
+        setTournamentsRecovered(true);
+      });
+    }).catch(err => {
+      console.error('[App] Firebase module import failed:', err);
+      setTournamentsRecovered(true);
+    });
+  }, [loading, tournaments.length, tournamentsRecovered]);
 
 
   // ── Auto-fetch headshots for all rostered players on app load ────────────
