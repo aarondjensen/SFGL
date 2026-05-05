@@ -1144,7 +1144,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         // swing_winner: show swing name; others: show tournament name
                         if (tx.type === 'swing_winner') {
                           return tx.segment
-                            ? <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>{tx.segment}</span>
+                            ? <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: getSwingColor(tx.segment) }}>{tx.segment}</span>
                             : null;
                         }
                         const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
