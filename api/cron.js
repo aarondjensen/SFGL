@@ -47,11 +47,17 @@ async function sendEmail(to, subject, html) {
 
 // ── Email templates ─────────────────────────────────────────────────────────
 
-const HEADER = `<div style="background:#0a1628;padding:20px 24px;border-bottom:2px solid rgba(220,170,60,0.4);"><h1 style="font-family:Georgia,serif;font-size:22px;color:#c4a24e;margin:0;letter-spacing:2px;">SFGL</h1><p style="font-family:-apple-system,sans-serif;font-size:11px;color:rgba(255,255,255,0.5);margin:4px 0 0;letter-spacing:1px;text-transform:uppercase;">2026 Season</p></div>`;
-const FOOTER = `<div style="padding:16px 24px;border-top:1px solid rgba(255,255,255,0.08);text-align:center;"><a href="https://sfglgolf.com" style="font-family:-apple-system,sans-serif;font-size:12px;color:#c4a24e;text-decoration:none;">sfglgolf.com</a><p style="font-family:-apple-system,sans-serif;font-size:10px;color:rgba(255,255,255,0.3);margin:6px 0 0;">You're receiving this because you're a manager in the SFGL fantasy golf league.</p></div>`;
+// Wave 8: refined to match the app's exact palette and typography.
+// pageBg #111d2e, brighter gold #f5c518, app's earnings green, Raleway font
+// loaded via Google Fonts with system-font fallbacks for clients that strip
+// web fonts (Outlook desktop, etc.). Layouts use display:table instead of
+// flex for Outlook compatibility.
+const FONT_STACK = `'Raleway','Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,sans-serif`;
+const HEADER = `<div style="background:#111d2e;padding:28px 32px 22px;border-bottom:1px solid rgba(245,197,24,0.25);"><div style="font-family:${FONT_STACK};font-size:30px;font-weight:300;color:#f5c518;letter-spacing:7px;line-height:1;">SFGL</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:2.5px;text-transform:uppercase;margin-top:8px;">2026 Season</div></div>`;
+const FOOTER = `<div style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;background:#0d1828;"><a href="https://sfglgolf.com" style="font-family:${FONT_STACK};font-size:13px;font-weight:500;color:#f5c518;text-decoration:none;letter-spacing:1.5px;">sfglgolf.com →</a><div style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.3);margin-top:8px;letter-spacing:0.3px;">You're receiving this because you're a manager in the SFGL fantasy golf league.</div></div>`;
 
 function wrap(body) {
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head><body style="margin:0;padding:0;background:#060e1a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><div style="max-width:560px;margin:0 auto;background:#0f1e30;border-radius:4px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">${HEADER}<div style="padding:24px;">${body}</div>${FOOTER}</div></body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap" rel="stylesheet"><title>SFGL</title></head><body style="margin:0;padding:0;background:#0a1322;font-family:${FONT_STACK};"><div style="max-width:600px;margin:0 auto;background:#111d2e;border:1px solid rgba(180,160,100,0.12);">${HEADER}<div style="padding:28px 32px 24px;">${body}</div>${FOOTER}</div></body></html>`;
 }
 
 function buildWaiverResultsEmail(processed, recipientTeam) {
@@ -60,9 +66,9 @@ function buildWaiverResultsEmail(processed, recipientTeam) {
     const bg = w.status === 'processed' ? (isMe ? 'rgba(80,180,120,0.15)' : 'rgba(80,180,120,0.06)') : 'rgba(200,60,60,0.08)';
     const icon = w.status === 'processed' ? '✅' : '❌';
     const label = w.status === 'processed' ? 'Approved' : 'Blocked';
-    return `<div style="background:${bg};border:1px solid rgba(255,255,255,0.06);border-radius:3px;padding:10px 14px;margin-bottom:6px;${isMe ? 'border-left:3px solid #c4a24e;' : ''}"><div style="font-size:13px;font-weight:600;color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.8)'};">${w.team}<span style="float:right;font-size:11px;font-weight:400;color:${w.status === 'processed' ? '#50b478' : '#cc5555'};">${icon} ${label}</span></div><div style="font-size:12px;margin-top:4px;"><span style="color:#50b478;">+ ${w.player}</span>${w.droppedPlayer ? `<span style="color:rgba(255,255,255,0.3);"> → </span><span style="color:#cc5555;">- ${w.droppedPlayer}</span>` : ''}</div>${w.failReason ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px;">${w.failReason}</div>` : ''}</div>`;
+    return `<div style="background:${bg};border:1px solid rgba(255,255,255,0.06);border-radius:3px;padding:10px 14px;margin-bottom:6px;${isMe ? 'border-left:3px solid #f5c518;' : ''}"><div style="font-family:${FONT_STACK};font-size:13px;font-weight:600;color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.8)'};">${w.team}<span style="float:right;font-size:11px;font-weight:400;color:${w.status === 'processed' ? '#50c378' : '#dc5555'};">${icon} ${label}</span></div><div style="font-family:${FONT_STACK};font-size:12px;margin-top:4px;"><span style="color:#50c378;">+ ${w.player}</span>${w.droppedPlayer ? `<span style="color:rgba(255,255,255,0.3);"> → </span><span style="color:#dc5555;">- ${w.droppedPlayer}</span>` : ''}</div>${w.failReason ? `<div style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px;">${w.failReason}</div>` : ''}</div>`;
   }).join('');
-  return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">⏰ Waiver Results</h2><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 16px;">Processed ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>${rows}`);
+  return wrap(`<div style="font-family:${FONT_STACK};font-size:22px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.5px;">⏰ Waiver Results</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:2px;text-transform:uppercase;margin:0 0 20px;">Processed ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</div>${rows}`);
 }
 
 function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam) {
@@ -71,58 +77,77 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam)
   // desc; teams without a lineup sort to the bottom and show a "no lineup"
   // notice instead of player rows.
   const sorted = [...teamResults].sort((a, b) => {
-    // Teams that submitted a lineup outrank those that didn't, regardless of $0
     if (a.submitted && !b.submitted) return -1;
     if (!a.submitted && b.submitted) return 1;
     return (b.totalEarnings || 0) - (a.totalEarnings || 0);
   });
 
+  // Medal styling for top-3 ranks (matches app's getMedalStyle)
+  const medalStyle = (rank) => {
+    if (rank === 1) return { bg: 'rgba(245,197,24,0.95)',  text: '#111d2e' };
+    if (rank === 2) return { bg: 'rgba(180,180,190,0.75)', text: '#111d2e' };
+    if (rank === 3) return { bg: 'rgba(160,110,60,0.8)',   text: '#ffffff' };
+    return { bg: 'rgba(255,255,255,0.06)', text: 'rgba(255,255,255,0.4)' };
+  };
+
   const teamBlocks = sorted.map((tr, i) => {
     const isMe = tr.team === recipientTeam;
     const rank = i + 1;
     const totalLabel = (tr.totalEarnings || 0).toLocaleString();
+    const totalColor = (tr.totalEarnings || 0) > 0 ? '#50c378' : 'rgba(255,255,255,0.3)';
 
-    // Header row: rank, team name, total
-    const totalColor = (tr.totalEarnings || 0) > 0 ? '#50b478' : 'rgba(255,255,255,0.35)';
-    const headerBg = isMe ? 'rgba(196,162,78,0.12)' : 'rgba(255,255,255,0.025)';
-    const headerBorder = isMe ? 'border-left:3px solid #c4a24e;' : 'border-left:3px solid transparent;';
-    const headerNameColor = isMe ? '#ffffff' : 'rgba(255,255,255,0.9)';
+    const cardBg = isMe ? 'rgba(245,197,24,0.07)' : 'rgba(255,255,255,0.025)';
+    const cardBorder = isMe ? '1px solid rgba(245,197,24,0.4)' : '1px solid rgba(255,255,255,0.06)';
+    const teamNameWeight = isMe ? '700' : '600';
+    const teamNameColor = isMe ? '#ffffff' : 'rgba(255,255,255,0.92)';
 
-    let lineupRows = '';
+    const medal = medalStyle(rank);
+    const medalCircle = `<span style="display:inline-block;width:24px;height:24px;line-height:24px;border-radius:12px;background:${medal.bg};color:${medal.text};font-family:${FONT_STACK};font-size:12px;font-weight:700;text-align:center;margin-right:12px;vertical-align:middle;">${rank}</span>`;
+
+    let lineupBody = '';
     if (!tr.submitted) {
-      lineupRows = `<div style="padding:10px 14px;font-family:-apple-system,sans-serif;font-size:12px;color:rgba(255,255,255,0.4);font-style:italic;">No lineup submitted</div>`;
+      lineupBody = `<div style="padding:14px 18px;font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.4);font-style:italic;">No lineup submitted</div>`;
     } else if (tr.players && tr.players.length > 0) {
-      // Sort players by earnings descending
       const playersSorted = [...tr.players].sort((a, b) => (b.earnings || 0) - (a.earnings || 0));
-      lineupRows = playersSorted.map(p => {
-        const limited = p.limited ? '<span style="color:#c4a24e;margin-left:4px;font-size:10px;">⭐</span>' : '';
+      const playerRows = playersSorted.map((p, idx) => {
+        const limited = p.limited ? `<span style="color:#f5c518;margin-left:6px;font-size:11px;">⭐</span>` : '';
         const bonusBadge = p.wasRoundLeader && p.roundsLed && p.roundsLed.length > 0
-          ? `<span style="margin-left:6px;font-family:-apple-system,sans-serif;font-size:10px;color:#c4a24e;background:rgba(196,162,78,0.12);padding:1px 5px;border-radius:2px;">${p.roundsLed.map(r => 'R' + r.round).join(', ')} leader</span>`
+          ? `<span style="display:inline-block;margin-left:8px;font-family:${FONT_STACK};font-size:10px;font-weight:600;color:#f5c518;background:rgba(245,197,24,0.12);padding:2px 7px;border-radius:3px;letter-spacing:0.5px;">${p.roundsLed.map(r => 'R' + r.round).join('·')} LEADER</span>`
           : '';
-        const earningsColor = (p.earnings || 0) > 0 ? '#50b478' : 'rgba(255,255,255,0.3)';
-        const playerLabel = (p.earnings || 0).toLocaleString();
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px;font-family:-apple-system,sans-serif;font-size:12px;border-top:1px solid rgba(255,255,255,0.04);"><span style="color:rgba(255,255,255,0.78);">${p.name || '—'}${limited}${bonusBadge}</span><span style="color:${earningsColor};font-weight:500;">$${playerLabel}</span></div>`;
+        const bonusAmount = (p.bonus && p.bonus > 0)
+          ? `<span style="font-family:${FONT_STACK};font-size:11px;color:rgba(245,197,24,0.7);margin-right:8px;">+$${p.bonus.toLocaleString()}</span>`
+          : '';
+        const earningsColor = (p.earnings || 0) > 0 ? '#50c378' : 'rgba(255,255,255,0.3)';
+        const earningsLabel = (p.earnings || 0).toLocaleString();
+        const rowBorder = idx === 0 ? '' : 'border-top:1px solid rgba(255,255,255,0.04);';
+        return `<table cellpadding="0" cellspacing="0" border="0" width="100%" style="${rowBorder}"><tr>
+          <td style="padding:9px 18px;font-family:${FONT_STACK};font-size:14px;color:rgba(255,255,255,0.85);">${p.name || '—'}${limited}${bonusBadge}</td>
+          <td style="padding:9px 18px;text-align:right;white-space:nowrap;font-family:${FONT_STACK};">${bonusAmount}<span style="font-size:14px;font-weight:500;color:${earningsColor};">$${earningsLabel}</span></td>
+        </tr></table>`;
       }).join('');
+      lineupBody = playerRows;
     } else {
-      lineupRows = `<div style="padding:10px 14px;font-family:-apple-system,sans-serif;font-size:12px;color:rgba(255,255,255,0.4);font-style:italic;">No starters scored</div>`;
+      lineupBody = `<div style="padding:14px 18px;font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.4);font-style:italic;">No starters scored</div>`;
     }
 
-    return `<div style="margin-bottom:10px;background:${headerBg};border-radius:3px;${headerBorder}overflow:hidden;border:1px solid rgba(255,255,255,0.06);">
-      <div style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06);">
-        <span style="font-family:Georgia,serif;font-size:14px;color:${headerNameColor};font-weight:${isMe ? '700' : '600'};">
-          <span style="display:inline-block;width:22px;color:rgba(255,255,255,0.35);font-weight:400;">${rank}</span>${tr.team}
-        </span>
-        <span style="font-family:-apple-system,sans-serif;font-size:14px;font-weight:600;color:${totalColor};">$${totalLabel}</span>
-      </div>
-      ${lineupRows}
+    return `<div style="margin-bottom:14px;background:${cardBg};border:${cardBorder};${isMe ? 'border-left:4px solid #f5c518;' : ''}border-radius:4px;overflow:hidden;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-bottom:1px solid rgba(255,255,255,0.08);">
+        <tr>
+          <td style="padding:14px 18px;">
+            ${medalCircle}<span style="font-family:${FONT_STACK};font-size:17px;font-weight:${teamNameWeight};color:${teamNameColor};letter-spacing:0.2px;vertical-align:middle;">${tr.team}</span>
+          </td>
+          <td style="padding:14px 18px;text-align:right;white-space:nowrap;font-family:${FONT_STACK};font-size:17px;font-weight:600;color:${totalColor};letter-spacing:-0.3px;">$${totalLabel}</td>
+        </tr>
+      </table>
+      ${lineupBody}
     </div>`;
   }).join('');
 
-  return wrap(`<h2 style="font-family:Georgia,serif;font-size:18px;color:#c4a24e;margin:0 0 4px;letter-spacing:0.3px;">🏆 ${tournamentName}</h2><p style="font-family:-apple-system,sans-serif;font-size:11px;color:rgba(255,255,255,0.45);margin:0 0 18px;letter-spacing:1px;text-transform:uppercase;">Tournament Results</p>${teamBlocks}`);
+  return wrap(`<div style="font-family:${FONT_STACK};font-size:24px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.3px;">🏆 ${tournamentName}</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:2.5px;text-transform:uppercase;margin:0 0 22px;">Tournament Results</div>${teamBlocks}`);
 }
 
 function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
-  return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">⛳ Lineups Lock Tomorrow</h2><p style="font-size:13px;color:rgba(255,255,255,0.75);margin:0 0 8px;">${tournamentName}</p><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 20px;">Lineups lock <strong style="color:#ffffff;">Thursday at ${lockTime} ET</strong>. Make sure your lineup is set!</p><a href="https://sfglgolf.com" style="display:inline-block;padding:10px 24px;background:rgba(196,162,78,0.15);border:1px solid rgba(196,162,78,0.5);border-radius:4px;color:#c4a24e;text-decoration:none;font-weight:600;font-size:13px;">Set Lineup →</a>`);
+  return wrap(`<div style="font-family:${FONT_STACK};font-size:22px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.3px;">⛳ Lineups Lock Tomorrow</div><div style="font-family:${FONT_STACK};font-size:14px;color:rgba(255,255,255,0.78);margin:8px 0 12px;">${tournamentName}</div><div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.5);margin:0 0 24px;">Lineups lock <strong style="color:#ffffff;font-weight:600;">Thursday at ${lockTime} ET</strong>. Make sure your lineup is set.</div><a href="https://sfglgolf.com" style="display:inline-block;padding:11px 26px;background:rgba(245,197,24,0.12);border:1px solid rgba(245,197,24,0.5);border-radius:4px;color:#f5c518;text-decoration:none;font-family:${FONT_STACK};font-weight:600;font-size:13px;letter-spacing:0.5px;">Set Lineup →</a>`);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
