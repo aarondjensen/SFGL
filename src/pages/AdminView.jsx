@@ -454,11 +454,12 @@ export const AdminView = ({
           body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
         });
         if (resp.ok) {
-          dialog.showToast('📧 Results emails sent', 'success');
+          const body = await resp.json().catch(() => ({}));
+          dialog.showToast(`📧 Results emails sent (${body.emailsSent || 0})`, 'success');
         } else {
-          const errText = await resp.text().catch(() => 'unknown');
-          console.warn('Results email failed:', resp.status, errText);
-          dialog.showToast(`Results emails failed (${resp.status})`, 'error');
+          const body = await resp.json().catch(() => ({}));
+          console.warn('Results email failed:', resp.status, body);
+          dialog.showToast(`Results emails failed (${resp.status}) — ${body.message || 'unknown'}`, 'error');
         }
       } catch (emailErr) {
         console.warn('Results email failed:', emailErr);
@@ -564,6 +565,34 @@ export const AdminView = ({
       sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
       dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
+
+      // Wave 8: notify managers about the reprocessed results — same flow as
+      // handleManualEntry. Previously reprocess silently updated earnings
+      // without telling anyone, which made testing the email pipeline via
+      // reprocess impossible.
+      try {
+        const teamResultsForEmail = newTeams.filter(t => resultsData.teams[t.id]).map(t => ({
+          team: t.name,
+          totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
+        }));
+        const resp = await fetch('/api/cron?action=notify-results', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
+        });
+        if (resp.ok) {
+          const body = await resp.json().catch(() => ({}));
+          dialog.showToast(`📧 Results emails sent (${body.emailsSent || 0})`, 'success');
+        } else {
+          const body = await resp.json().catch(() => ({}));
+          console.warn('Reprocess email failed:', resp.status, body);
+          dialog.showToast(`Results emails failed (${resp.status}) — ${body.message || 'unknown'}`, 'error');
+        }
+      } catch (emailErr) {
+        console.warn('Reprocess email failed:', emailErr);
+        dialog.showToast('Results emails failed — see console', 'error');
+      }
+
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
       console.error('handleReprocess error:', err);
