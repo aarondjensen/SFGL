@@ -431,8 +431,14 @@ export const teamsApi = {
 // TOURNAMENTS API
 // ============================================================================
 export const tournamentsApi = {
+  // No orderBy: tournament docs use a `dates` string field (e.g. "Apr 6-12"),
+  // not a queryable `start_date`. Firestore's orderBy silently filters out
+  // docs that lack the field — using 'start_date' here would (and did)
+  // return zero results for fresh clients with no localStorage cache.
+  // The consumer sorts client-side anyway.
   async getAll() {
-    return _getAllOrdered('tournaments', 'start_date');
+    const snap = await getDocs(collection(db, 'tournaments'));
+    return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
   },
 
   async setAll(tournaments) {
