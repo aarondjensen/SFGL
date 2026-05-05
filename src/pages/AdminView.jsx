@@ -516,7 +516,16 @@ export const AdminView = ({
       const oldResults = tournament.results;
       let reversedTeams = teams.map(team => {
         const oldTeamResult = oldResults?.teams?.[team.id];
-        if (!oldTeamResult) return team;
+        const overrideLineup = manualEntry.teamLineups[team.id];
+        // Wave 8: handle teams that DIDN'T submit a lineup originally — if
+        // commish has now provided one via the editor, set team.lineup to it
+        // so processTournamentData picks them up. Otherwise return unchanged.
+        if (!oldTeamResult) {
+          if (overrideLineup && overrideLineup.length > 0) {
+            return { ...team, lineup: overrideLineup };
+          }
+          return team;
+        }
         // Reverse team earnings
         const earningsDelta = -(oldTeamResult.totalEarnings || 0);
         // Reverse per-player sfglEarnings and starts
@@ -538,7 +547,7 @@ export const AdminView = ({
           roster: newRoster,
           earnings: Math.max(0, (team.earnings || 0) + earningsDelta),
           segmentEarnings: Math.max(0, (team.segmentEarnings || 0) + earningsDelta),
-          lineup: (manualEntry.teamLineups[team.id] || oldResults.fullLineups?.[team.id] || []),
+          lineup: (overrideLineup || oldResults.fullLineups?.[team.id] || []),
         };
       });
 
@@ -1080,6 +1089,70 @@ export const AdminView = ({
                 <RoundLeaderSelect label="R2 Leader" round={2} leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
                 <RoundLeaderSelect label="R3 Leader" round={3} leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
               </div>
+
+              {/* Wave 8: per-team lineup editor — primarily for fixing teams that
+                  missed submitting a lineup. Also lets commish override an
+                  existing lineup retroactively. Collapsible to avoid clutter
+                  for the normal case. */}
+              <details style={{ marginBottom: 14, background: 'rgba(255,255,255,0.02)', border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
+                <summary style={{ ...theme.smallText, color: colors.textSecondary, cursor: 'pointer', userSelect: 'none', listStyle: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Team Lineups (override or add missing)</span>
+                  <span style={{ fontSize: fontSize.xs, color: colors.textMuted }}>▼</span>
+                </summary>
+                <div style={{ marginTop: 12 }}>
+                  {teams.map(t => {
+                    const currentLineup = manualEntry.teamLineups[t.id] || [];
+                    const rosterNames = (t.roster || []).map(p => p.name).filter(Boolean).sort();
+                    const slots = 5;
+                    const hasLineup = currentLineup.length > 0;
+                    return (
+                      <div key={t.id} style={{ marginBottom: 12, padding: '8px 0', borderTop: `1px solid ${colors.borderSubtle}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>{t.name}</span>
+                          {!hasLineup && (
+                            <span style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, color: 'rgba(220,150,50,0.85)', fontStyle: 'italic' }}>no lineup submitted</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
+                          {Array.from({ length: slots }).map((_, i) => {
+                            const value = currentLineup[i] || '';
+                            // Other slots' values for this team — to avoid duplicate selection
+                            const usedElsewhere = new Set(currentLineup.filter((_, idx) => idx !== i));
+                            return (
+                              <select
+                                key={i}
+                                value={value}
+                                onChange={e => {
+                                  const newName = e.target.value;
+                                  const updated = [...currentLineup];
+                                  // Pad if short
+                                  while (updated.length < slots) updated.push(undefined);
+                                  if (newName) updated[i] = newName;
+                                  else updated[i] = undefined;
+                                  // Compact (remove empties)
+                                  const cleaned = updated.filter(Boolean);
+                                  setManualEntry(prev => ({
+                                    ...prev,
+                                    teamLineups: { ...prev.teamLineups, [t.id]: cleaned },
+                                  }));
+                                }}
+                                style={{ ...S.select, marginBottom: 0, fontSize: fontSize.sm, padding: '4px 6px' }}
+                              >
+                                <option value="">— slot {i + 1} —</option>
+                                {rosterNames.map(name => (
+                                  <option key={name} value={name} disabled={usedElsewhere.has(name) && name !== value}>
+                                    {name}{usedElsewhere.has(name) && name !== value ? ' (used)' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
 
               {/* Process / Reprocess */}
               {!tournaments.find(t => t.name === selectedTourney)?.completed ? (
