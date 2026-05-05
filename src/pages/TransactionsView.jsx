@@ -869,14 +869,17 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     );
                   }
 
-                  // Non-mulligan: search UI for free agents / all players
-                  const pool = addTxType === 'waiver blocked'
-                    ? allPlayers.filter(validPlayer)
-                    : allPlayers.filter(p => {
-                        if (!validPlayer(p)) return false;
-                        const allRostered = new Set(teams.flatMap(t => t.roster.map(r => r.name)));
-                        return !allRostered.has(p.name);
-                      });
+                  // Non-mulligan: search UI for the IN player.
+                  // Wave 8: show ALL players (not just free agents). For each match
+                  // we annotate which team they're already rostered on, so the
+                  // commish can:
+                  //  - see they're picking a free agent (no annotation)
+                  //  - see when they'd be claiming someone already rostered
+                  //  - retroactively record a tx for a player already on the team
+                  //    (useful when the league action happened but no tx exists)
+                  const pool = allPlayers.filter(validPlayer);
+                  const rosterByPlayer = new Map();
+                  teams.forEach(t => t.roster.forEach(r => { rosterByPlayer.set(r.name, t.name); }));
                   const filtered = pool.filter(p =>
                     (p.name || p).toLowerCase().includes(addTxSearchIn.toLowerCase())
                   );
@@ -899,7 +902,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         <>
                           <input
                             type="text"
-                            placeholder="Search free agents…"
+                            placeholder="Search players…"
                             value={addTxSearchIn}
                             onChange={e => setAddTxSearchIn(e.target.value)}
                             style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4 }}
@@ -910,6 +913,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid ' + colors.borderSubtle, borderRadius: 3, marginBottom: 4 }}>
                               {filtered.slice(0, 20).map(p => {
                                 const name = p.name || p;
+                                const rosteredOn = rosterByPlayer.get(name);
                                 return (
                                   <div key={name}
                                     onClick={() => { setAddTxPlayerIn({ name }); setAddTxSearchIn(''); }}
@@ -928,6 +932,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                                       </span>
                                     )}
                                     <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>{name}</span>
+                                    {rosteredOn && (
+                                      <span style={{ marginLeft: 'auto', fontFamily: fonts.sans, fontSize: fontSize.sm, fontStyle: 'italic', color: colors.textGoldDim }}>
+                                        on {rosteredOn}
+                                      </span>
+                                    )}
                                   </div>
                                 );
                               })}
