@@ -444,14 +444,25 @@ export const AdminView = ({
           team: t.name,
           totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
         }));
-        await fetch('/api/notify-results', {
+        // Wave 8: corrected URL — was '/api/notify-results' which 404s silently
+        // because that endpoint doesn't exist. The notify-results action is
+        // routed inside /api/cron.js. Also added response.ok check so a 404
+        // surfaces instead of showing a fake success toast.
+        const resp = await fetch('/api/cron?action=notify-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
         });
-        dialog.showToast('📧 Results emails sent', 'success');
+        if (resp.ok) {
+          dialog.showToast('📧 Results emails sent', 'success');
+        } else {
+          const errText = await resp.text().catch(() => 'unknown');
+          console.warn('Results email failed:', resp.status, errText);
+          dialog.showToast(`Results emails failed (${resp.status})`, 'error');
+        }
       } catch (emailErr) {
         console.warn('Results email failed:', emailErr);
+        dialog.showToast('Results emails failed — see console', 'error');
       }
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {

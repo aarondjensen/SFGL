@@ -96,6 +96,36 @@ async function loadTeams() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// Wave 8: read tournaments from the dedicated `tournaments` collection.
+// Previously this was read from `sfgl_data/fantasy-golf-tournaments`, which
+// was deleted in a prior cleanup. The result was that every cron handler
+// silently saw zero tournaments and exited. This matches tournamentsApi.getAll
+// in src/api/firebase.js — fetch all docs, sort client-side by parsed dates.
+const _MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+function _parseTournamentDate(datesStr) {
+  if (!datesStr) return new Date(9999, 11, 31);
+  const m = String(datesStr).match(/^([A-Za-z]+)\s+(\d+)/);
+  if (!m) return new Date(9999, 11, 31);
+  const monthKey = m[1].slice(0, 3);
+  const month = _MONTHS[monthKey];
+  const day = parseInt(m[2], 10);
+  if (month === undefined || isNaN(day)) return new Date(9999, 11, 31);
+  return new Date(new Date().getFullYear(), month, day);
+}
+async function loadTournaments() {
+  const snap = await db.collection('tournaments').get();
+  const tournaments = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+  return tournaments.sort((a, b) => _parseTournamentDate(a.dates) - _parseTournamentDate(b.dates));
+}
+
+// Wave 8: read global player stats from sfgl_data using the correct doc name.
+// The cron previously read 'fantasy-golf-global-stats' but the actual doc
+// kept after the prior cleanup is 'fantasy-golf-global-player-stats'.
+async function loadGlobalPlayerStats() {
+  const snap = await db.collection('sfgl_data').doc('fantasy-golf-global-player-stats').get();
+  return snap.exists ? (snap.data().value || {}) : {};
+}
+
 function getEmailMap(settings, teams) {
   const emailMap = settings.managerEmails || {};
   const result = {};
@@ -253,8 +283,7 @@ async function handleLineupReminder(res) {
   if (metaSnap.exists && metaSnap.data().value === today) return res.json({ status: 'already_sent' });
 
   const settings = await loadSettings();
-  const sfglSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
-  const tournaments = sfglSnap.exists ? sfglSnap.data().value : [];
+  const tournaments = await loadTournaments();
   const activeTourney = tournaments?.find(t => t.playing && !t.completed);
   if (!activeTourney) return res.json({ status: 'no_tournament' });
 
@@ -315,29 +344,28 @@ function matchName(a, b) {
   return false;
 }
 
-async function handleProcessResults(res) {
+async function handleProcessResults(res, dryRun = false) {
   const et = getETNow();
-  // Only run on Monday
-  if (et.getDay() !== 1) return res.json({ status: 'not_monday' });
+  // Only run on Monday — but dry-run can be tested any day for safety verification
+  if (!dryRun && et.getDay() !== 1) return res.json({ status: 'not_monday' });
 
   const today = et.toLocaleDateString('en-US');
   const metaSnap = await db.collection('sfgl_data').doc('last_auto_results').get();
-  if (metaSnap.exists && metaSnap.data().value === today) {
+  if (!dryRun && metaSnap.exists && metaSnap.data().value === today) {
     return res.json({ status: 'already_run', message: 'Results already processed today' });
   }
 
-  // Load all data
+  // Load all data (Wave 8: tournaments from dedicated collection, stats from
+  // correctly-named sfgl_data doc — both were silently broken before)
   const settings = await loadSettings();
   const teams = await loadTeams();
-  const tournamentsSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
-  const tournaments = tournamentsSnap.exists ? tournamentsSnap.data().value : [];
-  const statsSnap = await db.collection('sfgl_data').doc('fantasy-golf-global-stats').get();
-  const globalStats = statsSnap.exists ? statsSnap.data().value : {};
+  const tournaments = await loadTournaments();
+  const globalStats = await loadGlobalPlayerStats();
 
   // Find active tournament
   const ti = tournaments.findIndex(t => t.playing && !t.completed);
   if (ti === -1) {
-    await db.collection('sfgl_data').doc('last_auto_results').set({ key: 'last_auto_results', value: today });
+    if (!dryRun) await db.collection('sfgl_data').doc('last_auto_results').set({ key: 'last_auto_results', value: today });
     return res.json({ status: 'no_active_tournament' });
   }
   const tournament = tournaments[ti];
@@ -468,10 +496,24 @@ async function handleProcessResults(res) {
   const nx = newTournaments.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
   if (nx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nx].playing = true; }
 
+  // Wave 8: dryRun support — return what WOULD be written, without committing.
+  // Hit the endpoint with ?action=processResults&dryRun=1 to preview.
+  if (dryRun) {
+    return res.json({
+      status: 'dry_run',
+      tournament: tournament.name,
+      wouldUpdate: {
+        teams: updatedTeams.map(t => ({ id: t.id, name: t.name, earnings: t.earnings, lineup: t.lineup })),
+        tournaments: newTournaments.filter(nt => nt.completed === true || nt.playing === true).map(nt => ({ name: nt.name, completed: !!nt.completed, playing: !!nt.playing })),
+        statsKeys: Object.keys(newStats).length,
+      },
+    });
+  }
+
   // Write everything to Firebase
   const batch = db.batch();
 
-  // Update teams
+  // Update teams (unchanged — already writes to dedicated `teams` collection)
   for (const team of updatedTeams) {
     batch.update(db.collection('teams').doc(team.id), {
       roster: team.roster,
@@ -481,9 +523,21 @@ async function handleProcessResults(res) {
     });
   }
 
-  // Update tournaments and stats in sfgl_data
-  batch.set(db.collection('sfgl_data').doc('fantasy-golf-tournaments'), { key: 'fantasy-golf-tournaments', value: newTournaments });
-  batch.set(db.collection('sfgl_data').doc('fantasy-golf-global-stats'), { key: 'fantasy-golf-global-stats', value: newStats });
+  // Wave 8: update tournaments in the DEDICATED `tournaments` collection.
+  // Previously this wrote to sfgl_data/fantasy-golf-tournaments which the app
+  // doesn't read from anymore. Each tournament gets its own doc, mirroring
+  // tournamentsApi.setAll() in src/api/firebase.js. Strip the `_id` we added
+  // when reading so we don't store it back.
+  for (const t of newTournaments) {
+    const docId = t._id || t.name || t.id;
+    const data = { ...t };
+    delete data._id;
+    batch.set(db.collection('tournaments').doc(docId), data);
+  }
+
+  // Wave 8: stats doc name corrected — was 'fantasy-golf-global-stats',
+  // actual doc kept after cleanup is 'fantasy-golf-global-player-stats'.
+  batch.set(db.collection('sfgl_data').doc('fantasy-golf-global-player-stats'), { key: 'fantasy-golf-global-player-stats', value: newStats });
   batch.set(db.collection('sfgl_data').doc('last_auto_results'), { key: 'last_auto_results', value: today });
 
   await batch.commit();
@@ -527,7 +581,7 @@ export default async function handler(req, res) {
     switch (action) {
       case 'waivers':           return await handleWaivers(res);
       case 'lineup-reminder':   return await handleLineupReminder(res);
-      case 'process-results':   return await handleProcessResults(res);
+      case 'process-results':   return await handleProcessResults(res, req.query.dryRun === '1' || req.query.dryRun === 'true');
       case 'notify-results':    return await handleNotifyResults(req, res);
       default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results' });
     }
