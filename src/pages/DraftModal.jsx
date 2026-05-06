@@ -382,8 +382,8 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
       // Commit keepers to rosters
       const updatedTeams = teams.map(team => {
         const tk = keepers[team.id]; const newRoster = [];
-        if (tk?.limited)   newRoster.push({ name: tk.limited.name,   stars: tk.limited.stars, starts: 0, limited: true,  unlimited: false, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0, headshot: '' });
-        if (tk?.unlimited) newRoster.push({ name: tk.unlimited.name, stars: 0,                starts: 0, limited: false, unlimited: true,  eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0, headshot: '' });
+        if (tk?.limited)   newRoster.push({ name: tk.limited.name,   stars: tk.limited.stars, starts: 0, limited: true,  unlimited: false, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0 });
+        if (tk?.unlimited) newRoster.push({ name: tk.unlimited.name, stars: 0,                starts: 0, limited: false, unlimited: true,  eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0 });
         return { ...team, roster: newRoster };
       });
       const keeperNames = allKeeperNames();
@@ -404,7 +404,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
 
     const updatedTeams = teams.map(team => {
       if (team.id !== currentTeam.id) return team;
-      return { ...team, roster: [...team.roster, { name: playerName, stars: isLimitedRound ? 1 : 0, starts: 0, limited: isLimitedRound, unlimited: false, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0, headshot: '' }] };
+      return { ...team, roster: [...team.roster, { name: playerName, stars: isLimitedRound ? 1 : 0, starts: 0, limited: isLimitedRound, unlimited: false, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0 }] };
     });
 
     // Record pick for undo

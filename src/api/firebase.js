@@ -15,7 +15,6 @@
  * Firestore collections → former Supabase tables:
  *   players            → /players/{name}
  *   app_metadata       → /app_metadata/{key}
- *   liv_roster         → /liv_roster/{name}
  *   teams              → /teams/{id}
  *   tournaments        → /tournaments/{name}
  *   transactions       → /transactions/{txId|autoId}
@@ -24,6 +23,8 @@
  *   draft_picks        → /draft_picks/{autoId}
  *   tournament_results → /tournament_results/{tournamentName}_{season}
  *   sfgl_data          → /sfgl_data/{key}
+ *
+ * DEPRECATED: /liv_roster/ — LIV status now lives on /players/{name}.is_liv.
  * ============================================================================
  */
 
@@ -42,7 +43,6 @@ import {
   orderBy,
   where,
   limit,
-  onSnapshot,
   writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -167,7 +167,9 @@ export const playersApi = {
     const seen = new Set();
     const results = [];
     const addDoc = d => {
-      const name = resolveAlias(d.id);
+      // d.id IS the canonical name (it's the doc ID we wrote it under).
+      // No alias resolution needed.
+      const name = d.id;
       if (!seen.has(name)) {
         seen.add(name);
         results.push({ name, worldRank: d.data().world_rank, espnId: d.data().espn_id, headshotUrl: d.data().headshot_url, isLiv: d.data().is_liv });
@@ -319,7 +321,7 @@ export const playersApi = {
 // ============================================================================
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
-import { NAME_ALIASES, NAME_ALIASES_REVERSE, resolveAlias, allNameVariants } from '../constants/nameAliases.js';
+import { resolveAlias } from '../constants/nameAliases.js';
 
 
 const PLAYER_CACHE_KEY = 'sfgl-player-cache';
@@ -365,42 +367,6 @@ export const playerStatsApi = {
 };
 
 // ============================================================================
-// LIV ROSTER API
-// ============================================================================
-export const livRosterApi = {
-  async getAll() {
-    const snap = await getDocs(query(collection(db, 'liv_roster'), orderBy('player_name')));
-    return snap.docs.map(d => d.data().player_name);
-  },
-
-  async setAll(players) {
-    await _deleteAll('liv_roster');
-    if (players.length === 0) return [];
-    const BATCH_SIZE = 499;
-    for (let i = 0; i < players.length; i += BATCH_SIZE) {
-      const batch = writeBatch(db);
-      players.slice(i, i + BATCH_SIZE).forEach(name => {
-        batch.set(doc(collection(db, 'liv_roster')), { player_name: name });
-      });
-      await batch.commit();
-    }
-    return players;
-  },
-
-  async addPlayer(playerName) {
-    await addDoc(collection(db, 'liv_roster'), { player_name: playerName });
-  },
-
-  async removePlayer(playerName) {
-    const q = query(collection(db, 'liv_roster'), where('player_name', '==', playerName));
-    const snap = await getDocs(q);
-    const batch = writeBatch(db);
-    snap.docs.forEach(d => batch.delete(d.ref));
-    await batch.commit();
-  },
-};
-
-// ============================================================================
 // TEAMS API
 // ============================================================================
 export const teamsApi = {
@@ -408,17 +374,6 @@ export const teamsApi = {
     const teams = await _getAllOrdered('teams', 'name');
     // Ensure every team has a lineup array — older documents may not have one
     return teams.map(t => ({ ...t, lineup: t.lineup || [] }));
-  },
-
-  // Wave 8: real-time subscription. Calls back with the full teams array on
-  // every change. Returns an unsubscribe function. Same data shape as getAll.
-  subscribe(callback, errorCallback) {
-    const q = query(collection(db, 'teams'), orderBy('name', 'asc'));
-    return onSnapshot(
-      q,
-      snap => callback(snap.docs.map(d => ({ _id: d.id, ...d.data(), lineup: d.data().lineup || [] }))),
-      err => { console.error('[teamsApi.subscribe]', err); errorCallback?.(err); },
-    );
   },
 
   async setAll(teams) {
@@ -442,44 +397,9 @@ export const teamsApi = {
 // ============================================================================
 // TOURNAMENTS API
 // ============================================================================
-// Parse a "Mon DD-DD" or "Mon DD-Mon DD" tournament dates string to a sortable
-// Date for client-side ordering. Returns far-future for unparseable strings so
-// docs without a usable `dates` field sort to the end. Uses the current year
-// since tournament docs don't store year separately.
-const _SWING_MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
-function _parseTournamentDate(datesStr) {
-  if (!datesStr) return new Date(9999, 11, 31);
-  const m = String(datesStr).match(/^([A-Za-z]+)\s+(\d+)/);
-  if (!m) return new Date(9999, 11, 31);
-  const month = _SWING_MONTHS[m[1].slice(0, 3)];
-  const day = parseInt(m[2], 10);
-  if (month === undefined || isNaN(day)) return new Date(9999, 11, 31);
-  return new Date(new Date().getFullYear(), month, day);
-}
-
 export const tournamentsApi = {
-  // Tournament docs use a `dates` string field (e.g. "Apr 6-12"), not a
-  // queryable `start_date`. Firestore's orderBy silently filters out docs
-  // that lack the indexed field, so we fetch unordered and sort client-side
-  // by parsing the `dates` string.
   async getAll() {
-    const snap = await getDocs(collection(db, 'tournaments'));
-    const tournaments = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-    return tournaments.sort((a, b) => _parseTournamentDate(a.dates) - _parseTournamentDate(b.dates));
-  },
-
-  // Wave 8: real-time subscription. Sorts client-side by parsing the `dates`
-  // string (Firestore can't orderBy on a non-queryable field). Same shape
-  // as getAll. Returns an unsubscribe function.
-  subscribe(callback, errorCallback) {
-    return onSnapshot(
-      collection(db, 'tournaments'),
-      snap => {
-        const tournaments = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-        callback(tournaments.sort((a, b) => _parseTournamentDate(a.dates) - _parseTournamentDate(b.dates)));
-      },
-      err => { console.error('[tournamentsApi.subscribe]', err); errorCallback?.(err); },
-    );
+    return _getAllOrdered('tournaments', 'start_date');
   },
 
   async setAll(tournaments) {
@@ -504,16 +424,6 @@ export const tournamentsApi = {
 // TRANSACTIONS API
 // ============================================================================
 export const transactionsApi = {
-  // Wave 8: fetch a single transaction by id. Used by TransactionsView's
-  // delete handler to refresh status from Firestore before deciding undo
-  // vs simple-delete — guards against stale-cache mistakes when the cron
-  // has processed a transaction since the last UI refresh.
-  async getById(txId) {
-    if (!txId) return null;
-    const snap = await getDoc(doc(db, 'transactions', txId));
-    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
-  },
-
   async getAll() {
     const snap = await getDocs(
       query(collection(db, 'transactions'), orderBy('timestamp', 'desc'))
@@ -538,38 +448,6 @@ export const transactionsApi = {
       }
     });
     return deduped;
-  },
-
-  // Wave 8: real-time subscription. Mirrors getAll exactly: timestamp desc
-  // ordering and the same dedup pass. Returns an unsubscribe function. This
-  // is the listener that powers AdminView's "Process Waivers" auto-update
-  // when the cron processes claims server-side.
-  subscribe(callback, errorCallback) {
-    const q = query(collection(db, 'transactions'), orderBy('timestamp', 'desc'));
-    return onSnapshot(
-      q,
-      snap => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const seen = new Set();
-        const deduped = [];
-        data.forEach(tx => {
-          if (tx.txId) {
-            if (!seen.has('txId:' + tx.txId)) {
-              seen.add('txId:' + tx.txId);
-              deduped.push(tx);
-            }
-          } else {
-            const key = [tx.team, tx.type, tx.player, tx.droppedPlayer, tx.tournamentIndex, tx.status, tx.segment].join('|');
-            if (!seen.has(key)) {
-              seen.add(key);
-              deduped.push(tx);
-            }
-          }
-        });
-        callback(deduped);
-      },
-      err => { console.error('[transactionsApi.subscribe]', err); errorCallback?.(err); },
-    );
   },
 
   async add(transaction) {
@@ -599,27 +477,15 @@ export const transactionsApi = {
                        'priority','timestamp','processedDate','failReason','txId',
                        'tournamentIndex','tournament','date'];
 
-    // Wave 8: compare every editable field, not just status/failReason/priority.
-    // The previous narrow check meant merges (which rename `player` /
-    // `droppedPlayer`) and the edit-transaction modal (which can change `fee`,
-    // `tournament`, etc.) silently failed to persist — local state updated,
-    // sync saw "no important field changed", and the old values stayed in
-    // Firestore. Excluding `timestamp` and `txId` because they're set once at
-    // create time and shouldn't be re-written (timestamps would also fail a
-    // strict !== comparison if Firestore returns a Timestamp object vs the
-    // local Date/string).
-    const dirtyCheckFields = validCols.filter(c => c !== 'timestamp' && c !== 'txId');
-    const isDirty = (local, remote) => dirtyCheckFields.some(c => local[c] !== remote[c]);
-
     localTransactions.forEach(tx => {
       if (tx.txId && remoteByTxId.has(tx.txId)) {
         const r = remoteByTxId.get(tx.txId);
-        if (isDirty(tx, r)) {
+        if (tx.status !== r.status || tx.failReason !== r.failReason || tx.priority !== r.priority) {
           toUpdate.push({ ...tx, id: r.id });
         }
       } else if (tx.id && remoteById.has(tx.id)) {
         const r = remoteById.get(tx.id);
-        if (isDirty(tx, r)) {
+        if (tx.status !== r.status || tx.failReason !== r.failReason || tx.priority !== r.priority) {
           toUpdate.push(tx);
         }
       } else if (!tx.id) {
@@ -697,22 +563,6 @@ export const settingsApi = {
     const settings = {};
     snap.docs.forEach(d => { settings[d.data().key] = d.data().value; });
     return settings;
-  },
-
-  // Wave 8: real-time subscription. Same shape as getAll — an object keyed
-  // by setting name. Powers live updates when the commish changes settings
-  // from another tab/device, or when the waiverDay/Hour/Minute values are
-  // changed and need to flow through to the cron + UI.
-  subscribe(callback, errorCallback) {
-    return onSnapshot(
-      collection(db, 'league_settings'),
-      snap => {
-        const settings = {};
-        snap.docs.forEach(d => { settings[d.data().key] = d.data().value; });
-        callback(settings);
-      },
-      err => { console.error('[settingsApi.subscribe]', err); errorCallback?.(err); },
-    );
   },
 };
 

@@ -4,6 +4,7 @@ import { getSegmentByDate, normalizePlayerName } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi, playerRankingsApi, teamsApi } from '../api/firebase';
+import { seedAliasesToFirestore } from '../constants/nameAliases';
 import { theme, colors, fonts } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
 
@@ -229,12 +230,6 @@ export const AdminView = ({
   const [livSearch, setLivSearch] = useState('');
   const [livSaving, setLivSaving] = useState({});
   const [pgaFetching, setPgaFetching] = useState(false);
-  // Wave 8: Roster Override — direct-edit any team's roster. Used to repair
-  // corruption (e.g. duplicates from undo bugs, orphaned roster effects from
-  // deleted-while-pending transactions). Bypasses transaction logic.
-  const [rosterOvOpen, setRosterOvOpen] = useState(false);
-  const [rosterOvTeamId, setRosterOvTeamId] = useState('');
-  const [rosterOvAddSearch, setRosterOvAddSearch] = useState('');
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -538,7 +533,7 @@ export const AdminView = ({
     if (t.name !== w.team) return t;
     let r = [...t.roster];
     if (w.droppedPlayer) r = r.filter(p => p.name !== w.droppedPlayer);
-    if (!r.some(p => p.name === w.player)) r.push({ name: w.player, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' });
+    if (!r.some(p => p.name === w.player)) r.push({ name: w.player, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0 });
     return { ...t, roster: r };
   };
   const handleProcessSingle = async (w) => {
@@ -586,51 +581,41 @@ export const AdminView = ({
       dialog.showToast(winner.team + ' adds ' + winner.player + (winner.droppedPlayer ? ' / drops ' + winner.droppedPlayer : ''), 'success');
     }
   };
-  // Wave 8: handleProcessAll now delegates to the server (cron handler) so we
-  // get the per-team drop tracking fix, batched atomic writes, AND emails.
-  // The client-side version below was diverging from the server's logic and
-  // never sent emails. With ?force=true, the cron bypasses its deadline +
-  // idempotency checks and processes whatever's pending now. Real-time
-  // listeners propagate the resulting Firestore writes back into the UI.
   const handleProcessAll = async (pending) => {
     if (!pending.length) return;
-    if (!await dialog.showConfirm(
-      'Process All Waivers',
-      `Process ${pending.length} pending claim${pending.length !== 1 ? 's' : ''}?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims. Result emails will be sent to all managers.`,
-      { confirmText: 'Process All' },
-    )) return;
-
-    dialog.showToast('Processing waivers…', 'info');
-    try {
-      const resp = await fetch('/api/cron?action=waivers&force=true');
-      const data = await resp.json().catch(() => ({}));
-
-      if (!resp.ok) {
-        dialog.showToast(`Error: ${data.error || `HTTP ${resp.status}`}`, 'error');
-        return;
-      }
-
-      if (data.status === 'no_pending') {
-        dialog.showToast('No pending waivers found on server', 'info');
-        return;
-      }
-
-      if (data.status === 'processed') {
-        const p = data.processed || 0;
-        const f = data.failed || 0;
-        const e = data.emailsSent || 0;
-        dialog.showToast(
-          `✓ Processed ${p}${f ? ` · ${f} failed` : ''} · ${e} email${e !== 1 ? 's' : ''} sent`,
-          p > 0 ? 'success' : 'error',
-        );
-        return;
-      }
-
-      // Unexpected status — show whatever message came back
-      dialog.showToast(data.message || data.status || 'Done', 'success');
-    } catch (e) {
-      dialog.showToast(`Network error: ${e.message}`, 'error');
+    if (!await dialog.showConfirm('Process All Waivers', 'Process ' + pending.length + ' pending claim' + (pending.length !== 1 ? 's' : '') + '?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims.', { confirmText: 'Process All' })) return;
+    const em = {}; teams.forEach(t => { em[t.name] = t.earnings || 0; });
+    const pm = {}; [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
+    let nextLastPlace = teams.length; // counter for pushing winners to back of priority
+    const byTeam = {}; pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
+    Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
+    const allR = new Set(); teams.forEach(t => buildRoster(t).forEach(n => allR.add(n)));
+    const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
+    const tx2 = [...transactions]; let p = 0, f = 0, more = true;
+    while (more) {
+      more = false;
+      const round = []; Object.entries(byTeam).forEach(([tn, claims]) => { const top = claims.find(c => !done.has(c._idx) && !failed.has(c._idx)); if (top) round.push({ tn, claim: top, o: pm[tn] ?? 999 }); });
+      if (!round.length) break;
+      const byP = {}; round.forEach(rc => { if (!byP[rc.claim.player]) byP[rc.claim.player] = []; byP[rc.claim.player].push(rc); });
+      Object.entries(byP).forEach(([player, cs]) => {
+        cs.sort((a, b) => a.o - b.o); const w = cs[0];
+        if (allR.has(player)) { cs.forEach(c => { failed.add(c.claim._idx); tx2[c.claim._idx] = { ...tx2[c.claim._idx], status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() }; f++; }); more = true; return; }
+        if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allR.has(w.claim.droppedPlayer))) { failed.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }; f++; more = true; return; }
+        if (w.claim.droppedPlayer) { allR.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
+        allR.add(player); done.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() }; applied.push(w.claim); p++;
+        pm[w.tn] = nextLastPlace++; // winner moves to back of priority line
+        const winEarn = '$' + (em[w.tn] || 0).toLocaleString();
+        cs.slice(1).forEach(l => {
+          const loseEarn = '$' + (em[l.tn] || 0).toLocaleString();
+          failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: `Lost tiebreaker to ${w.tn} (${winEarn} vs ${loseEarn})`, processedDate: new Date().toLocaleDateString() }; f++;
+        }); more = true;
+      });
     }
+    let t2 = [...teams]; applied.forEach(w => { t2 = t2.map(t => applyWaiver(t, w)); });
+    setTransactions(tx2); updateTeams(t2);
+    await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
+    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
+    dialog.showToast('Processed ' + p + (f ? ' · ' + f + ' failed' : ''), p > 0 ? 'success' : 'error');
   };
 
   // ── Manager Login ────────────────────────────────────────────────────────
@@ -906,6 +891,33 @@ export const AdminView = ({
     } catch (err) {
       setLivSyncStatus('error');
       setLivSyncSummary(err.message || 'LIV sync failed');
+    }
+  };
+
+  // ── Static alias sync ─────────────────────────────────────────────────────
+  // One-shot migration: pushes the historical entries from
+  // src/constants/nameAliases.js into Firestore as dynamic aliases on each
+  // canonical player doc. Idempotent — safe to re-run. Once Aaron has run
+  // this and confirmed all entries migrated, the static map becomes a pure
+  // fallback (still used by upsertMany when the dynamic map misses).
+  const [aliasSyncStatus, setAliasSyncStatus] = useState(null);
+  const [aliasSyncSummary, setAliasSyncSummary] = useState('');
+  const handleSeedAliases = async () => {
+    setAliasSyncStatus('fetching');
+    setAliasSyncSummary('');
+    try {
+      const r = await seedAliasesToFirestore(playersApi);
+      const parts = [
+        r.added          > 0 ? `${r.added} added` : '',
+        r.alreadyPresent > 0 ? `${r.alreadyPresent} already present` : '',
+        r.skipped        > 0 ? `${r.skipped} skipped` : '',
+      ].filter(Boolean).join(' · ') || 'no entries to process';
+      const detail = r.errors.length ? '\n• ' + r.errors.join('\n• ') : '';
+      setAliasSyncStatus(r.errors.length && r.added === 0 && r.alreadyPresent === 0 ? 'error' : 'done');
+      setAliasSyncSummary(`✓ Static aliases synced · ${parts}${detail}`);
+    } catch (err) {
+      setAliasSyncStatus('error');
+      setAliasSyncSummary(err.message || 'Alias sync failed');
     }
   };
 
@@ -1215,6 +1227,31 @@ export const AdminView = ({
         )}
       </div>
 
+      {/* ── 5. Static Alias Sync (one-time migration) ── */}
+      <div style={S.section}>
+        <div style={S.title}>🔗 Static Aliases — Sync to Firestore</div>
+        <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
+          Copies the historical aliases hard-coded in <code>nameAliases.js</code> into Firestore as dynamic aliases on each canonical player doc. Run once after deploying. Idempotent — safe to re-run. New aliases going forward should use the Merge Players feature instead.
+        </div>
+        <button
+          onClick={handleSeedAliases}
+          disabled={aliasSyncStatus === 'fetching'}
+          style={{ ...S.btn, ...(aliasSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+        >
+          {aliasSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync Static Aliases'}
+        </button>
+        {aliasSyncSummary && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans, whiteSpace: 'pre-wrap',
+            background: aliasSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${aliasSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+            color: aliasSyncStatus === 'error' ? colors.danger : colors.success,
+          }}>
+            {aliasSyncSummary}
+          </div>
+        )}
+      </div>
+
       {/* ── 6. LIV Golf Ineligible Players ── */}
       <div style={S.section}>
         <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
@@ -1509,190 +1546,6 @@ export const AdminView = ({
         >
           💾 Save Emails
         </button>
-      </div>
-
-      {/* ── Roster Override ── direct-edit a team's roster (commish only,
-          for repairing corruption — bypasses all transaction logic) */}
-      <div style={S.section}>
-        <button onClick={() => { setRosterOvOpen(o => !o); setRosterOvTeamId(''); setRosterOvAddSearch(''); }}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          <div style={S.title}>🛠️ Roster Override</div>
-          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{rosterOvOpen ? '▲ close' : '▼ edit'}</span>
-        </button>
-        {rosterOvOpen && (() => {
-          const ovTeam = teams.find(t => t.id === rosterOvTeamId || t._id === rosterOvTeamId);
-          const ovRoster = ovTeam?.roster || [];
-          const dupNames = new Set();
-          const seenNames = new Set();
-          ovRoster.forEach(p => { if (seenNames.has(p.name)) dupNames.add(p.name); else seenNames.add(p.name); });
-          const allRosteredNames = new Set();
-          teams.forEach(t => (t.roster || []).forEach(p => allRosteredNames.add(p.name)));
-          const searchTrim = rosterOvAddSearch.trim().toLowerCase();
-          const filtered = searchTrim.length >= 2
-            ? (allPlayers || []).filter(p => p.name.toLowerCase().includes(searchTrim)).slice(0, 12)
-            : [];
-
-          // Remove a single roster slot by index. Keep duplicates removable
-          // individually (the whole point of this tool).
-          const removeAt = async (idx) => {
-            const p = ovRoster[idx];
-            if (!p) return;
-            const ok = await dialog.showConfirm(
-              'Remove from roster',
-              `Remove ${p.name} from ${ovTeam.name}?\n\nThis is a direct roster override and does NOT create a transaction. Use only for repairs.`,
-              { type: 'danger', confirmText: 'Remove' },
-            );
-            if (!ok) return;
-            const newRoster = [...ovRoster];
-            newRoster.splice(idx, 1);
-            const newTeams = teams.map(t => (t.id === ovTeam.id || t._id === ovTeam._id) ? { ...t, roster: newRoster } : t);
-            updateTeams(newTeams);
-            dialog.showToast(`${p.name} removed from ${ovTeam.name}`, 'success');
-          };
-
-          // Add a player. Refuse if already on this roster (no duplicates
-          // when adding — duplicates can only happen by removing some other
-          // way, never by an add). Warn but allow if on another team.
-          const addPlayer = async (player) => {
-            if (ovRoster.some(p => p.name === player.name)) {
-              dialog.showToast(`${player.name} is already on ${ovTeam.name}`, 'error');
-              return;
-            }
-            const onOtherTeam = teams.find(t => t.id !== ovTeam.id && (t.roster || []).some(p => p.name === player.name));
-            const confirmMsg = onOtherTeam
-              ? `${player.name} is currently on ${onOtherTeam.name}'s roster. Add to ${ovTeam.name} ANYWAY?\n\nThis will leave the player on both rosters — fix the other team afterward.`
-              : `Add ${player.name} to ${ovTeam.name}?\n\nThis is a direct roster override and does NOT create a transaction or charge a fee.`;
-            const ok = await dialog.showConfirm(
-              onOtherTeam ? '⚠️ Player on another team' : 'Add to roster',
-              confirmMsg,
-              { type: onOtherTeam ? 'danger' : 'info', confirmText: 'Add' },
-            );
-            if (!ok) return;
-            const newPlayer = {
-              name: player.name,
-              limited: player.limited || false,
-              unlimited: player.unlimited || false,
-              stars: player.stars || 0,
-              starts: player.starts || 0,
-              eventsPlayed: player.eventsPlayed || 0,
-              cutsMade: player.cutsMade || 0,
-              pgaTourEarnings: player.pgaTourEarnings || 0,
-              sfglEarnings: player.sfglEarnings || 0,
-              headshot: '',
-            };
-            const newRoster = [...ovRoster, newPlayer];
-            const newTeams = teams.map(t => (t.id === ovTeam.id || t._id === ovTeam._id) ? { ...t, roster: newRoster } : t);
-            updateTeams(newTeams);
-            setRosterOvAddSearch('');
-            dialog.showToast(`${player.name} added to ${ovTeam.name}`, 'success');
-          };
-
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 4 }}>
-              <div style={{ ...theme.smallText, color: 'rgba(220,140,80,0.95)', fontSize: 11, lineHeight: 1.45 }}>
-                ⚠️ Direct roster edit — bypasses transactions and fees. Use only to repair corruption (duplicates, missing players, orphaned changes from deleted transactions).
-              </div>
-
-              <select value={rosterOvTeamId} onChange={e => { setRosterOvTeamId(e.target.value); setRosterOvAddSearch(''); }} style={S.select}>
-                <option value="">— select team to edit —</option>
-                {teams.map(t => (
-                  <option key={t.id || t._id} value={t.id || t._id}>
-                    {t.name} ({(t.roster || []).length} players)
-                  </option>
-                ))}
-              </select>
-
-              {ovTeam && (
-                <>
-                  {/* Roster size warning */}
-                  {ovRoster.length !== 13 && (
-                    <div style={{ fontFamily: fonts.sans, fontSize: 11, color: ovRoster.length > 13 ? 'rgba(220,80,80,0.95)' : 'rgba(220,170,60,0.95)', padding: '6px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: 3 }}>
-                      Roster size: {ovRoster.length} {ovRoster.length > 13 ? `(${ovRoster.length - 13} OVER limit)` : `(${13 - ovRoster.length} UNDER 13)`}
-                    </div>
-                  )}
-                  {dupNames.size > 0 && (
-                    <div style={{ fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,80,80,0.95)', padding: '6px 10px', background: 'rgba(220,80,80,0.08)', border: '1px solid rgba(220,80,80,0.25)', borderRadius: 3 }}>
-                      Duplicates detected: {Array.from(dupNames).join(', ')}
-                    </div>
-                  )}
-
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textMuted, marginTop: 4 }}>
-                    Current roster
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, background: 'rgba(0,0,0,0.18)', borderRadius: 3, padding: '4px 0' }}>
-                    {ovRoster.length === 0 && (
-                      <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, padding: '8px 12px', fontStyle: 'italic' }}>
-                        Roster is empty.
-                      </div>
-                    )}
-                    {ovRoster.map((p, idx) => {
-                      const isDup = dupNames.has(p.name);
-                      return (
-                        <div key={`${p.name}-${idx}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', borderBottom: idx < ovRoster.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                          <span style={{ fontFamily: fonts.sans, fontSize: 12, color: isDup ? 'rgba(220,140,140,0.95)' : colors.textPrimary }}>
-                            {p.name}{isDup ? ' (dup)' : ''}
-                          </span>
-                          <button
-                            onClick={() => removeAt(idx)}
-                            title={`Remove ${p.name}`}
-                            style={{ background: 'none', border: 'none', color: 'rgba(220,80,80,0.7)', cursor: 'pointer', fontSize: 14, padding: '2px 6px', borderRadius: 2 }}
-                            onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,100,100,1)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(220,80,80,0.7)'; }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textMuted, marginTop: 8 }}>
-                    Add player
-                  </div>
-                  <input
-                    type="text"
-                    value={rosterOvAddSearch}
-                    onChange={e => setRosterOvAddSearch(e.target.value)}
-                    placeholder="Search by name (min 2 chars)…"
-                    style={{ ...theme.input, marginBottom: 0, fontSize: 13 }}
-                  />
-                  {filtered.length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, background: 'rgba(0,0,0,0.18)', borderRadius: 3, padding: '4px 0', maxHeight: 280, overflowY: 'auto' }}>
-                      {filtered.map(p => {
-                        const onAnotherTeam = allRosteredNames.has(p.name) && !ovRoster.some(r => r.name === p.name);
-                        const onThisTeam = ovRoster.some(r => r.name === p.name);
-                        return (
-                          <button
-                            key={p.name}
-                            onClick={() => addPlayer(p)}
-                            disabled={onThisTeam}
-                            style={{
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                              padding: '6px 10px', background: 'none', border: 'none',
-                              fontFamily: fonts.sans, fontSize: 12, textAlign: 'left',
-                              color: onThisTeam ? colors.textMuted : colors.textPrimary,
-                              cursor: onThisTeam ? 'not-allowed' : 'pointer',
-                              opacity: onThisTeam ? 0.5 : 1,
-                            }}
-                          >
-                            <span>+ {p.name}</span>
-                            {onThisTeam && <span style={{ fontSize: 10, color: colors.textMuted }}>already on this team</span>}
-                            {onAnotherTeam && !onThisTeam && <span style={{ fontSize: 10, color: 'rgba(220,140,80,0.9)' }}>on another team</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {searchTrim.length >= 2 && filtered.length === 0 && (
-                    <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, padding: '6px 10px', fontStyle: 'italic' }}>
-                      No matches.
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          );
-        })()}
       </div>
 
       <div style={S.section}>
