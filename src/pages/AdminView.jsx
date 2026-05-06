@@ -586,41 +586,51 @@ export const AdminView = ({
       dialog.showToast(winner.team + ' adds ' + winner.player + (winner.droppedPlayer ? ' / drops ' + winner.droppedPlayer : ''), 'success');
     }
   };
+  // Wave 8: handleProcessAll now delegates to the server (cron handler) so we
+  // get the per-team drop tracking fix, batched atomic writes, AND emails.
+  // The client-side version below was diverging from the server's logic and
+  // never sent emails. With ?force=true, the cron bypasses its deadline +
+  // idempotency checks and processes whatever's pending now. Real-time
+  // listeners propagate the resulting Firestore writes back into the UI.
   const handleProcessAll = async (pending) => {
     if (!pending.length) return;
-    if (!await dialog.showConfirm('Process All Waivers', 'Process ' + pending.length + ' pending claim' + (pending.length !== 1 ? 's' : '') + '?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims.', { confirmText: 'Process All' })) return;
-    const em = {}; teams.forEach(t => { em[t.name] = t.earnings || 0; });
-    const pm = {}; [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
-    let nextLastPlace = teams.length; // counter for pushing winners to back of priority
-    const byTeam = {}; pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
-    Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
-    const allR = new Set(); teams.forEach(t => buildRoster(t).forEach(n => allR.add(n)));
-    const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
-    const tx2 = [...transactions]; let p = 0, f = 0, more = true;
-    while (more) {
-      more = false;
-      const round = []; Object.entries(byTeam).forEach(([tn, claims]) => { const top = claims.find(c => !done.has(c._idx) && !failed.has(c._idx)); if (top) round.push({ tn, claim: top, o: pm[tn] ?? 999 }); });
-      if (!round.length) break;
-      const byP = {}; round.forEach(rc => { if (!byP[rc.claim.player]) byP[rc.claim.player] = []; byP[rc.claim.player].push(rc); });
-      Object.entries(byP).forEach(([player, cs]) => {
-        cs.sort((a, b) => a.o - b.o); const w = cs[0];
-        if (allR.has(player)) { cs.forEach(c => { failed.add(c.claim._idx); tx2[c.claim._idx] = { ...tx2[c.claim._idx], status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() }; f++; }); more = true; return; }
-        if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allR.has(w.claim.droppedPlayer))) { failed.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }; f++; more = true; return; }
-        if (w.claim.droppedPlayer) { allR.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
-        allR.add(player); done.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() }; applied.push(w.claim); p++;
-        pm[w.tn] = nextLastPlace++; // winner moves to back of priority line
-        const winEarn = '$' + (em[w.tn] || 0).toLocaleString();
-        cs.slice(1).forEach(l => {
-          const loseEarn = '$' + (em[l.tn] || 0).toLocaleString();
-          failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: `Lost tiebreaker to ${w.tn} (${winEarn} vs ${loseEarn})`, processedDate: new Date().toLocaleDateString() }; f++;
-        }); more = true;
-      });
+    if (!await dialog.showConfirm(
+      'Process All Waivers',
+      `Process ${pending.length} pending claim${pending.length !== 1 ? 's' : ''}?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims. Result emails will be sent to all managers.`,
+      { confirmText: 'Process All' },
+    )) return;
+
+    dialog.showToast('Processing waivers…', 'info');
+    try {
+      const resp = await fetch('/api/cron?action=waivers&force=true');
+      const data = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        dialog.showToast(`Error: ${data.error || `HTTP ${resp.status}`}`, 'error');
+        return;
+      }
+
+      if (data.status === 'no_pending') {
+        dialog.showToast('No pending waivers found on server', 'info');
+        return;
+      }
+
+      if (data.status === 'processed') {
+        const p = data.processed || 0;
+        const f = data.failed || 0;
+        const e = data.emailsSent || 0;
+        dialog.showToast(
+          `✓ Processed ${p}${f ? ` · ${f} failed` : ''} · ${e} email${e !== 1 ? 's' : ''} sent`,
+          p > 0 ? 'success' : 'error',
+        );
+        return;
+      }
+
+      // Unexpected status — show whatever message came back
+      dialog.showToast(data.message || data.status || 'Done', 'success');
+    } catch (e) {
+      dialog.showToast(`Network error: ${e.message}`, 'error');
     }
-    let t2 = [...teams]; applied.forEach(w => { t2 = t2.map(t => applyWaiver(t, w)); });
-    setTransactions(tx2); updateTeams(t2);
-    await storage.set(STORAGE_KEYS.TRANSACTIONS, tx2); await storage.set(STORAGE_KEYS.TEAMS, t2);
-    sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {}); sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
-    dialog.showToast('Processed ' + p + (f ? ' · ' + f + ' failed' : ''), p > 0 ? 'success' : 'error');
   };
 
   // ── Manager Login ────────────────────────────────────────────────────────
