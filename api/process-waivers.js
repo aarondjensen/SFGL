@@ -1,9 +1,11 @@
 // api/process-waivers.js — auto waiver processing
-// Cron: "5 0 * * 3" = 12:05am UTC Wednesday = 8:05pm EDT Tuesday
+// Cron: fires daily; the function reads waiver-deadline settings from Firestore
+// and processes only when current time is past the configured deadline AND
+// today's run hasn't already happened (idempotent).
 // Manual: POST /api/process-waivers with header x-sfgl-secret: YOUR_SECRET
 
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, collection, getDocs, doc, writeBatch } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, writeBatch } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey:            process.env.VITE_FIREBASE_API_KEY,
@@ -19,9 +21,54 @@ function getDb() {
   return getFirestore();
 }
 
-function isPastWaiverDeadline() {
+// Wave 8: read AdminView's configurable waiver-deadline settings from
+// Firestore (league_settings collection, one doc per setting). Returns the
+// configured day-of-week (0–6, Sun=0), hour (0–23), and minute (0–59), with
+// safe defaults if any are missing.
+async function loadWaiverDeadline(db) {
+  const snap = await getDocs(collection(db, 'league_settings'));
+  const s = {};
+  snap.docs.forEach(d => { s[d.id] = d.data().value ?? d.data(); });
+  return {
+    waiverDay:    typeof s.waiverDay    === 'number' ? s.waiverDay    : 2,   // Tuesday
+    waiverHour:   typeof s.waiverHour   === 'number' ? s.waiverHour   : 20,  // 8 PM
+    waiverMinute: typeof s.waiverMinute === 'number' ? s.waiverMinute : 0,
+  };
+}
+
+// Wave 8: determine whether the function should process waivers right now.
+// Logic: find the most recent occurrence of the configured day+time in ET.
+// If the current time is past that occurrence AND the last recorded auto-run
+// is older than that occurrence, we should run. Idempotency uses a Firestore
+// doc that stores the timestamp of the last successful run.
+async function shouldProcessWaivers(db) {
   const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  return et.getDay() === 2 && et.getHours() >= 20;
+  const settings = await loadWaiverDeadline(db);
+
+  // Compute the most recent deadline occurrence in ET.
+  const dl = new Date(et);
+  dl.setHours(settings.waiverHour, settings.waiverMinute, 0, 0);
+  const dayDiff = (dl.getDay() - settings.waiverDay + 7) % 7;
+  if (dayDiff === 0) {
+    // Today matches the configured day. If today's deadline is in the future,
+    // back up to last week's occurrence.
+    if (et < dl) dl.setDate(dl.getDate() - 7);
+  } else {
+    dl.setDate(dl.getDate() - dayDiff);
+  }
+
+  if (et < dl) return { run: false, reason: 'before deadline', nextDeadline: dl.toISOString() };
+
+  // Idempotency: have we already processed for this deadline?
+  const metaSnap = await getDoc(doc(db, 'sfgl_data', 'last_auto_waiver'));
+  if (metaSnap.exists()) {
+    const lastVal = metaSnap.data().value;
+    const lastMs = typeof lastVal === 'string' ? Date.parse(lastVal) : Number(lastVal);
+    if (Number.isFinite(lastMs) && lastMs >= dl.getTime()) {
+      return { run: false, reason: 'already processed for this deadline', deadline: dl.toISOString() };
+    }
+  }
+  return { run: true, deadline: dl };
 }
 
 function buildRoster(team, transactions) {
@@ -156,13 +203,33 @@ export default async function handler(req, res) {
   const isManual = req.method === 'POST' && req.headers['x-sfgl-secret'] === process.env.SFGL_CRON_SECRET;
 
   if (!isCron && !isManual) return res.status(401).json({ error: 'Unauthorized' });
-  if (isCron && !isPastWaiverDeadline()) return res.status(200).json({ message: 'Not yet deadline' });
 
   try {
     const db = getDb();
+
+    // Wave 8: cron invocations validate against AdminView's configurable
+    // settings (waiverDay/Hour/Minute) and a Firestore-backed idempotency
+    // doc. Manual invocations skip these gates so the commish can force a
+    // run from AdminView if needed.
+    if (isCron) {
+      const check = await shouldProcessWaivers(db);
+      if (!check.run) return res.status(200).json({ status: 'skipped', reason: check.reason, ...(check.nextDeadline && { nextDeadline: check.nextDeadline }) });
+    }
+
     const result = await processWaivers(db);
-    return res.status(200).json(result);
+
+    // Wave 8: stamp the idempotency doc on success so we don't process again
+    // until the next deadline occurrence (or until the doc is cleared).
+    if (isCron) {
+      await setDoc(doc(db, 'sfgl_data', 'last_auto_waiver'), {
+        key: 'last_auto_waiver',
+        value: new Date().toISOString(),
+      });
+    }
+
+    return res.status(200).json({ status: 'ok', ...result });
   } catch (err) {
+    console.error('[process-waivers] error:', err);
     return res.status(500).json({ error: err.message });
   }
 }
