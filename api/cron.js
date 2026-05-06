@@ -285,24 +285,26 @@ function getEmailMap(settings, teams) {
 
 // ── Action: process waivers ─────────────────────────────────────────────────
 
-async function handleWaivers(res) {
+async function handleWaivers(res, force = false) {
   const settings = await loadSettings();
 
-  // Check if past cutoff
-  const et = getETNow();
-  const day = et.getDay();
-  const timeVal = et.getHours() * 60 + et.getMinutes();
-  const wDay = settings?.waiverDay ?? 2;
-  const wHour = settings?.waiverHour ?? 20;
-  const wMin = settings?.waiverMinute ?? 0;
-  if (!(day === wDay && timeVal >= (wHour * 60 + wMin))) {
-    return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time' });
+  // Check if past cutoff (skipped when force=true — manual commish trigger)
+  if (!force) {
+    const et = getETNow();
+    const day = et.getDay();
+    const timeVal = et.getHours() * 60 + et.getMinutes();
+    const wDay = settings?.waiverDay ?? 2;
+    const wHour = settings?.waiverHour ?? 20;
+    const wMin = settings?.waiverMinute ?? 0;
+    if (!(day === wDay && timeVal >= (wHour * 60 + wMin))) {
+      return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time' });
+    }
   }
 
-  // Already run today?
+  // Already run today? (skipped when force=true — allows re-running after edits)
   const metaSnap = await db.collection('sfgl_data').doc('last_auto_waiver').get();
   const today = getETNow().toLocaleDateString('en-US');
-  if (metaSnap.exists && metaSnap.data().value === today) {
+  if (!force && metaSnap.exists && metaSnap.data().value === today) {
     return res.json({ status: 'already_run', message: 'Waivers already processed today' });
   }
 
@@ -776,15 +778,23 @@ export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
   const action = req.query.action || '';
+  const isForce = req.query.force === 'true' || req.query.force === '1';
 
-  // Cron actions require auth; notify-results is called from the client (no auth needed)
-  if (action !== 'notify-results' && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
+  // Cron actions require Bearer auth; client-callable actions are exempted:
+  //   - notify-results (manual results email send, called from AdminView)
+  //   - waivers&force=true (manual waiver process, called from AdminView)
+  // Risk surface: an unauthenticated caller could trigger waiver processing
+  // outside the normal Tuesday 8pm window. They cannot inject pending claims
+  // (manager auth required for that). Worst case: pending claims get
+  // processed slightly earlier than scheduled. Acceptable.
+  const isClientCallable = action === 'notify-results' || (action === 'waivers' && isForce);
+  if (!isClientCallable && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {
     switch (action) {
-      case 'waivers':           return await handleWaivers(res);
+      case 'waivers':           return await handleWaivers(res, isForce);
       case 'lineup-reminder':   return await handleLineupReminder(res);
       case 'process-results':   return await handleProcessResults(res, req.query.dryRun === '1' || req.query.dryRun === 'true');
       case 'notify-results':    return await handleNotifyResults(req, res);
