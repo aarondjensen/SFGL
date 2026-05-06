@@ -221,8 +221,39 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam)
   return wrap(`<div style="font-family:${FONT_STACK};font-size:24px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.3px;">🏆 ${tournamentName}</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:2.5px;text-transform:uppercase;margin:0 0 22px;">Tournament Results</div>${teamBlocks}`);
 }
 
-function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
-  return wrap(`<div style="font-family:${FONT_STACK};font-size:22px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.3px;">⛳ Lineups Lock Tomorrow</div><div style="font-family:${FONT_STACK};font-size:14px;color:rgba(255,255,255,0.78);margin:8px 0 12px;">${tournamentName}</div><div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.5);margin:0 0 24px;">Lineups lock <strong style="color:#ffffff;font-weight:600;">Thursday at ${lockTime} ET</strong>. Make sure your lineup is set.</div><a href="https://sfglgolf.com" style="display:inline-block;padding:11px 26px;background:rgba(245,197,24,0.12);border:1px solid rgba(245,197,24,0.5);border-radius:4px;color:#f5c518;text-decoration:none;font-family:${FONT_STACK};font-weight:600;font-size:13px;letter-spacing:0.5px;">Set Lineup →</a>`);
+function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam, lineup) {
+  const hasLineup = Array.isArray(lineup) && lineup.length > 0;
+
+  const titleHtml = hasLineup
+    ? `<div style="font-family:${FONT_STACK};font-size:22px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.3px;">⛳ Lineups Lock Tonight</div>`
+    : `<div style="font-family:${FONT_STACK};font-size:22px;font-weight:500;color:#cc5555;margin:0 0 4px;letter-spacing:0.3px;">🚨 No Lineup Set</div>`;
+
+  const tournamentLine = `<div style="font-family:${FONT_STACK};font-size:14px;color:rgba(255,255,255,0.78);margin:8px 0 4px;">${tournamentName}</div>`;
+
+  const lockLine = `<div style="font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 18px;">Locks <strong style="color:#ffffff;font-weight:600;">Thursday at ${lockTime} ET</strong></div>`;
+
+  let bodyHtml;
+  if (hasLineup) {
+    const rows = lineup.map((p, i) => {
+      const name = (typeof p === 'string' ? p : p.name) || '—';
+      return `<div style="font-family:${FONT_STACK};font-size:13px;color:#ffffff;padding:7px 0;border-top:${i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none'};display:flex;align-items:baseline;"><span style="display:inline-block;width:22px;color:rgba(255,255,255,0.4);font-size:11px;font-weight:600;">${i + 1}.</span><span>${name}</span></div>`;
+    }).join('');
+    bodyHtml = `
+      <div style="background:rgba(245,197,24,0.06);border:1px solid rgba(245,197,24,0.22);border-radius:4px;padding:14px 16px;margin:0 0 20px;">
+        <div style="font-family:${FONT_STACK};font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#f5c518;margin:0 0 10px;">Your Starting Lineup (${lineup.length})</div>
+        ${rows}
+      </div>
+      <div style="font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.55);margin:0 0 20px;line-height:1.55;">You can still make changes until lock. Tap below to review or swap players.</div>`;
+  } else {
+    // No-lineup variant: minimal — title + lock line above already convey
+    // urgency, so no extra body content. CTA does the work.
+    bodyHtml = '';
+  }
+
+  const ctaText = hasLineup ? 'Edit Lineup →' : 'Set Lineup →';
+  const ctaHtml = `<a href="https://sfglgolf.com" style="display:inline-block;padding:11px 26px;background:rgba(245,197,24,0.12);border:1px solid rgba(245,197,24,0.5);border-radius:4px;color:#f5c518;text-decoration:none;font-family:${FONT_STACK};font-weight:600;font-size:13px;letter-spacing:0.5px;">${ctaText}</a>`;
+
+  return wrap(`${titleHtml}${tournamentLine}${lockLine}${bodyHtml}${ctaHtml}`);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -480,18 +511,37 @@ async function handleLineupReminder(res) {
   const managerEmails = getEmailMap(settings, teams);
   const results = [];
 
+  // Wave 8: send to ALL managers, tailored to whether they have a lineup.
+  // Previously this skipped managers with lineups — Aaron wants everyone to
+  // get a Wednesday 2pm email so they have a chance to review/swap before
+  // Thursday's lock, not just the laggards.
   for (const team of teams) {
     const email = managerEmails[team.name];
-    if (!email) continue;
-    if (team.lineup && team.lineup.length > 0) { results.push({ team: team.name, skipped: true }); continue; }
+    if (!email) { results.push({ team: team.name, skipped: 'no_email' }); continue; }
+
+    const lineup = team.lineup || [];
+    const hasLineup = lineup.length > 0;
+    const subject = hasLineup
+      ? `⛳ Your lineup — ${activeTourney.name}`
+      : `🚨 No lineup set — ${activeTourney.name}`;
+
     try {
-      await sendEmail(email, `⛳ Lineups lock today — ${activeTourney.name}`, buildLineupReminderEmail(activeTourney.name, lockTime, team.name));
-      results.push({ team: team.name, success: true });
-    } catch (err) { results.push({ team: team.name, error: err.message }); }
+      await sendEmail(email, subject, buildLineupReminderEmail(activeTourney.name, lockTime, team.name, lineup));
+      results.push({ team: team.name, success: true, hasLineup });
+    } catch (err) {
+      results.push({ team: team.name, error: err.message });
+    }
   }
 
   await db.collection('sfgl_data').doc('last_lineup_reminder').set({ key: 'last_lineup_reminder', value: today });
-  return res.json({ status: 'sent', tournament: activeTourney.name, results });
+  return res.json({
+    status: 'sent',
+    tournament: activeTourney.name,
+    sent: results.filter(r => r.success).length,
+    withLineup: results.filter(r => r.success && r.hasLineup).length,
+    withoutLineup: results.filter(r => r.success && !r.hasLineup).length,
+    results,
+  });
 }
 
 // ── Action: notify results ──────────────────────────────────────────────────
