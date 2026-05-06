@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useDialog } from './DialogContext';
-import { normalizePlayerName, getSegmentForTournament } from '../utils';
+import { getSegmentByDate, normalizePlayerName } from '../utils';
 import { storage } from '../api';
 import { DraftModal } from './DraftModal';
-import { managerAuthApi, sfglDataApi, playersApi, playerRankingsApi, teamsApi } from '../api/firebase';
-import { theme, colors, fonts, fontSize, getSwingColor } from '../theme.js';
-import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER, SWINGS } from '../constants';
+import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi, playerRankingsApi, teamsApi } from '../api/firebase';
+import { theme, colors, fonts } from '../theme.js';
+import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
 
 
 // ── Tournament processing helpers ────────────────────────────────────────────
@@ -137,126 +137,6 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
   return { newTeams, newStats, resultsData };
 };
 
-// ── Admin group: collapsible top-level container ────────────────────────────
-// Wave 2: AdminView regrouped from 12 flat sections into 4 collapsible groups.
-// Open/closed state persists per-group in localStorage so the commish doesn't
-// re-collapse on every visit.
-//
-// IMPORTANT: children are always rendered (display: none when closed) so any
-// internal state (settingsDraft, emailDraft, MergePlayersPanel search inputs)
-// survives a collapse without being thrown away.
-const AdminGroup = ({ id, title, icon, badge, defaultOpen = false, children }) => {
-  const storageKey = `sfgl-admin-group-${id}`;
-  const [open, setOpen] = useState(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      return saved === null ? defaultOpen : saved === 'true';
-    } catch { return defaultOpen; }
-  });
-  const toggle = () => {
-    setOpen(o => {
-      const next = !o;
-      try { localStorage.setItem(storageKey, String(next)); } catch {}
-      return next;
-    });
-  };
-
-  // Wave 8: rebuilt for clearer open/closed visual states + smooth animation.
-  // Closed = subtle white tint, muted text, no accent.
-  // Open   = stronger blue tint, 3px blue left-border, brighter text,
-  //          rotated chevron, content slides in via grid-row animation.
-  // The grid-template-rows trick gives a smooth height transition without
-  // having to know content height in advance — works in modern browsers.
-  return (
-    <div style={{ marginBottom: 10 }}>
-      <button
-        onClick={toggle}
-        aria-expanded={open}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          width: '100%',
-          padding: '14px 18px',
-          paddingLeft: open ? 15 : 18,             // compensate for thicker left border when open
-          minHeight: 56,
-          background: open ? 'rgba(100,160,255,0.11)' : 'rgba(255,255,255,0.025)',
-          borderTop:    `1px solid ${open ? 'rgba(100,160,255,0.45)' : colors.border}`,
-          borderRight:  `1px solid ${open ? 'rgba(100,160,255,0.45)' : colors.border}`,
-          borderBottom: open ? '1px solid transparent' : `1px solid ${colors.border}`,
-          borderLeft:   open ? '4px solid rgba(100,160,255,0.85)' : `1px solid ${colors.border}`,
-          borderRadius: open ? '4px 4px 0 0' : 4,  // square bottom when open so content joins seamlessly
-          cursor: 'pointer',
-          transition: 'background 0.2s ease, border-color 0.2s ease, padding-left 0.2s ease, border-radius 0.2s ease',
-          textAlign: 'left',
-        }}
-        onMouseEnter={e => { if (!open) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'rgba(255,255,255,0.025)'; }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
-          <span style={{ fontSize: fontSize.lg, lineHeight: 1, flexShrink: 0, opacity: open ? 1 : 0.65, transition: 'opacity 0.2s ease' }}>{icon}</span>
-          <span style={{
-            fontFamily: fonts.sans,
-            fontSize: fontSize.base, fontWeight: 700, letterSpacing: '1.5px',
-            textTransform: 'uppercase',
-            color: open ? colors.sectionHeaderBlue : colors.textSecondary,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            transition: 'color 0.2s ease',
-          }}>{title}</span>
-          {badge}
-        </div>
-        <span style={{
-          display: 'inline-block',
-          fontSize: fontSize.lg,
-          lineHeight: 1,
-          color: open ? colors.sectionHeaderBlue : colors.textMuted,
-          flexShrink: 0,
-          transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-          transition: 'transform 0.25s ease, color 0.2s ease',
-        }}>▾</span>
-      </button>
-
-      {/* Animated content using grid-template-rows: 0fr → 1fr animates height
-          smoothly without needing to measure the content first. The inner
-          element handles overflow + opacity fade. */}
-      <div style={{
-        display: 'grid',
-        gridTemplateRows: open ? '1fr' : '0fr',
-        transition: 'grid-template-rows 0.28s ease',
-      }}>
-        <div style={{
-          overflow: 'hidden',
-          minHeight: 0,
-          opacity: open ? 1 : 0,
-          transition: 'opacity 0.22s ease',
-        }}>
-          <div style={{
-            // Visual continuation of the header: matching side+bottom border
-            // creates a unified card. Background stays transparent so the
-            // inner section cards don't compete with a tinted wrapper.
-            padding: open ? '12px 12px 0' : 0,
-            background: 'transparent',
-            borderLeft:   '4px solid rgba(100,160,255,0.85)',
-            borderRight:  '1px solid rgba(100,160,255,0.45)',
-            borderBottom: '1px solid rgba(100,160,255,0.45)',
-            borderRadius: '0 0 4px 4px',
-          }}>
-            {children}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── Tiny "unsaved changes" pulse dot ────────────────────────────────────────
-const UnsavedDot = () => (
-  <span title="Unsaved changes" style={{
-    width: 8, height: 8, borderRadius: '50%',
-    background: 'rgba(220,170,60,0.85)',
-    boxShadow: '0 0 8px rgba(220,170,60,0.5)',
-    flexShrink: 0,
-  }} />
-);
-
 const MergePlayersPanel = ({
   allPlayers, teams, transactions,
   dialog, updateTeams, setTransactions,
@@ -275,9 +155,9 @@ const MergePlayersPanel = ({
   );
   const f1 = search1.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(search1.toLowerCase())).slice(0, 8) : [];
   const f2 = search2.length >= 2 ? allNames.filter(n => n.toLowerCase().includes(search2.toLowerCase())).slice(0, 8) : [];
-  const iStyle = (sel) => ({ ...theme.input, width: '100%', fontSize: fontSize.md, border: sel ? `1px solid ${colors.textGold}` : undefined });
+  const iStyle = (sel) => ({ ...theme.input, width: '100%', fontSize: 13, border: sel ? `1px solid ${colors.textGold}` : undefined });
   const dStyle = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#0f1d35', border: `1px solid ${colors.border}`, borderRadius: 3, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' };
-  const oStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textPrimary, cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` };
+  const oStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` };
 
   const doMerge = async () => {
     if (!player1 || !player2 || player1 === player2) { setError('Select two different players'); return; }
@@ -305,7 +185,7 @@ const MergePlayersPanel = ({
           </div>
           {player1&&<button onClick={()=>{setPlayer1(null);setSearch1('');}} style={{...theme.btnSecondary,marginTop:4,padding:'2px 8px',fontSize:10}}>✕ Clear</button>}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20, color: colors.textMuted, fontSize: fontSize.lg }}>→</div>
+        <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20, color: colors.textMuted, fontSize: 16 }}>→</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <label style={S.lbl}>...to this name</label>
           <div style={{ position: 'relative' }}>
@@ -349,6 +229,12 @@ export const AdminView = ({
   const [livSearch, setLivSearch] = useState('');
   const [livSaving, setLivSaving] = useState({});
   const [pgaFetching, setPgaFetching] = useState(false);
+  // Wave 8: Roster Override — direct-edit any team's roster. Used to repair
+  // corruption (e.g. duplicates from undo bugs, orphaned roster effects from
+  // deleted-while-pending transactions). Bypasses transaction logic.
+  const [rosterOvOpen, setRosterOvOpen] = useState(false);
+  const [rosterOvTeamId, setRosterOvTeamId] = useState('');
+  const [rosterOvAddSearch, setRosterOvAddSearch] = useState('');
   const dialog = useDialog();
 
   React.useEffect(() => {
@@ -358,7 +244,7 @@ export const AdminView = ({
 
   const S = {
     section: { background: colors.cardBg, border: `1px solid ${colors.border}`, borderRadius: 4, padding: '16px 18px', marginBottom: 12 },
-    title: { fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700, letterSpacing: '1.8px', textTransform: 'uppercase', color: colors.sectionHeaderBlue, marginBottom: 12 },
+    title: { fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '1.8px', textTransform: 'uppercase', color: colors.sectionHeaderBlue, marginBottom: 12 },
     btn: { ...theme.btnPrimary, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
     btnSec: { ...theme.btnSecondary, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
     btnDgr: { ...theme.btnDanger, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
@@ -398,15 +284,8 @@ export const AdminView = ({
         .join('\n');
 
       // Only keep leaders who were actually in an SFGL starting lineup —
-      // same rule as the manual dropdown. Wave 8: when reprocessing a completed
-      // tournament, team.lineup has been cleared (set to []), so deriving from
-      // current state gives an empty set and filters out every leader. Pull
-      // from the tournament's stored fullLineups snapshot instead, falling
-      // back to current lineups for first-time processing.
-      const storedFullLineups = t.results?.fullLineups;
-      const startedPlayers = storedFullLineups && Object.keys(storedFullLineups).length > 0
-        ? new Set(Object.values(storedFullLineups).flat())
-        : new Set(teams.flatMap(t2 => t2.lineup || []));
+      // same rule as the manual dropdown. Filter against current team lineups.
+      const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
       const filterToStarted = (names) => {
         if (!names?.length) return [''];
         const filtered = names.filter(n => startedPlayers.has(n));
@@ -479,35 +358,18 @@ export const AdminView = ({
       dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
       // Send results email to all managers
       try {
-        // Wave 8: send richer payload — include ALL teams (even those that
-        // didn't submit a lineup), and per-team lineup with player earnings
-        // and round-leader info so the email can render details.
-        const teamResultsForEmail = newTeams.map(t => ({
+        const teamResultsForEmail = newTeams.filter(t => resultsData.teams[t.id]).map(t => ({
           team: t.name,
-          totalEarnings: resultsData.teams[t.id]?.totalEarnings || 0,
-          players: resultsData.teams[t.id]?.players || [],
-          submitted: !!resultsData.teams[t.id],
+          totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
         }));
-        // Wave 8: corrected URL — was '/api/notify-results' which 404s silently
-        // because that endpoint doesn't exist. The notify-results action is
-        // routed inside /api/cron.js. Also added response.ok check so a 404
-        // surfaces instead of showing a fake success toast.
-        const resp = await fetch('/api/cron?action=notify-results', {
+        await fetch('/api/notify-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
         });
-        if (resp.ok) {
-          const body = await resp.json().catch(() => ({}));
-          dialog.showToast(`📧 Results emails sent (${body.emailsSent || 0})`, 'success');
-        } else {
-          const body = await resp.json().catch(() => ({}));
-          console.warn('Results email failed:', resp.status, body);
-          dialog.showToast(`Results emails failed (${resp.status}) — ${body.message || 'unknown'}`, 'error');
-        }
+        dialog.showToast('📧 Results emails sent', 'success');
       } catch (emailErr) {
         console.warn('Results email failed:', emailErr);
-        dialog.showToast('Results emails failed — see console', 'error');
       }
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
@@ -548,16 +410,7 @@ export const AdminView = ({
       const oldResults = tournament.results;
       let reversedTeams = teams.map(team => {
         const oldTeamResult = oldResults?.teams?.[team.id];
-        const overrideLineup = manualEntry.teamLineups[team.id];
-        // Wave 8: handle teams that DIDN'T submit a lineup originally — if
-        // commish has now provided one via the editor, set team.lineup to it
-        // so processTournamentData picks them up. Otherwise return unchanged.
-        if (!oldTeamResult) {
-          if (overrideLineup && overrideLineup.length > 0) {
-            return { ...team, lineup: overrideLineup };
-          }
-          return team;
-        }
+        if (!oldTeamResult) return team;
         // Reverse team earnings
         const earningsDelta = -(oldTeamResult.totalEarnings || 0);
         // Reverse per-player sfglEarnings and starts
@@ -579,7 +432,7 @@ export const AdminView = ({
           roster: newRoster,
           earnings: Math.max(0, (team.earnings || 0) + earningsDelta),
           segmentEarnings: Math.max(0, (team.segmentEarnings || 0) + earningsDelta),
-          lineup: (overrideLineup || oldResults.fullLineups?.[team.id] || []),
+          lineup: (manualEntry.teamLineups[team.id] || oldResults.fullLineups?.[team.id] || []),
         };
       });
 
@@ -618,36 +471,6 @@ export const AdminView = ({
       sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
       dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
-
-      // Wave 8: notify managers about the reprocessed results — same flow as
-      // handleManualEntry. Previously reprocess silently updated earnings
-      // without telling anyone, which made testing the email pipeline via
-      // reprocess impossible.
-      try {
-        const teamResultsForEmail = newTeams.map(t => ({
-          team: t.name,
-          totalEarnings: resultsData.teams[t.id]?.totalEarnings || 0,
-          players: resultsData.teams[t.id]?.players || [],
-          submitted: !!resultsData.teams[t.id],
-        }));
-        const resp = await fetch('/api/cron?action=notify-results', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
-        });
-        if (resp.ok) {
-          const body = await resp.json().catch(() => ({}));
-          dialog.showToast(`📧 Results emails sent (${body.emailsSent || 0})`, 'success');
-        } else {
-          const body = await resp.json().catch(() => ({}));
-          console.warn('Reprocess email failed:', resp.status, body);
-          dialog.showToast(`Results emails failed (${resp.status}) — ${body.message || 'unknown'}`, 'error');
-        }
-      } catch (emailErr) {
-        console.warn('Reprocess email failed:', emailErr);
-        dialog.showToast('Results emails failed — see console', 'error');
-      }
-
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
       console.error('handleReprocess error:', err);
@@ -688,16 +511,16 @@ export const AdminView = ({
         {leaders.map((leader, idx) => (
           <div key={idx} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
             <select value={leader} onChange={e => { const n = [...leaders]; n[idx] = e.target.value; onChange(n); }}
-              style={{ ...theme.select, flex: 1, marginBottom: 0, fontSize: fontSize.base, padding: '7px 8px' }}>
+              style={{ ...theme.select, flex: 1, marginBottom: 0, fontSize: 12, padding: '7px 8px' }}>
               <option value="">(none)</option>
               {players.map(p => <option key={p.name + p.team} value={p.name}>{p.name} — {p.team}</option>)}
             </select>
             {idx > 0 && <button onClick={() => onChange(leaders.filter((_, i) => i !== idx))}
-              style={{ background: 'none', border: `1px solid ${colors.dangerBorder}`, color: colors.danger, borderRadius: 2, padding: '4px 7px', cursor: 'pointer', fontSize: fontSize.base }}>✕</button>}
+              style={{ background: 'none', border: `1px solid ${colors.dangerBorder}`, color: colors.danger, borderRadius: 2, padding: '4px 7px', cursor: 'pointer', fontSize: 11 }}>✕</button>}
           </div>
         ))}
         <button onClick={() => onChange([...leaders, ''])}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: fontSize.base, color: colors.textGoldDim, padding: 0 }}>+ co-leader</button>
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: colors.textGoldDim, padding: 0 }}>+ co-leader</button>
       </div>
     );
   };
@@ -810,18 +633,35 @@ export const AdminView = ({
   };
 
   // ── Award Swing Winner ──────────────────────────────────────────────────
-  // Wave 7: SWINGS now imported from ../constants (single source of truth).
-  // Local copy removed.
+  const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
 
-  // Wave 7: getTournamentSegment removed — now uses canonical getSegmentForTournament
-  // imported from ../utils (single source of truth for the 4-swing mapping).
+  // Get the swing a tournament belongs to, using t.segment if set,
+  // otherwise infer from the tournament's own dates field (not today's date)
+  const getTournamentSegment = (t) => {
+    if (t.segment) return t.segment;
+    // Parse month from dates: "Feb 9-15" → month=2
+    if (t.dates) {
+      const m = t.dates.match(/^([A-Za-z]+)/);
+      if (m) {
+        const months = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+        const mo = months[m[1]];
+        if (mo) {
+          if (mo >= 1 && mo <= 3) return 'West Coast Swing';
+          if (mo >= 4 && mo <= 6) return 'Spring Swing';
+          if (mo >= 7 && mo <= 9) return 'Summer Swing';
+          return 'Fall Finish';
+        }
+      }
+    }
+    return null;
+  };
 
   const handleSwingWinner = async () => {
     if (!swingAwardSeg) return;
 
     // Sum all transaction fees for this swing using tournamentIndex range,
     // matching the same logic as TransactionsView's fee counter.
-    const swingTournaments = tournaments.filter(t => t.completed && getSegmentForTournament(t) === swingAwardSeg && t.results?.teams);
+    const swingTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
     if (!swingTournaments.length) {
       dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
       return;
@@ -851,12 +691,10 @@ export const AdminView = ({
       });
     });
 
-    // Wave 5: gate debug logs to dev mode only — production console stays quiet.
-    if (import.meta.env?.DEV) {
-      console.log('[SwingWinner] Swing:', swingAwardSeg);
-      console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
-      console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
-    }
+    // Debug: log what we found so issues are visible in console
+    console.log('[SwingWinner] Swing:', swingAwardSeg);
+    console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
+    console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
 
     const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
     if (!winnerEntry) { dialog.showToast('Could not determine winner', 'error'); return; }
@@ -1064,731 +902,796 @@ export const AdminView = ({
   const pending = transactions.map((tx, i) => ({ ...tx, _idx: i })).filter(tx => tx.status === 'pending' && tx.type === 'waiver');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: 40 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 40 }}>
 
-      {/* ─────────────── 1. TOURNAMENT OPERATIONS ─────────────── */}
-      <AdminGroup
-        id="tournament-ops"
-        title="Tournament Operations"
-        icon="🏆"
-        defaultOpen
-        badge={pending.length > 0
-          ? <span style={{ ...theme.badge, ...theme.badgeWarning }}>{pending.length} pending</span>
-          : null
-        }
-      >
-        <div style={S.section}>
-          <div style={S.title}>🏆 Tournament Results</div>
-          <label style={S.lbl}>Tournament</label>
-          <select value={selectedTourney} onChange={e => {
-            const name = e.target.value;
-            setSelectedTourney(name);
-            const t = tournaments.find(t => t.name === name);
-            if (t?.completed && t.results) {
-              const lines = t.results.earningsMap
-                ? Object.entries(t.results.earningsMap).sort((a,b) => b[1]-a[1]).map(([p,a]) => `${p}, ${a}`).join('\n')
-                : '';
-              const teamLineups = {};
-              if (t.results.fullLineups) Object.entries(t.results.fullLineups).forEach(([id, lu]) => { teamLineups[id] = [...lu]; });
-              setManualEntry(prev => ({
-                ...prev, playerEarnings: lines, teamLineups,
-                round1Leaders: t.results.roundLeaders?.round1?.length ? t.results.roundLeaders.round1 : [''],
-                round2Leaders: t.results.roundLeaders?.round2?.length ? t.results.roundLeaders.round2 : [''],
-                round3Leaders: t.results.roundLeaders?.round3?.length ? t.results.roundLeaders.round3 : [''],
-              }));
-            } else {
-              setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
-            }
-          }} style={S.select}>
-            <option value="">Choose tournament...</option>
-            {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
-          </select>
+      {/* ── 1. Tournament Results ── */}
+      <div style={S.section}>
+        <div style={S.title}>🏆 Tournament Results</div>
+        <label style={S.lbl}>Tournament</label>
+        <select value={selectedTourney} onChange={e => {
+          const name = e.target.value;
+          setSelectedTourney(name);
+          const t = tournaments.find(t => t.name === name);
+          if (t?.completed && t.results) {
+            const lines = t.results.earningsMap
+              ? Object.entries(t.results.earningsMap).sort((a,b) => b[1]-a[1]).map(([p,a]) => `${p}, ${a}`).join('\n')
+              : '';
+            const teamLineups = {};
+            if (t.results.fullLineups) Object.entries(t.results.fullLineups).forEach(([id, lu]) => { teamLineups[id] = [...lu]; });
+            setManualEntry(prev => ({
+              ...prev, playerEarnings: lines, teamLineups,
+              round1Leaders: t.results.roundLeaders?.round1?.length ? t.results.roundLeaders.round1 : [''],
+              round2Leaders: t.results.roundLeaders?.round2?.length ? t.results.roundLeaders.round2 : [''],
+              round3Leaders: t.results.roundLeaders?.round3?.length ? t.results.roundLeaders.round3 : [''],
+            }));
+          } else {
+            setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
+          }
+        }} style={S.select}>
+          <option value="">Choose tournament...</option>
+          {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
+        </select>
 
-          {/* Fetch button — auto-fills earnings + round leaders */}
-          <button onClick={handleFetchPGAResults} disabled={pgaFetching || !selectedTourney}
-            style={{ ...S.btn, marginBottom: 14, ...(!selectedTourney || pgaFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}>
-            {pgaFetching ? '⏳ Fetching…' : selectedTourney ? `⛳ Get ${selectedTourney} Results` : '⛳ Get Tournament Results'}
-          </button>
+        {/* Fetch button — auto-fills earnings + round leaders */}
+        <button onClick={handleFetchPGAResults} disabled={pgaFetching || !selectedTourney}
+          style={{ ...S.btn, marginBottom: 14, ...(!selectedTourney || pgaFetching ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}>
+          {pgaFetching ? '⏳ Fetching…' : selectedTourney ? `⛳ Get ${selectedTourney} Results` : '⛳ Get Tournament Results'}
+        </button>
 
-          {/* Round leader overrides — auto-filled by fetch, commish can correct */}
-          {manualEntry.playerEarnings.trim() && (
-            <>
-              <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 8 }}>
-                Round leaders auto-detected — override if incorrect:
+        {/* Round leader overrides — auto-filled by fetch, commish can correct */}
+        {manualEntry.playerEarnings.trim() && (
+          <>
+            <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 8 }}>
+              Round leaders auto-detected — override if incorrect:
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <RoundLeaderSelect label="R1 Leader" round={1} leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
+              <RoundLeaderSelect label="R2 Leader" round={2} leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
+              <RoundLeaderSelect label="R3 Leader" round={3} leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
+            </div>
+
+            {/* Process / Reprocess */}
+            {!tournaments.find(t => t.name === selectedTourney)?.completed ? (
+              <button onClick={handleManualEntry} disabled={!selectedTourney}
+                style={{ ...S.btn, ...disabledBtn(!selectedTourney) }}>
+                ✅ Process Results
+              </button>
+            ) : (
+              <button onClick={handleReprocess} disabled={!selectedTourney}
+                style={{ ...S.btn, background: 'rgba(220,150,50,0.12)', border: '1px solid rgba(220,150,50,0.4)', color: 'rgba(220,180,80,0.9)', ...disabledBtn(!selectedTourney) }}>
+                ✏️ Reprocess Tournament
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── 2. Process Waivers ── */}
+      <div style={S.section}>
+        {/* Waiver processing reminder — uses configurable schedule */}
+        {(() => {
+          const now = new Date();
+          const etOffset = -4;
+          const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
+          const etMin  = now.getUTCMinutes();
+          const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay();
+          const wd = waiverDay ?? 2;
+          const wh = waiverHour ?? 20;
+          const wm = waiverMinute ?? 0;
+          const isReadyToProcess = etDay === wd && (etHour * 60 + etMin) >= (wh * 60 + wm) && pending.length > 0;
+          if (!isReadyToProcess) return null;
+          return (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 10, borderRadius: 3,
+              background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.45)',
+            }}>
+              <span style={{ fontSize: 14 }}>⏰</span>
+              <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,190,80,0.9)', fontWeight: 600 }}>
+                Past {fmtWaiverTime(wh, wm)} ET {DAY_NAMES[wd]} — process now!
               </div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                <RoundLeaderSelect label="R1 Leader" round={1} leaders={manualEntry.round1Leaders} onChange={r => setManualEntry({ ...manualEntry, round1Leaders: r })} />
-                <RoundLeaderSelect label="R2 Leader" round={2} leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
-                <RoundLeaderSelect label="R3 Leader" round={3} leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
-              </div>
-
-              {/* Wave 8: per-team lineup editor — primarily for fixing teams that
-                  missed submitting a lineup. Also lets commish override an
-                  existing lineup retroactively. Collapsible to avoid clutter
-                  for the normal case. */}
-              <details style={{ marginBottom: 14, background: 'rgba(255,255,255,0.02)', border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
-                <summary style={{ ...theme.smallText, color: colors.textSecondary, cursor: 'pointer', userSelect: 'none', listStyle: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Team Lineups (override or add missing)</span>
-                  <span style={{ fontSize: fontSize.xs, color: colors.textMuted }}>▼</span>
-                </summary>
-                <div style={{ marginTop: 12 }}>
-                  {teams.map(t => {
-                    const currentLineup = manualEntry.teamLineups[t.id] || [];
-                    const rosterNames = (t.roster || []).map(p => p.name).filter(Boolean).sort();
-                    const slots = 5;
-                    const hasLineup = currentLineup.length > 0;
-                    return (
-                      <div key={t.id} style={{ marginBottom: 12, padding: '8px 0', borderTop: `1px solid ${colors.borderSubtle}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>{t.name}</span>
-                          {!hasLineup && (
-                            <span style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, color: 'rgba(220,150,50,0.85)', fontStyle: 'italic' }}>no lineup submitted</span>
-                          )}
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
-                          {Array.from({ length: slots }).map((_, i) => {
-                            const value = currentLineup[i] || '';
-                            // Other slots' values for this team — to avoid duplicate selection
-                            const usedElsewhere = new Set(currentLineup.filter((_, idx) => idx !== i));
-                            return (
-                              <select
-                                key={i}
-                                value={value}
-                                onChange={e => {
-                                  const newName = e.target.value;
-                                  const updated = [...currentLineup];
-                                  // Pad if short
-                                  while (updated.length < slots) updated.push(undefined);
-                                  if (newName) updated[i] = newName;
-                                  else updated[i] = undefined;
-                                  // Compact (remove empties)
-                                  const cleaned = updated.filter(Boolean);
-                                  setManualEntry(prev => ({
-                                    ...prev,
-                                    teamLineups: { ...prev.teamLineups, [t.id]: cleaned },
-                                  }));
-                                }}
-                                style={{ ...S.select, marginBottom: 0, fontSize: fontSize.sm, padding: '4px 6px' }}
-                              >
-                                <option value="">— slot {i + 1} —</option>
-                                {rosterNames.map(name => (
-                                  <option key={name} value={name} disabled={usedElsewhere.has(name) && name !== value}>
-                                    {name}{usedElsewhere.has(name) && name !== value ? ' (used)' : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+            </div>
+          );
+        })()}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={S.title}>⏰ Process Waivers</div>
+          {pending.length > 0 && <span style={{ ...theme.badge, ...theme.badgeWarning }}>{pending.length} pending</span>}
+        </div>
+        {pending.length === 0 ? (
+          <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.success }}>✓ No pending waiver claims</div>
+        ) : !waiverRevealed ? (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+              {pending.map(w => (
+                <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '6px 12px' }}>
+                  <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
+                  <div style={{ flex: 1 }} />
+                  <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>claim pending</span>
                 </div>
-              </details>
+              ))}
+            </div>
+            {(() => {
+              const now = new Date();
+              const etOffset = -4;
+              const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
+              const etMin  = now.getUTCMinutes();
+              const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay();
+              const wd = waiverDay ?? 2;
+              const wh = waiverHour ?? 20;
+              const wm = waiverMinute ?? 0;
+              const ready = etDay === wd && (etHour * 60 + etMin) >= (wh * 60 + wm);
+              return (
+                <button onClick={() => setWaiverRevealed(true)} style={ready
+                  ? { ...S.btn, fontSize: 13, fontWeight: 700, padding: '12px 20px', background: 'rgba(220,170,60,0.2)', border: '2px solid rgba(220,170,60,0.7)', color: 'rgba(255,220,80,1)', boxShadow: '0 0 12px rgba(220,170,60,0.25)' }
+                  : { ...S.btnSec, fontSize: 11 }
+                }>
+                  {ready ? `⚡ Process Claims (${pending.length})` : `Process Claims (${pending.length})`}
+                </button>
+              );
+            })()}
+          </>
+        ) : (
+          <>
+            {/* Tiebreaker summary — show competing claims */}
+            {(() => {
+              // Group claims by player to find conflicts
+              const byPlayer = {};
+              pending.forEach(w => {
+                if (!byPlayer[w.player]) byPlayer[w.player] = [];
+                byPlayer[w.player].push(w);
+              });
+              const conflicts = Object.entries(byPlayer).filter(([, claims]) => claims.length > 1);
+              if (conflicts.length === 0) return null;
 
-              {/* Process / Reprocess */}
-              {!tournaments.find(t => t.name === selectedTourney)?.completed ? (
-                <button onClick={handleManualEntry} disabled={!selectedTourney}
-                  style={{ ...S.btn, ...disabledBtn(!selectedTourney) }}>
-                  ✅ Process Results
-                </button>
-              ) : (
-                <button onClick={handleReprocess} disabled={!selectedTourney}
-                  style={{ ...S.btn, background: 'rgba(220,150,50,0.12)', border: '1px solid rgba(220,150,50,0.4)', color: 'rgba(220,180,80,0.9)', ...disabledBtn(!selectedTourney) }}>
-                  ✏️ Reprocess Tournament
-                </button>
+              const earningsMap = {};
+              teams.forEach(t => { earningsMap[t.name] = t.earnings || 0; });
+              const fmtEarnings = (n) => '$' + (n || 0).toLocaleString();
+
+              return (
+                <div style={{
+                  background: 'rgba(220,100,60,0.08)', border: '1px solid rgba(220,100,60,0.35)',
+                  borderRadius: 3, padding: '10px 14px', marginBottom: 10,
+                }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(220,140,80,0.9)', marginBottom: 8 }}>
+                    ⚠️ Competing Claims ({conflicts.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {conflicts.map(([player, claims]) => {
+                      const sorted = [...claims].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
+                      return (
+                        <div key={player} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 2, padding: '8px 10px' }}>
+                          <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary, marginBottom: 4 }}>
+                            {player} — {claims.length} teams competing
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {sorted.map((c, i) => (
+                              <div key={c.team} style={{ fontFamily: fonts.sans, fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{
+                                  fontSize: 9, fontWeight: 700, width: 14, textAlign: 'center',
+                                  color: i === 0 ? colors.earningsGreen : colors.textMuted,
+                                }}>{i + 1}.</span>
+                                <span style={{ color: i === 0 ? colors.textPrimary : colors.textMuted, fontWeight: i === 0 ? 600 : 400 }}>
+                                  {c.team}
+                                </span>
+                                <span style={{ color: colors.textMuted, fontSize: 10 }}>
+                                  {fmtEarnings(earningsMap[c.team])}
+                                </span>
+                                {i === 0 && <span style={{ color: colors.earningsGreen, fontSize: 10, fontWeight: 600 }}>← wins</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ ...theme.smallText, color: colors.textMuted, marginTop: 6 }}>
+                    Tiebreaker: lowest total SFGL earnings wins. Winner moves to back of line.
+                  </div>
+                </div>
+              );
+            })()}
+            <button onClick={() => handleProcessAll(pending)} style={{ ...S.btn, marginBottom: 8 }}>⚡ Process All ({pending.length})</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {pending.map(w => (
+                <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
+                  <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
+                    <div style={{ fontSize: 11 }}>
+                      <span style={{ color: colors.earningsGreen }}>+{w.player}</span>
+                      {w.droppedPlayer && <span style={{ color: colors.danger }}> / -{w.droppedPlayer}</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => handleProcessSingle(w)} style={{ ...theme.btnSecondary, padding: '5px 10px', fontSize: 11, flexShrink: 0 }}>Process</button>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setWaiverRevealed(false)} style={{ ...theme.btnSecondary, marginTop: 8, fontSize: 10, padding: '4px 12px', width: 'auto', display: 'inline-block' }}>Hide Claims</button>
+          </>
+        )}
+      </div>
+
+      {/* ── 4. Award Swing Winner ── */}
+      <div style={S.section}>
+        <div style={S.title}>🏆 Award Swing Winner</div>
+        <label style={S.lbl}>Swing</label>
+        <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
+          <option value="">Select swing...</option>
+          {SWINGS.map(s => {
+            const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+            const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
+            return (
+              <option key={s} value={s} disabled={alreadyAwarded}>
+                {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
+              </option>
+            );
+          })}
+        </select>
+        {swingAwardSeg && (() => {
+          const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+          const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
+          const byTeam = {};
+          swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
+          const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+          const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
+          return (
+            <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
+              {leader
+                ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
+                : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
+              }
+            </div>
+          );
+        })()}
+        <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
+          style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
+          🏆 Award Swing Winner
+        </button>
+      </div>
+
+
+
+      {/* ── 3. Update OWGR Rankings ── */}
+      <div style={S.section}>
+        <div style={S.title}>🌍 Update OWGR Rankings</div>
+        {(owgrLastSynced || rankingsLastUpdated) && (
+          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+            Last synced: {new Date(owgrLastSynced || rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
+        <button
+          onClick={handleSyncOwgr}
+          disabled={owgrStatus === 'fetching'}
+          style={{ ...S.btn, ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+        >
+          {owgrStatus === 'fetching' ? '⏳ Fetching…' : '🔄 Sync OWGR Rankings'}
+        </button>
+        {owgrSummary && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+            background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+            color: owgrStatus === 'error' ? colors.danger : colors.success,
+          }}>
+            {owgrSummary}
+          </div>
+        )}
+      </div>
+
+      {/* ── 4. LIV Golf Sync ── */}
+      <div style={S.section}>
+        <div style={S.title}>🚫 LIV Golf — Sync Roster</div>
+        {(livLastSynced || settings?.livRosterLastSynced) && (
+          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+            Last synced: {new Date(livLastSynced || settings?.livRosterLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
+        <button
+          onClick={handleSyncLiv}
+          disabled={livSyncStatus === 'fetching'}
+          style={{ ...S.btn, ...(livSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+        >
+          {livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync LIV Roster'}
+        </button>
+        {livSyncSummary && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+            background: livSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${livSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+            color: livSyncStatus === 'error' ? colors.danger : colors.success,
+          }}>
+            {livSyncSummary}
+          </div>
+        )}
+      </div>
+
+      {/* ── 6. LIV Golf Ineligible Players ── */}
+      <div style={S.section}>
+        <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
+        <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
+          Players flagged as LIV are hidden from the add/drop modal and waiver system.
+        </div>
+        <input type="text" placeholder="Search players to add/remove LIV flag…"
+          value={livSearch} onChange={e => setLivSearch(e.target.value)}
+          style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
+        />
+        {(() => {
+          const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
+          // Search: show non-LIV players from allPlayers, plus LIV_GOLF_ROSTER names not yet in DB
+          const searchResults = livSearch.trim().length >= 2
+            ? (() => {
+                const q = livSearch.toLowerCase();
+                const livNames = new Set(allPlayers.filter(p => p.isLiv).map(p => p.name));
+                // Players in allPlayers that aren't LIV
+                const fromAll = allPlayers
+                  .filter(p => p.name && p.name.toLowerCase().includes(q) && !p.isLiv)
+                  .map(p => ({ name: p.name, worldRank: p.worldRank }));
+                // LIV_GOLF_ROSTER names not yet in allPlayers at all
+                const existingNames = new Set(allPlayers.map(p => p.name));
+                const fromConst = LIV_GOLF_ROSTER
+                  .filter(name => name.toLowerCase().includes(q) && !existingNames.has(name) && !livNames.has(name))
+                  .map(name => ({ name, worldRank: null }));
+                return [...fromAll, ...fromConst].slice(0, 10);
+              })()
+            : [];
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {/* Search results — players to add to LIV list */}
+              {searchResults.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+                    Add to LIV list
+                  </div>
+                  {searchResults.map(p => (
+                    <div key={p.name} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '6px 10px', marginBottom: 2, borderRadius: 3,
+                      background: 'rgba(80,180,120,0.06)', border: `1px solid rgba(80,180,120,0.2)`,
+                    }}>
+                      <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+                        {p.name}
+                        {p.worldRank && <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>#{p.worldRank}</span>}
+                      </span>
+                      <button
+                        disabled={livSaving[p.name]}
+                        onClick={async () => {
+                          setLivSaving(prev => ({ ...prev, [p.name]: true }));
+                          try {
+                            await playersApi.upsertMany([{ name: p.name, isLiv: true }]);
+                            setAllPlayers(prev => {
+                              const exists = prev.some(x => x.name === p.name);
+                              if (exists) return prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x);
+                              return [...prev, { name: p.name, worldRank: p.worldRank || null, isLiv: true }];
+                            });
+                            dialog.showToast('Flagged ' + p.name + ' as LIV', 'success');
+                            setLivSearch('');
+                          } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
+                          finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
+                        }}
+                        style={{ fontFamily: fonts.sans, fontSize: 10, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}
+                      >
+                        {livSaving[p.name] ? '…' : '+ Flag LIV'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
-            </>
+
+              {/* Current LIV roster */}
+              <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+                {livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}
+              </div>
+              {livPlayers.length === 0 ? (
+                <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.textMuted }}>No LIV players flagged</div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {livPlayers.map(p => (
+                    <div key={p.name} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '4px 8px', borderRadius: 3,
+                      background: 'rgba(220,60,60,0.08)', border: `1px solid rgba(220,60,60,0.2)`,
+                      fontSize: 11, fontFamily: fonts.sans, color: colors.textSecondary,
+                    }}>
+                      {p.name}
+                      <button
+                        disabled={livSaving[p.name]}
+                        onClick={async () => {
+                          setLivSaving(prev => ({ ...prev, [p.name]: true }));
+                          try {
+                            await playersApi.update(p.name, { isLiv: false });
+                            setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: false } : x));
+                            dialog.showToast('Removed LIV flag from ' + p.name, 'success');
+                          } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
+                          finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
+                        }}
+                        style={{ background: 'none', border: 'none', color: 'rgba(220,100,80,0.7)', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}
+                        title={'Remove LIV flag from ' + p.name}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* ── 7. Manager Login Credentials ── */}
+      <div style={S.section}>
+        <div style={S.title}>🔑 Manager Login Credentials</div>
+        <label style={S.lbl}>Team</label>
+        <select value={mgCredTeam} onChange={e => { setMgCredTeam(e.target.value); setMgCredName(teams.find(x => x.id === e.target.value)?.owner || ''); }} style={S.select}>
+          <option value="">Select team...</option>
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
+        </select>
+        <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
+        <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
+        <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
+          style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
+          {mgCredSaving ? 'Saving...' : 'Set Login'}
+        </button>
+      </div>
+
+      {/* ── 7. Draft ── */}
+      {/* ── Merge Players ── */}
+      <div style={S.section}>
+        <button onClick={() => setMergeOpen(o => !o)}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          <div style={S.title}>🔀 Merge Players</div>
+          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{mergeOpen ? '▲' : '▼'}</span>
+        </button>
+        {mergeOpen && <MergePlayersPanel
+          allPlayers={allPlayers} teams={teams} transactions={transactions}
+          dialog={dialog} updateTeams={updateTeams} setTransactions={setTransactions}
+          theme={theme} colors={colors} fonts={fonts} S={S}
+          sfglDataApi={sfglDataApi} playersApi={playersApi}
+          STORAGE_KEYS={STORAGE_KEYS} disabledBtn={disabledBtn}
+        />}
+      </div>
+
+      {/* ── Season Settings ── */}
+      <div style={S.section}>
+        <button onClick={() => { setSettingsOpen(o => !o); setSettingsDraft(null); }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          <div style={S.title}>⚙️ Season Settings</div>
+          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{settingsOpen ? '▲ close' : '▼ edit'}</span>
+        </button>
+        {settingsOpen && (() => {
+          const isEditing = settingsDraft !== null && typeof settingsDraft === 'object';
+          const draft = settingsDraft || getSettingsDraft();
+          const set = (key, val) => setSettingsDraft({ ...(settingsDraft || getSettingsDraft()), [key]: val });
+          const numInput = (key, label, min = 0, dollar = false) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <label style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</label>
+              <div style={{ position: 'relative' }}>
+                {dollar && <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontFamily: fonts.mono, fontSize: 13, color: colors.textMuted, pointerEvents: 'none' }}>$</span>}
+                <input type="number" min={min} value={draft[key]} onChange={e => set(key, Number(e.target.value))}
+                  style={{ ...theme.input, marginBottom: 0, fontSize: 13, textAlign: dollar ? 'right' : 'center', paddingLeft: dollar ? 18 : undefined, width: '100%', border: isEditing ? '1px solid rgba(220,170,60,0.5)' : undefined }} />
+              </div>
+            </div>
+          );
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4 }}>
+              <div style={{ ...theme.smallText, color: colors.textMuted }}>⚠️ Changes apply immediately to all league calculations.</div>
+              <div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Round Leader Bonuses</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                  {numInput('bonusR1Regular', 'R1 — Regular', 0, true)}
+                  {numInput('bonusR2Regular', 'R2 — Regular', 0, true)}
+                  {numInput('bonusR3Regular', 'R3 — Regular', 0, true)}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  {numInput('bonusR1Major', 'R1 — Major', 0, true)}
+                  {numInput('bonusR2Major', 'R2 — Major', 0, true)}
+                  {numInput('bonusR3Major', 'R3 — Major', 0, true)}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Transaction Fees ($)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {numInput('feeFA', 'Free Agent', 0, true)}
+                  {numInput('feeWaiver', 'Waiver Claim', 0, true)}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Roster Rules</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  {numInput('rosterLimit', 'Roster Size', 1)}
+                  {numInput('lineupSize', 'Lineup Size', 1)}
+                  {numInput('maxLimitedStarts', 'Max ★ Starts', 1)}
+                </div>
+              </div>
+              {isEditing && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={async () => { const ok = await dialog.showConfirm('Save Season Settings', 'These changes affect all league calculations immediately. Are you sure?', { confirmText: 'Yes, Save', type: 'warning' }); if (ok) handleSaveSettings(); }}
+                    disabled={settingsSaving} style={{ ...S.btn, flex: 1, ...(settingsSaving ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>
+                    {settingsSaving ? '⏳ Saving…' : '✓ Save Season Settings'}
+                  </button>
+                  <button onClick={() => setSettingsDraft(null)} style={{ ...theme.btnSecondary, flex: 0, padding: '10px 16px', whiteSpace: 'nowrap' }}>Discard</button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* ── Waiver Schedule ── */}
+      <div style={S.section}>
+        <div style={S.title}>🗓️ Waiver Schedule</div>
+        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
+          Set the day and time (ET) that waiver claims are processed each week. Default is Tuesday at 8:00 PM ET.
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 12 }}>
+          <div style={{ flex: 1 }}>
+            <label style={S.lbl}>Day</label>
+            <select value={waiverDay} onChange={e => setWaiverDay(Number(e.target.value))} style={S.select}>
+              {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={S.lbl}>Hour (ET)</label>
+            <select value={waiverHour} onChange={e => setWaiverHour(Number(e.target.value))} style={S.select}>
+              {Array.from({ length: 24 }, (_, i) => (
+                <option key={i} value={i}>{i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: '0 0 80px' }}>
+            <label style={S.lbl}>Minute</label>
+            <select value={waiverMinute} onChange={e => setWaiverMinute(Number(e.target.value))} style={S.select}>
+              {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => (
+                <option key={m} value={m}>:{String(m).padStart(2, '0')}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+          Current: waivers process {DAY_NAMES[waiverDay]} at {fmtWaiverTime(waiverHour, waiverMinute)} ET
+          {settings?.waiverDay !== undefined && (settings.waiverDay !== waiverDay || settings.waiverHour !== waiverHour || (settings.waiverMinute ?? 0) !== waiverMinute) && (
+            <span style={{ color: colors.warning }}> · unsaved changes</span>
           )}
         </div>
+        <button onClick={handleSaveWaiverSchedule} disabled={waiverSaving}
+          style={{ ...S.btn, ...(waiverSaving ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>
+          {waiverSaving ? '⏳ Saving…' : '💾 Save Waiver Schedule'}
+        </button>
+      </div>
 
-        <div style={S.section}>
-          {/* Waiver processing reminder — uses configurable schedule */}
-          {(() => {
-            const now = new Date();
-            const etOffset = -4;
-            const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
-            const etMin  = now.getUTCMinutes();
-            const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay();
-            const wd = waiverDay ?? 2;
-            const wh = waiverHour ?? 20;
-            const wm = waiverMinute ?? 0;
-            const isReadyToProcess = etDay === wd && (etHour * 60 + etMin) >= (wh * 60 + wm) && pending.length > 0;
-            if (!isReadyToProcess) return null;
+      {/* ── Manager Emails ── */}
+      <div style={S.section}>
+        <div style={S.title}>📧 Manager Emails</div>
+        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
+          Set email addresses for each manager. Used for waiver results, tournament results, and lineup reminders.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+          {teams.map(t => {
+            const currentEmail = (settings.managerEmails || {})[t.id] || '';
             return (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 10, borderRadius: 3,
-                background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.45)',
-              }}>
-                <span style={{ fontSize: fontSize.md }}>⏰</span>
-                <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: fontSize.base, color: 'rgba(220,190,80,0.9)', fontWeight: 600 }}>
-                  Past {fmtWaiverTime(wh, wm)} ET {DAY_NAMES[wd]} — process now!
-                </div>
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary, width: 120, flexShrink: 0 }}>{t.name}</span>
+                <input
+                  type="email"
+                  placeholder="email@example.com"
+                  value={emailDraft?.[t.id] ?? currentEmail}
+                  onChange={e => setEmailDraft(prev => ({ ...(prev || {}), [t.id]: e.target.value }))}
+                  style={{ ...theme.input, flex: 1, fontSize: 12, padding: '7px 10px' }}
+                />
               </div>
             );
-          })()}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={S.title}>⏰ Process Waivers</div>
-            {pending.length > 0 && <span style={{ ...theme.badge, ...theme.badgeWarning }}>{pending.length} pending</span>}
-          </div>
-          {pending.length === 0 ? (
-            <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.success }}>✓ No pending waiver claims</div>
-          ) : !waiverRevealed ? (
-            <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
-                {pending.map(w => (
-                  <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '6px 12px' }}>
-                    <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.xs, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
-                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
-                    <div style={{ flex: 1 }} />
-                    <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted }}>claim pending</span>
-                  </div>
-                ))}
+          })}
+        </div>
+        <button
+          onClick={async () => {
+            if (!emailDraft) return;
+            const merged = { ...(settings.managerEmails || {}), ...emailDraft };
+            try {
+              await setSettings({ ...settings, managerEmails: merged });
+              dialog.showToast('✓ Manager emails saved', 'success');
+              setEmailDraft(null);
+            } catch (err) {
+              dialog.showToast('Error: ' + err.message, 'error');
+            }
+          }}
+          disabled={!emailDraft}
+          style={{ ...S.btn, ...(!emailDraft ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
+        >
+          💾 Save Emails
+        </button>
+      </div>
+
+      {/* ── Roster Override ── direct-edit a team's roster (commish only,
+          for repairing corruption — bypasses all transaction logic) */}
+      <div style={S.section}>
+        <button onClick={() => { setRosterOvOpen(o => !o); setRosterOvTeamId(''); setRosterOvAddSearch(''); }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          <div style={S.title}>🛠️ Roster Override</div>
+          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{rosterOvOpen ? '▲ close' : '▼ edit'}</span>
+        </button>
+        {rosterOvOpen && (() => {
+          const ovTeam = teams.find(t => t.id === rosterOvTeamId || t._id === rosterOvTeamId);
+          const ovRoster = ovTeam?.roster || [];
+          const dupNames = new Set();
+          const seenNames = new Set();
+          ovRoster.forEach(p => { if (seenNames.has(p.name)) dupNames.add(p.name); else seenNames.add(p.name); });
+          const allRosteredNames = new Set();
+          teams.forEach(t => (t.roster || []).forEach(p => allRosteredNames.add(p.name)));
+          const searchTrim = rosterOvAddSearch.trim().toLowerCase();
+          const filtered = searchTrim.length >= 2
+            ? (allPlayers || []).filter(p => p.name.toLowerCase().includes(searchTrim)).slice(0, 12)
+            : [];
+
+          // Remove a single roster slot by index. Keep duplicates removable
+          // individually (the whole point of this tool).
+          const removeAt = async (idx) => {
+            const p = ovRoster[idx];
+            if (!p) return;
+            const ok = await dialog.showConfirm(
+              'Remove from roster',
+              `Remove ${p.name} from ${ovTeam.name}?\n\nThis is a direct roster override and does NOT create a transaction. Use only for repairs.`,
+              { type: 'danger', confirmText: 'Remove' },
+            );
+            if (!ok) return;
+            const newRoster = [...ovRoster];
+            newRoster.splice(idx, 1);
+            const newTeams = teams.map(t => (t.id === ovTeam.id || t._id === ovTeam._id) ? { ...t, roster: newRoster } : t);
+            updateTeams(newTeams);
+            dialog.showToast(`${p.name} removed from ${ovTeam.name}`, 'success');
+          };
+
+          // Add a player. Refuse if already on this roster (no duplicates
+          // when adding — duplicates can only happen by removing some other
+          // way, never by an add). Warn but allow if on another team.
+          const addPlayer = async (player) => {
+            if (ovRoster.some(p => p.name === player.name)) {
+              dialog.showToast(`${player.name} is already on ${ovTeam.name}`, 'error');
+              return;
+            }
+            const onOtherTeam = teams.find(t => t.id !== ovTeam.id && (t.roster || []).some(p => p.name === player.name));
+            const confirmMsg = onOtherTeam
+              ? `${player.name} is currently on ${onOtherTeam.name}'s roster. Add to ${ovTeam.name} ANYWAY?\n\nThis will leave the player on both rosters — fix the other team afterward.`
+              : `Add ${player.name} to ${ovTeam.name}?\n\nThis is a direct roster override and does NOT create a transaction or charge a fee.`;
+            const ok = await dialog.showConfirm(
+              onOtherTeam ? '⚠️ Player on another team' : 'Add to roster',
+              confirmMsg,
+              { type: onOtherTeam ? 'danger' : 'info', confirmText: 'Add' },
+            );
+            if (!ok) return;
+            const newPlayer = {
+              name: player.name,
+              limited: player.limited || false,
+              unlimited: player.unlimited || false,
+              stars: player.stars || 0,
+              starts: player.starts || 0,
+              eventsPlayed: player.eventsPlayed || 0,
+              cutsMade: player.cutsMade || 0,
+              pgaTourEarnings: player.pgaTourEarnings || 0,
+              sfglEarnings: player.sfglEarnings || 0,
+              headshot: '',
+            };
+            const newRoster = [...ovRoster, newPlayer];
+            const newTeams = teams.map(t => (t.id === ovTeam.id || t._id === ovTeam._id) ? { ...t, roster: newRoster } : t);
+            updateTeams(newTeams);
+            setRosterOvAddSearch('');
+            dialog.showToast(`${player.name} added to ${ovTeam.name}`, 'success');
+          };
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 4 }}>
+              <div style={{ ...theme.smallText, color: 'rgba(220,140,80,0.95)', fontSize: 11, lineHeight: 1.45 }}>
+                ⚠️ Direct roster edit — bypasses transactions and fees. Use only to repair corruption (duplicates, missing players, orphaned changes from deleted transactions).
               </div>
-              {(() => {
-                const now = new Date();
-                const etOffset = -4;
-                const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
-                const etMin  = now.getUTCMinutes();
-                const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay();
-                const wd = waiverDay ?? 2;
-                const wh = waiverHour ?? 20;
-                const wm = waiverMinute ?? 0;
-                const ready = etDay === wd && (etHour * 60 + etMin) >= (wh * 60 + wm);
-                return (
-                  <button onClick={() => setWaiverRevealed(true)} style={ready
-                    ? { ...S.btn, fontSize: fontSize.md, fontWeight: 700, padding: '12px 20px', background: 'rgba(220,170,60,0.2)', border: '2px solid rgba(220,170,60,0.7)', color: 'rgba(255,220,80,1)', boxShadow: '0 0 12px rgba(220,170,60,0.25)' }
-                    : { ...S.btnSec, fontSize: fontSize.base }
-                  }>
-                    {ready ? `⚡ Process Claims (${pending.length})` : `Process Claims (${pending.length})`}
-                  </button>
-                );
-              })()}
-            </>
-          ) : (
-            <>
-              {/* Tiebreaker summary — show competing claims */}
-              {(() => {
-                // Group claims by player to find conflicts
-                const byPlayer = {};
-                pending.forEach(w => {
-                  if (!byPlayer[w.player]) byPlayer[w.player] = [];
-                  byPlayer[w.player].push(w);
-                });
-                const conflicts = Object.entries(byPlayer).filter(([, claims]) => claims.length > 1);
-                if (conflicts.length === 0) return null;
 
-                const earningsMap = {};
-                teams.forEach(t => { earningsMap[t.name] = t.earnings || 0; });
-                const fmtEarnings = (n) => '$' + (n || 0).toLocaleString();
+              <select value={rosterOvTeamId} onChange={e => { setRosterOvTeamId(e.target.value); setRosterOvAddSearch(''); }} style={S.select}>
+                <option value="">— select team to edit —</option>
+                {teams.map(t => (
+                  <option key={t.id || t._id} value={t.id || t._id}>
+                    {t.name} ({(t.roster || []).length} players)
+                  </option>
+                ))}
+              </select>
 
-                return (
-                  <div style={{
-                    background: 'rgba(220,100,60,0.08)', border: '1px solid rgba(220,100,60,0.35)',
-                    borderRadius: 3, padding: '10px 14px', marginBottom: 10,
-                  }}>
-                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(220,140,80,0.9)', marginBottom: 8 }}>
-                      ⚠️ Competing Claims ({conflicts.length})
+              {ovTeam && (
+                <>
+                  {/* Roster size warning */}
+                  {ovRoster.length !== 13 && (
+                    <div style={{ fontFamily: fonts.sans, fontSize: 11, color: ovRoster.length > 13 ? 'rgba(220,80,80,0.95)' : 'rgba(220,170,60,0.95)', padding: '6px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: 3 }}>
+                      Roster size: {ovRoster.length} {ovRoster.length > 13 ? `(${ovRoster.length - 13} OVER limit)` : `(${13 - ovRoster.length} UNDER 13)`}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {conflicts.map(([player, claims]) => {
-                        const sorted = [...claims].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
+                  )}
+                  {dupNames.size > 0 && (
+                    <div style={{ fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,80,80,0.95)', padding: '6px 10px', background: 'rgba(220,80,80,0.08)', border: '1px solid rgba(220,80,80,0.25)', borderRadius: 3 }}>
+                      Duplicates detected: {Array.from(dupNames).join(', ')}
+                    </div>
+                  )}
+
+                  <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textMuted, marginTop: 4 }}>
+                    Current roster
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, background: 'rgba(0,0,0,0.18)', borderRadius: 3, padding: '4px 0' }}>
+                    {ovRoster.length === 0 && (
+                      <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, padding: '8px 12px', fontStyle: 'italic' }}>
+                        Roster is empty.
+                      </div>
+                    )}
+                    {ovRoster.map((p, idx) => {
+                      const isDup = dupNames.has(p.name);
+                      return (
+                        <div key={`${p.name}-${idx}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', borderBottom: idx < ovRoster.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                          <span style={{ fontFamily: fonts.sans, fontSize: 12, color: isDup ? 'rgba(220,140,140,0.95)' : colors.textPrimary }}>
+                            {p.name}{isDup ? ' (dup)' : ''}
+                          </span>
+                          <button
+                            onClick={() => removeAt(idx)}
+                            title={`Remove ${p.name}`}
+                            style={{ background: 'none', border: 'none', color: 'rgba(220,80,80,0.7)', cursor: 'pointer', fontSize: 14, padding: '2px 6px', borderRadius: 2 }}
+                            onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,100,100,1)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(220,80,80,0.7)'; }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textMuted, marginTop: 8 }}>
+                    Add player
+                  </div>
+                  <input
+                    type="text"
+                    value={rosterOvAddSearch}
+                    onChange={e => setRosterOvAddSearch(e.target.value)}
+                    placeholder="Search by name (min 2 chars)…"
+                    style={{ ...theme.input, marginBottom: 0, fontSize: 13 }}
+                  />
+                  {filtered.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, background: 'rgba(0,0,0,0.18)', borderRadius: 3, padding: '4px 0', maxHeight: 280, overflowY: 'auto' }}>
+                      {filtered.map(p => {
+                        const onAnotherTeam = allRosteredNames.has(p.name) && !ovRoster.some(r => r.name === p.name);
+                        const onThisTeam = ovRoster.some(r => r.name === p.name);
                         return (
-                          <div key={player} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 2, padding: '8px 10px' }}>
-                            <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600, color: colors.textPrimary, marginBottom: 4 }}>
-                              {player} — {claims.length} teams competing
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              {sorted.map((c, i) => (
-                                <div key={c.team} style={{ fontFamily: fonts.sans, fontSize: fontSize.base, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{
-                                    fontSize: fontSize.xs, fontWeight: 700, width: 14, textAlign: 'center',
-                                    color: i === 0 ? colors.earningsGreen : colors.textMuted,
-                                  }}>{i + 1}.</span>
-                                  <span style={{ color: i === 0 ? colors.textPrimary : colors.textMuted, fontWeight: i === 0 ? 600 : 400 }}>
-                                    {c.team}
-                                  </span>
-                                  <span style={{ color: colors.textMuted, fontSize: fontSize.sm }}>
-                                    {fmtEarnings(earningsMap[c.team])}
-                                  </span>
-                                  {i === 0 && <span style={{ color: colors.earningsGreen, fontSize: fontSize.sm, fontWeight: 600 }}>← wins</span>}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
+                          <button
+                            key={p.name}
+                            onClick={() => addPlayer(p)}
+                            disabled={onThisTeam}
+                            style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              padding: '6px 10px', background: 'none', border: 'none',
+                              fontFamily: fonts.sans, fontSize: 12, textAlign: 'left',
+                              color: onThisTeam ? colors.textMuted : colors.textPrimary,
+                              cursor: onThisTeam ? 'not-allowed' : 'pointer',
+                              opacity: onThisTeam ? 0.5 : 1,
+                            }}
+                          >
+                            <span>+ {p.name}</span>
+                            {onThisTeam && <span style={{ fontSize: 10, color: colors.textMuted }}>already on this team</span>}
+                            {onAnotherTeam && !onThisTeam && <span style={{ fontSize: 10, color: 'rgba(220,140,80,0.9)' }}>on another team</span>}
+                          </button>
                         );
                       })}
                     </div>
-                    <div style={{ ...theme.smallText, color: colors.textMuted, marginTop: 6 }}>
-                      Tiebreaker: lowest total SFGL earnings wins. Winner moves to back of line.
+                  )}
+                  {searchTrim.length >= 2 && filtered.length === 0 && (
+                    <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, padding: '6px 10px', fontStyle: 'italic' }}>
+                      No matches.
                     </div>
-                  </div>
-                );
-              })()}
-              <button
-                onClick={() => handleProcessAll(pending)}
-                className={pending.length > 0 ? 'sfgl-pulse-ready' : undefined}
-                style={{ ...S.btn, marginBottom: 8 }}
-              >
-                ⚡ Process All ({pending.length})
-              </button>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {pending.map(w => (
-                  <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
-                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.sm, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>{w.priority || '?'}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
-                      <div style={{ fontSize: fontSize.base }}>
-                        <span style={{ color: colors.earningsGreen }}>+{w.player}</span>
-                        {w.droppedPlayer && <span style={{ color: colors.danger }}> / -{w.droppedPlayer}</span>}
-                      </div>
-                    </div>
-                    <button onClick={() => handleProcessSingle(w)} style={{ ...theme.btnSecondary, padding: '5px 10px', fontSize: fontSize.base, flexShrink: 0 }}>Process</button>
-                  </div>
-                ))}
-              </div>
-              <button onClick={() => setWaiverRevealed(false)} style={{ ...theme.btnSecondary, marginTop: 8, fontSize: fontSize.sm, padding: '4px 12px', width: 'auto', display: 'inline-block' }}>Hide Claims</button>
-            </>
-          )}
-        </div>
-
-        <div style={S.section}>
-          <div style={S.title}>🏆 Award Swing Winner</div>
-          <label style={S.lbl}>Swing</label>
-          <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
-            <option value="">Select swing...</option>
-            {SWINGS.map(s => {
-              const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
-              const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
-              return (
-                <option key={s} value={s} disabled={alreadyAwarded}>
-                  {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
-                </option>
-              );
-            })}
-          </select>
-          {swingAwardSeg && (() => {
-            const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
-            const swingTourneys = tournaments.filter(t => t.completed && getSegmentForTournament(t) === swingAwardSeg && t.results?.teams);
-            const byTeam = {};
-            swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
-            const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
-            const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
-            return (
-              <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
-                {leader
-                  ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} · <span style={{ color: getSwingColor(swingAwardSeg) }}>Pot: ${pot.toLocaleString()}</span></span>
-                  : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
-                }
-              </div>
-            );
-          })()}
-          <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
-            style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
-            🏆 Award Swing Winner
-          </button>
-        </div>
-
-        <div style={S.section}>
-          <div style={S.title}>🎯 Draft</div>
-          <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
-        </div>
-      </AdminGroup>
-
-      {/* ─────────────── 2. DATA SYNC ─────────────── */}
-      <AdminGroup
-        id="data-sync"
-        title="Data Sync"
-        icon="🔄"
-      >
-        <div style={S.section}>
-          <div style={S.title}>🌍 Update OWGR Rankings</div>
-          {(owgrLastSynced || rankingsLastUpdated) && (
-            <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-              Last synced: {new Date(owgrLastSynced || rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  )}
+                </>
+              )}
             </div>
-          )}
-          <button
-            onClick={handleSyncOwgr}
-            disabled={owgrStatus === 'fetching'}
-            style={{ ...S.btn, ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-          >
-            {owgrStatus === 'fetching' ? '⏳ Fetching…' : '🔄 Sync OWGR Rankings'}
-          </button>
-          {owgrSummary && (
-            <div style={{
-              marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: fontSize.base, fontFamily: fonts.sans,
-              background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-              border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-              color: owgrStatus === 'error' ? colors.danger : colors.success,
-            }}>
-              {owgrSummary}
-            </div>
-          )}
-        </div>
+          );
+        })()}
+      </div>
 
-        <div style={S.section}>
-          <div style={S.title}>🚫 LIV Golf — Sync Roster</div>
-          {(livLastSynced || settings?.livRosterLastSynced) && (
-            <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-              Last synced: {new Date(livLastSynced || settings?.livRosterLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            </div>
-          )}
-          <button
-            onClick={handleSyncLiv}
-            disabled={livSyncStatus === 'fetching'}
-            style={{ ...S.btn, ...(livSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-          >
-            {livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync LIV Roster'}
-          </button>
-          {livSyncSummary && (
-            <div style={{
-              marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: fontSize.base, fontFamily: fonts.sans,
-              background: livSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-              border: `1px solid ${livSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-              color: livSyncStatus === 'error' ? colors.danger : colors.success,
-            }}>
-              {livSyncSummary}
-            </div>
-          )}
-        </div>
-
-        <div style={S.section}>
-          <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
-          <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
-            Players flagged as LIV are hidden from the add/drop modal and waiver system.
-          </div>
-          <input type="text" placeholder="Search players to add/remove LIV flag…"
-            value={livSearch} onChange={e => setLivSearch(e.target.value)}
-            style={{ ...theme.input, marginBottom: 10, fontSize: fontSize.base }}
-          />
-          {(() => {
-            const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
-            // Search: show non-LIV players from allPlayers, plus LIV_GOLF_ROSTER names not yet in DB
-            const searchResults = livSearch.trim().length >= 2
-              ? (() => {
-                  const q = livSearch.toLowerCase();
-                  const livNames = new Set(allPlayers.filter(p => p.isLiv).map(p => p.name));
-                  // Players in allPlayers that aren't LIV
-                  const fromAll = allPlayers
-                    .filter(p => p.name && p.name.toLowerCase().includes(q) && !p.isLiv)
-                    .map(p => ({ name: p.name, worldRank: p.worldRank }));
-                  // LIV_GOLF_ROSTER names not yet in allPlayers at all
-                  const existingNames = new Set(allPlayers.map(p => p.name));
-                  const fromConst = LIV_GOLF_ROSTER
-                    .filter(name => name.toLowerCase().includes(q) && !existingNames.has(name) && !livNames.has(name))
-                    .map(name => ({ name, worldRank: null }));
-                  return [...fromAll, ...fromConst].slice(0, 10);
-                })()
-              : [];
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {/* Search results — players to add to LIV list */}
-                {searchResults.length > 0 && (
-                  <div style={{ marginBottom: 8 }}>
-                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
-                      Add to LIV list
-                    </div>
-                    {searchResults.map(p => (
-                      <div key={p.name} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '6px 10px', marginBottom: 2, borderRadius: 3,
-                        background: 'rgba(80,180,120,0.06)', border: `1px solid rgba(80,180,120,0.2)`,
-                      }}>
-                        <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textPrimary }}>
-                          {p.name}
-                          {p.worldRank && <span style={{ color: colors.textMuted, fontSize: fontSize.sm, marginLeft: 6 }}>#{p.worldRank}</span>}
-                        </span>
-                        <button
-                          disabled={livSaving[p.name]}
-                          onClick={async () => {
-                            setLivSaving(prev => ({ ...prev, [p.name]: true }));
-                            try {
-                              await playersApi.upsertMany([{ name: p.name, isLiv: true }]);
-                              setAllPlayers(prev => {
-                                const exists = prev.some(x => x.name === p.name);
-                                if (exists) return prev.map(x => x.name === p.name ? { ...x, isLiv: true } : x);
-                                return [...prev, { name: p.name, worldRank: p.worldRank || null, isLiv: true }];
-                              });
-                              dialog.showToast('Flagged ' + p.name + ' as LIV', 'success');
-                              setLivSearch('');
-                            } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
-                            finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
-                          }}
-                          style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, padding: '3px 8px', background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)', color: colors.danger, borderRadius: 2, cursor: 'pointer' }}
-                        >
-                          {livSaving[p.name] ? '…' : '+ Flag LIV'}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Current LIV roster */}
-                <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
-                  {livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}
-                </div>
-                {livPlayers.length === 0 ? (
-                  <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.textMuted }}>No LIV players flagged</div>
-                ) : (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {livPlayers.map(p => (
-                      <div key={p.name} style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '4px 8px', borderRadius: 3,
-                        background: 'rgba(220,60,60,0.08)', border: `1px solid rgba(220,60,60,0.2)`,
-                        fontSize: fontSize.base, fontFamily: fonts.sans, color: colors.textSecondary,
-                      }}>
-                        {p.name}
-                        <button
-                          disabled={livSaving[p.name]}
-                          onClick={async () => {
-                            setLivSaving(prev => ({ ...prev, [p.name]: true }));
-                            try {
-                              await playersApi.update(p.name, { isLiv: false });
-                              setAllPlayers(prev => prev.map(x => x.name === p.name ? { ...x, isLiv: false } : x));
-                              dialog.showToast('Removed LIV flag from ' + p.name, 'success');
-                            } catch(err) { dialog.showToast('Error: ' + err.message, 'error'); }
-                            finally { setLivSaving(prev => ({ ...prev, [p.name]: false })); }
-                          }}
-                          style={{ background: 'none', border: 'none', color: 'rgba(220,100,80,0.7)', cursor: 'pointer', fontSize: fontSize.base, padding: 0, lineHeight: 1 }}
-                          title={'Remove LIV flag from ' + p.name}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-        </div>
-
-        <div style={S.section}>
-          <button onClick={() => setMergeOpen(o => !o)}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-            <div style={S.title}>🔀 Merge Players</div>
-            <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted, paddingBottom: 12 }}>{mergeOpen ? '▲' : '▼'}</span>
-          </button>
-          {mergeOpen && <MergePlayersPanel
-            allPlayers={allPlayers} teams={teams} transactions={transactions}
-            dialog={dialog} updateTeams={updateTeams} setTransactions={setTransactions}
-            theme={theme} colors={colors} fonts={fonts} S={S}
-            sfglDataApi={sfglDataApi} playersApi={playersApi}
-            STORAGE_KEYS={STORAGE_KEYS} disabledBtn={disabledBtn}
-          />}
-        </div>
-      </AdminGroup>
-
-      {/* ─────────────── 3. LEAGUE SETTINGS ─────────────── */}
-      <AdminGroup
-        id="league-settings"
-        title="League Settings"
-        icon="⚙️"
-        badge={
-          (settingsDraft
-            || waiverDay    !== (settings?.waiverDay    ?? 2)
-            || waiverHour   !== (settings?.waiverHour   ?? 20)
-            || waiverMinute !== (settings?.waiverMinute ?? 0))
-          ? <UnsavedDot />
-          : null
-        }
-      >
-        <div style={S.section}>
-          <button onClick={() => { setSettingsOpen(o => !o); setSettingsDraft(null); }}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-            <div style={S.title}>⚙️ Season Settings</div>
-            <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted, paddingBottom: 12 }}>{settingsOpen ? '▲ close' : '▼ edit'}</span>
-          </button>
-          {settingsOpen && (() => {
-            const isEditing = settingsDraft !== null && typeof settingsDraft === 'object';
-            const draft = settingsDraft || getSettingsDraft();
-            const set = (key, val) => setSettingsDraft({ ...(settingsDraft || getSettingsDraft()), [key]: val });
-            const numInput = (key, label, min = 0, dollar = false) => (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                <label style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</label>
-                <div style={{ position: 'relative' }}>
-                  {dollar && <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontFamily: fonts.mono, fontSize: fontSize.md, color: colors.textMuted, pointerEvents: 'none' }}>$</span>}
-                  <input type="number" min={min} value={draft[key]} onChange={e => set(key, Number(e.target.value))}
-                    style={{ ...theme.input, marginBottom: 0, fontSize: fontSize.md, textAlign: dollar ? 'right' : 'center', paddingLeft: dollar ? 18 : undefined, width: '100%', border: isEditing ? '1px solid rgba(220,170,60,0.5)' : undefined }} />
-                </div>
-              </div>
-            );
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4 }}>
-                <div style={{ ...theme.smallText, color: colors.textMuted }}>⚠️ Changes apply immediately to all league calculations.</div>
-                <div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Round Leader Bonuses</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                    {numInput('bonusR1Regular', 'R1 — Regular', 0, true)}
-                    {numInput('bonusR2Regular', 'R2 — Regular', 0, true)}
-                    {numInput('bonusR3Regular', 'R3 — Regular', 0, true)}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                    {numInput('bonusR1Major', 'R1 — Major', 0, true)}
-                    {numInput('bonusR2Major', 'R2 — Major', 0, true)}
-                    {numInput('bonusR3Major', 'R3 — Major', 0, true)}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Transaction Fees ($)</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    {numInput('feeFA', 'Free Agent', 0, true)}
-                    {numInput('feeWaiver', 'Waiver Claim', 0, true)}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Roster Rules</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                    {numInput('rosterLimit', 'Roster Size', 1)}
-                    {numInput('lineupSize', 'Lineup Size', 1)}
-                    {numInput('maxLimitedStarts', 'Max ★ Starts', 1)}
-                  </div>
-                </div>
-                {isEditing && (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={async () => { const ok = await dialog.showConfirm('Save Season Settings', 'These changes affect all league calculations immediately. Are you sure?', { confirmText: 'Yes, Save', type: 'warning' }); if (ok) handleSaveSettings(); }}
-                      disabled={settingsSaving} style={{ ...S.btn, flex: 1, ...(settingsSaving ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>
-                      {settingsSaving ? '⏳ Saving…' : '✓ Save Season Settings'}
-                    </button>
-                    <button onClick={() => setSettingsDraft(null)} style={{ ...theme.btnSecondary, flex: 0, padding: '10px 16px', whiteSpace: 'nowrap' }}>Discard</button>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-        </div>
-
-        <div style={S.section}>
-          <div style={S.title}>🗓️ Waiver Schedule</div>
-          <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-            Set the day and time (ET) that waiver claims are processed each week. Default is Tuesday at 8:00 PM ET.
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 12 }}>
-            <div style={{ flex: 1 }}>
-              <label style={S.lbl}>Day</label>
-              <select value={waiverDay} onChange={e => setWaiverDay(Number(e.target.value))} style={S.select}>
-                {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
-              </select>
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={S.lbl}>Hour (ET)</label>
-              <select value={waiverHour} onChange={e => setWaiverHour(Number(e.target.value))} style={S.select}>
-                {Array.from({ length: 24 }, (_, i) => (
-                  <option key={i} value={i}>{i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: '0 0 80px' }}>
-              <label style={S.lbl}>Minute</label>
-              <select value={waiverMinute} onChange={e => setWaiverMinute(Number(e.target.value))} style={S.select}>
-                {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => (
-                  <option key={m} value={m}>:{String(m).padStart(2, '0')}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Current: waivers process {DAY_NAMES[waiverDay]} at {fmtWaiverTime(waiverHour, waiverMinute)} ET
-            {settings?.waiverDay !== undefined && (settings.waiverDay !== waiverDay || settings.waiverHour !== waiverHour || (settings.waiverMinute ?? 0) !== waiverMinute) && (
-              <span style={{ color: colors.warning }}> · unsaved changes</span>
-            )}
-          </div>
-          <button onClick={handleSaveWaiverSchedule} disabled={waiverSaving}
-            style={{ ...S.btn, ...(waiverSaving ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>
-            {waiverSaving ? '⏳ Saving…' : '💾 Save Waiver Schedule'}
-          </button>
-        </div>
-      </AdminGroup>
-
-      {/* ─────────────── 4. MANAGER ACCOUNTS ─────────────── */}
-      <AdminGroup
-        id="manager-accounts"
-        title="Manager Accounts"
-        icon="👥"
-        badge={emailDraft ? <UnsavedDot /> : null}
-      >
-        <div style={S.section}>
-          <div style={S.title}>🔑 Manager Login Credentials</div>
-          <label style={S.lbl}>Team</label>
-          <select value={mgCredTeam} onChange={e => { setMgCredTeam(e.target.value); setMgCredName(teams.find(x => x.id === e.target.value)?.owner || ''); }} style={S.select}>
-            <option value="">Select team...</option>
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
-          </select>
-          <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
-          <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
-          <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
-            style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
-            {mgCredSaving ? 'Saving...' : 'Set Login'}
-          </button>
-        </div>
-
-        <div style={S.section}>
-          <div style={S.title}>📧 Manager Emails</div>
-          <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-            Set email addresses for each manager. Used for waiver results, tournament results, and lineup reminders.
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-            {teams.map(t => {
-              const currentEmail = (settings.managerEmails || {})[t.id] || '';
-              const draftValue   = emailDraft?.[t.id] ?? currentEmail;
-              // Email regex: simple format check — catches obvious typos
-              const isValid = !draftValue.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draftValue.trim());
-              return (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600, color: colors.textPrimary, width: 120, flexShrink: 0 }}>{t.name}</span>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <input
-                      type="email"
-                      placeholder="email@example.com"
-                      value={draftValue}
-                      onChange={e => setEmailDraft(prev => ({ ...(prev || {}), [t.id]: e.target.value }))}
-                      style={{
-                        ...theme.input, fontSize: fontSize.base, padding: '7px 10px',
-                        borderColor: !isValid ? colors.dangerBorder : colors.borderInput,
-                      }}
-                    />
-                    {!isValid && (
-                      <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.danger, paddingLeft: 2 }}>
-                        ⚠ Invalid email
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {(() => {
-            // Disable Save if any draft email fails validation
-            const allValid = !emailDraft || Object.values(emailDraft).every(v =>
-              !v.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
-            );
-            const canSave = !!emailDraft && allValid;
-            return (
-              <button
-                onClick={async () => {
-                  if (!canSave) return;
-                  const merged = { ...(settings.managerEmails || {}), ...emailDraft };
-                  try {
-                    await setSettings({ ...settings, managerEmails: merged });
-                    dialog.showToast('✓ Manager emails saved', 'success');
-                    setEmailDraft(null);
-                  } catch (err) {
-                    dialog.showToast('Error: ' + err.message, 'error');
-                  }
-                }}
-                disabled={!canSave}
-                style={{ ...S.btn, ...(!canSave ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
-              >
-                {!emailDraft ? '💾 Save Emails' : !allValid ? '⚠ Fix invalid emails to save' : '💾 Save Emails'}
-              </button>
-            );
-          })()}
-        </div>
-      </AdminGroup>
+      <div style={S.section}>
+        <div style={S.title}>🎯 Draft</div>
+        <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
+      </div>
 
       {showDraftModal && <DraftModal teams={teams} allPlayers={allPlayers} updateTeams={updateTeams} onClose={() => setShowDraftModal(false)} headshots={headshots} />}
     </div>
   );
 };
+
