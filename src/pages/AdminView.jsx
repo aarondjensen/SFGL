@@ -160,8 +160,15 @@ const AdminGroup = ({ id, title, icon, badge, defaultOpen = false, children }) =
       return next;
     });
   };
+
+  // Wave 8: rebuilt for clearer open/closed visual states + smooth animation.
+  // Closed = subtle white tint, muted text, no accent.
+  // Open   = stronger blue tint, 3px blue left-border, brighter text,
+  //          rotated chevron, content slides in via grid-row animation.
+  // The grid-template-rows trick gives a smooth height transition without
+  // having to know content height in advance — works in modern browsers.
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div style={{ marginBottom: 10 }}>
       <button
         onClick={toggle}
         aria-expanded={open}
@@ -169,47 +176,72 @@ const AdminGroup = ({ id, title, icon, badge, defaultOpen = false, children }) =
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           width: '100%',
           padding: '14px 18px',
+          paddingLeft: open ? 15 : 18,             // compensate for thicker left border when open
           minHeight: 56,
-          background: open ? 'rgba(100,160,255,0.07)' : 'rgba(255,255,255,0.025)',
-          border: `1px solid ${open ? 'rgba(100,160,255,0.3)' : colors.border}`,
-          borderRadius: 4,
+          background: open ? 'rgba(100,160,255,0.11)' : 'rgba(255,255,255,0.025)',
+          borderTop:    `1px solid ${open ? 'rgba(100,160,255,0.45)' : colors.border}`,
+          borderRight:  `1px solid ${open ? 'rgba(100,160,255,0.45)' : colors.border}`,
+          borderBottom: open ? '1px solid transparent' : `1px solid ${colors.border}`,
+          borderLeft:   open ? '4px solid rgba(100,160,255,0.85)' : `1px solid ${colors.border}`,
+          borderRadius: open ? '4px 4px 0 0' : 4,  // square bottom when open so content joins seamlessly
           cursor: 'pointer',
-          transition: 'background 0.15s, border-color 0.15s',
+          transition: 'background 0.2s ease, border-color 0.2s ease, padding-left 0.2s ease, border-radius 0.2s ease',
           textAlign: 'left',
         }}
-        onMouseEnter={e => {
-          if (!open) e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-        }}
-        onMouseLeave={e => {
-          if (!open) e.currentTarget.style.background = 'rgba(255,255,255,0.025)';
-        }}
+        onMouseEnter={e => { if (!open) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'rgba(255,255,255,0.025)'; }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
-          <span style={{ fontSize: fontSize.lg, lineHeight: 1, flexShrink: 0 }}>{icon}</span>
+          <span style={{ fontSize: fontSize.lg, lineHeight: 1, flexShrink: 0, opacity: open ? 1 : 0.65, transition: 'opacity 0.2s ease' }}>{icon}</span>
           <span style={{
             fontFamily: fonts.sans,
             fontSize: fontSize.base, fontWeight: 700, letterSpacing: '1.5px',
             textTransform: 'uppercase',
-            color: open ? colors.sectionHeaderBlue : colors.textPrimary,
+            color: open ? colors.sectionHeaderBlue : colors.textSecondary,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            transition: 'color 0.2s ease',
           }}>{title}</span>
           {badge}
         </div>
         <span style={{
-          fontFamily: fonts.sans,
-          fontSize: fontSize.base,
+          display: 'inline-block',
+          fontSize: fontSize.lg,
+          lineHeight: 1,
           color: open ? colors.sectionHeaderBlue : colors.textMuted,
-          letterSpacing: 1,
           flexShrink: 0,
-        }}>
-          {open ? '▲' : '▼'}
-        </span>
+          transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+          transition: 'transform 0.25s ease, color 0.2s ease',
+        }}>▾</span>
       </button>
+
+      {/* Animated content using grid-template-rows: 0fr → 1fr animates height
+          smoothly without needing to measure the content first. The inner
+          element handles overflow + opacity fade. */}
       <div style={{
-        display: open ? 'block' : 'none',
-        marginTop: 8,
+        display: 'grid',
+        gridTemplateRows: open ? '1fr' : '0fr',
+        transition: 'grid-template-rows 0.28s ease',
       }}>
-        {children}
+        <div style={{
+          overflow: 'hidden',
+          minHeight: 0,
+          opacity: open ? 1 : 0,
+          transition: 'opacity 0.22s ease',
+        }}>
+          <div style={{
+            // Visual continuation of the header: matching side+bottom border
+            // creates a unified card. Background stays transparent so the
+            // inner section cards don't compete with a tinted wrapper.
+            padding: open ? '12px 12px 0' : 0,
+            background: 'transparent',
+            borderLeft:   '4px solid rgba(100,160,255,0.85)',
+            borderRight:  '1px solid rgba(100,160,255,0.45)',
+            borderBottom: '1px solid rgba(100,160,255,0.45)',
+            borderRadius: '0 0 4px 4px',
+          }}>
+            {children}
+          </div>
+        </div>
       </div>
     </div>
   );

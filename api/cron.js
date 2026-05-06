@@ -53,7 +53,7 @@ async function sendEmail(to, subject, html) {
 // web fonts (Outlook desktop, etc.). Layouts use display:table instead of
 // flex for Outlook compatibility.
 const FONT_STACK = `'Raleway','Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,sans-serif`;
-const HEADER = `<div style="background:#111d2e;padding:28px 32px 22px;border-bottom:1px solid rgba(245,197,24,0.25);"><div style="font-family:${FONT_STACK};font-size:30px;font-weight:300;color:#f5c518;letter-spacing:7px;line-height:1;">SFGL</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:2.5px;text-transform:uppercase;margin-top:8px;">2026 Season</div></div>`;
+const HEADER = `<div style="background:#111d2e;padding:28px 32px 22px;border-bottom:1px solid rgba(180,160,100,0.25);"><div style="font-family:${FONT_STACK};font-size:30px;font-weight:300;color:rgba(255,255,255,0.95);letter-spacing:7px;line-height:1;">SFGL</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:2.5px;text-transform:uppercase;margin-top:8px;">2026 Season</div></div>`;
 const FOOTER = `<div style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;background:#0d1828;"><a href="https://sfglgolf.com" style="font-family:${FONT_STACK};font-size:13px;font-weight:500;color:#f5c518;text-decoration:none;letter-spacing:1.5px;">sfglgolf.com →</a><div style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.3);margin-top:8px;letter-spacing:0.3px;">You're receiving this because you're a manager in the SFGL fantasy golf league.</div></div>`;
 
 function wrap(body) {
@@ -61,14 +61,75 @@ function wrap(body) {
 }
 
 function buildWaiverResultsEmail(processed, recipientTeam) {
-  const rows = processed.map(w => {
+  // Wave 8: rebuilt to match the tournament results email visually. Splits
+  // claims into two sections (Successful and Blocked) with section headers.
+  // Each claim renders as a card with a header band (team + status) and a
+  // body row (player swap + reason if blocked). The recipient's claims get
+  // a gold left-border highlight, same as the results email.
+  const successful = processed.filter(w => w.status === 'processed');
+  const blocked    = processed.filter(w => w.status !== 'processed');
+
+  const renderCard = (w) => {
     const isMe = w.team === recipientTeam;
-    const bg = w.status === 'processed' ? (isMe ? 'rgba(80,180,120,0.15)' : 'rgba(80,180,120,0.06)') : 'rgba(200,60,60,0.08)';
-    const icon = w.status === 'processed' ? '✅' : '❌';
-    const label = w.status === 'processed' ? 'Approved' : 'Blocked';
-    return `<div style="background:${bg};border:1px solid rgba(255,255,255,0.06);border-radius:3px;padding:10px 14px;margin-bottom:6px;${isMe ? 'border-left:3px solid #f5c518;' : ''}"><div style="font-family:${FONT_STACK};font-size:13px;font-weight:600;color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.8)'};">${w.team}<span style="float:right;font-size:11px;font-weight:400;color:${w.status === 'processed' ? '#50c378' : '#dc5555'};">${icon} ${label}</span></div><div style="font-family:${FONT_STACK};font-size:12px;margin-top:4px;"><span style="color:#50c378;">+ ${w.player}</span>${w.droppedPlayer ? `<span style="color:rgba(255,255,255,0.3);"> → </span><span style="color:#dc5555;">- ${w.droppedPlayer}</span>` : ''}</div>${w.failReason ? `<div style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px;">${w.failReason}</div>` : ''}</div>`;
-  }).join('');
-  return wrap(`<div style="font-family:${FONT_STACK};font-size:22px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.5px;">⏰ Waiver Results</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:2px;text-transform:uppercase;margin:0 0 20px;">Processed ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</div>${rows}`);
+    const isSuccess = w.status === 'processed';
+
+    const cardBg = isMe ? 'rgba(245,197,24,0.07)' : 'rgba(255,255,255,0.025)';
+    const cardBorder = isMe ? '1px solid rgba(245,197,24,0.4)' : '1px solid rgba(255,255,255,0.06)';
+    // Header band tint: gold for recipient, otherwise green/red light tint
+    // matching the success/block status of the claim.
+    const headerBandBg = isMe
+      ? 'rgba(245,197,24,0.14)'
+      : (isSuccess ? 'rgba(80,180,120,0.08)' : 'rgba(220,80,80,0.08)');
+    const teamNameWeight = isMe ? '700' : '600';
+    const teamNameColor = isMe ? '#ffffff' : 'rgba(255,255,255,0.92)';
+
+    const statusColor = isSuccess ? '#50c378' : '#dc5555';
+    const statusIcon  = isSuccess ? '✓' : '✕';
+    const statusLabel = isSuccess ? 'SUCCESSFUL' : 'BLOCKED';
+    const statusPill = `<span style="display:inline-block;font-family:${FONT_STACK};font-size:10px;font-weight:700;color:${statusColor};background:${isSuccess ? 'rgba(80,180,120,0.12)' : 'rgba(220,80,80,0.12)'};padding:3px 9px;border-radius:3px;letter-spacing:0.8px;">${statusIcon} ${statusLabel}</span>`;
+
+    // Body: player swap. Player added in green, dropped in muted red.
+    const playerInColor  = isSuccess ? '#50c378' : 'rgba(255,255,255,0.55)';
+    const playerOutColor = 'rgba(220,80,80,0.7)';
+    const swapRow = `<table cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+      <td style="padding:11px 18px;font-family:${FONT_STACK};font-size:14px;">
+        <span style="color:${playerInColor};font-weight:500;">+ ${w.player}</span>${w.droppedPlayer ? `<span style="color:rgba(255,255,255,0.25);margin:0 8px;">→</span><span style="color:${playerOutColor};font-weight:500;">− ${w.droppedPlayer}</span>` : ''}
+      </td>
+    </tr></table>`;
+
+    // Reason row (only for blocked claims)
+    const reasonRow = (!isSuccess && w.failReason)
+      ? `<div style="padding:0 18px 11px;font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.45);font-style:italic;border-top:1px solid rgba(255,255,255,0.04);padding-top:9px;">${w.failReason}</div>`
+      : '';
+
+    return `<div style="margin-bottom:10px;background:${cardBg};border:${cardBorder};${isMe ? 'border-left:4px solid #f5c518;' : ''}border-radius:4px;overflow:hidden;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${headerBandBg};border-bottom:1px solid rgba(255,255,255,0.08);">
+        <tr>
+          <td style="padding:11px 18px;font-family:${FONT_STACK};font-size:15px;font-weight:${teamNameWeight};color:${teamNameColor};letter-spacing:0.2px;">${w.team}</td>
+          <td style="padding:11px 18px;text-align:right;white-space:nowrap;">${statusPill}</td>
+        </tr>
+      </table>
+      ${swapRow}
+      ${reasonRow}
+    </div>`;
+  };
+
+  const renderSection = (title, count, claims, accentColor) => {
+    if (claims.length === 0) return '';
+    return `<div style="margin-bottom:8px;margin-top:18px;font-family:${FONT_STACK};font-size:11px;font-weight:700;color:${accentColor};letter-spacing:2px;text-transform:uppercase;">${title} <span style="color:rgba(255,255,255,0.35);font-weight:500;margin-left:4px;">(${count})</span></div>${claims.map(renderCard).join('')}`;
+  };
+
+  const successfulSection = renderSection('Successful Claims', successful.length, successful, '#50c378');
+  const blockedSection    = renderSection('Blocked Claims',    blocked.length,    blocked,    '#dc5555');
+
+  // If somehow nothing to show, still render gracefully.
+  const body = (successful.length === 0 && blocked.length === 0)
+    ? `<div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.45);font-style:italic;padding:14px 0;">No claims were processed.</div>`
+    : `${successfulSection}${blockedSection}`;
+
+  const dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+
+  return wrap(`<div style="font-family:${FONT_STACK};font-size:24px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.3px;">⏰ Waiver Results</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:2.5px;text-transform:uppercase;margin:0 0 22px;">Processed ${dateLabel}</div>${body}`);
 }
 
 function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam) {
@@ -98,6 +159,10 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam)
 
     const cardBg = isMe ? 'rgba(245,197,24,0.07)' : 'rgba(255,255,255,0.025)';
     const cardBorder = isMe ? '1px solid rgba(245,197,24,0.4)' : '1px solid rgba(255,255,255,0.06)';
+    // Wave 8: header band has its own slightly elevated bg so the row stands
+    // out from the player rows below. For the recipient, use a stronger gold
+    // tint; for others, a subtle white tint.
+    const headerBandBg = isMe ? 'rgba(245,197,24,0.14)' : 'rgba(255,255,255,0.05)';
     const teamNameWeight = isMe ? '700' : '600';
     const teamNameColor = isMe ? '#ffffff' : 'rgba(255,255,255,0.92)';
 
@@ -110,19 +175,29 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam)
     } else if (tr.players && tr.players.length > 0) {
       const playersSorted = [...tr.players].sort((a, b) => (b.earnings || 0) - (a.earnings || 0));
       const playerRows = playersSorted.map((p, idx) => {
-        const limited = p.limited ? `<span style="color:#f5c518;margin-left:6px;font-size:11px;">⭐</span>` : '';
+        // Wave 8: limited players get their NAME in gold (matches the app's
+        // limited-player styling). Earnings use the same color as the name —
+        // white for normal, gold for limited.
+        const isLimited = !!p.limited;
+        const nameColor     = isLimited ? '#f5c518' : 'rgba(255,255,255,0.88)';
+        const earningsColor = nameColor; // intentionally matches name
+        const limitedStar = isLimited ? `<span style="margin-left:6px;font-size:11px;">⭐</span>` : '';
+        // R-badge shows just the round label, no "LEADER" suffix
         const bonusBadge = p.wasRoundLeader && p.roundsLed && p.roundsLed.length > 0
-          ? `<span style="display:inline-block;margin-left:8px;font-family:${FONT_STACK};font-size:10px;font-weight:600;color:#f5c518;background:rgba(245,197,24,0.12);padding:2px 7px;border-radius:3px;letter-spacing:0.5px;">${p.roundsLed.map(r => 'R' + r.round).join('·')} LEADER</span>`
+          ? `<span style="display:inline-block;margin-left:8px;font-family:${FONT_STACK};font-size:10px;font-weight:700;color:#f5c518;background:rgba(245,197,24,0.12);padding:2px 7px;border-radius:3px;letter-spacing:0.8px;">${p.roundsLed.map(r => 'R' + r.round).join('·')}</span>`
           : '';
-        const bonusAmount = (p.bonus && p.bonus > 0)
-          ? `<span style="font-family:${FONT_STACK};font-size:11px;color:rgba(245,197,24,0.7);margin-right:8px;">+$${p.bonus.toLocaleString()}</span>`
+        // Bonus moves to a stacked row below the earnings instead of inline
+        const bonusRow = (p.bonus && p.bonus > 0)
+          ? `<div style="font-family:${FONT_STACK};font-size:11px;color:rgba(245,197,24,0.7);margin-top:2px;letter-spacing:0.2px;">+$${p.bonus.toLocaleString()}</div>`
           : '';
-        const earningsColor = (p.earnings || 0) > 0 ? '#50c378' : 'rgba(255,255,255,0.3)';
         const earningsLabel = (p.earnings || 0).toLocaleString();
         const rowBorder = idx === 0 ? '' : 'border-top:1px solid rgba(255,255,255,0.04);';
         return `<table cellpadding="0" cellspacing="0" border="0" width="100%" style="${rowBorder}"><tr>
-          <td style="padding:9px 18px;font-family:${FONT_STACK};font-size:14px;color:rgba(255,255,255,0.85);">${p.name || '—'}${limited}${bonusBadge}</td>
-          <td style="padding:9px 18px;text-align:right;white-space:nowrap;font-family:${FONT_STACK};">${bonusAmount}<span style="font-size:14px;font-weight:500;color:${earningsColor};">$${earningsLabel}</span></td>
+          <td style="padding:9px 18px;font-family:${FONT_STACK};font-size:14px;color:${nameColor};">${p.name || '—'}${limitedStar}${bonusBadge}</td>
+          <td style="padding:9px 18px;text-align:right;white-space:nowrap;font-family:${FONT_STACK};vertical-align:top;">
+            <div style="font-size:14px;font-weight:500;color:${earningsColor};">$${earningsLabel}</div>
+            ${bonusRow}
+          </td>
         </tr></table>`;
       }).join('');
       lineupBody = playerRows;
@@ -131,7 +206,7 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam)
     }
 
     return `<div style="margin-bottom:14px;background:${cardBg};border:${cardBorder};${isMe ? 'border-left:4px solid #f5c518;' : ''}border-radius:4px;overflow:hidden;">
-      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-bottom:1px solid rgba(255,255,255,0.08);">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${headerBandBg};border-bottom:1px solid rgba(255,255,255,0.08);">
         <tr>
           <td style="padding:14px 18px;">
             ${medalCircle}<span style="font-family:${FONT_STACK};font-size:17px;font-weight:${teamNameWeight};color:${teamNameColor};letter-spacing:0.2px;vertical-align:middle;">${tr.team}</span>
