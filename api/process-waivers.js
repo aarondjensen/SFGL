@@ -68,7 +68,21 @@ async function processWaivers(db) {
   const byTeam = {}; pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
   Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
   const allR = new Set(); teams.forEach(t => buildRoster(t, transactions).forEach(n => allR.add(n)));
-  const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
+
+  // Wave 8: per-team roster + drop tracking. Previously a single global
+  // `dropped` set conflated "drop target already used by an earlier successful
+  // claim from THIS team" with "drop target not on any roster" under one
+  // misleading "Drop target unavailable" message — and could fail a perfectly
+  // legal claim. Example bug: Team A submits two claims both dropping Player X;
+  // claim 1 loses a tiebreaker (X is NOT actually dropped); claim 2 then
+  // fails because the global state thinks X is gone, even though he's still
+  // on Team A's roster. We now track drops per team and validate the drop
+  // target against the claimant's CURRENT (per-team) roster snapshot.
+  const teamRosters = {};
+  teams.forEach(t => { teamRosters[t.name] = new Set(buildRoster(t, transactions)); });
+  const droppedByTeam = {};
+
+  const done = new Set(), failed = new Set(), applied = [];
   const tx2 = [...transactions]; let p = 0, f = 0, more = true;
 
   while (more) {
@@ -79,9 +93,33 @@ async function processWaivers(db) {
     Object.entries(byP).forEach(([player, cs]) => {
       cs.sort((a, b) => a.o - b.o); const w = cs[0];
       if (allR.has(player)) { cs.forEach(c => { failed.add(c.claim._idx); tx2[c.claim._idx] = { ...tx2[c.claim._idx], status: 'failed', failReason: 'Already rostered', processedDate: new Date().toLocaleDateString() }; f++; }); more = true; return; }
-      if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allR.has(w.claim.droppedPlayer))) { failed.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: 'Drop target unavailable', processedDate: new Date().toLocaleDateString() }; f++; more = true; return; }
-      if (w.claim.droppedPlayer) { allR.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
-      allR.add(player); done.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() }; applied.push(w.claim); p++;
+
+      // Wave 8: per-team drop validation with distinct error messages
+      if (w.claim.droppedPlayer) {
+        const winnerTeamRoster = teamRosters[w.tn] || new Set();
+        const winnerTeamDropped = droppedByTeam[w.tn] || new Set();
+        if (winnerTeamDropped.has(w.claim.droppedPlayer)) {
+          failed.add(w.claim._idx);
+          tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped by earlier claim', processedDate: new Date().toLocaleDateString() };
+          f++; more = true; return;
+        }
+        if (!winnerTeamRoster.has(w.claim.droppedPlayer)) {
+          failed.add(w.claim._idx);
+          tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: w.claim.droppedPlayer + ` not on ${w.tn}'s roster`, processedDate: new Date().toLocaleDateString() };
+          f++; more = true; return;
+        }
+      }
+
+      // Apply winner to global allR + per-team trackers
+      if (w.claim.droppedPlayer) {
+        allR.delete(w.claim.droppedPlayer);
+        if (!droppedByTeam[w.tn]) droppedByTeam[w.tn] = new Set();
+        droppedByTeam[w.tn].add(w.claim.droppedPlayer);
+        if (teamRosters[w.tn]) teamRosters[w.tn].delete(w.claim.droppedPlayer);
+      }
+      allR.add(player);
+      if (teamRosters[w.tn]) teamRosters[w.tn].add(player);
+      done.add(w.claim._idx); tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() }; applied.push(w.claim); p++;
       pm[w.tn] = nextLastPlace++;
       cs.slice(1).forEach(l => { failed.add(l.claim._idx); tx2[l.claim._idx] = { ...tx2[l.claim._idx], status: 'failed', failReason: 'Lost tiebreaker to ' + w.tn, processedDate: new Date().toLocaleDateString() }; f++; }); more = true;
     });
