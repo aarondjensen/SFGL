@@ -10,7 +10,7 @@ export const NAME_ALIASES = {
   'Samuel Stevens':        'Sam Stevens',
   'Vincent Whaley':        'Vince Whaley',
   'Rafa Cabrera Bello':    'Rafael Cabrera Bello',
-  'Si Woo Kim':            'Si-Woo Kim',
+  'Si-Woo Kim':            'Si Woo Kim',
   'Byeong Hun An':         'Byeong-Hun An',
 
   // PGA Tour field page name variants

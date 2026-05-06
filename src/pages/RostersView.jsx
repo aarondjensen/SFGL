@@ -10,7 +10,7 @@ import {
   isWaiverWindowOpen,
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
-import { theme, colors, fonts, fontSize } from '../theme.js';
+import { theme, colors, fonts } from '../theme.js';
 import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
@@ -30,7 +30,25 @@ const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) =>
   _makeHeadshotErrorHandler(playerName, headshotMap, isLimited);
 
 // ── Nordic name normalization (single definition, used throughout) ────────────
-const normalizeNordic = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/ß/g, 'ss');
+// Normalizes Nordic and other diacritics, plus hyphens and whitespace, so
+// roster names match field/leaderboard names regardless of source format.
+//   • Diacritics: NFD decompose + strip combining marks (Höjgaard → Hojgaard)
+//   • Nordic special letters: ø/Ø → o/O, æ/Æ → ae/Ae, ß → ss
+//   • Hyphens to spaces ("Si-Woo Kim" → "Si Woo Kim") — PGA Tour renders
+//     Korean names hyphenated; rosters often use spaces (especially after
+//     a merge canonicalised to the spaced form). Without this, the playing
+//     badge and tee-time lookup silently miss those players.
+//   • Collapse whitespace so the hyphen->space replacement doesn't leave
+//     double spaces.
+const normalizeNordic = (s) => (s || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/ø/g, 'o').replace(/Ø/g, 'O')
+  .replace(/æ/g, 'ae').replace(/Æ/g, 'Ae')
+  .replace(/ß/g, 'ss')
+  .replace(/-/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
 
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
@@ -76,7 +94,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
           padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
           background: '#0f1d35', border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
-          fontFamily: fonts.serif, fontSize: fontSize.md, fontWeight: 700,
+          fontFamily: fonts.serif, fontSize: 14, fontWeight: 700,
           color: 'rgba(255,255,255,0.9)', textAlign: 'left',
           transition: 'border-color 0.15s', whiteSpace: 'nowrap',
         }}
@@ -84,7 +102,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {selected?.name ?? '—'}
         </span>
-        <span style={{ fontSize: fontSize.xs, opacity: 0.6, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 9, opacity: 0.6, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
         <div style={{
@@ -101,7 +119,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
                 whiteSpace: 'nowrap',
                 background: t.id === value ? 'rgba(245,197,24,0.12)' : 'transparent',
                 border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)',
-                fontFamily: fonts.serif, fontSize: fontSize.md, fontWeight: t.id === value ? 700 : 400,
+                fontFamily: fonts.serif, fontSize: 13, fontWeight: t.id === value ? 700 : 400,
                 color: t.id === value ? colors.textGold : 'rgba(255,255,255,0.85)',
                 transition: 'background 0.1s',
               }}
@@ -125,7 +143,7 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
         flex: 1, padding: '6px 0', borderRadius: 2,
         background: current === leftVal ? 'rgba(255,255,255,0.08)' : 'none',
         border: current === leftVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
-        fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
         color: current === leftVal ? leftColor : colors.textMuted,
         cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
       }}>{leftLabel}</button>
@@ -133,7 +151,7 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
         flex: 1, padding: '6px 0', borderRadius: 2,
         background: current === rightVal ? 'rgba(255,255,255,0.08)' : 'none',
         border: current === rightVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
-        fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
         color: current === rightVal ? rightColor : colors.textMuted,
         cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
       }}>{rightLabel}</button>
@@ -207,7 +225,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
       borderRadius: 3, padding: 12,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: fontSize.base }}>
+        <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: 11 }}>
           ⏰ Pending Waiver Claims ({pendingWaivers.length})
         </h3>
         <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>{waiverStatusLabel}</span>
@@ -226,19 +244,19 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                 <button onClick={() => swapPriority(index, index - 1)} disabled={index === 0}
                   style={{ background: 'none', border: 'none', cursor: index === 0 ? 'not-allowed' : 'pointer',
-                    color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: fontSize.md, padding: '6px 10px', lineHeight: 1 }}>▲</button>
-                <span style={{ fontSize: fontSize.sm, color: 'rgba(220,200,80,0.8)', fontWeight: 700 }}>{index + 1}</span>
+                    color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 14, padding: '6px 10px', lineHeight: 1 }}>▲</button>
+                <span style={{ fontSize: 10, color: 'rgba(220,200,80,0.8)', fontWeight: 700 }}>{index + 1}</span>
                 <button onClick={() => swapPriority(index, index + 1)} disabled={index === pendingWaivers.length - 1}
                   style={{ background: 'none', border: 'none', cursor: index === pendingWaivers.length - 1 ? 'not-allowed' : 'pointer',
-                    color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: fontSize.md, padding: '6px 10px', lineHeight: 1 }}>▼</button>
+                    color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 14, padding: '6px 10px', lineHeight: 1 }}>▼</button>
               </div>
             )}
             <div style={{ flex: 1 }}>
-              <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 500 }}>Add: {waiver.player}</span>
+              <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: 12, fontWeight: 500 }}>Add: {waiver.player}</span>
               {waiver.droppedPlayer && (
                 <>
                   <span style={{ color: colors.textMuted, margin: '0 4px' }}>→</span>
-                  <span style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: fontSize.base }}>Drop: {waiver.droppedPlayer}</span>
+                  <span style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 12 }}>Drop: {waiver.droppedPlayer}</span>
                 </>
               )}
               <div style={{ ...theme.smallText, marginTop: 2 }}>${waiver.fee} fee · {waiver.segment || 'Current Swing'}</div>
@@ -246,12 +264,12 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
             {isOwnTeam && (
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => deleteWaiver(waiver)}
-                  style={{ ...theme.btnSecondary, padding: '8px 12px', fontSize: fontSize.base, minHeight: 36 }}>✏️</button>
+                  style={{ ...theme.btnSecondary, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✏️</button>
                 <button onClick={async () => {
                   const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
                   if (!ok) return;
                   deleteWaiver(waiver);
-                }} style={{ ...theme.btnDanger, padding: '8px 12px', fontSize: fontSize.base, minHeight: 36 }}>✕</button>
+                }} style={{ ...theme.btnDanger, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✕</button>
               </div>
             )}
           </div>
@@ -326,7 +344,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
               background: 'rgba(220,60,60,0.92)',
               border: '1.5px solid rgba(255,255,255,0.25)',
               color: '#fff',
-              fontSize: fontSize.base, fontWeight: 700, lineHeight: 1,
+              fontSize: 11, fontWeight: 700, lineHeight: 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer',
               boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
@@ -346,7 +364,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
             position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
             background: 'rgba(15,25,45,0.88)', borderRadius: 6,
             padding: '0px 3px', lineHeight: 1, zIndex: 5,
-            fontSize: fontSize.xs, letterSpacing: 1,
+            fontSize: 8, letterSpacing: 1,
           }}>
             {'⭐'.repeat(player.stars || 1)}
           </div>
@@ -367,7 +385,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
 export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
-  loggedInUser, isCommissioner, globalPlayerStats, headshots, updateHeadshots,
+  loggedInUser, isCommissioner, globalPlayerStats, headshots,
   leagueSettings = {}, settings, firstTeeTime,
 }) => {
   // leagueSettings may come from either prop name (App passes settings=)
@@ -458,14 +476,13 @@ export const RostersView = ({
 
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
-  const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
+  const windowStatus  = useWindowStatus(activeTournament);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
   const togglePlayerInLineup = useCallback(async (player) => {
-    if (!team || !player?.name) return;
-    const currentLineup = Array.isArray(team.lineup) ? team.lineup : [];
-    const isInLineup = currentLineup.includes(player.name);
-    const activeLineupCount = currentLineup.filter(name => currentRoster.some(p => p.name === name)).length;
+    if (!team) return;
+    const isInLineup = (team.lineup || []).includes(player.name);
+    const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
     if (!isInLineup && activeLineupCount >= LINEUP_SIZE) {
       dialog.showToast(`You can only have ${LINEUP_SIZE} starters`, 'error'); return;
     }
@@ -475,20 +492,13 @@ export const RostersView = ({
     const lastName = player.name.split(' ').pop();
     const newTeams = teams.map(t => {
       if (t.id !== team.id) return t;
-      const tLineup = Array.isArray(t.lineup) ? t.lineup : [];
-      const newLineup = isInLineup ? tLineup.filter(p => p !== player.name) : [...tLineup, player.name];
+      const newLineup = isInLineup ? t.lineup.filter(p => p !== player.name) : [...t.lineup, player.name];
       return { ...t, lineup: newLineup };
     });
-    try {
-      await updateTeams(newTeams);
-    } catch (e) {
-      console.error('[Lineup] write failed:', e);
-      dialog.showToast('Failed to update lineup', 'error');
-      return;
-    }
+    updateTeams(newTeams); // writes to teamsApi (Firebase) + localStorage
     if (!isInLineup) dialog.showToast(`${lastName} added to lineup`, 'success');
     else dialog.showToast(`${lastName} removed from lineup`, 'info');
-  }, [team, teams, updateTeams, dialog, currentRoster, LINEUP_SIZE, MAX_LIMITED_STARTS]);
+  }, [team, teams, updateTeams, dialog]);
 
 
   const pendingWaivers = useMemo(() => {
@@ -545,12 +555,21 @@ export const RostersView = ({
     return map;
   }, [team, tournaments, transactions]);
 
-  // ── Headshot fetching is now centralized in App.jsx ──────────────────────
-  // Wave 1 cleanup: removed the redundant `/api/headshots?names=...` fetch
-  // that ran here on mount. App.jsx already does this for all rostered players
-  // and pipes the result down via the `headshots` prop + `updateHeadshots` setter.
-  // AddDropPlayerModal's `onHeadshotsFound` callback now writes straight to
-  // the global state via updateHeadshots.
+  // Fetch ESPN IDs for all rostered players directly from /api/headshots
+  // This runs once on mount and supplements whatever headshots are in Firebase
+  const [localHeadshots, setLocalHeadshots] = useState({});
+  useEffect(() => {
+    const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
+    if (!allRostered.length) return;
+    const encoded = allRostered.map(n => encodeURIComponent(n)).join(',');
+    fetch(`/api/headshots?names=${encoded}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.results) setLocalHeadshots(data.results); })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Merge prop headshots with locally fetched ESPN IDs
+  const mergedHeadshots = { ...headshots, ...localHeadshots };
   // We use a ref to track the last fetched tournament so re-renders don't re-trigger.
   const _fieldTournamentName = (
     tournaments.find(t => t.playing && !t.completed) ||
@@ -589,16 +608,8 @@ export const RostersView = ({
     };
 
     fetchField();
-    // Wave 5: pause while tab hidden, refetch on return
-    const tick = () => { if (!document.hidden) fetchField(); };
-    const interval = setInterval(tick, 30 * 60 * 1000);
-    const onVis = () => { if (!document.hidden) fetchField(); };
-    document.addEventListener('visibilitychange', onVis);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVis);
-    };
+    const interval = setInterval(fetchField, 30 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Odds are now fetched as part of the field fetch above
@@ -619,18 +630,8 @@ export const RostersView = ({
         }
       }).catch(() => {});
     };
-    // Wave 5: pause while tab hidden, refetch on return — saves ~40 Firebase reads/hour
-    // when a phone is in pocket but app is still mounted.
-    poll(); // initial fetch always runs
-    const tick = () => { if (!document.hidden) poll(); };
-    const interval = setInterval(tick, 90000);
-    const onVis = () => { if (!document.hidden) poll(); };
-    document.addEventListener('visibilitychange', onVis);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVis);
-    };
+    const interval = setInterval(poll, 90000); // every 90s (was 30s — reduces Firebase reads)
+    return () => { cancelled = true; clearInterval(interval); };
   }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch live leaderboard from /api/live during tournament week
@@ -683,16 +684,9 @@ export const RostersView = ({
     };
 
     fetchLive();
-    // Wave 5: pause while tab hidden, refetch on return
-    const tick = () => { if (!document.hidden) fetchLive(); };
-    interval = setInterval(tick, 5 * 60 * 1000);
-    const onVis = () => { if (!document.hidden) fetchLive(); };
-    document.addEventListener('visibilitychange', onVis);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVis);
-    };
+    // Poll every 5 min if tournament is in progress
+    interval = setInterval(fetchLive, 5 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sortedRoster = React.useMemo(() => {
@@ -778,67 +772,38 @@ export const RostersView = ({
               value={selectedTeam || ''}
               onChange={id => { setSelectedTeam(id); setLineupMode(false); setRosterView('full'); }}
             />
-            {/* Mulligan status — stacked Reg + Sig/Maj indicators (Wave 3: count format)
-                Total is always 1 per league rules. Show "1/1" remaining vs "0/1" used.
-                The 🚨 icon stays visible (greyscale when count is 0) so a glance still
-                says "this is mulligan info" — the digit tells you usage, not the cross-out.
-                Wave 8: derive remaining count from transactions array (the single source of
-                truth) rather than the stored team.mulligans counter. Previously, manually
-                added mulligan transactions in Firestore wouldn't decrement the counter
-                because team.mulligans only updates via TransactionsView.handleAddTx. */}
+            {/* Mulligan status — stacked Reg + Sig/Maj indicators */}
             {team && (() => {
-              // Count this team's used mulligans by tournament type. A mulligan tx is
-              // "used" when its status isn't 'failed'. We split between Signature/Major
-              // tournaments and regular events using the tx's tournamentIndex.
-              const usedReg = transactions.filter(tx =>
-                tx.type === 'mulligan' &&
-                tx.team === team.name &&
-                tx.status !== 'failed' &&
-                tx.tournamentIndex != null &&
-                !(tournaments[tx.tournamentIndex]?.isSignature || tournaments[tx.tournamentIndex]?.isMajor)
-              ).length;
-              const usedSig = transactions.filter(tx =>
-                tx.type === 'mulligan' &&
-                tx.team === team.name &&
-                tx.status !== 'failed' &&
-                tx.tournamentIndex != null &&
-                (tournaments[tx.tournamentIndex]?.isSignature || tournaments[tx.tournamentIndex]?.isMajor)
-              ).length;
-              // Each team gets 1 of each type per season per league rules.
-              const regRemaining = Math.max(0, 1 - usedReg);
-              const sigRemaining = Math.max(0, 1 - usedSig);
+              const regRemaining = team.mulligans?.regular ?? 1;
+              const sigRemaining = team.mulligans?.signatureMajor ?? 1;
               const regUsed = regRemaining <= 0;
               const sigUsed = sigRemaining <= 0;
               const activeColor = 'rgba(220,60,60,0.85)';
-              const usedColor   = 'rgba(255,255,255,0.32)';
+              const usedColor = 'rgba(255,255,255,0.18)';
               return (
                 <div style={{
                   display: 'flex', flexDirection: 'column', justifyContent: 'center',
                   gap: 3, flexShrink: 0, height: 36,
                 }}>
                   {[
-                    { label: 'Reg', used: regUsed, remaining: Math.max(0, regRemaining) },
-                    { label: 'Sig', used: sigUsed, remaining: Math.max(0, sigRemaining) },
-                  ].map(({ label, used, remaining }) => (
+                    { label: 'Reg', used: regUsed },
+                    { label: 'Sig', used: sigUsed },
+                  ].map(({ label, used }) => (
                     <div key={label} style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      opacity: used ? 0.55 : 1,
+                      display: 'flex', alignItems: 'center', gap: 3,
+                      opacity: used ? 0.5 : 1,
                       transition: 'opacity 0.2s',
                     }}>
                       <span style={{
-                        fontSize: fontSize.base, lineHeight: 1,
+                        fontSize: 11, lineHeight: 1,
                         filter: used ? 'grayscale(1)' : 'none',
                       }}>🚨</span>
                       <span style={{
-                        fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700,
+                        fontFamily: fonts.sans, fontSize: 8, fontWeight: 700,
                         letterSpacing: '0.3px', textTransform: 'uppercase',
                         color: used ? usedColor : activeColor,
+                        textDecoration: used ? 'line-through' : 'none',
                       }}>{label}</span>
-                      <span style={{
-                        fontFamily: fonts.mono, fontSize: fontSize.xs, fontWeight: 700,
-                        color: used ? usedColor : activeColor,
-                        marginLeft: 1,
-                      }}>{remaining}/1</span>
                     </div>
                   ))}
                 </div>
@@ -852,10 +817,8 @@ export const RostersView = ({
             const tournLocked = isTournamentLocked(activeTournament);
             // Waiver window open but pending waivers exist — free agency blocked until processed
             const waiverPending = addDropBlocked;
-            // Wave 8: commish overrides both gates — same pattern as canEditLineup.
-            // The lock and waiver-pending blocks are league-rule enforcement for
-            // managers; commish can always make manual adjustments.
-            const canAdd = isCommissioner || (!tournLocked && !waiverPending);
+            // Can add: not locked, not waiver-pending
+            const canAdd = !tournLocked && !waiverPending;
 
             return (
               <button
@@ -866,7 +829,7 @@ export const RostersView = ({
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '7px 14px', borderRadius: 4, flexShrink: 0,
-                  fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
+                  fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
                   cursor: 'pointer', transition: 'all 0.15s',
                   background: canAdd ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)',
                   border: canAdd ? '1.5px solid rgba(80,180,120,0.5)' : '1.5px solid rgba(255,255,255,0.12)',
@@ -875,9 +838,9 @@ export const RostersView = ({
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = canAdd ? 'rgba(80,180,120,0.22)' : 'rgba(255,255,255,0.08)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = canAdd ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)'; }}
-                title={isCommissioner ? 'Add or drop a player (commish override)' : tournLocked ? 'Adds unavailable during tournament — opens Tuesday 8pm ET' : waiverPending ? 'Waiver claims pending — free agency opens after Commish processes' : 'Add or drop a player'}
+                title={tournLocked ? 'Adds unavailable during tournament — opens Tuesday 8pm ET' : waiverPending ? 'Waiver claims pending — free agency opens after Commish processes' : 'Add or drop a player'}
               >
-                {canAdd && <span style={{ fontSize: fontSize.lg, lineHeight: 1, fontWeight: 800 }}>+</span>}
+                {canAdd && <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>+</span>}
                 <span>{canAdd ? 'Add Player' : '🔍 Search'}</span>
               </button>
             );
@@ -901,7 +864,7 @@ export const RostersView = ({
                         player={player}
                         lastName={lastName}
                         nameFontSize={nameFontSize}
-                        headshots={headshots}
+                        headshots={mergedHeadshots}
                         fieldPlayerIds={fieldPlayerIds}
                         canEdit={canEditLineup}
                         onRemove={() => togglePlayerInLineup(player)}
@@ -922,12 +885,12 @@ export const RostersView = ({
                         transition: 'all 0.15s',
                       }}>
                         <span style={{
-                          fontSize: fontSize.lg, fontWeight: 300, lineHeight: 1,
+                          fontSize: 20, fontWeight: 300, lineHeight: 1,
                           color: canEditLineup ? (lineupMode ? 'rgba(80,180,120,0.8)' : 'rgba(80,180,120,0.45)') : 'rgba(255,255,255,0.15)',
                         }}>+</span>
                       </div>
                       <div style={{
-                        fontSize: fontSize.xs, fontFamily: fonts.sans, marginTop: 3,
+                        fontSize: 9, fontFamily: fonts.sans, marginTop: 3,
                         textAlign: 'center', width: '100%',
                         color: canEditLineup ? 'rgba(80,180,120,0.5)' : 'rgba(255,255,255,0.15)',
                         letterSpacing: '0.3px',
@@ -1014,25 +977,25 @@ export const RostersView = ({
               )}
               {/* Row 2: column headers */}
               <tr>
-                <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
                 {infoView === 'info' ? (<>
-                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: isMobile ? 'right' : 'center', whiteSpace: 'nowrap', paddingRight: isMobile ? 4 : 0, ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
+                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: isMobile ? 'right' : 'center', whiteSpace: 'nowrap', paddingRight: isMobile ? 4 : 0, ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
                     {liveData?.players?.length
                       ? (liveData.players.some(p => p.thru === 'F' || (!isNaN(parseInt(p.thru, 10)) && parseInt(p.thru, 10) >= 0)) ? 'Score' : 'Tee Time')
                       : Object.keys(teeTimeMap).length > 0 ? <>Tee Time{sortArrow('teeTime')}</> : 'Field'}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
+                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
                     Odds{sortArrow('odds')}
                   </th>
                   <th scope="col" style={{ ...theme.tableHeaderCell }} />
                 </>) : (<>
-                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
+                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
                     OWGR{sortArrow('starts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
+                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
                     {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)') }}>
+                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)') }}>
                     {statsView === 'sfgl' ? 'Earnings' : 'PGA $'}{sortArrow('earnings')}
                   </th>
                 </>)}
@@ -1069,6 +1032,7 @@ export const RostersView = ({
                             if (canEditLineup && isOwnTeam) {
                               if (!lineupMode) {
                                 setLineupMode(true);
+                                // If clicking a non-lineup player with room, add them
                                 if (!isInLineup && canAddToLineup) togglePlayerInLineup(player);
                               } else if (isInLineup || canAddToLineup) {
                                 togglePlayerInLineup(player);
@@ -1078,8 +1042,8 @@ export const RostersView = ({
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
-                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+                            src={getPlayerHeadshot(player.name, player.limited, mergedHeadshots)}
+                            onError={makeHeadshotErrorHandler(player.name, player.limited, mergedHeadshots)}
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
@@ -1101,7 +1065,7 @@ export const RostersView = ({
                               background: 'rgba(220,60,60,0.9)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>
-                              <span style={{ color: '#fff', fontSize: fontSize.xs, fontWeight: 900 }}>✕</span>
+                              <span style={{ color: '#fff', fontSize: 9, fontWeight: 900 }}>✕</span>
                             </div>
                           )}
                           {isEditing && !isInLineup && canAddToLineup && (
@@ -1111,7 +1075,7 @@ export const RostersView = ({
                               background: 'rgba(80,195,120,0.9)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>
-                              <span style={{ color: '#fff', fontSize: fontSize.sm, fontWeight: 900, lineHeight: 1 }}>+</span>
+                              <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>+</span>
                             </div>
                           )}
                           {player.limited && (player.stars || 1) > 0 && (
@@ -1119,7 +1083,7 @@ export const RostersView = ({
                               position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
                               background: 'rgba(15,25,45,0.88)', borderRadius: 6,
                               padding: '0px 3px', lineHeight: 1, zIndex: 5,
-                              fontSize: fontSize.xs, letterSpacing: 0.5,
+                              fontSize: 7, letterSpacing: 0.5,
                               pointerEvents: 'none',
                               opacity: isBenched ? 0.35 : 1,
                             }}>
@@ -1142,25 +1106,22 @@ export const RostersView = ({
                             }}>
                               {displayName(player.name, isMobile)}
                             </span>
-                            {/* Wave 8: starts counter / unlimited sign comes IMMEDIATELY
-                                after the name. The ⛳ "in this week's field" badge
-                                comes AFTER the counter/sign so it doesn't split them. */}
+                            {tournamentField?.has(normalizeNordic(player.name)) && (
+                              <span title="In this week's field" style={{ fontSize: 11, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
+                            )}
                             {player.limited && (
                               <span style={{
-                                fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 600,
+                                fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
                                 color: isBenched ? 'rgba(245,197,24,0.35)' : colors.textGoldDim,
                               }}>
                                 {sfglCutsMap[player.name]?.starts ?? player.starts}/{MAX_LIMITED_STARTS}
                               </span>
                             )}
                             {player.unlimited && (
-                              <span style={{ fontSize: fontSize.sm, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)', flexShrink: 0 }}>♾️</span>
-                            )}
-                            {tournamentField?.has(normalizeNordic(player.name)) && (
-                              <span title="In this week's field" style={{ fontSize: fontSize.base, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
+                              <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)', flexShrink: 0 }}>♾️</span>
                             )}
                           </div>
-                          <div style={{ fontSize: fontSize.sm, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
+                          <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
                             {player.yearsOfService > 1 && <span>(Yr {player.yearsOfService})</span>}
                           </div>
                         </div>
@@ -1204,9 +1165,9 @@ export const RostersView = ({
                         const hasStarted = live && (live.thru === 'F' || (!isNaN(thruNum) && thruNum >= 0) || live.isCut || live.isWD);
 
                         if (live?.isCut) {
-                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted }}>CUT</td>;
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>CUT</td>;
                         } else if (live?.isWD) {
-                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted }}>WD</td>;
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>WD</td>;
                         } else if (hasStarted) {
                           const scoreColor = live.score?.startsWith('-') ? colors.danger : colors.textPrimary;
                           col1 = (
@@ -1280,10 +1241,10 @@ export const RostersView = ({
         nextTournamentIndex={addDropTournamentIndex}
         txSegment={tournaments[addDropTournamentIndex]?.segment || getSegmentByDate()}
         editingWaiverData={editingWaiverData}
-        headshots={headshots}
+        headshots={mergedHeadshots}
         fieldPlayerIds={fieldPlayerIds}
         leagueSettings={resolvedSettings}
-        onHeadshotsFound={found => updateHeadshots && updateHeadshots(prev => ({ ...(prev || {}), ...found }))}
+        onHeadshotsFound={found => setLocalHeadshots(prev => ({ ...prev, ...found }))}
       />
     </div>
   );

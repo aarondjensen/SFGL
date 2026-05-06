@@ -200,15 +200,19 @@ const FantasyGolfLeague = () => {
 
   // ── Auto-fetch headshots for all rostered players ────────────────────────
   // Runs whenever the roster set changes. Calls /api/headshots with every
-  // rostered player name we haven't already attempted, merges results into
-  // the headshots map so every component (Rosters, AddDrop, etc.) sees them.
+  // rostered player name we haven't already attempted recently, merges results
+  // into the headshots map so every component (Rosters, AddDrop, etc.) sees
+  // them.
   //
-  // Wave 8: previously gated by a one-shot `headshotsFetched` flag that
-  // only let the fetch run once per session. When a player was added via
-  // FA/waiver mid-session, their headshot was never fetched until full
-  // page reload. Now the effect re-evaluates on every roster change and
-  // uses a ref to dedupe: each name is attempted at most once per session.
-  const fetchedNamesRef = useRef(new Set());
+  // Wave 8 (post Adam-Scott bug): previously used a permanent Set to dedupe,
+  // which meant ANY single transient failure (ESPN 5xx, network blip, name not
+  // yet indexed in the 5 events the API queries) blocked that player from ever
+  // being retried until full page reload. Now uses a Map of name→timestamp
+  // with a 60-second TTL: a player attempted recently is skipped, but after
+  // a minute the next render re-attempts. Recovers automatically from
+  // transient failures without spamming the endpoint.
+  const fetchAttemptsRef = useRef(new Map()); // name → timestamp of last attempt
+  const HEADSHOT_RETRY_MS = 60 * 1000;
   useEffect(() => {
     if (loading) return;
     const allRostered = [...new Set(
@@ -217,18 +221,20 @@ const FantasyGolfLeague = () => {
     if (!allRostered.length) return;
 
     // Skip names we already have a headshot for, names with a static
-    // PGA_TOUR_IDS fallback, and names we've already attempted this session
-    // (whether they returned a result or not).
-    const missing = allRostered.filter(n =>
-      !safeHeadshots[n] &&
-      !PGA_TOUR_IDS[n] &&
-      !fetchedNamesRef.current.has(n)
-    );
+    // PGA_TOUR_IDS fallback, and names attempted within the retry window.
+    const now = Date.now();
+    const missing = allRostered.filter(n => {
+      if (safeHeadshots[n]) return false;
+      if (PGA_TOUR_IDS[n]) return false;
+      const lastAttempt = fetchAttemptsRef.current.get(n);
+      if (lastAttempt && (now - lastAttempt) < HEADSHOT_RETRY_MS) return false;
+      return true;
+    });
     if (!missing.length) return;
 
-    // Mark as attempted BEFORE the fetch so a quick second roster change
-    // doesn't trigger duplicate in-flight requests for the same names.
-    missing.forEach(n => fetchedNamesRef.current.add(n));
+    // Stamp attempt time BEFORE the fetch so a quick second roster change
+    // doesn't trigger a duplicate in-flight request for the same names.
+    missing.forEach(n => fetchAttemptsRef.current.set(n, now));
 
     const encoded = missing.map(n => encodeURIComponent(n)).join(',');
     fetch(`/api/headshots?names=${encoded}`)
@@ -238,7 +244,7 @@ const FantasyGolfLeague = () => {
           updateHeadshots(prev => ({ ...(prev || {}), ...data.results }));
           const found = Object.keys(data.results).length;
           const notFound = missing.length - found;
-          console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found`);
+          console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found (will retry in ${HEADSHOT_RETRY_MS / 1000}s if still missing)`);
           // Persist to player documents for future loads
           import('./api/firebase').then(({ playersApi }) => {
             const toSave = Object.entries(data.results).map(([name, espnId]) => ({ name, espnId }));
