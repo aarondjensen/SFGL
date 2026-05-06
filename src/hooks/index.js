@@ -211,6 +211,56 @@ export const useLeague = (STORAGE_KEYS) => {
   // Manual refetch — for PullToRefresh
   const refetch = useCallback(() => loadFromFirebase(true), [loadFromFirebase]);
 
+  // Wave 8: real-time Firestore subscriptions. After initial cascade load
+  // completes, attach onSnapshot listeners so any server-side change (cron
+  // processing waivers, results processing, settings change from another
+  // device, etc.) shows up immediately without a page refresh. Initial load
+  // path (Firebase → sfgl_data → localStorage) is unchanged — this is purely
+  // additive. If the initial Firebase load failed and we're showing local
+  // fallback data, the subscription will quietly start populating fresh data
+  // as soon as Firebase becomes reachable.
+  useEffect(() => {
+    if (loading) return; // wait until initial cascade load resolves
+
+    let cancelled = false;
+    const unsubs = [];
+
+    (async () => {
+      try {
+        const { teamsApi, transactionsApi, tournamentsApi, settingsApi } = await import('../api/firebase');
+        if (cancelled) return;
+
+        unsubs.push(teamsApi.subscribe(next => {
+          // Defensive: only update if next is a non-empty array. Firestore
+          // can briefly emit an empty snapshot during reconnect; we don't
+          // want that to wipe local state.
+          if (Array.isArray(next) && next.length > 0) setTeams(next);
+        }));
+
+        unsubs.push(transactionsApi.subscribe(next => {
+          if (Array.isArray(next)) setTransactions(next);
+        }));
+
+        unsubs.push(tournamentsApi.subscribe(next => {
+          if (Array.isArray(next) && next.length > 0) setTournaments(next);
+        }));
+
+        unsubs.push(settingsApi.subscribe(next => {
+          if (next && typeof next === 'object' && Object.keys(next).length > 0) setSettings(next);
+        }));
+
+        console.log('[useLeague] ✓ Real-time subscriptions active');
+      } catch (e) {
+        console.error('[useLeague] subscription setup failed:', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubs.forEach(u => { try { u && u(); } catch {} });
+    };
+  }, [loading]);
+
   // ── Refs for stable updater dependencies ──────────────────────────────
   const teamsRef        = useRef(teams);
   const tournamentsRef  = useRef(tournaments);

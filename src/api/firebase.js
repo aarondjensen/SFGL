@@ -42,6 +42,7 @@ import {
   orderBy,
   where,
   limit,
+  onSnapshot,
   writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -409,6 +410,17 @@ export const teamsApi = {
     return teams.map(t => ({ ...t, lineup: t.lineup || [] }));
   },
 
+  // Wave 8: real-time subscription. Calls back with the full teams array on
+  // every change. Returns an unsubscribe function. Same data shape as getAll.
+  subscribe(callback, errorCallback) {
+    const q = query(collection(db, 'teams'), orderBy('name', 'asc'));
+    return onSnapshot(
+      q,
+      snap => callback(snap.docs.map(d => ({ _id: d.id, ...d.data(), lineup: d.data().lineup || [] }))),
+      err => { console.error('[teamsApi.subscribe]', err); errorCallback?.(err); },
+    );
+  },
+
   async setAll(teams) {
     await _deleteAll('teams');
     if (teams.length === 0) return [];
@@ -454,6 +466,20 @@ export const tournamentsApi = {
     const snap = await getDocs(collection(db, 'tournaments'));
     const tournaments = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
     return tournaments.sort((a, b) => _parseTournamentDate(a.dates) - _parseTournamentDate(b.dates));
+  },
+
+  // Wave 8: real-time subscription. Sorts client-side by parsing the `dates`
+  // string (Firestore can't orderBy on a non-queryable field). Same shape
+  // as getAll. Returns an unsubscribe function.
+  subscribe(callback, errorCallback) {
+    return onSnapshot(
+      collection(db, 'tournaments'),
+      snap => {
+        const tournaments = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+        callback(tournaments.sort((a, b) => _parseTournamentDate(a.dates) - _parseTournamentDate(b.dates)));
+      },
+      err => { console.error('[tournamentsApi.subscribe]', err); errorCallback?.(err); },
+    );
   },
 
   async setAll(tournaments) {
@@ -502,6 +528,38 @@ export const transactionsApi = {
       }
     });
     return deduped;
+  },
+
+  // Wave 8: real-time subscription. Mirrors getAll exactly: timestamp desc
+  // ordering and the same dedup pass. Returns an unsubscribe function. This
+  // is the listener that powers AdminView's "Process Waivers" auto-update
+  // when the cron processes claims server-side.
+  subscribe(callback, errorCallback) {
+    const q = query(collection(db, 'transactions'), orderBy('timestamp', 'desc'));
+    return onSnapshot(
+      q,
+      snap => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const seen = new Set();
+        const deduped = [];
+        data.forEach(tx => {
+          if (tx.txId) {
+            if (!seen.has('txId:' + tx.txId)) {
+              seen.add('txId:' + tx.txId);
+              deduped.push(tx);
+            }
+          } else {
+            const key = [tx.team, tx.type, tx.player, tx.droppedPlayer, tx.tournamentIndex, tx.status, tx.segment].join('|');
+            if (!seen.has(key)) {
+              seen.add(key);
+              deduped.push(tx);
+            }
+          }
+        });
+        callback(deduped);
+      },
+      err => { console.error('[transactionsApi.subscribe]', err); errorCallback?.(err); },
+    );
   },
 
   async add(transaction) {
@@ -617,6 +675,22 @@ export const settingsApi = {
     const settings = {};
     snap.docs.forEach(d => { settings[d.data().key] = d.data().value; });
     return settings;
+  },
+
+  // Wave 8: real-time subscription. Same shape as getAll — an object keyed
+  // by setting name. Powers live updates when the commish changes settings
+  // from another tab/device, or when the waiverDay/Hour/Minute values are
+  // changed and need to flow through to the cron + UI.
+  subscribe(callback, errorCallback) {
+    return onSnapshot(
+      collection(db, 'league_settings'),
+      snap => {
+        const settings = {};
+        snap.docs.forEach(d => { settings[d.data().key] = d.data().value; });
+        callback(settings);
+      },
+      err => { console.error('[settingsApi.subscribe]', err); errorCallback?.(err); },
+    );
   },
 };
 
