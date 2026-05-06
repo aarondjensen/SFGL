@@ -329,7 +329,20 @@ async function handleWaivers(res) {
   const allRostered = new Set();
   teams.forEach(t => (t.roster || []).forEach(p => allRostered.add(p.name)));
 
-  const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
+  // Wave 8: per-team roster tracking. Previously, the cron tracked drops in a
+  // global `dropped` set. That conflated two different failure cases — "drop
+  // target already used by an earlier successful claim from this team" vs
+  // "drop target not currently on any roster" — under one misleading "already
+  // dropped" message. Worse, it failed claims that were perfectly legal: e.g.
+  // Team A has two claims both dropping Player X; if claim 1 fails (e.g. lost
+  // a tiebreaker), claim 2 should still be able to use Player X as its drop
+  // because nothing actually dropped them. We now track drops per team and
+  // validate the drop player against the claimant's CURRENT roster snapshot.
+  const teamRosters = {};
+  teams.forEach(t => { teamRosters[t.name] = new Set((t.roster || []).map(p => p.name)); });
+  const droppedByTeam = {};
+
+  const done = new Set(), failed = new Set(), applied = [];
   const processedResults = [];
   let more = true;
 
@@ -353,13 +366,37 @@ async function handleWaivers(res) {
         cs.forEach(c => { failed.add(c.claim.id); processedResults.push({ ...c.claim, status: 'failed', failReason: 'Player already rostered' }); });
         more = true; return;
       }
-      if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allRostered.has(w.claim.droppedPlayer))) {
-        failed.add(w.claim.id); processedResults.push({ ...w.claim, status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped' });
-        more = true; return;
+
+      // Wave 8: per-team drop validation. Look up the WINNER's team roster
+      // snapshot; the drop player must be on it AND must not have been dropped
+      // by an earlier successful claim from the same team in this batch.
+      // Distinct error messages so debugging is unambiguous.
+      if (w.claim.droppedPlayer) {
+        const winnerTeamRoster = teamRosters[w.tn] || new Set();
+        const winnerTeamDropped = droppedByTeam[w.tn] || new Set();
+        if (winnerTeamDropped.has(w.claim.droppedPlayer)) {
+          failed.add(w.claim.id);
+          processedResults.push({ ...w.claim, status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped by earlier claim' });
+          more = true; return;
+        }
+        if (!winnerTeamRoster.has(w.claim.droppedPlayer)) {
+          failed.add(w.claim.id);
+          processedResults.push({ ...w.claim, status: 'failed', failReason: w.claim.droppedPlayer + ` is not on ${w.tn}'s roster` });
+          more = true; return;
+        }
       }
 
-      if (w.claim.droppedPlayer) { allRostered.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
-      allRostered.add(player); done.add(w.claim.id);
+      // Apply winner: update both global allRostered (for picked-up player
+      // collision detection) and per-team roster + drop tracking.
+      if (w.claim.droppedPlayer) {
+        allRostered.delete(w.claim.droppedPlayer);
+        if (!droppedByTeam[w.tn]) droppedByTeam[w.tn] = new Set();
+        droppedByTeam[w.tn].add(w.claim.droppedPlayer);
+        if (teamRosters[w.tn]) teamRosters[w.tn].delete(w.claim.droppedPlayer);
+      }
+      allRostered.add(player);
+      if (teamRosters[w.tn]) teamRosters[w.tn].add(player);
+      done.add(w.claim.id);
       applied.push(w.claim); processedResults.push({ ...w.claim, status: 'processed' });
       pm[w.tn] = nextLastPlace++;
 
