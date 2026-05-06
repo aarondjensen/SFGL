@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
@@ -198,22 +198,37 @@ const FantasyGolfLeague = () => {
   }, [loading, tournaments.length, tournamentsRecovered]);
 
 
-  // ── Auto-fetch headshots for all rostered players on app load ────────────
-  // Runs once after league data loads. Calls /api/headshots with every rostered
-  // player name, merges results into the headshots map so every component
-  // (Rosters, AddDrop, etc.) has headshots immediately without its own fetch.
-  // NOTE: RostersView's own duplicate fetch was removed in Wave 1.
-  const [headshotsFetched, setHeadshotsFetched] = useState(false);
+  // ── Auto-fetch headshots for all rostered players ────────────────────────
+  // Runs whenever the roster set changes. Calls /api/headshots with every
+  // rostered player name we haven't already attempted, merges results into
+  // the headshots map so every component (Rosters, AddDrop, etc.) sees them.
+  //
+  // Wave 8: previously gated by a one-shot `headshotsFetched` flag that
+  // only let the fetch run once per session. When a player was added via
+  // FA/waiver mid-session, their headshot was never fetched until full
+  // page reload. Now the effect re-evaluates on every roster change and
+  // uses a ref to dedupe: each name is attempted at most once per session.
+  const fetchedNamesRef = useRef(new Set());
   useEffect(() => {
-    if (loading || headshotsFetched) return;
+    if (loading) return;
     const allRostered = [...new Set(
       resolvedTeams.flatMap(t => (t.roster || []).map(p => p.name))
     )].filter(Boolean);
-    if (!allRostered.length) { setHeadshotsFetched(true); return; }
+    if (!allRostered.length) return;
 
-    // Only fetch names not already in the headshots map
-    const missing = allRostered.filter(n => !safeHeadshots[n] && !PGA_TOUR_IDS[n]);
-    if (!missing.length) { setHeadshotsFetched(true); return; }
+    // Skip names we already have a headshot for, names with a static
+    // PGA_TOUR_IDS fallback, and names we've already attempted this session
+    // (whether they returned a result or not).
+    const missing = allRostered.filter(n =>
+      !safeHeadshots[n] &&
+      !PGA_TOUR_IDS[n] &&
+      !fetchedNamesRef.current.has(n)
+    );
+    if (!missing.length) return;
+
+    // Mark as attempted BEFORE the fetch so a quick second roster change
+    // doesn't trigger duplicate in-flight requests for the same names.
+    missing.forEach(n => fetchedNamesRef.current.add(n));
 
     const encoded = missing.map(n => encodeURIComponent(n)).join(',');
     fetch(`/api/headshots?names=${encoded}`)
@@ -221,15 +236,17 @@ const FantasyGolfLeague = () => {
       .then(data => {
         if (data?.results && Object.keys(data.results).length > 0) {
           updateHeadshots(prev => ({ ...(prev || {}), ...data.results }));
-          // Also persist to player documents for future loads
+          const found = Object.keys(data.results).length;
+          const notFound = missing.length - found;
+          console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found`);
+          // Persist to player documents for future loads
           import('./api/firebase').then(({ playersApi }) => {
             const toSave = Object.entries(data.results).map(([name, espnId]) => ({ name, espnId }));
             if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
           }).catch(() => {});
         }
       })
-      .catch(() => {})
-      .finally(() => setHeadshotsFetched(true));
+      .catch(() => {});
   }, [loading, resolvedTeams]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
