@@ -38,14 +38,21 @@ function formatTeeTime(iso) {
 }
 
 // ── Known name aliases — maps API name variants to canonical names ──────────────
-// Add entries here when PGA Tour uses a different name than our Firebase records
+//
+// ⚠ KEEP IN SYNC with `src/constants/nameAliases.js` — that file is the source
+// of truth for client-side alias resolution; this is a copy because serverless
+// functions can't import client-side code.
+//
+// Format: alternate (API/PGA Tour form) → canonical (SFGL roster form)
 const NAME_ALIASES = {
-  'Nico Echavarria':    'Nicolas Echavarria',
-  'Rafa Cabrera Bello': 'Rafael Cabrera Bello',
-  'Si-Woo Kim':         'Si Woo Kim',
-  'Byeong-Hun An':      'Byeong Hun An',
-  'K.H. Lee':           'Kyoung-Hoon Lee',
-  'S.H. Kim':           'Sung-Hyun Kim',
+  'Samuel Stevens':        'Sam Stevens',
+  'Vincent Whaley':        'Vince Whaley',
+  'Rafa Cabrera Bello':    'Rafael Cabrera Bello',
+  'Si-Woo Kim':            'Si Woo Kim',
+  'Byeong Hun An':         'Byeong-Hun An',
+  'Nico Echavarria':       'Nicolas Echavarria',
+  'K.H. Lee':              'Kyoung-Hoon Lee',
+  'S.H. Kim':              'Sung-Hyun Kim',
 };
 function canonicalName(name) {
   return NAME_ALIASES[name?.trim()] || name?.trim();
@@ -201,13 +208,14 @@ async function fetchFromESPN() {
     competitors.forEach(c => {
       const name = c.athlete?.displayName || c.athlete?.fullName || '';
       if (!name) return;
-      players.push(name);
+      const canonical = canonicalName(name) || name;
+      players.push(canonical);
       // ESPN athlete ID doubles as the headshot ID
-      if (c.athlete?.id) playerIdMap[name] = String(c.athlete.id);
+      if (c.athlete?.id) playerIdMap[canonical] = String(c.athlete.id);
       const ttRaw = c.teeTime || c.status?.teeTime || c.startTime;
       if (ttRaw) {
         const tt = formatTeeTime(ttRaw);
-        if (tt) teeTimes.push({ name, teeTime: tt });
+        if (tt) teeTimes.push({ name: canonical, teeTime: tt });
       }
     });
 

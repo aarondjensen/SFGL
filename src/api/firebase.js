@@ -44,6 +44,7 @@ import {
   where,
   limit,
   writeBatch,
+  onSnapshot,
   serverTimestamp,
 } from 'firebase/firestore';
 
@@ -110,6 +111,48 @@ async function _deleteAll(collectionName) {
   });
   chunks.push(batch);
   await Promise.all(chunks.map(b => b.commit()));
+}
+
+/**
+ * Wave-A subscribe helper: attaches an onSnapshot listener with consistent
+ * error handling. Returns the unsubscribe function. Errors during snapshot
+ * delivery are logged but never thrown — a transient Firestore error
+ * shouldn't tear down the rest of the app.
+ */
+function _subscribeOrdered(collectionName, field, mapDocs, callback, dir = 'asc') {
+  const q = query(collection(db, collectionName), orderBy(field, dir));
+  return onSnapshot(
+    q,
+    (snap) => {
+      try {
+        const docs = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+        callback(mapDocs ? mapDocs(docs) : docs);
+      } catch (e) {
+        console.error(`[subscribe:${collectionName}] handler error:`, e);
+      }
+    },
+    (err) => console.error(`[subscribe:${collectionName}] firestore error:`, err)
+  );
+}
+
+// ── Transaction dedup (shared between getAll + subscribe) ───────────────────
+// Same logic that's been in transactionsApi.getAll since the Supabase migration:
+// • Prefer `txId` as the dedup key when present.
+// • Fall back to a composite of (team, type, player, droppedPlayer,
+//   tournamentIndex, status, segment) for legacy rows without a txId.
+function _dedupeTransactions(rows) {
+  const seen = new Set();
+  const out = [];
+  rows.forEach(tx => {
+    if (tx.txId) {
+      const k = 'txId:' + tx.txId;
+      if (!seen.has(k)) { seen.add(k); out.push(tx); }
+    } else {
+      const k = [tx.team, tx.type, tx.player, tx.droppedPlayer, tx.tournamentIndex, tx.status, tx.segment].join('|');
+      if (!seen.has(k)) { seen.add(k); out.push(tx); }
+    }
+  });
+  return out;
 }
 
 // ============================================================================
@@ -216,7 +259,7 @@ export const playersApi = {
   async upsertMany(players) {
     const timestamp = Date.now();
     // Check alias map — if a player name is an alias for a canonical doc, use that doc ID
-    const aliasMap = await getAliasMap(db);
+    const aliasMap = await getAliasMap();
     const BATCH_SIZE = 499;
     for (let i = 0; i < players.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
@@ -356,8 +399,36 @@ export const playerRankingsApi = {
 };
 
 export const headshotsApi = {
-  async getAll()         { return playersApi.getHeadshotsMap(); },
-  async setAll(_obj)     { console.warn('headshotsApi.setAll is deprecated'); },
+  async getAll() { return playersApi.getHeadshotsMap(); },
+
+  /**
+   * Wave A fix: previously a deprecated no-op that just `console.warn`-ed.
+   * useLeague.updateHeadshots was calling this on every headshot update,
+   * which meant the centralized persistence path never wrote to Firebase —
+   * headshots only landed in the DB through the explicit playersApi.upsertMany
+   * call in App.jsx. If that explicit call ever got skipped, the headshot
+   * was lost on next load.
+   *
+   * Now setAll properly persists. Accepts either a map { name: espnId } (the
+   * shape useLeague passes) or an array of { name, espnId } objects.
+   */
+  async setAll(map) {
+    if (!map) return;
+    let entries;
+    if (Array.isArray(map)) {
+      entries = map
+        .filter(p => p && p.name && p.espnId)
+        .map(p => ({ name: p.name, espnId: p.espnId }));
+    } else if (typeof map === 'object') {
+      entries = Object.entries(map)
+        .filter(([name, espnId]) => name && espnId)
+        .map(([name, espnId]) => ({ name, espnId }));
+    } else {
+      return;
+    }
+    if (!entries.length) return;
+    return playersApi.upsertMany(entries);
+  },
 };
 
 export const playerStatsApi = {
@@ -392,6 +463,19 @@ export const teamsApi = {
     await updateDoc(doc(db, 'teams', teamId), updates);
     return updates;
   },
+
+  /**
+   * Wave A fix: real-time subscription. useLeague has been calling this
+   * since the Wave 8 changes, but no implementation existed — every call
+   * threw silently and the subscription block in useLeague was a no-op.
+   * Now wired through onSnapshot. Returns the unsubscribe function.
+   */
+  subscribe(callback) {
+    return _subscribeOrdered('teams', 'name', (docs) =>
+      docs.map(t => ({ ...t, lineup: t.lineup || [] })),
+      callback
+    );
+  },
 };
 
 // ============================================================================
@@ -418,6 +502,13 @@ export const tournamentsApi = {
     await updateDoc(doc(db, 'tournaments', tournamentName), updates);
     return updates;
   },
+
+  /**
+   * Wave A fix: real-time subscription via onSnapshot.
+   */
+  subscribe(callback) {
+    return _subscribeOrdered('tournaments', 'start_date', null, callback);
+  },
 };
 
 // ============================================================================
@@ -429,25 +520,7 @@ export const transactionsApi = {
       query(collection(db, 'transactions'), orderBy('timestamp', 'desc'))
     );
     const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    // Dedup — mirrors supabase.js logic exactly
-    const seen = new Set();
-    const deduped = [];
-    data.forEach(tx => {
-      if (tx.txId) {
-        if (!seen.has('txId:' + tx.txId)) {
-          seen.add('txId:' + tx.txId);
-          deduped.push(tx);
-        }
-      } else {
-        const key = [tx.team, tx.type, tx.player, tx.droppedPlayer, tx.tournamentIndex, tx.status, tx.segment].join('|');
-        if (!seen.has(key)) {
-          seen.add(key);
-          deduped.push(tx);
-        }
-      }
-    });
-    return deduped;
+    return _dedupeTransactions(data);
   },
 
   async add(transaction) {
@@ -542,6 +615,27 @@ export const transactionsApi = {
     // Return only what the local state should have (no more merging back deleted items)
     return localTransactions;
   },
+
+  /**
+   * Wave A fix: real-time subscription via onSnapshot. Applies the same
+   * dedup logic that getAll() uses so subscribers and direct fetchers see
+   * identical shapes.
+   */
+  subscribe(callback) {
+    const q = query(collection(db, 'transactions'), orderBy('timestamp', 'desc'));
+    return onSnapshot(
+      q,
+      (snap) => {
+        try {
+          const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          callback(_dedupeTransactions(data));
+        } catch (e) {
+          console.error('[subscribe:transactions] handler error:', e);
+        }
+      },
+      (err) => console.error('[subscribe:transactions] firestore error:', err)
+    );
+  },
 };
 
 // ============================================================================
@@ -563,6 +657,26 @@ export const settingsApi = {
     const settings = {};
     snap.docs.forEach(d => { settings[d.data().key] = d.data().value; });
     return settings;
+  },
+
+  /**
+   * Wave A fix: real-time subscription. Emits the full {key: value} settings
+   * object whenever any league_settings doc changes — same shape as getAll().
+   */
+  subscribe(callback) {
+    return onSnapshot(
+      collection(db, 'league_settings'),
+      (snap) => {
+        try {
+          const settings = {};
+          snap.docs.forEach(d => { settings[d.data().key] = d.data().value; });
+          callback(settings);
+        } catch (e) {
+          console.error('[subscribe:league_settings] handler error:', e);
+        }
+      },
+      (err) => console.error('[subscribe:league_settings] firestore error:', err)
+    );
   },
 };
 
@@ -813,4 +927,3 @@ export const globalPlayerStatsApi = {
   async get()         { return (await sfglDataApi.get('fantasy-golf-global-stats')) || {}; },
   async set(stats)    { await sfglDataApi.set('fantasy-golf-global-stats', stats); },
 };
-

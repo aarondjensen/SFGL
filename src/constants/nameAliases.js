@@ -21,6 +21,10 @@
 // OWGR bracket suffixes like "Jackson Koivun(Am)" or "Daniel Brown(Oct1994)"
 // are stripped by cleanName() in AdminView before any alias lookup, so they
 // no longer need entries here.
+//
+// ⚠ KEEP IN SYNC with `api/field.js` NAME_ALIASES — the serverless function
+// can't import this file (different deploy target), so it has its own copy.
+// When you edit this file, mirror the changes there too.
 
 export const NAME_ALIASES = {
   // Format: alternate (OWGR/PGA form) → canonical (roster form)
@@ -30,6 +34,8 @@ export const NAME_ALIASES = {
   'Si-Woo Kim':            'Si Woo Kim',
   'Byeong Hun An':         'Byeong-Hun An',
   'Nico Echavarria':       'Nicolas Echavarria',
+  'K.H. Lee':              'Kyoung-Hoon Lee',
+  'S.H. Kim':              'Sung-Hyun Kim',
 };
 
 // Resolve an alternate name to its canonical form. Used as a fallback when
