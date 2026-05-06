@@ -599,15 +599,27 @@ export const transactionsApi = {
                        'priority','timestamp','processedDate','failReason','txId',
                        'tournamentIndex','tournament','date'];
 
+    // Wave 8: compare every editable field, not just status/failReason/priority.
+    // The previous narrow check meant merges (which rename `player` /
+    // `droppedPlayer`) and the edit-transaction modal (which can change `fee`,
+    // `tournament`, etc.) silently failed to persist — local state updated,
+    // sync saw "no important field changed", and the old values stayed in
+    // Firestore. Excluding `timestamp` and `txId` because they're set once at
+    // create time and shouldn't be re-written (timestamps would also fail a
+    // strict !== comparison if Firestore returns a Timestamp object vs the
+    // local Date/string).
+    const dirtyCheckFields = validCols.filter(c => c !== 'timestamp' && c !== 'txId');
+    const isDirty = (local, remote) => dirtyCheckFields.some(c => local[c] !== remote[c]);
+
     localTransactions.forEach(tx => {
       if (tx.txId && remoteByTxId.has(tx.txId)) {
         const r = remoteByTxId.get(tx.txId);
-        if (tx.status !== r.status || tx.failReason !== r.failReason || tx.priority !== r.priority) {
+        if (isDirty(tx, r)) {
           toUpdate.push({ ...tx, id: r.id });
         }
       } else if (tx.id && remoteById.has(tx.id)) {
         const r = remoteById.get(tx.id);
-        if (tx.status !== r.status || tx.failReason !== r.failReason || tx.priority !== r.priority) {
+        if (isDirty(tx, r)) {
           toUpdate.push(tx);
         }
       } else if (!tx.id) {
