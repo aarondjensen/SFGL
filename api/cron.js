@@ -47,213 +47,35 @@ async function sendEmail(to, subject, html) {
 
 // ── Email templates ─────────────────────────────────────────────────────────
 
-// Wave 8: refined to match the app's exact palette and typography.
-// pageBg #111d2e, brighter gold #f5c518, app's earnings green, Raleway font
-// loaded via Google Fonts with system-font fallbacks for clients that strip
-// web fonts (Outlook desktop, etc.). Layouts use display:table instead of
-// flex for Outlook compatibility.
-const FONT_STACK = `'Raleway','Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,sans-serif`;
-const HEADER = `<div style="background:#111d2e;padding:28px 32px 22px;border-bottom:1px solid rgba(180,160,100,0.25);"><div style="font-family:${FONT_STACK};font-size:30px;font-weight:300;color:rgba(255,255,255,0.95);letter-spacing:7px;line-height:1;">SFGL</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:2.5px;text-transform:uppercase;margin-top:8px;">2026 Season</div></div>`;
-const FOOTER = `<div style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;background:#0d1828;"><a href="https://sfglgolf.com" style="font-family:${FONT_STACK};font-size:13px;font-weight:500;color:#f5c518;text-decoration:none;letter-spacing:1.5px;">sfglgolf.com →</a><div style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.3);margin-top:8px;letter-spacing:0.3px;">You're receiving this because you're a manager in the SFGL fantasy golf league.</div></div>`;
+const HEADER = `<div style="background:#0a1628;padding:20px 24px;border-bottom:2px solid rgba(220,170,60,0.4);"><h1 style="font-family:Georgia,serif;font-size:22px;color:#c4a24e;margin:0;letter-spacing:2px;">SFGL</h1><p style="font-family:-apple-system,sans-serif;font-size:11px;color:rgba(255,255,255,0.5);margin:4px 0 0;letter-spacing:1px;text-transform:uppercase;">2026 Season</p></div>`;
+const FOOTER = `<div style="padding:16px 24px;border-top:1px solid rgba(255,255,255,0.08);text-align:center;"><a href="https://sfglgolf.com" style="font-family:-apple-system,sans-serif;font-size:12px;color:#c4a24e;text-decoration:none;">sfglgolf.com</a><p style="font-family:-apple-system,sans-serif;font-size:10px;color:rgba(255,255,255,0.3);margin:6px 0 0;">You're receiving this because you're a manager in the SFGL fantasy golf league.</p></div>`;
 
 function wrap(body) {
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap" rel="stylesheet"><title>SFGL</title></head><body style="margin:0;padding:0;background:#0a1322;font-family:${FONT_STACK};"><div style="max-width:600px;margin:0 auto;background:#111d2e;border:1px solid rgba(180,160,100,0.12);">${HEADER}<div style="padding:28px 32px 24px;">${body}</div>${FOOTER}</div></body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head><body style="margin:0;padding:0;background:#060e1a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><div style="max-width:560px;margin:0 auto;background:#0f1e30;border-radius:4px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">${HEADER}<div style="padding:24px;">${body}</div>${FOOTER}</div></body></html>`;
 }
 
 function buildWaiverResultsEmail(processed, recipientTeam) {
-  // Wave 8: rebuilt to match the tournament results email visually. Splits
-  // claims into two sections (Successful and Blocked) with section headers.
-  // Each claim renders as a card with a header band (team + status) and a
-  // body row (player swap + reason if blocked). The recipient's claims get
-  // a gold left-border highlight, same as the results email.
-  const successful = processed.filter(w => w.status === 'processed');
-  const blocked    = processed.filter(w => w.status !== 'processed');
-
-  const renderCard = (w) => {
+  const rows = processed.map(w => {
     const isMe = w.team === recipientTeam;
-    const isSuccess = w.status === 'processed';
-
-    const cardBg = isMe ? 'rgba(245,197,24,0.07)' : 'rgba(255,255,255,0.025)';
-    const cardBorder = isMe ? '1px solid rgba(245,197,24,0.4)' : '1px solid rgba(255,255,255,0.06)';
-    // Header band tint: gold for recipient, otherwise green/red light tint
-    // matching the success/block status of the claim.
-    const headerBandBg = isMe
-      ? 'rgba(245,197,24,0.14)'
-      : (isSuccess ? 'rgba(80,180,120,0.08)' : 'rgba(220,80,80,0.08)');
-    const teamNameWeight = isMe ? '700' : '600';
-    const teamNameColor = isMe ? '#ffffff' : 'rgba(255,255,255,0.92)';
-
-    const statusColor = isSuccess ? '#50c378' : '#dc5555';
-    const statusIcon  = isSuccess ? '✓' : '✕';
-    const statusLabel = isSuccess ? 'SUCCESSFUL' : 'BLOCKED';
-    const statusPill = `<span style="display:inline-block;font-family:${FONT_STACK};font-size:10px;font-weight:700;color:${statusColor};background:${isSuccess ? 'rgba(80,180,120,0.12)' : 'rgba(220,80,80,0.12)'};padding:3px 9px;border-radius:3px;letter-spacing:0.8px;">${statusIcon} ${statusLabel}</span>`;
-
-    // Body: player swap. Player added in green, dropped in muted red.
-    const playerInColor  = isSuccess ? '#50c378' : 'rgba(255,255,255,0.55)';
-    const playerOutColor = 'rgba(220,80,80,0.7)';
-    const swapRow = `<table cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-      <td style="padding:11px 18px;font-family:${FONT_STACK};font-size:14px;">
-        <span style="color:${playerInColor};font-weight:500;">+ ${w.player}</span>${w.droppedPlayer ? `<span style="color:rgba(255,255,255,0.25);margin:0 8px;">→</span><span style="color:${playerOutColor};font-weight:500;">− ${w.droppedPlayer}</span>` : ''}
-      </td>
-    </tr></table>`;
-
-    // Reason row (only for blocked claims)
-    const reasonRow = (!isSuccess && w.failReason)
-      ? `<div style="padding:0 18px 11px;font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.45);font-style:italic;border-top:1px solid rgba(255,255,255,0.04);padding-top:9px;">${w.failReason}</div>`
-      : '';
-
-    return `<div style="margin-bottom:10px;background:${cardBg};border:${cardBorder};${isMe ? 'border-left:4px solid #f5c518;' : ''}border-radius:4px;overflow:hidden;">
-      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${headerBandBg};border-bottom:1px solid rgba(255,255,255,0.08);">
-        <tr>
-          <td style="padding:11px 18px;font-family:${FONT_STACK};font-size:15px;font-weight:${teamNameWeight};color:${teamNameColor};letter-spacing:0.2px;">${w.team}</td>
-          <td style="padding:11px 18px;text-align:right;white-space:nowrap;">${statusPill}</td>
-        </tr>
-      </table>
-      ${swapRow}
-      ${reasonRow}
-    </div>`;
-  };
-
-  const renderSection = (title, count, claims, accentColor) => {
-    if (claims.length === 0) return '';
-    return `<div style="margin-bottom:8px;margin-top:18px;font-family:${FONT_STACK};font-size:11px;font-weight:700;color:${accentColor};letter-spacing:2px;text-transform:uppercase;">${title} <span style="color:rgba(255,255,255,0.35);font-weight:500;margin-left:4px;">(${count})</span></div>${claims.map(renderCard).join('')}`;
-  };
-
-  const successfulSection = renderSection('Successful Claims', successful.length, successful, '#50c378');
-  const blockedSection    = renderSection('Blocked Claims',    blocked.length,    blocked,    '#dc5555');
-
-  // If somehow nothing to show, still render gracefully.
-  const body = (successful.length === 0 && blocked.length === 0)
-    ? `<div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.45);font-style:italic;padding:14px 0;">No claims were processed.</div>`
-    : `${successfulSection}${blockedSection}`;
-
-  const dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-
-  return wrap(`<div style="font-family:${FONT_STACK};font-size:24px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.3px;">⏰ Waiver Results</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:2.5px;text-transform:uppercase;margin:0 0 22px;">Processed ${dateLabel}</div>${body}`);
+    const bg = w.status === 'processed' ? (isMe ? 'rgba(80,180,120,0.15)' : 'rgba(80,180,120,0.06)') : 'rgba(200,60,60,0.08)';
+    const icon = w.status === 'processed' ? '✅' : '❌';
+    const label = w.status === 'processed' ? 'Approved' : 'Blocked';
+    return `<div style="background:${bg};border:1px solid rgba(255,255,255,0.06);border-radius:3px;padding:10px 14px;margin-bottom:6px;${isMe ? 'border-left:3px solid #c4a24e;' : ''}"><div style="font-size:13px;font-weight:600;color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.8)'};">${w.team}<span style="float:right;font-size:11px;font-weight:400;color:${w.status === 'processed' ? '#50b478' : '#cc5555'};">${icon} ${label}</span></div><div style="font-size:12px;margin-top:4px;"><span style="color:#50b478;">+ ${w.player}</span>${w.droppedPlayer ? `<span style="color:rgba(255,255,255,0.3);"> → </span><span style="color:#cc5555;">- ${w.droppedPlayer}</span>` : ''}</div>${w.failReason ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px;">${w.failReason}</div>` : ''}</div>`;
+  }).join('');
+  return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">⏰ Waiver Results</h2><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 16px;">Processed ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>${rows}`);
 }
 
 function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam) {
-  // Wave 8: rebuilt to show all teams (including those with no lineup) and
-  // each team's full lineup with per-player earnings. Sorts by total earnings
-  // desc; teams without a lineup sort to the bottom and show a "no lineup"
-  // notice instead of player rows.
-  const sorted = [...teamResults].sort((a, b) => {
-    if (a.submitted && !b.submitted) return -1;
-    if (!a.submitted && b.submitted) return 1;
-    return (b.totalEarnings || 0) - (a.totalEarnings || 0);
-  });
-
-  // Medal styling for top-3 ranks (matches app's getMedalStyle)
-  const medalStyle = (rank) => {
-    if (rank === 1) return { bg: 'rgba(245,197,24,0.95)',  text: '#111d2e' };
-    if (rank === 2) return { bg: 'rgba(180,180,190,0.75)', text: '#111d2e' };
-    if (rank === 3) return { bg: 'rgba(160,110,60,0.8)',   text: '#ffffff' };
-    return { bg: 'rgba(255,255,255,0.06)', text: 'rgba(255,255,255,0.4)' };
-  };
-
-  const teamBlocks = sorted.map((tr, i) => {
+  const sorted = [...teamResults].sort((a, b) => b.totalEarnings - a.totalEarnings);
+  const rows = sorted.map((tr, i) => {
     const isMe = tr.team === recipientTeam;
-    const rank = i + 1;
-    const totalLabel = (tr.totalEarnings || 0).toLocaleString();
-    const totalColor = (tr.totalEarnings || 0) > 0 ? '#50c378' : 'rgba(255,255,255,0.3)';
-
-    const cardBg = isMe ? 'rgba(245,197,24,0.07)' : 'rgba(255,255,255,0.025)';
-    const cardBorder = isMe ? '1px solid rgba(245,197,24,0.4)' : '1px solid rgba(255,255,255,0.06)';
-    // Wave 8: header band has its own slightly elevated bg so the row stands
-    // out from the player rows below. For the recipient, use a stronger gold
-    // tint; for others, a subtle white tint.
-    const headerBandBg = isMe ? 'rgba(245,197,24,0.14)' : 'rgba(255,255,255,0.05)';
-    const teamNameWeight = isMe ? '700' : '600';
-    const teamNameColor = isMe ? '#ffffff' : 'rgba(255,255,255,0.92)';
-
-    const medal = medalStyle(rank);
-    const medalCircle = `<span style="display:inline-block;width:24px;height:24px;line-height:24px;border-radius:12px;background:${medal.bg};color:${medal.text};font-family:${FONT_STACK};font-size:12px;font-weight:700;text-align:center;margin-right:12px;vertical-align:middle;">${rank}</span>`;
-
-    let lineupBody = '';
-    if (!tr.submitted) {
-      lineupBody = `<div style="padding:14px 18px;font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.4);font-style:italic;">No lineup submitted</div>`;
-    } else if (tr.players && tr.players.length > 0) {
-      const playersSorted = [...tr.players].sort((a, b) => (b.earnings || 0) - (a.earnings || 0));
-      const playerRows = playersSorted.map((p, idx) => {
-        // Wave 8: limited players get their NAME in gold (matches the app's
-        // limited-player styling). Earnings use the same color as the name —
-        // white for normal, gold for limited.
-        const isLimited = !!p.limited;
-        const nameColor     = isLimited ? '#f5c518' : 'rgba(255,255,255,0.88)';
-        const earningsColor = nameColor; // intentionally matches name
-        const limitedStar = isLimited ? `<span style="margin-left:6px;font-size:11px;">⭐</span>` : '';
-        // R-badge shows just the round label, no "LEADER" suffix
-        const bonusBadge = p.wasRoundLeader && p.roundsLed && p.roundsLed.length > 0
-          ? `<span style="display:inline-block;margin-left:8px;font-family:${FONT_STACK};font-size:10px;font-weight:700;color:#f5c518;background:rgba(245,197,24,0.12);padding:2px 7px;border-radius:3px;letter-spacing:0.8px;">${p.roundsLed.map(r => 'R' + r.round).join('·')}</span>`
-          : '';
-        // Bonus moves to a stacked row below the earnings instead of inline
-        const bonusRow = (p.bonus && p.bonus > 0)
-          ? `<div style="font-family:${FONT_STACK};font-size:11px;color:rgba(245,197,24,0.7);margin-top:2px;letter-spacing:0.2px;">+$${p.bonus.toLocaleString()}</div>`
-          : '';
-        const earningsLabel = (p.earnings || 0).toLocaleString();
-        const rowBorder = idx === 0 ? '' : 'border-top:1px solid rgba(255,255,255,0.04);';
-        return `<table cellpadding="0" cellspacing="0" border="0" width="100%" style="${rowBorder}"><tr>
-          <td style="padding:9px 18px;font-family:${FONT_STACK};font-size:14px;color:${nameColor};">${p.name || '—'}${limitedStar}${bonusBadge}</td>
-          <td style="padding:9px 18px;text-align:right;white-space:nowrap;font-family:${FONT_STACK};vertical-align:top;">
-            <div style="font-size:14px;font-weight:500;color:${earningsColor};">$${earningsLabel}</div>
-            ${bonusRow}
-          </td>
-        </tr></table>`;
-      }).join('');
-      lineupBody = playerRows;
-    } else {
-      lineupBody = `<div style="padding:14px 18px;font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.4);font-style:italic;">No starters scored</div>`;
-    }
-
-    return `<div style="margin-bottom:14px;background:${cardBg};border:${cardBorder};${isMe ? 'border-left:4px solid #f5c518;' : ''}border-radius:4px;overflow:hidden;">
-      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${headerBandBg};border-bottom:1px solid rgba(255,255,255,0.08);">
-        <tr>
-          <td style="padding:14px 18px;">
-            ${medalCircle}<span style="font-family:${FONT_STACK};font-size:17px;font-weight:${teamNameWeight};color:${teamNameColor};letter-spacing:0.2px;vertical-align:middle;">${tr.team}</span>
-          </td>
-          <td style="padding:14px 18px;text-align:right;white-space:nowrap;font-family:${FONT_STACK};font-size:17px;font-weight:600;color:${totalColor};letter-spacing:-0.3px;">$${totalLabel}</td>
-        </tr>
-      </table>
-      ${lineupBody}
-    </div>`;
+    return `<div style="padding:8px 12px;background:${isMe ? 'rgba(196,162,78,0.1)' : 'rgba(255,255,255,0.02)'};border-radius:3px;margin-bottom:4px;${isMe ? 'border-left:3px solid #c4a24e;' : ''}"><span style="font-size:14px;font-weight:700;color:rgba(255,255,255,0.3);display:inline-block;width:20px;">${i + 1}</span><span style="font-size:13px;font-weight:${isMe ? '700' : '500'};color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.75)'};">${tr.team}</span><span style="float:right;font-size:13px;font-weight:600;color:#50b478;">$${(tr.totalEarnings || 0).toLocaleString()}</span></div>`;
   }).join('');
-
-  return wrap(`<div style="font-family:${FONT_STACK};font-size:24px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.3px;">🏆 ${tournamentName}</div><div style="font-family:${FONT_STACK};font-size:11px;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:2.5px;text-transform:uppercase;margin:0 0 22px;">Tournament Results</div>${teamBlocks}`);
+  return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">🏆 ${tournamentName}</h2><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 16px;">Tournament Results</p>${rows}`);
 }
 
-function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam, lineup) {
-  const hasLineup = Array.isArray(lineup) && lineup.length > 0;
-
-  const titleHtml = hasLineup
-    ? `<div style="font-family:${FONT_STACK};font-size:22px;font-weight:500;color:#f5c518;margin:0 0 4px;letter-spacing:0.3px;">⛳ Lineups Lock Tonight</div>`
-    : `<div style="font-family:${FONT_STACK};font-size:22px;font-weight:500;color:#cc5555;margin:0 0 4px;letter-spacing:0.3px;">🚨 No Lineup Set</div>`;
-
-  const tournamentLine = `<div style="font-family:${FONT_STACK};font-size:14px;color:rgba(255,255,255,0.78);margin:8px 0 4px;">${tournamentName}</div>`;
-
-  const lockLine = `<div style="font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 18px;">Locks <strong style="color:#ffffff;font-weight:600;">Thursday at ${lockTime} ET</strong></div>`;
-
-  let bodyHtml;
-  if (hasLineup) {
-    const rows = lineup.map((p, i) => {
-      const name = (typeof p === 'string' ? p : p.name) || '—';
-      return `<div style="font-family:${FONT_STACK};font-size:13px;color:#ffffff;padding:7px 0;border-top:${i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none'};display:flex;align-items:baseline;"><span style="display:inline-block;width:22px;color:rgba(255,255,255,0.4);font-size:11px;font-weight:600;">${i + 1}.</span><span>${name}</span></div>`;
-    }).join('');
-    bodyHtml = `
-      <div style="background:rgba(245,197,24,0.06);border:1px solid rgba(245,197,24,0.22);border-radius:4px;padding:14px 16px;margin:0 0 20px;">
-        <div style="font-family:${FONT_STACK};font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#f5c518;margin:0 0 10px;">Your Starting Lineup (${lineup.length})</div>
-        ${rows}
-      </div>
-      <div style="font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.55);margin:0 0 20px;line-height:1.55;">You can still make changes until lock. Tap below to review or swap players.</div>`;
-  } else {
-    // No-lineup variant: minimal — title + lock line above already convey
-    // urgency, so no extra body content. CTA does the work.
-    bodyHtml = '';
-  }
-
-  const ctaText = hasLineup ? 'Edit Lineup →' : 'Set Lineup →';
-  const ctaHtml = `<a href="https://sfglgolf.com" style="display:inline-block;padding:11px 26px;background:rgba(245,197,24,0.12);border:1px solid rgba(245,197,24,0.5);border-radius:4px;color:#f5c518;text-decoration:none;font-family:${FONT_STACK};font-weight:600;font-size:13px;letter-spacing:0.5px;">${ctaText}</a>`;
-
-  return wrap(`${titleHtml}${tournamentLine}${lockLine}${bodyHtml}${ctaHtml}`);
+function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
+  return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">⛳ Lineups Lock Tomorrow</h2><p style="font-size:13px;color:rgba(255,255,255,0.75);margin:0 0 8px;">${tournamentName}</p><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 20px;">Lineups lock <strong style="color:#ffffff;">Thursday at ${lockTime} ET</strong>. Make sure your lineup is set!</p><a href="https://sfglgolf.com" style="display:inline-block;padding:10px 24px;background:rgba(196,162,78,0.15);border:1px solid rgba(196,162,78,0.5);border-radius:4px;color:#c4a24e;text-decoration:none;font-weight:600;font-size:13px;">Set Lineup →</a>`);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -274,36 +96,6 @@ async function loadTeams() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-// Wave 8: read tournaments from the dedicated `tournaments` collection.
-// Previously this was read from `sfgl_data/fantasy-golf-tournaments`, which
-// was deleted in a prior cleanup. The result was that every cron handler
-// silently saw zero tournaments and exited. This matches tournamentsApi.getAll
-// in src/api/firebase.js — fetch all docs, sort client-side by parsed dates.
-const _MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
-function _parseTournamentDate(datesStr) {
-  if (!datesStr) return new Date(9999, 11, 31);
-  const m = String(datesStr).match(/^([A-Za-z]+)\s+(\d+)/);
-  if (!m) return new Date(9999, 11, 31);
-  const monthKey = m[1].slice(0, 3);
-  const month = _MONTHS[monthKey];
-  const day = parseInt(m[2], 10);
-  if (month === undefined || isNaN(day)) return new Date(9999, 11, 31);
-  return new Date(new Date().getFullYear(), month, day);
-}
-async function loadTournaments() {
-  const snap = await db.collection('tournaments').get();
-  const tournaments = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-  return tournaments.sort((a, b) => _parseTournamentDate(a.dates) - _parseTournamentDate(b.dates));
-}
-
-// Wave 8: read global player stats from sfgl_data using the correct doc name.
-// The cron previously read 'fantasy-golf-global-stats' but the actual doc
-// kept after the prior cleanup is 'fantasy-golf-global-player-stats'.
-async function loadGlobalPlayerStats() {
-  const snap = await db.collection('sfgl_data').doc('fantasy-golf-global-player-stats').get();
-  return snap.exists ? (snap.data().value || {}) : {};
-}
-
 function getEmailMap(settings, teams) {
   const emailMap = settings.managerEmails || {};
   const result = {};
@@ -316,26 +108,24 @@ function getEmailMap(settings, teams) {
 
 // ── Action: process waivers ─────────────────────────────────────────────────
 
-async function handleWaivers(res, force = false) {
+async function handleWaivers(res) {
   const settings = await loadSettings();
 
-  // Check if past cutoff (skipped when force=true — manual commish trigger)
-  if (!force) {
-    const et = getETNow();
-    const day = et.getDay();
-    const timeVal = et.getHours() * 60 + et.getMinutes();
-    const wDay = settings?.waiverDay ?? 2;
-    const wHour = settings?.waiverHour ?? 20;
-    const wMin = settings?.waiverMinute ?? 0;
-    if (!(day === wDay && timeVal >= (wHour * 60 + wMin))) {
-      return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time' });
-    }
+  // Check if past cutoff
+  const et = getETNow();
+  const day = et.getDay();
+  const timeVal = et.getHours() * 60 + et.getMinutes();
+  const wDay = settings?.waiverDay ?? 2;
+  const wHour = settings?.waiverHour ?? 20;
+  const wMin = settings?.waiverMinute ?? 0;
+  if (!(day === wDay && timeVal >= (wHour * 60 + wMin))) {
+    return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time' });
   }
 
-  // Already run today? (skipped when force=true — allows re-running after edits)
+  // Already run today?
   const metaSnap = await db.collection('sfgl_data').doc('last_auto_waiver').get();
   const today = getETNow().toLocaleDateString('en-US');
-  if (!force && metaSnap.exists && metaSnap.data().value === today) {
+  if (metaSnap.exists && metaSnap.data().value === today) {
     return res.json({ status: 'already_run', message: 'Waivers already processed today' });
   }
 
@@ -362,20 +152,7 @@ async function handleWaivers(res, force = false) {
   const allRostered = new Set();
   teams.forEach(t => (t.roster || []).forEach(p => allRostered.add(p.name)));
 
-  // Wave 8: per-team roster tracking. Previously, the cron tracked drops in a
-  // global `dropped` set. That conflated two different failure cases — "drop
-  // target already used by an earlier successful claim from this team" vs
-  // "drop target not currently on any roster" — under one misleading "already
-  // dropped" message. Worse, it failed claims that were perfectly legal: e.g.
-  // Team A has two claims both dropping Player X; if claim 1 fails (e.g. lost
-  // a tiebreaker), claim 2 should still be able to use Player X as its drop
-  // because nothing actually dropped them. We now track drops per team and
-  // validate the drop player against the claimant's CURRENT roster snapshot.
-  const teamRosters = {};
-  teams.forEach(t => { teamRosters[t.name] = new Set((t.roster || []).map(p => p.name)); });
-  const droppedByTeam = {};
-
-  const done = new Set(), failed = new Set(), applied = [];
+  const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
   const processedResults = [];
   let more = true;
 
@@ -399,37 +176,13 @@ async function handleWaivers(res, force = false) {
         cs.forEach(c => { failed.add(c.claim.id); processedResults.push({ ...c.claim, status: 'failed', failReason: 'Player already rostered' }); });
         more = true; return;
       }
-
-      // Wave 8: per-team drop validation. Look up the WINNER's team roster
-      // snapshot; the drop player must be on it AND must not have been dropped
-      // by an earlier successful claim from the same team in this batch.
-      // Distinct error messages so debugging is unambiguous.
-      if (w.claim.droppedPlayer) {
-        const winnerTeamRoster = teamRosters[w.tn] || new Set();
-        const winnerTeamDropped = droppedByTeam[w.tn] || new Set();
-        if (winnerTeamDropped.has(w.claim.droppedPlayer)) {
-          failed.add(w.claim.id);
-          processedResults.push({ ...w.claim, status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped by earlier claim' });
-          more = true; return;
-        }
-        if (!winnerTeamRoster.has(w.claim.droppedPlayer)) {
-          failed.add(w.claim.id);
-          processedResults.push({ ...w.claim, status: 'failed', failReason: w.claim.droppedPlayer + ` is not on ${w.tn}'s roster` });
-          more = true; return;
-        }
+      if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allRostered.has(w.claim.droppedPlayer))) {
+        failed.add(w.claim.id); processedResults.push({ ...w.claim, status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped' });
+        more = true; return;
       }
 
-      // Apply winner: update both global allRostered (for picked-up player
-      // collision detection) and per-team roster + drop tracking.
-      if (w.claim.droppedPlayer) {
-        allRostered.delete(w.claim.droppedPlayer);
-        if (!droppedByTeam[w.tn]) droppedByTeam[w.tn] = new Set();
-        droppedByTeam[w.tn].add(w.claim.droppedPlayer);
-        if (teamRosters[w.tn]) teamRosters[w.tn].delete(w.claim.droppedPlayer);
-      }
-      allRostered.add(player);
-      if (teamRosters[w.tn]) teamRosters[w.tn].add(player);
-      done.add(w.claim.id);
+      if (w.claim.droppedPlayer) { allRostered.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
+      allRostered.add(player); done.add(w.claim.id);
       applied.push(w.claim); processedResults.push({ ...w.claim, status: 'processed' });
       pm[w.tn] = nextLastPlace++;
 
@@ -462,7 +215,7 @@ async function handleWaivers(res, force = false) {
     let roster = [...(team.roster || [])];
     if (w.droppedPlayer) roster = roster.filter(p => p.name !== w.droppedPlayer);
     if (!roster.some(p => p.name === w.player)) {
-      roster.push({ name: w.player, limited: false, stars: 0, unlimited: false, yearsOfService: 1, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' });
+      roster.push({ name: w.player, limited: false, stars: 0, unlimited: false, yearsOfService: 1, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0 });
     }
     batch.update(db.collection('teams').doc(team.id), { roster, transactionFees: (team.transactionFees || 0) + (w.fee || 0) });
   }
@@ -491,98 +244,39 @@ async function handleWaivers(res, force = false) {
 
 // ── Action: lineup reminder ─────────────────────────────────────────────────
 
-async function handleLineupReminder(res, force = false) {
+async function handleLineupReminder(res) {
   const et = getETNow();
-  if (!force && et.getDay() !== 3) return res.json({ status: 'not_wednesday' });
+  if (et.getDay() !== 3) return res.json({ status: 'not_wednesday' });
 
   const today = et.toLocaleDateString('en-US');
   const metaSnap = await db.collection('sfgl_data').doc('last_lineup_reminder').get();
-  if (!force && metaSnap.exists && metaSnap.data().value === today) return res.json({ status: 'already_sent' });
+  if (metaSnap.exists && metaSnap.data().value === today) return res.json({ status: 'already_sent' });
 
   const settings = await loadSettings();
-  const tournaments = await loadTournaments();
+  const sfglSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
+  const tournaments = sfglSnap.exists ? sfglSnap.data().value : [];
   const activeTourney = tournaments?.find(t => t.playing && !t.completed);
   if (!activeTourney) return res.json({ status: 'no_tournament' });
 
-  // Wave 8: lock time = first tee time of the tournament. Fetch live from
-  // /api/field (the PGA Tour data hub used by RostersView). If that fails or
-  // returns no tee times, fall back to the tournament's configured
-  // lockHourET, then to a 7am default. Email always renders something.
-  let lockTime;
-  try {
-    const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://sfglgolf.com';
-    const fieldResp = await fetch(`${baseUrl}/api/field`);
-    if (fieldResp.ok) {
-      const fieldData = await fieldResp.json();
-      const earliest = findEarliestTeeTime(fieldData?.teeTimes || []);
-      if (earliest) lockTime = earliest.replace(/\s+(AM|PM)/i, (_, mer) => mer.toLowerCase());
-    }
-  } catch (e) {
-    console.warn('[handleLineupReminder] /api/field fetch failed, using fallback:', e.message);
-  }
-  if (!lockTime) {
-    const lockHour = activeTourney.lockHourET || 7;
-    lockTime = lockHour > 12 ? `${lockHour - 12}pm` : lockHour === 12 ? '12pm' : `${lockHour}am`;
-  }
+  const lockHour = activeTourney.lockHourET || 7;
+  const lockTime = lockHour > 12 ? `${lockHour - 12}pm` : lockHour === 12 ? '12pm' : `${lockHour}am`;
 
   const teams = await loadTeams();
   const managerEmails = getEmailMap(settings, teams);
   const results = [];
 
-  // Wave 8: send to ALL managers, tailored to whether they have a lineup.
-  // Previously this skipped managers with lineups — Aaron wants everyone to
-  // get a Wednesday 2pm email so they have a chance to review/swap before
-  // Thursday's lock, not just the laggards.
   for (const team of teams) {
     const email = managerEmails[team.name];
-    if (!email) { results.push({ team: team.name, skipped: 'no_email' }); continue; }
-
-    const lineup = team.lineup || [];
-    const hasLineup = lineup.length > 0;
-    const subject = hasLineup
-      ? `⛳ Your lineup — ${activeTourney.name}`
-      : `🚨 No lineup set — ${activeTourney.name}`;
-
+    if (!email) continue;
+    if (team.lineup && team.lineup.length > 0) { results.push({ team: team.name, skipped: true }); continue; }
     try {
-      await sendEmail(email, subject, buildLineupReminderEmail(activeTourney.name, lockTime, team.name, lineup));
-      results.push({ team: team.name, success: true, hasLineup });
-    } catch (err) {
-      results.push({ team: team.name, error: err.message });
-    }
+      await sendEmail(email, `⛳ Lineups lock today — ${activeTourney.name}`, buildLineupReminderEmail(activeTourney.name, lockTime, team.name));
+      results.push({ team: team.name, success: true });
+    } catch (err) { results.push({ team: team.name, error: err.message }); }
   }
 
   await db.collection('sfgl_data').doc('last_lineup_reminder').set({ key: 'last_lineup_reminder', value: today });
-  return res.json({
-    status: 'sent',
-    tournament: activeTourney.name,
-    lockTime,
-    sent: results.filter(r => r.success).length,
-    withLineup: results.filter(r => r.success && r.hasLineup).length,
-    withoutLineup: results.filter(r => r.success && !r.hasLineup).length,
-    results,
-  });
-}
-
-// Find earliest tee time from /api/field's teeTimes array.
-// Input: [{ name, teeTime: "6:30 AM" }, ...]  Output: "6:30 AM" or null.
-function findEarliestTeeTime(teeTimes) {
-  if (!Array.isArray(teeTimes) || teeTimes.length === 0) return null;
-  let earliestStr = null;
-  let earliestMin = Infinity;
-  for (const tt of teeTimes) {
-    const s = tt?.teeTime;
-    if (!s) continue;
-    const m = String(s).match(/^(\d+):(\d+)\s*(AM|PM)$/i);
-    if (!m) continue;
-    let h = parseInt(m[1], 10);
-    const min = parseInt(m[2], 10);
-    const mer = m[3].toUpperCase();
-    if (mer === 'PM' && h !== 12) h += 12;
-    if (mer === 'AM' && h === 12) h = 0;
-    const total = h * 60 + min;
-    if (total < earliestMin) { earliestMin = total; earliestStr = s; }
-  }
-  return earliestStr;
+  return res.json({ status: 'sent', tournament: activeTourney.name, results });
 }
 
 // ── Action: notify results ──────────────────────────────────────────────────
@@ -598,28 +292,12 @@ async function handleNotifyResults(req, res) {
 
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      const sendResult = await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName));
-      // Wave 8: sendEmail returns { skipped: true } if BREVO_API_KEY is missing.
-      // Don't count those as successes. Distinguish so the caller can tell
-      // "all sent" from "all skipped/errored".
-      if (sendResult?.skipped) {
-        results.push({ team: teamName, skipped: true, reason: 'BREVO_API_KEY missing' });
-      } else {
-        results.push({ team: teamName, success: true });
-      }
+      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName));
+      results.push({ team: teamName, success: true });
     } catch (err) { results.push({ team: teamName, error: err.message }); }
   }
 
-  const sent    = results.filter(r => r.success).length;
-  const errored = results.filter(r => r.error).length;
-  const skipped = results.filter(r => r.skipped).length;
-  const total   = results.length;
-
-  // If no manager emails configured, also a problem worth surfacing
-  if (total === 0) return res.status(500).json({ status: 'no_recipients', message: 'No manager emails configured', sent: 0, errored: 0, skipped: 0, results });
-  // If everything failed, return non-2xx so the client surfaces the failure
-  if (sent === 0)  return res.status(502).json({ status: 'all_failed',   message: skipped === total ? 'BREVO_API_KEY not configured' : 'All sends errored', sent, errored, skipped, results });
-  return res.json({ status: 'sent', emailsSent: sent, errored, skipped, results });
+  return res.json({ status: 'sent', emailsSent: results.filter(r => r.success).length, results });
 }
 
 // ── Action: auto-process tournament results ─────────────────────────────────
@@ -637,28 +315,29 @@ function matchName(a, b) {
   return false;
 }
 
-async function handleProcessResults(res, dryRun = false) {
+async function handleProcessResults(res) {
   const et = getETNow();
-  // Only run on Monday — but dry-run can be tested any day for safety verification
-  if (!dryRun && et.getDay() !== 1) return res.json({ status: 'not_monday' });
+  // Only run on Monday
+  if (et.getDay() !== 1) return res.json({ status: 'not_monday' });
 
   const today = et.toLocaleDateString('en-US');
   const metaSnap = await db.collection('sfgl_data').doc('last_auto_results').get();
-  if (!dryRun && metaSnap.exists && metaSnap.data().value === today) {
+  if (metaSnap.exists && metaSnap.data().value === today) {
     return res.json({ status: 'already_run', message: 'Results already processed today' });
   }
 
-  // Load all data (Wave 8: tournaments from dedicated collection, stats from
-  // correctly-named sfgl_data doc — both were silently broken before)
+  // Load all data
   const settings = await loadSettings();
   const teams = await loadTeams();
-  const tournaments = await loadTournaments();
-  const globalStats = await loadGlobalPlayerStats();
+  const tournamentsSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
+  const tournaments = tournamentsSnap.exists ? tournamentsSnap.data().value : [];
+  const statsSnap = await db.collection('sfgl_data').doc('fantasy-golf-global-stats').get();
+  const globalStats = statsSnap.exists ? statsSnap.data().value : {};
 
   // Find active tournament
   const ti = tournaments.findIndex(t => t.playing && !t.completed);
   if (ti === -1) {
-    if (!dryRun) await db.collection('sfgl_data').doc('last_auto_results').set({ key: 'last_auto_results', value: today });
+    await db.collection('sfgl_data').doc('last_auto_results').set({ key: 'last_auto_results', value: today });
     return res.json({ status: 'no_active_tournament' });
   }
   const tournament = tournaments[ti];
@@ -789,24 +468,10 @@ async function handleProcessResults(res, dryRun = false) {
   const nx = newTournaments.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
   if (nx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nx].playing = true; }
 
-  // Wave 8: dryRun support — return what WOULD be written, without committing.
-  // Hit the endpoint with ?action=processResults&dryRun=1 to preview.
-  if (dryRun) {
-    return res.json({
-      status: 'dry_run',
-      tournament: tournament.name,
-      wouldUpdate: {
-        teams: updatedTeams.map(t => ({ id: t.id, name: t.name, earnings: t.earnings, lineup: t.lineup })),
-        tournaments: newTournaments.filter(nt => nt.completed === true || nt.playing === true).map(nt => ({ name: nt.name, completed: !!nt.completed, playing: !!nt.playing })),
-        statsKeys: Object.keys(newStats).length,
-      },
-    });
-  }
-
   // Write everything to Firebase
   const batch = db.batch();
 
-  // Update teams (unchanged — already writes to dedicated `teams` collection)
+  // Update teams
   for (const team of updatedTeams) {
     batch.update(db.collection('teams').doc(team.id), {
       roster: team.roster,
@@ -816,35 +481,18 @@ async function handleProcessResults(res, dryRun = false) {
     });
   }
 
-  // Wave 8: update tournaments in the DEDICATED `tournaments` collection.
-  // Previously this wrote to sfgl_data/fantasy-golf-tournaments which the app
-  // doesn't read from anymore. Each tournament gets its own doc, mirroring
-  // tournamentsApi.setAll() in src/api/firebase.js. Strip the `_id` we added
-  // when reading so we don't store it back.
-  for (const t of newTournaments) {
-    const docId = t._id || t.name || t.id;
-    const data = { ...t };
-    delete data._id;
-    batch.set(db.collection('tournaments').doc(docId), data);
-  }
-
-  // Wave 8: stats doc name corrected — was 'fantasy-golf-global-stats',
-  // actual doc kept after cleanup is 'fantasy-golf-global-player-stats'.
-  batch.set(db.collection('sfgl_data').doc('fantasy-golf-global-player-stats'), { key: 'fantasy-golf-global-player-stats', value: newStats });
+  // Update tournaments and stats in sfgl_data
+  batch.set(db.collection('sfgl_data').doc('fantasy-golf-tournaments'), { key: 'fantasy-golf-tournaments', value: newTournaments });
+  batch.set(db.collection('sfgl_data').doc('fantasy-golf-global-stats'), { key: 'fantasy-golf-global-stats', value: newStats });
   batch.set(db.collection('sfgl_data').doc('last_auto_results'), { key: 'last_auto_results', value: today });
 
   await batch.commit();
 
   // Email results to all managers
   const managerEmails = getEmailMap(settings, teams);
-  // Wave 8: include all teams (even those without lineups) and per-team
-  // lineup details so the email can render player breakdowns.
-  const teamResultsForEmail = updatedTeams.map(t => ({
-    team: t.name,
-    totalEarnings: resultsData.teams[t.id]?.totalEarnings || 0,
-    players: resultsData.teams[t.id]?.players || [],
-    submitted: !!resultsData.teams[t.id],
-  }));
+  const teamResultsForEmail = updatedTeams
+    .filter(t => resultsData.teams[t.id])
+    .map(t => ({ team: t.name, totalEarnings: resultsData.teams[t.id].totalEarnings || 0 }));
 
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
@@ -869,29 +517,17 @@ export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
   const action = req.query.action || '';
-  const isForce = req.query.force === 'true' || req.query.force === '1';
 
-  // Cron actions require Bearer auth; client-callable actions are exempted:
-  //   - notify-results (manual results email send, called from AdminView)
-  //   - waivers&force=true (manual waiver process, called from AdminView)
-  //   - lineup-reminder&force=true (manual reminder send, used for testing
-  //     email rendering — bypasses the day-of-week + idempotency checks)
-  // Risk surface: an unauthenticated caller could trigger waiver processing
-  // outside the normal Tuesday 8pm window. They cannot inject pending claims
-  // (manager auth required for that). Worst case: pending claims get
-  // processed slightly earlier than scheduled. Acceptable.
-  const isClientCallable = action === 'notify-results'
-    || (action === 'waivers' && isForce)
-    || (action === 'lineup-reminder' && isForce);
-  if (!isClientCallable && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
+  // Cron actions require auth; notify-results is called from the client (no auth needed)
+  if (action !== 'notify-results' && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {
     switch (action) {
-      case 'waivers':           return await handleWaivers(res, isForce);
-      case 'lineup-reminder':   return await handleLineupReminder(res, isForce);
-      case 'process-results':   return await handleProcessResults(res, req.query.dryRun === '1' || req.query.dryRun === 'true');
+      case 'waivers':           return await handleWaivers(res);
+      case 'lineup-reminder':   return await handleLineupReminder(res);
+      case 'process-results':   return await handleProcessResults(res);
       case 'notify-results':    return await handleNotifyResults(req, res);
       default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results' });
     }

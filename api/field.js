@@ -42,13 +42,40 @@ function formatTeeTime(iso) {
 const NAME_ALIASES = {
   'Nico Echavarria':    'Nicolas Echavarria',
   'Rafa Cabrera Bello': 'Rafael Cabrera Bello',
-  'Si Woo Kim':         'Si-Woo Kim',
+  'Si-Woo Kim':         'Si Woo Kim',
   'Byeong-Hun An':      'Byeong Hun An',
   'K.H. Lee':           'Kyoung-Hoon Lee',
   'S.H. Kim':           'Sung-Hyun Kim',
 };
 function canonicalName(name) {
   return NAME_ALIASES[name?.trim()] || name?.trim();
+}
+
+// Strip diacritics, hyphens, whitespace, lowercase — for robust name matching
+// across PGA Tour data sections that may render the same player differently
+// (e.g. "Si-Woo Kim" vs "Si Woo Kim", "Højgaard" vs "Hojgaard").
+function normName(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+// Build tee-time list from a players array + teeTimeMap with two-pass matching:
+// (1) exact canonical key match, (2) fall back to normalized match. This catches
+// cases where canonicalName didn't unify the variants because no alias exists.
+function joinPlayersToTeeTimes(players, teeTimeMap) {
+  const normalizedTtMap = {};
+  Object.entries(teeTimeMap).forEach(([k, v]) => { normalizedTtMap[normName(k)] = v; });
+  const out = [];
+  for (const n of players) {
+    const tt = teeTimeMap[n] || normalizedTtMap[normName(n)];
+    if (tt) out.push({ name: n, teeTime: tt });
+  }
+  return out;
 }
 
 // ── Get upcoming tournament from schedule ─────────────────────────────────────
@@ -98,7 +125,7 @@ function parseFieldPage(nd) {
       const tt = obj.teeTime || obj.teeTimeLocal || obj.startTime;
       if (tt && typeof tt === 'string') {
         const formatted = formatTeeTime(tt);
-        if (formatted) teeTimeMap[name] = formatted;
+        if (formatted) teeTimeMap[canonicalName(name) || name] = formatted;
       }
     }
 
@@ -110,8 +137,8 @@ function parseFieldPage(nd) {
           const pn = p.displayName?.trim()
             || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
           if (pn) {
-            teeTimeMap[pn] = tt;
-            if (p.id) playerIdMap[pn] = String(p.id);
+            teeTimeMap[canonicalName(pn) || pn] = tt;
+            if (p.id) playerIdMap[canonicalName(pn) || pn] = String(p.id);
           }
         });
       }
@@ -214,7 +241,7 @@ export default async function handler(req, res) {
         const { players, playerIdMap, teeTimeMap, oddsMap } = parseFieldPage(fieldNd);
 
         // If no tee times from field page, try dedicated tee-times page
-        let finalTeeTimes = players.filter(n => teeTimeMap[n]).map(n => ({ name: n, teeTime: teeTimeMap[n] }));
+        let finalTeeTimes = joinPlayersToTeeTimes(players, teeTimeMap);
         if (!finalTeeTimes.length && players.length) {
           try {
             const ttResp = await fetch(`https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/tee-times`, { headers: HEADERS });
@@ -222,7 +249,7 @@ export default async function handler(req, res) {
               const ttNd = extractNextData(await ttResp.text());
               if (ttNd) {
                 const { teeTimeMap: ttMap2, playerIdMap: pidMap2 } = parseFieldPage(ttNd);
-                finalTeeTimes = players.filter(n => ttMap2[n]).map(n => ({ name: n, teeTime: ttMap2[n] }));
+                finalTeeTimes = joinPlayersToTeeTimes(players, ttMap2);
                 // Merge any new IDs from tee-times page
                 Object.assign(playerIdMap, pidMap2);
               }
