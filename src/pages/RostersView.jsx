@@ -386,6 +386,7 @@ export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
   loggedInUser, isCommissioner, globalPlayerStats, headshots,
+  updateHeadshots,
   leagueSettings = {}, settings, firstTeeTime,
 }) => {
   // leagueSettings may come from either prop name (App passes settings=)
@@ -476,7 +477,7 @@ export const RostersView = ({
 
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
-  const windowStatus  = useWindowStatus(activeTournament);
+  const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
   const togglePlayerInLineup = useCallback(async (player) => {
@@ -555,21 +556,11 @@ export const RostersView = ({
     return map;
   }, [team, tournaments, transactions]);
 
-  // Fetch ESPN IDs for all rostered players directly from /api/headshots
-  // This runs once on mount and supplements whatever headshots are in Firebase
-  const [localHeadshots, setLocalHeadshots] = useState({});
-  useEffect(() => {
-    const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
-    if (!allRostered.length) return;
-    const encoded = allRostered.map(n => encodeURIComponent(n)).join(',');
-    fetch(`/api/headshots?names=${encoded}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.results) setLocalHeadshots(data.results); })
-      .catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Merge prop headshots with locally fetched ESPN IDs
-  const mergedHeadshots = { ...headshots, ...localHeadshots };
+  // Headshot fetching is handled centrally in App.jsx — its useEffect at
+  // module load fetches missing ESPN IDs for all rostered players, persists
+  // them via playersApi.upsertMany, and pushes the result into the headshots
+  // map via updateHeadshots. RostersView no longer maintains its own local
+  // copy: it just reads `headshots` directly. (Wave A cleanup.)
   // We use a ref to track the last fetched tournament so re-renders don't re-trigger.
   const _fieldTournamentName = (
     tournaments.find(t => t.playing && !t.completed) ||
@@ -864,7 +855,7 @@ export const RostersView = ({
                         player={player}
                         lastName={lastName}
                         nameFontSize={nameFontSize}
-                        headshots={mergedHeadshots}
+                        headshots={headshots}
                         fieldPlayerIds={fieldPlayerIds}
                         canEdit={canEditLineup}
                         onRemove={() => togglePlayerInLineup(player)}
@@ -1042,8 +1033,8 @@ export const RostersView = ({
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <img
-                            src={getPlayerHeadshot(player.name, player.limited, mergedHeadshots)}
-                            onError={makeHeadshotErrorHandler(player.name, player.limited, mergedHeadshots)}
+                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
+                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
@@ -1241,10 +1232,10 @@ export const RostersView = ({
         nextTournamentIndex={addDropTournamentIndex}
         txSegment={tournaments[addDropTournamentIndex]?.segment || getSegmentByDate()}
         editingWaiverData={editingWaiverData}
-        headshots={mergedHeadshots}
+        headshots={headshots}
         fieldPlayerIds={fieldPlayerIds}
         leagueSettings={resolvedSettings}
-        onHeadshotsFound={found => setLocalHeadshots(prev => ({ ...prev, ...found }))}
+        onHeadshotsFound={found => updateHeadshots && updateHeadshots(prev => ({ ...(prev || {}), ...found }))}
       />
     </div>
   );

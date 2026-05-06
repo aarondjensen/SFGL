@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/process-waivers",
-      "schedule": "5 0 * * 3"
-    }
-  ]
-}
+{}
