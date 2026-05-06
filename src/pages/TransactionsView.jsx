@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
-import { theme, colors, fonts, fontSize, getSwingColor } from '../theme.js';
+import { getSegmentByDate, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
+import { STORAGE_KEYS } from '../constants/index.js';
+import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 
 // shortName imported from utils (see abbreviateName)
@@ -126,7 +127,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
           flexShrink: 0,
         }}>
           <div>
-            <h2 style={{ fontFamily: fonts.serif, fontSize: fontSize.lg, color: 'rgba(150,190,255,0.9)', margin: 0 }}>
+            <h2 style={{ fontFamily: fonts.serif, fontSize: 15, color: 'rgba(150,190,255,0.9)', margin: 0 }}>
               ✏️ Edit Transaction
             </h2>
             <p style={{ ...theme.smallText, marginTop: 2 }}>
@@ -196,7 +197,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                       padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                       background: sel ? 'rgba(80,180,120,0.15)' : 'rgba(255,255,255,0.03)',
                       border: `1px solid ${sel ? 'rgba(80,180,120,0.4)' : colors.borderSubtle}`,
-                      fontFamily: fonts.serif, fontSize: fontSize.base,
+                      fontFamily: fonts.serif, fontSize: 12,
                       color: sel ? colors.success : colors.textPrimary,
                       transition: 'all 0.1s',
                     }}
@@ -224,7 +225,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                     padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                     background: !editDrop ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
                     border: `1px solid ${!editDrop ? colors.borderInput : colors.borderSubtle}`,
-                    fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted,
+                    fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
                   }}
                 >
                   — None —
@@ -239,7 +240,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                         padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                         background: sel ? colors.dangerBg : 'rgba(255,255,255,0.03)',
                         border: `1px solid ${sel ? colors.dangerBorder : colors.borderSubtle}`,
-                        fontFamily: fonts.serif, fontSize: fontSize.base,
+                        fontFamily: fonts.serif, fontSize: 12,
                         color: sel ? colors.danger : colors.textPrimary,
                         transition: 'all 0.1s',
                       }}
@@ -283,7 +284,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
-export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner, STORAGE_KEYS, settings = {} }) => {
+export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner, STORAGE_KEYS }) => {
   const [filterTeam,   setFilterTeam]   = useState('all');
   const [filterSwing,  setFilterSwing]  = useState('all');
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
@@ -297,7 +298,22 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const [addTxSearchOut,   setAddTxSearchOut]   = useState('');
   const dialog = useDialog();
 
-  // Wave 7: getSegForTourney removed — now uses canonical getSegmentForTournament from utils.
+  const getSegForTourney = (t) => {
+    if (t.segment) return t.segment;
+    if (t.dates) {
+      const m = t.dates.match(/^([A-Za-z]+)/);
+      if (m) {
+        const mo = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12}[m[1]];
+        if (mo) {
+          if (mo <= 3) return 'West Coast Swing';
+          if (mo <= 6) return 'Spring Swing';
+          if (mo <= 9) return 'Summer Swing';
+          return 'Fall Finish';
+        }
+      }
+    }
+    return null;
+  };
 
   const teamFees = useMemo(() => {
     // Determine current swing for the fee counter:
@@ -306,24 +322,25 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     //    next swing — the one containing the next upcoming non-alternate tournament
     // 3. This resets the counter to $0 as soon as the commish awards the pot
     const lastCompleted = [...(tournaments || [])].reverse().find(t => t.completed && t.results?.teams);
-    const lastSeg = lastCompleted ? getSegmentForTournament(lastCompleted) : getSegmentByDate();
+    const lastSeg = lastCompleted ? getSegForTourney(lastCompleted) : getSegmentByDate();
     const lastSwingAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === lastSeg);
 
     let currentSwing = lastSeg;
     if (lastSwingAwarded) {
       // Advance to next swing: find first non-alternate upcoming tournament
       const nextTourney = (tournaments || []).find(t => !t.completed && !t.isAlternate);
-      currentSwing = nextTourney ? (getSegmentForTournament(nextTourney) || lastSeg) : lastSeg;
+      currentSwing = nextTourney ? (getSegForTourney(nextTourney) || lastSeg) : lastSeg;
     }
 
+    const swingIsComplete = false; // new swing just started — never "complete" yet
     const fees = {};
-    teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, teamId: t.id, teamName: t.name }; });
+    teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, swingIsComplete, teamId: t.id, teamName: t.name }; });
 
     // Build the set of tournamentIndexes that belong to the current swing
     const currentSwingIndexes = new Set(
       (tournaments || [])
         .map((t, i) => ({ t, i }))
-        .filter(({ t }) => getSegmentForTournament(t) === currentSwing)
+        .filter(({ t }) => getSegForTourney(t) === currentSwing)
         .map(({ i }) => i)
     );
 
@@ -383,7 +400,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const getTxSegment = (tx) => {
     if (tx.segment) return tx.segment;
     if (tx.tournamentIndex !== undefined && tournaments[tx.tournamentIndex]) {
-      return getSegmentForTournament(tournaments[tx.tournamentIndex]);
+      return getSegForTourney(tournaments[tx.tournamentIndex]);
     }
     return '';
   };
@@ -408,11 +425,15 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const team = teams.find(t => t.name === tx.team);
     if (!team) return;
 
-    // Remove the added player from the roster
+    // Remove the added player from the roster (filters all instances — defensive
+    // against pre-existing duplicates from prior corruption)
     let newRoster = team.roster.filter(p => p.name !== tx.player);
 
-    // Restore the dropped player — use allPlayers data if available, else makePlayer
-    if (tx.droppedPlayer) {
+    // Restore the dropped player — but ONLY if they're not already on the
+    // roster. Without this guard, undoing two transactions that both dropped
+    // the same player results in that player appearing twice (the bug that
+    // put two Ryan Foxes on World #1).
+    if (tx.droppedPlayer && !newRoster.some(p => p.name === tx.droppedPlayer)) {
       const playerData = allPlayers?.find(p => p.name === tx.droppedPlayer);
       newRoster.push(playerData
         ? { name: playerData.name, limited: playerData.limited || false, unlimited: playerData.unlimited || false, stars: playerData.stars || 0, starts: playerData.starts || 0, eventsPlayed: playerData.eventsPlayed || 0, cutsMade: playerData.cutsMade || 0, pgaTourEarnings: playerData.pgaTourEarnings || 0, sfglEarnings: playerData.sfglEarnings || 0 }
@@ -468,15 +489,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
     const tournamentIndex = parseInt(addTxTourney);
     const isBlocked = addTxType === 'waiver blocked';
-    // Wave 6: auto-calculate fee based on transaction type, defaulting to the
-    // league settings (feeFA: 1, feeWaiver: 2). Previous code hardcoded 0 for
-    // every type, so manually-added FA transactions never charged the $1 fee.
-    const feeFA     = settings?.feeFA     ?? 1;
-    const feeWaiver = settings?.feeWaiver ?? 2;
-    const computedFee = isBlocked       ? 0
-                      : addTxType === 'fa'        ? feeFA
-                      : addTxType === 'waiver'    ? feeWaiver
-                      : 0; // mulligan, drop, etc. — no fee
     const newTx = {
       txId: `manual-${addTxTeam}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team: addTxTeam,
@@ -485,7 +497,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       droppedPlayer: addTxType === 'mulligan' ? playerOutName || undefined
                    : addTxType === 'drop'     ? undefined
                    : playerOutName || undefined,
-      fee: computedFee,
+      fee: isBlocked ? 0 : 0,
       segment: tournaments[tournamentIndex]?.segment || '',
       date: new Date().toLocaleDateString(),
       timestamp: Date.now(),
@@ -507,6 +519,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     if (addTxType === 'mulligan' && (playerInName || playerOutName)) {
       const mulliganTeam = teams.find(t => t.name === addTxTeam);
       const tournament = tournaments[tournamentIndex];
+      const isSigOrMajor = tournament?.isSignature || tournament?.isMajor;
+      const mullKey = isSigOrMajor ? 'signatureMajor' : 'regular';
       const alreadyProcessed = !!tournament?.completed;
 
       // Detect if this mulligan was already applied (e.g. re-adding a lost transaction record).
@@ -537,10 +551,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   return p;
                 })
               : t.roster,
-            // Wave 8: no longer write to team.mulligans. RostersView now derives
-            // remaining mulligans from the transactions array (single source of
-            // truth), so a manually-added mulligan tx in Firestore correctly
-            // counts against the team's quota — same as one added via this UI.
+            // Decrement mulligan counter
+            mulligans: {
+              ...t.mulligans,
+              [mullKey]: Math.max(0, (t.mulligans?.[mullKey] ?? 1) - 1),
+            },
           };
         });
 
@@ -633,7 +648,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   // Human-readable label for transaction type
   const txTypeLabel = (type) => {
     if (type === 'swing_winner') return 'swing winner';
-    if (type === 'fa')           return 'free agent';
     return type;
   };
 
@@ -674,12 +688,17 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               const swingPot = teamFees.reduce((sum, t) => sum + (t.swingTotal || 0), 0);
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, letterSpacing: '0.3px', color: swingColor }}>
+                  <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.3px', color: swingColor }}>
                     {teamFees[0].currentSwing}
                   </span>
                   {swingPot > 0 && (
-                    <span style={{ fontFamily: fonts.mono, fontSize: fontSize.base, fontWeight: 700, color: swingColor }}>
+                    <span style={{ fontFamily: fonts.mono, fontSize: 12, fontWeight: 700, color: swingColor }}>
                       ${swingPot}
+                    </span>
+                  )}
+                  {teamFees[0].swingIsComplete && (
+                    <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(245,197,24,0.8)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 2, padding: '1px 4px' }}>
+                      Final
                     </span>
                   )}
                 </div>
@@ -697,13 +716,13 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     border: `1px solid ${colors.borderSubtle}`,
                     borderRadius: 2, padding: '8px 6px', textAlign: 'center', minWidth: 0,
                   }}>
-                    <div style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>
+                    <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>
                       {abbr}
                     </div>
-                    <div style={{ ...theme.statNum, fontSize: fontSize.md, color: colors.textGold, marginTop: 2 }}>
+                    <div style={{ ...theme.statNum, fontSize: 13, color: colors.textGold, marginTop: 2 }}>
                       ${team.seasonTotal}
                     </div>
-                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: getSwingColor(team.currentSwing), marginTop: 1 }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: getSwingColor(team.currentSwing), marginTop: 1 }}>
                       ${team.swingTotal} swing
                     </div>
                   </div>
@@ -713,10 +732,30 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           </div>
         </div>
 
-        {/* ── Commissioner: Add Manual Transaction (form only — toggle moved
-            inline with the Transaction History header below) ── */}
+        {/* ── Commissioner: Add Manual Transaction ── */}
         {isCommissioner && (
           <>
+          <button
+              onClick={() => setAddTxOpen(!addTxOpen)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 14px', borderRadius: 4,
+                fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                background: 'rgba(80,180,120,0.12)',
+                border: '1.5px solid rgba(80,180,120,0.5)',
+                color: 'rgba(80,180,120,0.9)',
+                letterSpacing: '0.2px',
+                marginBottom: addTxOpen ? 0 : 8,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.12)'; }}
+            >
+              <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>{addTxOpen ? '−' : '+'}</span>
+              <span>Add Transaction</span>
+            </button>
+
             {addTxOpen && (
           <div style={theme.card}>
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -779,11 +818,38 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         setAddTxType(type);
                         setAddTxPlayerIn(null); setAddTxSearchIn('');
                         setAddTxPlayerOut(null); setAddTxSearchOut('');
-                        // Wave 8: removed auto-set of the tournament field when
-                        // type changes. Commish always picks tournament explicitly
-                        // — nothing in this form should change without a click.
+                        // Always re-default tournament when type changes (commish can still override)
+                        {
+                          if (type === 'mulligan') {
+                            // Mulligan → current playing tournament
+                            const idx = tournaments.findIndex(t => t.playing);
+                            if (idx >= 0) setAddTxTourney(String(idx));
+                          } else {
+                            // FA/waiver/drop → date-based current tournament week
+                            const parseStart = (t) => {
+                              if (!t?.dates) return null;
+                              const m = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
+                              if (!m) return null;
+                              const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+                              const mo = months[m[1]];
+                              if (mo === undefined) return null;
+                              return new Date(2026, mo, parseInt(m[2]));
+                            };
+                            const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+                            const now = new Date(etStr);
+                            let found = -1;
+                            tournaments.forEach((t, i) => {
+                              const start = parseStart(t);
+                              if (!start) return;
+                              const end = new Date(start); end.setDate(end.getDate() + 13);
+                              if (now >= start && now <= end) found = i;
+                            });
+                            if (found < 0) found = tournaments.findIndex(t => !t.completed);
+                            if (found >= 0) setAddTxTourney(String(found));
+                          }
+                        }
                       }} style={{
-                        flex: 1, padding: '7px 4px', borderRadius: 2, fontSize: fontSize.base,
+                        flex: 1, padding: '7px 4px', borderRadius: 2, fontSize: 11,
                         fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
                         background: addTxType === type ? colors.buttonNavy : 'transparent',
                         border: '1px solid ' + (addTxType === type ? colors.border : colors.borderInput),
@@ -800,29 +866,31 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   const teamObj  = teams.find(t => t.name === addTxTeam);
                   const validPlayer = p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim());
 
-                  // Mulligan: show a simple dropdown of the team's full roster.
-                  // Wave 8: previously filtered to bench-only (roster minus lineup),
-                  // but commish wanted the full roster visible — use roster directly.
-                  // Annotates each name with "(in lineup)" so the original distinction
-                  // is still visible without restricting the choice.
+                  // Mulligan: show a simple dropdown of the team's roster
                   if (addTxType === 'mulligan') {
                     const roster = (teamObj?.roster || []).filter(validPlayer);
-                    // Determine the ORIGINAL lineup for the selected tournament for
-                    // the annotation. If results already processed, lineup was cleared
-                    // — pull from stored results. If a mulligan was already applied,
-                    // reconstruct the original lineup by undoing the swap.
+                    // Determine the ORIGINAL lineup for the selected tournament:
+                    // If results already processed, lineup was cleared — pull from stored results.
+                    // If a mulligan was already applied to results, reconstruct the original
+                    // lineup by undoing the swap (replacedPlayer → original starter).
                     const tournIdx = addTxTourney ? parseInt(addTxTourney) : -1;
                     const tournament = tournIdx >= 0 ? tournaments[tournIdx] : null;
                     const storedPlayers = tournament?.results?.teams?.[teamObj?.id]?.players || [];
+                    // Reconstruct original lineup: for any player with mulliganIn/replacedPlayer,
+                    // use the replacedPlayer (original starter) instead of the swapped-in player.
                     const originalLineup = storedPlayers.map(p => {
                       if (p.mulliganIn && p.replacedPlayer) return p.replacedPlayer;
                       return p.name || p;
                     }).filter(Boolean);
                     const currentLineup = teamObj?.lineup || [];
                     const lineup = new Set(originalLineup.length > 0 ? originalLineup : currentLineup);
+                    // For mulligan IN, show roster players NOT in the original lineup (the bench)
+                    const benchPlayers = roster.filter(p => !lineup.has(p.name));
+                    // Fallback: show all roster players if bench is empty
+                    const pool = benchPlayers.length > 0 ? benchPlayers : roster;
                     return (
                       <div>
-                        <div style={{ ...theme.label, marginBottom: 4 }}>Player IN</div>
+                        <div style={{ ...theme.label, marginBottom: 4 }}>Player IN (from bench)</div>
                         <select
                           value={addTxPlayerIn?.name || ''}
                           onChange={e => {
@@ -832,27 +900,22 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4, cursor: 'pointer' }}
                         >
                           <option value="">— select player —</option>
-                          {roster.sort((a, b) => a.name.localeCompare(b.name)).map(p => (
-                            <option key={p.name} value={p.name}>
-                              {p.name}{p.limited ? ' ⭐' : ''}{lineup.has(p.name) ? ' (in lineup)' : ''}
-                            </option>
+                          {pool.sort((a, b) => a.name.localeCompare(b.name)).map(p => (
+                            <option key={p.name} value={p.name}>{p.name}{p.limited ? ' ⭐' : ''}</option>
                           ))}
                         </select>
                       </div>
                     );
                   }
 
-                  // Non-mulligan: search UI for the IN player.
-                  // Wave 8: show ALL players (not just free agents). For each match
-                  // we annotate which team they're already rostered on, so the
-                  // commish can:
-                  //  - see they're picking a free agent (no annotation)
-                  //  - see when they'd be claiming someone already rostered
-                  //  - retroactively record a tx for a player already on the team
-                  //    (useful when the league action happened but no tx exists)
-                  const pool = allPlayers.filter(validPlayer);
-                  const rosterByPlayer = new Map();
-                  teams.forEach(t => t.roster.forEach(r => { rosterByPlayer.set(r.name, t.name); }));
+                  // Non-mulligan: search UI for free agents / all players
+                  const pool = addTxType === 'waiver blocked'
+                    ? allPlayers.filter(validPlayer)
+                    : allPlayers.filter(p => {
+                        if (!validPlayer(p)) return false;
+                        const allRostered = new Set(teams.flatMap(t => t.roster.map(r => r.name)));
+                        return !allRostered.has(p.name);
+                      });
                   const filtered = pool.filter(p =>
                     (p.name || p).toLowerCase().includes(addTxSearchIn.toLowerCase())
                   );
@@ -867,15 +930,15 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           padding: '8px 12px', borderRadius: 3, marginBottom: 4,
                           background: 'rgba(80,180,120,0.12)', border: '1px solid rgba(80,180,120,0.35)',
                         }}>
-                          <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.success }}>{addTxPlayerIn.name}</span>
+                          <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.success }}>{addTxPlayerIn.name}</span>
                           <button onClick={() => { setAddTxPlayerIn(null); setAddTxSearchIn(''); }}
-                            style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: fontSize.base, padding: '0 2px' }}>✕</button>
+                            style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 12, padding: '0 2px' }}>✕</button>
                         </div>
                       ) : (
                         <>
                           <input
                             type="text"
-                            placeholder="Search players…"
+                            placeholder="Search free agents…"
                             value={addTxSearchIn}
                             onChange={e => setAddTxSearchIn(e.target.value)}
                             style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4 }}
@@ -886,7 +949,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid ' + colors.borderSubtle, borderRadius: 3, marginBottom: 4 }}>
                               {filtered.slice(0, 20).map(p => {
                                 const name = p.name || p;
-                                const rosteredOn = rosterByPlayer.get(name);
                                 return (
                                   <div key={name}
                                     onClick={() => { setAddTxPlayerIn({ name }); setAddTxSearchIn(''); }}
@@ -900,21 +962,16 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                                   >
                                     {p.worldRank && (
-                                      <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, minWidth: 26 }}>
+                                      <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, minWidth: 26 }}>
                                         {p.worldRank === 999 ? 'NR' : '#' + p.worldRank}
                                       </span>
                                     )}
-                                    <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>{name}</span>
-                                    {rosteredOn && (
-                                      <span style={{ marginLeft: 'auto', fontFamily: fonts.sans, fontSize: fontSize.sm, fontStyle: 'italic', color: colors.textGoldDim }}>
-                                        on {rosteredOn}
-                                      </span>
-                                    )}
+                                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>{name}</span>
                                   </div>
                                 );
                               })}
                               {filtered.length === 0 && (
-                                <div style={{ padding: '10px 12px', fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted }}>No players found</div>
+                                <div style={{ padding: '10px 12px', fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>No players found</div>
                               )}
                             </div>
                           )}
@@ -928,13 +985,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 {(addTxType === 'mulligan' || addTxType === 'fa' || addTxType === 'waiver') && (() => {
                   const teamObj = teams.find(t => t.name === addTxTeam);
 
-                  // Mulligan: dropdown of the team's full roster.
-                  // Wave 8: previously restricted to lineup-only — commish wanted
-                  // full roster visible. Annotate each non-lineup player with
-                  // "(on bench)" so the distinction is still clear.
+                  // Mulligan: simple dropdown of lineup players (the one being swapped out)
                   if (addTxType === 'mulligan') {
-                    const roster = (teamObj?.roster || []).filter(p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim()));
-                    // Determine ORIGINAL lineup for annotation (same logic as Player IN).
+                    // Determine ORIGINAL lineup: if results already processed, pull from stored results.
+                    // If a mulligan was already applied, reconstruct original by undoing the swap.
                     const tournIdx = addTxTourney ? parseInt(addTxTourney) : -1;
                     const tournament = tournIdx >= 0 ? tournaments[tournIdx] : null;
                     const storedPlayers = tournament?.results?.teams?.[teamObj?.id]?.players || [];
@@ -943,10 +997,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       return p.name || p;
                     }).filter(Boolean);
                     const currentLineup = teamObj?.lineup || [];
-                    const lineup = new Set(originalLineup.length > 0 ? originalLineup : currentLineup);
+                    const lineup = originalLineup.length > 0 ? originalLineup : currentLineup;
+                    const rosterMap = {};
+                    (teamObj?.roster || []).forEach(p => { rosterMap[p.name] = p; });
                     return (
                       <div>
-                        <div style={{ ...theme.label, marginBottom: 4 }}>Player OUT</div>
+                        <div style={{ ...theme.label, marginBottom: 4 }}>Player OUT (from lineup)</div>
                         <select
                           value={addTxPlayerOut?.name || ''}
                           onChange={e => {
@@ -956,25 +1012,16 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4, cursor: 'pointer' }}
                         >
                           <option value="">— select player —</option>
-                          {roster.sort((a, b) => a.name.localeCompare(b.name)).map(p => (
-                            <option key={p.name} value={p.name}>
-                              {p.name}{p.limited ? ' ⭐' : ''}{lineup.has(p.name) ? '' : ' (on bench)'}
-                            </option>
+                          {lineup.sort((a, b) => a.localeCompare(b)).map(name => (
+                            <option key={name} value={name}>{name}{rosterMap[name]?.limited ? ' ⭐' : ''}</option>
                           ))}
                         </select>
                       </div>
                     );
                   }
 
-                  // FA / Waiver: search ALL players for the dropped slot.
-                  // Wave 8: previously restricted to the selected team's current
-                  // roster, which blocked retroactive transactions where the
-                  // dropped player has since been removed. Now we show every
-                  // player and annotate which team (if any) currently has them
-                  // — same pattern as the Player Added search above.
-                  const pool = allPlayers.filter(p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim()));
-                  const rosterByPlayer = new Map();
-                  teams.forEach(t => t.roster.forEach(r => { rosterByPlayer.set(r.name, t.name); }));
+                  // FA / Waiver: search the team's roster for who to drop
+                  const pool = teamObj?.roster || [];
                   const filtered = pool.filter(p =>
                     (p.name || p).toLowerCase().includes(addTxSearchOut.toLowerCase())
                   );
@@ -987,15 +1034,15 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           padding: '8px 12px', borderRadius: 3, marginBottom: 4,
                           background: colors.dangerBg, border: '1px solid ' + colors.dangerBorder,
                         }}>
-                          <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.danger }}>{addTxPlayerOut.name}</span>
+                          <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.danger }}>{addTxPlayerOut.name}</span>
                           <button onClick={() => { setAddTxPlayerOut(null); setAddTxSearchOut(''); }}
-                            style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: fontSize.base, padding: '0 2px' }}>✕</button>
+                            style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 12, padding: '0 2px' }}>✕</button>
                         </div>
                       ) : (
                         <>
                           <input
                             type="text"
-                            placeholder="Search players…"
+                            placeholder="Search roster…"
                             value={addTxSearchOut}
                             onChange={e => setAddTxSearchOut(e.target.value)}
                             style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4 }}
@@ -1006,7 +1053,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid ' + colors.borderSubtle, borderRadius: 3, marginBottom: 4 }}>
                               {filtered.slice(0, 20).map(p => {
                                 const name = p.name || p;
-                                const rosteredOn = rosterByPlayer.get(name);
                                 return (
                                   <div key={name}
                                     onClick={() => { setAddTxPlayerOut({ name }); setAddTxSearchOut(''); }}
@@ -1019,22 +1065,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                                     onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
                                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                                   >
-                                    {p.worldRank && (
-                                      <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, minWidth: 26 }}>
-                                        {p.worldRank === 999 ? 'NR' : '#' + p.worldRank}
-                                      </span>
-                                    )}
-                                    <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>{name}</span>
-                                    {rosteredOn && (
-                                      <span style={{ marginLeft: 'auto', fontFamily: fonts.sans, fontSize: fontSize.sm, fontStyle: 'italic', color: colors.textGoldDim }}>
-                                        on {rosteredOn}
-                                      </span>
-                                    )}
+                                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>{name}</span>
                                   </div>
                                 );
                               })}
                               {filtered.length === 0 && (
-                                <div style={{ padding: '10px 12px', fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted }}>No players found</div>
+                                <div style={{ padding: '10px 12px', fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>No players found</div>
                               )}
                             </div>
                           )}
@@ -1064,38 +1100,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         {/* ── Transaction history ── */}
         <div style={theme.card}>
           <div style={{ ...theme.cardHeader, justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-              <h2 style={theme.h2}>Transaction History</h2>
-              {isCommissioner && (
-                <button
-                  onClick={() => setAddTxOpen(!addTxOpen)}
-                  title={addTxOpen ? 'Close add transaction form' : 'Add manual transaction'}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                    padding: '3px 9px', borderRadius: 3,
-                    fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700,
-                    letterSpacing: '0.4px', textTransform: 'uppercase',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s',
-                    background: addTxOpen ? 'rgba(80,180,120,0.22)' : 'rgba(80,180,120,0.1)',
-                    border: '1px solid rgba(80,180,120,0.45)',
-                    color: 'rgba(80,180,120,0.9)',
-                    flexShrink: 0,
-                    lineHeight: 1.2,
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = addTxOpen ? 'rgba(80,180,120,0.22)' : 'rgba(80,180,120,0.1)'; }}
-                >
-                  <span style={{ fontSize: fontSize.base, lineHeight: 1, fontWeight: 800 }}>{addTxOpen ? '−' : '+'}</span>
-                  <span>Add</span>
-                </button>
-              )}
-            </div>
+            <h2 style={theme.h2}>Transaction History</h2>
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
               <select
                 value={filterSwing}
                 onChange={e => setFilterSwing(e.target.value)}
-                style={{ ...theme.select, width: 'auto', fontSize: fontSize.base, padding: '5px 10px' }}
+                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
                 onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
@@ -1108,7 +1118,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               <select
                 value={filterTeam}
                 onChange={e => setFilterTeam(e.target.value)}
-                style={{ ...theme.select, width: 'auto', fontSize: fontSize.base, padding: '5px 10px' }}
+                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
                 onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
@@ -1137,21 +1147,21 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   <div style={{ minWidth: 0, flex: 1 }}>
                     {/* Team name + tournament or swing name */}
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
-                      <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary }}>
+                      <span style={{ fontFamily: fonts.serif, fontSize: 'clamp(13px, 1.1vw, 15px)', color: colors.textPrimary }}>
                         {tx.team}
                       </span>
                       {(() => {
                         // swing_winner: show swing name; others: show tournament name
                         if (tx.type === 'swing_winner') {
                           return tx.segment
-                            ? <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: getSwingColor(tx.segment) }}>{tx.segment}</span>
+                            ? <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>{tx.segment}</span>
                             : null;
                         }
                         const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
                         const name = t?.name || tx.tournament || null;
                         if (!name) return null;
                         return (
-                          <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: 'rgba(255,255,255,0.45)' }}>
+                          <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>
                             {name}
                           </span>
                         );
@@ -1159,10 +1169,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     </div>
 
                     {/* Transaction detail */}
-                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textSecondary }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(11px, 0.9vw, 13px)', color: colors.textSecondary }}>
                       <span style={{ color: txTypeColor(tx.type) }}>{txTypeLabel(tx.type)}</span>
                       {tx.status === 'failed' && tx.type === 'waiver' && (
-                        <span style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
+                        <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
                       )}
                       {': '}
                       <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : shortName(tx.player)}</span>
@@ -1174,7 +1184,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       )}
                     </div>
                     {tx.status === 'failed' && tx.failReason && (
-                      <div style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 }}>
+                      <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.7vw, 10px)', color: colors.textMuted, marginTop: 1 }}>
                         {tx.failReason}
                       </div>
                     )}
@@ -1185,12 +1195,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     {tx.type === 'mulligan' ? (
                       <span style={{ fontSize: 14, lineHeight: 1 }}>🚨</span>
                     ) : tx.type === 'swing_winner' ? (
-                      <span style={{ ...theme.statNum, fontSize: fontSize.md, fontWeight: 600, color: colors.textGold }}>
+                      <span style={{ ...theme.statNum, fontSize: 13, fontWeight: 600, color: colors.textGold }}>
                         +${(tx.amount || 0).toLocaleString()}
                       </span>
                     ) : (
                       <span style={{
-                        ...theme.statNum, fontSize: fontSize.md, fontWeight: 600,
+                        ...theme.statNum, fontSize: 13, fontWeight: 600,
                         color: tx.status === 'failed' ? colors.textMuted : (tx.fee > 0 ? colors.earningsGreen : colors.textMuted),
                       }}>
                         {tx.status === 'failed' ? '—' : `$${tx.fee}`}
@@ -1222,22 +1232,43 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         {/* Delete button — red ✕ for all types */}
                         <button
                           onClick={async () => {
-                            const label = tx.type === 'mulligan'
-                              ? `Delete mulligan for ${tx.team}?\n\n${tx.player} IN → ${tx.droppedPlayer} OUT`
-                              : tx.type === 'swing_winner'
-                                ? `Delete swing winner: ${tx.team}?`
-                                : tx.status === 'processed'
-                                  ? `Undo ${tx.type}: ${tx.team} added ${tx.player}${tx.droppedPlayer ? ' / dropped ' + tx.droppedPlayer : ''}?\n\nThis will reverse the roster change and refund the $${tx.fee} fee.`
-                                  : `Delete ${tx.type} record for ${tx.team}: ${tx.player}?`;
+                            // Refresh the live status from Firestore before deciding
+                            // undo vs simple-delete. The cron may have processed this
+                            // tx since last refresh; if so we MUST take the undo path
+                            // to reverse the roster change. Without this check, a
+                            // user looking at stale "pending" UI would simple-delete
+                            // a transaction that had actually been processed,
+                            // leaving the roster effect orphaned (the bug that put
+                            // Ryan Fox on Hip Happens with no transaction record).
+                            let liveTx = tx;
+                            if (tx.id && tx.type !== 'mulligan' && tx.type !== 'swing_winner') {
+                              try {
+                                const { transactionsApi } = await import('../api/firebase');
+                                const fresh = await transactionsApi.getById?.(tx.id);
+                                if (fresh) liveTx = { ...tx, ...fresh };
+                              } catch (e) {
+                                console.warn('[TransactionsView] could not refresh tx status:', e);
+                              }
+                            }
+                            const statusChanged = liveTx.status !== tx.status;
+                            const isUndoPath = liveTx.status === 'processed' && !['mulligan', 'swing_winner'].includes(liveTx.type);
+
+                            const label = liveTx.type === 'mulligan'
+                              ? `Delete mulligan for ${liveTx.team}?\n\n${liveTx.player} IN → ${liveTx.droppedPlayer} OUT`
+                              : liveTx.type === 'swing_winner'
+                                ? `Delete swing winner: ${liveTx.team}?`
+                                : isUndoPath
+                                  ? `${statusChanged ? '⚠️ This was processed since you last refreshed.\n\n' : ''}Undo ${liveTx.type}: ${liveTx.team} added ${liveTx.player}${liveTx.droppedPlayer ? ' / dropped ' + liveTx.droppedPlayer : ''}?\n\nThis will reverse the roster change and refund the $${liveTx.fee} fee.`
+                                  : `Delete ${liveTx.type} record for ${liveTx.team}: ${liveTx.player}?`;
                             const ok = await dialog.showConfirm(
-                              tx.status === 'processed' && !['mulligan', 'swing_winner'].includes(tx.type) ? 'Undo Transaction' : 'Delete Transaction',
+                              isUndoPath ? 'Undo Transaction' : 'Delete Transaction',
                               label,
-                              { type: 'danger', confirmText: tx.status === 'processed' && !['mulligan', 'swing_winner'].includes(tx.type) ? 'Undo' : 'Delete' },
+                              { type: 'danger', confirmText: isUndoPath ? 'Undo' : 'Delete' },
                             );
                             if (!ok) return;
                             // For processed FA/waiver/drop: full undo with roster reversal
-                            if (tx.status === 'processed' && !['mulligan', 'swing_winner'].includes(tx.type)) {
-                              undoTransaction(tx, true); // skipConfirm
+                            if (isUndoPath) {
+                              undoTransaction(liveTx, true); // skipConfirm
                             } else {
                               // Simple delete for everything else
                               const newTx = transactions.filter(t => t !== tx);

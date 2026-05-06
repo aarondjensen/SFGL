@@ -504,6 +504,16 @@ export const tournamentsApi = {
 // TRANSACTIONS API
 // ============================================================================
 export const transactionsApi = {
+  // Wave 8: fetch a single transaction by id. Used by TransactionsView's
+  // delete handler to refresh status from Firestore before deciding undo
+  // vs simple-delete — guards against stale-cache mistakes when the cron
+  // has processed a transaction since the last UI refresh.
+  async getById(txId) {
+    if (!txId) return null;
+    const snap = await getDoc(doc(db, 'transactions', txId));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  },
+
   async getAll() {
     const snap = await getDocs(
       query(collection(db, 'transactions'), orderBy('timestamp', 'desc'))
