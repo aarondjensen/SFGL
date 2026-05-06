@@ -651,6 +651,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   // Human-readable label for transaction type
   const txTypeLabel = (type) => {
     if (type === 'swing_winner') return 'swing winner';
+    if (type === 'fa') return 'free agent';
     return type;
   };
 
@@ -735,31 +736,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           </div>
         </div>
 
-        {/* ── Commissioner: Add Manual Transaction ── */}
-        {isCommissioner && (
-          <>
-          <button
-              onClick={() => setAddTxOpen(!addTxOpen)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '7px 14px', borderRadius: 4,
-                fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-                background: 'rgba(80,180,120,0.12)',
-                border: '1.5px solid rgba(80,180,120,0.5)',
-                color: 'rgba(80,180,120,0.9)',
-                letterSpacing: '0.2px',
-                marginBottom: addTxOpen ? 0 : 8,
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.12)'; }}
-            >
-              <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>{addTxOpen ? '−' : '+'}</span>
-              <span>Add Transaction</span>
-            </button>
-
-            {addTxOpen && (
+        {/* ── Commissioner: Add Manual Transaction panel — toggled by the
+            inline button inside the Transaction History card header below ── */}
+        {isCommissioner && addTxOpen && (
           <div style={theme.card}>
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {/* Team */}
@@ -1096,14 +1075,37 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 </button>
               </div>
           </div>
-            )}
-          </>
         )}
 
         {/* ── Transaction history ── */}
         <div style={theme.card}>
           <div style={{ ...theme.cardHeader, justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={theme.h2}>Transaction History</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h2 style={{ ...theme.h2, margin: 0 }}>Transaction History</h2>
+              {isCommissioner && (
+                <button
+                  onClick={() => setAddTxOpen(!addTxOpen)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '4px 10px', borderRadius: 3,
+                    fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'background 0.15s',
+                    background: 'rgba(80,180,120,0.12)',
+                    border: '1px solid rgba(80,180,120,0.45)',
+                    color: 'rgba(80,180,120,0.95)',
+                    letterSpacing: '0.2px',
+                    lineHeight: 1,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.22)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,180,120,0.12)'; }}
+                  title={addTxOpen ? 'Close add panel' : 'Add manual transaction'}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 800 }}>{addTxOpen ? '−' : '+'}</span>
+                  <span>Add</span>
+                </button>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
               <select
                 value={filterSwing}
