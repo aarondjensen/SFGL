@@ -491,21 +491,39 @@ async function handleWaivers(res, force = false) {
 
 // ── Action: lineup reminder ─────────────────────────────────────────────────
 
-async function handleLineupReminder(res) {
+async function handleLineupReminder(res, force = false) {
   const et = getETNow();
-  if (et.getDay() !== 3) return res.json({ status: 'not_wednesday' });
+  if (!force && et.getDay() !== 3) return res.json({ status: 'not_wednesday' });
 
   const today = et.toLocaleDateString('en-US');
   const metaSnap = await db.collection('sfgl_data').doc('last_lineup_reminder').get();
-  if (metaSnap.exists && metaSnap.data().value === today) return res.json({ status: 'already_sent' });
+  if (!force && metaSnap.exists && metaSnap.data().value === today) return res.json({ status: 'already_sent' });
 
   const settings = await loadSettings();
   const tournaments = await loadTournaments();
   const activeTourney = tournaments?.find(t => t.playing && !t.completed);
   if (!activeTourney) return res.json({ status: 'no_tournament' });
 
-  const lockHour = activeTourney.lockHourET || 7;
-  const lockTime = lockHour > 12 ? `${lockHour - 12}pm` : lockHour === 12 ? '12pm' : `${lockHour}am`;
+  // Wave 8: lock time = first tee time of the tournament. Fetch live from
+  // /api/field (the PGA Tour data hub used by RostersView). If that fails or
+  // returns no tee times, fall back to the tournament's configured
+  // lockHourET, then to a 7am default. Email always renders something.
+  let lockTime;
+  try {
+    const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://sfglgolf.com';
+    const fieldResp = await fetch(`${baseUrl}/api/field`);
+    if (fieldResp.ok) {
+      const fieldData = await fieldResp.json();
+      const earliest = findEarliestTeeTime(fieldData?.teeTimes || []);
+      if (earliest) lockTime = earliest.replace(/\s+(AM|PM)/i, (_, mer) => mer.toLowerCase());
+    }
+  } catch (e) {
+    console.warn('[handleLineupReminder] /api/field fetch failed, using fallback:', e.message);
+  }
+  if (!lockTime) {
+    const lockHour = activeTourney.lockHourET || 7;
+    lockTime = lockHour > 12 ? `${lockHour - 12}pm` : lockHour === 12 ? '12pm' : `${lockHour}am`;
+  }
 
   const teams = await loadTeams();
   const managerEmails = getEmailMap(settings, teams);
@@ -537,11 +555,34 @@ async function handleLineupReminder(res) {
   return res.json({
     status: 'sent',
     tournament: activeTourney.name,
+    lockTime,
     sent: results.filter(r => r.success).length,
     withLineup: results.filter(r => r.success && r.hasLineup).length,
     withoutLineup: results.filter(r => r.success && !r.hasLineup).length,
     results,
   });
+}
+
+// Find earliest tee time from /api/field's teeTimes array.
+// Input: [{ name, teeTime: "6:30 AM" }, ...]  Output: "6:30 AM" or null.
+function findEarliestTeeTime(teeTimes) {
+  if (!Array.isArray(teeTimes) || teeTimes.length === 0) return null;
+  let earliestStr = null;
+  let earliestMin = Infinity;
+  for (const tt of teeTimes) {
+    const s = tt?.teeTime;
+    if (!s) continue;
+    const m = String(s).match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+    if (!m) continue;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const mer = m[3].toUpperCase();
+    if (mer === 'PM' && h !== 12) h += 12;
+    if (mer === 'AM' && h === 12) h = 0;
+    const total = h * 60 + min;
+    if (total < earliestMin) { earliestMin = total; earliestStr = s; }
+  }
+  return earliestStr;
 }
 
 // ── Action: notify results ──────────────────────────────────────────────────
@@ -833,11 +874,15 @@ export default async function handler(req, res) {
   // Cron actions require Bearer auth; client-callable actions are exempted:
   //   - notify-results (manual results email send, called from AdminView)
   //   - waivers&force=true (manual waiver process, called from AdminView)
+  //   - lineup-reminder&force=true (manual reminder send, used for testing
+  //     email rendering — bypasses the day-of-week + idempotency checks)
   // Risk surface: an unauthenticated caller could trigger waiver processing
   // outside the normal Tuesday 8pm window. They cannot inject pending claims
   // (manager auth required for that). Worst case: pending claims get
   // processed slightly earlier than scheduled. Acceptable.
-  const isClientCallable = action === 'notify-results' || (action === 'waivers' && isForce);
+  const isClientCallable = action === 'notify-results'
+    || (action === 'waivers' && isForce)
+    || (action === 'lineup-reminder' && isForce);
   if (!isClientCallable && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -845,7 +890,7 @@ export default async function handler(req, res) {
   try {
     switch (action) {
       case 'waivers':           return await handleWaivers(res, isForce);
-      case 'lineup-reminder':   return await handleLineupReminder(res);
+      case 'lineup-reminder':   return await handleLineupReminder(res, isForce);
       case 'process-results':   return await handleProcessResults(res, req.query.dryRun === '1' || req.query.dryRun === 'true');
       case 'notify-results':    return await handleNotifyResults(req, res);
       default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results' });
