@@ -448,14 +448,39 @@ export const teamsApi = {
   },
 
   async setAll(teams) {
-    await _deleteAll('teams');
-    if (teams.length === 0) return [];
-    const batch = writeBatch(db);
-    teams.forEach(team => {
-      const id = team.id || team.name;
-      batch.set(doc(db, 'teams', id), { ...team });
-    });
-    await batch.commit();
+    // Wave A hotfix: previously this did `_deleteAll('teams')` followed by a
+    // batch insert — destructive, multi-step, and pre-Wave-A it didn't matter
+    // because real-time subscriptions weren't actually wired up. Now they are,
+    // and the delete-all phase emits a stream of intermediate snapshots
+    // (8 teams → 7 → 6 → ... → 0 → 8) to every subscribed client, including
+    // the one issuing the write. That caused mulligans, lineups, and any
+    // other team-level fields to flicker / reset during the write window.
+    //
+    // Replaced with an upsert (idempotent per-doc writes) plus a targeted
+    // delete of any docs that exist remotely but aren't in the local set.
+    // Snapshots now arrive as a single coherent emission per write.
+    if (!Array.isArray(teams)) return [];
+    const snap = await getDocs(collection(db, 'teams'));
+    const remoteIds = new Set(snap.docs.map(d => d.id));
+    const localIds = new Set(teams.map(t => t.id || t.name));
+
+    const BATCH_SIZE = 499;
+    // Upsert all locals
+    for (let i = 0; i < teams.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      teams.slice(i, i + BATCH_SIZE).forEach(team => {
+        const id = team.id || team.name;
+        batch.set(doc(db, 'teams', id), { ...team });
+      });
+      await batch.commit();
+    }
+    // Delete any remote docs that no longer exist locally
+    const toDelete = [...remoteIds].filter(id => !localIds.has(id));
+    if (toDelete.length) {
+      const batch = writeBatch(db);
+      toDelete.forEach(id => batch.delete(doc(db, 'teams', id)));
+      await batch.commit();
+    }
     return teams;
   },
 
@@ -487,14 +512,29 @@ export const tournamentsApi = {
   },
 
   async setAll(tournaments) {
-    await _deleteAll('tournaments');
-    if (tournaments.length === 0) return [];
-    const batch = writeBatch(db);
-    tournaments.forEach(t => {
-      const id = t.name || t.id;
-      batch.set(doc(db, 'tournaments', id), { ...t });
-    });
-    await batch.commit();
+    // Same Wave A hotfix as teamsApi.setAll — see comment there. Real-time
+    // subscriptions made the delete-all-then-insert pattern emit transient
+    // empty / partial snapshots that clobbered local state mid-write.
+    if (!Array.isArray(tournaments)) return [];
+    const snap = await getDocs(collection(db, 'tournaments'));
+    const remoteIds = new Set(snap.docs.map(d => d.id));
+    const localIds = new Set(tournaments.map(t => t.name || t.id));
+
+    const BATCH_SIZE = 499;
+    for (let i = 0; i < tournaments.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      tournaments.slice(i, i + BATCH_SIZE).forEach(t => {
+        const id = t.name || t.id;
+        batch.set(doc(db, 'tournaments', id), { ...t });
+      });
+      await batch.commit();
+    }
+    const toDelete = [...remoteIds].filter(id => !localIds.has(id));
+    if (toDelete.length) {
+      const batch = writeBatch(db);
+      toDelete.forEach(id => batch.delete(doc(db, 'tournaments', id)));
+      await batch.commit();
+    }
     return tournaments;
   },
 
