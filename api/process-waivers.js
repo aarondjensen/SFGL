@@ -199,18 +199,28 @@ async function processWaivers(db) {
 }
 
 export default async function handler(req, res) {
-  const isCron = req.headers['x-vercel-cron'] === '1';
-  const isManual = req.method === 'POST' && req.headers['x-sfgl-secret'] === process.env.SFGL_CRON_SECRET;
+  // Wave 8: three valid invocation paths.
+  // 1. Vercel cron (x-vercel-cron: 1 header) — applies deadline + idempotency gates.
+  // 2. cron-job.org or any external scheduler (Authorization: Bearer <CRON_SECRET>)
+  //    — also applies deadline + idempotency gates. This is the path used for
+  //    minute-precision auto-processing per AdminView's configured waiver time.
+  // 3. Manual override (POST with x-sfgl-secret) — bypasses gates so commish
+  //    can force a run from AdminView regardless of time / idempotency state.
+  const isVercelCron   = req.headers['x-vercel-cron'] === '1';
+  const cronSecret     = process.env.CRON_SECRET;
+  const isExternalCron = !!cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
+  const isCron         = isVercelCron || isExternalCron;
+  const isManual       = req.method === 'POST' && req.headers['x-sfgl-secret'] === process.env.SFGL_CRON_SECRET;
 
   if (!isCron && !isManual) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
     const db = getDb();
 
-    // Wave 8: cron invocations validate against AdminView's configurable
-    // settings (waiverDay/Hour/Minute) and a Firestore-backed idempotency
-    // doc. Manual invocations skip these gates so the commish can force a
-    // run from AdminView if needed.
+    // Cron invocations validate against AdminView's configurable settings
+    // (waiverDay/Hour/Minute) and a Firestore-backed idempotency doc.
+    // Manual invocations skip these gates so the commish can force a run
+    // from AdminView if needed.
     if (isCron) {
       const check = await shouldProcessWaivers(db);
       if (!check.run) return res.status(200).json({ status: 'skipped', reason: check.reason, ...(check.nextDeadline && { nextDeadline: check.nextDeadline }) });
@@ -218,7 +228,7 @@ export default async function handler(req, res) {
 
     const result = await processWaivers(db);
 
-    // Wave 8: stamp the idempotency doc on success so we don't process again
+    // Stamp the idempotency doc on success so we don't process again
     // until the next deadline occurrence (or until the doc is cleared).
     if (isCron) {
       await setDoc(doc(db, 'sfgl_data', 'last_auto_waiver'), {
