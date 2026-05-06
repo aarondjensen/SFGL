@@ -131,25 +131,18 @@ export const AddDropPlayerModal = ({
   const mergedHeadshots = { ...localHeadshots, ...headshots };
 
   // ── Available players ──────────────────────────────────────────────────────
-  // Build the effective roster for EVERY team by replaying processed transactions,
-  // matching the same logic as useRoster. This prevents players added via FA/waiver
-  // (who live in transactions but not in team.roster) from appearing as available.
+  // Wave 8: trust team.roster directly. Previously this replayed processed
+  // transactions on top of the roster, but that caused a serious bug: any
+  // stale or orphaned 'drop' transaction (e.g. from a deleted-then-restored
+  // claim, a transaction without tournamentIndex, or a future-dated one)
+  // would silently remove a currently-rostered player from this set, making
+  // them appear as "available" in the FA/waiver picker even though they're
+  // actually on someone's roster. The cron, handleProcessSingle, and all
+  // other processing paths update team.roster atomically with their
+  // transaction writes, so team.roster IS the source of truth for who's
+  // currently rostered. No replay needed.
   const rosteredPlayers = new Set(
-    teams.flatMap(t => {
-      let roster = (t.roster || []).map(p => p.name);
-      const rosterSet = new Set(roster);
-      transactions
-        .filter(tx =>
-          tx.team === t.name &&
-          tx.type !== 'mulligan' &&
-          (tx.status === 'processed' || tx.status === 'completed')
-        )
-        .forEach(tx => {
-          if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
-          if (tx.player) rosterSet.add(tx.player);
-        });
-      return [...rosterSet];
-    })
+    teams.flatMap(t => (t.roster || []).map(p => p.name))
   );
 
   // Players dropped via a processed FA/waiver whose tournament hasn't been completed yet
@@ -189,17 +182,15 @@ export const AddDropPlayerModal = ({
     return true;
   });
 
-  // Build ownership map: playerName → teamName
+  // Build ownership map: playerName → teamName.
+  // Wave 8: trust team.roster (same reasoning as rosteredPlayers above —
+  // replaying transactions caused stale 'drop' tx to incorrectly transfer
+  // ownership or orphan players).
   const ownerMap = new Map();
   teams.forEach(t => {
-    const rosterSet = new Set((t.roster || []).map(p => p.name));
-    transactions
-      .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && (tx.status === 'processed' || tx.status === 'completed'))
-      .forEach(tx => {
-        if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
-        if (tx.player) rosterSet.add(tx.player);
-      });
-    rosterSet.forEach(name => ownerMap.set(name, t.name));
+    (t.roster || []).forEach(p => {
+      if (p.name) ownerMap.set(p.name, t.name);
+    });
   });
 
   // Is the active tournament currently locked (Thu–Sun)?
@@ -615,13 +606,12 @@ export const AddDropPlayerModal = ({
                     </span>
                   ) : tournamentIsLocked ? (
                     <span style={{
-                      fontFamily: fonts.sans, fontSize: 10.5, fontWeight: 400,
-                      fontStyle: 'italic',
+                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
                       padding: '5px 0', borderRadius: 3,
                       width: 90, textAlign: 'center', flexShrink: 0,
-                      background: 'transparent',
-                      border: `1px dashed ${colors.borderSubtle}`,
-                      color: 'rgba(255,255,255,0.35)',
+                      background: 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${colors.borderSubtle}`,
+                      color: colors.textMuted,
                       letterSpacing: '0.3px',
                       display: 'inline-block',
                     }}>
