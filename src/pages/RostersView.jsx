@@ -395,12 +395,6 @@ export const RostersView = ({
 
   const activeTournament      = tournaments.find(t => t.playing);
   const activeTournamentIndex = activeTournament ? tournaments.findIndex(t => t.name === activeTournament.name) : -1;
-  // Wave 8: when activeTournament is locked (Thursday morning has passed), any
-  // lineup edits actually affect the NEXT tournament, not the locked one. So
-  // for window-status calculations (lineupOpen, faOpen, waiverOpen), use the
-  // next non-locked tournament. Falls back to activeTournament if everything
-  // is locked (end of season).
-  const editingTournament = tournaments.find(t => !t.completed && !isTournamentLocked(t)) || activeTournament;
   // ── Date-based tournament week resolution ────────────────────────────────
   // Add/drop/waiver belong to whichever tournament's week we're currently in,
   // based on calendar date — regardless of whether that tournament is "playing" yet.
@@ -464,7 +458,7 @@ export const RostersView = ({
 
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
-  const windowStatus  = useWindowStatus(editingTournament, resolvedSettings);
+  const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
   const togglePlayerInLineup = useCallback(async (player) => {
@@ -858,8 +852,10 @@ export const RostersView = ({
             const tournLocked = isTournamentLocked(activeTournament);
             // Waiver window open but pending waivers exist — free agency blocked until processed
             const waiverPending = addDropBlocked;
-            // Can add: not locked, not waiver-pending
-            const canAdd = !tournLocked && !waiverPending;
+            // Wave 8: commish overrides both gates — same pattern as canEditLineup.
+            // The lock and waiver-pending blocks are league-rule enforcement for
+            // managers; commish can always make manual adjustments.
+            const canAdd = isCommissioner || (!tournLocked && !waiverPending);
 
             return (
               <button
@@ -879,7 +875,7 @@ export const RostersView = ({
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = canAdd ? 'rgba(80,180,120,0.22)' : 'rgba(255,255,255,0.08)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = canAdd ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)'; }}
-                title={tournLocked ? 'Adds unavailable during tournament — opens Tuesday 8pm ET' : waiverPending ? 'Waiver claims pending — free agency opens after Commish processes' : 'Add or drop a player'}
+                title={isCommissioner ? 'Add or drop a player (commish override)' : tournLocked ? 'Adds unavailable during tournament — opens Tuesday 8pm ET' : waiverPending ? 'Waiver claims pending — free agency opens after Commish processes' : 'Add or drop a player'}
               >
                 {canAdd && <span style={{ fontSize: fontSize.lg, lineHeight: 1, fontWeight: 800 }}>+</span>}
                 <span>{canAdd ? 'Add Player' : '🔍 Search'}</span>
@@ -1146,9 +1142,9 @@ export const RostersView = ({
                             }}>
                               {displayName(player.name, isMobile)}
                             </span>
-                            {tournamentField?.has(normalizeNordic(player.name)) && (
-                              <span title="In this week's field" style={{ fontSize: fontSize.base, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
-                            )}
+                            {/* Wave 8: starts counter / unlimited sign comes IMMEDIATELY
+                                after the name. The ⛳ "in this week's field" badge
+                                comes AFTER the counter/sign so it doesn't split them. */}
                             {player.limited && (
                               <span style={{
                                 fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 600,
@@ -1159,6 +1155,9 @@ export const RostersView = ({
                             )}
                             {player.unlimited && (
                               <span style={{ fontSize: fontSize.sm, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)', flexShrink: 0 }}>♾️</span>
+                            )}
+                            {tournamentField?.has(normalizeNordic(player.name)) && (
+                              <span title="In this week's field" style={{ fontSize: fontSize.base, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
                             )}
                           </div>
                           <div style={{ fontSize: fontSize.sm, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
