@@ -448,9 +448,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     );
 
     // Remove this transaction; also restore any blocked losers back to pending
-    // so the commissioner can re-process the waiver round fairly
+    // so the commissioner can re-process the waiver round fairly.
+    // Filter by id (not reference) — the delete handler synthesises a fresh
+    // `liveTx` from a Firestore status refetch, which is a NEW object that
+    // would never match `t !== tx` against the original array reference.
     const newTransactions = transactions
-      .filter(t => t !== tx)
+      .filter(t => tx.id ? t.id !== tx.id : t !== tx)
       .map(t => {
         if (
           t.status === 'failed' &&
@@ -1271,7 +1274,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                               undoTransaction(liveTx, true); // skipConfirm
                             } else {
                               // Simple delete for everything else
-                              const newTx = transactions.filter(t => t !== tx);
+                              const newTx = transactions.filter(t => tx.id ? t.id !== tx.id : t !== tx);
                               setTransactions(newTx);
                               dialog.showToast('Transaction deleted', 'success');
                             }
