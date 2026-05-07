@@ -254,27 +254,39 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
           <colgroup>
             <col style={{ width: 36 }} />
             <col />
-            {/* Third column: width matches the Overall/Swing toggle above so the
-                Total/Behind toggle in this header lines up vertically with it. */}
-            <col style={{ width: 170 }} />
+            {/* Width = 170 (toggle) + 20 (right padding to match cardHeader) */}
+            <col style={{ width: 190 }} />
           </colgroup>
           <thead>
             <tr>
               <th style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Pos</th>
               <th style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Team</th>
-              <th style={{ ...theme.tableHeaderCell, padding: 0, verticalAlign: 'middle' }}>
+              <th style={{
+                ...theme.tableHeaderCell,
+                // Padding-right of 20px matches theme.cardHeader's padding so the
+                // toggle's right edge lines up with the Overall/Swing toggle above.
+                // Vertical padding kept tight so the toggle's height drives row height.
+                padding: '4px 20px 4px 0',
+                verticalAlign: 'middle',
+                textAlign: 'right',
+              }}>
                 {/* Total/Behind toggle — same shape and size as the Overall/Swing
-                    toggle in the row above, vertically aligned with it. */}
+                    toggle in the row above, vertically aligned with it.
+                    Fixed 170px width matches Overall/Swing exactly. Wrapped in an
+                    inline-block container so text-align: right on the parent th
+                    pins it to the right edge of the column. */}
                 <div
                   style={{
+                    display: 'inline-flex',
                     position: 'relative',
-                    display: 'flex',
                     background: 'rgba(255,255,255,0.04)',
                     border: '1px solid rgba(180,160,100,0.2)',
                     borderRadius: 4,
                     padding: 3,
                     gap: 0,
-                    width: '100%',
+                    width: 170,
+                    boxSizing: 'border-box',
+                    verticalAlign: 'middle',
                   }}
                 >
                   <div style={{
