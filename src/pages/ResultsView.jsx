@@ -11,8 +11,6 @@ const BLUE_DIM    = 'rgba(100,180,255,0.35)';
 
 // Wave 8: thin wrapper around theme's getSwingColorAt that returns the
 // {accent, bg, border} triplet used by swing cards on the Results page.
-// Kept local because the specific alphas (0.07, 0.3) are this view's choice;
-// other views compose their own variants via getSwingColorAt directly.
 const swingColors = (seg) => ({
   accent: getSwingColor(seg),
   bg:     getSwingColorAt(seg, 0.07),
@@ -27,9 +25,15 @@ const playerNameColor = (p, showEarnings) => {
     : colors.textSecondary;
 };
 
+// Row-density consistency: all clickable card *headers* use the list-tier
+// vertical padding (8px) so they match Tournaments / Transactions / Rosters
+// list rows. The expanded content panels below each header are NOT row-tier
+// (they contain multi-line player grids) — those keep their tighter 6px
+// padding because their height is content-driven, not row-driven.
+const HEADER_BUTTON_PADDING = '8px 14px';
+
 // ── Player slot grid ──────────────────────────────────────────────────────────
 const PlayerSlotGrid = ({ players, showEarnings }) => {
-  // Always 5 columns — pad with nulls for empty slots
   const slots = Array.from({ length: 5 }, (_, i) => players[i] || null);
   return (
     <div style={{ marginLeft: 24, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 3 }}>
@@ -37,7 +41,6 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
         <div key={idx} style={{ fontSize: fontSize.sm, minWidth: 0, overflow: 'hidden' }}>
           {p ? (
             <>
-              {/* Line 1: name + mulligan */}
               <div style={{
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 color: playerNameColor(p, showEarnings),
@@ -51,7 +54,6 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                   }}>🚨</span>
                 )}
               </div>
-              {/* Line 2: earnings (base + bonus combined) */}
               {showEarnings ? (
                 <div style={{ whiteSpace: 'nowrap' }}>
                   <span style={{ ...theme.statNum, fontSize: fontSize.sm, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
@@ -61,7 +63,6 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
               ) : (
                 <div style={{ color: colors.textMuted }}>—</div>
               )}
-              {/* Line 3: round leader badges (only if any) */}
               {showEarnings && p.roundsLed?.length > 0 && (
                 <div style={{ display: 'flex', gap: 2, marginTop: 1 }}>
                   {p.roundsLed.map((rl, ri) => (
@@ -84,10 +85,6 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
   );
 };
 
-// ── Tournament type badges ────────────────────────────────────────────────────
-// Now imported from ./TournamentBadges (Wave 1 cleanup — was inlined here AND
-// in TournamentsView, plus 3 more inline copies inside this file's render).
-
 // ── Empty state ───────────────────────────────────────────────────────────────
 const EmptyState = () => (
   <div style={{ ...theme.card, ...theme.emptyState, padding: '52px 20px' }}>
@@ -98,8 +95,6 @@ const EmptyState = () => (
 );
 
 export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
-  // Build name → {limited, unlimited} from live roster so historical results
-  // (which may predate the unlimited field being stored) still render correctly
   const rosterFlagMap = useMemo(() => {
     const map = {};
     teams.forEach(team => {
@@ -110,38 +105,28 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
     return map;
   }, [teams]);
 
-  // Build mulligan lookup: { tournamentIndex → { playerIn → droppedPlayer, droppedPlayer → playerIn } }
-  // We track both directions because tournament results may contain EITHER the original
-  // player (if the swap wasn't applied to results) or the replacement player (if it was).
   const mulliganMap = useMemo(() => {
     const map = {};
     transactions.forEach(tx => {
       if (tx.type !== 'mulligan' || !tx.player) return;
       const idx = tx.tournamentIndex ?? -1;
       if (!map[idx]) map[idx] = { ins: {}, outs: {} };
-      // tx.player = player IN, tx.droppedPlayer = player OUT
       map[idx].ins[tx.player] = tx.droppedPlayer || '?';
       if (tx.droppedPlayer) map[idx].outs[tx.droppedPlayer] = tx.player;
     });
     return map;
   }, [transactions]);
 
-  // Enrich a result player with live roster flags + mulligan detection.
-  // When the original player (mulliganed OUT) still appears in results data,
-  // swap the display name to the replacement player (mulliganed IN).
   const enrich = (p, tournamentIndex) => {
     const tMap = mulliganMap[tournamentIndex];
-    // Player was mulliganed IN (replacement player appears in results)
     const isMullIn = p.mulliganIn || !!tMap?.ins[p.name];
-    // Player was mulliganed OUT (original player still appears in results — swap wasn't applied)
     const isMullOut = !!tMap?.outs[p.name];
 
-    // If the original player is still in results, swap to show the replacement
     const displayName = isMullOut ? tMap.outs[p.name] : p.name;
     const replacedPlayer = isMullIn
       ? (p.replacedPlayer || tMap?.ins[p.name] || null)
       : isMullOut
-        ? p.name  // the original player who was replaced
+        ? p.name
         : null;
 
     return {
@@ -160,15 +145,10 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
     [tournaments],
   );
 
-  // ── Swing segment helper ─────────────────────────────────────────────────
-  // Wave 7: now uses canonical getSegmentForTournament from utils.
-
-  // Build swing summary cards from swing_winner transactions
   const swingSummaries = useMemo(() => {
     const awarded = transactions.filter(tx => tx.type === 'swing_winner');
     return awarded.map(tx => {
       const seg = tx.segment;
-      // Sum earnings per team across all completed tournaments in this swing
       const swingTourneys = tournaments.filter(t => t.completed && getSegmentForTournament(t) === seg && t.results?.teams);
       const byTeam = {};
       swingTourneys.forEach(t => {
@@ -176,7 +156,6 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
           byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
         });
       });
-      // Find the last tournament in this swing (for insertion ordering)
       const lastTourney = swingTourneys[swingTourneys.length - 1];
       const ranked = Object.entries(byTeam)
         .map(([id, earnings]) => ({ team: teams.find(t => t.id === id), earnings }))
@@ -217,7 +196,8 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               aria-expanded={isExpanded}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '6px 14px',
+                // List-tier row height for header consistency across views
+                padding: HEADER_BUTTON_PADDING,
                 background: isExpanded ? 'rgba(40,120,80,0.1)' : 'linear-gradient(90deg, rgba(40,120,80,0.12) 0%, transparent 100%)',
                 border: 'none', borderBottom: `1px solid rgba(80,180,120,0.15)`,
                 cursor: 'pointer', transition: 'background 0.2s',
@@ -251,6 +231,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   const sortedLineup = getSortedRoster(lineupPlayers);
                   return (
                     <div key={team.id} style={{
+                      // Content panel — height driven by player grid below, not row-tier
                       padding: '6px 14px',
                       borderBottom: `1px solid ${colors.borderSubtle}`,
                     }}>
@@ -271,14 +252,10 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
 
       {/* ── Completed tournaments + swing summaries (interleaved) ── */}
       {(() => {
-        // completedTournaments is reverse-chrono (newest first).
-        // Swing card goes at the TOP of its swing group — before the first
-        // tournament of that swing we encounter while iterating.
         const renderedSwings = new Set();
         const items = [];
         completedTournaments.forEach((tournament) => {
           const seg = getSegmentForTournament(tournament);
-          // If this is the first time we see this swing, prepend the swing card
           if (seg && !renderedSwings.has(seg)) {
             const summary = swingSummaries.find(s => s.seg === seg);
             if (summary) {
@@ -288,7 +265,6 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
           }
           items.push({ type: 'tournament', tournament });
         });
-        // Fallback: any unplaced swing summaries go at the end
         swingSummaries.forEach(s => {
           if (!renderedSwings.has(s.seg)) {
             items.push({ type: 'swing', summary: s });
@@ -306,13 +282,12 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                 ...theme.cardLift,
                 border: `1px solid ${sc.border}`,
               }} {...cardLiftHandlers({ disabled: isExpanded })}>
-                {/* Header — same padding/height as tournament cards */}
                 <button
                   onClick={() => toggle('swing:' + summary.seg)}
                   aria-expanded={isExpanded}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '6px 14px',
+                    padding: HEADER_BUTTON_PADDING,
                     background: isExpanded ? sc.bg : `linear-gradient(90deg, ${sc.bg} 0%, transparent 100%)`,
                     border: 'none', borderBottom: isExpanded ? `1px solid ${sc.border}` : 'none',
                     cursor: 'pointer', transition: 'background 0.2s',
@@ -321,7 +296,6 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = `linear-gradient(90deg, ${sc.bg} 0%, transparent 100%)`; }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                    {/* Same badge-column width as tournament cards */}
                     <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
                       <Trophy style={{ width: 11, height: 11, color: sc.accent }} />
                     </div>
@@ -344,13 +318,13 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   </div>
                 </button>
 
-                {/* Expanded rows — identical layout to tournament result rows */}
                 {isExpanded && (
                   <div>
                     {summary.ranked.map((entry, rank) => (
                       <div key={entry.team.id}
                         style={{
-                          padding: '6px 14px',
+                          // Content panel — single-line content, list-tier height
+                          padding: HEADER_BUTTON_PADDING,
                           borderBottom: `1px solid ${colors.borderSubtle}`,
                           background: rank === 0 ? sc.bg : 'transparent',
                           transition: 'background 0.15s',
@@ -358,7 +332,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                         onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'rgba(255,255,255,0.04)'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'transparent'; }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{
                             fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center',
                             fontFamily: fonts.serif,
@@ -407,7 +381,8 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               aria-expanded={isExpanded}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '6px 14px', background: isExpanded
+                padding: HEADER_BUTTON_PADDING,
+                background: isExpanded
                   ? 'rgba(18,46,82,0.3)'
                   : 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)',
                 border: 'none', borderBottom: isExpanded ? `1px solid ${colors.borderSubtle}` : 'none',
@@ -417,7 +392,6 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)'; }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                {/* Badge column — Sig/Major or empty */}
                 <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
                   <TournamentBadges tournament={tournament} />
                 </div>
@@ -443,6 +417,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   return (
                     <div key={team.id}
                       style={{
+                        // Content panel — height driven by player grid, not row-tier
                         padding: '6px 14px',
                         borderBottom: `1px solid ${colors.borderSubtle}`,
                         background: rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent',
@@ -476,7 +451,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
             )}
           </div>
         );
-        }); // end items.map
+        });
       })()}
 
     </div>
