@@ -64,12 +64,16 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
 
     return (
       <span style={{
-        display: 'inline-flex', alignItems: 'center', gap: 3,
-        fontSize: fontSize.xs, fontFamily: fonts.sans, fontWeight: 600,
-        padding: '2px 6px', borderRadius: 3,
-        background: 'rgba(80,200,120,0.15)',
-        border: '1px solid rgba(80,200,120,0.4)',
-        color: 'rgba(80,200,120,0.9)',
+        ...theme.badge,
+        ...theme.badgeInProgress,
+        // Override base badge sizing to match the original tighter inline version
+        // (TournamentsView's row height is tight; the default 2px 8px padding
+        // with 10px font and 1px letter-spacing is a hair too big).
+        padding: '2px 6px',
+        fontSize: fontSize.xs,
+        letterSpacing: 0,
+        textTransform: 'none',
+        gap: 3,
         whiteSpace: 'nowrap',
       }}>
         In Progress

@@ -232,7 +232,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                 <h3 style={{ ...theme.h3, color: colors.success, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.name}</h3>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ ...theme.badge, background: 'rgba(80,180,120,0.15)', border: '1px solid rgba(80,180,120,0.3)', color: colors.success }}>
+                <span style={{ ...theme.badge, ...theme.badgeInProgress }}>
                   In Progress
                 </span>
                 {isExpanded

@@ -391,6 +391,7 @@ const FantasyGolfLeague = () => {
                   <button
                     onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }}
                     title="Click to exit Commissioner mode"
+                    aria-label="Exit Commissioner mode"
                     style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
                       fontSize: fontSize.sm,
@@ -416,7 +417,7 @@ const FantasyGolfLeague = () => {
                   </button>
                 )}
                 {loggedInUser && !isCommissioner && (
-                    <button onClick={handleLogout} style={{
+                    <button onClick={handleLogout} aria-label="Sign out of your account" style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
                       fontSize: fontSize.sm,
                       letterSpacing: 1.5,
@@ -433,7 +434,7 @@ const FantasyGolfLeague = () => {
                     </button>
                 )}
                 {!loggedInUser && !isCommissioner && (
-                    <button onClick={() => setShowLoginModal(true)} style={{
+                    <button onClick={() => setShowLoginModal(true)} aria-label="Open sign-in dialog" style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
                       fontSize: fontSize.sm,
                       letterSpacing: 1.5,

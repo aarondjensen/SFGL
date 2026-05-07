@@ -264,12 +264,17 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
             {isOwnTeam && (
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => deleteWaiver(waiver)}
+                  title="Withdraw this waiver claim"
+                  aria-label="Withdraw this waiver claim"
                   style={{ ...theme.btnSecondary, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✏️</button>
                 <button onClick={async () => {
                   const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
                   if (!ok) return;
                   deleteWaiver(waiver);
-                }} style={{ ...theme.btnDanger, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✕</button>
+                }}
+                title="Delete waiver claim (with confirmation)"
+                aria-label="Delete waiver claim"
+                style={{ ...theme.btnDanger, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✕</button>
               </div>
             )}
           </div>
