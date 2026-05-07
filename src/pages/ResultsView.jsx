@@ -198,7 +198,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
 
       {/* ── In-progress tournaments ── */}
       {inProgressTournaments.map((tournament) => {
@@ -217,7 +217,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               aria-expanded={isExpanded}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '10px 14px',
+                padding: '6px 14px',
                 background: isExpanded ? 'rgba(40,120,80,0.1)' : 'linear-gradient(90deg, rgba(40,120,80,0.12) 0%, transparent 100%)',
                 border: 'none', borderBottom: `1px solid rgba(80,180,120,0.15)`,
                 cursor: 'pointer', transition: 'background 0.2s',
@@ -312,7 +312,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   aria-expanded={isExpanded}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '10px 14px',
+                    padding: '6px 14px',
                     background: isExpanded ? sc.bg : `linear-gradient(90deg, ${sc.bg} 0%, transparent 100%)`,
                     border: 'none', borderBottom: isExpanded ? `1px solid ${sc.border}` : 'none',
                     cursor: 'pointer', transition: 'background 0.2s',
@@ -407,7 +407,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
               aria-expanded={isExpanded}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '10px 14px', background: isExpanded
+                padding: '6px 14px', background: isExpanded
                   ? 'rgba(18,46,82,0.3)'
                   : 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)',
                 border: 'none', borderBottom: isExpanded ? `1px solid ${colors.borderSubtle}` : 'none',
