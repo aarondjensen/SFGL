@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
+import { getSegmentByDate, getSegmentForTournament, getCurrentTournamentIndex, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
@@ -746,25 +746,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   <select value={addTxTourney} onChange={e => setAddTxTourney(e.target.value)} style={{ ...theme.select, width: '100%' }}>
                     <option value="">Select tournament...</option>
                     {(() => {
-                      // Date-based: which week are we in for add/drop?
-                      const parseStart = (t) => {
-                        if (!t?.dates) return null;
-                        const m = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
-                        if (!m) return null;
-                        const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
-                        const mo = months[m[1]];
-                        if (mo === undefined) return null;
-                        return new Date(2026, mo, parseInt(m[2]));
-                      };
-                      const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-                      const now = new Date(etStr);
-                      let dateWeekIdx = -1;
-                      tournaments.forEach((t, i) => {
-                        const start = parseStart(t);
-                        if (!start) return;
-                        const end = new Date(start); end.setDate(end.getDate() + 13);
-                        if (now >= start && now <= end) dateWeekIdx = i;
-                      });
+                      // Wave C.5: was a local 14-day-window implementation;
+                      // now uses the canonical getCurrentTournamentIndex which
+                      // does Sun-Sat week math. The fallback chain (next
+                      // non-completed → last) means we always have an answer.
+                      const dateWeekIdx = getCurrentTournamentIndex(tournaments);
                       return tournaments.map((t, i) => {
                         let hint = '';
                         if (t.playing) hint = ' (active)';
@@ -797,26 +783,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             const idx = tournaments.findIndex(t => t.playing);
                             if (idx >= 0) setAddTxTourney(String(idx));
                           } else {
-                            // FA/waiver/drop → date-based current tournament week
-                            const parseStart = (t) => {
-                              if (!t?.dates) return null;
-                              const m = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
-                              if (!m) return null;
-                              const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
-                              const mo = months[m[1]];
-                              if (mo === undefined) return null;
-                              return new Date(2026, mo, parseInt(m[2]));
-                            };
-                            const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-                            const now = new Date(etStr);
-                            let found = -1;
-                            tournaments.forEach((t, i) => {
-                              const start = parseStart(t);
-                              if (!start) return;
-                              const end = new Date(start); end.setDate(end.getDate() + 13);
-                              if (now >= start && now <= end) found = i;
-                            });
-                            if (found < 0) found = tournaments.findIndex(t => !t.completed);
+                            // FA/waiver/drop → date-based current tournament week.
+                            // Wave C.5: was a local 14-day-window implementation;
+                            // now uses canonical getCurrentTournamentIndex (Sun-Sat
+                            // week with built-in next-non-completed fallback).
+                            const found = getCurrentTournamentIndex(tournaments);
                             if (found >= 0) setAddTxTourney(String(found));
                           }
                         }
