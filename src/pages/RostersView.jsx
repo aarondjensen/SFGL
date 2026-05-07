@@ -556,6 +556,30 @@ export const RostersView = ({
     return map;
   }, [team, tournaments, transactions]);
 
+  // Derive mulligans used by this team from the transaction history.
+  // Source of truth = transactions array (matches how every other counter in
+  // the app is derived: waiver fees, FA fees, segment earnings, etc.). The
+  // legacy `team.mulligans` field on team docs is no longer trusted — manually
+  // added mulligan transactions never decremented it, which caused the
+  // counter to under-report.
+  //
+  // Classification: each mulligan tx is Sig/Major or Regular based on the
+  // tournament it was applied to. Looks up the tournament by tx.tournamentIndex
+  // (the field TransactionsView writes when adding a mulligan).
+  const mulligansUsed = useMemo(() => {
+    if (!team) return { regular: 0, signatureMajor: 0 };
+    let regular = 0, signatureMajor = 0;
+    transactions.forEach(tx => {
+      if (tx.type !== 'mulligan') return;
+      if (tx.team !== team.name) return;
+      if (tx.status === 'failed') return;
+      const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
+      const isSigOrMajor = !!(t && (t.isSignature || t.isMajor));
+      if (isSigOrMajor) signatureMajor += 1; else regular += 1;
+    });
+    return { regular, signatureMajor };
+  }, [team, transactions, tournaments]);
+
   // Headshot fetching is handled centrally in App.jsx — its useEffect at
   // module load fetches missing ESPN IDs for all rostered players, persists
   // them via playersApi.upsertMany, and pushes the result into the headshots
@@ -763,12 +787,14 @@ export const RostersView = ({
               value={selectedTeam || ''}
               onChange={id => { setSelectedTeam(id); setLineupMode(false); setRosterView('full'); }}
             />
-            {/* Mulligan status — stacked Reg + Sig/Maj indicators */}
+            {/* Mulligan status — stacked Reg + Sig/Maj indicators.
+                Used count is derived from the transaction history (see
+                `mulligansUsed` memo above). Each team gets 1 of each per
+                season; once used, the icon greys out and the label gets a
+                strikethrough. */}
             {team && (() => {
-              const regRemaining = team.mulligans?.regular ?? 1;
-              const sigRemaining = team.mulligans?.signatureMajor ?? 1;
-              const regUsed = regRemaining <= 0;
-              const sigUsed = sigRemaining <= 0;
+              const regUsed = mulligansUsed.regular >= 1;
+              const sigUsed = mulligansUsed.signatureMajor >= 1;
               const activeColor = 'rgba(220,60,60,0.85)';
               const usedColor = 'rgba(255,255,255,0.18)';
               return (
