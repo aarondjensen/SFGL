@@ -171,3 +171,16 @@ html { scrollbar-gutter: stable; }
 .sfgl-pulse-ready {
   animation: sfgl-button-pulse 2.2s ease-in-out infinite;
 }
+
+/* ============================================================================
+ * TEXT PULSE — replaces Tailwind's `animate-pulse` (Wave B Tailwind removal).
+ * Used by the "Saving…" indicator in the App header.
+ * Same timing curve and opacity range as Tailwind's default.
+ * ============================================================================ */
+@keyframes sfgl-text-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+.sfgl-text-pulse {
+  animation: sfgl-text-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
