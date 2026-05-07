@@ -2,8 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { theme, colors, fonts, fontSize, rowHoverHandlers, SWINGS, SWING_COLORS, getSwingColorAt } from '../theme.js';
 import { getSegmentForTournament } from '../utils';
 
-// Standings row styles (.sfgl-standings-row, .sfgl-standings-cell, .sfgl-owner)
-// are now in app-global.css — no runtime injection needed.
+// Row height enforced via the .sfgl-row-hero class defined in app-global.css.
+// (Hero tier = 56px desktop / 52px mobile, single-line content.)
 
 const ALL_SWINGS = SWINGS;
 const SWING_ACCENT = SWING_COLORS;
@@ -195,17 +195,17 @@ const StandingsCard = ({
               return (
                 <tr
                   key={team.id}
-                  className="sfgl-standings-row"
+                  className="sfgl-row-hero"
                   style={{ background: rowBg, transition: 'background 0.15s' }}
                   {...rowHoverHandlers(isTop)}
                 >
                   {/* Position badge */}
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, paddingLeft: 14, paddingRight: 6 }}>
+                  <td style={{ ...theme.tableCell, paddingLeft: 14, paddingRight: 6 }}>
                     <PositionBadge position={position} isWinner={isWinner} swingAccent={accentColor} />
                   </td>
 
                   {/* Team name */}
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, overflow: 'hidden', paddingLeft: 4, paddingRight: 4 }}>
+                  <td style={{ ...theme.tableCell, overflow: 'hidden', paddingLeft: 4, paddingRight: 4 }}>
                     <div style={{
                       ...theme.bodyText,
                       fontSize: fontSize.lg,
@@ -222,7 +222,7 @@ const StandingsCard = ({
                   {/* Recent event earnings — own column so values stack vertically.
                       Prefixed with "+" to communicate "this is what they ADDED to
                       their season total from the most recent event". */}
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right', paddingLeft: 4, paddingRight: 8 }}>
+                  <td style={{ ...theme.tableCell, textAlign: 'right', paddingLeft: 4, paddingRight: 8 }}>
                     {team.recentEventName ? (
                       <div style={{
                         ...theme.statNum,
@@ -238,7 +238,7 @@ const StandingsCard = ({
                   </td>
 
                   {/* Total / Behind */}
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right', paddingRight: 14 }}>
+                  <td style={{ ...theme.tableCell, textAlign: 'right', paddingRight: 14 }}>
                     {metric === 'total' ? (
                       <div style={{
                         ...theme.statNumLg,

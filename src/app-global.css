@@ -3,11 +3,7 @@
  * Static CSS consolidating styles previously injected at runtime via
  * document.createElement('style') in App.jsx and StandingsView.jsx.
  *
- * Wave I additions:
- *   • Toast container respects iOS safe-area-inset-bottom (was 24px from
- *     bottom edge, which collided with the home indicator on iPhone X+).
- *   • Saved & Pulse-ready button hover states have explicit reduce-motion
- *     fallback for accessibility.
+ * IMPORT: Add `import './app-global.css'` in main.tsx (after index.css).
  * ============================================================================
  */
 
@@ -50,22 +46,48 @@ select option:hover {
   background: #243660;
 }
 
-/* ── Standings row styles ── */
-.sfgl-standings-row { height: 56px; }
-.sfgl-standings-cell { vertical-align: middle !important; }
-.sfgl-owner { display: inline; }
+/* ============================================================================
+ * ROW DENSITY TIERS
+ * Two consistent row-height tiers used across the app. Pair each row class
+ * with the matching theme.tableCell* padding token (see theme.js).
+ *
+ *   .sfgl-row-hero   — Standings (showpiece): fixed 56/52px, single-line
+ *   .sfgl-row-list   — Rosters/Tournaments/Results/Transactions: 44/40px,
+ *                      multi-line tolerant via min-height
+ *
+ * Keep the per-cell vertical alignment rule next to its row class so the
+ * rules ship together — adding/removing a tier means touching one place.
+ * ============================================================================ */
 
-.sfgl-leader-mobile  { display: inline; }
-.sfgl-leader-desktop { display: none; }
+/* ── Hero tier — Standings ── */
+.sfgl-row-hero { height: 56px; }
+.sfgl-row-hero td,
+.sfgl-row-hero th { vertical-align: middle !important; }
 
+/* ── List tier — dense scannable tables.
+   For TABLE rows: pair theme.tableCellList (8px vertical padding) with this
+   class. The padding alone produces ~44px for single-line content; this
+   class adds the min-height guarantee.
+   For NON-TABLE rows (div-based, e.g. in TransactionsView and ResultsView):
+   apply the class directly to enforce min-height. Multi-line content grows
+   past 44px naturally because we use min-height, not height. ── */
+.sfgl-row-list { min-height: 44px; }
+.sfgl-row-list td,
+.sfgl-row-list th { vertical-align: middle; }
+
+/* ── Mobile: tighten both tiers ── */
 @media (max-width: 639px) {
-  .sfgl-standings-row { height: 52px; }
-  .sfgl-owner { display: none; }
+  .sfgl-row-hero { height: 52px; }
+  .sfgl-row-list { min-height: 40px; }
 }
 
-@media (min-width: 640px) {
-  .sfgl-leader-mobile  { display: none; }
-  .sfgl-leader-desktop { display: inline; }
+/* ── Legacy aliases — old class names kept for any holdouts ── */
+/* StandingsView used to use these; now using .sfgl-row-hero. Keeping the
+   old names as aliases so any in-flight references don't 404 visually. */
+.sfgl-standings-row { height: 56px; }
+.sfgl-standings-cell { vertical-align: middle !important; }
+@media (max-width: 639px) {
+  .sfgl-standings-row { height: 52px; }
 }
 
 /* ── Tab focus-visible for keyboard accessibility ── */
@@ -74,16 +96,7 @@ select option:hover {
   outline-offset: -2px;
 }
 
-/* Wave I: standardised focus-visible across all interactive elements that
-   don't already define their own. Helps keyboard users who tab through. */
-button:focus-visible,
-[role="button"]:focus-visible,
-a:focus-visible {
-  outline: 2px solid rgba(180,160,100,0.5);
-  outline-offset: 2px;
-}
-
-/* ── Body scroll lock ── */
+/* ── Body scroll lock — applied by modals when open ── */
 body.sfgl-modal-open {
   overflow: hidden;
   position: fixed;
@@ -107,7 +120,7 @@ html {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ── Safe area padding for notched phones ── */
+/* ── Safe area padding for notched phones (iPhone X+) ── */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .sfgl-bottom-sheet {
     padding-bottom: env(safe-area-inset-bottom);
@@ -115,14 +128,9 @@ html {
   .sfgl-main-content {
     padding-bottom: calc(80px + env(safe-area-inset-bottom));
   }
-  /* Wave I: toast container — was 24px from bottom which collided with the
-     iOS home indicator on iPhone X+. Now respects safe area. */
-  .sfgl-toast-container {
-    padding-bottom: calc(24px + env(safe-area-inset-bottom));
-  }
 }
 
-/* ── Toast animations ── */
+/* ── Toast + confirm dialog animations ── */
 html { scrollbar-gutter: stable; }
 
 @keyframes sfgl-slideIn {
@@ -187,15 +195,4 @@ html { scrollbar-gutter: stable; }
 }
 .sfgl-text-pulse {
   animation: sfgl-text-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Wave I: prefers-reduced-motion respect. Honour OS-level "reduce motion"
-   setting by killing infinite-loop animations. Still allows quick transitions. */
-@media (prefers-reduced-motion: reduce) {
-  .sfgl-logo-load,
-  .sfgl-dot,
-  .sfgl-pulse-ready,
-  .sfgl-text-pulse {
-    animation: none !important;
-  }
 }

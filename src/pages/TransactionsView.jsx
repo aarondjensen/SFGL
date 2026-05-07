@@ -1101,12 +1101,16 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
             {filteredTransactions.map((tx) => {
               const idx = realIndex(tx);
               return (
-                <div key={idx} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '10px 16px', gap: 8,
-                  borderBottom: `1px solid ${colors.borderSubtle}`,
-                  transition: 'background 0.15s',
-                }}
+                <div key={idx}
+                  className="sfgl-row-list"
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    // List-tier row: 8px vertical padding for consistency with
+                    // Rosters / Tournaments / Results headers (was 10px).
+                    padding: '8px 16px', gap: 8,
+                    borderBottom: `1px solid ${colors.borderSubtle}`,
+                    transition: 'background 0.15s',
+                  }}
                   onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                 >

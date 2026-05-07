@@ -4,13 +4,6 @@
  * Single source of truth for all visual styles across the app.
  * To change the look of every view at once, edit values here.
  * ============================================================================
- *
- * Wave I additions:
- *   • btnSuccess    — green pill (was inlined 5+ times for Add Player, Sign In, etc.)
- *   • btnPill       — small inline pill (40px tall) used in headers
- *   • btnPillGold   — gold pill variant (Commish indicator)
- *   • btnPillDanger — red pill variant (Sign Out)
- *   • btnPillSuccess — green pill variant (Sign In)
  */
 
 // ── Color tokens ─────────────────────────────────────────────────────────────
@@ -44,8 +37,6 @@ export const colors = {
 
   // Semantic
   success:       'rgba(80,180,120,0.85)',
-  successBg:     'rgba(80,180,120,0.12)',
-  successBorder: 'rgba(80,180,120,0.35)',
   earningsGreen:      'rgba(80,195,120,0.95)',   // season earnings — full green
   earningsGreenLight: 'rgba(100,210,150,0.65)',  // swing earnings — softer green
   danger:        'rgba(220,80,80,0.85)',
@@ -201,6 +192,18 @@ export const theme = {
   },
 
   // ── Table ──
+  // Two row-density tiers used across the app:
+  //
+  //   HERO tier  → tableCell (12px padding) + .sfgl-row-hero (56/52px height)
+  //                Standings — single-line content, comfortable spacing.
+  //
+  //   LIST tier  → tableCellList (8px padding) + .sfgl-row-list (44/40px min-height)
+  //                Rosters, Tournaments, Results, Transactions — many rows,
+  //                multi-line content tolerant.
+  //
+  // Both row classes live in app-global.css. Apply the matching cell padding
+  // from theme.tableCell or theme.tableCellList here, and the row class on
+  // the <tr> (or <div> row) — that keeps row height predictable across views.
   tableHeaderCell: {
     padding: '8px 16px',
     fontSize: fontSize.sm,
@@ -213,8 +216,19 @@ export const theme = {
     background: 'rgba(255,255,255,0.02)',
   },
 
+  // Hero-tier cell — used by Standings.
   tableCell: {
     padding: '12px 16px',
+    borderBottom: `1px solid ${colors.borderSubtle}`,
+  },
+
+  // List-tier cell — for dense, scannable tables (Rosters, Tournaments,
+  // Results, Transactions). 8px vertical padding pairs with .sfgl-row-list
+  // for a consistent ~44px row height across all list-style views.
+  // Horizontal 14px matches the existing rhythm in TournamentsView and
+  // ResultsView headers — switching them to this token is a no-op there.
+  tableCellList: {
+    padding: '8px 14px',
     borderBottom: `1px solid ${colors.borderSubtle}`,
   },
 
@@ -313,24 +327,6 @@ export const theme = {
     transition: 'all 0.2s',
   },
 
-  // Wave I: btnSuccess — was inlined as 'rgba(80,180,120,0.12)' background
-  // with similar border in 5+ places (Add Player button, Sign In pill, Add tx
-  // button, etc). Single source of truth now.
-  btnSuccess: {
-    background: colors.successBg,
-    border: `1px solid ${colors.successBorder}`,
-    borderRadius: shape.btnRadius,
-    padding: '9px 18px',
-    fontFamily: fonts.sans,
-    fontSize: fontSize.base,
-    fontWeight: 600,
-    letterSpacing: '1.5px',
-    textTransform: 'uppercase',
-    color: colors.success,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-
   btnIconSmall: {
     background: 'transparent',
     border: 'none',
@@ -342,44 +338,7 @@ export const theme = {
     transition: 'color 0.2s',
   },
 
-  // ── Pills (compact buttons used in header bars) ──
-  // Wave I: standardised the small inline pills used for Sign In/Out/Commish
-  // in the header. Were previously 3 separate inline style objects.
-  pillBase: {
-    fontFamily: fonts.sans,
-    fontSize: fontSize.sm,
-    fontWeight: 600,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-    padding: '8px 14px',
-    borderRadius: 1,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-  },
-
-  pillSuccess: {
-    background: 'rgba(40,120,80,0.15)',
-    border: '1px solid rgba(80,195,120,0.35)',
-    color: 'rgba(80,195,120,0.9)',
-  },
-
-  pillDanger: {
-    background: 'rgba(180,60,60,0.12)',
-    border: '1px solid rgba(180,60,60,0.3)',
-    color: 'rgba(220,120,120,0.8)',
-  },
-
-  pillGold: {
-    background: 'rgba(245,197,24,0.18)',
-    border: '1px solid rgba(245,197,24,0.55)',
-    color: 'rgba(245,197,24,0.95)',
-    fontWeight: 700,
-  },
-
-  // ── Badges / pills (semantic content tags, not buttons) ──
+  // ── Badges / pills ──
   badge: {
     display: 'inline-flex',
     alignItems: 'center',

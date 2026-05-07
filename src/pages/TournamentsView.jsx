@@ -112,6 +112,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
           if (editMode) {
             return (
               <tr key={t.name}
+                className="sfgl-row-list"
                 style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
                 onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
@@ -273,6 +274,7 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
           // ── Read-only row ──
           return (
             <tr key={t.name}
+              className="sfgl-row-list"
               style={{
                 borderBottom: `1px solid ${colors.borderSubtle}`,
                 opacity: alt ? 0.45 : 1,
