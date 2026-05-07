@@ -204,7 +204,7 @@ const StandingsCard = ({
                     <PositionBadge position={position} isWinner={isWinner} swingAccent={accentColor} />
                   </td>
 
-                  {/* Team name + event name caption */}
+                  {/* Team name */}
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, overflow: 'hidden', paddingLeft: 4, paddingRight: 4 }}>
                     <div style={{
                       ...theme.bodyText,
@@ -217,23 +217,12 @@ const StandingsCard = ({
                     }}>
                       {team.name}
                     </div>
-                    {team.recentEventName && (
-                      <div style={{
-                        ...theme.smallText,
-                        marginTop: 2,
-                        fontSize: fontSize.sm,
-                        color: colors.textSecondary,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {team.recentEventName}
-                      </div>
-                    )}
                   </td>
 
-                  {/* Event earnings — its own column so values stack vertically */}
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right', verticalAlign: 'bottom', paddingLeft: 4, paddingRight: 8, paddingBottom: 14 }}>
+                  {/* Recent event earnings — own column so values stack vertically.
+                      Prefixed with "+" to communicate "this is what they ADDED to
+                      their season total from the most recent event". */}
+                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right', paddingLeft: 4, paddingRight: 8 }}>
                     {team.recentEventName ? (
                       <div style={{
                         ...theme.statNum,
@@ -241,9 +230,9 @@ const StandingsCard = ({
                         color: team.recentEarnings > 0 ? colors.earningsGreen : colors.textMuted,
                         fontWeight: 500,
                       }}>
-                        {team.recentEarnings === null
+                        {team.recentEarnings === null || team.recentEarnings === 0
                           ? '—'
-                          : formatEventEarnings(team.recentEarnings)}
+                          : '+' + formatEventEarnings(team.recentEarnings)}
                       </div>
                     ) : null}
                   </td>
