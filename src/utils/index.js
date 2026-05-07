@@ -380,6 +380,52 @@ export const isPastRoundStart = (tournament, roundNum) => {
 };
 
 // ============================================================================
+// CURRENT TOURNAMENT — date-based "which tournament are we in this week"
+// ============================================================================
+// Wave C.5 consolidation. Replaces THREE separate implementations: RostersView's
+// `getAddDropTournamentIndex` and two inline copies in TransactionsView (the
+// option list and the type-change handler). Each previous implementation
+// parsed `tournament.dates` itself with slightly different regex/window math
+// — RostersView used a Sun–Sat week; TransactionsView used a 14-day window.
+// We standardize on the Sun–Sat week here because that's the natural
+// "tournament week" boundary; the 14-day window only differed at edges and
+// both fell through to the same `next non-completed` fallback.
+//
+// Returns the tournament index whose Sun–Sat week contains `now`. If none
+// match, falls back to the next non-completed tournament, and finally to the
+// last tournament. Returns -1 only if the array is empty.
+export const getCurrentTournamentIndex = (tournaments, refDate = null) => {
+  if (!tournaments?.length) return -1;
+  const now = refDate || getETNow();
+
+  let best = -1;
+  let bestDist = Infinity;
+  tournaments.forEach((t, i) => {
+    const start = getTournamentStartDate(t);
+    if (!start) return;
+    // Sun-Sat week containing the tournament's start
+    const sun = new Date(start);
+    sun.setDate(sun.getDate() - sun.getDay()); // back to Sunday
+    sun.setHours(0, 0, 0, 0);
+    const sat = new Date(sun);
+    sat.setDate(sat.getDate() + 6);
+    sat.setHours(23, 59, 59, 999);
+    if (now >= sun && now <= sat) {
+      const dist = Math.abs(now - start);
+      if (dist < bestDist) { best = i; bestDist = dist; }
+    }
+  });
+  if (best >= 0) return best;
+
+  // Fallback: next non-completed tournament
+  const upcomingIdx = tournaments.findIndex(t => !t.completed);
+  if (upcomingIdx >= 0) return upcomingIdx;
+
+  // Final fallback: last tournament
+  return Math.max(0, tournaments.length - 1);
+};
+
+// ============================================================================
 // STATUS LABELS
 // ============================================================================
 const lockStr = (hour) =>
@@ -523,67 +569,13 @@ export const processTournamentData = (tournament, apiPlayers, currentTeams, curr
   return { newTeams, newStats, resultsData };
 };
 
-// ============================================================================
-// API FETCH
-// ============================================================================
-export const slashGolfFetch = async (endpoint, params = {}) => {
-  const RAPIDAPI_KEY = import.meta.env.VITE_RAPIDAPI_KEY;
-  const url = new URL(`https://live-golf-data.p.rapidapi.com/${endpoint}`);
-  Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null) url.searchParams.set(k, v);
-  });
-  const res = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      'X-RapidAPI-Key':  RAPIDAPI_KEY,
-      'X-RapidAPI-Host': 'live-golf-data.p.rapidapi.com',
-    },
-  });
-  if (!res.ok) throw new Error(`Slash Golf API error: ${res.status} ${res.statusText}`);
-  return res.json();
-};
+// Wave C.5: removed the API FETCH section (slashGolfFetch + fetchFirstTeeTime).
+// Both were dead code — slashGolfFetch was only used by the deleted
+// ScheduleImportModal (Wave B) and by fetchFirstTeeTime, which itself was
+// never called from App.jsx. The `firstTeeTime` prop that RostersView and
+// TournamentsView destructure was always undefined in production.
+//
+// If you ever need first-tee-time data again, source it from /api/field
+// (which already returns teeTimes for the current week's tournament) rather
+// than reintroducing the RapidAPI dependency.
 
-// ── Fetch First Tee Time ──────────────────────────────────────────────────
-export const fetchFirstTeeTime = async (tournament) => {
-  if (!tournament?.slashGolfId) return null;
-
-  try {
-    const data = await slashGolfFetch('leaderboard', {
-      tournId: tournament.slashGolfId,
-      year: '2026'
-    });
-
-    const players = data.leaderboardRows || data.leaderboard || [];
-    if (!players.length) return null;
-
-    // Find earliest tee time from all players
-    let earliestTime = null;
-
-    for (const player of players) {
-      const timeStr = player.teeTime || player.teeTimeTimestamp;
-      if (!timeStr) continue;
-
-      let teeDate;
-
-      // Handle timestamp format { $date: { $numberLong: "..." } }
-      if (typeof timeStr === 'object' && timeStr.$date) {
-        const timestamp = timeStr.$date.$numberLong || timeStr.$date;
-        teeDate = new Date(parseInt(timestamp));
-      } else if (typeof timeStr === 'string') {
-        // Try parsing as date string
-        teeDate = new Date(timeStr);
-      }
-
-      if (teeDate && !isNaN(teeDate.getTime())) {
-        if (!earliestTime || teeDate < earliestTime) {
-          earliestTime = teeDate;
-        }
-      }
-    }
-
-    return earliestTime;
-  } catch (error) {
-    console.error('Failed to fetch tee time:', error);
-    return null;
-  }
-};

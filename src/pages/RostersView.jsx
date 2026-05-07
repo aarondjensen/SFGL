@@ -8,6 +8,7 @@ import {
   getFreeAgentWindowStatus,
   getSegmentByDate, isTournamentLocked,
   isWaiverWindowOpen,
+  getCurrentTournamentIndex,
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts } from '../theme.js';
@@ -420,50 +421,11 @@ export const RostersView = ({
   const activeTournament      = tournaments.find(t => t.playing);
   const activeTournamentIndex = activeTournament ? tournaments.findIndex(t => t.name === activeTournament.name) : -1;
   // ── Date-based tournament week resolution ────────────────────────────────
-  // Add/drop/waiver belong to whichever tournament's week we're currently in,
-  // based on calendar date — regardless of whether that tournament is "playing" yet.
-  // Tournament dates format: "Feb 9-15" → startDate = Feb 9 (Mon of that week)
-  // The add/drop window is Mon–Wed of that week (before Thursday tee time).
-  // We search by date so late result processing by the commish doesn't shift the tag.
-  const getAddDropTournamentIndex = () => {
-    const parseStart = (t) => {
-      if (!t?.dates) return null;
-      const m = t.dates.match(/^([A-Za-z]+)\s+(\d+)/);
-      if (!m) return null;
-      const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
-      const mo = months[m[1]];
-      if (mo === undefined) return null;
-      return new Date(2026, mo, parseInt(m[2]));
-    };
-    const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-    const now = new Date(etStr);
-    // Find the tournament whose week we're currently in:
-    // A tournament "week" runs from the prior Sunday through the following Saturday.
-    // We look for the tournament whose start date (Thursday) is closest to now,
-    // checking if now falls within Sun before start through Sat after start.
-    let best = -1;
-    let bestDist = Infinity;
-    tournaments.forEach((t, i) => {
-      const start = parseStart(t);
-      if (!start) return;
-      // Tournament week: Sunday before start through Saturday after
-      const sun = new Date(start);
-      sun.setDate(sun.getDate() - (sun.getDay())); // back to Sunday
-      const sat = new Date(sun);
-      sat.setDate(sat.getDate() + 6); // through Saturday
-      sat.setHours(23, 59, 59);
-      if (now >= sun && now <= sat) {
-        const dist = Math.abs(now - start);
-        if (dist < bestDist) { best = i; bestDist = dist; }
-      }
-    });
-    if (best >= 0) return best;
-    // Fallback: next non-completed tournament
-    const upcomingIdx = tournaments.findIndex(t => !t.completed);
-    if (upcomingIdx >= 0) return upcomingIdx;
-    return Math.max(0, tournaments.length - 1);
-  };
-  const addDropTournamentIndex = getAddDropTournamentIndex();
+  // Wave C.5: was a 36-line local implementation (`getAddDropTournamentIndex`)
+  // duplicating logic in TransactionsView. Now uses the canonical
+  // getCurrentTournamentIndex from utils — same Sun-Sat week semantics, same
+  // fallback chain (next non-completed → last tournament).
+  const addDropTournamentIndex = getCurrentTournamentIndex(tournaments);
 
   // Switch to the logged-in manager's team whenever loggedInUser changes (e.g. after login)
   const prevLoggedInUser = React.useRef(null);
