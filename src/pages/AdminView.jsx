@@ -1,29 +1,19 @@
 // src/pages/AdminView.jsx
 // ============================================================================
-// Wave I refactor: AdminView is now a thin layout shell that wires panels
-// together. The previous 1615-line monolith has been split into:
+// Wave I refactor: AdminView is a thin layout shell that wires panels together.
 //
-//   admin/CollapsibleGroup.jsx       — accordion wrapper (with localStorage state)
-//   admin/adminStyles.js             — shared S tokens + Sync banners
-//   admin/processTournamentData.js   — pure helper for result processing
-//   admin/TournamentResultsPanel.jsx — fetch / process / reprocess flows
-//   admin/WaiverProcessingPanel.jsx  — pending claims + tiebreaker UI
-//   admin/SwingWinnerPanel.jsx       — pot calculation + award
-//   admin/DataSyncPanel.jsx          — OWGR + LIV + Aliases sync (3 buttons)
-//   admin/LivIneligiblePanel.jsx     — flag/unflag LIV defectors
-//   admin/MergePlayersPanel.jsx      — player name merge
-//   admin/ManagerAccountsPanel.jsx   — credentials + emails
-//   admin/SeasonSettingsPanel.jsx    — bonuses + fees + waiver schedule + draft
-//
-// All cross-panel state has been pushed into the panels themselves.
-// AdminView only orchestrates layout.
+// Wave I.2:
+//   • Dropped WaiverProcessingPanel — waivers are fully automated by
+//     api/cron.js (Tuesday 8pm ET). Pending claims still visible in the
+//     Transactions tab. The cron is the source of truth.
+//   • TournamentResultsPanel now needs setTransactions to write the
+//     auto-awarded swing winner transaction.
 // ============================================================================
 
 import React from 'react';
 
 import { CollapsibleGroup }          from './admin/CollapsibleGroup';
 import { TournamentResultsPanel }    from './admin/TournamentResultsPanel';
-import { WaiverProcessingPanel }     from './admin/WaiverProcessingPanel';
 import { SwingWinnerPanel }          from './admin/SwingWinnerPanel';
 import { DataSyncPanel }             from './admin/DataSyncPanel';
 import { LivIneligiblePanel }        from './admin/LivIneligiblePanel';
@@ -32,9 +22,6 @@ import { ManagerAccountsPanel }      from './admin/ManagerAccountsPanel';
 import { SeasonSettingsPanel }       from './admin/SeasonSettingsPanel';
 
 export const AdminView = ({
-  // (isCommissioner / setIsCommissioner / setActiveTab were always present
-  // in the props but never used inside AdminView — visibility of this view is
-  // controlled by App.jsx. Kept on the signature for backward compat.)
   isCommissioner: _isCommissioner,
   setIsCommissioner: _setIsCommissioner,
   setActiveTab: _setActiveTab,
@@ -61,16 +48,9 @@ export const AdminView = ({
           teams={teams}
           updateTeams={updateTeams}
           transactions={transactions}
+          setTransactions={setTransactions}
           globalPlayerStats={globalPlayerStats}
           setGlobalPlayerStats={setGlobalPlayerStats}
-          STORAGE_KEYS={STORAGE_KEYS}
-        />
-        <WaiverProcessingPanel
-          transactions={transactions}
-          setTransactions={setTransactions}
-          teams={teams}
-          updateTeams={updateTeams}
-          settings={settings}
           STORAGE_KEYS={STORAGE_KEYS}
         />
         <SwingWinnerPanel

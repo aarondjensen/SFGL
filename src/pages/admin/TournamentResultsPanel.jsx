@@ -5,7 +5,9 @@
 //   2. Manual entry → process tournament, mark complete, advance "playing" pointer
 //   3. Reprocess a completed tournament with corrected earnings
 //
-// Wave I extraction from AdminView.
+// Wave I.2: after process/reprocess, automatically check whether the just-
+// processed tournament completes a swing. If so, award the pot to the leader
+// in the same write — keeps the manual SwingWinnerPanel as a safety-net only.
 // ============================================================================
 
 import React from 'react';
@@ -13,6 +15,7 @@ import { useDialog } from '../DialogContext';
 import { theme, colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { processTournamentData } from './processTournamentData';
+import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { S, disabledBtn } from './adminStyles';
 
 // ── Round-leader dropdown (uses stored tournament lineups + R3 mulligan additions) ──
@@ -73,7 +76,6 @@ const RoundLeaderSelect = ({
 
 const EMPTY_ENTRY = { round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} };
 
-// Parse "Player Name, 1234567" lines into a Map<name, number>.
 const parseEarningsLines = (text) => {
   const map = new Map();
   text.split('\n').forEach(line => {
@@ -91,7 +93,7 @@ const parseEarningsLines = (text) => {
 export const TournamentResultsPanel = ({
   tournaments, setTournaments,
   teams, updateTeams,
-  transactions,
+  transactions, setTransactions,
   globalPlayerStats, setGlobalPlayerStats,
   STORAGE_KEYS,
 }) => {
@@ -100,7 +102,6 @@ export const TournamentResultsPanel = ({
   const [manualEntry, setManualEntry] = React.useState(EMPTY_ENTRY);
   const [pgaFetching, setPgaFetching] = React.useState(false);
 
-  // Auto-select active tournament on load
   React.useEffect(() => {
     const active = tournaments.find(t => t.playing);
     if (active && !selectedTourney) setSelectedTourney(active.name);
@@ -145,7 +146,6 @@ export const TournamentResultsPanel = ({
         .map(p => `${p.name}, ${p.earnings}`)
         .join('\n');
 
-      // Only keep leaders who were actually in an SFGL starting lineup.
       const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
       const filterToStarted = (names) => {
         if (!names?.length) return [''];
@@ -200,24 +200,55 @@ export const TournamentResultsPanel = ({
       const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
       if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
 
-      updateTeams(newTeams);
+      // ── Wave I.2: auto-award if this completes a swing ──
+      // Computed BEFORE we call updateTeams/setTransactions so the award
+      // updates can be merged into a single write.
+      const award = maybeAwardForCompletedTournament({
+        justProcessedTournament: newT[ti],
+        allTournaments: newT,
+        transactions,
+        teams: newTeams,
+      });
+      const finalTeams = award ? award.updatedTeams : newTeams;
+      const finalTransactions = award ? [...transactions, award.newTx] : transactions;
+
+      updateTeams(finalTeams);
       setGlobalPlayerStats(newStats);
       setTournaments(newT);
+      if (award) {
+        setTransactions(prev => [...prev, award.newTx]);
+        await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, finalTransactions).catch(() => {});
+      }
       sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
 
       dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
 
-      // Notify managers via email
+      if (award) {
+        dialog.showToast(
+          `🏆 ${award.segment} complete! ${award.winnerTeam.name} (${award.winnerTeam.owner}) wins the $${award.pot.toLocaleString()} pot`,
+          'success'
+        );
+      }
+
+      // Notify managers via email — include swing-award banner if one fired
       try {
-        const teamResultsForEmail = newTeams.filter(t => resultsData.teams[t.id]).map(t => ({
+        const teamResultsForEmail = finalTeams.filter(t => resultsData.teams[t.id]).map(t => ({
           team: t.name,
           totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
         }));
+        const body = { tournamentName: selectedTourney, teamResults: teamResultsForEmail };
+        if (award) {
+          body.swingAward = {
+            segment: award.segment,
+            winnerTeamName: award.winnerTeam.name,
+            pot: award.pot,
+          };
+        }
         await fetch('/api/notify-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
+          body: JSON.stringify(body),
         });
         dialog.showToast('📧 Results emails sent', 'success');
       } catch (emailErr) {
@@ -300,13 +331,37 @@ export const TournamentResultsPanel = ({
       const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions);
 
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
-      updateTeams(newTeams);
+
+      // ── Wave I.2: auto-award if reprocess somehow completes a swing ──
+      // Almost always a no-op for reprocess (already-awarded swings are
+      // idempotently skipped) but covers the edge case of correcting a
+      // tournament that had been incompletely processed.
+      const award = maybeAwardForCompletedTournament({
+        justProcessedTournament: newT[ti],
+        allTournaments: newT,
+        transactions,
+        teams: newTeams,
+      });
+      const finalTeams = award ? award.updatedTeams : newTeams;
+      const finalTransactions = award ? [...transactions, award.newTx] : transactions;
+
+      updateTeams(finalTeams);
       setGlobalPlayerStats(newStats);
       setTournaments(newT);
+      if (award) {
+        setTransactions(prev => [...prev, award.newTx]);
+        await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, finalTransactions).catch(() => {});
+      }
       sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
 
       dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
+      if (award) {
+        dialog.showToast(
+          `🏆 ${award.segment} complete! ${award.winnerTeam.name} wins the $${award.pot.toLocaleString()} pot`,
+          'success'
+        );
+      }
       setManualEntry(EMPTY_ENTRY);
     } catch (err) {
       console.error('handleReprocess error:', err);
