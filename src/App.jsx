@@ -339,7 +339,7 @@ const FantasyGolfLeague = () => {
 
   return (
     <PullToRefresh onRefresh={refetch}>
-    <div className="min-h-screen pb-20 text-white" style={{ background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
+    <div style={{ minHeight: '100vh', paddingBottom: 80, color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
       {/* ── Sticky shell: header + banner + nav ── */}
       <div style={{
@@ -479,7 +479,7 @@ const FantasyGolfLeague = () => {
               </div>
             )}
             {isSyncing && (
-              <span style={{ fontSize: fontSize.sm, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="animate-pulse">
+              <span style={{ fontSize: fontSize.sm, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="sfgl-text-pulse">
                 Saving…
               </span>
             )}
