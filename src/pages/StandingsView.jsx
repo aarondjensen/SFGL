@@ -28,6 +28,10 @@ const SWING_ACCENT = SWING_COLORS;
 
 export const StandingsView = ({ teams, tournaments = [], transactions = [] }) => {
 
+  // Which column to display in the third position: 'total' (default) or 'behind'.
+  // The other column is hidden so the visible one can be larger and easier to read.
+  const [metric, setMetric] = useState('total');
+
   // ── Overall — compute live from tournament results (source of truth) ────
   const seasonTotals = useMemo(() => {
     const totals = {};
@@ -238,6 +242,68 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
         </div>
       </div>
 
+      {/* Metric toggle — Total vs Behind (right-aligned to match Overall/Swing) */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6, marginBottom: 8 }}>
+        <div
+          style={{
+            position: 'relative',
+            display: 'flex',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(180,160,100,0.2)',
+            borderRadius: 4,
+            padding: 3,
+            gap: 0,
+            minWidth: 140,
+            maxWidth: 200,
+            flexShrink: 0,
+          }}
+        >
+          <div style={{
+            position: 'absolute',
+            top: 3, bottom: 3,
+            left: metric === 'behind' ? 'calc(50% + 1px)' : 3,
+            width: 'calc(50% - 4px)',
+            borderRadius: 2,
+            background: 'rgba(255,255,255,0.1)',
+            border: '1px solid rgba(255,255,255,0.3)',
+            transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
+            pointerEvents: 'none',
+          }} />
+          <button
+            onClick={() => setMetric('total')}
+            style={{
+              flex: 1, position: 'relative', zIndex: 1,
+              padding: '5px 0',
+              background: 'none', border: 'none',
+              fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
+              letterSpacing: '1px', textTransform: 'uppercase',
+              color: metric === 'total' ? colors.textPrimary : colors.textMuted,
+              cursor: 'pointer',
+              transition: 'color 0.18s',
+              borderRadius: 2,
+            }}
+          >
+            Total
+          </button>
+          <button
+            onClick={() => setMetric('behind')}
+            style={{
+              flex: 1, position: 'relative', zIndex: 1,
+              padding: '5px 0',
+              background: 'none', border: 'none',
+              fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
+              letterSpacing: '1px', textTransform: 'uppercase',
+              color: metric === 'behind' ? colors.textPrimary : colors.textMuted,
+              cursor: 'pointer',
+              transition: 'color 0.18s',
+              borderRadius: 2,
+            }}
+          >
+            Behind
+          </button>
+        </div>
+      </div>
+
       {/* Empty state for swing */}
       {showSwing && swingsWithResults.length === 0 && (
         <div style={theme.emptyState}>No swing results yet — check back after the first tournament completes</div>
@@ -249,13 +315,12 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
           <colgroup>
             <col style={{ width: 36 }} />
             <col />
-            <col style={{ width: '26%' }} />
-            <col style={{ width: '20%' }} />
+            <col style={{ width: '34%' }} />
           </colgroup>
           <thead>
             <tr>
-              {['Pos', 'Team', earningsLabel, 'Behind'].map((h, i) => (
-                <th key={h} style={{ ...theme.tableHeaderCell, textAlign: i === 2 ? 'left' : i === 3 ? 'right' : 'left' }}>{h}</th>
+              {['Pos', 'Team', metric === 'total' ? earningsLabel : 'Behind'].map((h, i) => (
+                <th key={h} style={{ ...theme.tableHeaderCell, textAlign: i === 2 ? 'right' : 'left' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -283,25 +348,26 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                     </div>
                     <div className="sfgl-owner" style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
                   </td>
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'left' }}>
-                    <div style={{ ...theme.statNumLg, letterSpacing: 3, fontWeight: 300, color: showSwing ? accentColor : (earnings > 0 ? colors.textPrimary : colors.textMuted) }}>
-                      {formatEarnings(earnings)}
-                    </div>
-                  </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
-                    <div style={{ ...theme.statNum, fontSize: fontSize.base, letterSpacing: 1.5, fontWeight: 300, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : behind === 0 ? (showSwing ? accentColor : colors.earningsGreen) : colors.textSecondary }}>
-                      {isSwingWinner
-                        ? 'Winner'
-                        : behind === 0
-                          ? (
-                            <>
-                              <span className="sfgl-leader-mobile">—</span>
-                              <span className="sfgl-leader-desktop" title="Current leader">🏆</span>
-                            </>
-                          )
-                          : formatBehind(behind)
-                      }
-                    </div>
+                    {metric === 'total' ? (
+                      <div style={{ ...theme.statNumLg, fontSize: fontSize.xl, letterSpacing: 2, fontWeight: 300, color: showSwing ? accentColor : (earnings > 0 ? colors.textPrimary : colors.textMuted) }}>
+                        {formatEarnings(earnings)}
+                      </div>
+                    ) : (
+                      <div style={{ ...theme.statNumLg, fontSize: fontSize.xl, letterSpacing: 1.5, fontWeight: 300, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : behind === 0 ? (showSwing ? accentColor : colors.earningsGreen) : colors.textSecondary }}>
+                        {isSwingWinner
+                          ? 'Winner'
+                          : behind === 0
+                            ? (
+                              <>
+                                <span className="sfgl-leader-mobile">—</span>
+                                <span className="sfgl-leader-desktop" title="Current leader">🏆</span>
+                              </>
+                            )
+                            : formatBehind(behind)
+                        }
+                      </div>
+                    )}
                   </td>
                 </tr>
               );
