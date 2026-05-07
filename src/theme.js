@@ -4,6 +4,13 @@
  * Single source of truth for all visual styles across the app.
  * To change the look of every view at once, edit values here.
  * ============================================================================
+ *
+ * Wave I additions:
+ *   • btnSuccess    — green pill (was inlined 5+ times for Add Player, Sign In, etc.)
+ *   • btnPill       — small inline pill (40px tall) used in headers
+ *   • btnPillGold   — gold pill variant (Commish indicator)
+ *   • btnPillDanger — red pill variant (Sign Out)
+ *   • btnPillSuccess — green pill variant (Sign In)
  */
 
 // ── Color tokens ─────────────────────────────────────────────────────────────
@@ -37,6 +44,8 @@ export const colors = {
 
   // Semantic
   success:       'rgba(80,180,120,0.85)',
+  successBg:     'rgba(80,180,120,0.12)',
+  successBorder: 'rgba(80,180,120,0.35)',
   earningsGreen:      'rgba(80,195,120,0.95)',   // season earnings — full green
   earningsGreenLight: 'rgba(100,210,150,0.65)',  // swing earnings — softer green
   danger:        'rgba(220,80,80,0.85)',
@@ -54,10 +63,6 @@ export const colors = {
 };
 
 // ── Typography ────────────────────────────────────────────────────────────────
-// Raleway throughout — single font for the entire app.
-// Google Fonts import is injected in App.jsx root.
-// All font stacks resolve to Raleway — one font throughout the entire app.
-// serif and mono are kept as aliases so existing code doesn't need touching.
 const RALEWAY = "'Raleway', system-ui, sans-serif";
 export const fonts = {
   serif: RALEWAY,
@@ -73,21 +78,6 @@ export const shape = {
 };
 
 // ── Font size scale ───────────────────────────────────────────────────────────
-// Wave 8: single source of truth for every font size in the app.
-// Consumers should use these instead of inline `fontSize: 11` values.
-//
-//   xs   → 9-10px   — micro accents, badges (use sparingly)
-//   sm   → 10-12px  — labels, table headers, button text, badges
-//   base → 11-13px  — small UI text — DEFAULT for most secondary text
-//   md   → 13-15px  — body text, names in lists, primary content
-//   lg   → 15-18px  — sub-headings, large names, big stat numbers
-//   xl   → 17-22px  — section titles
-//   xxl  → 24-30px  — page titles
-//
-// Three visual tiers map to the scale:
-//   SMALL  = xs / sm / base
-//   MEDIUM = md
-//   LARGE  = lg / xl / xxl
 export const fontSize = {
   xs:   'clamp(9px, 0.7vw, 10px)',
   sm:   'clamp(10px, 0.85vw, 12px)',
@@ -99,7 +89,6 @@ export const fontSize = {
 };
 
 // ── Reusable style objects ────────────────────────────────────────────────────
-// Use these directly on JSX elements: <div style={theme.card}>
 
 export const theme = {
 
@@ -119,7 +108,6 @@ export const theme = {
     overflow: 'hidden',
   },
 
-  // Card with hover lift — apply via onMouseEnter/Leave using cardLiftHandlers()
   cardLift: {
     background: colors.cardBg,
     border: `1px solid ${colors.border}`,
@@ -193,7 +181,6 @@ export const theme = {
     color: colors.textMuted,
   },
 
-  // Monospace stat numbers — for earnings, scores, rankings
   statNum: {
     fontFamily: fonts.mono,
     fontVariantNumeric: 'tabular-nums lining-nums',
@@ -326,6 +313,24 @@ export const theme = {
     transition: 'all 0.2s',
   },
 
+  // Wave I: btnSuccess — was inlined as 'rgba(80,180,120,0.12)' background
+  // with similar border in 5+ places (Add Player button, Sign In pill, Add tx
+  // button, etc). Single source of truth now.
+  btnSuccess: {
+    background: colors.successBg,
+    border: `1px solid ${colors.successBorder}`,
+    borderRadius: shape.btnRadius,
+    padding: '9px 18px',
+    fontFamily: fonts.sans,
+    fontSize: fontSize.base,
+    fontWeight: 600,
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    color: colors.success,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+
   btnIconSmall: {
     background: 'transparent',
     border: 'none',
@@ -337,7 +342,44 @@ export const theme = {
     transition: 'color 0.2s',
   },
 
-  // ── Badges / pills ──
+  // ── Pills (compact buttons used in header bars) ──
+  // Wave I: standardised the small inline pills used for Sign In/Out/Commish
+  // in the header. Were previously 3 separate inline style objects.
+  pillBase: {
+    fontFamily: fonts.sans,
+    fontSize: fontSize.sm,
+    fontWeight: 600,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    padding: '8px 14px',
+    borderRadius: 1,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  pillSuccess: {
+    background: 'rgba(40,120,80,0.15)',
+    border: '1px solid rgba(80,195,120,0.35)',
+    color: 'rgba(80,195,120,0.9)',
+  },
+
+  pillDanger: {
+    background: 'rgba(180,60,60,0.12)',
+    border: '1px solid rgba(180,60,60,0.3)',
+    color: 'rgba(220,120,120,0.8)',
+  },
+
+  pillGold: {
+    background: 'rgba(245,197,24,0.18)',
+    border: '1px solid rgba(245,197,24,0.55)',
+    color: 'rgba(245,197,24,0.95)',
+    fontWeight: 700,
+  },
+
+  // ── Badges / pills (semantic content tags, not buttons) ──
   badge: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -374,10 +416,6 @@ export const theme = {
     color: colors.success,
   },
 
-  // For tournaments / events that are currently active. Slightly brighter and
-  // more saturated than badgeSuccess to feel "live". Wave D consolidation —
-  // was previously inlined with two slightly different shades of green in
-  // ResultsView and TournamentsView.
   badgeInProgress: {
     background: 'rgba(80,200,120,0.15)',
     border: '1px solid rgba(80,200,120,0.4)',
@@ -444,10 +482,6 @@ export const segmentEarningsColor = (amount) =>
   (amount || 0) > 0 ? colors.earningsGreenLight : colors.textMuted;
 
 // ── Helper: card lift hover handlers ─────────────────────────────────────────
-// Pass `{ disabled: true }` to suppress the lift effect (e.g. when the card is
-// already expanded — hovering an open card shouldn't visually shift it).
-// onMouseLeave still resets styles even when disabled, so a card that was
-// already lifted at the moment of expansion gets reset cleanly.
 export const cardLiftHandlers = ({ disabled = false } = {}) => ({
   onMouseEnter: (e) => {
     if (disabled) return;
@@ -474,17 +508,7 @@ export const SWING_COLORS = {
 
 export const getSwingColor = (swing) => SWING_COLORS[swing] || colors.textSecondary;
 
-// Get a swing's accent color at a custom alpha. Centralises the previous
-// pattern of consumers doing `accentColor.replace('0.85)', '0.18)')` inline.
-// Falls back to colors.textSecondary at the requested alpha when the swing
-// isn't recognised.
-//
-// Examples:
-//   getSwingColorAt('Spring Swing', 0.18)   → 'rgba(80,200,120,0.18)'
-//   getSwingColorAt('Spring Swing', 1)      → 'rgba(80,200,120,1)'
-//   getSwingColorAt(null, 0.18)             → 'rgba(255,255,255,0.18)'
 export const getSwingColorAt = (swing, alpha) => {
   const c = getSwingColor(swing);
-  // Replace the trailing alpha in the rgba(...) string. Tolerant of spaces.
   return c.replace(/,\s*[\d.]+\s*\)\s*$/, `,${alpha})`);
 };

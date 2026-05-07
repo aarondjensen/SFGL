@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, Search, RotateCcw, Flag } from 'lucide-react';
-import { draftStateApi } from '../api';
+// Wave I: standardised on '../api/firebase' direct import (was '../api' barrel,
+// inconsistent with every other file in the project).
+import { draftStateApi } from '../api/firebase';
 import { useDialog } from './DialogContext';
 import { theme, colors, fonts } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
@@ -121,7 +123,7 @@ const SearchInput = ({ value, onChange, placeholder, autoFocus }) => (
   </div>
 );
 
-// ── KeeperBox — defined outside DraftModal to prevent focus loss on re-render ──
+// ── KeeperBox ────────────────────────────────────────────────────────────────
 const KeeperBox = ({ type, label, accentColor, searchVal, setSearch, searchResults, selectLabel, selected, onClear, onSelect, onStars, getHeadshot }) => (
   <div style={{ background: `${accentColor}0d`, border: `1px solid ${accentColor}40`, borderRadius: 3, padding: 16 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -194,7 +196,7 @@ const KeeperBox = ({ type, label, accentColor, searchVal, setSearch, searchResul
 
 // ── Main DraftModal ───────────────────────────────────────────────────────────
 export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots = {}, initialPhase }) => {
-  const [phase, setPhase]                     = useState('resume_prompt'); // 'resume_prompt','order','keepers','draft'
+  const [phase, setPhase]                     = useState('resume_prompt');
   const [hasSavedState, setHasSavedState]     = useState(false);
   const [draftOrder, setDraftOrder]           = useState(teams.map((t, i) => ({ ...t, order: i })));
   const [keeperTeamIndex, setKeeperTeamIndex] = useState(0);
@@ -202,7 +204,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0);
   const [currentRound, setCurrentRound]       = useState(1);
   const [draftedPlayers, setDraftedPlayers]   = useState([]);
-  const [pickHistory, setPickHistory]         = useState([]); // [{teamId, playerName, round, teamIndex, isLimited}]
+  const [pickHistory, setPickHistory]         = useState([]);
   const [searchQuery, setSearchQuery]         = useState('');
   const [limitedSearch, setLimitedSearch]     = useState('');
   const [unlimitedSearch, setUnlimitedSearch] = useState('');
@@ -210,18 +212,14 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const [confirmDraft, setConfirmDraft]       = useState(null);
   const dialog = useDialog();
 
-  // ── Escape key + body scroll lock (shared) ────────────────────────────────
   useModalBehaviorAlways(onClose);
 
-  // ── On mount: use initialPhase from parent if provided ──
   useEffect(() => {
     if (initialPhase === 'order') {
-      // Parent already cleared draft, go straight to order
       setPhase('order');
       initKeepers();
       return;
     }
-    // Default: check for saved state
     const checkSaved = async () => {
       try {
         const savedState = await draftStateApi.get();
@@ -246,7 +244,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     setKeepers(init);
   };
 
-  // ── Resume saved draft ──
   const handleResume = async () => {
     try {
       const savedState = await draftStateApi.get();
@@ -265,7 +262,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     }
   };
 
-  // ── Start fresh ──
   const handleStartNew = async () => {
     await clearDraftState();
     initKeepers();
@@ -275,7 +271,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     setPhase('order');
   };
 
-  // ── Auto-save on state change ──
   useEffect(() => {
     if (phase === 'order' || phase === 'resume_prompt') return;
     const save = async () => {
@@ -305,7 +300,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     onClose();
   };
 
-  // ── End Draft ──
   const handleEndDraft = async () => {
     const confirmed = await dialog.showConfirm(
       '🏁 End Draft',
@@ -317,7 +311,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     onClose();
   };
 
-  // ── Headshots ──
   const getPlayerHeadshot = (playerName) => {
     let id = headshots[playerName];
     if (!id) { const p = allPlayers.find(p => p.name === playerName); id = p?.pgaTourId; }
@@ -344,7 +337,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const limitedSearchResults  = allPlayers.filter(p => !allKeeperNames().includes(p.name) && p.name.toLowerCase().includes(limitedSearch.toLowerCase())).slice(0, 10);
   const unlimitedSearchResults = allPlayers.filter(p => !allKeeperNames().includes(p.name) && p.name.toLowerCase().includes(unlimitedSearch.toLowerCase())).slice(0, 10);
 
-  // ── Draft order drag ──
   const moveDraftOrder = (fromIndex, dir) => {
     const toIndex = fromIndex + dir;
     if (toIndex < 0 || toIndex >= draftOrder.length) return;
@@ -365,7 +357,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   };
   const handleDragEnd = () => setDraggedIndex(null);
 
-  // ── Keepers ──
   const handleKeeperSelect = (playerName, type, stars = 1) => {
     const updated = { ...keepers };
     if (!updated[currentTeam.id]) updated[currentTeam.id] = { limited: null, unlimited: null };
@@ -379,7 +370,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     if (keeperTeamIndex < draftOrder.length - 1) {
       setKeeperTeamIndex(keeperTeamIndex + 1);
     } else {
-      // Commit keepers to rosters
       const updatedTeams = teams.map(team => {
         const tk = keepers[team.id]; const newRoster = [];
         if (tk?.limited)   newRoster.push({ name: tk.limited.name,   stars: tk.limited.stars, starts: 0, limited: true,  unlimited: false, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0 });
@@ -393,7 +383,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     }
   };
 
-  // ── Draft pick ──
   const handleDraftPlayer = (playerName) => {
     setConfirmDraft({ playerName, type: currentRound <= 2 ? 'limited' : 'unlimited' });
   };
@@ -407,13 +396,11 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
       return { ...team, roster: [...team.roster, { name: playerName, stars: isLimitedRound ? 1 : 0, starts: 0, limited: isLimitedRound, unlimited: false, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0 }] };
     });
 
-    // Record pick for undo
     const pick = { teamId: currentTeam.id, playerName, round: currentRound, teamIndex: currentTeamIndex, isLimited: isLimitedRound };
     setPickHistory(prev => [...prev, pick]);
     setDraftedPlayers(prev => [...prev, playerName]);
     updateTeams(updatedTeams);
 
-    // Advance snake draft
     const isSnake = currentRound % 2 === 0;
     if (isSnake) {
       if (currentTeamIndex === 0)       { setCurrentRound(r => r + 1); setCurrentTeamIndex(0); }
@@ -425,12 +412,9 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     setSearchQuery(''); setConfirmDraft(null);
   };
 
-  // ── Undo last pick ──
   const handleUndo = () => {
     if (pickHistory.length === 0) return;
     const last = pickHistory[pickHistory.length - 1];
-
-    // Remove player from that team's roster
     const updatedTeams = teams.map(team => {
       if (team.id !== last.teamId) return team;
       return { ...team, roster: team.roster.filter(p => p.name !== last.playerName) };
@@ -448,9 +432,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const isSnakeDraft    = currentRound % 2 === 0;
   const canUndo         = pickHistory.length > 0;
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // PHASE: Resume prompt
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   if (phase === 'resume_prompt') {
     return (
       <Shell>
@@ -471,9 +452,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     );
   }
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // PHASE: Draft order
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   if (phase === 'order') {
     return (
       <Shell>
@@ -534,9 +512,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     );
   }
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // PHASE: Keeper selection
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   if (phase === 'keepers') {
     const canProceed = currentKeeper.limited && currentKeeper.unlimited;
     return (
@@ -583,9 +558,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     );
   }
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // PHASE: Draft
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const draftAccent = isLimitedRound ? colors.textGold : 'rgba(255,255,255,0.75)';
 
   return (
@@ -606,12 +578,10 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
         </div>
       ) : (
         <>
-          {/* Search */}
           <div style={{ padding: '12px 22px', borderBottom: `1px solid ${colors.borderSubtle}`, flexShrink: 0 }}>
             <SearchInput value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search players…" autoFocus />
           </div>
 
-          {/* Player list */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px', minHeight: 0 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {availablePlayers.map(player => (
@@ -644,7 +614,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
             </div>
           </div>
 
-          {/* Footer: draft order + undo */}
           <ModalFooter>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 8 }}>
               <span style={{ ...theme.label, flexShrink: 0 }}>
@@ -689,7 +658,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
         </>
       )}
 
-      {/* ── Confirm pick overlay ── */}
       {confirmDraft && (
         <div style={{
           position: 'absolute', inset: 0, background: 'rgba(5,10,25,0.8)', backdropFilter: 'blur(4px)',
