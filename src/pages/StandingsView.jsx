@@ -184,8 +184,9 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
             borderRadius: 4,
             padding: 3,
             gap: 0,
-            minWidth: 140,
-            maxWidth: 200,
+            // Width matched exactly to the Total/Behind toggle in the table
+            // header row below so the two toggles stack vertically.
+            width: 170,
             flexShrink: 0,
           }}
         >
@@ -242,68 +243,6 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
         </div>
       </div>
 
-      {/* Metric toggle — Total vs Behind (right-aligned to match Overall/Swing) */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6, marginBottom: 8 }}>
-        <div
-          style={{
-            position: 'relative',
-            display: 'flex',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(180,160,100,0.2)',
-            borderRadius: 4,
-            padding: 3,
-            gap: 0,
-            minWidth: 140,
-            maxWidth: 200,
-            flexShrink: 0,
-          }}
-        >
-          <div style={{
-            position: 'absolute',
-            top: 3, bottom: 3,
-            left: metric === 'behind' ? 'calc(50% + 1px)' : 3,
-            width: 'calc(50% - 4px)',
-            borderRadius: 2,
-            background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.3)',
-            transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
-            pointerEvents: 'none',
-          }} />
-          <button
-            onClick={() => setMetric('total')}
-            style={{
-              flex: 1, position: 'relative', zIndex: 1,
-              padding: '5px 0',
-              background: 'none', border: 'none',
-              fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
-              letterSpacing: '1px', textTransform: 'uppercase',
-              color: metric === 'total' ? colors.textPrimary : colors.textMuted,
-              cursor: 'pointer',
-              transition: 'color 0.18s',
-              borderRadius: 2,
-            }}
-          >
-            Total
-          </button>
-          <button
-            onClick={() => setMetric('behind')}
-            style={{
-              flex: 1, position: 'relative', zIndex: 1,
-              padding: '5px 0',
-              background: 'none', border: 'none',
-              fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
-              letterSpacing: '1px', textTransform: 'uppercase',
-              color: metric === 'behind' ? colors.textPrimary : colors.textMuted,
-              cursor: 'pointer',
-              transition: 'color 0.18s',
-              borderRadius: 2,
-            }}
-          >
-            Behind
-          </button>
-        </div>
-      </div>
-
       {/* Empty state for swing */}
       {showSwing && swingsWithResults.length === 0 && (
         <div style={theme.emptyState}>No swing results yet — check back after the first tournament completes</div>
@@ -315,13 +254,74 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
           <colgroup>
             <col style={{ width: 36 }} />
             <col />
-            <col style={{ width: '34%' }} />
+            {/* Third column: width matches the Overall/Swing toggle above so the
+                Total/Behind toggle in this header lines up vertically with it. */}
+            <col style={{ width: 170 }} />
           </colgroup>
           <thead>
             <tr>
-              {['Pos', 'Team', metric === 'total' ? earningsLabel : 'Behind'].map((h, i) => (
-                <th key={h} style={{ ...theme.tableHeaderCell, textAlign: i === 2 ? 'right' : 'left' }}>{h}</th>
-              ))}
+              <th style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Pos</th>
+              <th style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Team</th>
+              <th style={{ ...theme.tableHeaderCell, padding: 0, verticalAlign: 'middle' }}>
+                {/* Total/Behind toggle — same shape and size as the Overall/Swing
+                    toggle in the row above, vertically aligned with it. */}
+                <div
+                  style={{
+                    position: 'relative',
+                    display: 'flex',
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(180,160,100,0.2)',
+                    borderRadius: 4,
+                    padding: 3,
+                    gap: 0,
+                    width: '100%',
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute',
+                    top: 3, bottom: 3,
+                    left: metric === 'behind' ? 'calc(50% + 1px)' : 3,
+                    width: 'calc(50% - 4px)',
+                    borderRadius: 2,
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
+                    pointerEvents: 'none',
+                  }} />
+                  <button
+                    onClick={() => setMetric('total')}
+                    style={{
+                      flex: 1, position: 'relative', zIndex: 1,
+                      padding: '5px 0',
+                      background: 'none', border: 'none',
+                      fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
+                      letterSpacing: '1px', textTransform: 'uppercase',
+                      color: metric === 'total' ? colors.textPrimary : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'color 0.18s',
+                      borderRadius: 2,
+                    }}
+                  >
+                    Total
+                  </button>
+                  <button
+                    onClick={() => setMetric('behind')}
+                    style={{
+                      flex: 1, position: 'relative', zIndex: 1,
+                      padding: '5px 0',
+                      background: 'none', border: 'none',
+                      fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
+                      letterSpacing: '1px', textTransform: 'uppercase',
+                      color: metric === 'behind' ? colors.textPrimary : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'color 0.18s',
+                      borderRadius: 2,
+                    }}
+                  >
+                    Behind
+                  </button>
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody>
