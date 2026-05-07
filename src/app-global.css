@@ -19,6 +19,20 @@
  */
 
 /* ── Body defaults (was: document.body.style.fontFamily in App.jsx) ── */
+/* Wave D hotfix: also reset html/body margin and color so the page background
+   set by App.jsx's root div (#111d2e) extends edge-to-edge. The previous
+   reset was an inadvertent side effect of LoginPage.css's global universal
+   selector — once that was correctly scoped to .sfgl-login-root in Wave D,
+   the browser's default 8px body margin re-appeared and showed up as a white
+   sliver around the app. The reset belongs here, not in a lazy-loaded
+   page-specific stylesheet. */
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background: #111d2e;
+}
+
 body {
   font-family: 'Raleway', system-ui, sans-serif;
   font-variant-numeric: tabular-nums lining-nums;
