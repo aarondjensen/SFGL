@@ -56,13 +56,19 @@ export const DialogProvider = ({ children }) => {
       {children}
 
       {/* ── Toasts ── */}
-      <div style={{
-        position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-        zIndex: 100,
-        display: 'flex', flexDirection: 'column', gap: 8,
-        pointerEvents: 'none',
-        width: '100%', maxWidth: 360, padding: '0 16px',
-      }}>
+      {/* Wave I: added `sfgl-toast-container` class so app-global.css can apply
+          safe-area-inset-bottom on notched phones (was 24px from bottom edge,
+          which collided with the iOS home indicator on iPhone X+). */}
+      <div
+        className="sfgl-toast-container"
+        style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 100,
+          display: 'flex', flexDirection: 'column', gap: 8,
+          pointerEvents: 'none',
+          width: '100%', maxWidth: 360, padding: '0 16px',
+        }}
+      >
         {toasts.map(toast => {
           const accent = toastAccent(toast.type);
           const Icon   = ToastIcon(toast.type);
@@ -124,7 +130,6 @@ export const DialogProvider = ({ children }) => {
             onClick={e => e.stopPropagation()}
             role="alertdialog"
           >
-            {/* Title */}
             <h3 style={{
               ...theme.h2,
               marginBottom: 10,
@@ -136,7 +141,6 @@ export const DialogProvider = ({ children }) => {
               {confirm.title}
             </h3>
 
-            {/* Message */}
             <p style={{
               fontFamily: fonts.sans, fontSize: 13,
               color: colors.textSecondary,
@@ -146,7 +150,6 @@ export const DialogProvider = ({ children }) => {
               {confirm.message}
             </p>
 
-            {/* Buttons */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <button
                 onClick={() => handleResult(false)}
@@ -176,8 +179,6 @@ export const DialogProvider = ({ children }) => {
           </div>
         </div>
       )}
-
-      {/* Animations now in app-global.css — no inline <style> needed */}
     </DialogContext.Provider>
   );
 };

@@ -8,11 +8,22 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
     <link rel="manifest" href="/favicon/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111d2e" />
 
-    <!-- Google Fonts: preconnect + stylesheet (was injected from JS in App.jsx; now static for faster first paint) -->
+    <!-- Google Fonts: preconnect + stylesheet -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap" />
+
+    <!-- Wave I: preconnect to ESPN's headshot CDN. Headshots are loaded for
+         every rostered player on every page-load, and TLS handshake to a new
+         host adds ~150-250ms before the first image appears. Preconnecting
+         here lets that handshake start in parallel with bundle parsing. -->
+    <link rel="preconnect" href="https://a.espncdn.com" crossorigin />
+    <link rel="dns-prefetch" href="https://a.espncdn.com" />
+
+    <!-- Same idea for the fallback initials avatar service -->
+    <link rel="dns-prefetch" href="https://ui-avatars.com" />
 
     <title>SFGL 2026</title>
   </head>

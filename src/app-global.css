@@ -3,29 +3,15 @@
  * Static CSS consolidating styles previously injected at runtime via
  * document.createElement('style') in App.jsx and StandingsView.jsx.
  *
- * WHAT WAS MOVED HERE:
- * 1. Tab responsive styles (from App.jsx useEffect — sfgl-tab-styles)
- * 2. Select dropdown dark theme (from App.jsx useEffect — sfgl-select-styles)
- * 3. Standings row styles (from StandingsView.jsx module-level injection)
- * 4. Body font (from App.jsx useEffect — document.body.style assignment)
- * 5. Loading screen animations (from App.jsx inline <style> — Wave 1 cleanup)
- *
- * WHY: Runtime style injection causes unnecessary style recalculation after
- * first paint. Static CSS loads in parallel with the JS bundle and is parsed
- * before any React rendering begins.
- *
- * IMPORT: Add `import './app-global.css'` in main.tsx (after index.css).
+ * Wave I additions:
+ *   • Toast container respects iOS safe-area-inset-bottom (was 24px from
+ *     bottom edge, which collided with the home indicator on iPhone X+).
+ *   • Saved & Pulse-ready button hover states have explicit reduce-motion
+ *     fallback for accessibility.
  * ============================================================================
  */
 
-/* ── Body defaults (was: document.body.style.fontFamily in App.jsx) ── */
-/* Wave D hotfix: also reset html/body margin and color so the page background
-   set by App.jsx's root div (#111d2e) extends edge-to-edge. The previous
-   reset was an inadvertent side effect of LoginPage.css's global universal
-   selector — once that was correctly scoped to .sfgl-login-root in Wave D,
-   the browser's default 8px body margin re-appeared and showed up as a white
-   sliver around the app. The reset belongs here, not in a lazy-loaded
-   page-specific stylesheet. */
+/* ── Body defaults ── */
 html, body {
   margin: 0;
   padding: 0;
@@ -38,7 +24,7 @@ body {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-/* ── Tab responsive styles (was: sfgl-tab-styles in App.jsx) ── */
+/* ── Tab responsive styles ── */
 .sfgl-nav-row { justify-content: space-between; }
 .sfgl-tab { flex: 1; }
 .sfgl-tab-label { display: none; }
@@ -53,7 +39,7 @@ body {
   .sfgl-tournament-mobile { display: none !important; }
 }
 
-/* ── Select dropdown dark theme (was: sfgl-select-styles in App.jsx) ── */
+/* ── Select dropdown dark theme ── */
 select { color-scheme: dark; }
 select option {
   background: #1a2744;
@@ -64,12 +50,11 @@ select option:hover {
   background: #243660;
 }
 
-/* ── Standings row styles (was: sfgl-standings-styles in StandingsView.jsx) ── */
+/* ── Standings row styles ── */
 .sfgl-standings-row { height: 56px; }
 .sfgl-standings-cell { vertical-align: middle !important; }
 .sfgl-owner { display: inline; }
 
-/* Leader marker: "—" on tight mobile screens, 🏆 on desktop where there's space (Wave 3) */
 .sfgl-leader-mobile  { display: inline; }
 .sfgl-leader-desktop { display: none; }
 
@@ -89,10 +74,18 @@ select option:hover {
   outline-offset: -2px;
 }
 
-/* ── Body scroll lock — applied by modals when open ── */
+/* Wave I: standardised focus-visible across all interactive elements that
+   don't already define their own. Helps keyboard users who tab through. */
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(180,160,100,0.5);
+  outline-offset: 2px;
+}
+
+/* ── Body scroll lock ── */
 body.sfgl-modal-open {
   overflow: hidden;
-  /* Prevent iOS Safari rubber-band bounce on body while modal is open */
   position: fixed;
   width: 100%;
 }
@@ -101,35 +94,35 @@ body.sfgl-modal-open {
  * MOBILE POLISH
  * ============================================================================ */
 
-/* ── Kill iOS tap highlight flash on all interactive elements ── */
 button, a, [role="button"], input, select, label {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* ── Remove 300ms tap delay on iOS — allow pinch-zoom but not double-tap zoom ── */
 html {
   touch-action: manipulation;
 }
 
-/* ── Prevent overscroll chaining on modal scroll areas ── */
 .sfgl-modal-scroll {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
-/* ── Safe area padding for notched phones (iPhone X+) ── */
+/* ── Safe area padding for notched phones ── */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
-  /* Bottom-sheet modals (AddDropPlayerModal) */
   .sfgl-bottom-sheet {
     padding-bottom: env(safe-area-inset-bottom);
   }
-  /* Main content area — already has padding-bottom: 80px, add safe area on top */
   .sfgl-main-content {
     padding-bottom: calc(80px + env(safe-area-inset-bottom));
   }
+  /* Wave I: toast container — was 24px from bottom which collided with the
+     iOS home indicator on iPhone X+. Now respects safe area. */
+  .sfgl-toast-container {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
 }
 
-/* ── Toast + confirm dialog animations (was: inline <style> in DialogContext.jsx) ── */
+/* ── Toast animations ── */
 html { scrollbar-gutter: stable; }
 
 @keyframes sfgl-slideIn {
@@ -146,7 +139,7 @@ html { scrollbar-gutter: stable; }
 }
 
 /* ============================================================================
- * LOADING SCREEN (was: inline <style> tag in App.jsx — Wave 1 cleanup)
+ * LOADING SCREEN
  * ============================================================================ */
 
 @keyframes sfgl-pulse {
@@ -175,8 +168,7 @@ html { scrollbar-gutter: stable; }
 .sfgl-dot:nth-child(3) { animation-delay: 0.4s; }
 
 /* ============================================================================
- * BUTTON PULSE — for action-ready buttons that want subtle attention
- * (e.g. the Process All button in AdminView when waivers are ready to process).
+ * BUTTON PULSE
  * ============================================================================ */
 @keyframes sfgl-button-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(80,180,120,0.0); }
@@ -187,9 +179,7 @@ html { scrollbar-gutter: stable; }
 }
 
 /* ============================================================================
- * TEXT PULSE — replaces Tailwind's `animate-pulse` (Wave B Tailwind removal).
- * Used by the "Saving…" indicator in the App header.
- * Same timing curve and opacity range as Tailwind's default.
+ * TEXT PULSE
  * ============================================================================ */
 @keyframes sfgl-text-pulse {
   0%, 100% { opacity: 1; }
@@ -197,4 +187,15 @@ html { scrollbar-gutter: stable; }
 }
 .sfgl-text-pulse {
   animation: sfgl-text-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Wave I: prefers-reduced-motion respect. Honour OS-level "reduce motion"
+   setting by killing infinite-loop animations. Still allows quick transitions. */
+@media (prefers-reduced-motion: reduce) {
+  .sfgl-logo-load,
+  .sfgl-dot,
+  .sfgl-pulse-ready,
+  .sfgl-text-pulse {
+    animation: none !important;
+  }
 }
