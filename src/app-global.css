@@ -4,8 +4,7 @@
  * document.createElement('style') in App.jsx and StandingsView.jsx.
  *
  * IMPORT: Add `import './app-global.css'` in main.tsx (after index.css).
- * ============================================================================
- */
+ * ============================================================================ */
 
 /* ── Body defaults ── */
 html, body {
@@ -20,19 +19,39 @@ body {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-/* ── Tab responsive styles ── */
-.sfgl-nav-row { justify-content: space-between; }
-.sfgl-tab { flex: 1; }
-.sfgl-tab-label { display: none; }
+/* ============================================================================
+ * NAVIGATION
+ *
+ * Pass 2: nav moved from top to bottom. The TOP-nav rules (.sfgl-nav-row,
+ * .sfgl-tab-label) are gone. The .sfgl-tab class survives because the bottom
+ * nav buttons reuse it for keyboard focus styling.
+ *
+ * The .sfgl-tournament-desktop/mobile pair survives — those control the
+ * "⛳ Active Tournament" indicator's visibility in the header context strip,
+ * which is independent of the nav layout.
+ * ============================================================================ */
+
+/* ── Bottom nav — fixed to viewport bottom ── */
+/* Safe-area padding prevents the home indicator on iPhone X+ from overlapping
+   the tap targets. Combined with the inner buttons' min-height: 56px, every
+   tab gets its full 56px hit zone above the indicator. */
+.sfgl-bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* ── Active Tournament indicator visibility (mobile vs desktop) ── */
 .sfgl-tournament-desktop { display: none !important; }
 .sfgl-tournament-mobile { display: flex !important; }
 
 @media (min-width: 640px) {
-  .sfgl-nav-row { justify-content: flex-start; }
-  .sfgl-tab { flex: 1; }
-  .sfgl-tab-label { display: inline; }
   .sfgl-tournament-desktop { display: flex !important; }
   .sfgl-tournament-mobile { display: none !important; }
+}
+
+/* ── Tab focus-visible for keyboard accessibility ── */
+.sfgl-tab:focus-visible {
+  outline: 2px solid rgba(180,160,100,0.6);
+  outline-offset: -2px;
 }
 
 /* ── Select dropdown dark theme ── */
@@ -54,9 +73,6 @@ select option:hover {
  *   .sfgl-row-hero   — Standings (showpiece): fixed 56/52px, single-line
  *   .sfgl-row-list   — Rosters/Tournaments/Results/Transactions: 44/40px,
  *                      multi-line tolerant via min-height
- *
- * Keep the per-cell vertical alignment rule next to its row class so the
- * rules ship together — adding/removing a tier means touching one place.
  * ============================================================================ */
 
 /* ── Hero tier — Standings ── */
@@ -82,18 +98,10 @@ select option:hover {
 }
 
 /* ── Legacy aliases — old class names kept for any holdouts ── */
-/* StandingsView used to use these; now using .sfgl-row-hero. Keeping the
-   old names as aliases so any in-flight references don't 404 visually. */
 .sfgl-standings-row { height: 56px; }
 .sfgl-standings-cell { vertical-align: middle !important; }
 @media (max-width: 639px) {
   .sfgl-standings-row { height: 52px; }
-}
-
-/* ── Tab focus-visible for keyboard accessibility ── */
-.sfgl-tab:focus-visible {
-  outline: 2px solid rgba(180,160,100,0.6);
-  outline-offset: -2px;
 }
 
 /* ── Body scroll lock — applied by modals when open ── */
@@ -120,13 +128,19 @@ html {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ── Safe area padding for notched phones (iPhone X+) ── */
+/* ── Safe area + bottom nav clearance ──
+   Main content reserves room for the bottom nav. The nav itself is roughly
+   58px tall (10+18+3+14+8 + 1px border) plus whatever safe-area inset the
+   device adds. We use env() inside calc() so the same rule covers notched
+   and non-notched devices: env() returns 0 when safe-area is unsupported. */
+.sfgl-main-content {
+  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0));
+}
+
+/* Bottom-sheet modals (AddDropPlayerModal) get the safe-area bump too. */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .sfgl-bottom-sheet {
     padding-bottom: env(safe-area-inset-bottom);
-  }
-  .sfgl-main-content {
-    padding-bottom: calc(80px + env(safe-area-inset-bottom));
   }
 }
 

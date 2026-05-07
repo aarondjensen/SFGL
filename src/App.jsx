@@ -1,17 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
-import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
+import { Trophy, Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
-// Mobile devices can get stuck on stale localStorage data while desktop has
-// fresh state from Firebase. Visiting any URL with ?reset=1 (e.g.
-// https://sfglgolf.com/?reset=1) clears all SFGL-namespaced localStorage keys
-// and reloads. This runs at module-load time so it fires BEFORE any useState
-// initializers read from localStorage.
-//
-// Wave 7 fix: previously this only matched 'sfgl-' prefix keys, but the actual
-// data keys in this app use 'fantasy-golf-' as their prefix (only the
-// logged-in-user key uses 'sfgl-'). The old filter only signed users out and
-// did not reset cache. Now matches both.
 if (typeof window !== 'undefined') {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -20,7 +10,6 @@ if (typeof window !== 'undefined') {
         .filter(k => k.startsWith('sfgl-') || k.startsWith('fantasy-golf-'))
         .forEach(k => localStorage.removeItem(k));
       console.log('[?reset=1] Cleared SFGL localStorage');
-      // Navigate to the URL without ?reset — replace() also reloads
       window.location.replace(window.location.pathname);
     }
   } catch (e) {
@@ -32,19 +21,13 @@ import { DialogProvider } from './pages/DialogContext';
 import { ErrorBoundary }  from './pages/ErrorBoundary';
 import { PullToRefresh }  from './pages/PullToRefresh';
 
-// ── Eagerly loaded views (shown on first visit / lightweight) ──────────────
+// ── Eagerly loaded views ──
 import { StandingsView }  from './pages/StandingsView';
 import { ResultsView }    from './pages/ResultsView';
 import { RostersView }    from './pages/RostersView';
 import { TournamentsView }  from './pages/TournamentsView';
 
-// ── Lazy-loaded views (heavy, rarely visited on initial load) ──────────────
-// AdminView and TransactionsView (and their transitive deps like DraftModal)
-// are deferred until the user actually navigates to those tabs. This removes
-// thousands of lines of JS from the initial bundle.
-// LoginPage was added to this list in Wave 5 — most users browse anonymously
-// and never click Sign In, so the LoginPage component + its CSS shouldn't be
-// in the initial bundle.
+// ── Lazy-loaded views ──
 const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m => ({ default: m.AdminView })));
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 const LazyLoginPage        = React.lazy(() => import('./pages/LoginPage'));
@@ -56,7 +39,7 @@ import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS }
 import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
 
-// ── Lazy-load fallback spinner ─────────────────────────────────────────────
+// ── Lazy-load fallback spinner ──
 const LazyFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
     <div style={{
@@ -69,14 +52,16 @@ const LazyFallback = () => (
   </div>
 );
 
-// ── Tabs ────────────────────────────────────────────────────────────────────
+// ── User-facing tabs (Admin moved to header gear icon) ──────────────────────
+// Five tabs, all labeled. Order matches the user's mental flow during a
+// tournament week: check standings → set lineups → see results → review
+// transactions → glance at upcoming schedule.
 const TABS = [
   { id: 'standings',    label: 'Standings',    Icon: Trophy     },
   { id: 'rosters',      label: 'Rosters',      Icon: Users      },
   { id: 'results',      label: 'Results',      Icon: Award      },
   { id: 'transactions', label: 'Transactions', Icon: DollarSign },
-  { id: 'tournaments',  label: 'Tournaments',  Icon: Calendar   },
-  { id: 'admin',        label: 'Commish',      Icon: Settings   },
+  { id: 'tournaments',  label: 'Schedule',     Icon: Calendar   },
 ];
 
 // ── App shell ───────────────────────────────────────────────────────────────
@@ -95,14 +80,13 @@ const FantasyGolfLeague = () => {
   const {
     teams, tournaments, transactions, settings, globalPlayerStats,
     allPlayers, rankingsLastUpdated, headshots, loading, isSyncing,
-    loadErrors, // Wave 7: surfaces Firebase failures to the UI
+    loadErrors,
     setTournaments, setAllPlayers,
     updateTeams, updateTournaments, updateTransactions, updateSettings,
     updateGlobalStats, updateHeadshots, updateRankings,
-    refetch, // Wave 7: lets PullToRefresh do a real refetch instead of window.location.reload()
+    refetch,
   } = league;
 
-  // Guard against useLeague returning null/undefined when Firebase load fails
   const safeTeams        = Array.isArray(teams)        ? teams        : [];
   const safeTournaments  = Array.isArray(tournaments)  ? tournaments  : [];
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
@@ -112,10 +96,7 @@ const FantasyGolfLeague = () => {
   const resolvedHeadshots = Object.keys(safeHeadshots).length > 0 ? safeHeadshots : PGA_TOUR_IDS;
   const currentTournament = safeTournaments.find(t => t.playing);
 
-  // ── Google Fonts is now loaded statically from index.html (Wave 1 cleanup) ──
-  // Loading-screen styles + body font are in app-global.css.
-
-  // ── Restore session on page load ──────────────────────────────────────────
+  // ── Restore session on page load ──
   useEffect(() => {
     managerAuthApi.getCurrentSession().then(session => {
       if (!session) return;
@@ -127,24 +108,13 @@ const FantasyGolfLeague = () => {
     }).catch(() => {});
   }, [resolvedTeams]);
 
-  // ── Hydrate tournament results from Firebase ──────────────────────────────
-  // Hydrate tournament results from Firebase once after load.
-  // MERGE only — never overwrites a tournament that already has local results.
-  // Remote results win only when the local tournament has none.
-  //
-  // Wave 6 hotfix: previously this effect would set `resultsHydrated = true`
-  // even when `tournaments.length === 0` (e.g. when ?reset=1 had cleared
-  // localStorage and the tournament-recovery effect hadn't seeded state yet).
-  // That meant once recovery DID populate tournaments, this effect never
-  // re-ran — leaving every team's earnings at $0 because results were never
-  // merged in. Fix: bail without latching when tournaments is empty.
+  // ── Hydrate tournament results from Firebase ──
   useEffect(() => {
     if (loading || resultsHydrated) return;
-    if (tournaments.length === 0) return; // wait for tournaments to populate, don't latch
+    if (tournaments.length === 0) return;
     tournamentResultsApi.getAllForSeason().then(remoteResults => {
       if (!remoteResults || remoteResults.length === 0) { setResultsHydrated(true); return; }
       setTournaments(prev => prev.map(t => {
-        // Keep local results if they already exist — don't overwrite with remote
         if (t.completed && t.results) return t;
         const remote = remoteResults.find(r => r.tournamentName === t.name);
         if (!remote) return t;
@@ -158,18 +128,7 @@ const FantasyGolfLeague = () => {
   }, [loading, tournaments.length, resultsHydrated]);
 
 
-  // ── Wave 7-rollback: defensive direct-from-Firebase tournament recovery ──
-  // After useLeague finishes its initial load, if `tournaments` is still
-  // empty we try once more to fetch directly from Firebase. This is a
-  // belt-and-suspenders backup for the case where useLeague's main loader
-  // failed silently. It does NOT use any timeout — it waits as long as the
-  // call needs and applies the result if successful.
-  //
-  // This was originally added in Wave 6 to recover mobile from a wedged
-  // state. Wave 7 removed it under the (incorrect) assumption that the
-  // rewritten useLeague would handle the case. After Wave 7's timeouts
-  // proved harmful, we reverted useLeague to its original behaviour and
-  // restored this effect as a safety net.
+  // ── Tournament recovery ──
   const [tournamentsRecovered, setTournamentsRecovered] = useState(false);
   useEffect(() => {
     if (loading || tournamentsRecovered) return;
@@ -198,20 +157,8 @@ const FantasyGolfLeague = () => {
   }, [loading, tournaments.length, tournamentsRecovered]);
 
 
-  // ── Auto-fetch headshots for all rostered players ────────────────────────
-  // Runs whenever the roster set changes. Calls /api/headshots with every
-  // rostered player name we haven't already attempted recently, merges results
-  // into the headshots map so every component (Rosters, AddDrop, etc.) sees
-  // them.
-  //
-  // Wave 8 (post Adam-Scott bug): previously used a permanent Set to dedupe,
-  // which meant ANY single transient failure (ESPN 5xx, network blip, name not
-  // yet indexed in the 5 events the API queries) blocked that player from ever
-  // being retried until full page reload. Now uses a Map of name→timestamp
-  // with a 60-second TTL: a player attempted recently is skipped, but after
-  // a minute the next render re-attempts. Recovers automatically from
-  // transient failures without spamming the endpoint.
-  const fetchAttemptsRef = useRef(new Map()); // name → timestamp of last attempt
+  // ── Auto-fetch headshots ──
+  const fetchAttemptsRef = useRef(new Map());
   const HEADSHOT_RETRY_MS = 60 * 1000;
   useEffect(() => {
     if (loading) return;
@@ -220,8 +167,6 @@ const FantasyGolfLeague = () => {
     )].filter(Boolean);
     if (!allRostered.length) return;
 
-    // Skip names we already have a headshot for, names with a static
-    // PGA_TOUR_IDS fallback, and names attempted within the retry window.
     const now = Date.now();
     const missing = allRostered.filter(n => {
       if (safeHeadshots[n]) return false;
@@ -232,8 +177,6 @@ const FantasyGolfLeague = () => {
     });
     if (!missing.length) return;
 
-    // Stamp attempt time BEFORE the fetch so a quick second roster change
-    // doesn't trigger a duplicate in-flight request for the same names.
     missing.forEach(n => fetchAttemptsRef.current.set(n, now));
 
     const encoded = missing.map(n => encodeURIComponent(n)).join(',');
@@ -245,7 +188,6 @@ const FantasyGolfLeague = () => {
           const found = Object.keys(data.results).length;
           const notFound = missing.length - found;
           console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found (will retry in ${HEADSHOT_RETRY_MS / 1000}s if still missing)`);
-          // Persist to player documents for future loads
           import('./api/firebase').then(({ playersApi }) => {
             const toSave = Object.entries(data.results).map(([name, espnId]) => ({ name, espnId }));
             if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
@@ -256,21 +198,12 @@ const FantasyGolfLeague = () => {
   }, [loading, resolvedTeams]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  // ── Wave 7: surface Firebase load failures to user via toast ──────────────
-  // The previous behavior (silently falling back to localStorage) is the root
-  // cause of the May 2026 mobile-vs-desktop divergence. Now, if any collection
-  // fails to load from Firebase on initial load OR on a refresh, show a toast.
-  // ── Wave 7: Surface load failures so silent Firebase failures stop being silent
-  // useLeague tracks which collections failed to load. We log a warning here
-  // and (in a future wave) will surface a toast via DialogProvider.
-  // The user can pull-to-refresh to retry.
+  // ── Surface load failures ──
   const [failureToastShown, setFailureToastShown] = useState(false);
   useEffect(() => {
     if (loading) return;
     if (failureToastShown) return;
     if (!loadErrors || loadErrors.length === 0) return;
-    // Only mention the user-visible collections — silent failures of
-    // 'rankings' / 'headshots' aren't worth distracting the user with.
     const userVisible = ['tournaments', 'teams', 'transactions', 'settings'];
     const visibleFailures = loadErrors.filter(f => userVisible.includes(f));
     if (visibleFailures.length === 0) {
@@ -278,16 +211,14 @@ const FantasyGolfLeague = () => {
       return;
     }
     setFailureToastShown(true);
-    // Plain console for now; a future wave will route this through DialogContext.
     console.warn(`[App] Couldn't reach Firebase for: ${visibleFailures.join(', ')}. Pull to refresh to retry.`);
   }, [loading, loadErrors, failureToastShown]);
 
 
-  // ── Admin login ────────────────────────────────────────────────────────────
+  // ── Admin login ──
   const handleAdminLogin = async () => {
     const hashed = await hashPassword(adminPassword);
     if (hashed === COMMISSIONER_PASSWORD_HASH) {
-      // Blur input to dismiss keyboard and reset iOS zoom
       if (document.activeElement) document.activeElement.blur();
       setIsCommissioner(true);
       setShowAdminLoginPopover(false);
@@ -299,11 +230,26 @@ const FantasyGolfLeague = () => {
     }
   };
 
-  // ── Manager login ──────────────────────────────────────────────────────────
+  // ── Admin gear icon click handler ──
+  // When commish: navigate to admin tab (or exit commish mode if already there).
+  // When not commish: toggle the password popover anchored to the gear button.
+  const handleAdminGearClick = () => {
+    if (isCommissioner) {
+      // If already on admin tab, treat as "exit commish mode"
+      if (activeTab === 'admin') {
+        setIsCommissioner(false);
+        setActiveTab('standings');
+      } else {
+        setActiveTab('admin');
+      }
+      return;
+    }
+    setShowAdminLoginPopover(prev => !prev);
+  };
+
+  // ── Manager login ──
   const handleManagerLogin = (result) => {
-    // result = { teamId } — resolve display name from loaded teams
     const team = resolvedTeams.find(t => t.id === result.teamId);
-    // Blur any focused input and reset iOS viewport zoom
     if (document.activeElement) document.activeElement.blur();
     const mv = document.querySelector('meta[name=viewport]');
     if (mv) {
@@ -315,7 +261,6 @@ const FantasyGolfLeague = () => {
     setShowLoginModal(false);
   };
 
-  // ── Logout ─────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
     await managerAuthApi.logout();
     setLoggedInUser(null);
@@ -325,7 +270,6 @@ const FantasyGolfLeague = () => {
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
-        {/* Loading-screen animations are now in app-global.css (Wave 1 cleanup) */}
         <div className="sfgl-logo-load" style={{ fontSize: fontSize.xxl, fontWeight: 600, letterSpacing: 10, color: 'rgba(255,255,255,0.9)' }}>SFGL</div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span className="sfgl-dot" />
@@ -339,9 +283,12 @@ const FantasyGolfLeague = () => {
 
   return (
     <PullToRefresh>
-    <div style={{ minHeight: '100vh', paddingBottom: 80, color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
+    {/* Bottom-nav clearance: replaces the previous fixed paddingBottom: 80.
+        The .sfgl-main-content rule in app-global.css already adds safe-area
+        inset on top of the bottom-nav clearance. */}
+    <div style={{ minHeight: '100vh', color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
-      {/* ── Sticky shell: header + banner + nav ── */}
+      {/* ── Sticky shell: header + tournament context strip ── */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 50,
         background: 'rgba(8, 18, 40, 0.97)',
@@ -350,18 +297,21 @@ const FantasyGolfLeague = () => {
       }}>
 
         {/* ── Header ── */}
-        <header>
+        <header style={{ position: 'relative' }}>
           <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
 
               {/* Logo */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{
-                  fontFamily: "'Raleway', system-ui, sans-serif",
-                  fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5,
-                  color: 'rgba(255,255,255,0.93)',
-                  whiteSpace: 'nowrap', userSelect: 'none',
-                }}>SFGL</span>
+                <span
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  style={{
+                    fontFamily: "'Raleway', system-ui, sans-serif",
+                    fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5,
+                    color: 'rgba(255,255,255,0.93)',
+                    whiteSpace: 'nowrap', userSelect: 'none', cursor: 'pointer',
+                  }}
+                >SFGL</span>
                 <div style={{ width: 1, height: 22, background: 'rgba(180,160,100,0.25)' }} />
                 <span style={{
                   fontFamily: "'Raleway', system-ui, sans-serif",
@@ -372,8 +322,8 @@ const FantasyGolfLeague = () => {
                 }}>2026</span>
               </div>
 
-              {/* Right side: user + login/logout */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {/* Right side: user · admin gear · sign in/out */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {loggedInUser && (
                   <span style={{
                     fontSize: fontSize.base,
@@ -385,81 +335,143 @@ const FantasyGolfLeague = () => {
                     {loggedInUser}
                   </span>
                 )}
-                {/* Commissioner pill — replaces the old full-width yellow banner.
-                    Click signs out of commish mode and returns to standings. */}
-                {isCommissioner && (
-                  <button
-                    onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }}
-                    title="Click to exit Commissioner mode"
-                    aria-label="Exit Commissioner mode"
-                    style={{
-                      fontFamily: "'Raleway', system-ui, sans-serif",
-                      fontSize: fontSize.sm,
-                      fontWeight: 700,
-                      letterSpacing: 1.5,
-                      textTransform: 'uppercase',
-                      padding: '8px 12px',
-                      background: 'rgba(245,197,24,0.18)',
-                      border: '1px solid rgba(245,197,24,0.55)',
+
+                {/* Admin gear icon — replaces the old "Commish" pill AND the old
+                    Settings tab in the bottom nav. Behaviour:
+                      • Not signed in as commish → opens password popover
+                      • Signed in, not on admin tab → navigate to admin
+                      • Signed in, on admin tab → exit commish mode
+
+                    Visual states are deliberately understated when not commish
+                    (gray) and gold when commish so it doesn't draw attention
+                    for non-admin users but clearly indicates active state when
+                    you are the commish. */}
+                <button
+                  onClick={handleAdminGearClick}
+                  aria-label={isCommissioner ? (activeTab === 'admin' ? 'Exit Commissioner mode' : 'Open Commissioner panel') : 'Sign in as Commissioner'}
+                  title={isCommissioner ? (activeTab === 'admin' ? 'Exit Commish mode' : 'Open Commish panel') : 'Commish'}
+                  style={{
+                    background: isCommissioner
+                      ? (activeTab === 'admin' ? 'rgba(245,197,24,0.18)' : 'rgba(245,197,24,0.10)')
+                      : 'transparent',
+                    border: `1px solid ${
+                      isCommissioner
+                        ? 'rgba(245,197,24,0.55)'
+                        : showAdminLoginPopover
+                          ? 'rgba(255,255,255,0.2)'
+                          : 'rgba(255,255,255,0.1)'
+                    }`,
+                    borderRadius: 2,
+                    padding: 7,
+                    color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.5)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    minWidth: 32, minHeight: 32,
+                  }}
+                  onMouseEnter={e => {
+                    if (!isCommissioner) e.currentTarget.style.color = 'rgba(255,255,255,0.85)';
+                  }}
+                  onMouseLeave={e => {
+                    if (!isCommissioner) e.currentTarget.style.color = 'rgba(255,255,255,0.5)';
+                  }}
+                >
+                  <Settings style={{ width: 14, height: 14 }} />
+                </button>
+
+                {/* Admin password popover — anchored under the gear icon.
+                    Right-aligned to the header's right edge. */}
+                {showAdminLoginPopover && !isCommissioner && (
+                  <div style={{
+                    position: 'absolute', right: 16, top: '100%', marginTop: 4,
+                    background: '#0f1d35',
+                    border: '1px solid rgba(180,160,100,0.25)',
+                    borderRadius: 2,
+                    padding: 10,
+                    boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
+                    zIndex: 60,
+                    display: 'flex',
+                    gap: 8,
+                  }}>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoFocus
+                      autoComplete="current-password"
+                      placeholder="Password"
+                      value={adminPassword}
+                      onChange={e => setAdminPassword(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleAdminLogin(); }}
+                      style={{
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: 1,
+                        padding: '7px 10px',
+                        fontSize: 16,
+                        width: 160,
+                        color: 'white',
+                        outline: 'none',
+                      }}
+                    />
+                    <button onClick={handleAdminLogin} style={{
+                      background: '#1c3a5e',
+                      border: '1px solid rgba(180,160,100,0.25)',
                       borderRadius: 1,
-                      color: 'rgba(245,197,24,0.95)',
+                      padding: '7px 14px',
+                      fontSize: fontSize.base,
+                      fontWeight: 600,
+                      color: 'rgba(180,160,100,0.9)',
                       cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.28)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.18)'; }}
-                  >
-                    <span style={{ fontSize: fontSize.base }}>⚙</span>
-                    <span>Commish</span>
+                      letterSpacing: 1,
+                    }}>
+                      Enter
+                    </button>
+                  </div>
+                )}
+
+                {loggedInUser && !isCommissioner && (
+                  <button onClick={handleLogout} aria-label="Sign out of your account" style={{
+                    fontFamily: "'Raleway', system-ui, sans-serif",
+                    fontSize: fontSize.sm,
+                    letterSpacing: 1.5,
+                    textTransform: 'uppercase',
+                    padding: '8px 14px',
+                    background: 'rgba(180,60,60,0.12)',
+                    border: '1px solid rgba(180,60,60,0.3)',
+                    borderRadius: 1,
+                    color: 'rgba(220,120,120,0.8)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}>
+                    Sign Out
                   </button>
                 )}
-                {loggedInUser && !isCommissioner && (
-                    <button onClick={handleLogout} aria-label="Sign out of your account" style={{
-                      fontFamily: "'Raleway', system-ui, sans-serif",
-                      fontSize: fontSize.sm,
-                      letterSpacing: 1.5,
-                      textTransform: 'uppercase',
-                      padding: '8px 14px',
-                      background: 'rgba(180,60,60,0.12)',
-                      border: '1px solid rgba(180,60,60,0.3)',
-                      borderRadius: 1,
-                      color: 'rgba(220,120,120,0.8)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}>
-                      Sign Out
-                    </button>
-                )}
                 {!loggedInUser && !isCommissioner && (
-                    <button onClick={() => setShowLoginModal(true)} aria-label="Open sign-in dialog" style={{
-                      fontFamily: "'Raleway', system-ui, sans-serif",
-                      fontSize: fontSize.sm,
-                      letterSpacing: 1.5,
-                      textTransform: 'uppercase',
-                      padding: '8px 14px',
-                      background: 'rgba(40,120,80,0.15)',
-                      border: '1px solid rgba(80,195,120,0.35)',
-                      borderRadius: 1,
-                      color: 'rgba(80,195,120,0.9)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}>
-                      Sign In
-                    </button>
+                  <button onClick={() => setShowLoginModal(true)} aria-label="Open sign-in dialog" style={{
+                    fontFamily: "'Raleway', system-ui, sans-serif",
+                    fontSize: fontSize.sm,
+                    letterSpacing: 1.5,
+                    textTransform: 'uppercase',
+                    padding: '8px 14px',
+                    background: 'rgba(40,120,80,0.15)',
+                    border: '1px solid rgba(80,195,120,0.35)',
+                    borderRadius: 1,
+                    color: 'rgba(80,195,120,0.9)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}>
+                    Sign In
+                  </button>
                 )}
               </div>
             </div>
           </div>
         </header>
 
-        {/* (Old full-width yellow Commissioner banner removed in Wave 3 — replaced
-            by the gold "⚙ Commish" pill in the header right side above. Saves
-            ~30px of vertical real-estate on every commish screen.) */}
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
+        {/* ── Tournament context strip — swing + active tournament ── */}
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 8px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, minWidth: 0 }}>
             <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
               {(() => {
                 const active = safeTournaments.find(t => t.playing);
@@ -468,15 +480,17 @@ const FantasyGolfLeague = () => {
               })()}
             </div>
             {currentTournament && (
-              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
-                <span>⛳</span> {currentTournament.name}
+              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span>⛳</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentTournament.name}</span>
               </div>
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {currentTournament && (
-              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
-                <span>⛳</span> {currentTournament.name}
+              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span>⛳</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentTournament.name}</span>
               </div>
             )}
             {isSyncing && (
@@ -487,117 +501,10 @@ const FantasyGolfLeague = () => {
           </div>
         </div>
 
-        {/* ── Navigation ── */}
-        <nav style={{ maxWidth: 1100, margin: "0 auto", padding: "0 16px", position: "relative" }}>
-        <div className="sfgl-nav-row" style={{ display: "flex", gap: 0, paddingBottom: 8, overflowX: "auto" }}>
-          {TABS.map(tab => {
-            const isActive = activeTab === tab.id;
-            const isAdminPopover = tab.id === 'admin' && showAdminLoginPopover;
-            return (
-              <button
-                key={tab.id}
-                className="sfgl-tab"
-                onClick={() => {
-                  if (tab.id === 'admin' && !isCommissioner) {
-                    setShowAdminLoginPopover(prev => !prev);
-                    return;
-                  }
-                  setShowAdminLoginPopover(false);
-                  setActiveTab(tab.id);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  padding: '10px 12px',
-                  borderRadius: 2,
-                  fontSize: fontSize.md,
-                  fontWeight: 400,
-                  letterSpacing: 0.5,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  border: isActive
-                    ? '1px solid rgba(255,255,255,0.2)'
-                    : '1px solid transparent',
-                  background: isActive
-                    ? 'rgba(255,255,255,0.08)'
-                    : isAdminPopover
-                      ? 'rgba(255,255,255,0.06)'
-                      : 'rgba(255,255,255,0.04)',
-                  color: isActive
-                    ? 'rgba(255,255,255,0.95)'
-                    : 'rgba(255,255,255,0.78)',
-                  boxShadow: isActive ? 'inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
-                  outline: 'none', // focus-visible handled by CSS class in app-global.css
-                }}
-              >
-                <tab.Icon style={{ width: 13, height: 13 }} />
-                <span className="sfgl-tab-label" style={{
-                  fontFamily: "'Raleway', system-ui, sans-serif",
-                  fontSize: fontSize.md,
-                  fontWeight: 500,
-                  letterSpacing: '1px',
-                }}>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Admin password popover */}
-        {showAdminLoginPopover && !isCommissioner && (
-          <div style={{
-            position: 'absolute', right: 12, top: '100%', marginTop: 4,
-            background: '#0f1d35',
-            border: '1px solid rgba(180,160,100,0.25)',
-            borderRadius: 2,
-            padding: 10,
-            boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
-            zIndex: 50,
-            display: 'flex',
-            gap: 8,
-          }}>
-            <input
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              autoFocus
-              autoComplete="current-password"
-              placeholder="Password"
-              value={adminPassword}
-              onChange={e => setAdminPassword(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleAdminLogin(); }}
-              style={{
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: 1,
-                padding: '7px 10px',
-                fontSize: 16,
-                width: 160,
-                color: 'white',
-                outline: 'none',
-              }}
-            />
-            <button onClick={handleAdminLogin} style={{
-              background: '#1c3a5e',
-              border: '1px solid rgba(180,160,100,0.25)',
-              borderRadius: 1,
-              padding: '7px 14px',
-              fontSize: fontSize.base,
-              fontWeight: 600,
-              color: 'rgba(180,160,100,0.9)',
-              cursor: 'pointer',
-              letterSpacing: 1,
-            }}>
-              Enter
-            </button>
-          </div>
-        )}
-        </nav>
       </div>{/* end sticky shell */}
 
       {/* ── Main content ── */}
-      <main className="sfgl-main-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 80px" }}>
+      <main className="sfgl-main-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 100px" }}>
 
         <ErrorBoundary key={activeTab} tabName={activeTab}>
           {activeTab === 'standings' && (
@@ -676,6 +583,82 @@ const FantasyGolfLeague = () => {
         </ErrorBoundary>
       </main>
 
+      {/* ── Bottom Navigation ────────────────────────────────────────────────
+          Fixed to the bottom of the viewport. Five labeled tabs, evenly
+          distributed. Translucent background + backdrop-blur to feel native
+          to iOS PWAs and modern Android. Safe-area-inset padding handled
+          via the .sfgl-bottom-nav class in app-global.css so the tap targets
+          clear the iPhone home indicator zone. ─────────────────────────── */}
+      <nav
+        className="sfgl-bottom-nav"
+        aria-label="Primary"
+        style={{
+          position: 'fixed',
+          left: 0, right: 0, bottom: 0,
+          zIndex: 50,
+          background: 'rgba(8, 18, 40, 0.96)',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          borderTop: '1px solid rgba(180,160,100,0.18)',
+        }}
+      >
+        <div style={{
+          maxWidth: 1100, margin: '0 auto',
+          display: 'flex', alignItems: 'stretch',
+          padding: '0 4px',
+        }}>
+          {TABS.map(tab => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setShowAdminLoginPopover(false);
+                  setActiveTab(tab.id);
+                }}
+                aria-label={tab.label}
+                aria-current={isActive ? 'page' : undefined}
+                className="sfgl-tab"
+                style={{
+                  flex: 1,
+                  position: 'relative',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 3,
+                  padding: '10px 4px 8px',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: isActive ? colors.textGold : 'rgba(255,255,255,0.5)',
+                  transition: 'color 0.15s',
+                  minHeight: 56,
+                }}
+              >
+                {/* Active indicator — top-edge gold accent line */}
+                {isActive && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0, left: '20%', right: '20%',
+                    height: 2,
+                    background: colors.textGold,
+                    borderRadius: '0 0 2px 2px',
+                  }} />
+                )}
+                <tab.Icon style={{ width: 18, height: 18, strokeWidth: isActive ? 2.4 : 2 }} />
+                <span style={{
+                  fontFamily: "'Raleway', system-ui, sans-serif",
+                  fontSize: 10,
+                  fontWeight: isActive ? 700 : 500,
+                  letterSpacing: 0.4,
+                  whiteSpace: 'nowrap',
+                }}>
+                  {tab.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
       {/* ── Manager Login Modal ── */}
       {showLoginModal && (
         <div style={{
@@ -716,7 +699,7 @@ const FantasyGolfLeague = () => {
   );
 };
 
-// ── Root with providers ──────────────────────────────────────────────────────
+// ── Root with providers ──
 const App = () => (
   <DialogProvider>
     <FantasyGolfLeague />
