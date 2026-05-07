@@ -374,6 +374,16 @@ export const theme = {
     color: colors.success,
   },
 
+  // For tournaments / events that are currently active. Slightly brighter and
+  // more saturated than badgeSuccess to feel "live". Wave D consolidation —
+  // was previously inlined with two slightly different shades of green in
+  // ResultsView and TournamentsView.
+  badgeInProgress: {
+    background: 'rgba(80,200,120,0.15)',
+    border: '1px solid rgba(80,200,120,0.4)',
+    color: 'rgba(80,200,120,0.9)',
+  },
+
   badgeCut: {
     background: 'rgba(220,80,80,0.1)',
     border: '1px solid rgba(220,80,80,0.25)',

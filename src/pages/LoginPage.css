@@ -1,4 +1,11 @@
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* Wave D fix: previously this rule used the global universal selector (`*, *::before, *::after`)
+   which cascaded across the *entire document* — once LoginPage.css loaded (lazy import on first
+   open), every <p>, <h2>, etc. in the rest of the app lost its default browser margin/padding for
+   the rest of the session. Now scoped to .sfgl-login-root descendants only. */
+.sfgl-login-root,
+.sfgl-login-root *,
+.sfgl-login-root *::before,
+.sfgl-login-root *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .sfgl-login-root {
   width: 100%;
