@@ -1,8 +1,15 @@
-// src/pages/admin/adminStyles.js
+// src/pages/admin/adminStyles.jsx
 // ============================================================================
-// Shared style tokens used by every admin panel. Was previously a local `S`
-// const inside AdminView's render — extracted here so each panel can share
-// the same look without redefining.
+// Shared style tokens used by every admin panel + a couple of small JSX
+// helper components (SyncStatusBanner, LastSyncedLine).
+//
+// Wave I hotfix: this file was originally written as .js but contains JSX,
+// which Vite refuses to parse without the .jsx extension. Same content as
+// before — only the file extension changed.
+//
+// IMPORTANT: delete the old src/pages/admin/adminStyles.js file when you
+// drop this in. Bare imports of './adminStyles' will resolve to .jsx
+// automatically once .js is gone.
 // ============================================================================
 
 import { theme, colors, fonts } from '../../theme.js';
