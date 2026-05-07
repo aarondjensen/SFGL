@@ -247,7 +247,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
       {(!showSwing || swingsWithResults.length > 0) && (
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <colgroup>
-            <col style={{ width: 48 }} />
+            <col style={{ width: 36 }} />
             <col />
             <col style={{ width: '26%' }} />
             <col style={{ width: '20%' }} />
@@ -273,12 +273,12 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
                   {...rowHoverHandlers(isTop)}
                 >
                   <td className="sfgl-standings-cell" style={theme.tableCell}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.base, fontWeight: 700, background: isSwingWinner ? getSwingColorAt(selectedSwing, 0.15) : medal.bg, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : medal.text, border: isSwingWinner ? `1px solid ${getSwingColorAt(selectedSwing, 0.4)}` : 'none', flexShrink: 0 }}>
+                    <div style={{ width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.sm, fontWeight: 700, background: isSwingWinner ? getSwingColorAt(selectedSwing, 0.15) : medal.bg, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : medal.text, border: isSwingWinner ? `1px solid ${getSwingColorAt(selectedSwing, 0.4)}` : 'none', flexShrink: 0 }}>
                       {isSwingWinner ? '🏆' : team[posKey]}
                     </div>
                   </td>
                   <td className="sfgl-standings-cell" style={{ ...theme.tableCell, overflow: 'hidden' }}>
-                    <div style={{ ...theme.bodyText, fontSize: fontSize.md, fontFamily: fonts.serif, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : colors.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ ...theme.bodyText, fontSize: fontSize.lg, fontFamily: fonts.serif, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : colors.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {team.name}
                     </div>
                     <div className="sfgl-owner" style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
