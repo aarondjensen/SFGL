@@ -1,12 +1,9 @@
 // pages/PullToRefresh.jsx
-// Wave 7: now accepts an onRefresh callback so we can refetch from Firebase
-// instead of doing a full page reload. Falls back to window.location.reload()
-// if no callback provided so this component still works in isolation.
-//
 // Wraps content with a touch-driven pull-to-refresh gesture. When the user
-// pulls down past the threshold while at the top of the page, onRefresh fires.
-// Pure visual feedback while pulling (no refresh until release).
+// pulls down past the threshold while at the top of the page, the page
+// fully reloads — picking up both fresh data AND any newly-deployed code.
 //
+// Pure visual feedback while pulling (no reload until release).
 // On non-touch devices the touch handlers are silent — no negative impact.
 
 import React from 'react';
@@ -14,6 +11,14 @@ import React from 'react';
 const THRESHOLD = 80;
 
 export const PullToRefresh = ({ children, onRefresh }) => {
+  // onRefresh is accepted for backward compatibility but no longer used.
+  // The previous behaviour (call onRefresh() to refetch from Firestore in-place)
+  // didn't pick up new code from Vercel deploys — users had to fully close the
+  // app and reopen it to get the new bundle. Doing a full reload here gets
+  // both new code and new data in one gesture, matching how every other
+  // mobile app's pull-to-refresh works.
+  void onRefresh;
+
   const [pulling, setPulling] = React.useState(false);
   const [pullY, setPullY] = React.useState(0);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -44,23 +49,20 @@ export const PullToRefresh = ({ children, onRefresh }) => {
     if (pullY >= THRESHOLD && !refreshing) {
       setRefreshing(true);
       setPullY(THRESHOLD * 0.5);
-      // Wave 7: prefer the onRefresh callback (refetches data without bundle reload)
-      // and fall back to the old reload behavior if no callback was passed.
-      if (typeof onRefresh === 'function') {
-        Promise.resolve(onRefresh())
-          .catch(err => console.error('[PullToRefresh] onRefresh failed:', err))
-          .finally(() => {
-            setPullY(0);
-            setRefreshing(false);
-          });
-      } else {
-        setTimeout(() => window.location.reload(), 400);
-      }
+      // Brief delay so the user sees the "Refreshing…" state before the
+      // page goes white during reload. 200ms feels intentional, not laggy.
+      setTimeout(() => {
+        // Bypass HTTP cache when supported (Chrome desktop/Android, some others).
+        // iOS Safari ignores the bool argument but `.reload()` itself still
+        // re-fetches when the server's cache headers permit.
+        try { window.location.reload(true); }
+        catch { window.location.reload(); }
+      }, 200);
     } else {
       setPullY(0);
     }
     setPulling(false);
-  }, [pulling, pullY, refreshing, onRefresh]);
+  }, [pulling, pullY, refreshing]);
 
   return (
     <div
