@@ -133,6 +133,7 @@ const StandingsCard = ({
   accentColor,           // optional swing tint applied to the toggle + earnings color
   showSwingWinner,       // when truthy, top row gets the trophy treatment
   emptyState,            // optional: render this instead of the table when no rows
+  emphasis,              // 'primary' for the Season card (gold accent), undefined otherwise
 }) => {
   const leaderEarnings = rows[0]?.earnings || 0;
 
@@ -141,7 +142,9 @@ const StandingsCard = ({
   // room for the rows below on small screens.
   const compactHeader = {
     padding: '8px 14px',
-    background: theme.cardHeader.background,
+    background: emphasis === 'primary'
+      ? 'linear-gradient(90deg, rgba(245,197,24,0.12) 0%, rgba(245,197,24,0.04) 60%, transparent 100%)'
+      : theme.cardHeader.background,
     borderBottom: theme.cardHeader.borderBottom,
     display: 'flex',
     alignItems: 'center',
@@ -149,8 +152,14 @@ const StandingsCard = ({
     justifyContent: 'space-between',
   };
 
+  // Primary cards get a slightly stronger gold border to read as "featured"
+  // relative to the secondary swing card below.
+  const cardStyle = emphasis === 'primary'
+    ? { ...theme.card, border: '1px solid rgba(245,197,24,0.35)' }
+    : theme.card;
+
   return (
-    <div style={theme.card}>
+    <div style={cardStyle}>
       {/* Header */}
       <div style={compactHeader}>
         <div style={{
@@ -420,50 +429,71 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   const swingAccent = selectedSwing ? SWING_ACCENT[selectedSwing] : colors.textSecondary;
 
   // ── Subtitles ─────────────────────────────────────────────────────────────
-  // Subtitle font size matches team-name font size (fontSize.lg) so the card
-  // header reads as the same visual tier as its contents — not smaller.
+  // Both subtitles use the same font family/size/weight so SEASON and the
+  // swing name read as the same visual tier. SEASON is set in caps with
+  // tracked letter-spacing (sans rather than serif because all-caps serif
+  // can feel heavy in small sizes).
+  const HEADER_FONT = {
+    fontFamily: fonts.sans,
+    fontSize: fontSize.lg,
+    fontWeight: 700,
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+  };
+
   const overallSubtitle = (
-    <span style={{ fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.textPrimary, letterSpacing: '0.5px' }}>
+    <span style={{ ...HEADER_FONT, color: colors.textGold }}>
       Season
     </span>
   );
 
+  // Swing subtitle: the swing name is styled like SEASON (same font / size /
+  // tracking) plus a small chevron indicating it's a dropdown trigger. The
+  // <select> sits invisibly on top so the OS-native picker still renders.
   const swingSubtitle = selectedSwing ? (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
       {swingsWithResults.length > 1 ? (
-        <select
-          value={selectedSwing || ''}
-          onChange={e => setSelectedSwing(e.target.value)}
-          style={{
-            ...theme.select,
-            width: 'auto',
-            fontSize: fontSize.md,
-            padding: '0px 8px',
-            height: 24,
-            color: swingAccent,
-            borderColor: getSwingColorAt(selectedSwing, 0.3),
-            background: '#0d1b2e',
-            appearance: 'none',
-            WebkitAppearance: 'none',
-            fontWeight: 600,
-          }}
-        >
-          {swingsWithResults.map(s => (
-            <option key={s} value={s}>{s.replace(/\s+Swing$/, '')}</option>
-          ))}
-        </select>
-      ) : (
-        <span style={{
-          fontFamily: fonts.serif,
-          fontSize: fontSize.md,
-          fontWeight: 600, color: swingAccent,
-          border: `1px solid ${getSwingColorAt(selectedSwing, 0.4)}`,
-          borderRadius: 4,
-          padding: '1px 8px',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          letterSpacing: '0.5px',
+        <label style={{
+          position: 'relative',
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          cursor: 'pointer',
         }}>
-          {selectedSwing?.replace(/\s+Swing$/, '') || ''}
+          <span style={{ ...HEADER_FONT, color: swingAccent }}>
+            {selectedSwing.replace(/\s+Swing$/, '')}
+          </span>
+          {/* Chevron — tiny down-arrow indicating dropdown affordance */}
+          <span aria-hidden="true" style={{
+            fontSize: 9,
+            color: swingAccent,
+            opacity: 0.65,
+            lineHeight: 1,
+            marginTop: 1,
+          }}>▼</span>
+          {/* Invisible select layered over the styled span/chevron — keeps
+              native picker UX without showing the OS chrome. */}
+          <select
+            value={selectedSwing}
+            onChange={e => setSelectedSwing(e.target.value)}
+            aria-label="Select swing"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              opacity: 0,
+              cursor: 'pointer',
+              border: 'none',
+              background: 'transparent',
+              fontSize: 16, // ≥16px to prevent iOS zoom
+            }}
+          >
+            {swingsWithResults.map(s => (
+              <option key={s} value={s}>{s.replace(/\s+Swing$/, '')}</option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        // Only one swing has results yet — no dropdown needed, just label.
+        <span style={{ ...HEADER_FONT, color: swingAccent }}>
+          {selectedSwing.replace(/\s+Swing$/, '')}
         </span>
       )}
       {swingEventCount > 0 && (
@@ -482,22 +512,23 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
       )}
     </div>
   ) : (
-    <span style={{ fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.textMuted, letterSpacing: '0.5px' }}>
+    <span style={{ ...HEADER_FONT, color: colors.textMuted }}>
       Swing
     </span>
   );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* Overall card */}
+      {/* Overall card — primary emphasis (gold accent) */}
       <StandingsCard
         subtitle={overallSubtitle}
         rows={overallRows}
         metric={overallMetric}
         setMetric={setOverallMetric}
+        emphasis="primary"
       />
 
-      {/* Swing card */}
+      {/* Swing card — secondary, neutral chrome */}
       <StandingsCard
         subtitle={swingSubtitle}
         rows={swingRows}

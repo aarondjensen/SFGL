@@ -31,12 +31,17 @@ body {
  * which is independent of the nav layout.
  * ============================================================================ */
 
-/* ── Bottom nav — fixed to viewport bottom ── */
-/* Safe-area padding prevents the home indicator on iPhone X+ from overlapping
-   the tap targets. Combined with the inner buttons' min-height: 56px, every
-   tab gets its full 56px hit zone above the indicator. */
+/* ── Bottom nav — fixed to viewport bottom ──
+   The nav sits above:
+     • env(safe-area-inset-bottom)  — the iPhone X+ home indicator region
+     • an additional 8px of buffer  — so tap targets aren't right against
+       the indicator gesture zone (where iOS hijacks touches for Siri /
+       Control Center / app switcher swipes).
+
+   Both add to the bottom of the nav so the chrome (translucent strip)
+   extends to the edge of the screen, but the tap targets stop short. */
 .sfgl-bottom-nav {
-  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
 }
 
 /* ── Active Tournament indicator visibility (mobile vs desktop) ── */
@@ -129,12 +134,13 @@ html {
 }
 
 /* ── Safe area + bottom nav clearance ──
-   Main content reserves room for the bottom nav. The nav itself is roughly
-   58px tall (10+18+3+14+8 + 1px border) plus whatever safe-area inset the
-   device adds. We use env() inside calc() so the same rule covers notched
-   and non-notched devices: env() returns 0 when safe-area is unsupported. */
+   Main content reserves room for the bottom nav. The nav is roughly 58px of
+   chrome plus 8px of buffer (added to keep tap targets clear of the iOS
+   gesture zone) plus whatever safe-area inset the device adds. We use
+   env() inside calc() so the same rule covers notched and non-notched
+   devices: env() returns 0 when safe-area is unsupported. */
 .sfgl-main-content {
-  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0));
+  padding-bottom: calc(84px + env(safe-area-inset-bottom, 0));
 }
 
 /* Bottom-sheet modals (AddDropPlayerModal) get the safe-area bump too. */

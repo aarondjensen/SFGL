@@ -926,10 +926,24 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '46%' : '50%' }} />
-              <col style={{ width: isMobile ? '17%' : '12.5%' }} />
-              <col style={{ width: isMobile ? '17%' : '12.5%' }} />
-              <col style={{ width: isMobile ? '20%' : '25%' }} />
+              {/* Column widths shift based on infoView: in Info mode the 4th
+                  column (used for Earnings in Stats mode) is empty, so we
+                  collapse it and give that space to the Player column —
+                  prevents long names like "Christiaan Bezuidenhout" from
+                  truncating. Stats mode keeps the original layout where the
+                  Earnings column actually carries data. */}
+              <col style={{ width: infoView === 'info'
+                ? (isMobile ? '64%' : '62%')
+                : (isMobile ? '46%' : '50%') }} />
+              <col style={{ width: infoView === 'info'
+                ? (isMobile ? '18%' : '14%')
+                : (isMobile ? '17%' : '12.5%') }} />
+              <col style={{ width: infoView === 'info'
+                ? (isMobile ? '18%' : '14%')
+                : (isMobile ? '17%' : '12.5%') }} />
+              <col style={{ width: infoView === 'info'
+                ? '0%'
+                : (isMobile ? '20%' : '25%') }} />
             </colgroup>
             <thead>
               {/* Row 1: desktop only — toggles in thead */}

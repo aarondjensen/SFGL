@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { Trophy, Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
-// ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
+// ── ?reset=1 cache flush ──
 if (typeof window !== 'undefined') {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -33,9 +33,12 @@ const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView')
 const LazyLoginPage        = React.lazy(() => import('./pages/LoginPage'));
 
 import { useLeague }       from './hooks';
-import { hashPassword, getSegmentByDate } from './utils';
+import { getSegmentByDate } from './utils';
 import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
-import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
+// COMMISSIONER_PASSWORD_HASH no longer imported — admin access is now derived
+// from settings.adminTeamIds (managed via the ManagerAccountsPanel UI). Safe
+// to leave the constant exported elsewhere; nothing reads it anymore.
+import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
 import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
 
@@ -52,10 +55,7 @@ const LazyFallback = () => (
   </div>
 );
 
-// ── User-facing tabs (Admin moved to header gear icon) ──────────────────────
-// Five tabs, all labeled. Order matches the user's mental flow during a
-// tournament week: check standings → set lineups → see results → review
-// transactions → glance at upcoming schedule.
+// ── User-facing tabs ──
 const TABS = [
   { id: 'standings',    label: 'Standings',    Icon: Trophy     },
   { id: 'rosters',      label: 'Rosters',      Icon: Users      },
@@ -68,11 +68,9 @@ const TABS = [
 const FantasyGolfLeague = () => {
   const [activeTab,             setActiveTab]             = useState('standings');
   const [selectedTeam,          setSelectedTeam]          = useState(null);
-  const [isCommissioner,        setIsCommissioner]        = useState(false);
   const [loggedInUser,          setLoggedInUser]          = useState(null);
+  const [loggedInTeamId,        setLoggedInTeamId]        = useState(null);
   const [showLoginModal,        setShowLoginModal]        = useState(false);
-  const [showAdminLoginPopover, setShowAdminLoginPopover] = useState(false);
-  const [adminPassword,         setAdminPassword]         = useState('');
   const [resultsHydrated,       setResultsHydrated]       = useState(false);
 
   const league = useLeague(STORAGE_KEYS);
@@ -96,6 +94,24 @@ const FantasyGolfLeague = () => {
   const resolvedHeadshots = Object.keys(safeHeadshots).length > 0 ? safeHeadshots : PGA_TOUR_IDS;
   const currentTournament = safeTournaments.find(t => t.playing);
 
+  // ── Derive isCommissioner from settings.adminTeamIds ─────────────────────
+  // Replaces the old standalone-password admin login. Admin access is now
+  // a property of which manager you logged in as, so:
+  //   • Not signed in → never commish
+  //   • Signed in, your team is in settings.adminTeamIds → commish
+  //   • Signed in, no admin team IDs configured yet (transition period
+  //     after first deploy) → any signed-in manager gets commish access.
+  //     Once anyone is tagged, this fallback no longer applies.
+  //
+  // The fallback exists so the very first deploy isn't locked out before
+  // an admin can be tagged. Tag yourself as admin via the Manager Accounts
+  // panel and the fallback stops mattering.
+  const adminTeamIds = Array.isArray(settings?.adminTeamIds) ? settings.adminTeamIds : [];
+  const noAdminsConfiguredYet = adminTeamIds.length === 0;
+  const isCommissioner = !!loggedInTeamId && (
+    noAdminsConfiguredYet || adminTeamIds.includes(loggedInTeamId)
+  );
+
   // ── Restore session on page load ──
   useEffect(() => {
     managerAuthApi.getCurrentSession().then(session => {
@@ -103,7 +119,10 @@ const FantasyGolfLeague = () => {
       const teamId = localStorage.getItem('manager_team_id');
       if (teamId) {
         const team = resolvedTeams.find(t => t.id === teamId);
-        if (team) setLoggedInUser(team.owner || team.name);
+        if (team) {
+          setLoggedInUser(team.owner || team.name);
+          setLoggedInTeamId(team.id);
+        }
       }
     }).catch(() => {});
   }, [resolvedTeams]);
@@ -126,7 +145,6 @@ const FantasyGolfLeague = () => {
       setResultsHydrated(true);
     });
   }, [loading, tournaments.length, resultsHydrated]);
-
 
   // ── Tournament recovery ──
   const [tournamentsRecovered, setTournamentsRecovered] = useState(false);
@@ -215,36 +233,18 @@ const FantasyGolfLeague = () => {
   }, [loading, loadErrors, failureToastShown]);
 
 
-  // ── Admin login ──
-  const handleAdminLogin = async () => {
-    const hashed = await hashPassword(adminPassword);
-    if (hashed === COMMISSIONER_PASSWORD_HASH) {
-      if (document.activeElement) document.activeElement.blur();
-      setIsCommissioner(true);
-      setShowAdminLoginPopover(false);
-      setAdminPassword('');
-      setActiveTab('admin');
-    } else {
-      alert('Incorrect password');
-      setAdminPassword('');
-    }
-  };
-
-  // ── Admin gear icon click handler ──
-  // When commish: navigate to admin tab (or exit commish mode if already there).
-  // When not commish: toggle the password popover anchored to the gear button.
+  // ── Admin gear icon click handler ─────────────────────────────────────────
+  // The gear icon only renders for users who are commish (see render below),
+  // so this handler only deals with the "navigate" or "exit" cases. There
+  // is no longer a "log in as commish" path through the gear — admin status
+  // flows from the manager login.
   const handleAdminGearClick = () => {
-    if (isCommissioner) {
-      // If already on admin tab, treat as "exit commish mode"
-      if (activeTab === 'admin') {
-        setIsCommissioner(false);
-        setActiveTab('standings');
-      } else {
-        setActiveTab('admin');
-      }
-      return;
+    if (activeTab === 'admin') {
+      // Already on admin → return to standings (treat as "leave admin view")
+      setActiveTab('standings');
+    } else {
+      setActiveTab('admin');
     }
-    setShowAdminLoginPopover(prev => !prev);
   };
 
   // ── Manager login ──
@@ -257,14 +257,18 @@ const FantasyGolfLeague = () => {
       setTimeout(() => mv.setAttribute('content', 'width=device-width, initial-scale=1'), 300);
     }
     setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
-    setIsCommissioner(false);
+    setLoggedInTeamId(team ? team.id : result.teamId);
     setShowLoginModal(false);
   };
 
   const handleLogout = async () => {
     await managerAuthApi.logout();
     setLoggedInUser(null);
-    setIsCommissioner(false);
+    setLoggedInTeamId(null);
+    // If commish was on the admin tab, return them to standings on logout —
+    // the admin tab won't render once isCommissioner flips to false anyway,
+    // but explicit nav avoids a blank-content frame.
+    if (activeTab === 'admin') setActiveTab('standings');
   };
 
   if (loading) {
@@ -283,9 +287,6 @@ const FantasyGolfLeague = () => {
 
   return (
     <PullToRefresh>
-    {/* Bottom-nav clearance: replaces the previous fixed paddingBottom: 80.
-        The .sfgl-main-content rule in app-global.css already adds safe-area
-        inset on top of the bottom-nav clearance. */}
     <div style={{ minHeight: '100vh', color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
       {/* ── Sticky shell: header + tournament context strip ── */}
@@ -336,101 +337,31 @@ const FantasyGolfLeague = () => {
                   </span>
                 )}
 
-                {/* Admin gear icon — replaces the old "Commish" pill AND the old
-                    Settings tab in the bottom nav. Behaviour:
-                      • Not signed in as commish → opens password popover
-                      • Signed in, not on admin tab → navigate to admin
-                      • Signed in, on admin tab → exit commish mode
-
-                    Visual states are deliberately understated when not commish
-                    (gray) and gold when commish so it doesn't draw attention
-                    for non-admin users but clearly indicates active state when
-                    you are the commish. */}
-                <button
-                  onClick={handleAdminGearClick}
-                  aria-label={isCommissioner ? (activeTab === 'admin' ? 'Exit Commissioner mode' : 'Open Commissioner panel') : 'Sign in as Commissioner'}
-                  title={isCommissioner ? (activeTab === 'admin' ? 'Exit Commish mode' : 'Open Commish panel') : 'Commish'}
-                  style={{
-                    background: isCommissioner
-                      ? (activeTab === 'admin' ? 'rgba(245,197,24,0.18)' : 'rgba(245,197,24,0.10)')
-                      : 'transparent',
-                    border: `1px solid ${
-                      isCommissioner
-                        ? 'rgba(245,197,24,0.55)'
-                        : showAdminLoginPopover
-                          ? 'rgba(255,255,255,0.2)'
-                          : 'rgba(255,255,255,0.1)'
-                    }`,
-                    borderRadius: 2,
-                    padding: 7,
-                    color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.5)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s',
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    minWidth: 32, minHeight: 32,
-                  }}
-                  onMouseEnter={e => {
-                    if (!isCommissioner) e.currentTarget.style.color = 'rgba(255,255,255,0.85)';
-                  }}
-                  onMouseLeave={e => {
-                    if (!isCommissioner) e.currentTarget.style.color = 'rgba(255,255,255,0.5)';
-                  }}
-                >
-                  <Settings style={{ width: 14, height: 14 }} />
-                </button>
-
-                {/* Admin password popover — anchored under the gear icon.
-                    Right-aligned to the header's right edge. */}
-                {showAdminLoginPopover && !isCommissioner && (
-                  <div style={{
-                    position: 'absolute', right: 16, top: '100%', marginTop: 4,
-                    background: '#0f1d35',
-                    border: '1px solid rgba(180,160,100,0.25)',
-                    borderRadius: 2,
-                    padding: 10,
-                    boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
-                    zIndex: 60,
-                    display: 'flex',
-                    gap: 8,
-                  }}>
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      autoFocus
-                      autoComplete="current-password"
-                      placeholder="Password"
-                      value={adminPassword}
-                      onChange={e => setAdminPassword(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleAdminLogin(); }}
-                      style={{
-                        background: 'rgba(255,255,255,0.05)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: 1,
-                        padding: '7px 10px',
-                        fontSize: 16,
-                        width: 160,
-                        color: 'white',
-                        outline: 'none',
-                      }}
-                    />
-                    <button onClick={handleAdminLogin} style={{
-                      background: '#1c3a5e',
-                      border: '1px solid rgba(180,160,100,0.25)',
-                      borderRadius: 1,
-                      padding: '7px 14px',
-                      fontSize: fontSize.base,
-                      fontWeight: 600,
-                      color: 'rgba(180,160,100,0.9)',
+                {/* Admin gear icon — only visible to signed-in admins.
+                    Replaces the old password popover. Tapping toggles
+                    between the admin tab and standings. */}
+                {isCommissioner && (
+                  <button
+                    onClick={handleAdminGearClick}
+                    aria-label={activeTab === 'admin' ? 'Leave admin panel' : 'Open admin panel'}
+                    title={activeTab === 'admin' ? 'Leave admin panel' : 'Admin'}
+                    style={{
+                      background: activeTab === 'admin' ? 'rgba(245,197,24,0.18)' : 'rgba(245,197,24,0.10)',
+                      border: '1px solid rgba(245,197,24,0.55)',
+                      borderRadius: 2,
+                      padding: 7,
+                      color: 'rgba(245,197,24,0.95)',
                       cursor: 'pointer',
-                      letterSpacing: 1,
-                    }}>
-                      Enter
-                    </button>
-                  </div>
+                      transition: 'all 0.15s',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      minWidth: 32, minHeight: 32,
+                    }}
+                  >
+                    <Settings style={{ width: 14, height: 14 }} />
+                  </button>
                 )}
 
-                {loggedInUser && !isCommissioner && (
+                {loggedInUser && (
                   <button onClick={handleLogout} aria-label="Sign out of your account" style={{
                     fontFamily: "'Raleway', system-ui, sans-serif",
                     fontSize: fontSize.sm,
@@ -447,7 +378,7 @@ const FantasyGolfLeague = () => {
                     Sign Out
                   </button>
                 )}
-                {!loggedInUser && !isCommissioner && (
+                {!loggedInUser && (
                   <button onClick={() => setShowLoginModal(true)} aria-label="Open sign-in dialog" style={{
                     fontFamily: "'Raleway', system-ui, sans-serif",
                     fontSize: fontSize.sm,
@@ -558,7 +489,6 @@ const FantasyGolfLeague = () => {
             <Suspense fallback={<LazyFallback />}>
               <LazyAdminView
                 isCommissioner={isCommissioner}
-                setIsCommissioner={setIsCommissioner}
                 setActiveTab={setActiveTab}
                 settings={settings}
                 setSettings={updateSettings}
@@ -583,12 +513,7 @@ const FantasyGolfLeague = () => {
         </ErrorBoundary>
       </main>
 
-      {/* ── Bottom Navigation ────────────────────────────────────────────────
-          Fixed to the bottom of the viewport. Five labeled tabs, evenly
-          distributed. Translucent background + backdrop-blur to feel native
-          to iOS PWAs and modern Android. Safe-area-inset padding handled
-          via the .sfgl-bottom-nav class in app-global.css so the tap targets
-          clear the iPhone home indicator zone. ─────────────────────────── */}
+      {/* ── Bottom Navigation ── */}
       <nav
         className="sfgl-bottom-nav"
         aria-label="Primary"
@@ -612,10 +537,7 @@ const FantasyGolfLeague = () => {
             return (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setShowAdminLoginPopover(false);
-                  setActiveTab(tab.id);
-                }}
+                onClick={() => setActiveTab(tab.id)}
                 aria-label={tab.label}
                 aria-current={isActive ? 'page' : undefined}
                 className="sfgl-tab"
@@ -628,18 +550,20 @@ const FantasyGolfLeague = () => {
                   background: 'transparent',
                   border: 'none',
                   cursor: 'pointer',
-                  color: isActive ? colors.textGold : 'rgba(255,255,255,0.5)',
+                  // Active = white, inactive = light gray. Avoiding gold here
+                  // so the nav doesn't compete with the gold Standings card or
+                  // the gold gear icon in the header.
+                  color: isActive ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)',
                   transition: 'color 0.15s',
                   minHeight: 56,
                 }}
               >
-                {/* Active indicator — top-edge gold accent line */}
                 {isActive && (
                   <div style={{
                     position: 'absolute',
                     top: 0, left: '20%', right: '20%',
                     height: 2,
-                    background: colors.textGold,
+                    background: 'rgba(255,255,255,0.95)',
                     borderRadius: '0 0 2px 2px',
                   }} />
                 )}
