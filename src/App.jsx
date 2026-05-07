@@ -338,7 +338,7 @@ const FantasyGolfLeague = () => {
   }
 
   return (
-    <PullToRefresh onRefresh={refetch}>
+    <PullToRefresh>
     <div style={{ minHeight: '100vh', paddingBottom: 80, color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
       {/* ── Sticky shell: header + banner + nav ── */}
