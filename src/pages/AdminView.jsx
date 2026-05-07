@@ -1,11 +1,78 @@
 import React, { useState } from 'react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, normalizePlayerName } from '../utils';
+import { getSegmentByDate, getSegmentForTournament, normalizePlayerName } from '../utils';
 import { DraftModal } from './DraftModal';
 import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi, playerRankingsApi, teamsApi } from '../api/firebase';
 import { seedAliasesToFirestore } from '../constants/nameAliases';
 import { theme, colors, fonts, SWINGS } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
+
+
+// ── Wave E: CollapsibleGroup ────────────────────────────────────────────────
+// Wraps a set of related admin sections into a collapsible accordion group.
+// Persists open/closed state in localStorage so a refresh remembers what the
+// commish had collapsed.
+const CG_STATE_KEY = 'sfgl-admin-group-state';
+const _readGroupState = () => {
+  try { return JSON.parse(localStorage.getItem(CG_STATE_KEY) || '{}') || {}; }
+  catch { return {}; }
+};
+const _writeGroupState = (state) => {
+  try { localStorage.setItem(CG_STATE_KEY, JSON.stringify(state)); } catch {}
+};
+
+const CollapsibleGroup = ({ title, icon, children }) => {
+  // Default each group to OPEN. Commish can collapse to focus on one group.
+  const [open, setOpen] = React.useState(() => {
+    const s = _readGroupState();
+    return s[title] !== false; // treat undefined or true as open
+  });
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    const s = _readGroupState();
+    s[title] = next;
+    _writeGroupState(s);
+  };
+  return (
+    <div style={{ marginBottom: open ? 0 : 4 }}>
+      <button
+        onClick={toggle}
+        aria-expanded={open}
+        aria-label={(open ? 'Collapse ' : 'Expand ') + title + ' group'}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          width: '100%', padding: '10px 14px', marginBottom: open ? 8 : 0,
+          background: 'rgba(20, 45, 80, 0.45)',
+          border: '1px solid rgba(180,160,100,0.18)',
+          borderRadius: 4,
+          cursor: 'pointer',
+          fontFamily: fonts.sans,
+          fontSize: 11, fontWeight: 700,
+          letterSpacing: '2px', textTransform: 'uppercase',
+          color: 'rgba(245,197,24,0.92)',
+          transition: 'background 0.15s, border-color 0.15s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(20,45,80,0.65)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(20,45,80,0.45)'; }}
+      >
+        <span style={{ fontSize: 13 }}>{icon}</span>
+        <span style={{ flex: 1, textAlign: 'left' }}>{title}</span>
+        <span style={{
+          fontSize: 11, color: 'rgba(245,197,24,0.6)',
+          transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+          transition: 'transform 0.15s',
+        }}>▼</span>
+      </button>
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
+
 
 
 // ── Tournament processing helpers ────────────────────────────────────────────
@@ -626,27 +693,11 @@ export const AdminView = ({
 
   // ── Award Swing Winner ──────────────────────────────────────────────────
   // SWINGS now imported from theme — single source of truth (was duplicated here)
-
-  // Get the swing a tournament belongs to, using t.segment if set,
-  // otherwise infer from the tournament's own dates field (not today's date)
-  const getTournamentSegment = (t) => {
-    if (t.segment) return t.segment;
-    // Parse month from dates: "Feb 9-15" → month=2
-    if (t.dates) {
-      const m = t.dates.match(/^([A-Za-z]+)/);
-      if (m) {
-        const months = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
-        const mo = months[m[1]];
-        if (mo) {
-          if (mo >= 1 && mo <= 3) return 'West Coast Swing';
-          if (mo >= 4 && mo <= 6) return 'Spring Swing';
-          if (mo >= 7 && mo <= 9) return 'Summer Swing';
-          return 'Fall Finish';
-        }
-      }
-    }
-    return null;
-  };
+  // Segment-from-tournament resolution uses the canonical helper from utils.
+  // (Wave C.5 — was a local re-implementation here that disagreed with
+  // utils on edge cases. Both supported t.dates fallback; the utils version
+  // also tries t.startDate which is more robust.)
+  const getTournamentSegment = getSegmentForTournament;
 
   const handleSwingWinner = async () => {
     if (!swingAwardSeg) return;
@@ -923,6 +974,7 @@ export const AdminView = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 40 }}>
 
+      <CollapsibleGroup title="Tournament Operations" icon="🏆">
       {/* ── 1. Tournament Results ── */}
       <div style={S.section}>
         <div style={S.title}>🏆 Tournament Results</div>
@@ -1167,8 +1219,9 @@ export const AdminView = ({
           🏆 Award Swing Winner
         </button>
       </div>
+      </CollapsibleGroup>
 
-
+      <CollapsibleGroup title="Data Sync" icon="🔄">
 
       {/* ── 3. Update OWGR Rankings ── */}
       <div style={S.section}>
@@ -1362,22 +1415,6 @@ export const AdminView = ({
         })()}
       </div>
 
-      {/* ── 7. Manager Login Credentials ── */}
-      <div style={S.section}>
-        <div style={S.title}>🔑 Manager Login Credentials</div>
-        <label style={S.lbl}>Team</label>
-        <select value={mgCredTeam} onChange={e => { setMgCredTeam(e.target.value); setMgCredName(teams.find(x => x.id === e.target.value)?.owner || ''); }} style={S.select}>
-          <option value="">Select team...</option>
-          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
-        </select>
-        <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
-        <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
-        <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
-          style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
-          {mgCredSaving ? 'Saving...' : 'Set Login'}
-        </button>
-      </div>
-
       {/* ── 7. Draft ── */}
       {/* ── Merge Players ── */}
       <div style={S.section}>
@@ -1394,7 +1431,69 @@ export const AdminView = ({
           STORAGE_KEYS={STORAGE_KEYS} disabledBtn={disabledBtn}
         />}
       </div>
+      </CollapsibleGroup>
 
+      <CollapsibleGroup title="Manager Accounts" icon="👥">
+      {/* ── 7. Manager Login Credentials ── */}
+      <div style={S.section}>
+        <div style={S.title}>🔑 Manager Login Credentials</div>
+        <label style={S.lbl}>Team</label>
+        <select value={mgCredTeam} onChange={e => { setMgCredTeam(e.target.value); setMgCredName(teams.find(x => x.id === e.target.value)?.owner || ''); }} style={S.select}>
+          <option value="">Select team...</option>
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
+        </select>
+        <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
+        <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
+        <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
+          style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
+          {mgCredSaving ? 'Saving...' : 'Set Login'}
+        </button>
+      </div>
+
+      {/* ── Manager Emails ── */}
+      <div style={S.section}>
+        <div style={S.title}>📧 Manager Emails</div>
+        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
+          Set email addresses for each manager. Used for waiver results, tournament results, and lineup reminders.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+          {teams.map(t => {
+            const currentEmail = (settings.managerEmails || {})[t.id] || '';
+            return (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary, width: 120, flexShrink: 0 }}>{t.name}</span>
+                <input
+                  type="email"
+                  placeholder="email@example.com"
+                  value={emailDraft?.[t.id] ?? currentEmail}
+                  onChange={e => setEmailDraft(prev => ({ ...(prev || {}), [t.id]: e.target.value }))}
+                  style={{ ...theme.input, flex: 1, fontSize: 12, padding: '7px 10px' }}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <button
+          onClick={async () => {
+            if (!emailDraft) return;
+            const merged = { ...(settings.managerEmails || {}), ...emailDraft };
+            try {
+              await setSettings({ ...settings, managerEmails: merged });
+              dialog.showToast('✓ Manager emails saved', 'success');
+              setEmailDraft(null);
+            } catch (err) {
+              dialog.showToast('Error: ' + err.message, 'error');
+            }
+          }}
+          disabled={!emailDraft}
+          style={{ ...S.btn, ...(!emailDraft ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
+        >
+          💾 Save Emails
+        </button>
+      </div>
+      </CollapsibleGroup>
+
+      <CollapsibleGroup title="League Settings" icon="⚙️">
       {/* ── Season Settings ── */}
       <div style={S.section}>
         <button onClick={() => { setSettingsOpen(o => !o); setSettingsDraft(null); }}
@@ -1503,52 +1602,11 @@ export const AdminView = ({
         </button>
       </div>
 
-      {/* ── Manager Emails ── */}
-      <div style={S.section}>
-        <div style={S.title}>📧 Manager Emails</div>
-        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-          Set email addresses for each manager. Used for waiver results, tournament results, and lineup reminders.
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-          {teams.map(t => {
-            const currentEmail = (settings.managerEmails || {})[t.id] || '';
-            return (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary, width: 120, flexShrink: 0 }}>{t.name}</span>
-                <input
-                  type="email"
-                  placeholder="email@example.com"
-                  value={emailDraft?.[t.id] ?? currentEmail}
-                  onChange={e => setEmailDraft(prev => ({ ...(prev || {}), [t.id]: e.target.value }))}
-                  style={{ ...theme.input, flex: 1, fontSize: 12, padding: '7px 10px' }}
-                />
-              </div>
-            );
-          })}
-        </div>
-        <button
-          onClick={async () => {
-            if (!emailDraft) return;
-            const merged = { ...(settings.managerEmails || {}), ...emailDraft };
-            try {
-              await setSettings({ ...settings, managerEmails: merged });
-              dialog.showToast('✓ Manager emails saved', 'success');
-              setEmailDraft(null);
-            } catch (err) {
-              dialog.showToast('Error: ' + err.message, 'error');
-            }
-          }}
-          disabled={!emailDraft}
-          style={{ ...S.btn, ...(!emailDraft ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
-        >
-          💾 Save Emails
-        </button>
-      </div>
-
       <div style={S.section}>
         <div style={S.title}>🎯 Draft</div>
         <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
       </div>
+      </CollapsibleGroup>
 
       {showDraftModal && <DraftModal teams={teams} allPlayers={allPlayers} updateTeams={updateTeams} onClose={() => setShowDraftModal(false)} headshots={headshots} />}
     </div>

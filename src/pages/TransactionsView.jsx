@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
+import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
@@ -298,22 +298,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const [addTxSearchOut,   setAddTxSearchOut]   = useState('');
   const dialog = useDialog();
 
-  const getSegForTourney = (t) => {
-    if (t.segment) return t.segment;
-    if (t.dates) {
-      const m = t.dates.match(/^([A-Za-z]+)/);
-      if (m) {
-        const mo = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12}[m[1]];
-        if (mo) {
-          if (mo <= 3) return 'West Coast Swing';
-          if (mo <= 6) return 'Spring Swing';
-          if (mo <= 9) return 'Summer Swing';
-          return 'Fall Finish';
-        }
-      }
-    }
-    return null;
-  };
+  // Wave C.5: was a local re-implementation of segment-from-tournament
+  // resolution that disagreed slightly with utils on the boundary handling.
+  // The canonical version (getSegmentForTournament from utils) handles the
+  // same cases plus also tries t.startDate before falling back to t.dates,
+  // which is more robust. Aliased here to avoid touching every call site.
+  const getSegForTourney = getSegmentForTournament;
 
   const teamFees = useMemo(() => {
     // Determine current swing for the fee counter:
