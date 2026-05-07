@@ -1,14 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { theme, colors, fonts, fontSize, rowHoverHandlers, SWINGS, SWING_COLORS, getSwingColorAt } from '../theme.js';
-import { getSegmentForTournament } from '../utils';
+import { theme, colors, fonts, fontSize, getMedalStyle, rowHoverHandlers, earningsColor, SWINGS, SWING_COLORS, getSwingColorAt } from '../theme.js';
+import { getSegmentByDate, getSegmentForTournament } from '../utils';
 
-// Row height enforced via the .sfgl-row-hero class defined in app-global.css.
-// (Hero tier = 56px desktop / 52px mobile, single-line content.)
+// Standings row styles (.sfgl-standings-row, .sfgl-standings-cell, .sfgl-owner)
+// are now in app-global.css — no runtime injection needed.
 
-const ALL_SWINGS = SWINGS;
-const SWING_ACCENT = SWING_COLORS;
-
-// ── Formatters ──────────────────────────────────────────────────────────────
 const formatEarnings = (n) => {
   n = n || 0;
   if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(3) + 'M';
@@ -23,308 +19,20 @@ const formatBehind = (n) => {
   return '$' + n;
 };
 
-// Compact event-earnings formatter — fewer digits than the season total
-// (e.g. "$1.2M" not "$1.234M") because the event column is narrower and
-// these are visually subordinate to the season number.
-const formatEventEarnings = (n) => {
-  if (!n || n <= 0) return '—';
-  if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(2) + 'M';
-  if (n >= 1_000)     return '$' + Math.round(n / 1_000) + 'k';
-  return '$' + n;
-};
+const ALL_SWINGS = SWINGS;
 
-// ── Position badge ──────────────────────────────────────────────────────────
-// Only 1st place gets a colored fill (gold from the app theme). 2nd-Nth get
-// a neutral muted treatment because there's no prize for finishing 2nd in
-// this league. When the swing is complete and there's a swing winner, 1st
-// place gets the trophy emoji on top of its swing-tinted fill instead.
-const PositionBadge = ({ position, isWinner, swingAccent }) => {
-  const isFirst = position === 1;
+const SWING_ACCENT = SWING_COLORS;
 
-  let bg, fg, border;
-  if (isWinner) {
-    bg     = swingAccent ? getSwingColorAt(swingAccent, 0.15) : 'rgba(245,197,24,0.15)';
-    fg     = swingAccent ? getSwingColorAt(swingAccent, 1)    : colors.textGold;
-    border = swingAccent ? `1px solid ${getSwingColorAt(swingAccent, 0.4)}` : `1px solid ${colors.textGold}`;
-  } else if (isFirst) {
-    // App-theme gold (#f5c518). Solid fill — this is the only "winner" badge
-    // since 2nd/3rd don't earn anything in this league.
-    bg     = colors.textGold;
-    fg     = '#111d2e';   // dark navy text on gold for contrast
-    border = 'none';
-  } else {
-    // Neutral muted — no medal coloring for 2nd/3rd
-    bg     = 'rgba(255,255,255,0.06)';
-    fg     = colors.textSecondary;
-    border = 'none';
-  }
+// Wave 7: getSegmentForTournament now imported from ../utils (single source of truth).
+// Local copy removed to align with the canonical 4-swing mapping.
 
-  return (
-    <div style={{
-      width: 26, height: 26, borderRadius: '50%',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: fontSize.sm, fontWeight: 700,
-      background: bg, color: fg, border,
-      flexShrink: 0,
-    }}>
-      {isWinner ? '🏆' : position}
-    </div>
-  );
-};
-
-// ── Total/Behind toggle (compact, lives in card header) ────────────────────
-const MetricToggle = ({ value, onChange, accentColor }) => (
-  <div style={{
-    display: 'inline-flex',
-    position: 'relative',
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid rgba(180,160,100,0.2)',
-    borderRadius: 4,
-    padding: 3,
-    width: 150,
-    boxSizing: 'border-box',
-    flexShrink: 0,
-  }}>
-    <div style={{
-      position: 'absolute',
-      top: 3, bottom: 3,
-      left: value === 'behind' ? 'calc(50% + 1px)' : 3,
-      width: 'calc(50% - 4px)',
-      borderRadius: 2,
-      background: accentColor ? getSwingColorAt(accentColor, 0.18) : 'rgba(255,255,255,0.1)',
-      border: `1px solid ${accentColor ? getSwingColorAt(accentColor, 0.45) : 'rgba(255,255,255,0.3)'}`,
-      transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
-      pointerEvents: 'none',
-    }} />
-    {[
-      ['total',  'Total'],
-      ['behind', 'Behind'],
-    ].map(([key, label]) => (
-      <button
-        key={key}
-        onClick={() => onChange(key)}
-        style={{
-          flex: 1, position: 'relative', zIndex: 1,
-          padding: '4px 0',
-          background: 'none', border: 'none',
-          fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700,
-          letterSpacing: '1px', textTransform: 'uppercase',
-          color: value === key ? colors.textPrimary : colors.textMuted,
-          cursor: 'pointer',
-          transition: 'color 0.18s',
-          borderRadius: 2,
-        }}
-      >
-        {label}
-      </button>
-    ))}
-  </div>
-);
-
-// ── StandingsCard — shared layout for Overall and Swing cards ──────────────
-// 4-column table: position · team+event_name · event_earnings · total_earnings.
-// The dedicated event_earnings column is what makes the recent event amounts
-// line up vertically across all rows for clean scanning.
-const StandingsCard = ({
-  subtitle,
-  rows,
-  metric,
-  setMetric,
-  accentColor,           // optional swing tint applied to the toggle + earnings color
-  showSwingWinner,       // when truthy, top row gets the trophy treatment
-  emptyState,            // optional: render this instead of the table when no rows
-  emphasis,              // 'primary' for the Season card (gold accent), undefined otherwise
-}) => {
-  const leaderEarnings = rows[0]?.earnings || 0;
-
-  // Compact header — overrides theme.cardHeader's default 16px padding to
-  // 8px/14px so the card header takes about 16px less vertical space, freeing
-  // room for the rows below on small screens.
-  const compactHeader = {
-    padding: '8px 14px',
-    background: emphasis === 'primary'
-      ? 'linear-gradient(90deg, rgba(245,197,24,0.12) 0%, rgba(245,197,24,0.04) 60%, transparent 100%)'
-      : theme.cardHeader.background,
-    borderBottom: theme.cardHeader.borderBottom,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    justifyContent: 'space-between',
-  };
-
-  // Primary cards get a slightly stronger gold border to read as "featured"
-  // relative to the secondary swing card below.
-  const cardStyle = emphasis === 'primary'
-    ? { ...theme.card, border: '1px solid rgba(245,197,24,0.35)' }
-    : theme.card;
-
-  return (
-    <div style={cardStyle}>
-      {/* Header */}
-      <div style={compactHeader}>
-        <div style={{
-          fontFamily: fonts.sans,
-          fontSize: fontSize.base,
-          letterSpacing: '0.3px',
-          display: 'flex',
-          alignItems: 'center',
-          lineHeight: 1.3,
-          minHeight: 28,
-          minWidth: 0,
-          flex: 1,
-        }}>
-          {subtitle}
-        </div>
-        <MetricToggle value={metric} onChange={setMetric} accentColor={accentColor} />
-      </div>
-
-      {emptyState ? (
-        <div style={theme.emptyState}>{emptyState}</div>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-          <colgroup>
-            <col style={{ width: 44 }} />   {/* Pos badge */}
-            <col />                          {/* Team name + event name caption */}
-            <col style={{ width: 78 }} />   {/* Event earnings — own column for vertical alignment */}
-            <col style={{ width: 100 }} />  {/* Total / Behind earnings */}
-          </colgroup>
-          <tbody>
-            {rows.map((team, index) => {
-              const earnings = team.earnings || 0;
-              const behind   = leaderEarnings - earnings;
-              const position = index + 1;
-              const isTop    = position === 1;
-              const isWinner = showSwingWinner && isTop;
-              const rowBg    = isWinner
-                ? getSwingColorAt(accentColor, 0.08)
-                : isTop
-                  ? 'rgba(245,197,24,0.04)'   // very subtle gold tint for #1
-                  : 'transparent';
-
-              return (
-                <tr
-                  key={team.id}
-                  className="sfgl-row-hero"
-                  style={{ background: rowBg, transition: 'background 0.15s' }}
-                  {...rowHoverHandlers(isTop)}
-                >
-                  {/* Position badge */}
-                  <td style={{ ...theme.tableCell, paddingLeft: 14, paddingRight: 6 }}>
-                    <PositionBadge position={position} isWinner={isWinner} swingAccent={accentColor} />
-                  </td>
-
-                  {/* Team name */}
-                  <td style={{ ...theme.tableCell, overflow: 'hidden', paddingLeft: 4, paddingRight: 4 }}>
-                    <div style={{
-                      ...theme.bodyText,
-                      fontSize: fontSize.lg,
-                      fontFamily: fonts.serif,
-                      color: isWinner ? getSwingColorAt(accentColor, 1) : colors.textPrimary,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {team.name}
-                    </div>
-                  </td>
-
-                  {/* Recent event earnings — own column so values stack vertically.
-                      Prefixed with "+" to communicate "this is what they ADDED to
-                      their season total from the most recent event". */}
-                  <td style={{ ...theme.tableCell, textAlign: 'right', paddingLeft: 4, paddingRight: 8 }}>
-                    {team.recentEventName ? (
-                      <div style={{
-                        ...theme.statNum,
-                        fontSize: fontSize.sm,
-                        color: team.recentEarnings > 0 ? colors.earningsGreen : colors.textMuted,
-                        fontWeight: 500,
-                      }}>
-                        {team.recentEarnings === null || team.recentEarnings === 0
-                          ? '—'
-                          : '+' + formatEventEarnings(team.recentEarnings)}
-                      </div>
-                    ) : null}
-                  </td>
-
-                  {/* Total / Behind */}
-                  <td style={{ ...theme.tableCell, textAlign: 'right', paddingRight: 14 }}>
-                    {metric === 'total' ? (
-                      <div style={{
-                        ...theme.statNumLg,
-                        fontSize: fontSize.lg,
-                        letterSpacing: 1.5,
-                        fontWeight: 300,
-                        color: accentColor
-                          ? accentColor
-                          : (earnings > 0 ? colors.textPrimary : colors.textMuted),
-                      }}>
-                        {formatEarnings(earnings)}
-                      </div>
-                    ) : (
-                      <div style={{
-                        ...theme.statNumLg,
-                        fontSize: fontSize.lg,
-                        letterSpacing: 1.2,
-                        fontWeight: 300,
-                        color: isWinner
-                          ? getSwingColorAt(accentColor, 1)
-                          : behind === 0
-                            ? (accentColor || colors.earningsGreen)
-                            : colors.textSecondary,
-                      }}>
-                        {isWinner
-                          ? 'Winner'
-                          : behind === 0
-                            ? '🏆'
-                            : formatBehind(behind)
-                        }
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-};
-
-// ── StandingsView — composes the two cards ─────────────────────────────────
 export const StandingsView = ({ teams, tournaments = [], transactions = [] }) => {
-  const [overallMetric, setOverallMetric] = useState('total');
-  const [swingMetric,   setSwingMetric]   = useState('total');
 
-  // ── Helpers shared by both cards ──────────────────────────────────────────
+  // Which column to display in the third position: 'total' (default) or 'behind'.
+  // The other column is hidden so the visible one can be larger and easier to read.
+  const [metric, setMetric] = useState('total');
 
-  // Given a single completed tournament's results, return:
-  //   { eventName, earningsByTeam: Map<teamId, earnings> }
-  // (The "leader of the week" tracking has been removed since we no longer
-  // show a leader badge in the row.)
-  const summarizeTournament = (t) => {
-    if (!t || !t.completed || !t.results?.teams) return null;
-    const earningsByTeam = new Map();
-    Object.entries(t.results.teams).forEach(([teamId, result]) => {
-      earningsByTeam.set(teamId, result.totalEarnings || 0);
-    });
-    return { eventName: t.name, earningsByTeam };
-  };
-
-  // Build a row's recent-event fields from a tournament summary.
-  const recentFieldsFor = (teamId, summary) => {
-    if (!summary) {
-      return { recentEventName: null, recentEarnings: null };
-    }
-    const earned = summary.earningsByTeam.get(teamId);
-    if (earned === undefined) {
-      // Team didn't compete that week (no lineup, alternate event, etc.)
-      return { recentEventName: summary.eventName, recentEarnings: null };
-    }
-    return { recentEventName: summary.eventName, recentEarnings: earned };
-  };
-
-  // ── Overall card ──────────────────────────────────────────────────────────
+  // ── Overall — compute live from tournament results (source of truth) ────
   const seasonTotals = useMemo(() => {
     const totals = {};
     teams.forEach(t => { totals[t.id] = 0; });
@@ -337,26 +45,16 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
     return totals;
   }, [teams, tournaments]);
 
-  const lastCompletedOverall = useMemo(
-    () => [...tournaments].reverse().find(t => t.completed && t.results?.teams) || null,
-    [tournaments]
-  );
-  const lastCompletedOverallSummary = useMemo(
-    () => summarizeTournament(lastCompletedOverall),
-    [lastCompletedOverall]
-  );
-
-  const overallRows = useMemo(() => {
-    return [...teams]
+  const sortedTeams = useMemo(() =>
+    [...teams]
       .map(t => ({ ...t, earnings: seasonTotals[t.id] || 0 }))
       .sort((a, b) => b.earnings - a.earnings)
-      .map(t => ({
-        ...t,
-        ...recentFieldsFor(t.id, lastCompletedOverallSummary),
-      }));
-  }, [teams, seasonTotals, lastCompletedOverallSummary]);
+      .map((t, i) => ({ ...t, position: i + 1 })),
+    [teams, seasonTotals],
+  );
+  const leader = sortedTeams[0]?.earnings || 0;
 
-  // ── Swing card ────────────────────────────────────────────────────────────
+  // ── Swing ────────────────────────────────────────────────────────────────
   const swingsWithResults = useMemo(() => {
     const seen = new Set();
     tournaments.forEach(t => {
@@ -372,19 +70,8 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
     ) || null
   );
 
-  const lastCompletedSwing = useMemo(() => {
-    if (!selectedSwing) return null;
-    return [...tournaments].reverse().find(t =>
-      getSegmentForTournament(t) === selectedSwing && t.completed && t.results?.teams
-    ) || null;
-  }, [selectedSwing, tournaments]);
-  const lastCompletedSwingSummary = useMemo(
-    () => summarizeTournament(lastCompletedSwing),
-    [lastCompletedSwing]
-  );
-
-  const swingTotals = useMemo(() => {
-    if (!selectedSwing) return {};
+  const swingStandings = useMemo(() => {
+    if (!selectedSwing) return [];
     const totals = {};
     teams.forEach(t => { totals[t.id] = 0; });
     tournaments.forEach(t => {
@@ -393,26 +80,27 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
         if (totals[teamId] !== undefined) totals[teamId] += (result.totalEarnings || 0);
       });
     });
-    return totals;
+    return teams
+      .map(t => ({ ...t, swingEarnings: totals[t.id] || 0 }))
+      .sort((a, b) => b.swingEarnings - a.swingEarnings)
+      .map((t, i) => ({ ...t, swingPos: i + 1 }));
   }, [selectedSwing, teams, tournaments]);
 
-  const swingRows = useMemo(() => {
-    if (!selectedSwing) return [];
-    return [...teams]
-      .map(t => ({ ...t, earnings: swingTotals[t.id] || 0 }))
-      .sort((a, b) => b.earnings - a.earnings)
-      .map(t => ({
-        ...t,
-        ...recentFieldsFor(t.id, lastCompletedSwingSummary),
-      }));
-  }, [selectedSwing, teams, swingTotals, lastCompletedSwingSummary]);
-
+  const swingLeader = swingStandings[0]?.swingEarnings || 0;
   const swingEventCount = useMemo(() =>
     !selectedSwing ? 0 : tournaments.filter(t =>
       getSegmentForTournament(t) === selectedSwing && t.completed && t.results?.teams
     ).length,
     [selectedSwing, tournaments]
   );
+
+  // ── Most recent completed tournament (for Overall subtitle) ────────────
+  const mostRecentTournament = useMemo(() =>
+    [...tournaments].reverse().find(t => t.completed && t.results?.teams),
+    [tournaments]
+  );
+
+  // Total events in selected swing (completed or not, non-alternate) ────────
   const swingTotalCount = useMemo(() =>
     !selectedSwing ? 0 : tournaments.filter(t =>
       getSegmentForTournament(t) === selectedSwing && !t.isAlternate
@@ -420,126 +108,286 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
     [selectedSwing, tournaments]
   );
 
+  // ── Swing completion ─────────────────────────────────────────────────────
   const swingWinnerTx = useMemo(() =>
     !selectedSwing ? null :
     transactions.find(tx => tx.type === 'swing_winner' && tx.segment === selectedSwing) || null,
     [selectedSwing, transactions]
   );
   const swingIsComplete = !!swingWinnerTx;
-  const swingAccent = selectedSwing ? SWING_ACCENT[selectedSwing] : colors.textSecondary;
 
-  // ── Subtitles ─────────────────────────────────────────────────────────────
-  // Both subtitles use the same font family/size/weight so SEASON and the
-  // swing name read as the same visual tier. SEASON is set in caps with
-  // tracked letter-spacing (sans rather than serif because all-caps serif
-  // can feel heavy in small sizes).
-  const HEADER_FONT = {
-    fontFamily: fonts.sans,
-    fontSize: fontSize.lg,
-    fontWeight: 700,
-    letterSpacing: '2px',
-    textTransform: 'uppercase',
-  };
+  // ── Toggle ───────────────────────────────────────────────────────────────
+  const [view, setView] = useState('overall');
+  const showSwing    = view === 'swing';
+  const accentColor  = selectedSwing ? SWING_ACCENT[selectedSwing] : colors.textSecondary;
 
-  const overallSubtitle = (
-    <span style={{ ...HEADER_FONT, color: colors.textGold }}>
-      Season
-    </span>
-  );
+  const displayRows   = showSwing ? swingStandings : sortedTeams;
+  const displayLeader = showSwing ? swingLeader : leader;
+  const earningsKey   = showSwing ? 'swingEarnings' : 'earnings';
+  const posKey        = showSwing ? 'swingPos' : 'position';
+  const earningsLabel = showSwing ? 'Swing' : 'Season';
 
-  // Swing subtitle: the swing name is styled like SEASON (same font / size /
-  // tracking) plus a small chevron indicating it's a dropdown trigger. The
-  // <select> sits invisibly on top so the OS-native picker still renders.
-  const swingSubtitle = selectedSwing ? (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-      {swingsWithResults.length > 1 ? (
-        <label style={{
-          position: 'relative',
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          cursor: 'pointer',
-        }}>
-          <span style={{ ...HEADER_FONT, color: swingAccent }}>
-            {selectedSwing.replace(/\s+Swing$/, '')}
-          </span>
-          {/* Chevron — tiny down-arrow indicating dropdown affordance */}
-          <span aria-hidden="true" style={{
-            fontSize: 9,
-            color: swingAccent,
-            opacity: 0.65,
-            lineHeight: 1,
-            marginTop: 1,
-          }}>▼</span>
-          {/* Invisible select layered over the styled span/chevron — keeps
-              native picker UX without showing the OS chrome. */}
-          <select
-            value={selectedSwing}
-            onChange={e => setSelectedSwing(e.target.value)}
-            aria-label="Select swing"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              opacity: 0,
-              cursor: 'pointer',
-              border: 'none',
-              background: 'transparent',
-              fontSize: 16, // ≥16px to prevent iOS zoom
-            }}
-          >
-            {swingsWithResults.map(s => (
-              <option key={s} value={s}>{s.replace(/\s+Swing$/, '')}</option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        // Only one swing has results yet — no dropdown needed, just label.
-        <span style={{ ...HEADER_FONT, color: swingAccent }}>
-          {selectedSwing.replace(/\s+Swing$/, '')}
-        </span>
-      )}
-      {swingEventCount > 0 && (
-        <span style={{
-          fontSize: fontSize.sm,
-          color: swingIsComplete ? colors.textMuted : getSwingColorAt(selectedSwing, 0.7),
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>
-          {swingIsComplete
-            ? <><span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 4 }}>Final</span>{swingEventCount} events</>
-            : <>{swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}</>
-          }
-        </span>
-      )}
-    </div>
-  ) : (
-    <span style={{ ...HEADER_FONT, color: colors.textMuted }}>
-      Swing
-    </span>
-  );
+  // slider toggle — no tabStyle needed
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* Overall card — primary emphasis (gold accent) */}
-      <StandingsCard
-        subtitle={overallSubtitle}
-        rows={overallRows}
-        metric={overallMetric}
-        setMetric={setOverallMetric}
-        emphasis="primary"
-      />
+    <div style={theme.card}>
 
-      {/* Swing card — secondary, neutral chrome */}
-      <StandingsCard
-        subtitle={swingSubtitle}
-        rows={swingRows}
-        metric={swingMetric}
-        setMetric={setSwingMetric}
-        accentColor={selectedSwing}
-        showSwingWinner={swingIsComplete}
-        emptyState={swingsWithResults.length === 0
-          ? 'No swing results yet — check back after the first tournament completes'
-          : null}
-      />
+      {/* Header — single row: subtitle left, toggle right */}
+      <div style={{ ...theme.cardHeader, alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        {/* Left: subtitle / swing selector */}
+        <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', lineHeight: 1.3, minHeight: 28, minWidth: 0, flex: 1 }}>
+          {showSwing && selectedSwing && (
+            swingsWithResults.length > 1 ? (
+              <select
+                value={selectedSwing || ''}
+                onChange={e => setSelectedSwing(e.target.value)}
+                style={{ ...theme.select, width: 'auto', fontSize: fontSize.base, padding: '0px 8px', height: 22, color: accentColor, borderColor: getSwingColorAt(selectedSwing, 0.3), background: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' }}
+              >
+                {swingsWithResults.map(s => (
+                  <option key={s} value={s}>{s.replace(/\s+Swing$/, '')}</option>
+                ))}
+              </select>
+            ) : (
+              <span style={{
+                fontWeight: 600, color: accentColor,
+                border: `1px solid ${getSwingColorAt(selectedSwing, 0.4)}`,
+                borderRadius: 4,
+                padding: '1px 8px',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {selectedSwing?.replace(/\s+Swing$/, '') || ''}
+              </span>
+            )
+          )}
+          {showSwing && swingEventCount > 0 && (
+            <span style={{ marginLeft: 8, fontSize: fontSize.sm, color: swingIsComplete ? colors.textMuted : getSwingColorAt(selectedSwing, 0.7) }}>
+              {swingIsComplete
+                ? <><span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 4 }}>Final</span>{swingEventCount} events</>
+                : <>{swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}</>
+              }
+            </span>
+          )}
+          {!showSwing && mostRecentTournament && (
+            <span style={{ color: 'rgba(255,255,255,0.55)' }}>
+              through {mostRecentTournament.name}
+            </span>
+          )}
+        </div>
+
+        {/* Right: toggle */}
+        <div
+          style={{
+            position: 'relative',
+            display: 'flex',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(180,160,100,0.2)',
+            borderRadius: 4,
+            padding: 3,
+            gap: 0,
+            // Width matched exactly to the Total/Behind toggle in the table
+            // header row below so the two toggles stack vertically.
+            width: 170,
+            flexShrink: 0,
+          }}
+        >
+          <div style={{
+            position: 'absolute',
+            top: 3, bottom: 3,
+            left: showSwing ? 'calc(50% + 1px)' : 3,
+            width: 'calc(50% - 4px)',
+            borderRadius: 2,
+            background: showSwing
+              ? `linear-gradient(180deg, ${getSwingColorAt(selectedSwing, 0.32)} 0%, ${getSwingColorAt(selectedSwing, 0.10)} 100%)`
+              : 'linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 100%)',
+            border: `1px solid ${showSwing ? getSwingColorAt(selectedSwing, 0.5) : 'rgba(255,255,255,0.4)'}`,
+            transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1), background 0.22s ease',
+            pointerEvents: 'none',
+          }} />
+          <button
+            onClick={() => setView('overall')}
+            style={{
+              flex: 1, position: 'relative', zIndex: 1,
+              padding: '5px 0',
+              background: 'none', border: 'none',
+              fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
+              letterSpacing: '1px', textTransform: 'uppercase',
+              color: !showSwing ? '#ffffff' : colors.textMuted,
+              cursor: 'pointer',
+              transition: 'color 0.18s',
+              borderRadius: 2,
+            }}
+          >
+            Season
+          </button>
+          <button
+            onClick={() => {
+              if (swingsWithResults.length === 0) return;
+              setView('swing');
+              if (!selectedSwing && swingsWithResults.length) setSelectedSwing(swingsWithResults[swingsWithResults.length - 1]);
+            }}
+            style={{
+              flex: 1, position: 'relative', zIndex: 1,
+              padding: '5px 0',
+              background: 'none', border: 'none',
+              fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
+              letterSpacing: '1px', textTransform: 'uppercase',
+              color: showSwing ? accentColor : swingsWithResults.length === 0 ? 'rgba(255,255,255,0.15)' : colors.textMuted,
+              cursor: swingsWithResults.length === 0 ? 'default' : 'pointer',
+              transition: 'color 0.18s',
+              borderRadius: 2,
+              opacity: swingsWithResults.length === 0 ? 0.4 : 1,
+            }}
+          >
+            Swing
+          </button>
+        </div>
+      </div>
+
+      {/* Empty state for swing */}
+      {showSwing && swingsWithResults.length === 0 && (
+        <div style={theme.emptyState}>No swing results yet — check back after the first tournament completes</div>
+      )}
+
+      {/* Table */}
+      {(!showSwing || swingsWithResults.length > 0) && (
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: 36 }} />
+            <col />
+            {/* Width = 170 (toggle) + 20 (right padding to match cardHeader) */}
+            <col style={{ width: 190 }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Pos</th>
+              <th style={{ ...theme.tableHeaderCell, textAlign: 'left' }}>Team</th>
+              <th style={{
+                ...theme.tableHeaderCell,
+                // Padding-right of 20px matches theme.cardHeader's padding so the
+                // toggle's right edge lines up with the Overall/Swing toggle above.
+                // Vertical padding kept tight so the toggle's height drives row height.
+                padding: '4px 20px 4px 0',
+                verticalAlign: 'middle',
+                textAlign: 'right',
+              }}>
+                {/* Total/Behind toggle — same shape and size as the Overall/Swing
+                    toggle in the row above, vertically aligned with it.
+                    Fixed 170px width matches Overall/Swing exactly. Wrapped in an
+                    inline-block container so text-align: right on the parent th
+                    pins it to the right edge of the column. */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    position: 'relative',
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(180,160,100,0.2)',
+                    borderRadius: 4,
+                    padding: 3,
+                    gap: 0,
+                    width: 170,
+                    boxSizing: 'border-box',
+                    verticalAlign: 'middle',
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute',
+                    top: 3, bottom: 3,
+                    left: metric === 'behind' ? 'calc(50% + 1px)' : 3,
+                    width: 'calc(50% - 4px)',
+                    borderRadius: 2,
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
+                    pointerEvents: 'none',
+                  }} />
+                  <button
+                    onClick={() => setMetric('total')}
+                    style={{
+                      flex: 1, position: 'relative', zIndex: 1,
+                      padding: '5px 0',
+                      background: 'none', border: 'none',
+                      fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
+                      letterSpacing: '1px', textTransform: 'uppercase',
+                      color: metric === 'total' ? colors.textPrimary : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'color 0.18s',
+                      borderRadius: 2,
+                    }}
+                  >
+                    Total
+                  </button>
+                  <button
+                    onClick={() => setMetric('behind')}
+                    style={{
+                      flex: 1, position: 'relative', zIndex: 1,
+                      padding: '5px 0',
+                      background: 'none', border: 'none',
+                      fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 700,
+                      letterSpacing: '1px', textTransform: 'uppercase',
+                      color: metric === 'behind' ? colors.textPrimary : colors.textMuted,
+                      cursor: 'pointer',
+                      transition: 'color 0.18s',
+                      borderRadius: 2,
+                    }}
+                  >
+                    Behind
+                  </button>
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayRows.map((team, index) => {
+              const earnings = team[earningsKey] || 0;
+              const behind   = displayLeader - earnings;
+              const medal    = getMedalStyle(index);
+              const isTop    = index === 0;
+              const isSwingWinner = showSwing && swingIsComplete && isTop;
+              const rowBg = isSwingWinner ? getSwingColorAt(selectedSwing, 0.08) : isTop ? 'rgba(180,160,100,0.04)' : 'transparent';
+              return (
+                <tr key={team.id} className="sfgl-standings-row"
+                  style={{ background: rowBg, transition: 'background 0.15s' }}
+                  {...rowHoverHandlers(isTop)}
+                >
+                  <td className="sfgl-standings-cell" style={theme.tableCell}>
+                    <div style={{ width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.sm, fontWeight: 700, background: isSwingWinner ? getSwingColorAt(selectedSwing, 0.15) : medal.bg, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : medal.text, border: isSwingWinner ? `1px solid ${getSwingColorAt(selectedSwing, 0.4)}` : 'none', flexShrink: 0 }}>
+                      {isSwingWinner ? '🏆' : team[posKey]}
+                    </div>
+                  </td>
+                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, overflow: 'hidden' }}>
+                    <div style={{ ...theme.bodyText, fontSize: fontSize.lg, fontFamily: fonts.serif, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : colors.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {team.name}
+                    </div>
+                    <div className="sfgl-owner" style={{ ...theme.smallText, marginTop: 1 }}>{team.owner}</div>
+                  </td>
+                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
+                    {metric === 'total' ? (
+                      <div style={{ ...theme.statNumLg, fontSize: fontSize.xl, letterSpacing: 2, fontWeight: 300, color: showSwing ? accentColor : (earnings > 0 ? colors.textPrimary : colors.textMuted) }}>
+                        {formatEarnings(earnings)}
+                      </div>
+                    ) : (
+                      <div style={{ ...theme.statNumLg, fontSize: fontSize.xl, letterSpacing: 1.5, fontWeight: 300, color: isSwingWinner ? getSwingColorAt(selectedSwing, 1) : behind === 0 ? (showSwing ? accentColor : colors.earningsGreen) : colors.textSecondary }}>
+                        {isSwingWinner
+                          ? 'Winner'
+                          : behind === 0
+                            ? (
+                              <>
+                                <span className="sfgl-leader-mobile">—</span>
+                                <span className="sfgl-leader-desktop" title="Current leader">🏆</span>
+                              </>
+                            )
+                            : formatBehind(behind)
+                        }
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
     </div>
   );
 };
