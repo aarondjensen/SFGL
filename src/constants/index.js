@@ -69,53 +69,10 @@ export const INITIAL_TEAMS = [
   { id: 'pops', name: 'POPS, LLC',         owner: 'Lutz',   roster: [], lineup: [], earnings: 0, segmentEarnings: 0, segmentFees: 0, transactionFees: 0, mulligans: { ...DEFAULT_MULLIGANS } },
 ];
 
-// ============================================================================
-// API
-// ============================================================================
-export const RAPIDAPI_HOST = 'live-golf-data.p.rapidapi.com';
-
-// ============================================================================
-// FALLBACK SCHEDULE
-// ============================================================================
-export const FALLBACK_SCHEDULE_DATA = [
-  { key: 'Sentry',            loc: 'Kapalua, Hawaii',                course: 'Kapalua Resort',       d: 'Jan 5-11',      s: '2026-01-05', e: '2026-01-11' },
-  { key: 'Sony Open',         loc: 'Honolulu, Hawaii',               course: 'Waialae CC',            d: 'Jan 12-18',     s: '2026-01-12', e: '2026-01-18' },
-  { key: 'American Express',  loc: 'La Quinta, California',          course: 'PGA West',             d: 'Jan 19-25',     s: '2026-01-19', e: '2026-01-25' },
-  { key: 'Farmers Insurance', loc: 'San Diego, California',          course: 'Torrey Pines',         d: 'Jan 26-Feb 1',  s: '2026-01-26', e: '2026-02-01' },
-  { key: 'WM Phoenix',        loc: 'Scottsdale, Arizona',            course: 'TPC Scottsdale',       d: 'Feb 2-8',       s: '2026-02-02', e: '2026-02-08' },
-  { key: 'Pebble Beach',      loc: 'Pebble Beach, California',       course: 'Pebble Beach GL',      d: 'Feb 9-15',      s: '2026-02-09', e: '2026-02-15' },
-  { key: 'Genesis',           loc: 'Pacific Palisades, California',  course: 'Riviera CC',           d: 'Feb 16-22',     s: '2026-02-16', e: '2026-02-22' },
-  { key: 'Cognizant',         loc: 'Palm Beach Gardens, Florida',    course: 'PGA National',         d: 'Feb 23-Mar 1',  s: '2026-02-23', e: '2026-03-01' },
-  { key: 'Arnold Palmer',     loc: 'Orlando, Florida',               course: 'Bay Hill',             d: 'Mar 2-8',       s: '2026-03-02', e: '2026-03-08' },
-  { key: 'Puerto Rico',       loc: 'Rio Grande, Puerto Rico',        course: 'Grand Reserve',        d: 'Mar 2-8',       s: '2026-03-02', e: '2026-03-08' },
-  { key: 'PLAYERS',           loc: 'Ponte Vedra Beach, Florida',     course: 'TPC Sawgrass',         d: 'Mar 9-15',      s: '2026-03-09', e: '2026-03-15' },
-  { key: 'Valspar',           loc: 'Palm Harbor, Florida',           course: 'Innisbrook',           d: 'Mar 16-22',     s: '2026-03-16', e: '2026-03-22' },
-  { key: 'Houston Open',      loc: 'Houston, Texas',                 course: 'Memorial Park',        d: 'Mar 23-29',     s: '2026-03-23', e: '2026-03-29' },
-  { key: 'Valero Texas',      loc: 'San Antonio, Texas',             course: 'TPC San Antonio',      d: 'Mar 30-Apr 5',  s: '2026-03-30', e: '2026-04-05' },
-  { key: 'Masters',           loc: 'Augusta, Georgia',               course: 'Augusta National',     d: 'Apr 6-12',      s: '2026-04-06', e: '2026-04-12' },
-  { key: 'RBC Heritage',      loc: 'Hilton Head Island, SC',         course: 'Harbour Town',         d: 'Apr 13-19',     s: '2026-04-13', e: '2026-04-19' },
-  { key: 'Zurich Classic',    loc: 'Avondale, Louisiana',            course: 'TPC Louisiana',        d: 'Apr 20-26',     s: '2026-04-20', e: '2026-04-26' },
-  { key: 'Miami Championship',loc: 'Miami, Florida',                 course: 'TBD',                  d: 'Apr 27-May 3',  s: '2026-04-27', e: '2026-05-03' },
-  { key: 'Truist Championship',loc:'Charlotte, North Carolina',      course: 'Quail Hollow',         d: 'May 4-10',      s: '2026-05-04', e: '2026-05-10' },
-  { key: 'Myrtle Beach',      loc: 'Myrtle Beach, SC',               course: 'Dunes Club',           d: 'May 4-10',      s: '2026-05-04', e: '2026-05-10' },
-  { key: 'PGA Championship',  loc: 'Newtown Square, Pennsylvania',   course: 'Aronimink GC',         d: 'May 11-17',     s: '2026-05-11', e: '2026-05-17' },
-  { key: 'Charles Schwab',    loc: 'Fort Worth, Texas',              course: 'Colonial CC',          d: 'May 18-24',     s: '2026-05-18', e: '2026-05-24' },
-  { key: 'Memorial',          loc: 'Dublin, Ohio',                   course: 'Muirfield Village',    d: 'May 25-31',     s: '2026-05-25', e: '2026-05-31' },
-  { key: 'RBC Canadian',      loc: 'Toronto, Ontario',               course: 'Oakdale',              d: 'Jun 1-7',       s: '2026-06-01', e: '2026-06-07' },
-  { key: 'U.S. Open',         loc: 'Southampton, New York',          course: 'Shinnecock Hills',     d: 'Jun 8-14',      s: '2026-06-08', e: '2026-06-14' },
-  { key: 'Travelers',         loc: 'Cromwell, Connecticut',          course: 'TPC River Highlands',  d: 'Jun 15-21',     s: '2026-06-15', e: '2026-06-21' },
-  { key: 'Rocket Mortgage',   loc: 'Detroit, Michigan',              course: 'Detroit GC',           d: 'Jun 22-28',     s: '2026-06-22', e: '2026-06-28' },
-  { key: 'John Deere',        loc: 'Silvis, Illinois',               course: 'TPC Deere Run',        d: 'Jun 29-Jul 5',  s: '2026-06-29', e: '2026-07-05' },
-  { key: 'Scottish Open',     loc: 'North Berwick, Scotland',        course: 'Renaissance Club',     d: 'Jul 6-12',      s: '2026-07-06', e: '2026-07-12' },
-  { key: 'ISCO',              loc: 'Nicholasville, Kentucky',        course: 'Keene Trace',          d: 'Jul 6-12',      s: '2026-07-06', e: '2026-07-12' },
-  { key: 'The Open',          loc: 'Lytham St Annes, England',       course: 'Royal Birkdale',       d: 'Jul 13-19',     s: '2026-07-13', e: '2026-07-19' },
-  { key: 'Barracuda',         loc: 'Truckee, California',            course: 'Tahoe Mountain Club',  d: 'Jul 13-19',     s: '2026-07-13', e: '2026-07-19' },
-  { key: '3M Open',           loc: 'Blaine, Minnesota',              course: 'TPC Twin Cities',      d: 'Jul 20-26',     s: '2026-07-20', e: '2026-07-26' },
-  { key: 'Wyndham',           loc: 'Greensboro, North Carolina',     course: 'Sedgefield CC',        d: 'Aug 3-9',       s: '2026-08-03', e: '2026-08-09' },
-  { key: 'FedEx St. Jude',    loc: 'Memphis, Tennessee',             course: 'TPC Southwind',        d: 'Aug 10-16',     s: '2026-08-10', e: '2026-08-16' },
-  { key: 'BMW Championship',  loc: 'Owings Mills, Maryland',         course: 'Caves Valley',         d: 'Aug 17-23',     s: '2026-08-17', e: '2026-08-23' },
-  { key: 'TOUR Championship', loc: 'Atlanta, Georgia',               course: 'East Lake GC',         d: 'Aug 24-30',     s: '2026-08-24', e: '2026-08-30' },
-];
+// Wave C.5: removed RAPIDAPI_HOST and FALLBACK_SCHEDULE_DATA — both were only
+// used by ScheduleImportModal, which was deleted in Wave B. RAPIDAPI_HOST also
+// referenced an environment variable (VITE_RAPIDAPI_KEY) that no other code
+// path uses; safe to drop.
 
 // ============================================================================
 // PLAYER DATA
