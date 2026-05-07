@@ -160,7 +160,7 @@ const StandingsCard = ({
           display: 'flex',
           alignItems: 'center',
           lineHeight: 1.3,
-          minHeight: 26,
+          minHeight: 28,
           minWidth: 0,
           flex: 1,
         }}>
@@ -420,8 +420,10 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   const swingAccent = selectedSwing ? SWING_ACCENT[selectedSwing] : colors.textSecondary;
 
   // ── Subtitles ─────────────────────────────────────────────────────────────
+  // Subtitle font size matches team-name font size (fontSize.lg) so the card
+  // header reads as the same visual tier as its contents — not smaller.
   const overallSubtitle = (
-    <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textPrimary, letterSpacing: '0.5px' }}>
+    <span style={{ fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.textPrimary, letterSpacing: '0.5px' }}>
       Season
     </span>
   );
@@ -435,9 +437,9 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
           style={{
             ...theme.select,
             width: 'auto',
-            fontSize: fontSize.base,
+            fontSize: fontSize.md,
             padding: '0px 8px',
-            height: 22,
+            height: 24,
             color: swingAccent,
             borderColor: getSwingColorAt(selectedSwing, 0.3),
             background: '#0d1b2e',
@@ -452,11 +454,14 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
         </select>
       ) : (
         <span style={{
+          fontFamily: fonts.serif,
+          fontSize: fontSize.md,
           fontWeight: 600, color: swingAccent,
           border: `1px solid ${getSwingColorAt(selectedSwing, 0.4)}`,
           borderRadius: 4,
           padding: '1px 8px',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          letterSpacing: '0.5px',
         }}>
           {selectedSwing?.replace(/\s+Swing$/, '') || ''}
         </span>
@@ -477,7 +482,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
       )}
     </div>
   ) : (
-    <span style={{ fontFamily: fonts.serif, fontSize: fontSize.md, color: colors.textMuted, letterSpacing: '0.5px' }}>
+    <span style={{ fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.textMuted, letterSpacing: '0.5px' }}>
       Swing
     </span>
   );

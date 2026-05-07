@@ -25,12 +25,17 @@ const playerNameColor = (p, showEarnings) => {
     : colors.textSecondary;
 };
 
-// Row-density consistency: all clickable card *headers* use the list-tier
-// vertical padding (8px) so they match Tournaments / Transactions / Rosters
-// list rows. The expanded content panels below each header are NOT row-tier
-// (they contain multi-line player grids) — those keep their tighter 6px
-// padding because their height is content-driven, not row-driven.
-const HEADER_BUTTON_PADDING = '8px 14px';
+// Row-density consistency: clickable card *headers* match the StandingsView
+// hero tier (56/52px). They're collapsed cards acting as primary navigation
+// between tournaments — the same visual role Standings rows play between
+// teams. We apply .sfgl-row-hero via className so the height is enforced
+// (not just suggested by padding) — the class works on any element, not
+// just <tr>.
+//
+// Expanded content panels below each header are NOT row-tier — they contain
+// multi-line player grids that drive their own height — those keep tighter
+// 6px padding so the panel feels distinct from the header above it.
+const HEADER_BUTTON_PADDING = '0 14px';
 
 // ── Player slot grid ──────────────────────────────────────────────────────────
 const PlayerSlotGrid = ({ players, showEarnings }) => {
@@ -194,9 +199,10 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
             <button
               onClick={() => toggle(tournament.name)}
               aria-expanded={isExpanded}
+              className="sfgl-row-hero"
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                // List-tier row height for header consistency across views
+                // Hero-tier row height — matches StandingsView team rows.
                 padding: HEADER_BUTTON_PADDING,
                 background: isExpanded ? 'rgba(40,120,80,0.1)' : 'linear-gradient(90deg, rgba(40,120,80,0.12) 0%, transparent 100%)',
                 border: 'none', borderBottom: `1px solid rgba(80,180,120,0.15)`,
@@ -285,6 +291,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                 <button
                   onClick={() => toggle('swing:' + summary.seg)}
                   aria-expanded={isExpanded}
+                  className="sfgl-row-hero"
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: HEADER_BUTTON_PADDING,
@@ -322,9 +329,13 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                   <div>
                     {summary.ranked.map((entry, rank) => (
                       <div key={entry.team.id}
+                        className="sfgl-row-hero"
                         style={{
-                          // Content panel — single-line content, list-tier height
-                          padding: HEADER_BUTTON_PADDING,
+                          // Hero-tier row — single-line ranked team, matches StandingsView
+                          // team rows. The .sfgl-row-hero class enforces 56/52px height;
+                          // padding here just sets the horizontal inset.
+                          padding: '0 14px',
+                          display: 'flex', alignItems: 'center',
                           borderBottom: `1px solid ${colors.borderSubtle}`,
                           background: rank === 0 ? sc.bg : 'transparent',
                           transition: 'background 0.15s',
@@ -332,7 +343,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
                         onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'rgba(255,255,255,0.04)'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'transparent'; }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
                           <span style={{
                             fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center',
                             fontFamily: fonts.serif,
@@ -379,6 +390,7 @@ export const ResultsView = ({ teams, tournaments, transactions = [] }) => {
             <button
               onClick={() => toggle(tournament.name)}
               aria-expanded={isExpanded}
+              className="sfgl-row-hero"
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: HEADER_BUTTON_PADDING,
