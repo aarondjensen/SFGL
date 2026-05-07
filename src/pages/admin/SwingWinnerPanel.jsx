@@ -1,8 +1,12 @@
 // src/pages/admin/SwingWinnerPanel.jsx
 // ============================================================================
-// Award swing pots — calculates fees collected during a given swing and
-// awards the pot to the team with the highest swing earnings.
-// Wave I extraction from AdminView.
+// Manual swing-winner override. The auto-award now happens automatically
+// when the final tournament of a swing gets processed (see swingAward.js +
+// TournamentResultsPanel). This panel is a safety net for the rare case
+// where the auto-award didn't fire — same logic, manually triggered.
+//
+// Wave I.2: refactored to use computeSwingAward from swingAward.js — both
+// auto and manual paths now share the same code.
 // ============================================================================
 
 import React from 'react';
@@ -10,9 +14,9 @@ import { useDialog } from '../DialogContext';
 import { theme, colors } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { SWINGS } from '../../theme.js';
-import { getSegmentForTournament } from '../../utils';
 import { S, disabledBtn } from './adminStyles';
-import { getSwingTournaments, getSwingEarningsByTeam, getSwingPot, getSwingLeader } from '../../utils/sharedHelpers';
+import { getSwingLeader, getSwingPot } from '../../utils/sharedHelpers';
+import { computeSwingAward } from '../../utils/swingAward';
 
 export const SwingWinnerPanel = ({
   tournaments, teams, transactions, setTransactions, updateTeams,
@@ -24,66 +28,53 @@ export const SwingWinnerPanel = ({
   const handleSwingWinner = async () => {
     if (!swingAwardSeg) return;
 
-    const swingTournaments = getSwingTournaments(tournaments, swingAwardSeg);
-    if (!swingTournaments.length) {
-      dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
+    // computeSwingAward gates everything: completion check, pot > 0,
+    // idempotency, leader resolution. Returns null with no specific reason
+    // when not eligible — we re-check the details below to surface a
+    // helpful error message.
+    const award = computeSwingAward({
+      segment: swingAwardSeg,
+      allTournaments: tournaments,
+      transactions,
+      teams,
+    });
+
+    if (!award) {
+      // Surface the most likely reason
+      const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === swingAwardSeg);
+      if (alreadyAwarded) {
+        dialog.showToast(swingAwardSeg + ' has already been awarded', 'warning');
+        return;
+      }
+      const pot = getSwingPot(transactions, tournaments, swingAwardSeg);
+      if (pot === 0) { dialog.showToast('No fees collected for ' + swingAwardSeg, 'error'); return; }
+      // Most likely the swing isn't fully complete yet
+      dialog.showToast(swingAwardSeg + ' isn\'t fully complete yet — wait until all tournaments are processed', 'error');
       return;
     }
 
-    const pot = getSwingPot(transactions, tournaments, swingAwardSeg);
-    if (pot === 0) {
-      dialog.showToast('No fees collected for ' + swingAwardSeg, 'error');
-      return;
-    }
-
-    const byTeam = getSwingEarningsByTeam(tournaments, swingAwardSeg);
-    const leader = getSwingLeader(tournaments, swingAwardSeg);
-    if (!leader) { dialog.showToast('Could not determine winner', 'error'); return; }
-
-    const winnerTeam = teams.find(t => t.id === leader.teamId);
-    if (!winnerTeam) { dialog.showToast('Winner team not found', 'error'); return; }
-
-    // Debug logging — useful when results look unexpected
-    console.log('[SwingWinner] Swing:', swingAwardSeg);
-    console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
-    console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => {
-      const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString();
-    }));
-
-    const msg = swingAwardSeg + ' complete. Winner: ' + winnerTeam.name + ' (' + winnerTeam.owner + '). Swing: $' + leader.earnings.toLocaleString() + '. Pot: $' + pot.toLocaleString() + '. Award pot?';
-    const ok = await dialog.showConfirm('Award Swing Winner', msg, { confirmText: 'Award $' + pot.toLocaleString() });
+    const msg = `${award.segment} complete. Winner: ${award.winnerTeam.name} (${award.winnerTeam.owner}). Swing: $${award.winnerEarnings.toLocaleString()}. Pot: $${award.pot.toLocaleString()}. Award pot?`;
+    const ok = await dialog.showConfirm('Award Swing Winner', msg, { confirmText: 'Award $' + award.pot.toLocaleString() });
     if (!ok) return;
 
-    const lastSwingTournament = swingTournaments.reduce((last, t) => {
-      const idx = tournaments.indexOf(t);
-      return idx > (last?.idx ?? -1) ? { t, idx } : last;
-    }, null);
+    // Debug logging — useful when results look unexpected
+    console.log('[SwingWinner] Manual award:', award.segment, '→', award.winnerTeam.name, '$' + award.pot.toLocaleString());
 
-    const newTx = {
-      team: winnerTeam.name, type: 'swing_winner', player: winnerTeam.owner,
-      fee: 0, amount: pot, segment: swingAwardSeg,
-      date: new Date().toLocaleDateString(), status: 'completed',
-      tournamentIndex: lastSwingTournament?.idx ?? undefined,
-      note: swingAwardSeg + ' winner pot',
-    };
+    updateTeams(award.updatedTeams);
+    setTransactions(prev => [...prev, award.newTx]);
+    await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, award.newTx]).catch(e => console.error('sfgl tx:', e));
 
-    const newTeams = teams.map(t =>
-      t.id === leader.teamId
-        ? { ...t, earnings: (t.earnings || 0) + pot }
-        : t
-    );
-
-    updateTeams(newTeams);
-    setTransactions(prev => [...prev, newTx]);
-    await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(e => console.error('sfgl tx:', e));
-
-    dialog.showToast('🏆 ' + winnerTeam.name + ' awarded $' + pot.toLocaleString() + ' for ' + swingAwardSeg, 'success');
+    dialog.showToast('🏆 ' + award.winnerTeam.name + ' awarded $' + award.pot.toLocaleString() + ' for ' + award.segment, 'success');
     setSwingAwardSeg('');
   };
 
   return (
     <div style={S.section}>
-      <div style={S.title}>🏆 Award Swing Winner</div>
+      <div style={S.title}>🏆 Award Swing Winner (manual override)</div>
+      <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 10 }}>
+        Swing winners are awarded automatically when the final tournament of a swing gets processed.
+        Use this panel only if the auto-award didn't fire for some reason.
+      </div>
       <label style={S.lbl}>Swing</label>
       <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
         <option value="">Select swing...</option>

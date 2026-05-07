@@ -2,10 +2,15 @@
 // Routes via ?action= query parameter:
 //   ?action=waivers          — auto-process pending waivers
 //   ?action=lineup-reminder  — send lineup reminders to managers without lineups
+//   ?action=process-results  — auto-process active tournament's results (Mondays)
 //   ?action=notify-results   — send tournament results emails (POST with body)
 //
 // This consolidates what would be 5 separate functions into 1 to stay under
 // Vercel Hobby plan's 12 serverless function limit.
+//
+// Wave I.2: handleProcessResults now also fires the swing-winner auto-award
+// when the just-processed tournament completes a swing. The award logic is
+// inlined here (mirrors src/utils/swingAward.js) — keep them in sync.
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -65,13 +70,21 @@ function buildWaiverResultsEmail(processed, recipientTeam) {
   return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">⏰ Waiver Results</h2><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 16px;">Processed ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>${rows}`);
 }
 
-function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam) {
+function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam, swingAward = null) {
   const sorted = [...teamResults].sort((a, b) => b.totalEarnings - a.totalEarnings);
   const rows = sorted.map((tr, i) => {
     const isMe = tr.team === recipientTeam;
     return `<div style="padding:8px 12px;background:${isMe ? 'rgba(196,162,78,0.1)' : 'rgba(255,255,255,0.02)'};border-radius:3px;margin-bottom:4px;${isMe ? 'border-left:3px solid #c4a24e;' : ''}"><span style="font-size:14px;font-weight:700;color:rgba(255,255,255,0.3);display:inline-block;width:20px;">${i + 1}</span><span style="font-size:13px;font-weight:${isMe ? '700' : '500'};color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.75)'};">${tr.team}</span><span style="float:right;font-size:13px;font-weight:600;color:#50b478;">$${(tr.totalEarnings || 0).toLocaleString()}</span></div>`;
   }).join('');
-  return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">🏆 ${tournamentName}</h2><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 16px;">Tournament Results</p>${rows}`);
+
+  // If a swing was just awarded, prepend a celebratory banner.
+  let swingBanner = '';
+  if (swingAward) {
+    const isWinner = swingAward.winnerTeamName === recipientTeam;
+    swingBanner = `<div style="background:rgba(196,162,78,0.18);border:1px solid rgba(196,162,78,0.5);border-radius:4px;padding:14px 16px;margin-bottom:16px;text-align:center;"><div style="font-size:22px;margin-bottom:4px;">🏆</div><div style="font-family:Georgia,serif;font-size:15px;color:#c4a24e;font-weight:700;margin-bottom:2px;">${swingAward.segment} Champion</div><div style="font-size:14px;color:${isWinner ? '#ffffff' : 'rgba(255,255,255,0.85)'};font-weight:${isWinner ? '700' : '500'};">${swingAward.winnerTeamName}${isWinner ? ' (you!)' : ''}</div><div style="font-size:12px;color:#50b478;margin-top:4px;">$${(swingAward.pot || 0).toLocaleString()} pot awarded</div></div>`;
+  }
+
+  return wrap(`<h2 style="font-family:Georgia,serif;font-size:16px;color:#c4a24e;margin:0 0 4px;">🏆 ${tournamentName}</h2><p style="font-size:12px;color:rgba(255,255,255,0.5);margin:0 0 16px;">Tournament Results</p>${swingBanner}${rows}`);
 }
 
 function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
@@ -104,6 +117,114 @@ function getEmailMap(settings, teams) {
     if (email) result[t.name] = email;
   });
   return result;
+}
+
+// ── Swing-segment + auto-award helpers (mirrors src/utils/swingAward.js) ────
+
+// Mirror of getSegmentForTournament from src/utils/index.js. Resolves a
+// tournament's swing segment from its explicit `segment` field or from
+// `dates`/`startDate`. Keep in sync with the frontend version.
+function getSegmentForTournament(t) {
+  if (!t) return null;
+  if (t.segment) return t.segment;
+  // Date-based fallback. Months 1-3 = West Coast, 4-5 = Spring, 6-8 = Summer,
+  // 9-12 = Fall Finish. Try `dates` (e.g. "Mar 20-23"), then `startDate`.
+  const tryParse = (s) => {
+    if (!s) return null;
+    const m = String(s).match(/^([A-Za-z]+)/);
+    if (!m) return null;
+    const monthIdx = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+      .indexOf(m[1].slice(0, 3).toLowerCase());
+    if (monthIdx < 0) return null;
+    if (monthIdx <= 2) return 'West Coast Swing';
+    if (monthIdx <= 4) return 'Spring Swing';
+    if (monthIdx <= 7) return 'Summer Swing';
+    return 'Fall Finish';
+  };
+  return tryParse(t.dates) || tryParse(t.startDate) || null;
+}
+
+function getSwingPot(transactions, tournaments, segment) {
+  const swingTourneys = (tournaments || []).filter(
+    t => t.completed && getSegmentForTournament(t) === segment && t.results?.teams
+  );
+  const swingIndexes = new Set(swingTourneys.map(t => tournaments.indexOf(t)));
+  return (transactions || [])
+    .filter(tx => {
+      if ((tx.fee || 0) <= 0) return false;
+      if (tx.status === 'failed') return false;
+      if (tx.type === 'swing_winner') return false;
+      return tx.tournamentIndex !== undefined
+        ? swingIndexes.has(tx.tournamentIndex)
+        : tx.segment === segment;
+    })
+    .reduce((sum, tx) => sum + tx.fee, 0);
+}
+
+function getSwingLeader(tournaments, segment) {
+  const byTeam = {};
+  (tournaments || []).filter(
+    t => t.completed && getSegmentForTournament(t) === segment && t.results?.teams
+  ).forEach(t => {
+    Object.entries(t.results.teams).forEach(([teamId, tr]) => {
+      byTeam[teamId] = (byTeam[teamId] || 0) + (tr.totalEarnings || 0);
+    });
+  });
+  const top = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+  return top ? { teamId: top[0], earnings: top[1] } : null;
+}
+
+function computeSwingAward({ segment, allTournaments, transactions, teams }) {
+  if (!segment) return null;
+  const alreadyAwarded = (transactions || []).some(
+    tx => tx.type === 'swing_winner' && tx.segment === segment
+  );
+  if (alreadyAwarded) return null;
+
+  const swingTourneys = (allTournaments || []).filter(t =>
+    getSegmentForTournament(t) === segment && !t.isAlternate
+  );
+  if (swingTourneys.length === 0) return null;
+  if (!swingTourneys.every(t => t.completed)) return null;
+
+  const pot = getSwingPot(transactions, allTournaments, segment);
+  if (pot === 0) return null;
+
+  const leader = getSwingLeader(allTournaments, segment);
+  if (!leader) return null;
+  const winnerTeam = (teams || []).find(t => t.id === leader.teamId);
+  if (!winnerTeam) return null;
+
+  const lastTourney = swingTourneys[swingTourneys.length - 1];
+  const tournamentIndex = (allTournaments || []).indexOf(lastTourney);
+
+  const newTx = {
+    team: winnerTeam.name,
+    type: 'swing_winner',
+    player: winnerTeam.owner,
+    fee: 0,
+    amount: pot,
+    segment,
+    date: new Date().toLocaleDateString(),
+    status: 'completed',
+    tournamentIndex: tournamentIndex >= 0 ? tournamentIndex : undefined,
+    note: `${segment} winner pot`,
+  };
+
+  const updatedTeams = (teams || []).map(t =>
+    t.id === leader.teamId
+      ? { ...t, earnings: (t.earnings || 0) + pot }
+      : t
+  );
+
+  return {
+    segment,
+    winnerTeam,
+    winnerEarnings: leader.earnings,
+    pot,
+    newTx,
+    updatedTeams,
+  };
 }
 
 // ── Action: process waivers ─────────────────────────────────────────────────
@@ -282,7 +403,7 @@ async function handleLineupReminder(res) {
 // ── Action: notify results ──────────────────────────────────────────────────
 
 async function handleNotifyResults(req, res) {
-  const { tournamentName, teamResults } = req.body || {};
+  const { tournamentName, teamResults, swingAward = null } = req.body || {};
   if (!tournamentName || !teamResults?.length) return res.status(400).json({ error: 'Missing tournamentName or teamResults' });
 
   const settings = await loadSettings();
@@ -292,7 +413,7 @@ async function handleNotifyResults(req, res) {
 
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName));
+      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingAward));
       results.push({ team: teamName, success: true });
     } catch (err) { results.push({ team: teamName, error: err.message }); }
   }
@@ -468,17 +589,36 @@ async function handleProcessResults(res) {
   const nx = newTournaments.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
   if (nx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nx].playing = true; }
 
-  // Write everything to Firebase
+  // ── Wave I.2: auto-award swing winner if this completes the swing ──
+  // Loaded transactions to drive the idempotency check + pot calculation.
+  const txSnap = await db.collection('transactions').get();
+  const allTx = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const award = computeSwingAward({
+    segment: getSegmentForTournament(newTournaments[ti]),
+    allTournaments: newTournaments,
+    transactions: allTx,
+    teams: updatedTeams,
+  });
+  const finalTeams = award ? award.updatedTeams : updatedTeams;
+
+  // Write everything to Firebase in one batch
   const batch = db.batch();
 
-  // Update teams
-  for (const team of updatedTeams) {
+  // Update teams (post-tournament + post-swing-award if applicable)
+  for (const team of finalTeams) {
     batch.update(db.collection('teams').doc(team.id), {
       roster: team.roster,
       earnings: team.earnings,
       segmentEarnings: team.segmentEarnings,
       lineup: team.lineup,
     });
+  }
+
+  // Add the swing-winner transaction if award fired
+  if (award) {
+    const newTxRef = db.collection('transactions').doc();
+    batch.set(newTxRef, award.newTx);
+    console.log(`[cron:process-results] 🏆 Auto-awarded ${award.segment} → ${award.winnerTeam.name} ($${award.pot.toLocaleString()})`);
   }
 
   // Update tournaments and stats in sfgl_data
@@ -488,16 +628,26 @@ async function handleProcessResults(res) {
 
   await batch.commit();
 
-  // Email results to all managers
+  // Email results to all managers (with swing-award banner if applicable)
   const managerEmails = getEmailMap(settings, teams);
-  const teamResultsForEmail = updatedTeams
+  const teamResultsForEmail = finalTeams
     .filter(t => resultsData.teams[t.id])
     .map(t => ({ team: t.name, totalEarnings: resultsData.teams[t.id].totalEarnings || 0 }));
+
+  const swingAwardForEmail = award ? {
+    segment: award.segment,
+    winnerTeamName: award.winnerTeam.name,
+    pot: award.pot,
+  } : null;
 
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournament.name} — SFGL Results`, buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName));
+      await sendEmail(
+        email,
+        `🏆 ${tournament.name} — SFGL Results`,
+        buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName, swingAwardForEmail)
+      );
       emailResults.push({ team: teamName, success: true });
     } catch (err) { emailResults.push({ team: teamName, error: err.message }); }
   }
@@ -508,6 +658,7 @@ async function handleProcessResults(res) {
     teamsScored: Object.keys(resultsData.teams).length,
     playersLoaded: players.length,
     emailsSent: emailResults.filter(r => r.success).length,
+    swingAward: award ? { segment: award.segment, winner: award.winnerTeam.name, pot: award.pot } : null,
   });
 }
 
