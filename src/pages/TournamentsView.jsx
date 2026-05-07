@@ -4,9 +4,9 @@ import { useDialog } from './DialogContext';
 
 import { theme, colors, fonts, fontSize, SWINGS, SWING_COLORS, getSwingColor } from '../theme.js';
 import { getSegmentForTournament } from '../utils';
-import { storage } from '../api';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
+import { TournamentBadges } from './TournamentBadges';
 
 const ALTERNATE_KEYWORDS = ['Puerto Rico', 'Zurich', 'Corales', 'Myrtle Beach', 'ISCO', 'Barracuda'];
 
@@ -39,11 +39,9 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
   const saveChanges = async () => {
     setTournaments(localTournaments);
     setEditMode(false);
-    try {
-      await storage.set(STORAGE_KEYS.TOURNAMENTS, localTournaments);
-    } catch (e) {
-      console.error('storage.set tournaments failed:', e);
-    }
+    // setTournaments (= updateTournaments from useLeague) already persists to
+    // Firestore + localStorage. The sfglDataApi write below is a belt-and-
+    // suspenders backup to the key-value fallback path the cascade-loader checks.
     try {
       await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, localTournaments);
     } catch (e) {
@@ -279,14 +277,9 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
               onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
             >
-              {/* Badge column */}
+              {/* Badge column — uses shared TournamentBadges (sm = 18×18 to fit row height) */}
               <td style={{ padding: '8px 2px 8px 8px', verticalAlign: 'middle' }}>
-                {t.isMajor && (
-                  <div style={{ width: 18, height: 18, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.xs, fontWeight: 800, background: 'rgba(160,110,240,0.18)', border: '1px solid rgba(160,110,240,0.65)', color: 'rgba(250,200,80,0.98)' }}>M</div>
-                )}
-                {t.isSignature && !t.isMajor && (
-                  <div style={{ width: 18, height: 18, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fontSize.xs, fontWeight: 600, background: 'rgba(150,115,230,0.16)', border: '1px solid rgba(160,125,240,0.6)', color: 'rgba(195,170,255,0.92)' }}>S</div>
-                )}
+                <TournamentBadges tournament={t} size="sm" />
               </td>
 
               {/* Tournament name */}
