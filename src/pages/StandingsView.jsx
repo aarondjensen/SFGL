@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { theme, colors, fonts, fontSize, getMedalStyle, rowHoverHandlers, SWINGS, SWING_COLORS, getSwingColorAt } from '../theme.js';
+import { theme, colors, fonts, fontSize, rowHoverHandlers, SWINGS, SWING_COLORS, getSwingColorAt } from '../theme.js';
 import { getSegmentForTournament } from '../utils';
 
 // Standings row styles (.sfgl-standings-row, .sfgl-standings-cell, .sfgl-owner)
@@ -23,100 +23,51 @@ const formatBehind = (n) => {
   return '$' + n;
 };
 
-// Compact for inline change indicators — no decimals when amount is small,
-// 1 decimal for millions ("+1.2M" not "+1.234M"). Different rounding than
-// the main earnings formatter because these appear next to the bigger number
-// and need to be visually subordinate.
-const formatChange = (n) => {
-  if (n === 0) return '$0';
-  const abs = Math.abs(n);
-  const sign = n > 0 ? '+' : '−';
-  if (abs >= 1_000_000) return sign + '$' + (abs / 1_000_000).toFixed(1) + 'M';
-  if (abs >= 1_000)     return sign + '$' + Math.round(abs / 1_000) + 'k';
-  return sign + '$' + Math.round(abs);
+// Compact event-earnings formatter — fewer digits than the season total
+// (e.g. "$1.2M" not "$1.234M") because the event column is narrower and
+// these are visually subordinate to the season number.
+const formatEventEarnings = (n) => {
+  if (!n || n <= 0) return '—';
+  if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000)     return '$' + Math.round(n / 1_000) + 'k';
+  return '$' + n;
 };
 
-// ── RecentEventLine — caption row under team name ───────────────────────────
-// Shows: <Event Name> · <Earnings> <ChangeBadge>
-// • If the team didn't compete (no lineup that week), shows just the event
-//   name in muted gray with no earnings.
-// • If the team is the leader (the one with the highest earnings from this
-//   single event), the change badge says "leader" instead of a +amount.
-// • If the team scored 0, no change badge — just "$0" in muted gray.
-const RecentEventLine = ({ eventName, earnings, gainVsLeader, isWeekLeader }) => {
-  if (!eventName) return null;
+// ── Position badge ──────────────────────────────────────────────────────────
+// Only 1st place gets a colored fill (gold from the app theme). 2nd-Nth get
+// a neutral muted treatment because there's no prize for finishing 2nd in
+// this league. When the swing is complete and there's a swing winner, 1st
+// place gets the trophy emoji on top of its swing-tinted fill instead.
+const PositionBadge = ({ position, isWinner, swingAccent }) => {
+  const isFirst = position === 1;
 
-  // Team didn't compete that week
-  if (earnings === null) {
-    return (
-      <div style={{
-        ...theme.smallText,
-        marginTop: 2,
-        fontSize: fontSize.sm,
-        color: colors.textMuted,
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-      }}>
-        {eventName} · <span style={{ color: colors.textMuted }}>—</span>
-      </div>
-    );
+  let bg, fg, border;
+  if (isWinner) {
+    bg     = swingAccent ? getSwingColorAt(swingAccent, 0.15) : 'rgba(245,197,24,0.15)';
+    fg     = swingAccent ? getSwingColorAt(swingAccent, 1)    : colors.textGold;
+    border = swingAccent ? `1px solid ${getSwingColorAt(swingAccent, 0.4)}` : `1px solid ${colors.textGold}`;
+  } else if (isFirst) {
+    // App-theme gold (#f5c518). Solid fill — this is the only "winner" badge
+    // since 2nd/3rd don't earn anything in this league.
+    bg     = colors.textGold;
+    fg     = '#111d2e';   // dark navy text on gold for contrast
+    border = 'none';
+  } else {
+    // Neutral muted — no medal coloring for 2nd/3rd
+    bg     = 'rgba(255,255,255,0.06)';
+    fg     = colors.textSecondary;
+    border = 'none';
   }
 
   return (
     <div style={{
-      ...theme.smallText,
-      marginTop: 2,
-      fontSize: fontSize.sm,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 6,
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
+      width: 26, height: 26, borderRadius: '50%',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: fontSize.sm, fontWeight: 700,
+      background: bg, color: fg, border,
+      flexShrink: 0,
     }}>
-      <span style={{
-        color: colors.textSecondary,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        minWidth: 0,
-        flexShrink: 1,
-      }}>
-        {eventName}
-      </span>
-      <span style={{ color: colors.textMuted, flexShrink: 0 }}>·</span>
-      <span style={{
-        color: earnings > 0 ? colors.earningsGreen : colors.textMuted,
-        fontFamily: fonts.mono,
-        fontVariantNumeric: 'tabular-nums lining-nums',
-        flexShrink: 0,
-      }}>
-        {earnings > 0 ? formatEarnings(earnings) : '—'}
-      </span>
-      {/* Change badge — only show if there's a meaningful comparison. The
-          week leader gets "leader" instead of a +0 (which would be confusing
-          since some other team's gainVsLeader could also be 0). */}
-      {isWeekLeader ? (
-        <span style={{
-          fontSize: fontSize.xs,
-          color: colors.textGold,
-          fontWeight: 600,
-          letterSpacing: '0.5px',
-          textTransform: 'uppercase',
-          flexShrink: 0,
-        }}>
-          ◆ leader
-        </span>
-      ) : earnings > 0 && gainVsLeader !== null ? (
-        <span style={{
-          fontSize: fontSize.xs,
-          color: colors.textMuted,
-          fontFamily: fonts.mono,
-          fontVariantNumeric: 'tabular-nums lining-nums',
-          flexShrink: 0,
-        }}>
-          {formatChange(gainVsLeader)}
-        </span>
-      ) : null}
+      {isWinner ? '🏆' : position}
     </div>
   );
 };
@@ -154,7 +105,7 @@ const MetricToggle = ({ value, onChange, accentColor }) => (
         onClick={() => onChange(key)}
         style={{
           flex: 1, position: 'relative', zIndex: 1,
-          padding: '5px 0',
+          padding: '4px 0',
           background: 'none', border: 'none',
           fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700,
           letterSpacing: '1px', textTransform: 'uppercase',
@@ -171,10 +122,12 @@ const MetricToggle = ({ value, onChange, accentColor }) => (
 );
 
 // ── StandingsCard — shared layout for Overall and Swing cards ──────────────
-// Renders header (subtitle + Total/Behind toggle) + standings table.
+// 4-column table: position · team+event_name · event_earnings · total_earnings.
+// The dedicated event_earnings column is what makes the recent event amounts
+// line up vertically across all rows for clean scanning.
 const StandingsCard = ({
   subtitle,
-  rows,                  // [{ id, name, owner, position, earnings, recentEventName, recentEarnings, recentGainVsLeader, isWeekLeader }]
+  rows,
   metric,
   setMetric,
   accentColor,           // optional swing tint applied to the toggle + earnings color
@@ -183,10 +136,23 @@ const StandingsCard = ({
 }) => {
   const leaderEarnings = rows[0]?.earnings || 0;
 
+  // Compact header — overrides theme.cardHeader's default 16px padding to
+  // 8px/14px so the card header takes about 16px less vertical space, freeing
+  // room for the rows below on small screens.
+  const compactHeader = {
+    padding: '8px 14px',
+    background: theme.cardHeader.background,
+    borderBottom: theme.cardHeader.borderBottom,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    justifyContent: 'space-between',
+  };
+
   return (
     <div style={theme.card}>
       {/* Header */}
-      <div style={{ ...theme.cardHeader, alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <div style={compactHeader}>
         <div style={{
           fontFamily: fonts.sans,
           fontSize: fontSize.base,
@@ -194,7 +160,7 @@ const StandingsCard = ({
           display: 'flex',
           alignItems: 'center',
           lineHeight: 1.3,
-          minHeight: 28,
+          minHeight: 26,
           minWidth: 0,
           flex: 1,
         }}>
@@ -208,21 +174,22 @@ const StandingsCard = ({
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <colgroup>
-            <col style={{ width: 44 }} />   {/* Pos medal — slightly wider for breathing room */}
-            <col />                          {/* Team block — gets all remaining space */}
-            <col style={{ width: 110 }} />  {/* Earnings — narrower than before since toggle is gone */}
+            <col style={{ width: 44 }} />   {/* Pos badge */}
+            <col />                          {/* Team name + event name caption */}
+            <col style={{ width: 78 }} />   {/* Event earnings — own column for vertical alignment */}
+            <col style={{ width: 100 }} />  {/* Total / Behind earnings */}
           </colgroup>
           <tbody>
             {rows.map((team, index) => {
               const earnings = team.earnings || 0;
               const behind   = leaderEarnings - earnings;
-              const medal    = getMedalStyle(index);
-              const isTop    = index === 0;
+              const position = index + 1;
+              const isTop    = position === 1;
               const isWinner = showSwingWinner && isTop;
               const rowBg    = isWinner
                 ? getSwingColorAt(accentColor, 0.08)
                 : isTop
-                  ? 'rgba(180,160,100,0.04)'
+                  ? 'rgba(245,197,24,0.04)'   // very subtle gold tint for #1
                   : 'transparent';
 
               return (
@@ -232,23 +199,13 @@ const StandingsCard = ({
                   style={{ background: rowBg, transition: 'background 0.15s' }}
                   {...rowHoverHandlers(isTop)}
                 >
-                  {/* Position medal */}
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, paddingLeft: 16, paddingRight: 6 }}>
-                    <div style={{
-                      width: 26, height: 26, borderRadius: '50%',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: fontSize.sm, fontWeight: 700,
-                      background: isWinner ? getSwingColorAt(accentColor, 0.15) : medal.bg,
-                      color:      isWinner ? getSwingColorAt(accentColor, 1)    : medal.text,
-                      border:     isWinner ? `1px solid ${getSwingColorAt(accentColor, 0.4)}` : 'none',
-                      flexShrink: 0,
-                    }}>
-                      {isWinner ? '🏆' : team.position}
-                    </div>
+                  {/* Position badge */}
+                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, paddingLeft: 14, paddingRight: 6 }}>
+                    <PositionBadge position={position} isWinner={isWinner} swingAccent={accentColor} />
                   </td>
 
-                  {/* Team block — name + recent event line */}
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, overflow: 'hidden', paddingLeft: 4 }}>
+                  {/* Team name + event name caption */}
+                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, overflow: 'hidden', paddingLeft: 4, paddingRight: 4 }}>
                     <div style={{
                       ...theme.bodyText,
                       fontSize: fontSize.lg,
@@ -260,17 +217,39 @@ const StandingsCard = ({
                     }}>
                       {team.name}
                     </div>
-                    {/* Recent event caption — replaces the old "owner" subtitle */}
-                    <RecentEventLine
-                      eventName={team.recentEventName}
-                      earnings={team.recentEarnings}
-                      gainVsLeader={team.recentGainVsLeader}
-                      isWeekLeader={team.isWeekLeader}
-                    />
+                    {team.recentEventName && (
+                      <div style={{
+                        ...theme.smallText,
+                        marginTop: 2,
+                        fontSize: fontSize.sm,
+                        color: colors.textSecondary,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {team.recentEventName}
+                      </div>
+                    )}
                   </td>
 
-                  {/* Earnings */}
-                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right' }}>
+                  {/* Event earnings — its own column so values stack vertically */}
+                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right', verticalAlign: 'bottom', paddingLeft: 4, paddingRight: 8, paddingBottom: 14 }}>
+                    {team.recentEventName ? (
+                      <div style={{
+                        ...theme.statNum,
+                        fontSize: fontSize.sm,
+                        color: team.recentEarnings > 0 ? colors.earningsGreen : colors.textMuted,
+                        fontWeight: 500,
+                      }}>
+                        {team.recentEarnings === null
+                          ? '—'
+                          : formatEventEarnings(team.recentEarnings)}
+                      </div>
+                    ) : null}
+                  </td>
+
+                  {/* Total / Behind */}
+                  <td className="sfgl-standings-cell" style={{ ...theme.tableCell, textAlign: 'right', paddingRight: 14 }}>
                     {metric === 'total' ? (
                       <div style={{
                         ...theme.statNumLg,
@@ -322,49 +301,29 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   // ── Helpers shared by both cards ──────────────────────────────────────────
 
   // Given a single completed tournament's results, return:
-  //   { eventName, earningsByTeam: Map<teamId, earnings>, weekLeaderId, weekLeaderEarnings }
+  //   { eventName, earningsByTeam: Map<teamId, earnings> }
+  // (The "leader of the week" tracking has been removed since we no longer
+  // show a leader badge in the row.)
   const summarizeTournament = (t) => {
     if (!t || !t.completed || !t.results?.teams) return null;
     const earningsByTeam = new Map();
-    let weekLeaderId = null;
-    let weekLeaderEarnings = -1;
     Object.entries(t.results.teams).forEach(([teamId, result]) => {
-      const earned = result.totalEarnings || 0;
-      earningsByTeam.set(teamId, earned);
-      if (earned > weekLeaderEarnings) {
-        weekLeaderEarnings = earned;
-        weekLeaderId = teamId;
-      }
+      earningsByTeam.set(teamId, result.totalEarnings || 0);
     });
-    return {
-      eventName: t.name,
-      earningsByTeam,
-      weekLeaderId,
-      weekLeaderEarnings,
-    };
+    return { eventName: t.name, earningsByTeam };
   };
 
   // Build a row's recent-event fields from a tournament summary.
   const recentFieldsFor = (teamId, summary) => {
     if (!summary) {
-      return { recentEventName: null, recentEarnings: null, recentGainVsLeader: null, isWeekLeader: false };
+      return { recentEventName: null, recentEarnings: null };
     }
     const earned = summary.earningsByTeam.get(teamId);
     if (earned === undefined) {
       // Team didn't compete that week (no lineup, alternate event, etc.)
-      return {
-        recentEventName: summary.eventName,
-        recentEarnings: null,
-        recentGainVsLeader: null,
-        isWeekLeader: false,
-      };
+      return { recentEventName: summary.eventName, recentEarnings: null };
     }
-    return {
-      recentEventName: summary.eventName,
-      recentEarnings: earned,
-      recentGainVsLeader: earned - summary.weekLeaderEarnings,
-      isWeekLeader: teamId === summary.weekLeaderId,
-    };
+    return { recentEventName: summary.eventName, recentEarnings: earned };
   };
 
   // ── Overall card ──────────────────────────────────────────────────────────
@@ -380,7 +339,6 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
     return totals;
   }, [teams, tournaments]);
 
-  // Most recent completed tournament across the whole season (Overall card uses this)
   const lastCompletedOverall = useMemo(
     () => [...tournaments].reverse().find(t => t.completed && t.results?.teams) || null,
     [tournaments]
@@ -394,9 +352,8 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
     return [...teams]
       .map(t => ({ ...t, earnings: seasonTotals[t.id] || 0 }))
       .sort((a, b) => b.earnings - a.earnings)
-      .map((t, i) => ({
+      .map(t => ({
         ...t,
-        position: i + 1,
         ...recentFieldsFor(t.id, lastCompletedOverallSummary),
       }));
   }, [teams, seasonTotals, lastCompletedOverallSummary]);
@@ -417,7 +374,6 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
     ) || null
   );
 
-  // Most recent completed tournament *within the selected swing*
   const lastCompletedSwing = useMemo(() => {
     if (!selectedSwing) return null;
     return [...tournaments].reverse().find(t =>
@@ -447,14 +403,12 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
     return [...teams]
       .map(t => ({ ...t, earnings: swingTotals[t.id] || 0 }))
       .sort((a, b) => b.earnings - a.earnings)
-      .map((t, i) => ({
+      .map(t => ({
         ...t,
-        position: i + 1,
         ...recentFieldsFor(t.id, lastCompletedSwingSummary),
       }));
   }, [selectedSwing, teams, swingTotals, lastCompletedSwingSummary]);
 
-  // Swing meta — event count, completion status
   const swingEventCount = useMemo(() =>
     !selectedSwing ? 0 : tournaments.filter(t =>
       getSegmentForTournament(t) === selectedSwing && t.completed && t.results?.teams
