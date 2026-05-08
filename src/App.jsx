@@ -84,6 +84,10 @@ const FantasyGolfLeague = () => {
   const [activeTab,             setActiveTab]             = useState('standings');
   const [selectedTeam,          setSelectedTeam]          = useState(null);
   const [isCommissioner,        setIsCommissioner]        = useState(false);
+  // Tagged via team.isCommissioner. Determines whether the user is *allowed*
+  // to enter commish mode. Active commish mode (isCommissioner) is toggled
+  // by tapping the user's name in the header.
+  const [taggedCommissioner,    setTaggedCommissioner]    = useState(false);
   const [loggedInUser,          setLoggedInUser]          = useState(null);
   const [showLoginModal,        setShowLoginModal]        = useState(false);
   // (Password popover state removed — commish access is granted by team tag,
@@ -125,9 +129,11 @@ const FantasyGolfLeague = () => {
         const team = resolvedTeams.find(t => t.id === teamId);
         if (team) {
           setLoggedInUser(team.owner || team.name);
-          // Tagged-commissioner check: team.isCommissioner is set via the
-          // AdminView Manager Accounts UI. Replaces the old password gate.
-          setIsCommissioner(!!team.isCommissioner);
+          // Tagged commissioners are *allowed* to enter commish mode but
+          // start the session in normal-manager view. They opt in by tapping
+          // their name in the header.
+          setTaggedCommissioner(!!team.isCommissioner);
+          setIsCommissioner(false);
         }
       }
     }).catch(() => {});
@@ -301,9 +307,10 @@ const FantasyGolfLeague = () => {
       setTimeout(() => mv.setAttribute('content', 'width=device-width, initial-scale=1'), 300);
     }
     setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
-    // Tagged commissioners get the Commish tab automatically on login.
-    // Tag is set per-team via the AdminView Manager Accounts panel.
-    setIsCommissioner(team ? !!team.isCommissioner : false);
+    // Tagged commissioners can opt into commish mode by tapping their name
+    // in the header. Login itself doesn't activate commish mode.
+    setTaggedCommissioner(team ? !!team.isCommissioner : false);
+    setIsCommissioner(false);
     setShowLoginModal(false);
   };
 
@@ -312,6 +319,7 @@ const FantasyGolfLeague = () => {
     await managerAuthApi.logout();
     setLoggedInUser(null);
     setIsCommissioner(false);
+    setTaggedCommissioner(false);
   };
 
   if (loading) {
@@ -366,53 +374,68 @@ const FantasyGolfLeague = () => {
 
               {/* Right side: user + login/logout */}
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                {loggedInUser && (
-                  <span style={{
+                {loggedInUser && (() => {
+                  // Last name only — matches the visual weight of "2026" on
+                  // the left side of the header. Splits on whitespace and
+                  // takes the final token; works for "Aaron Jensen" →
+                  // "Jensen" and for single-word usernames.
+                  const lastName = String(loggedInUser).trim().split(/\s+/).pop();
+                  // 2026 styling — used for both the plain span and the
+                  // commish toggle button so the layout doesn't shift when
+                  // commish mode flips on/off.
+                  const baseNameStyle = {
                     fontFamily: "'Raleway', system-ui, sans-serif",
                     fontSize: fontSize.lg,
-                    fontWeight: 400,
-                    color: 'rgba(255,255,255,0.7)',
                     letterSpacing: 4,
                     whiteSpace: 'nowrap',
-                  }}>
-                    {/* Last name only — matches the visual weight of "2026" on the
-                        left side of the header. Splits on whitespace and takes
-                        the final token; works for "Aaron Jensen" → "Jensen" and
-                        for single-word usernames (returns the whole thing). */}
-                    {String(loggedInUser).trim().split(/\s+/).pop()}
-                  </span>
-                )}
-                {/* Commissioner pill — navigates to the Commish tab. Visible
-                    only to managers tagged with isCommissioner. */}
-                {isCommissioner && (
-                  <button
-                    onClick={() => setActiveTab('admin')}
-                    title="Open Commish tab"
-                    aria-label="Open Commish tab"
-                    style={{
-                      fontFamily: "'Raleway', system-ui, sans-serif",
-                      fontSize: fontSize.sm,
-                      fontWeight: 700,
-                      letterSpacing: 1.5,
-                      textTransform: 'uppercase',
-                      padding: '8px 12px',
-                      background: 'rgba(245,197,24,0.18)',
-                      border: '1px solid rgba(245,197,24,0.55)',
-                      borderRadius: 1,
-                      color: 'rgba(245,197,24,0.95)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.28)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.18)'; }}
-                  >
-                    <span style={{ fontSize: fontSize.base }}>⚙</span>
-                    <span>Commish</span>
-                  </button>
-                )}
+                  };
+
+                  // Tagged commissioners get a clickable name. Tapping toggles
+                  // commish mode — the gold tint signals "active". Untagged
+                  // managers see a plain span with no interaction.
+                  if (taggedCommissioner) {
+                    const toggleCommishMode = () => {
+                      setIsCommissioner(prev => {
+                        const next = !prev;
+                        // Leaving commish mode while on the Commish tab
+                        // would render nothing — bounce back to standings.
+                        if (!next && activeTab === 'admin') setActiveTab('standings');
+                        return next;
+                      });
+                    };
+                    return (
+                      <button
+                        onClick={toggleCommishMode}
+                        title={isCommissioner ? "Tap to exit Commish mode" : "Tap to enter Commish mode"}
+                        aria-label={isCommissioner ? "Exit Commish mode" : "Enter Commish mode"}
+                        aria-pressed={isCommissioner}
+                        style={{
+                          ...baseNameStyle,
+                          fontWeight: isCommissioner ? 700 : 400,
+                          color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.7)',
+                          background: 'transparent',
+                          border: 'none',
+                          padding: 0,
+                          cursor: 'pointer',
+                          transition: 'color 0.2s, font-weight 0.2s',
+                        }}
+                      >
+                        {lastName}
+                      </button>
+                    );
+                  }
+
+                  // Untagged manager — plain, non-interactive name.
+                  return (
+                    <span style={{
+                      ...baseNameStyle,
+                      fontWeight: 400,
+                      color: 'rgba(255,255,255,0.7)',
+                    }}>
+                      {lastName}
+                    </span>
+                  );
+                })()}
                 {!loggedInUser && !isCommissioner && (
                     <button onClick={() => setShowLoginModal(true)} aria-label="Open sign-in dialog" style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
