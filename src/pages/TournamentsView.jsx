@@ -503,16 +503,24 @@ export const TournamentsView = ({
                 )}
               </td>
 
-              {/* Location + course */}
+              {/* Location + course — stacked: city/state on top, course below */}
               <td style={{ padding: '8px 8px 8px 6px' }}>
                 <div style={{
-                  fontFamily: fonts.sans, fontSize: fontSize.sm, color: alt ? colors.textMuted : colors.textSecondary,
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden', lineHeight: 1.4,
+                  fontFamily: fonts.sans, fontSize: fontSize.sm,
+                  color: alt ? colors.textMuted : colors.textSecondary,
+                  overflow: 'hidden', lineHeight: 1.3,
                 }}>
-                  {t.location}
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {t.location}
+                  </div>
                   {t.course && t.course !== 'TBD' && (
-                    <span style={{ color: colors.textMuted }}> · {t.course}</span>
+                    <div style={{
+                      color: colors.textMuted,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      marginTop: 1,
+                    }}>
+                      {t.course}
+                    </div>
                   )}
                 </div>
               </td>
