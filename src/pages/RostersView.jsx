@@ -11,7 +11,7 @@ import {
   getCurrentTournamentIndex,
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
-import { theme, colors, fonts } from '../theme.js';
+import { theme, colors, fonts, fontSize } from '../theme.js';
 import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
@@ -926,24 +926,10 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              {/* Column widths shift based on infoView: in Info mode the 4th
-                  column (used for Earnings in Stats mode) is empty, so we
-                  collapse it and give that space to the Player column —
-                  prevents long names like "Christiaan Bezuidenhout" from
-                  truncating. Stats mode keeps the original layout where the
-                  Earnings column actually carries data. */}
-              <col style={{ width: infoView === 'info'
-                ? (isMobile ? '64%' : '62%')
-                : (isMobile ? '46%' : '50%') }} />
-              <col style={{ width: infoView === 'info'
-                ? (isMobile ? '18%' : '14%')
-                : (isMobile ? '17%' : '12.5%') }} />
-              <col style={{ width: infoView === 'info'
-                ? (isMobile ? '18%' : '14%')
-                : (isMobile ? '17%' : '12.5%') }} />
-              <col style={{ width: infoView === 'info'
-                ? '0%'
-                : (isMobile ? '20%' : '25%') }} />
+              <col style={{ width: isMobile ? '46%' : '50%' }} />
+              <col style={{ width: isMobile ? '17%' : '12.5%' }} />
+              <col style={{ width: isMobile ? '17%' : '12.5%' }} />
+              <col style={{ width: isMobile ? '20%' : '25%' }} />
             </colgroup>
             <thead>
               {/* Row 1: desktop only — toggles in thead */}
@@ -1016,13 +1002,12 @@ export const RostersView = ({
 
                 return (
                   <tr key={player.name}
-                    className="sfgl-row-list"
                     style={{ borderBottom: `1px solid ${colors.borderSubtle}`, background: 'transparent', transition: 'background 0.15s' }}
                     onMouseEnter={e => { if (!isBenched) e.currentTarget.style.background = colors.rowHover; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                   >
                     {/* Player cell */}
-                    <td style={{ padding: isMobile ? '8px 10px' : '8px 16px' }}>
+                    <td style={{ padding: isMobile ? '7px 10px' : '8px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, minWidth: 0 }}>
                         {/* Headshot / lineup toggle */}
                         <button
@@ -1095,7 +1080,7 @@ export const RostersView = ({
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <span style={{
-                              fontFamily: fonts.sans, fontSize: isMobile ? 14 : 15, fontWeight: 500,
+                              fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 500,
                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               color: player.limited
                                 ? (isBenched ? 'rgba(245,197,24,0.4)' : colors.textGold)
@@ -1210,9 +1195,9 @@ export const RostersView = ({
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
                         <>
-                          <td style={{ padding: isMobile ? '8px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{owgr ? `#${owgr}` : '—'}</td>
-                          <td style={{ padding: isMobile ? '8px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{cuts}/{cutsOf}</td>
-                          <td style={{ padding: isMobile ? '8px 8px 8px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 13 : 15, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>${amount.toLocaleString()}</td>
+                          <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{owgr ? `#${owgr}` : '—'}</td>
+                          <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{cuts}/{cutsOf}</td>
+                          <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 13 : 15, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>${amount.toLocaleString()}</td>
                         </>
                       );
                     })()}
