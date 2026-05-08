@@ -504,16 +504,27 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
       )}
       {swingEventCount > 0 && (
         <span style={{
+          display: 'inline-flex',
+          flexDirection: 'column',
+          alignItems: 'center',
           fontSize: fontSize.sm,
           color: swingIsComplete ? colors.textMuted : getSwingColorAt(selectedSwing, 0.7),
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
+          lineHeight: 1.1,
         }}>
-          {swingIsComplete
-            ? <><span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 4 }}>Final</span>{swingEventCount} events</>
-            : <>{swingEventCount} of {swingTotalCount} event{swingTotalCount !== 1 ? 's' : ''}</>
-          }
+          {swingIsComplete ? (
+            <>
+              <span style={{ whiteSpace: 'nowrap' }}>
+                <span style={{ color: 'rgba(245,197,24,0.9)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 4 }}>Final</span>
+                {swingEventCount}
+              </span>
+              <span>event{swingEventCount !== 1 ? 's' : ''}</span>
+            </>
+          ) : (
+            <>
+              <span style={{ whiteSpace: 'nowrap' }}>{swingEventCount} of {swingTotalCount}</span>
+              <span>event{swingTotalCount !== 1 ? 's' : ''}</span>
+            </>
+          )}
         </span>
       )}
     </div>
