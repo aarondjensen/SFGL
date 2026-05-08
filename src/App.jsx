@@ -416,23 +416,6 @@ const FantasyGolfLeague = () => {
                     <span>Commish</span>
                   </button>
                 )}
-                {loggedInUser && !isCommissioner && (
-                    <button onClick={handleLogout} aria-label="Sign out of your account" style={{
-                      fontFamily: "'Raleway', system-ui, sans-serif",
-                      fontSize: fontSize.sm,
-                      letterSpacing: 1.5,
-                      textTransform: 'uppercase',
-                      padding: '8px 14px',
-                      background: 'rgba(180,60,60,0.12)',
-                      border: '1px solid rgba(180,60,60,0.3)',
-                      borderRadius: 1,
-                      color: 'rgba(220,120,120,0.8)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}>
-                      Sign Out
-                    </button>
-                )}
                 {!loggedInUser && !isCommissioner && (
                     <button onClick={() => setShowLoginModal(true)} aria-label="Open sign-in dialog" style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
