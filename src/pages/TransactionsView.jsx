@@ -3,7 +3,7 @@ import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, getCurrentTournamentIndex, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { STORAGE_KEYS } from '../constants/index.js';
-import { theme, colors, fonts, getSwingColor } from '../theme.js';
+import { theme, colors, fonts, fontSize, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 
 // shortName imported from utils (see abbreviateName)
@@ -675,8 +675,23 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
         {/* ── Fee summary ── */}
         <div style={theme.card}>
-          <div style={{ ...theme.cardHeader, justifyContent: 'space-between' }}>
-            <h2 style={theme.h2}>Transaction Fees</h2>
+          <div style={{
+            padding: '8px 14px',
+            background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
+            borderBottom: theme.cardHeader.borderBottom,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            justifyContent: 'space-between',
+          }}>
+            <span style={{
+              fontFamily: fonts.sans,
+              fontSize: fontSize.lg,
+              fontWeight: 700,
+              letterSpacing: '2px',
+              textTransform: 'uppercase',
+              color: colors.textPrimary,
+            }}>Transaction Fees</span>
             {teamFees[0]?.currentSwing && (() => {
               const swingColor = getSwingColor(teamFees[0].currentSwing);
               const swingPot = teamFees.reduce((sum, t) => sum + (t.swingTotal || 0), 0);
@@ -1040,9 +1055,25 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
         {/* ── Transaction history ── */}
         <div style={theme.card}>
-          <div style={{ ...theme.cardHeader, justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{
+            padding: '8px 14px',
+            background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
+            borderBottom: theme.cardHeader.borderBottom,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+          }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <h2 style={{ ...theme.h2, margin: 0 }}>Transaction History</h2>
+              <span style={{
+                fontFamily: fonts.sans,
+                fontSize: fontSize.lg,
+                fontWeight: 700,
+                letterSpacing: '2px',
+                textTransform: 'uppercase',
+                color: colors.textPrimary,
+              }}>Transaction History</span>
               {isCommissioner && (
                 <button
                   onClick={() => setAddTxOpen(!addTxOpen)}
@@ -1101,23 +1132,19 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
             {filteredTransactions.map((tx) => {
               const idx = realIndex(tx);
               return (
-                <div key={idx}
-                  className="sfgl-row-list"
-                  style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    // List-tier row: 8px vertical padding for consistency with
-                    // Rosters / Tournaments / Results headers (was 10px).
-                    padding: '8px 16px', gap: 8,
-                    borderBottom: `1px solid ${colors.borderSubtle}`,
-                    transition: 'background 0.15s',
-                  }}
+                <div key={idx} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '10px 16px', gap: 8,
+                  borderBottom: `1px solid ${colors.borderSubtle}`,
+                  transition: 'background 0.15s',
+                }}
                   onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <div style={{ minWidth: 0, flex: 1 }}>
                     {/* Team name + tournament or swing name */}
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
-                      <span style={{ fontFamily: fonts.serif, fontSize: 'clamp(13px, 1.1vw, 15px)', color: colors.textPrimary }}>
+                      <span style={{ fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.textPrimary }}>
                         {tx.team}
                       </span>
                       {(() => {

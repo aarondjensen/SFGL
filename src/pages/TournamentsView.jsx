@@ -112,7 +112,6 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
           if (editMode) {
             return (
               <tr key={t.name}
-                className="sfgl-row-list"
                 style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
                 onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
@@ -274,7 +273,6 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
           // ── Read-only row ──
           return (
             <tr key={t.name}
-              className="sfgl-row-list"
               style={{
                 borderBottom: `1px solid ${colors.borderSubtle}`,
                 opacity: alt ? 0.45 : 1,
@@ -358,9 +356,23 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
 
       {/* ── Upcoming ── */}
       <div style={theme.card}>
-        <div style={theme.cardHeader}>
+        <div style={{
+          padding: '8px 14px',
+          background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
+          borderBottom: theme.cardHeader.borderBottom,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}>
           <Calendar style={{ width: 15, height: 15, color: colors.textPrimary }} />
-          <h2 style={theme.h2}>Upcoming Events</h2>
+          <span style={{
+            fontFamily: fonts.sans,
+            fontSize: fontSize.lg,
+            fontWeight: 700,
+            letterSpacing: '2px',
+            textTransform: 'uppercase',
+            color: colors.textPrimary,
+          }}>Upcoming Events</span>
         </div>
         <div style={{ overflowX: 'auto' }}>{renderTable(upcoming)}</div>
       </div>
@@ -368,9 +380,23 @@ export const TournamentsView = ({ tournaments, isCommissioner, setTournaments, f
       {/* ── Completed ── */}
       {completed.length > 0 && (
         <div style={theme.card}>
-          <div style={theme.cardHeader}>
+          <div style={{
+            padding: '8px 14px',
+            background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
+            borderBottom: theme.cardHeader.borderBottom,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}>
             <Trophy style={{ width: 15, height: 15, color: colors.textGold }} />
-            <h2 style={theme.h2}>Completed Tournaments</h2>
+            <span style={{
+              fontFamily: fonts.sans,
+              fontSize: fontSize.lg,
+              fontWeight: 700,
+              letterSpacing: '2px',
+              textTransform: 'uppercase',
+              color: colors.textPrimary,
+            }}>Completed Tournaments</span>
           </div>
           <div style={{ overflowX: 'auto' }}>{renderTable(completed)}</div>
         </div>
