@@ -341,12 +341,19 @@ const FantasyGolfLeague = () => {
     <PullToRefresh onRefresh={refetch}>
     <div style={{ minHeight: '100vh', color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
-      {/* ── Sticky shell: header + banner + nav ── */}
+      {/* ── Sticky shell: header + banner + nav ──
+          Background tints gold when commish mode is active — a full-header
+          signal that complements the gold name button on the right side. */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 50,
-        background: 'rgba(8, 18, 40, 0.97)',
+        background: isCommissioner
+          ? 'rgba(58, 47, 12, 0.97)'
+          : 'rgba(8, 18, 40, 0.97)',
         backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid rgba(180,160,100,0.15)',
+        borderBottom: isCommissioner
+          ? '1px solid rgba(245,197,24,0.55)'
+          : '1px solid rgba(180,160,100,0.15)',
+        transition: 'background 0.25s, border-color 0.25s',
       }}>
 
         {/* ── Header ── */}
@@ -461,7 +468,7 @@ const FantasyGolfLeague = () => {
         {/* (Old full-width yellow Commissioner banner removed in Wave 3 — replaced
             by the gold "⚙ Commish" pill in the header right side above. Saves
             ~30px of vertical real-estate on every commish screen.) */}
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
             <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
               {(() => {
