@@ -51,9 +51,9 @@ const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView')
 const LazyLoginPage        = React.lazy(() => import('./pages/LoginPage'));
 
 import { useLeague }       from './hooks';
-import { hashPassword, getSegmentByDate } from './utils';
+import { getSegmentByDate } from './utils';
 import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
-import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
+import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
 import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
 
@@ -86,8 +86,9 @@ const FantasyGolfLeague = () => {
   const [isCommissioner,        setIsCommissioner]        = useState(false);
   const [loggedInUser,          setLoggedInUser]          = useState(null);
   const [showLoginModal,        setShowLoginModal]        = useState(false);
-  const [showAdminLoginPopover, setShowAdminLoginPopover] = useState(false);
-  const [adminPassword,         setAdminPassword]         = useState('');
+  // (Password popover state removed — commish access is granted by team tag,
+  // not by password. See handleManagerLogin and the AdminView Manager Accounts
+  // panel for how the tag is set.)
   const [resultsHydrated,       setResultsHydrated]       = useState(false);
 
   const league = useLeague(STORAGE_KEYS);
@@ -122,7 +123,12 @@ const FantasyGolfLeague = () => {
       const teamId = localStorage.getItem('manager_team_id');
       if (teamId) {
         const team = resolvedTeams.find(t => t.id === teamId);
-        if (team) setLoggedInUser(team.owner || team.name);
+        if (team) {
+          setLoggedInUser(team.owner || team.name);
+          // Tagged-commissioner check: team.isCommissioner is set via the
+          // AdminView Manager Accounts UI. Replaces the old password gate.
+          setIsCommissioner(!!team.isCommissioner);
+        }
       }
     }).catch(() => {});
   }, [resolvedTeams]);
@@ -283,22 +289,6 @@ const FantasyGolfLeague = () => {
   }, [loading, loadErrors, failureToastShown]);
 
 
-  // ── Admin login ────────────────────────────────────────────────────────────
-  const handleAdminLogin = async () => {
-    const hashed = await hashPassword(adminPassword);
-    if (hashed === COMMISSIONER_PASSWORD_HASH) {
-      // Blur input to dismiss keyboard and reset iOS zoom
-      if (document.activeElement) document.activeElement.blur();
-      setIsCommissioner(true);
-      setShowAdminLoginPopover(false);
-      setAdminPassword('');
-      setActiveTab('admin');
-    } else {
-      alert('Incorrect password');
-      setAdminPassword('');
-    }
-  };
-
   // ── Manager login ──────────────────────────────────────────────────────────
   const handleManagerLogin = (result) => {
     // result = { teamId } — resolve display name from loaded teams
@@ -311,7 +301,9 @@ const FantasyGolfLeague = () => {
       setTimeout(() => mv.setAttribute('content', 'width=device-width, initial-scale=1'), 300);
     }
     setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
-    setIsCommissioner(false);
+    // Tagged commissioners get the Commish tab automatically on login.
+    // Tag is set per-team via the AdminView Manager Accounts panel.
+    setIsCommissioner(team ? !!team.isCommissioner : false);
     setShowLoginModal(false);
   };
 
@@ -582,21 +574,13 @@ const FantasyGolfLeague = () => {
             position: 'relative',
           }}
         >
-          {TABS.map(tab => {
+          {TABS.filter(tab => tab.id !== 'admin' || isCommissioner).map(tab => {
             const isActive = activeTab === tab.id;
-            const isAdminPopover = tab.id === 'admin' && showAdminLoginPopover;
             return (
               <button
                 key={tab.id}
                 className="sfgl-tab"
-                onClick={() => {
-                  if (tab.id === 'admin' && !isCommissioner) {
-                    setShowAdminLoginPopover(prev => !prev);
-                    return;
-                  }
-                  setShowAdminLoginPopover(false);
-                  setActiveTab(tab.id);
-                }}
+                onClick={() => setActiveTab(tab.id)}
                 style={{
                   flex: 1,
                   display: 'flex',
@@ -609,9 +593,7 @@ const FantasyGolfLeague = () => {
                   border: 'none',
                   background: isActive
                     ? 'rgba(255,255,255,0.07)'
-                    : isAdminPopover
-                      ? 'rgba(255,255,255,0.04)'
-                      : 'transparent',
+                    : 'transparent',
                   borderRadius: 6,
                   color: isActive
                     ? 'rgba(255,255,255,0.95)'
@@ -632,56 +614,6 @@ const FantasyGolfLeague = () => {
               </button>
             );
           })}
-
-          {/* Admin password popover — anchored ABOVE the nav now */}
-          {showAdminLoginPopover && !isCommissioner && (
-            <div style={{
-              position: 'absolute', right: 8, bottom: '100%', marginBottom: 8,
-              background: '#0f1d35',
-              border: '1px solid rgba(180,160,100,0.25)',
-              borderRadius: 2,
-              padding: 10,
-              boxShadow: '0 -16px 48px rgba(0,0,0,0.5)',
-              zIndex: 51,
-              display: 'flex',
-              gap: 8,
-            }}>
-              <input
-                type="password"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                autoFocus
-                autoComplete="current-password"
-                placeholder="Password"
-                value={adminPassword}
-                onChange={e => setAdminPassword(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAdminLogin(); }}
-                style={{
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: 1,
-                  padding: '7px 10px',
-                  fontSize: 16,
-                  width: 160,
-                  color: 'white',
-                  outline: 'none',
-                }}
-              />
-              <button onClick={handleAdminLogin} style={{
-                background: '#1c3a5e',
-                border: '1px solid rgba(180,160,100,0.25)',
-                borderRadius: 1,
-                padding: '7px 14px',
-                fontSize: fontSize.base,
-                fontWeight: 600,
-                color: 'rgba(180,160,100,0.9)',
-                cursor: 'pointer',
-                letterSpacing: 1,
-              }}>
-                Enter
-              </button>
-            </div>
-          )}
         </div>
       </nav>
 
