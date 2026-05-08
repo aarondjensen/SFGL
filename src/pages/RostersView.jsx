@@ -88,15 +88,17 @@ const TeamDropdown = ({ teams, value, onChange }) => {
   }, []);
 
   return (
-    <div ref={ref} style={{ position: 'relative', minWidth: 160 }}>
+    <div ref={ref} style={{ position: 'relative', minWidth: 160, flex: 1 }}>
       <button
         onClick={() => setOpen(o => !o)}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-          padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
-          background: '#0f1d35', border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
-          fontFamily: fonts.serif, fontSize: 14, fontWeight: 700,
-          color: 'rgba(255,255,255,0.9)', textAlign: 'left',
+          padding: '8px 14px', borderRadius: 2, cursor: 'pointer', width: '100%',
+          background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
+          border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
+          fontFamily: fonts.sans, fontSize: fontSize.lg, fontWeight: 700,
+          letterSpacing: '2px', textTransform: 'uppercase',
+          color: colors.textPrimary, textAlign: 'left',
           transition: 'border-color 0.15s', whiteSpace: 'nowrap',
         }}
       >
