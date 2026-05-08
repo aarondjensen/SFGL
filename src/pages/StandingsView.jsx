@@ -145,7 +145,9 @@ const StandingsCard = ({
     padding: '8px 14px',
     background: emphasis === 'primary'
       ? 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)'
-      : theme.cardHeader.background,
+      : accentColor
+        ? `linear-gradient(90deg, ${getSwingColorAt(accentColor, 0.12)} 0%, ${getSwingColorAt(accentColor, 0.04)} 60%, transparent 100%)`
+        : theme.cardHeader.background,
     borderBottom: theme.cardHeader.borderBottom,
     display: 'flex',
     alignItems: 'center',
@@ -231,14 +233,17 @@ const StandingsCard = ({
 
                   {/* Recent event earnings — own column so values stack vertically.
                       Prefixed with "+" to communicate "this is what they ADDED to
-                      their season total from the most recent event". */}
+                      their season total from the most recent event". Mirrors the
+                      Total column's font treatment (mono, weight 300, tracked) at
+                      a smaller size and in green. */}
                   <td style={{ ...theme.tableCell, textAlign: 'right', paddingLeft: 4, paddingRight: 8 }}>
                     {team.recentEventName ? (
                       <div style={{
-                        ...theme.statNum,
-                        fontSize: fontSize.sm,
+                        ...theme.statNumLg,
+                        fontSize: fontSize.md,
+                        letterSpacing: 1.5,
+                        fontWeight: 300,
                         color: team.recentEarnings > 0 ? colors.earningsGreen : colors.textMuted,
-                        fontWeight: 500,
                       }}>
                         {team.recentEarnings === null || team.recentEarnings === 0
                           ? '—'
