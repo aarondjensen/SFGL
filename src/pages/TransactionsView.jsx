@@ -1151,14 +1151,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         // swing_winner: show swing name; others: show tournament name
                         if (tx.type === 'swing_winner') {
                           return tx.segment
-                            ? <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>{tx.segment}</span>
+                            ? <span style={{ fontFamily: fonts.sans, fontSize: fontSize.md, color: 'rgba(255,255,255,0.45)' }}>{tx.segment}</span>
                             : null;
                         }
                         const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
                         const name = t?.name || tx.tournament || null;
                         if (!name) return null;
                         return (
-                          <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>
+                          <span style={{ fontFamily: fonts.sans, fontSize: fontSize.md, color: 'rgba(255,255,255,0.45)' }}>
                             {name}
                           </span>
                         );
@@ -1166,7 +1166,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     </div>
 
                     {/* Transaction detail */}
-                    <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(11px, 0.9vw, 13px)', color: colors.textSecondary }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.md, color: colors.textSecondary }}>
                       <span style={{ color: txTypeColor(tx.type) }}>{txTypeLabel(tx.type)}</span>
                       {tx.status === 'failed' && tx.type === 'waiver' && (
                         <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
