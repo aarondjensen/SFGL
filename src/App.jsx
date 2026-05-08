@@ -339,7 +339,7 @@ const FantasyGolfLeague = () => {
 
   return (
     <PullToRefresh onRefresh={refetch}>
-    <div style={{ minHeight: '100vh', paddingBottom: 80, color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
+    <div style={{ minHeight: '100vh', color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
       {/* ── Sticky shell: header + banner + nav ── */}
       <div style={{
@@ -487,117 +487,11 @@ const FantasyGolfLeague = () => {
           </div>
         </div>
 
-        {/* ── Navigation ── */}
-        <nav style={{ maxWidth: 1100, margin: "0 auto", padding: "0 16px", position: "relative" }}>
-        <div className="sfgl-nav-row" style={{ display: "flex", gap: 0, paddingBottom: 8, overflowX: "auto" }}>
-          {TABS.map(tab => {
-            const isActive = activeTab === tab.id;
-            const isAdminPopover = tab.id === 'admin' && showAdminLoginPopover;
-            return (
-              <button
-                key={tab.id}
-                className="sfgl-tab"
-                onClick={() => {
-                  if (tab.id === 'admin' && !isCommissioner) {
-                    setShowAdminLoginPopover(prev => !prev);
-                    return;
-                  }
-                  setShowAdminLoginPopover(false);
-                  setActiveTab(tab.id);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  padding: '10px 12px',
-                  borderRadius: 2,
-                  fontSize: fontSize.md,
-                  fontWeight: 400,
-                  letterSpacing: 0.5,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  border: isActive
-                    ? '1px solid rgba(255,255,255,0.2)'
-                    : '1px solid transparent',
-                  background: isActive
-                    ? 'rgba(255,255,255,0.08)'
-                    : isAdminPopover
-                      ? 'rgba(255,255,255,0.06)'
-                      : 'rgba(255,255,255,0.04)',
-                  color: isActive
-                    ? 'rgba(255,255,255,0.95)'
-                    : 'rgba(255,255,255,0.78)',
-                  boxShadow: isActive ? 'inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
-                  outline: 'none', // focus-visible handled by CSS class in app-global.css
-                }}
-              >
-                <tab.Icon style={{ width: 13, height: 13 }} />
-                <span className="sfgl-tab-label" style={{
-                  fontFamily: "'Raleway', system-ui, sans-serif",
-                  fontSize: fontSize.md,
-                  fontWeight: 500,
-                  letterSpacing: '1px',
-                }}>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Admin password popover */}
-        {showAdminLoginPopover && !isCommissioner && (
-          <div style={{
-            position: 'absolute', right: 12, top: '100%', marginTop: 4,
-            background: '#0f1d35',
-            border: '1px solid rgba(180,160,100,0.25)',
-            borderRadius: 2,
-            padding: 10,
-            boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
-            zIndex: 50,
-            display: 'flex',
-            gap: 8,
-          }}>
-            <input
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              autoFocus
-              autoComplete="current-password"
-              placeholder="Password"
-              value={adminPassword}
-              onChange={e => setAdminPassword(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleAdminLogin(); }}
-              style={{
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: 1,
-                padding: '7px 10px',
-                fontSize: 16,
-                width: 160,
-                color: 'white',
-                outline: 'none',
-              }}
-            />
-            <button onClick={handleAdminLogin} style={{
-              background: '#1c3a5e',
-              border: '1px solid rgba(180,160,100,0.25)',
-              borderRadius: 1,
-              padding: '7px 14px',
-              fontSize: fontSize.base,
-              fontWeight: 600,
-              color: 'rgba(180,160,100,0.9)',
-              cursor: 'pointer',
-              letterSpacing: 1,
-            }}>
-              Enter
-            </button>
-          </div>
-        )}
-        </nav>
+        {/* Nav moved to fixed bottom bar (see below the <main> element). */}
       </div>{/* end sticky shell */}
 
       {/* ── Main content ── */}
-      <main className="sfgl-main-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 120px" }}>
+      <main className="sfgl-main-content" style={{ maxWidth: 1100, margin: "0 auto", paddingTop: 16, paddingLeft: 16, paddingRight: 16 }}>
 
         <ErrorBoundary key={activeTab} tabName={activeTab}>
           {activeTab === 'standings' && (
@@ -675,6 +569,139 @@ const FantasyGolfLeague = () => {
           )}
         </ErrorBoundary>
       </main>
+
+      {/* ── Bottom Navigation (fixed) ──
+          Mobile-first: nav lives at the bottom of the viewport. Generous
+          paddingBottom (24px base + safe-area-inset) keeps tap targets well
+          clear of the iOS home indicator / Siri activation zone, which on
+          iPhone X+ extends ~34px up from the screen edge. */}
+      <nav
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 50,
+          background: 'rgba(8, 18, 40, 0.97)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          borderTop: '1px solid rgba(180,160,100,0.15)',
+          paddingTop: 6,
+          paddingBottom: 'calc(24px + env(safe-area-inset-bottom))',
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 600,
+            margin: '0 auto',
+            padding: '0 4px',
+            display: 'flex',
+            gap: 0,
+            position: 'relative',
+          }}
+        >
+          {TABS.map(tab => {
+            const isActive = activeTab === tab.id;
+            const isAdminPopover = tab.id === 'admin' && showAdminLoginPopover;
+            return (
+              <button
+                key={tab.id}
+                className="sfgl-tab"
+                onClick={() => {
+                  if (tab.id === 'admin' && !isCommissioner) {
+                    setShowAdminLoginPopover(prev => !prev);
+                    return;
+                  }
+                  setShowAdminLoginPopover(false);
+                  setActiveTab(tab.id);
+                }}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 3,
+                  padding: '6px 4px',
+                  minHeight: 48,
+                  border: 'none',
+                  background: isActive
+                    ? 'rgba(255,255,255,0.07)'
+                    : isAdminPopover
+                      ? 'rgba(255,255,255,0.04)'
+                      : 'transparent',
+                  borderRadius: 6,
+                  color: isActive
+                    ? 'rgba(255,255,255,0.95)'
+                    : 'rgba(255,255,255,0.55)',
+                  cursor: 'pointer',
+                  transition: 'all 0.18s',
+                  outline: 'none',
+                }}
+              >
+                <tab.Icon style={{ width: 20, height: 20 }} />
+                <span style={{
+                  fontFamily: "'Raleway', system-ui, sans-serif",
+                  fontSize: 10,
+                  fontWeight: 500,
+                  letterSpacing: 0.5,
+                  whiteSpace: 'nowrap',
+                }}>{tab.label}</span>
+              </button>
+            );
+          })}
+
+          {/* Admin password popover — anchored ABOVE the nav now */}
+          {showAdminLoginPopover && !isCommissioner && (
+            <div style={{
+              position: 'absolute', right: 8, bottom: '100%', marginBottom: 8,
+              background: '#0f1d35',
+              border: '1px solid rgba(180,160,100,0.25)',
+              borderRadius: 2,
+              padding: 10,
+              boxShadow: '0 -16px 48px rgba(0,0,0,0.5)',
+              zIndex: 51,
+              display: 'flex',
+              gap: 8,
+            }}>
+              <input
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoFocus
+                autoComplete="current-password"
+                placeholder="Password"
+                value={adminPassword}
+                onChange={e => setAdminPassword(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAdminLogin(); }}
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 1,
+                  padding: '7px 10px',
+                  fontSize: 16,
+                  width: 160,
+                  color: 'white',
+                  outline: 'none',
+                }}
+              />
+              <button onClick={handleAdminLogin} style={{
+                background: '#1c3a5e',
+                border: '1px solid rgba(180,160,100,0.25)',
+                borderRadius: 1,
+                padding: '7px 14px',
+                fontSize: fontSize.base,
+                fontWeight: 600,
+                color: 'rgba(180,160,100,0.9)',
+                cursor: 'pointer',
+                letterSpacing: 1,
+              }}>
+                Enter
+              </button>
+            </div>
+          )}
+        </div>
+      </nav>
 
       {/* ── Manager Login Modal ── */}
       {showLoginModal && (
