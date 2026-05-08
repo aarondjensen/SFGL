@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
-import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
+import { Trophy, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
 // Mobile devices can get stuck on stale localStorage data while desktop has
@@ -34,7 +34,8 @@ import { PullToRefresh }  from './pages/PullToRefresh';
 
 // ── Eagerly loaded views (shown on first visit / lightweight) ──────────────
 import { StandingsView }  from './pages/StandingsView';
-import { ResultsView }    from './pages/ResultsView';
+// ResultsView merged into TournamentsView — completed events expand inline
+// to show team standings + player breakdowns. The standalone tab is gone.
 import { RostersView }    from './pages/RostersView';
 import { TournamentsView }  from './pages/TournamentsView';
 
@@ -73,7 +74,6 @@ const LazyFallback = () => (
 const TABS = [
   { id: 'standings',    label: 'Standings',    Icon: Trophy     },
   { id: 'rosters',      label: 'Rosters',      Icon: Users      },
-  { id: 'results',      label: 'Results',      Icon: Award      },
   { id: 'transactions', label: 'Transactions', Icon: DollarSign },
   { id: 'tournaments',  label: 'Tournaments',  Icon: Calendar   },
   { id: 'admin',        label: 'Commish',      Icon: Settings   },
@@ -480,9 +480,6 @@ const FantasyGolfLeague = () => {
           {activeTab === 'standings' && (
             <StandingsView teams={resolvedTeams} tournaments={safeTournaments} transactions={safeTransactions} />
           )}
-          {activeTab === 'results' && (
-            <ResultsView teams={resolvedTeams} tournaments={safeTournaments} transactions={safeTransactions} />
-          )}
           {activeTab === 'rosters' && (
             <RostersView
               teams={resolvedTeams}
@@ -522,6 +519,8 @@ const FantasyGolfLeague = () => {
               tournaments={safeTournaments}
               isCommissioner={isCommissioner}
               setTournaments={updateTournaments}
+              teams={resolvedTeams}
+              transactions={safeTransactions}
             />
           )}
           {activeTab === 'admin' && isCommissioner && (
