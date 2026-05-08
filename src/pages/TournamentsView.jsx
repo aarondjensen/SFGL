@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Trophy, Edit2, Save, ChevronDown, ChevronRight } from 'lucide-react';
 import { useDialog } from './DialogContext';
 
-import { theme, colors, fonts, fontSize, cardLiftHandlers, SWINGS, SWING_COLORS, getSwingColor, getSwingColorAt } from '../theme.js';
+import { theme, colors, fonts, fontSize, SWINGS, getSwingColor } from '../theme.js';
 import { getSegmentForTournament, shortName } from '../utils';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
@@ -21,14 +21,9 @@ const GOLD_DIM    = 'rgba(245,197,24,0.35)';
 const BLUE_BRIGHT = 'rgba(100,180,255,0.95)';
 const BLUE_DIM    = 'rgba(100,180,255,0.35)';
 
-// Triplet of {accent, bg, border} colors used by swing summary cards on the
-// completed-events list. Specific alpha values (0.07, 0.3) are tuned for the
-// card backgrounds in this view; other views compose their own variants.
-const swingColorsForCard = (seg) => ({
-  accent: getSwingColor(seg),
-  bg:     getSwingColorAt(seg, 0.07),
-  border: getSwingColorAt(seg, 0.3),
-});
+// (swingColorsForCard helper and swing summary card rendering were removed
+// when completed events moved to the same table format as upcoming events.
+// Per-swing standings are still available on the Standings tab.)
 
 const playerNameColor = (p, showEarnings) => {
   if (p.unlimited) return showEarnings ? (p.earnings > 0 ? BLUE_BRIGHT : BLUE_DIM) : BLUE_BRIGHT;
@@ -238,26 +233,8 @@ export const TournamentsView = ({
     };
   };
 
-  // Build swing summary cards from swing_winner transactions.
-  const swingSummaries = useMemo(() => {
-    const awarded = transactions.filter(tx => tx.type === 'swing_winner');
-    return awarded.map(tx => {
-      const seg = tx.segment;
-      const swingTourneys = localTournaments.filter(t => t.completed && getSegmentForTournament(t) === seg && t.results?.teams);
-      const byTeam = {};
-      swingTourneys.forEach(t => {
-        Object.entries(t.results.teams).forEach(([id, tr]) => {
-          byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
-        });
-      });
-      const lastTourney = swingTourneys[swingTourneys.length - 1];
-      const ranked = Object.entries(byTeam)
-        .map(([id, earnings]) => ({ team: teams.find(t => t.id === id), earnings }))
-        .filter(e => e.team)
-        .sort((a, b) => b.earnings - a.earnings);
-      return { seg, tx, ranked, lastTourney, pot: tx.amount || 0, tourneyCount: swingTourneys.length };
-    });
-  }, [transactions, localTournaments, teams]);
+  // (swingSummaries memo removed when swing summary cards were dropped from
+  // this view — see Standings tab for swing-level team standings.)
 
   // ── Status badge component ──
   const StatusBadge = ({ tournament }) => {
@@ -283,7 +260,67 @@ export const TournamentsView = ({
     );
   };
 
-  const renderTable = (list) => (
+  // Helper: build the team-standings JSX for a completed tournament expansion.
+  // Used inside an expansion <tr> rendered below each completed row.
+  const renderTournamentExpansion = (tournament) => {
+    const tIdx = tournaments.indexOf(tournament);
+    const results = tournament.results;
+    if (!results) {
+      return (
+        <div style={{ ...theme.emptyState, padding: '14px 14px' }}>
+          No result details available
+        </div>
+      );
+    }
+    const rankedTeams = teams
+      .map(tt => ({ ...tt, result: results.teams?.[tt.id] }))
+      .filter(tt => tt.result)
+      .sort((a, b) => (b.result.totalEarnings || 0) - (a.result.totalEarnings || 0));
+
+    return (
+      <div>
+        {rankedTeams.map((team, rank) => {
+          const tr = team.result;
+          const players = (tr.players || [])
+            .map(p => enrich(p, tIdx))
+            .sort((a, b) => (b.earnings || 0) - (a.earnings || 0));
+          return (
+            <div key={team.id}
+              style={{
+                padding: '6px 14px',
+                borderBottom: `1px solid ${colors.borderSubtle}`,
+                background: rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent',
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.07)' : 'rgba(255,255,255,0.04)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent'; }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <span style={{
+                  fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center',
+                  fontFamily: fonts.serif,
+                  color: rank === 0 ? colors.textGold : colors.textMuted,
+                }}>
+                  {rank + 1}
+                </span>
+                <span style={{ ...theme.bodyText, color: colors.textPrimary }}>{team.name}</span>
+                <span style={{
+                  ...theme.statNum, fontSize: fontSize.base, fontWeight: 600,
+                  color: (tr.totalEarnings || 0) > 0 ? colors.earningsGreen : colors.textMuted,
+                  marginLeft: 2,
+                }}>
+                  ${(tr.totalEarnings || 0).toLocaleString()}
+                </span>
+              </div>
+              <PlayerSlotGrid players={players} showEarnings />
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderTable = (list, kind = 'upcoming') => (
     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
       {!editMode && (
         <colgroup>
@@ -462,15 +499,21 @@ export const TournamentsView = ({
           }
 
           // ── Read-only row ──
+          const isExpandable = kind === 'completed' && !editMode;
+          const isExpanded = isExpandable && expandedTournament === t.name;
           return (
-            <tr key={t.name}
+            <React.Fragment key={t.name}>
+            <tr
               style={{
                 borderBottom: `1px solid ${colors.borderSubtle}`,
                 opacity: alt ? 0.45 : 1,
                 transition: 'background 0.15s',
+                cursor: isExpandable ? 'pointer' : 'default',
+                background: isExpanded ? 'rgba(255,255,255,0.04)' : 'transparent',
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+              onClick={isExpandable ? () => toggleExpansion(t.name) : undefined}
+              onMouseEnter={e => { e.currentTarget.style.background = isExpanded ? 'rgba(255,255,255,0.06)' : colors.rowHover; }}
+              onMouseLeave={e => { e.currentTarget.style.background = isExpanded ? 'rgba(255,255,255,0.04)' : 'transparent'; }}
             >
               {/* Badge column — uses shared TournamentBadges (sm = 18×18 to fit row height) */}
               <td style={{ padding: '8px 2px 8px 8px', verticalAlign: 'middle' }}>
@@ -486,7 +529,7 @@ export const TournamentsView = ({
                   overflow: 'hidden', lineHeight: 1.35,
                 }}>
                   {t.name}
-                  {t.completed && (
+                  {t.completed && !isExpandable && (
                     <span style={{ fontSize: fontSize.base, color: colors.textMuted, marginLeft: 4 }}>✓</span>
                   )}
                 </span>
@@ -503,243 +546,52 @@ export const TournamentsView = ({
                 )}
               </td>
 
-              {/* Location + course — stacked: city/state on top, course below */}
+              {/* Location + course — stacked: city/state on top, course below.
+                  For completed events, a chevron sits at the right edge to
+                  indicate the row is expandable. */}
               <td style={{ padding: '8px 8px 8px 6px' }}>
-                <div style={{
-                  fontFamily: fonts.sans, fontSize: fontSize.sm,
-                  color: alt ? colors.textMuted : colors.textSecondary,
-                  overflow: 'hidden', lineHeight: 1.3,
-                }}>
-                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {t.location}
-                  </div>
-                  {t.course && t.course !== 'TBD' && (
-                    <div style={{
-                      color: colors.textMuted,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      marginTop: 1,
-                    }}>
-                      {t.course}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{
+                    flex: 1, minWidth: 0,
+                    fontFamily: fonts.sans, fontSize: fontSize.sm,
+                    color: alt ? colors.textMuted : colors.textSecondary,
+                    overflow: 'hidden', lineHeight: 1.3,
+                  }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {t.location}
                     </div>
+                    {t.course && t.course !== 'TBD' && (
+                      <div style={{
+                        color: colors.textMuted,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        marginTop: 1,
+                      }}>
+                        {t.course}
+                      </div>
+                    )}
+                  </div>
+                  {isExpandable && (
+                    isExpanded
+                      ? <ChevronDown style={{ width: 14, height: 14, color: colors.textSecondary, flexShrink: 0 }} />
+                      : <ChevronRight style={{ width: 14, height: 14, color: colors.textMuted, flexShrink: 0 }} />
                   )}
                 </div>
               </td>
             </tr>
+            {/* Expansion row — team standings + player breakdowns inline */}
+            {isExpanded && (
+              <tr>
+                <td colSpan={4} style={{ padding: 0, background: 'rgba(0,0,0,0.15)', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                  {renderTournamentExpansion(t)}
+                </td>
+              </tr>
+            )}
+            </React.Fragment>
           );
         })}
       </tbody>
     </table>
   );
-
-  // ── Render the completed list as expandable result cards ────────────────
-  // Swing summary cards interleaved at the top of each swing group, matching
-  // the layout that used to live in ResultsView.
-  const renderCompletedResults = () => {
-    const renderedSwings = new Set();
-    const items = [];
-    completed.forEach((tournament) => {
-      const seg = getSegmentForTournament(tournament);
-      if (seg && !renderedSwings.has(seg)) {
-        const summary = swingSummaries.find(s => s.seg === seg);
-        if (summary) {
-          items.push({ type: 'swing', summary });
-          renderedSwings.add(seg);
-        }
-      }
-      items.push({ type: 'tournament', tournament });
-    });
-    // Fallback: any unplaced swing summaries go at the end
-    swingSummaries.forEach(s => {
-      if (!renderedSwings.has(s.seg)) {
-        items.push({ type: 'swing', summary: s });
-        renderedSwings.add(s.seg);
-      }
-    });
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 6 }}>
-        {items.map(item => {
-          if (item.type === 'swing') {
-            const { summary } = item;
-            const isExpanded = expandedTournament === ('swing:' + summary.seg);
-            const sc = swingColorsForCard(summary.seg);
-            return (
-              <div key={'swing:' + summary.seg} style={{
-                ...theme.cardLift,
-                border: `1px solid ${sc.border}`,
-              }} {...cardLiftHandlers({ disabled: isExpanded })}>
-                <button
-                  onClick={() => toggleExpansion('swing:' + summary.seg)}
-                  aria-expanded={isExpanded}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '6px 14px',
-                    background: isExpanded ? sc.bg : `linear-gradient(90deg, ${sc.bg} 0%, transparent 100%)`,
-                    border: 'none', borderBottom: isExpanded ? `1px solid ${sc.border}` : 'none',
-                    cursor: 'pointer', transition: 'background 0.2s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = sc.bg; }}
-                  onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = `linear-gradient(90deg, ${sc.bg} 0%, transparent 100%)`; }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                    <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
-                      <Trophy style={{ width: 11, height: 11, color: sc.accent }} />
-                    </div>
-                    <div style={{ textAlign: 'left', minWidth: 0 }}>
-                      <h3 style={{ ...theme.h3, color: sc.accent, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {summary.seg}
-                      </h3>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {!isExpanded && summary.ranked[0] && (
-                      <span style={{ ...theme.badge, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.accent }}>
-                        🏆 {summary.ranked[0].team.name}
-                      </span>
-                    )}
-                    {isExpanded
-                      ? <ChevronDown style={{ width: 15, height: 15, color: sc.accent }} />
-                      : <ChevronRight style={{ width: 15, height: 15, color: sc.accent }} />
-                    }
-                  </div>
-                </button>
-
-                {/* Expanded — team standings for the swing */}
-                {isExpanded && (
-                  <div>
-                    {summary.ranked.map((entry, rank) => (
-                      <div key={entry.team.id}
-                        style={{
-                          padding: '6px 14px',
-                          borderBottom: `1px solid ${colors.borderSubtle}`,
-                          background: rank === 0 ? sc.bg : 'transparent',
-                          transition: 'background 0.15s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'rgba(255,255,255,0.04)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? sc.bg : 'transparent'; }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          <span style={{
-                            fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center',
-                            fontFamily: fonts.serif,
-                            color: rank === 0 ? sc.accent : colors.textMuted,
-                          }}>
-                            {rank + 1}
-                          </span>
-                          <span style={{ ...theme.bodyText, color: rank === 0 ? colors.textPrimary : colors.textSecondary }}>{entry.team.name}</span>
-                          <span style={{
-                            ...theme.statNum,
-                            fontSize: rank === 0 ? fontSize.md : fontSize.base,
-                            fontWeight: rank === 0 ? 700 : 400,
-                            color: rank === 0 ? colors.earningsGreen : 'rgba(80,180,120,0.5)',
-                            marginLeft: 2,
-                          }}>
-                            ${entry.earnings.toLocaleString()}
-                          </span>
-                          {rank === 0 && (
-                            <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700, color: sc.accent, marginLeft: 2 }}>
-                              +${summary.pot.toLocaleString()} pot
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          }
-
-          // Regular tournament card
-          const { tournament } = item;
-          const tIdx = tournaments.indexOf(tournament);
-          const isExpanded = expandedTournament === tournament.name;
-          const results = tournament.results;
-          const rankedTeams = teams
-            .map(t => ({ ...t, result: results?.teams?.[t.id] }))
-            .filter(t => t.result)
-            .sort((a, b) => (b.result.totalEarnings || 0) - (a.result.totalEarnings || 0));
-
-          return (
-            <div key={tournament.name} style={theme.cardLift} {...cardLiftHandlers({ disabled: isExpanded })}>
-              <button
-                onClick={() => toggleExpansion(tournament.name)}
-                aria-expanded={isExpanded}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '6px 14px', background: isExpanded
-                    ? 'rgba(18,46,82,0.3)'
-                    : 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)',
-                  border: 'none', borderBottom: isExpanded ? `1px solid ${colors.borderSubtle}` : 'none',
-                  cursor: 'pointer', transition: 'background 0.2s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(18,46,82,0.25)'; }}
-                onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'linear-gradient(90deg, rgba(18,46,82,0.3) 0%, transparent 100%)'; }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                  <div style={{ flexShrink: 0, width: 20, display: 'flex', justifyContent: 'center' }}>
-                    <TournamentBadges tournament={tournament} />
-                  </div>
-                  <div style={{ textAlign: 'left', minWidth: 0 }}>
-                    <h3 style={{ ...theme.h3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.name}</h3>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  {isExpanded
-                    ? <ChevronDown style={{ width: 15, height: 15, color: colors.textSecondary }} />
-                    : <ChevronRight style={{ width: 15, height: 15, color: colors.textSecondary }} />
-                  }
-                </div>
-              </button>
-
-              {/* Expanded — team rows with player slot grid below each */}
-              {isExpanded && results && (
-                <div>
-                  {rankedTeams.map((team, rank) => {
-                    const tr = team.result;
-                    const players = (tr.players || [])
-                      .map(p => enrich(p, tIdx))
-                      .sort((a, b) => (b.earnings || 0) - (a.earnings || 0));
-                    return (
-                      <div key={team.id}
-                        style={{
-                          padding: '6px 14px',
-                          borderBottom: `1px solid ${colors.borderSubtle}`,
-                          background: rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent',
-                          transition: 'background 0.15s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.07)' : 'rgba(255,255,255,0.04)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent'; }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          <span style={{
-                            fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center',
-                            fontFamily: fonts.serif,
-                            color: rank === 0 ? colors.textGold : colors.textMuted,
-                          }}>
-                            {rank + 1}
-                          </span>
-                          <span style={{ ...theme.bodyText, color: colors.textPrimary }}>{team.name}</span>
-                          <span style={{
-                            ...theme.statNum, fontSize: fontSize.base, fontWeight: 600,
-                            color: (tr.totalEarnings || 0) > 0 ? colors.earningsGreen : colors.textMuted,
-                            marginLeft: 2,
-                          }}>
-                            ${(tr.totalEarnings || 0).toLocaleString()}
-                          </span>
-                        </div>
-                        <PlayerSlotGrid players={players} showEarnings />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -769,22 +621,21 @@ export const TournamentsView = ({
           <Calendar style={{ width: 15, height: 15, color: colors.textPrimary }} />
           <span style={sectionTitleStyle}>Upcoming Events</span>
         </div>
-        <div style={{ overflowX: 'auto' }}>{renderTable(upcoming)}</div>
+        <div style={{ overflowX: 'auto' }}>{renderTable(upcoming, 'upcoming')}</div>
       </div>
 
-      {/* ── Completed ── */}
-      {/* In edit mode: show the editable table. Otherwise: render expandable
-          result cards with the most recent expanded by default. */}
+      {/* ── Completed ──
+          Uses the same row template as Upcoming. Completed rows are clickable —
+          tapping anywhere on the row toggles a chevron and reveals the team
+          standings + player breakdown directly below. The most recent completed
+          event auto-expands on first load. */}
       {completed.length > 0 && (
         <div style={theme.card}>
           <div style={sectionHeaderStyle}>
             <Trophy style={{ width: 15, height: 15, color: colors.textGold }} />
             <span style={sectionTitleStyle}>Completed Events</span>
           </div>
-          {editMode
-            ? <div style={{ overflowX: 'auto' }}>{renderTable(completed)}</div>
-            : renderCompletedResults()
-          }
+          <div style={{ overflowX: 'auto' }}>{renderTable(completed, 'completed')}</div>
         </div>
       )}
     </div>
