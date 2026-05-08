@@ -505,6 +505,11 @@ export const TournamentsView = ({
             <React.Fragment key={t.name}>
             <tr
               style={{
+                // Fixed row height accommodates tournament names that spill
+                // to a 2nd line, so every row reads as the same size whether
+                // its name is short or long. Single-line rows vertically
+                // center via td default vertical-align: middle.
+                height: 56,
                 borderBottom: `1px solid ${colors.borderSubtle}`,
                 opacity: alt ? 0.45 : 1,
                 transition: 'background 0.15s',
