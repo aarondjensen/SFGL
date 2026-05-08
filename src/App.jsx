@@ -368,22 +368,27 @@ const FantasyGolfLeague = () => {
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {loggedInUser && (
                   <span style={{
-                    fontSize: fontSize.base,
-                    color: 'rgba(255,255,255,0.45)',
-                    letterSpacing: 1,
-                    textTransform: 'uppercase',
                     fontFamily: "'Raleway', system-ui, sans-serif",
+                    fontSize: fontSize.lg,
+                    fontWeight: 400,
+                    color: 'rgba(255,255,255,0.7)',
+                    letterSpacing: 4,
+                    whiteSpace: 'nowrap',
                   }}>
-                    {loggedInUser}
+                    {/* Last name only — matches the visual weight of "2026" on the
+                        left side of the header. Splits on whitespace and takes
+                        the final token; works for "Aaron Jensen" → "Jensen" and
+                        for single-word usernames (returns the whole thing). */}
+                    {String(loggedInUser).trim().split(/\s+/).pop()}
                   </span>
                 )}
-                {/* Commissioner pill — replaces the old full-width yellow banner.
-                    Click signs out of commish mode and returns to standings. */}
+                {/* Commissioner pill — navigates to the Commish tab. Visible
+                    only to managers tagged with isCommissioner. */}
                 {isCommissioner && (
                   <button
-                    onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }}
-                    title="Click to exit Commissioner mode"
-                    aria-label="Exit Commissioner mode"
+                    onClick={() => setActiveTab('admin')}
+                    title="Open Commish tab"
+                    aria-label="Open Commish tab"
                     style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
                       fontSize: fontSize.sm,
