@@ -100,7 +100,11 @@ const matchPlayerName = (a, b) => {
 const getEffectiveRoster = (team, allTransactions) => {
   if (!team) return [];
   const teamKey = String(team.name || '').trim().toLowerCase();
-  let roster = [...(team.roster || [])];
+  // Only keep roster entries with a usable string name; downstream code
+  // sorts by name and crashes on undefined/non-string values.
+  let roster = (team.roster || []).filter(p => p && typeof p.name === 'string' && p.name.length > 0);
+  // Defensive copy so we don't mutate the prop
+  roster = roster.map(p => ({ ...p }));
 
   (allTransactions || [])
     .filter(tx => {
@@ -110,21 +114,19 @@ const getEffectiveRoster = (team, allTransactions) => {
       if (tx.type === 'mulligan') return false;       // lineup swap, not roster
       if (tx.type === 'swing_winner') return false;   // tx.player is owner name, not a player
       // Exclude pending (not yet effective) and failed (didn't go through)
-      // Accepts 'processed', 'completed', and any other non-pending/non-failed
-      // status — broader than AddDropPlayerModal's positive list, in case
-      // there's a custom status in the wild.
       if (tx.status === 'pending') return false;
       if (tx.status === 'failed')  return false;
       return true;
     })
     .sort((a, b) => (a.tournamentIndex ?? 0) - (b.tournamentIndex ?? 0))
     .forEach(tx => {
-      // Apply drop first, then add — handles add-then-drop and drop-then-readd
+      // Drop first, then add — handles add-then-drop and drop-then-readd
       // sequences correctly when sorted by tournament index.
-      if (tx.droppedPlayer) {
+      if (tx.droppedPlayer && typeof tx.droppedPlayer === 'string') {
         roster = roster.filter(p => p.name !== tx.droppedPlayer);
       }
-      if (tx.player && !roster.some(p => p.name === tx.player)) {
+      // Only accept string player values, never undefined/objects/etc.
+      if (typeof tx.player === 'string' && tx.player.length > 0 && !roster.some(p => p.name === tx.player)) {
         roster.push({ name: tx.player, limited: !!tx.limited });
       }
     });
@@ -373,24 +375,35 @@ const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, ros
         </span>
       </button>
 
-      {/* Expanded panel — one row per team */}
+      {/* Expanded panel — one row per team. Each row's render is wrapped in
+          try/catch so a single bad team can't take down the whole editor —
+          the broken team shows an inline error and the others render normally. */}
       {expanded && (
         <div style={{ padding: '8px 12px 12px', background: 'rgba(0,0,0,0.12)' }}>
           {teams.map(team => {
+            try {
             const lineup = manualEntry.teamLineups?.[team.id] || [];
-            // Effective roster — transactions-aware snapshot of the team's
-            // roster as of the selected tournament. Falls back to team.roster
-            // if the caller didn't supply a precomputed map (defensive).
-            const effectiveRoster = rostersByTeamId?.[team.id] || team.roster || [];
+            // Effective roster — transactions-aware roster snapshot. Falls
+            // back to team.roster if the caller didn't supply a precomputed
+            // map (defensive).
+            const effectiveRoster = (rostersByTeamId?.[team.id] || team.roster || [])
+              .filter(p => p && typeof p.name === 'string' && p.name.length > 0);
             const rosterNames = effectiveRoster.map(p => p.name);
             // Roster pool: effective roster + any lineup names that aren't in
             // it, so editing a saved lineup doesn't drop legacy players (e.g.
-            // someone rostered for the tournament but dropped after).
-            const extras = lineup.filter(n => n && !rosterNames.includes(n));
-            const pool = [...rosterNames, ...extras].sort((a, b) => a.localeCompare(b));
+            // someone rostered for the tournament but dropped after). Filter
+            // out anything that isn't a non-empty string so the sort below
+            // can't crash on undefined.
+            const extras = (lineup || []).filter(n => typeof n === 'string' && n.length > 0 && !rosterNames.includes(n));
+            const pool = [...rosterNames, ...extras]
+              .filter(n => typeof n === 'string' && n.length > 0)
+              // Defensive localeCompare — String() coerces any oddball value
+              // that slipped past the filter so the sort can't blow up the
+              // entire editor mid-render.
+              .sort((a, b) => String(a).localeCompare(String(b)));
 
             // Track currently-picked names so the same player can't be picked twice
-            const picked = new Set(lineup.filter(n => n));
+            const picked = new Set((lineup || []).filter(n => typeof n === 'string' && n.length > 0));
 
             const isComplete = lineup.length === lineupSize;
             const isEmpty = lineup.length === 0;
@@ -474,6 +487,23 @@ const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, ros
                 </div>
               </div>
             );
+            } catch (rowErr) {
+              // One team's row crashed — log, render a placeholder, and let
+              // the other rows continue. Without this catch a single bad
+              // team object would blank the entire editor.
+              console.error('[TeamLineupsEditor] row crashed for', team?.name, rowErr);
+              return (
+                <div key={team?.id || Math.random()} style={{
+                  padding: '10px 14px', marginBottom: 6,
+                  background: 'rgba(200,80,80,0.08)',
+                  border: '1px solid rgba(200,80,80,0.35)',
+                  borderRadius: 3,
+                  fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,140,140,0.9)',
+                }}>
+                  ⚠ Couldn't render {team?.name || 'this team'} — see console for details
+                </div>
+              );
+            }
           })}
         </div>
       )}
