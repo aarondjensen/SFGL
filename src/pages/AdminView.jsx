@@ -126,6 +126,96 @@ const computeSwingPot = (transactions, tournaments, swingSegment) => {
     .reduce((sum, tx) => sum + (tx.fee || 0), 0);
 };
 
+// Auto-award helper — call after processing/reprocessing a tournament to
+// check whether its swing is now complete and should be awarded. Returns
+// { updatedTeams, updatedTransactions, summary } when an award is applied,
+// or null when no award should fire (already awarded, swing not complete,
+// no fees collected, no rankable results, etc).
+//
+// The conditions for an auto-award:
+//   1. Swing segment is resolvable.
+//   2. No swing_winner transaction already exists for this segment.
+//   3. EVERY tournament in this swing is `completed`.
+//   4. At least one tournament has a `results.teams` populated to rank from.
+//   5. Pot > 0 (fees were actually collected).
+//
+// When the manual "Award Swing Winner" button is used, it duplicates this
+// logic but skips the alreadyAwarded check (the button is a deliberate
+// commish action — they can re-award after a manual fix). So this helper
+// is the "automatic when conditions are met" path; the button is the
+// "I know what I'm doing" path.
+const maybeAutoAwardSwing = (swingSegment, tournaments, teams, transactions) => {
+  if (!swingSegment) return null;
+
+  // Already awarded? Bail out so we don't double-credit.
+  if (transactions.some(tx => tx.type === 'swing_winner' && tx.segment === swingSegment)) {
+    return null;
+  }
+
+  // Find every tournament in this swing
+  const swingTournaments = (tournaments || []).filter(t => getSegmentForTournament(t) === swingSegment);
+  if (swingTournaments.length === 0) return null;
+
+  // All complete? If anything's still upcoming/in-progress, swing isn't over.
+  if (!swingTournaments.every(t => t.completed)) return null;
+
+  // Need rankable results from at least one tournament
+  const rankedTournaments = swingTournaments.filter(t => t.results?.teams);
+  if (rankedTournaments.length === 0) return null;
+
+  // Sum earnings per team across the swing
+  const byTeam = {};
+  rankedTournaments.forEach(t => {
+    Object.entries(t.results.teams).forEach(([id, tr]) => {
+      byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
+    });
+  });
+  const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+  if (!winnerEntry) return null;
+
+  const [winnerId] = winnerEntry;
+  const winnerTeam = (teams || []).find(t => t.id === winnerId);
+  if (!winnerTeam) return null;
+
+  // Pot via canonical helper
+  const pot = computeSwingPot(transactions, tournaments, swingSegment);
+  if (pot === 0) return null;
+
+  // Tag the swing_winner tx to the last tournament in the swing so it sorts
+  // sensibly in TransactionsView.
+  const lastSegTourney = rankedTournaments.reduce((last, tt) => {
+    const idx = tournaments.indexOf(tt);
+    return idx > (last?.idx ?? -1) ? { t: tt, idx } : last;
+  }, null);
+
+  const newSwingTx = {
+    txId: `swing-${swingSegment}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    team: winnerTeam.name,
+    type: 'swing_winner',
+    player: winnerTeam.owner,
+    fee: 0,
+    amount: pot,
+    segment: swingSegment,
+    date: new Date().toLocaleDateString(),
+    timestamp: Date.now(),
+    status: 'completed',
+    tournamentIndex: lastSegTourney?.idx ?? undefined,
+    note: swingSegment + ' winner pot (auto-awarded)',
+  };
+
+  const updatedTeams = teams.map(t =>
+    t.id === winnerId
+      ? { ...t, earnings: (t.earnings || 0) + pot }
+      : t
+  );
+
+  return {
+    updatedTeams,
+    updatedTransactions: [...transactions, newSwingTx],
+    summary: `${swingSegment} complete — $${pot.toLocaleString()} to ${winnerTeam.name}`,
+  };
+};
+
 // Compute a team's effective current roster. Mirrors the same logic used by
 // AddDropPlayerModal (lines 195-203 in /mnt/project) and RostersView's
 // useRoster hook so the three views agree on roster contents.
@@ -726,16 +816,37 @@ export const AdminView = ({
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
       const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
       if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
-      updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
+
+      // ── Auto-award swing winner if this was the final event in its swing ──
+      // After marking the tournament complete, see if every other tournament
+      // in this swing is also complete. If so, the swing is over — award
+      // the pot now instead of requiring a separate manual click. The
+      // manual button still exists in the Award Swing Winner panel as a
+      // backup for re-awarding after corrections.
+      const swingSegment = getTournamentSegment(newT[ti]);
+      const autoAward = maybeAutoAwardSwing(swingSegment, newT, newTeams, transactions);
+      const finalTeams       = autoAward?.updatedTeams        || newTeams;
+      const finalTransactions = autoAward?.updatedTransactions || transactions;
+
+      updateTeams(finalTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
+      if (autoAward) {
+        setTransactions(finalTransactions);
+        sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, finalTransactions).catch(() => {});
+      }
       // Persistence (localStorage + dedicated Firestore collections) handled by the
       // updaters above. The sfglDataApi writes below are belt-and-suspenders backups
       // to the key-value fallback path that useLeague's cascade loader checks.
       sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
+
       dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
+      if (autoAward) {
+        dialog.showToast('🏆 ' + autoAward.summary, 'success');
+      }
+
       // Send results email to all managers
       try {
-        const teamResultsForEmail = newTeams.filter(t => resultsData.teams[t.id]).map(t => ({
+        const teamResultsForEmail = finalTeams.filter(t => resultsData.teams[t.id]).map(t => ({
           team: t.name,
           totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
         }));
@@ -1013,6 +1124,23 @@ export const AdminView = ({
           finalTeams = newTeams;
           finalTransactions = transactions;
           swingRecalcSummary = '(swing recalc skipped — see console)';
+        }
+      } else {
+        // No prior swing_winner tx — but the reprocess may have just made
+        // this the FINAL completed event in its swing (or fixed up the
+        // results that were missing the last time the swing tried to
+        // auto-award). Run the same conditions check that handleManualEntry
+        // does and award if applicable.
+        try {
+          const autoAward = maybeAutoAwardSwing(tSegment, newT, finalTeams, finalTransactions);
+          if (autoAward) {
+            finalTeams        = autoAward.updatedTeams;
+            finalTransactions = autoAward.updatedTransactions;
+            swingRecalcSummary = autoAward.summary;
+          }
+        } catch (awardErr) {
+          console.error('[handleReprocess] Auto-award failed:', awardErr);
+          swingRecalcSummary = '(swing auto-award skipped — see console)';
         }
       }
 
