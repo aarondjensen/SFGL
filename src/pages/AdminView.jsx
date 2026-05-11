@@ -86,6 +86,46 @@ const matchPlayerName = (a, b) => {
   return false;
 };
 
+// Compute the fee pot for a swing.
+//
+// **Single source of truth for pot calculations** — every UI that shows a
+// swing pot (the dropdown options, the leader panel, handleSwingWinner's
+// final award, the swing cascade in handleReprocess) routes through this.
+// Without a shared helper, each call site filtered transactions differently
+// and produced different numbers for the same swing (most recently: $17 in
+// the Admin dropdown vs $19 in TransactionsView, off by Truist's two $1 fees
+// because the dropdown only checked tx.segment string and the SwingWinner
+// handler required tournaments to have computed results).
+//
+// Logic:
+// - Include any transaction with fee > 0
+// - Skip 'failed' (blocked waiver) and 'swing_winner' (pot payout, not contribution)
+// - Match a transaction to a swing by tournamentIndex (preferred — derived
+//   from the tournament's segment), falling back to tx.segment string for
+//   legacy transactions that don't have tournamentIndex stored.
+// - Crucially does NOT require the tournament to be completed or have
+//   results — fees are collected at transaction time, independent of
+//   tournament outcomes.
+const computeSwingPot = (transactions, tournaments, swingSegment) => {
+  if (!swingSegment) return 0;
+  const swingIndexes = new Set(
+    (tournaments || [])
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => getSegmentForTournament(t) === swingSegment)
+      .map(({ i }) => i)
+  );
+  return (transactions || [])
+    .filter(tx => {
+      if ((tx.fee || 0) <= 0) return false;
+      if (tx.status === 'failed') return false;
+      if (tx.type === 'swing_winner') return false;
+      return tx.tournamentIndex !== undefined
+        ? swingIndexes.has(tx.tournamentIndex)
+        : tx.segment === swingSegment;
+    })
+    .reduce((sum, tx) => sum + (tx.fee || 0), 0);
+};
+
 // Compute a team's effective current roster. Mirrors the same logic used by
 // AddDropPlayerModal (lines 195-203 in /mnt/project) and RostersView's
 // useRoster hook so the three views agree on roster contents.
@@ -904,10 +944,12 @@ export const AdminView = ({
             );
           }
 
-          // 2. Recompute swing standings against the NEW tournament results (newT)
-          const segmentTournaments = newT.filter(tt => tt.completed && getTournamentSegment(tt) === tSegment && tt.results?.teams);
+          // 2. Recompute swing standings against the NEW tournament results (newT).
+          // Ranking requires results; pot calc uses the canonical helper
+          // (works across all tournaments in the swing regardless of results).
+          const rankedSegmentTournaments = newT.filter(tt => tt.completed && getTournamentSegment(tt) === tSegment && tt.results?.teams);
           const byTeam = {};
-          segmentTournaments.forEach(tt => {
+          rankedSegmentTournaments.forEach(tt => {
             Object.entries(tt.results.teams).forEach(([id, tr]) => {
               byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
             });
@@ -918,23 +960,14 @@ export const AdminView = ({
             const [winnerId] = winnerEntry;
             const newWinnerTeam = finalTeams.find(t => t.id === winnerId);
 
-            // 3. Recompute pot from fee transactions across the segment.
-            const segmentIndexes = new Set(segmentTournaments.map(tt => newT.indexOf(tt)));
-            const newPot = transactions
-              .filter(tx => {
-                if ((tx.fee || 0) <= 0) return false;
-                if (tx.status === 'failed') return false;
-                if (tx.type === 'swing_winner') return false;
-                return tx.tournamentIndex !== undefined
-                  ? segmentIndexes.has(tx.tournamentIndex)
-                  : tx.segment === tSegment;
-              })
-              .reduce((sum, tx) => sum + tx.fee, 0);
+            // 3. Recompute pot via the canonical helper — matches what the
+            // dropdown, leader panel, and TransactionsView all display.
+            const newPot = computeSwingPot(transactions, newT, tSegment);
 
             // 4. Drop the old swing_winner tx, append the new one.
-            // Includes txId + timestamp to match the shape that
-            // TransactionsView and the Firebase sync code expect.
-            const lastSegTourney = segmentTournaments.reduce((last, tt) => {
+            // Tag tournamentIndex to the last ranked tournament so the tx
+            // sorts naturally with other transactions in TransactionsView.
+            const lastSegTourney = rankedSegmentTournaments.reduce((last, tt) => {
               const idx = newT.indexOf(tt);
               return idx > (last?.idx ?? -1) ? { t: tt, idx } : last;
             }, null);
@@ -1224,33 +1257,29 @@ export const AdminView = ({
   const handleSwingWinner = async () => {
     if (!swingAwardSeg) return;
 
-    // Sum all transaction fees for this swing using tournamentIndex range,
-    // matching the same logic as TransactionsView's fee counter.
-    const swingTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
-    if (!swingTournaments.length) {
-      dialog.showToast('No completed results found for ' + swingAwardSeg, 'error');
-      return;
-    }
-    const swingIndexes = new Set(swingTournaments.map(t => tournaments.indexOf(t)));
-    const pot = transactions
-      .filter(tx => {
-        if ((tx.fee || 0) <= 0) return false;
-        if (tx.status === 'failed') return false;
-        if (tx.type === 'swing_winner') return false;
-        // Match by tournamentIndex if available, fall back to segment string
-        return tx.tournamentIndex !== undefined
-          ? swingIndexes.has(tx.tournamentIndex)
-          : tx.segment === swingAwardSeg;
-      })
-      .reduce((sum, tx) => sum + tx.fee, 0);
+    // ── Pot calculation ──
+    // Use the canonical computeSwingPot helper so the displayed pot here
+    // matches the dropdown, the leader panel, and TransactionsView. Fees
+    // count regardless of whether their tournaments have computed results
+    // (fees are collected at transaction time, not result time).
+    const pot = computeSwingPot(transactions, tournaments, swingAwardSeg);
 
     if (pot === 0) {
       dialog.showToast('No fees collected for ' + swingAwardSeg, 'error');
       return;
     }
 
+    // ── Winner determination ──
+    // For ranking we DO need tournament results — can't rank teams by
+    // earnings without earnings data. Different filter than the pot calc.
+    const rankedTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
+    if (!rankedTournaments.length) {
+      dialog.showToast('No completed results found for ' + swingAwardSeg + '. Reprocess at least one tournament first.', 'error');
+      return;
+    }
+
     const byTeam = {};
-    swingTournaments.forEach(t => {
+    rankedTournaments.forEach(t => {
       Object.entries(t.results.teams).forEach(([id, tr]) => {
         byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
       });
@@ -1258,7 +1287,8 @@ export const AdminView = ({
 
     // Debug: log what we found so issues are visible in console
     console.log('[SwingWinner] Swing:', swingAwardSeg);
-    console.log('[SwingWinner] Tournaments found:', swingTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
+    console.log('[SwingWinner] Pot ($):', pot);
+    console.log('[SwingWinner] Tournaments used for ranking:', rankedTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
     console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
 
     const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
@@ -1271,7 +1301,7 @@ export const AdminView = ({
     const ok = await dialog.showConfirm('Award Swing Winner', msg, { confirmText: 'Award $' + pot.toLocaleString() });
     if (!ok) return;
 
-    const lastSwingTournament = swingTournaments.reduce((last, t) => {
+    const lastSwingTournament = rankedTournaments.reduce((last, t) => {
       const idx = tournaments.indexOf(t);
       return idx > (last?.idx ?? -1) ? { t, idx } : last;
     }, null);
@@ -1764,7 +1794,7 @@ export const AdminView = ({
         <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
           <option value="">Select swing...</option>
           {SWINGS.map(s => {
-            const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+            const pot = computeSwingPot(transactions, tournaments, s);
             const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
             return (
               <option key={s} value={s} disabled={alreadyAwarded}>
@@ -1774,7 +1804,7 @@ export const AdminView = ({
           })}
         </select>
         {swingAwardSeg && (() => {
-          const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+          const pot = computeSwingPot(transactions, tournaments, swingAwardSeg);
           const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
           const byTeam = {};
           swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
