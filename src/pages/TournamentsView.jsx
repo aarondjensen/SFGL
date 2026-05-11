@@ -277,13 +277,30 @@ export const TournamentsView = ({
       .filter(tt => tt.result)
       .sort((a, b) => (b.result.totalEarnings || 0) - (a.result.totalEarnings || 0));
 
+    // Surface empty/sparse results explicitly instead of rendering a zero-row
+    // container. After a botched reprocess, results.teams can come back empty
+    // — without this message the user just sees a blank gap and can't tell
+    // whether the data is missing or whether the panel failed to load.
+    if (rankedTeams.length === 0) {
+      return (
+        <div style={{ ...theme.emptyState, padding: '14px 14px' }}>
+          No team results recorded for this tournament. Reprocess it from the Commish tab to populate.
+        </div>
+      );
+    }
+
     return (
       <div>
         {rankedTeams.map((team, rank) => {
           const tr = team.result;
-          const players = (tr.players || [])
-            .map(p => enrich(p, tIdx))
-            .sort((a, b) => (b.earnings || 0) - (a.earnings || 0));
+          // Player list may be empty (e.g. if processTournamentData skipped a
+          // team for having no lineup). Still render the team row so totals
+          // are visible — just skip the per-player grid in that case.
+          const players = Array.isArray(tr.players) && tr.players.length > 0
+            ? tr.players
+                .map(p => enrich(p, tIdx))
+                .sort((a, b) => (b.earnings || 0) - (a.earnings || 0))
+            : [];
           return (
             <div key={team.id}
               style={{
@@ -312,7 +329,13 @@ export const TournamentsView = ({
                   ${(tr.totalEarnings || 0).toLocaleString()}
                 </span>
               </div>
-              <PlayerSlotGrid players={players} showEarnings />
+              {players.length > 0 ? (
+                <PlayerSlotGrid players={players} showEarnings />
+              ) : (
+                <div style={{ fontSize: fontSize.sm, color: colors.textMuted, padding: '4px 0 6px 24px', fontStyle: 'italic' }}>
+                  No lineup recorded for this team
+                </div>
+              )}
             </div>
           );
         })}

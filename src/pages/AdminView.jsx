@@ -607,9 +607,21 @@ export const AdminView = ({
         .map(p => `${p.name}, ${p.earnings}`)
         .join('\n');
 
-      // Only keep leaders who were actually in an SFGL starting lineup —
-      // same rule as the manual dropdown. Filter against current team lineups.
-      const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
+      // Only keep leaders who were actually in an SFGL starting lineup.
+      // For active tournaments, that's team.lineup. For already-completed
+      // ones, team.lineup is cleared by processing — so fall back to the
+      // lineups the commish has set in the Team Lineups editor, then to the
+      // saved tournament fullLineups, so refreshing PGA data on an old
+      // tournament doesn't strip all the round leaders.
+      const tCurrent = tournaments.find(tt => tt.name === selectedTourney);
+      const lineupNamesFromManualEntry = new Set(Object.values(manualEntry.teamLineups || {}).flat());
+      const lineupNamesFromHistory = new Set(Object.values(tCurrent?.results?.fullLineups || {}).flat());
+      const lineupNamesFromLive = new Set(teams.flatMap(t => t.lineup || []));
+      const startedPlayers = new Set([
+        ...lineupNamesFromLive,
+        ...lineupNamesFromManualEntry,
+        ...lineupNamesFromHistory,
+      ]);
       const filterToStarted = (names) => {
         if (!names?.length) return [''];
         const filtered = names.filter(n => startedPlayers.has(n));
@@ -710,22 +722,41 @@ export const AdminView = ({
     if (!tournament?.completed) { dialog.showToast('Tournament is not yet completed', 'error'); return; }
     const ti = tournaments.findIndex(t => t.name === selectedTourney);
 
+    // Count teams without a usable lineup. Teams either need an entry in
+    // manualEntry.teamLineups (set via the Team Lineups editor) or in
+    // oldResults.fullLineups (carried over from the original processing).
+    // Without one of these, the team will score $0 for this tournament.
+    const oldResultsForCheck = tournament.results;
+    const teamsMissingLineups = teams.filter(team => {
+      const fromEditor = manualEntry.teamLineups?.[team.id];
+      const fromOldResults = oldResultsForCheck?.fullLineups?.[team.id];
+      const lineup = (fromEditor && fromEditor.length > 0)
+        ? fromEditor
+        : (fromOldResults && fromOldResults.length > 0)
+          ? fromOldResults
+          : [];
+      return lineup.length === 0;
+    });
+
     // Will reprocessing this tournament cascade into a swing-winner change?
-    // It does whenever a swing_winner tx already exists for this tournament's
-    // segment — meaning the swing was awarded, and recalculated earnings
-    // could shift the winner. The user is told before they confirm.
     const tSegment = getTournamentSegment(tournament);
     const existingSwingTx = transactions.find(tx => tx.type === 'swing_winner' && tx.segment === tSegment);
     const swingCascade = !!existingSwingTx;
 
-    const confirmMsg = swingCascade
+    // Build confirm message — lead with the lineup warning if any teams
+    // are missing entries, so the commish sees it before committing.
+    const lineupWarning = teamsMissingLineups.length > 0
+      ? `⚠ ${teamsMissingLineups.length} team${teamsMissingLineups.length === 1 ? '' : 's'} ${teamsMissingLineups.length === 1 ? 'has' : 'have'} no lineup set (${teamsMissingLineups.map(t => t.name).join(', ')}) — ${teamsMissingLineups.length === 1 ? 'it' : 'they'} will score $0 for this tournament.\n\n`
+      : '';
+
+    const confirmMsg = lineupWarning + (swingCascade
       ? 'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.\n\nThe ' + tSegment + ' swing winner ($' + (existingSwingTx.amount || 0).toLocaleString() + ' to ' + existingSwingTx.team + ') will be automatically recalculated and re-awarded based on the new totals.'
-      : 'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.';
+      : 'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.');
 
     const ok = await dialog.showConfirm(
       'Reprocess Tournament',
       confirmMsg,
-      { confirmText: 'Reprocess' }
+      { confirmText: 'Reprocess', type: teamsMissingLineups.length > 0 ? 'warning' : undefined }
     );
     if (!ok) return;
 
@@ -798,6 +829,35 @@ export const AdminView = ({
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));
       const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions);
+
+      // ── Diagnostic logging ──
+      // If a reprocess produces unexpected results (empty team standings,
+      // missing detail rows), the console output here is the fastest path
+      // to seeing what actually happened. Each line corresponds to one
+      // logical step of the pipeline.
+      console.log('[handleReprocess] selectedTourney:', selectedTourney);
+      console.log('[handleReprocess] manualEntry.teamLineups:',
+        Object.fromEntries(Object.entries(manualEntry.teamLineups || {}).map(([k, v]) => {
+          const t = teams.find(tt => tt.id === k);
+          return [t?.name || k, v];
+        }))
+      );
+      console.log('[handleReprocess] reversedTeams lineups:',
+        reversedTeams.map(t => ({ name: t.name, lineup: t.lineup || [] }))
+      );
+      console.log('[handleReprocess] earningsMap entries:', earningsMap.size);
+      console.log('[handleReprocess] resultsData.teams keys:',
+        Object.keys(resultsData.teams || {}).map(id => {
+          const t = teams.find(tt => tt.id === id);
+          return t?.name || id;
+        })
+      );
+      console.log('[handleReprocess] resultsData.fullLineups keys:',
+        Object.keys(resultsData.fullLineups || {}).map(id => {
+          const t = teams.find(tt => tt.id === id);
+          return t?.name || id;
+        })
+      );
 
       // Mark tournament with new results (keep completed, don't change playing)
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
