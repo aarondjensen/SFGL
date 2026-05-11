@@ -86,17 +86,35 @@ const matchPlayerName = (a, b) => {
   return false;
 };
 
-const getRosterForTournament = (team, tournamentIndex, allTransactions) => {
-  // Defensive: team.roster can be undefined for newly-added teams that
-  // haven't been initialised, and allTransactions can be undefined on
-  // very early renders before useLeague has finished loading.
-  let roster = [...(team?.roster || [])];
+// Compute a team's effective current roster — uses team.roster as the
+// baseline (which is the persisted live roster) and idempotently re-applies
+// all processed transactions for that team to catch any that haven't synced
+// into team.roster yet. In the happy path where data is in sync, each
+// transaction is a no-op (drop of an already-gone player, add of an
+// already-present player). When team.roster lags the transaction log —
+// which happens during live waiver processing — this picks up the changes
+// the same way RostersView's useRoster hook does.
+//
+// Replaces the older getRosterForTournament helper which tried to compute
+// "roster as of tournament X" by applying past transactions on top of the
+// current roster. That helper was never actually called and its logic was
+// inverted (rolling forward from current = double-applying changes); it's
+// removed entirely now.
+const getEffectiveRoster = (team, allTransactions) => {
+  if (!team) return [];
+  let roster = [...(team.roster || [])];
   (allTransactions || [])
-    .filter(tx => tx.team === team?.name && tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex && tx.status !== 'pending')
-    .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
+    .filter(tx => tx.team === team.name && tx.status !== 'pending')
+    .sort((a, b) => (a.tournamentIndex ?? 0) - (b.tournamentIndex ?? 0))
     .forEach(tx => {
-      if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
-      if (tx.player && !roster.some(p => p.name === tx.player)) roster.push({ name: tx.player });
+      // Drops first, then adds — handles add-then-drop and drop-then-readd
+      // sequences correctly when applied in tournament order.
+      if (tx.droppedPlayer) {
+        roster = roster.filter(p => p.name !== tx.droppedPlayer);
+      }
+      if (tx.player && !roster.some(p => p.name === tx.player)) {
+        roster.push({ name: tx.player, limited: !!tx.limited });
+      }
     });
   return roster;
 };
@@ -134,7 +152,6 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
     };
   });
 
-  const tournamentIndex = -1; // used only for getRosterForTournament; -1 = ignore tx filtering
   const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders: tournamentData.roundLeaders || {}, fullLineups: {} };
 
   const newTeams = teams.map(team => {
@@ -475,38 +492,28 @@ export const AdminView = ({
   const [pgaFetching, setPgaFetching] = useState(false);
   const dialog = useDialog();
 
-  // ── Roster snapshot for the selected tournament ──
-  // RostersView shows a "live" roster derived from team.roster + processed
-  // transactions (via the useRoster hook). team.roster itself can lag behind
-  // the transaction log — adds/drops show in transactions immediately but
-  // may not have been folded into team.roster yet. The lineup editor needs
-  // the same effective roster, otherwise newly-added players are invisible
-  // in the dropdowns even though RostersView shows them.
-  //
-  // Uses the module-level getRosterForTournament helper, which already
-  // applies all processed transactions up to (and including) the tournament
-  // index. Falls back to team.roster directly when no tournament is selected.
+  // ── Effective roster snapshot ──
+  // The lineup editor needs the same roster RostersView shows — current
+  // team.roster augmented by any processed transactions that haven't synced
+  // back into team.roster yet. Without this, players added via waivers
+  // mid-week are invisible in the lineup dropdowns even though RostersView
+  // displays them. See getEffectiveRoster's comment for details.
   const rostersByTeamIdForSelectedTourney = useMemo(() => {
     const map = {};
     const safeTeams = Array.isArray(teams) ? teams : [];
     const safeTx    = Array.isArray(transactions) ? transactions : [];
-    const safeTours = Array.isArray(tournaments) ? tournaments : [];
-    const tIdx = selectedTourney ? safeTours.findIndex(t => t.name === selectedTourney) : -1;
     safeTeams.forEach(t => {
       if (!t || !t.id) return;
       try {
-        map[t.id] = tIdx >= 0
-          ? getRosterForTournament(t, tIdx, safeTx)
-          : (t.roster || []);
+        map[t.id] = getEffectiveRoster(t, safeTx);
       } catch (err) {
         // Catch keeps a single bad team from crashing the whole editor.
-        // Falls back to the team's raw roster as a last resort.
         console.warn('[AdminView] roster snapshot failed for', t.name, err);
         map[t.id] = t.roster || [];
       }
     });
     return map;
-  }, [teams, transactions, tournaments, selectedTourney]);
+  }, [teams, transactions]);
 
   React.useEffect(() => {
     const active = tournaments.find(t => t.playing);
