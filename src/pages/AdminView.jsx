@@ -87,9 +87,12 @@ const matchPlayerName = (a, b) => {
 };
 
 const getRosterForTournament = (team, tournamentIndex, allTransactions) => {
-  let roster = [...team.roster];
-  allTransactions
-    .filter(tx => tx.team === team.name && tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex && tx.status !== 'pending')
+  // Defensive: team.roster can be undefined for newly-added teams that
+  // haven't been initialised, and allTransactions can be undefined on
+  // very early renders before useLeague has finished loading.
+  let roster = [...(team?.roster || [])];
+  (allTransactions || [])
+    .filter(tx => tx.team === team?.name && tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex && tx.status !== 'pending')
     .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
     .forEach(tx => {
       if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
@@ -485,11 +488,22 @@ export const AdminView = ({
   // index. Falls back to team.roster directly when no tournament is selected.
   const rostersByTeamIdForSelectedTourney = useMemo(() => {
     const map = {};
-    const tIdx = selectedTourney ? tournaments.findIndex(t => t.name === selectedTourney) : -1;
-    teams.forEach(t => {
-      map[t.id] = tIdx >= 0
-        ? getRosterForTournament(t, tIdx, transactions)
-        : (t.roster || []);
+    const safeTeams = Array.isArray(teams) ? teams : [];
+    const safeTx    = Array.isArray(transactions) ? transactions : [];
+    const safeTours = Array.isArray(tournaments) ? tournaments : [];
+    const tIdx = selectedTourney ? safeTours.findIndex(t => t.name === selectedTourney) : -1;
+    safeTeams.forEach(t => {
+      if (!t || !t.id) return;
+      try {
+        map[t.id] = tIdx >= 0
+          ? getRosterForTournament(t, tIdx, safeTx)
+          : (t.roster || []);
+      } catch (err) {
+        // Catch keeps a single bad team from crashing the whole editor.
+        // Falls back to the team's raw roster as a last resort.
+        console.warn('[AdminView] roster snapshot failed for', t.name, err);
+        map[t.id] = t.roster || [];
+      }
     });
     return map;
   }, [teams, transactions, tournaments, selectedTourney]);
