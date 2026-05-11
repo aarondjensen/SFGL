@@ -271,6 +271,170 @@ const MergePlayersPanel = ({
   );
 };
 
+// ── TeamLineupsEditor ──────────────────────────────────────────────────────
+// Inline editor for the selected tournament's team lineups. Used during both
+// manual processing (first time the tournament is scored) and reprocessing
+// (correcting an already-completed tournament). Edits flow directly into
+// `manualEntry.teamLineups` which both handlers already consume.
+//
+// Roster pool per team = union of current roster + names already in the
+// saved lineup. This preserves edit access to players who were rostered
+// during the tournament but have since been dropped — without this, editing
+// an old lineup would silently lose any player no longer on the active
+// roster.
+//
+// Lives at module level (not inside the AdminView render) so internal state
+// — and the dropdown elements — don't remount and lose focus between
+// keystrokes when the parent re-renders.
+const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, S }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const updateTeamLineup = (teamId, slotIndex, playerName) => {
+    setManualEntry(prev => {
+      const current = prev.teamLineups?.[teamId] || [];
+      // Pad to lineupSize so partial lineups don't collapse when editing slot N
+      const next = [...current];
+      while (next.length < lineupSize) next.push('');
+      next[slotIndex] = playerName;
+      // Filter out empties for storage, keeping the array compact for downstream code
+      const compact = next.filter(n => n);
+      return { ...prev, teamLineups: { ...(prev.teamLineups || {}), [teamId]: compact } };
+    });
+  };
+
+  // Summary stats for the collapsed header — at a glance, the commish should
+  // see how many teams are missing or partial lineups before expanding.
+  const summary = teams.reduce((acc, t) => {
+    const lu = manualEntry.teamLineups?.[t.id] || [];
+    if (lu.length === 0) acc.missing++;
+    else if (lu.length < lineupSize) acc.partial++;
+    else acc.complete++;
+    return acc;
+  }, { missing: 0, partial: 0, complete: 0 });
+
+  return (
+    <div style={{ marginBottom: 14, border: `1px solid ${colors.borderSubtle}`, borderRadius: 4, overflow: 'hidden' }}>
+      {/* Header — tap to toggle expanded */}
+      <button
+        type="button"
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          width: '100%', padding: '10px 14px',
+          background: 'rgba(255,255,255,0.03)',
+          border: 'none', borderBottom: expanded ? `1px solid ${colors.borderSubtle}` : 'none',
+          cursor: 'pointer', textAlign: 'left',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+          fontFamily: fonts.sans,
+        }}
+      >
+        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: colors.textPrimary }}>
+          👥 Team Lineups
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 10, color: summary.missing > 0 ? colors.warning : colors.textMuted, letterSpacing: 0.5 }}>
+            {summary.complete}/{teams.length} set
+            {summary.missing > 0 && <span style={{ marginLeft: 6, color: colors.warning }}>· {summary.missing} missing</span>}
+            {summary.partial > 0 && <span style={{ marginLeft: 6, color: colors.textGoldDim }}>· {summary.partial} partial</span>}
+          </span>
+          <span style={{ fontSize: 12, color: colors.textMuted, transition: 'transform 0.15s', display: 'inline-block', transform: expanded ? 'rotate(90deg)' : 'none' }}>▸</span>
+        </span>
+      </button>
+
+      {/* Expanded panel — one row per team */}
+      {expanded && (
+        <div style={{ padding: '8px 12px 12px', background: 'rgba(0,0,0,0.12)' }}>
+          {teams.map(team => {
+            const lineup = manualEntry.teamLineups?.[team.id] || [];
+            // Roster pool: current roster + any saved-lineup names not in roster,
+            // so dropping a player doesn't strip them from a historical lineup edit.
+            const rosterNames = (team.roster || []).map(p => p.name);
+            const extras = lineup.filter(n => n && !rosterNames.includes(n));
+            const pool = [...rosterNames, ...extras].sort((a, b) => a.localeCompare(b));
+
+            // Track currently-picked names so the same player can't be picked twice
+            const picked = new Set(lineup.filter(n => n));
+
+            const isComplete = lineup.length === lineupSize;
+            const isEmpty = lineup.length === 0;
+
+            return (
+              <div key={team.id}
+                style={{
+                  padding: '8px 10px', marginBottom: 6,
+                  background: isEmpty ? 'rgba(200,80,80,0.06)' : isComplete ? 'rgba(80,180,120,0.04)' : 'rgba(220,180,80,0.05)',
+                  border: `1px solid ${isEmpty ? 'rgba(200,80,80,0.25)' : isComplete ? 'rgba(80,180,120,0.18)' : 'rgba(220,180,80,0.2)'}`,
+                  borderRadius: 3,
+                }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>
+                    {team.name}
+                  </span>
+                  <span style={{
+                    fontFamily: fonts.sans, fontSize: 9, letterSpacing: 1, textTransform: 'uppercase',
+                    color: isEmpty ? colors.warning : isComplete ? colors.earningsGreen : colors.textGoldDim,
+                  }}>
+                    {isEmpty ? 'No lineup' : `${lineup.length}/${lineupSize}`}
+                  </span>
+                </div>
+
+                {/* Lineup slot dropdowns — one per lineupSize slot.
+                    Slot value pulls from lineup[i]; '' if not set. */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 6 }}>
+                  {Array.from({ length: lineupSize }).map((_, slot) => {
+                    const currentValue = lineup[slot] || '';
+                    return (
+                      <select
+                        key={slot}
+                        value={currentValue}
+                        onChange={e => updateTeamLineup(team.id, slot, e.target.value)}
+                        style={{ ...S.select, marginBottom: 0, padding: '6px 8px', fontSize: 12 }}
+                      >
+                        <option value="">— Slot {slot + 1} —</option>
+                        {pool.map(name => {
+                          const player = (team.roster || []).find(p => p.name === name);
+                          const limited = player?.limited;
+                          const offRoster = !rosterNames.includes(name);
+                          // Disable if picked elsewhere in this team's lineup (but not this slot)
+                          const pickedElsewhere = picked.has(name) && name !== currentValue;
+                          return (
+                            <option key={name} value={name} disabled={pickedElsewhere}>
+                              {limited ? '★ ' : ''}{name}{offRoster ? ' (dropped)' : ''}{pickedElsewhere ? ' — used' : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    );
+                  })}
+                </div>
+
+                {/* Quick clear button for this team */}
+                {!isEmpty && (
+                  <button
+                    type="button"
+                    onClick={() => setManualEntry(prev => ({
+                      ...prev,
+                      teamLineups: { ...(prev.teamLineups || {}), [team.id]: [] },
+                    }))}
+                    style={{
+                      marginTop: 6, padding: '3px 8px',
+                      background: 'transparent', border: `1px solid ${colors.borderSubtle}`,
+                      borderRadius: 2, color: colors.textMuted,
+                      fontFamily: fonts.sans, fontSize: 9, letterSpacing: 0.5,
+                      textTransform: 'uppercase', cursor: 'pointer',
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const AdminView = ({
   isCommissioner, setIsCommissioner, setActiveTab,
   settings, setSettings,
@@ -447,9 +611,21 @@ export const AdminView = ({
     if (!tournament?.completed) { dialog.showToast('Tournament is not yet completed', 'error'); return; }
     const ti = tournaments.findIndex(t => t.name === selectedTourney);
 
+    // Will reprocessing this tournament cascade into a swing-winner change?
+    // It does whenever a swing_winner tx already exists for this tournament's
+    // segment — meaning the swing was awarded, and recalculated earnings
+    // could shift the winner. The user is told before they confirm.
+    const tSegment = getTournamentSegment(tournament);
+    const existingSwingTx = transactions.find(tx => tx.type === 'swing_winner' && tx.segment === tSegment);
+    const swingCascade = !!existingSwingTx;
+
+    const confirmMsg = swingCascade
+      ? 'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.\n\nThe ' + tSegment + ' swing winner ($' + (existingSwingTx.amount || 0).toLocaleString() + ' to ' + existingSwingTx.team + ') will be automatically recalculated and re-awarded based on the new totals.'
+      : 'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.';
+
     const ok = await dialog.showConfirm(
       'Reprocess Tournament',
-      'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.',
+      confirmMsg,
       { confirmText: 'Reprocess' }
     );
     if (!ok) return;
@@ -527,11 +703,111 @@ export const AdminView = ({
       // Mark tournament with new results (keep completed, don't change playing)
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
 
-      updateTeams(newTeams); setGlobalPlayerStats(newStats); setTournaments(newT);
-      // Persistence handled by updaters above; sfglDataApi writes below are backups.
+      // ── Swing winner cascade ──
+      // When the segment already had its swing_winner awarded, the recalculated
+      // tournament earnings may shift the winner. Same workflow the commish
+      // would otherwise do manually: reverse old credit, recompute, re-award.
+      // All wrapped into this single Reprocess action so it's never out of sync.
+      let finalTeams = newTeams;
+      let finalTransactions = transactions;
+      let swingRecalcSummary = null;
+
+      if (swingCascade) {
+        // 1. Reverse old swing pot credit from whoever was awarded
+        const oldWinnerTeam = finalTeams.find(t => t.name === existingSwingTx.team);
+        if (oldWinnerTeam) {
+          finalTeams = finalTeams.map(t =>
+            t.id === oldWinnerTeam.id
+              ? { ...t, earnings: Math.max(0, (t.earnings || 0) - (existingSwingTx.amount || 0)) }
+              : t
+          );
+        }
+
+        // 2. Recompute swing standings against the NEW tournament results (newT)
+        const segmentTournaments = newT.filter(tt => tt.completed && getTournamentSegment(tt) === tSegment && tt.results?.teams);
+        const byTeam = {};
+        segmentTournaments.forEach(tt => {
+          Object.entries(tt.results.teams).forEach(([id, tr]) => {
+            byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
+          });
+        });
+        const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+
+        if (winnerEntry) {
+          const [winnerId, winnerEarnings] = winnerEntry;
+          const newWinnerTeam = finalTeams.find(t => t.id === winnerId);
+
+          // 3. Recompute pot from fee transactions across the segment.
+          // Pot is fee-driven, not earnings-driven, so it normally matches the
+          // old pot. We recompute defensively in case fees changed.
+          const segmentIndexes = new Set(segmentTournaments.map(tt => newT.indexOf(tt)));
+          const newPot = transactions
+            .filter(tx => {
+              if ((tx.fee || 0) <= 0) return false;
+              if (tx.status === 'failed') return false;
+              if (tx.type === 'swing_winner') return false;
+              return tx.tournamentIndex !== undefined
+                ? segmentIndexes.has(tx.tournamentIndex)
+                : tx.segment === tSegment;
+            })
+            .reduce((sum, tx) => sum + tx.fee, 0);
+
+          // 4. Drop the old swing_winner tx, append the new one
+          const lastSegTourney = segmentTournaments.reduce((last, tt) => {
+            const idx = newT.indexOf(tt);
+            return idx > (last?.idx ?? -1) ? { t: tt, idx } : last;
+          }, null);
+
+          const newSwingTx = {
+            team: newWinnerTeam?.name || existingSwingTx.team,
+            type: 'swing_winner',
+            player: newWinnerTeam?.owner || existingSwingTx.player,
+            fee: 0,
+            amount: newPot,
+            segment: tSegment,
+            date: new Date().toLocaleDateString(),
+            status: 'completed',
+            tournamentIndex: lastSegTourney?.idx ?? existingSwingTx.tournamentIndex,
+            note: tSegment + ' winner pot (auto-recalculated)',
+          };
+          finalTransactions = transactions
+            .filter(tx => !(tx.type === 'swing_winner' && tx.segment === tSegment))
+            .concat(newSwingTx);
+
+          // 5. Credit the new winner with the (re)computed pot
+          if (newWinnerTeam) {
+            finalTeams = finalTeams.map(t =>
+              t.id === winnerId
+                ? { ...t, earnings: (t.earnings || 0) + newPot }
+                : t
+            );
+          }
+
+          // For the toast — surface whether the winner actually changed
+          const sameWinner = newWinnerTeam?.name === existingSwingTx.team;
+          swingRecalcSummary = sameWinner
+            ? `${tSegment}: ${newWinnerTeam.name} retains $${newPot.toLocaleString()}`
+            : `${tSegment}: ${existingSwingTx.team} → ${newWinnerTeam?.name} ($${newPot.toLocaleString()})`;
+        }
+      }
+
+      // Persist everything atomically. updateTeams is the writer; the
+      // sfglDataApi writes below are belt-and-suspenders backups.
+      updateTeams(finalTeams);
+      setGlobalPlayerStats(newStats);
+      setTournaments(newT);
+      if (finalTransactions !== transactions) {
+        setTransactions(finalTransactions);
+        sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, finalTransactions).catch(() => {});
+      }
       sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
-      dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
+      dialog.showToast(
+        swingRecalcSummary
+          ? '✓ Reprocessed ' + selectedTourney + ' · ' + swingRecalcSummary
+          : '✓ Reprocessed ' + selectedTourney + ' with corrected earnings',
+        'success'
+      );
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
       console.error('handleReprocess error:', err);
@@ -1084,6 +1360,28 @@ export const AdminView = ({
               <RoundLeaderSelect label="R2 Leader" round={2} leaders={manualEntry.round2Leaders} onChange={r => setManualEntry({ ...manualEntry, round2Leaders: r })} />
               <RoundLeaderSelect label="R3 Leader" round={3} leaders={manualEntry.round3Leaders} onChange={r => setManualEntry({ ...manualEntry, round3Leaders: r })} />
             </div>
+
+            {/* ── Team Lineups editor ──
+                Lets the commish set or correct each team's lineup for the
+                selected tournament before (re)processing. Edits flow into
+                manualEntry.teamLineups, which both handleManualEntry and
+                handleReprocess already consume — no new persistence wiring
+                needed. Roster pool is the union of each team's current
+                roster + any names already saved in the lineup, so legacy
+                tournaments don't lose previously-rostered players that have
+                since been dropped. Collapsed by default to keep the panel
+                compact; expand to edit.
+                Once edits are made + Reprocess is run, the new lineups are
+                used to compute earnings. If the swing is affected, manually
+                reverse the old swing_winner transaction in the Transactions
+                tab and re-run "Award Swing Winner" to redistribute the pot. */}
+            <TeamLineupsEditor
+              teams={teams}
+              manualEntry={manualEntry}
+              setManualEntry={setManualEntry}
+              lineupSize={settings?.lineupSize ?? 5}
+              S={S}
+            />
 
             {/* Process / Reprocess */}
             {!tournaments.find(t => t.name === selectedTourney)?.completed ? (
