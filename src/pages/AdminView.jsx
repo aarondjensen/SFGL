@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, normalizePlayerName } from '../utils';
 import { DraftModal } from './DraftModal';
@@ -286,7 +286,7 @@ const MergePlayersPanel = ({
 // Lives at module level (not inside the AdminView render) so internal state
 // — and the dropdown elements — don't remount and lose focus between
 // keystrokes when the parent re-renders.
-const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, S }) => {
+const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, rostersByTeamId, S }) => {
   const [expanded, setExpanded] = useState(false);
 
   const updateTeamLineup = (teamId, slotIndex, playerName) => {
@@ -345,9 +345,14 @@ const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, S }
         <div style={{ padding: '8px 12px 12px', background: 'rgba(0,0,0,0.12)' }}>
           {teams.map(team => {
             const lineup = manualEntry.teamLineups?.[team.id] || [];
-            // Roster pool: current roster + any saved-lineup names not in roster,
-            // so dropping a player doesn't strip them from a historical lineup edit.
-            const rosterNames = (team.roster || []).map(p => p.name);
+            // Effective roster — transactions-aware snapshot of the team's
+            // roster as of the selected tournament. Falls back to team.roster
+            // if the caller didn't supply a precomputed map (defensive).
+            const effectiveRoster = rostersByTeamId?.[team.id] || team.roster || [];
+            const rosterNames = effectiveRoster.map(p => p.name);
+            // Roster pool: effective roster + any lineup names that aren't in
+            // it, so editing a saved lineup doesn't drop legacy players (e.g.
+            // someone rostered for the tournament but dropped after).
             const extras = lineup.filter(n => n && !rosterNames.includes(n));
             const pool = [...rosterNames, ...extras].sort((a, b) => a.localeCompare(b));
 
@@ -391,7 +396,12 @@ const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, S }
                       >
                         <option value="">— Slot {slot + 1} —</option>
                         {pool.map(name => {
-                          const player = (team.roster || []).find(p => p.name === name);
+                          // limited flag may live on the effective roster
+                          // entry or on team.roster (waiver-added players
+                          // don't carry the flag through transactions, so
+                          // fall back to team.roster as a secondary lookup)
+                          const player = effectiveRoster.find(p => p.name === name)
+                            || (team.roster || []).find(p => p.name === name);
                           const limited = player?.limited;
                           const offRoster = !rosterNames.includes(name);
                           // Disable if picked elsewhere in this team's lineup (but not this slot)
@@ -461,6 +471,28 @@ export const AdminView = ({
   const [livSaving, setLivSaving] = useState({});
   const [pgaFetching, setPgaFetching] = useState(false);
   const dialog = useDialog();
+
+  // ── Roster snapshot for the selected tournament ──
+  // RostersView shows a "live" roster derived from team.roster + processed
+  // transactions (via the useRoster hook). team.roster itself can lag behind
+  // the transaction log — adds/drops show in transactions immediately but
+  // may not have been folded into team.roster yet. The lineup editor needs
+  // the same effective roster, otherwise newly-added players are invisible
+  // in the dropdowns even though RostersView shows them.
+  //
+  // Uses the module-level getRosterForTournament helper, which already
+  // applies all processed transactions up to (and including) the tournament
+  // index. Falls back to team.roster directly when no tournament is selected.
+  const rostersByTeamIdForSelectedTourney = useMemo(() => {
+    const map = {};
+    const tIdx = selectedTourney ? tournaments.findIndex(t => t.name === selectedTourney) : -1;
+    teams.forEach(t => {
+      map[t.id] = tIdx >= 0
+        ? getRosterForTournament(t, tIdx, transactions)
+        : (t.roster || []);
+    });
+    return map;
+  }, [teams, transactions, tournaments, selectedTourney]);
 
   React.useEffect(() => {
     const active = tournaments.find(t => t.playing);
@@ -1380,6 +1412,7 @@ export const AdminView = ({
               manualEntry={manualEntry}
               setManualEntry={setManualEntry}
               lineupSize={settings?.lineupSize ?? 5}
+              rostersByTeamId={rostersByTeamIdForSelectedTourney}
               S={S}
             />
 
