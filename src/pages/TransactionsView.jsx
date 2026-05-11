@@ -3,7 +3,7 @@ import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, getCurrentTournamentIndex, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { STORAGE_KEYS } from '../constants/index.js';
-import { theme, colors, fonts, fontSize, getSwingColor } from '../theme.js';
+import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 
 // shortName imported from utils (see abbreviateName)
@@ -675,23 +675,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
         {/* ── Fee summary ── */}
         <div style={theme.card}>
-          <div style={{
-            padding: '8px 14px',
-            background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
-            borderBottom: theme.cardHeader.borderBottom,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            justifyContent: 'space-between',
-          }}>
-            <span style={{
-              fontFamily: fonts.sans,
-              fontSize: fontSize.lg,
-              fontWeight: 700,
-              letterSpacing: '2px',
-              textTransform: 'uppercase',
-              color: colors.textPrimary,
-            }}>Transaction Fees</span>
+          <div style={{ ...theme.cardHeader, justifyContent: 'space-between' }}>
+            <h2 style={theme.h2}>Transaction Fees</h2>
             {teamFees[0]?.currentSwing && (() => {
               const swingColor = getSwingColor(teamFees[0].currentSwing);
               const swingPot = teamFees.reduce((sum, t) => sum + (t.swingTotal || 0), 0);
@@ -1055,25 +1040,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
         {/* ── Transaction history ── */}
         <div style={theme.card}>
-          <div style={{
-            padding: '8px 14px',
-            background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
-            borderBottom: theme.cardHeader.borderBottom,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-          }}>
+          <div style={{ ...theme.cardHeader, justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{
-                fontFamily: fonts.sans,
-                fontSize: fontSize.lg,
-                fontWeight: 700,
-                letterSpacing: '2px',
-                textTransform: 'uppercase',
-                color: colors.textPrimary,
-              }}>Transaction History</span>
+              <h2 style={{ ...theme.h2, margin: 0 }}>Transaction History</h2>
               {isCommissioner && (
                 <button
                   onClick={() => setAddTxOpen(!addTxOpen)}
@@ -1144,21 +1113,21 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   <div style={{ minWidth: 0, flex: 1 }}>
                     {/* Team name + tournament or swing name */}
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
-                      <span style={{ fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.textPrimary }}>
+                      <span style={{ fontFamily: fonts.serif, fontSize: 'clamp(13px, 1.1vw, 15px)', color: colors.textPrimary }}>
                         {tx.team}
                       </span>
                       {(() => {
                         // swing_winner: show swing name; others: show tournament name
                         if (tx.type === 'swing_winner') {
                           return tx.segment
-                            ? <span style={{ fontFamily: fonts.sans, fontSize: fontSize.md, color: 'rgba(255,255,255,0.45)' }}>{tx.segment}</span>
+                            ? <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>{tx.segment}</span>
                             : null;
                         }
                         const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
                         const name = t?.name || tx.tournament || null;
                         if (!name) return null;
                         return (
-                          <span style={{ fontFamily: fonts.sans, fontSize: fontSize.md, color: 'rgba(255,255,255,0.45)' }}>
+                          <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>
                             {name}
                           </span>
                         );
@@ -1166,13 +1135,18 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     </div>
 
                     {/* Transaction detail */}
-                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.md, color: colors.textSecondary }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 'clamp(11px, 0.9vw, 13px)', color: colors.textSecondary }}>
                       <span style={{ color: txTypeColor(tx.type) }}>{txTypeLabel(tx.type)}</span>
                       {tx.status === 'failed' && tx.type === 'waiver' && (
                         <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
                       )}
                       {': '}
-                      <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>{tx.type === 'swing_winner' ? tx.team : shortName(tx.player)}</span>
+                      <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>
+                        {tx.type === 'swing_winner'
+                          ? (tx.player ? shortName(tx.player) : tx.team)
+                          : shortName(tx.player)
+                        }
+                      </span>
                       {tx.droppedPlayer && !(tx.status === 'failed' && tx.type === 'waiver') && (
                         <>
                           <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ {tx.type === 'mulligan' ? 'out' : 'drop'}</span>
@@ -1248,24 +1222,44 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                               }
                             }
                             const statusChanged = liveTx.status !== tx.status;
+                            // FA/waiver/drop processed → roster + fee reversal
                             const isUndoPath = liveTx.status === 'processed' && !['mulligan', 'swing_winner'].includes(liveTx.type);
+                            // swing_winner with positive amount → earnings reversal
+                            const isSwingUndoPath = liveTx.type === 'swing_winner' && (liveTx.amount || 0) > 0;
 
                             const label = liveTx.type === 'mulligan'
                               ? `Delete mulligan for ${liveTx.team}?\n\n${liveTx.player} IN → ${liveTx.droppedPlayer} OUT`
-                              : liveTx.type === 'swing_winner'
-                                ? `Delete swing winner: ${liveTx.team}?`
+                              : isSwingUndoPath
+                                ? `Undo ${liveTx.segment || 'swing'} winner: ${liveTx.team}?\n\nThis will subtract $${(liveTx.amount || 0).toLocaleString()} from ${liveTx.team}'s total earnings and remove this transaction. The pot returns to "unawarded" status.`
                                 : isUndoPath
                                   ? `${statusChanged ? '⚠️ This was processed since you last refreshed.\n\n' : ''}Undo ${liveTx.type}: ${liveTx.team} added ${liveTx.player}${liveTx.droppedPlayer ? ' / dropped ' + liveTx.droppedPlayer : ''}?\n\nThis will reverse the roster change and refund the $${liveTx.fee} fee.`
                                   : `Delete ${liveTx.type} record for ${liveTx.team}: ${liveTx.player}?`;
                             const ok = await dialog.showConfirm(
-                              isUndoPath ? 'Undo Transaction' : 'Delete Transaction',
+                              (isUndoPath || isSwingUndoPath) ? 'Undo Transaction' : 'Delete Transaction',
                               label,
-                              { type: 'danger', confirmText: isUndoPath ? 'Undo' : 'Delete' },
+                              { type: 'danger', confirmText: (isUndoPath || isSwingUndoPath) ? 'Undo' : 'Delete' },
                             );
                             if (!ok) return;
                             // For processed FA/waiver/drop: full undo with roster reversal
                             if (isUndoPath) {
                               undoTransaction(liveTx, true); // skipConfirm
+                            } else if (isSwingUndoPath) {
+                              // Reverse the earnings credit on the winner team, then
+                              // delete the swing_winner tx. The pot becomes
+                              // "unawarded" again — handleSwingWinner (or the next
+                              // auto-award trigger) can re-award it later.
+                              const winnerTeam = teams.find(t => t.name === liveTx.team);
+                              if (winnerTeam) {
+                                const newTeams = teams.map(t =>
+                                  t.id === winnerTeam.id
+                                    ? { ...t, earnings: Math.max(0, (t.earnings || 0) - (liveTx.amount || 0)) }
+                                    : t
+                                );
+                                updateTeams(newTeams);
+                              }
+                              const newTx = transactions.filter(t => liveTx.id ? t.id !== liveTx.id : t !== liveTx);
+                              setTransactions(newTx);
+                              dialog.showToast(`Swing winner reversed: -$${(liveTx.amount || 0).toLocaleString()} from ${liveTx.team}`, 'success');
                             } else {
                               // Simple delete for everything else
                               const newTx = transactions.filter(t => tx.id ? t.id !== tx.id : t !== tx);

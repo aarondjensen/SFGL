@@ -1435,9 +1435,12 @@ export const AdminView = ({
     }, null);
 
     const newTx = {
+      txId: `swing-${swingAwardSeg}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team: winnerTeam.name, type: 'swing_winner', player: winnerTeam.owner,
       fee: 0, amount: pot, segment: swingAwardSeg,
-      date: new Date().toLocaleDateString(), status: 'completed',
+      date: new Date().toLocaleDateString(),
+      timestamp: Date.now(),
+      status: 'completed',
       tournamentIndex: lastSwingTournament?.idx ?? undefined,
       note: swingAwardSeg + ' winner pot',
     };

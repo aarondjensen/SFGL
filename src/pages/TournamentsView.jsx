@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Trophy, Edit2, Save, ChevronDown, ChevronRight } from 'lucide-react';
 import { useDialog } from './DialogContext';
 
-import { theme, colors, fonts, fontSize, SWINGS, getSwingColor } from '../theme.js';
+import { theme, colors, fonts, fontSize, SWINGS, getSwingColor, getSwingColorAt } from '../theme.js';
 import { getSegmentForTournament, shortName } from '../utils';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
@@ -241,10 +241,18 @@ export const TournamentsView = ({
     const isActive = tournament.playing && !tournament.completed;
     if (!isActive) return null;
 
+    // Tint the badge with the tournament's swing color so it visually
+    // reads as belonging to that swing. Falls back gracefully to the
+    // default green-tinted look when the segment can't be resolved
+    // (getSwingColorAt returns a neutral white rgba for unknown swings).
+    const segment = getSegmentForTournament(tournament);
+
     return (
       <span style={{
         ...theme.badge,
-        ...theme.badgeInProgress,
+        background: getSwingColorAt(segment, 0.15),
+        border:    `1px solid ${getSwingColorAt(segment, 0.40)}`,
+        color:      getSwingColorAt(segment, 0.90),
         // Override base badge sizing to match the original tighter inline version
         // (TournamentsView's row height is tight; the default 2px 8px padding
         // with 10px font and 1px letter-spacing is a hair too big).
