@@ -424,7 +424,7 @@ export const AdminView = ({
           team: t.name,
           totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
         }));
-        await fetch('/api/notify-results', {
+        await fetch('/api/cron?action=notify-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
@@ -536,6 +536,49 @@ export const AdminView = ({
     } catch (err) {
       console.error('handleReprocess error:', err);
       dialog.showToast('Error reprocessing: ' + err.message, 'error');
+    }
+  };
+
+  // ── Resend results email for an already-completed tournament ─────────────
+  // Used when (a) the auto-cron email failed to render properly, or (b) the
+  // commish wants to test changes to the email template without waiting for
+  // next Monday. Doesn't touch any data — only re-fires the email via the
+  // notify-results endpoint, which has no same-day lockout.
+  const handleResendResultsEmail = async () => {
+    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const t = tournaments.find(tt => tt.name === selectedTourney);
+    if (!t?.completed || !t?.results?.teams) {
+      dialog.showToast('Tournament must be completed and have results', 'error');
+      return;
+    }
+    const ok = await dialog.showConfirm(
+      'Resend Results Email',
+      `Send the ${selectedTourney} results email to all managers? This does not modify any data — only re-sends the email.`,
+      { confirmText: 'Send Email', type: 'warning' }
+    );
+    if (!ok) return;
+    try {
+      const teamResultsForEmail = teams
+        .filter(team => t.results.teams[team.id])
+        .map(team => ({
+          team: team.name,
+          totalEarnings: t.results.teams[team.id].totalEarnings || 0,
+          // Include player breakdown so the new email template can render it
+          players: (t.results.teams[team.id].players || []).map(p => ({
+            name: p.name, earnings: p.earnings || 0, limited: !!p.limited,
+          })),
+        }));
+      const resp = await fetch('/api/cron?action=notify-results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data?.error || 'Resend failed');
+      dialog.showToast(`📧 Sent to ${data.emailsSent || 0} manager${data.emailsSent === 1 ? '' : 's'}`, 'success');
+    } catch (err) {
+      console.error('handleResendResultsEmail error:', err);
+      dialog.showToast('Error: ' + err.message, 'error');
     }
   };
 
@@ -1049,10 +1092,19 @@ export const AdminView = ({
                 ✅ Process Results
               </button>
             ) : (
-              <button onClick={handleReprocess} disabled={!selectedTourney}
-                style={{ ...S.btn, background: 'rgba(220,150,50,0.12)', border: '1px solid rgba(220,150,50,0.4)', color: 'rgba(220,180,80,0.9)', ...disabledBtn(!selectedTourney) }}>
-                ✏️ Reprocess Tournament
-              </button>
+              <>
+                <button onClick={handleReprocess} disabled={!selectedTourney}
+                  style={{ ...S.btn, background: 'rgba(220,150,50,0.12)', border: '1px solid rgba(220,150,50,0.4)', color: 'rgba(220,180,80,0.9)', ...disabledBtn(!selectedTourney) }}>
+                  ✏️ Reprocess Tournament
+                </button>
+                {/* Resend the email without touching any data — useful for
+                    re-sending after a broken template render, or testing
+                    template changes without waiting for next Monday. */}
+                <button onClick={handleResendResultsEmail} disabled={!selectedTourney}
+                  style={{ ...S.btn, marginTop: 6, background: 'rgba(80,140,200,0.10)', border: '1px solid rgba(80,140,200,0.35)', color: 'rgba(150,200,255,0.9)', ...disabledBtn(!selectedTourney) }}>
+                  📧 Resend Results Email
+                </button>
+              </>
             )}
           </>
         )}
