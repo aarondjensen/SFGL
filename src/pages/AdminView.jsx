@@ -86,29 +86,41 @@ const matchPlayerName = (a, b) => {
   return false;
 };
 
-// Compute a team's effective current roster — uses team.roster as the
-// baseline (which is the persisted live roster) and idempotently re-applies
-// all processed transactions for that team to catch any that haven't synced
-// into team.roster yet. In the happy path where data is in sync, each
-// transaction is a no-op (drop of an already-gone player, add of an
-// already-present player). When team.roster lags the transaction log —
-// which happens during live waiver processing — this picks up the changes
-// the same way RostersView's useRoster hook does.
+// Compute a team's effective current roster. Mirrors the same logic used by
+// AddDropPlayerModal (lines 195-203 in /mnt/project) and RostersView's
+// useRoster hook so the three views agree on roster contents.
 //
-// Replaces the older getRosterForTournament helper which tried to compute
-// "roster as of tournament X" by applying past transactions on top of the
-// current roster. That helper was never actually called and its logic was
-// inverted (rolling forward from current = double-applying changes); it's
-// removed entirely now.
+// Strategy: start from team.roster as the baseline (persisted live roster),
+// then apply every processed-or-completed transaction for this team.
+// Idempotent for synced data; corrective for de-synced data (e.g. a waiver
+// was processed but team.roster hasn't been written back to Firestore yet).
+//
+// Permissive on matching to avoid edge cases where team names have trailing
+// whitespace or case mismatches between transaction records and team docs.
 const getEffectiveRoster = (team, allTransactions) => {
   if (!team) return [];
+  const teamKey = String(team.name || '').trim().toLowerCase();
   let roster = [...(team.roster || [])];
+
   (allTransactions || [])
-    .filter(tx => tx.team === team.name && tx.status !== 'pending')
+    .filter(tx => {
+      // Match team (normalized for whitespace/case)
+      if (String(tx.team || '').trim().toLowerCase() !== teamKey) return false;
+      // Exclude transaction types that don't represent roster changes
+      if (tx.type === 'mulligan') return false;       // lineup swap, not roster
+      if (tx.type === 'swing_winner') return false;   // tx.player is owner name, not a player
+      // Exclude pending (not yet effective) and failed (didn't go through)
+      // Accepts 'processed', 'completed', and any other non-pending/non-failed
+      // status — broader than AddDropPlayerModal's positive list, in case
+      // there's a custom status in the wild.
+      if (tx.status === 'pending') return false;
+      if (tx.status === 'failed')  return false;
+      return true;
+    })
     .sort((a, b) => (a.tournamentIndex ?? 0) - (b.tournamentIndex ?? 0))
     .forEach(tx => {
-      // Drops first, then adds — handles add-then-drop and drop-then-readd
-      // sequences correctly when applied in tournament order.
+      // Apply drop first, then add — handles add-then-drop and drop-then-readd
+      // sequences correctly when sorted by tournament index.
       if (tx.droppedPlayer) {
         roster = roster.filter(p => p.name !== tx.droppedPlayer);
       }
@@ -116,6 +128,7 @@ const getEffectiveRoster = (team, allTransactions) => {
         roster.push({ name: tx.player, limited: !!tx.limited });
       }
     });
+
   return roster;
 };
 
@@ -390,16 +403,39 @@ const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, ros
                   border: `1px solid ${isEmpty ? 'rgba(200,80,80,0.25)' : isComplete ? 'rgba(80,180,120,0.18)' : 'rgba(220,180,80,0.2)'}`,
                   borderRadius: 3,
                 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
                   <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>
                     {team.name}
                   </span>
-                  <span style={{
-                    fontFamily: fonts.sans, fontSize: 9, letterSpacing: 1, textTransform: 'uppercase',
-                    color: isEmpty ? colors.warning : isComplete ? colors.earningsGreen : colors.textGoldDim,
-                  }}>
-                    {isEmpty ? 'No lineup' : `${lineup.length}/${lineupSize}`}
-                  </span>
+                  {/* Right cluster: status counter + clear button (when applicable),
+                      kept together on a single row so the team card doesn't
+                      grow a second row of chrome once a player is picked. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      fontFamily: fonts.sans, fontSize: 9, letterSpacing: 1, textTransform: 'uppercase',
+                      color: isEmpty ? colors.warning : isComplete ? colors.earningsGreen : colors.textGoldDim,
+                    }}>
+                      {isEmpty ? 'No lineup' : `${lineup.length}/${lineupSize}`}
+                    </span>
+                    {!isEmpty && (
+                      <button
+                        type="button"
+                        onClick={() => setManualEntry(prev => ({
+                          ...prev,
+                          teamLineups: { ...(prev.teamLineups || {}), [team.id]: [] },
+                        }))}
+                        style={{
+                          padding: '3px 8px',
+                          background: 'transparent', border: `1px solid ${colors.borderSubtle}`,
+                          borderRadius: 2, color: colors.textMuted,
+                          fontFamily: fonts.sans, fontSize: 9, letterSpacing: 0.5,
+                          textTransform: 'uppercase', cursor: 'pointer',
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Lineup slot dropdowns — one per lineupSize slot.
@@ -436,26 +472,6 @@ const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, ros
                     );
                   })}
                 </div>
-
-                {/* Quick clear button for this team */}
-                {!isEmpty && (
-                  <button
-                    type="button"
-                    onClick={() => setManualEntry(prev => ({
-                      ...prev,
-                      teamLineups: { ...(prev.teamLineups || {}), [team.id]: [] },
-                    }))}
-                    style={{
-                      marginTop: 6, padding: '3px 8px',
-                      background: 'transparent', border: `1px solid ${colors.borderSubtle}`,
-                      borderRadius: 2, color: colors.textMuted,
-                      fontFamily: fonts.sans, fontSize: 9, letterSpacing: 0.5,
-                      textTransform: 'uppercase', cursor: 'pointer',
-                    }}
-                  >
-                    Clear
-                  </button>
-                )}
               </div>
             );
           })}
