@@ -777,106 +777,134 @@ export const AdminView = ({
       // tournament earnings may shift the winner. Same workflow the commish
       // would otherwise do manually: reverse old credit, recompute, re-award.
       // All wrapped into this single Reprocess action so it's never out of sync.
+      //
+      // The cascade is its own try/catch — if anything in here fails we log a
+      // warning, skip the swing recalc, and let the base reprocess still
+      // persist. Better to have correct tournament results + a stale swing
+      // award than a half-applied write that corrupts state.
       let finalTeams = newTeams;
       let finalTransactions = transactions;
       let swingRecalcSummary = null;
 
       if (swingCascade) {
-        // 1. Reverse old swing pot credit from whoever was awarded
-        const oldWinnerTeam = finalTeams.find(t => t.name === existingSwingTx.team);
-        if (oldWinnerTeam) {
-          finalTeams = finalTeams.map(t =>
-            t.id === oldWinnerTeam.id
-              ? { ...t, earnings: Math.max(0, (t.earnings || 0) - (existingSwingTx.amount || 0)) }
-              : t
-          );
-        }
-
-        // 2. Recompute swing standings against the NEW tournament results (newT)
-        const segmentTournaments = newT.filter(tt => tt.completed && getTournamentSegment(tt) === tSegment && tt.results?.teams);
-        const byTeam = {};
-        segmentTournaments.forEach(tt => {
-          Object.entries(tt.results.teams).forEach(([id, tr]) => {
-            byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
-          });
-        });
-        const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
-
-        if (winnerEntry) {
-          const [winnerId, winnerEarnings] = winnerEntry;
-          const newWinnerTeam = finalTeams.find(t => t.id === winnerId);
-
-          // 3. Recompute pot from fee transactions across the segment.
-          // Pot is fee-driven, not earnings-driven, so it normally matches the
-          // old pot. We recompute defensively in case fees changed.
-          const segmentIndexes = new Set(segmentTournaments.map(tt => newT.indexOf(tt)));
-          const newPot = transactions
-            .filter(tx => {
-              if ((tx.fee || 0) <= 0) return false;
-              if (tx.status === 'failed') return false;
-              if (tx.type === 'swing_winner') return false;
-              return tx.tournamentIndex !== undefined
-                ? segmentIndexes.has(tx.tournamentIndex)
-                : tx.segment === tSegment;
-            })
-            .reduce((sum, tx) => sum + tx.fee, 0);
-
-          // 4. Drop the old swing_winner tx, append the new one
-          const lastSegTourney = segmentTournaments.reduce((last, tt) => {
-            const idx = newT.indexOf(tt);
-            return idx > (last?.idx ?? -1) ? { t: tt, idx } : last;
-          }, null);
-
-          const newSwingTx = {
-            team: newWinnerTeam?.name || existingSwingTx.team,
-            type: 'swing_winner',
-            player: newWinnerTeam?.owner || existingSwingTx.player,
-            fee: 0,
-            amount: newPot,
-            segment: tSegment,
-            date: new Date().toLocaleDateString(),
-            status: 'completed',
-            tournamentIndex: lastSegTourney?.idx ?? existingSwingTx.tournamentIndex,
-            note: tSegment + ' winner pot (auto-recalculated)',
-          };
-          finalTransactions = transactions
-            .filter(tx => !(tx.type === 'swing_winner' && tx.segment === tSegment))
-            .concat(newSwingTx);
-
-          // 5. Credit the new winner with the (re)computed pot
-          if (newWinnerTeam) {
+        try {
+          // 1. Reverse old swing pot credit from whoever was awarded
+          const oldWinnerTeam = finalTeams.find(t => t.name === existingSwingTx.team);
+          if (oldWinnerTeam) {
             finalTeams = finalTeams.map(t =>
-              t.id === winnerId
-                ? { ...t, earnings: (t.earnings || 0) + newPot }
+              t.id === oldWinnerTeam.id
+                ? { ...t, earnings: Math.max(0, (t.earnings || 0) - (existingSwingTx.amount || 0)) }
                 : t
             );
           }
 
-          // For the toast — surface whether the winner actually changed
-          const sameWinner = newWinnerTeam?.name === existingSwingTx.team;
-          swingRecalcSummary = sameWinner
-            ? `${tSegment}: ${newWinnerTeam.name} retains $${newPot.toLocaleString()}`
-            : `${tSegment}: ${existingSwingTx.team} → ${newWinnerTeam?.name} ($${newPot.toLocaleString()})`;
+          // 2. Recompute swing standings against the NEW tournament results (newT)
+          const segmentTournaments = newT.filter(tt => tt.completed && getTournamentSegment(tt) === tSegment && tt.results?.teams);
+          const byTeam = {};
+          segmentTournaments.forEach(tt => {
+            Object.entries(tt.results.teams).forEach(([id, tr]) => {
+              byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
+            });
+          });
+          const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+
+          if (winnerEntry) {
+            const [winnerId] = winnerEntry;
+            const newWinnerTeam = finalTeams.find(t => t.id === winnerId);
+
+            // 3. Recompute pot from fee transactions across the segment.
+            const segmentIndexes = new Set(segmentTournaments.map(tt => newT.indexOf(tt)));
+            const newPot = transactions
+              .filter(tx => {
+                if ((tx.fee || 0) <= 0) return false;
+                if (tx.status === 'failed') return false;
+                if (tx.type === 'swing_winner') return false;
+                return tx.tournamentIndex !== undefined
+                  ? segmentIndexes.has(tx.tournamentIndex)
+                  : tx.segment === tSegment;
+              })
+              .reduce((sum, tx) => sum + tx.fee, 0);
+
+            // 4. Drop the old swing_winner tx, append the new one.
+            // Includes txId + timestamp to match the shape that
+            // TransactionsView and the Firebase sync code expect.
+            const lastSegTourney = segmentTournaments.reduce((last, tt) => {
+              const idx = newT.indexOf(tt);
+              return idx > (last?.idx ?? -1) ? { t: tt, idx } : last;
+            }, null);
+
+            const newSwingTx = {
+              txId: `swing-${tSegment}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              team: newWinnerTeam?.name || existingSwingTx.team,
+              type: 'swing_winner',
+              player: newWinnerTeam?.owner || existingSwingTx.player,
+              fee: 0,
+              amount: newPot,
+              segment: tSegment,
+              date: new Date().toLocaleDateString(),
+              timestamp: Date.now(),
+              status: 'completed',
+              tournamentIndex: lastSegTourney?.idx ?? existingSwingTx.tournamentIndex,
+              note: tSegment + ' winner pot (auto-recalculated)',
+            };
+            finalTransactions = transactions
+              .filter(tx => !(tx.type === 'swing_winner' && tx.segment === tSegment))
+              .concat(newSwingTx);
+
+            // 5. Credit the new winner with the (re)computed pot
+            if (newWinnerTeam) {
+              finalTeams = finalTeams.map(t =>
+                t.id === winnerId
+                  ? { ...t, earnings: (t.earnings || 0) + newPot }
+                  : t
+              );
+            }
+
+            // For the toast — surface whether the winner actually changed
+            const sameWinner = newWinnerTeam?.name === existingSwingTx.team;
+            swingRecalcSummary = sameWinner
+              ? `${tSegment}: ${newWinnerTeam.name} retains $${newPot.toLocaleString()}`
+              : `${tSegment}: ${existingSwingTx.team} → ${newWinnerTeam?.name} ($${newPot.toLocaleString()})`;
+          }
+        } catch (cascadeErr) {
+          // Cascade failed — log, but keep going so the base reprocess
+          // still applies. Reverts finalTeams/finalTransactions to the
+          // pre-cascade state so we don't persist half-applied changes.
+          console.error('[handleReprocess] Swing cascade failed:', cascadeErr);
+          finalTeams = newTeams;
+          finalTransactions = transactions;
+          swingRecalcSummary = '(swing recalc skipped — see console)';
         }
       }
 
-      // Persist everything atomically. updateTeams is the writer; the
-      // sfglDataApi writes below are belt-and-suspenders backups.
-      updateTeams(finalTeams);
-      setGlobalPlayerStats(newStats);
-      setTournaments(newT);
+      // Persist — sequenced and individually try/caught so a single failure
+      // in one writer doesn't leave us in a half-applied state where some
+      // state is updated and the rest isn't. Each writer is fired and we
+      // continue even if one fails, surfacing the error in the toast.
+      const writerErrors = [];
+      try { updateTeams(finalTeams); }       catch (e) { writerErrors.push('teams: ' + e.message); }
+      try { setGlobalPlayerStats(newStats); } catch (e) { writerErrors.push('stats: ' + e.message); }
+      try { setTournaments(newT); }          catch (e) { writerErrors.push('tournaments: ' + e.message); }
       if (finalTransactions !== transactions) {
-        setTransactions(finalTransactions);
-        sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, finalTransactions).catch(() => {});
+        try {
+          setTransactions(finalTransactions);
+          sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, finalTransactions).catch(e => console.warn('tx backup failed:', e));
+        } catch (e) { writerErrors.push('transactions: ' + e.message); }
       }
-      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
-      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
-      dialog.showToast(
-        swingRecalcSummary
-          ? '✓ Reprocessed ' + selectedTourney + ' · ' + swingRecalcSummary
-          : '✓ Reprocessed ' + selectedTourney + ' with corrected earnings',
-        'success'
-      );
+      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(e => console.warn('tournaments backup failed:', e));
+      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(e => console.warn('stats backup failed:', e));
+
+      if (writerErrors.length > 0) {
+        console.error('[handleReprocess] Persistence errors:', writerErrors);
+        dialog.showToast('Reprocessed with warnings — see console for details', 'warning');
+      } else {
+        dialog.showToast(
+          swingRecalcSummary
+            ? '✓ Reprocessed ' + selectedTourney + ' · ' + swingRecalcSummary
+            : '✓ Reprocessed ' + selectedTourney + ' with corrected earnings',
+          'success'
+        );
+      }
       setManualEntry({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
     } catch (err) {
       console.error('handleReprocess error:', err);
