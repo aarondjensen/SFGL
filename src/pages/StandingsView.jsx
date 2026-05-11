@@ -188,8 +188,8 @@ const StandingsCard = ({
           <colgroup>
             <col style={{ width: 44 }} />   {/* Pos badge */}
             <col />                          {/* Team name + event name caption */}
-            <col style={{ width: 78 }} />   {/* Event earnings — own column for vertical alignment */}
-            <col style={{ width: 100 }} />  {/* Total / Behind earnings */}
+            <col style={{ width: 88 }} />   {/* Event earnings — own column for vertical alignment */}
+            <col style={{ width: 120 }} />  {/* Total / Behind earnings — wide enough for $XX.XXXM */}
           </colgroup>
           <tbody>
             {rows.map((team, index) => {
@@ -253,7 +253,7 @@ const StandingsCard = ({
                   </td>
 
                   {/* Total / Behind */}
-                  <td style={{ ...theme.tableCell, textAlign: 'right', paddingRight: 14 }}>
+                  <td style={{ ...theme.tableCell, textAlign: 'right', paddingLeft: 4, paddingRight: 14 }}>
                     {metric === 'total' ? (
                       <div style={{
                         ...theme.statNumLg,
@@ -535,7 +535,18 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    // StandingsView shows at most ~5–10 teams. A 1100px wide card leaves
+    // a large dead-air gap between team names and earnings on desktop, so
+    // we cap the view itself at 720px and center it. On narrower viewports
+    // (mobile) the cap is a no-op since the parent main is already < 720.
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12,
+      maxWidth: 720,
+      margin: '0 auto',
+      width: '100%',
+    }}>
       {/* Overall card — primary emphasis (gold accent) */}
       <StandingsCard
         subtitle={overallSubtitle}
