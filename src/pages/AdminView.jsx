@@ -774,11 +774,27 @@ export const AdminView = ({
       });
       if (!earningsMap.size) { dialog.showToast('No valid earnings lines found', 'error'); return; }
 
-      // Step 1: Reverse old results from all teams
+      // Step 1: Reverse old results from all teams AND attach the new lineup
+      // that will be scored in Step 2. Important: every team needs the
+      // lineup attached, including teams that had no prior result — without
+      // this, processTournamentData skips them (no lineup → no score) and
+      // resultsData.teams comes back empty.
       const oldResults = tournament.results;
       let reversedTeams = teams.map(team => {
+        // New lineup precedence: explicit edit > carried-over from prior
+        // processing > empty.
+        const newLineup = manualEntry.teamLineups[team.id]
+          || oldResults?.fullLineups?.[team.id]
+          || [];
+
         const oldTeamResult = oldResults?.teams?.[team.id];
-        if (!oldTeamResult) return team;
+        if (!oldTeamResult) {
+          // No prior result to reverse — just attach the new lineup so this
+          // team gets scored when processTournamentData runs.
+          return { ...team, lineup: newLineup };
+        }
+
+        // Has a prior result — reverse earnings, decrement starts, etc.
         // Reverse team earnings
         const earningsDelta = -(oldTeamResult.totalEarnings || 0);
         // Reverse per-player sfglEarnings and starts
@@ -800,7 +816,7 @@ export const AdminView = ({
           roster: newRoster,
           earnings: Math.max(0, (team.earnings || 0) + earningsDelta),
           segmentEarnings: Math.max(0, (team.segmentEarnings || 0) + earningsDelta),
-          lineup: (manualEntry.teamLineups[team.id] || oldResults.fullLineups?.[team.id] || []),
+          lineup: newLineup,
         };
       });
 
