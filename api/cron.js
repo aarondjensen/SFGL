@@ -622,11 +622,18 @@ async function handleProcessResults(res) {
       })),
     };
 
+    // Build lineup-name → earnings map from starterResults so the roster
+    // update below uses the EXACT same numbers as resultsData.teams[id].
+    // Mirrors the same fix applied to the client-side processTournamentData.
+    const earningsByLineupName = {};
+    starterResults.forEach(({ playerName, earnings }) => {
+      earningsByLineupName[playerName] = earnings;
+    });
+
     const updatedRoster = team.roster.map(player => {
       if (!team.lineup.includes(player.name)) return player;
-      let pe = earningsMap[player.name];
-      if (pe === undefined) { const mk = Object.keys(earningsMap).find(k => matchName(k, player.name)); if (mk) pe = earningsMap[mk]; }
-      return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + (pe || 0) };
+      const pe = earningsByLineupName[player.name] || 0;
+      return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + pe };
     });
 
     return {

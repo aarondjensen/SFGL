@@ -350,11 +350,24 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
       })),
     };
 
+    // Build lineup-name → earnings map from starterResults so the roster
+    // update below uses the EXACT same numbers as what's stored in
+    // resultsData.teams[id].players. Previously, the roster update did
+    // its own independent earningsMap lookup which could resolve to a
+    // different value (e.g. if name normalization or fuzzy matching
+    // produced different results on the second pass). When the two
+    // diverged, we'd see a player credited in results.teams but with
+    // $0 sfglEarnings on the roster — exactly the bug observed for
+    // Alex Fitzpatrick on Truist 2026 reprocess.
+    const earningsByLineupName = {};
+    starterResults.forEach(({ playerName, earnings }) => {
+      earningsByLineupName[playerName] = earnings;
+    });
+
     const updatedRoster = team.roster.map(player => {
       if (!team.lineup.includes(player.name)) return player;
-      let pe = earningsMap[player.name];
-      if (pe === undefined) { const mk = Object.keys(earningsMap).find(k => matchPlayerName(k, player.name)); if (mk) pe = earningsMap[mk]; }
-      return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + (pe || 0) };
+      const pe = earningsByLineupName[player.name] || 0;
+      return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + pe };
     });
 
     return {

@@ -478,14 +478,28 @@ export const RostersView = ({
   }, [team, transactions]);
 
   // Derive SFGL cuts per player per team from completed tournament results
-  // sfglCutsMap: { playerName: { cuts, starts } }
-  // Source: results.teams[teamId].players — each entry is a player who was in the
-  // starting lineup for that tournament, with the earnings they contributed.
-  // starts = appeared in lineup, cuts = appeared in lineup AND earned > $0
-  // Mulliganed-out players are excluded from start counts.
-  const sfglCutsMap = useMemo(() => {
+  // sfglStatsMap: { playerName: { cuts, starts, earnings } }
+  // Source of truth for everything the Stats panel renders. Derived
+  // entirely from tournament.results.teams[teamId].players + fullLineups,
+  // matching the same pattern that already worked for cuts/starts.
+  //
+  // Why derive earnings instead of reading player.sfglEarnings off the
+  // roster doc: that field is maintained by handleReprocess and the
+  // add/drop modal, and can DRIFT from the underlying tournament data
+  // when name matching produces a different result on the reversal pass
+  // vs the new-processing pass. We've seen this in production — a player
+  // showing 1/1 cuts/starts (derived correctly) but $0 sfglEarnings
+  // (stored field stuck at 0 because the new-processing add didn't fire).
+  // Deriving from tournament.results is self-healing; it always matches
+  // what the Tournaments page shows.
+  //
+  // starts = appeared in lineup, cuts = appeared AND earned > $0,
+  // earnings = sum of (base earnings + round-leader bonus) across all
+  // tournaments where they started. Mulligan-out players are excluded.
+  const sfglStatsMap = useMemo(() => {
     const map = {};
     if (!team) return map;
+
     // Build set of mulliganed-out players per tournament index
     const mulliganedOut = {};
     transactions.forEach(tx => {
@@ -494,34 +508,45 @@ export const RostersView = ({
         mulliganedOut[tx.tournamentIndex].add(tx.droppedPlayer);
       }
     });
+
     tournaments.forEach((t, tIdx) => {
       if (!t.completed || !t.results?.teams?.[team.id]) return;
       const teamResult = t.results.teams[team.id];
       const players = teamResult.players || [];
       const excluded = mulliganedOut[tIdx] || new Set();
-
-      // Also check fullLineups — captures players in lineup even if missing from players array
       const fullLineup = t.results.fullLineups?.[team.id] || [];
 
-      // Union of players array names and fullLineup names
+      // Build earnings lookup from players array. Include bonus in totals
+      // since the Tournaments page shows earnings as (base + bonus) too.
+      const earningsLookup = {};
+      players.forEach(p => {
+        if (p?.name) earningsLookup[p.name] = (p.earnings || 0) + (p.bonus || 0);
+      });
+
+      // Union of players array names and fullLineup names — captures
+      // anyone who started even if their entry is missing from the
+      // top-5 players array (e.g. lineup of 6 with one $0 earner).
       const allStarted = new Set([
         ...players.map(p => p.name || p),
         ...fullLineup,
       ]);
 
-      // Build earnings lookup from players array
-      const earningsLookup = {};
-      players.forEach(p => { if (p.name) earningsLookup[p.name] = p.earnings || 0; });
-
       allStarted.forEach(name => {
-        if (excluded.has(name)) return;
-        if (!map[name]) map[name] = { cuts: 0, starts: 0 };
+        if (!name || excluded.has(name)) return;
+        if (!map[name]) map[name] = { cuts: 0, starts: 0, earnings: 0 };
         map[name].starts += 1;
-        if ((earningsLookup[name] || 0) > 0) map[name].cuts += 1;
+        const earned = earningsLookup[name] || 0;
+        map[name].earnings += earned;
+        if (earned > 0) map[name].cuts += 1;
       });
     });
     return map;
   }, [team, tournaments, transactions]);
+
+  // Backwards-compat alias — older code references sfglCutsMap directly.
+  // Same object shape (cuts/starts), just doesn't expose earnings to
+  // existing callers. Anything new should reach for sfglStatsMap.
+  const sfglCutsMap = sfglStatsMap;
 
   // Derive mulligans used by this team from the transaction history.
   // Source of truth = transactions array (matches how every other counter in
@@ -717,14 +742,14 @@ export const RostersView = ({
         av = statsView === 'sfgl' ? ga : pa;
         bv = statsView === 'sfgl' ? gb : pb;
       } else if (sortCol === 'earnings') {
-        // Earnings sort tracks the toggle — SFGL → sfglEarnings, PGAT → pgaTourEarnings
-        // Without this, you'd see PGA $ values in the column but the sort would
-        // be ordered by SFGL $ — the rows would appear shuffled.
+        // Earnings sort tracks the toggle — SFGL → derived from results,
+        // PGAT → pgaTourEarnings. Reads the SAME source as the displayed
+        // value so sort order always matches what the user sees.
         av = statsView === 'sfgl'
-          ? (a.sfglEarnings || 0)
+          ? (sfglStatsMap[a.name]?.earnings || 0)
           : (globalPlayerStats?.[a.name]?.pgaTourEarnings || 0);
         bv = statsView === 'sfgl'
-          ? (b.sfglEarnings || 0)
+          ? (sfglStatsMap[b.name]?.earnings || 0)
           : (globalPlayerStats?.[b.name]?.pgaTourEarnings || 0);
       }
       // Always push players without data to the bottom
@@ -734,7 +759,7 @@ export const RostersView = ({
       if (av === bv) return 0;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
-  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglCutsMap, rosterView, tournamentField, statsView, globalPlayerStats, worldRankMap]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglStatsMap, rosterView, tournamentField, statsView, globalPlayerStats, worldRankMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!team) return null;
 
@@ -1252,7 +1277,7 @@ export const RostersView = ({
                     {/* ── Stats columns: OWGR + Cuts + Earnings ── */}
                     {infoView === 'stats' && (() => {
                       const owgr = worldRankMap[player.name] || null;
-                      const sfglEntry = sfglCutsMap[player.name] || { cuts: 0, starts: 0 };
+                      const sfglEntry = sfglStatsMap[player.name] || { cuts: 0, starts: 0, earnings: 0 };
                       const pgaStats = globalPlayerStats?.[player.name] || {};
 
                       // Cuts column: dual-meaning per statsView
@@ -1271,8 +1296,16 @@ export const RostersView = ({
                         cutsDisplay = String(pgaStats.cutsMade || 0);
                       }
 
-                      // Earnings column: SFGL = sfglEarnings, PGAT = pgaTourEarnings
-                      const amount = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (pgaStats.pgaTourEarnings || 0);
+                      // Earnings column — SFGL pulls from the derived
+                      // sfglStatsMap (matches what the Tournaments page
+                      // shows). PGA $ still uses globalPlayerStats which
+                      // is also maintained per-tournament but doesn't
+                      // suffer the same name-mismatch class of bugs since
+                      // it's keyed on the player name exactly as the
+                      // PGA results emit it.
+                      const amount = statsView === 'sfgl'
+                        ? (sfglEntry.earnings || 0)
+                        : (pgaStats.pgaTourEarnings || 0);
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
                         <>
