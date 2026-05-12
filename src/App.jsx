@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
-import { Trophy, Users, DollarSign, Calendar, Settings } from 'lucide-react';
+import { Trophy,  Award, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
 // Mobile devices can get stuck on stale localStorage data while desktop has
@@ -34,8 +34,7 @@ import { PullToRefresh }  from './pages/PullToRefresh';
 
 // ── Eagerly loaded views (shown on first visit / lightweight) ──────────────
 import { StandingsView }  from './pages/StandingsView';
-// ResultsView merged into TournamentsView — completed events expand inline
-// to show team standings + player breakdowns. The standalone tab is gone.
+import { ResultsView }    from './pages/ResultsView';
 import { RostersView }    from './pages/RostersView';
 import { TournamentsView }  from './pages/TournamentsView';
 
@@ -51,9 +50,9 @@ const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView')
 const LazyLoginPage        = React.lazy(() => import('./pages/LoginPage'));
 
 import { useLeague }       from './hooks';
-import { getSegmentByDate } from './utils';
+import { hashPassword, getSegmentByDate } from './utils';
 import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
-import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
+import { STORAGE_KEYS, INITIAL_TEAMS, COMMISSIONER_PASSWORD_HASH, PGA_TOUR_IDS } from './constants';
 import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
 
@@ -74,6 +73,7 @@ const LazyFallback = () => (
 const TABS = [
   { id: 'standings',    label: 'Standings',    Icon: Trophy     },
   { id: 'rosters',      label: 'Rosters',      Icon: Users      },
+  { id: 'results',      label: 'Results',      Icon: Award      },
   { id: 'transactions', label: 'Transactions', Icon: DollarSign },
   { id: 'tournaments',  label: 'Tournaments',  Icon: Calendar   },
   { id: 'admin',        label: 'Commish',      Icon: Settings   },
@@ -84,15 +84,10 @@ const FantasyGolfLeague = () => {
   const [activeTab,             setActiveTab]             = useState('standings');
   const [selectedTeam,          setSelectedTeam]          = useState(null);
   const [isCommissioner,        setIsCommissioner]        = useState(false);
-  // Tagged via team.isCommissioner. Determines whether the user is *allowed*
-  // to enter commish mode. Active commish mode (isCommissioner) is toggled
-  // by tapping the user's name in the header.
-  const [taggedCommissioner,    setTaggedCommissioner]    = useState(false);
   const [loggedInUser,          setLoggedInUser]          = useState(null);
   const [showLoginModal,        setShowLoginModal]        = useState(false);
-  // (Password popover state removed — commish access is granted by team tag,
-  // not by password. See handleManagerLogin and the AdminView Manager Accounts
-  // panel for how the tag is set.)
+  const [showAdminLoginPopover, setShowAdminLoginPopover] = useState(false);
+  const [adminPassword,         setAdminPassword]         = useState('');
   const [resultsHydrated,       setResultsHydrated]       = useState(false);
 
   const league = useLeague(STORAGE_KEYS);
@@ -127,14 +122,7 @@ const FantasyGolfLeague = () => {
       const teamId = localStorage.getItem('manager_team_id');
       if (teamId) {
         const team = resolvedTeams.find(t => t.id === teamId);
-        if (team) {
-          setLoggedInUser(team.owner || team.name);
-          // Tagged commissioners are *allowed* to enter commish mode but
-          // start the session in normal-manager view. They opt in by tapping
-          // their name in the header.
-          setTaggedCommissioner(!!team.isCommissioner);
-          setIsCommissioner(false);
-        }
+        if (team) setLoggedInUser(team.owner || team.name);
       }
     }).catch(() => {});
   }, [resolvedTeams]);
@@ -212,17 +200,21 @@ const FantasyGolfLeague = () => {
 
   // ── Auto-fetch headshots for all rostered players ────────────────────────
   // Runs whenever the roster set changes. Calls /api/headshots with every
-  // rostered player name we haven't already attempted recently, merges results
-  // into the headshots map so every component (Rosters, AddDrop, etc.) sees
-  // them.
+  // rostered player name (subject to a 60s TTL to dedupe rapid renders).
+  // The returned ESPN IDs get merged into the headshots map.
   //
   // Wave 8 (post Adam-Scott bug): previously used a permanent Set to dedupe,
-  // which meant ANY single transient failure (ESPN 5xx, network blip, name not
-  // yet indexed in the 5 events the API queries) blocked that player from ever
-  // being retried until full page reload. Now uses a Map of name→timestamp
-  // with a 60-second TTL: a player attempted recently is skipped, but after
-  // a minute the next render re-attempts. Recovers automatically from
-  // transient failures without spamming the endpoint.
+  // which meant ANY single transient failure (ESPN 5xx, network blip, name
+  // not yet indexed) blocked that player from being retried until full page
+  // reload. Replaced with a Map of name→timestamp with a 60-second TTL.
+  //
+  // Wave 9 (post Alex-Fitzpatrick bug): the filter was also skipping players
+  // who had a CACHED value, which prevented stale wrong mappings (like
+  // Matt Fitzpatrick's ID being incorrectly cached for Alex) from ever
+  // being corrected. Now every rostered player is subject to the TTL
+  // refresh — cached, miscached, and uncached all get re-fetched after
+  // the TTL expires. Static PGA_TOUR_IDS still take precedence and aren't
+  // re-fetched (they're hard-coded fallbacks).
   const fetchAttemptsRef = useRef(new Map()); // name → timestamp of last attempt
   const HEADSHOT_RETRY_MS = 60 * 1000;
   useEffect(() => {
@@ -232,30 +224,36 @@ const FantasyGolfLeague = () => {
     )].filter(Boolean);
     if (!allRostered.length) return;
 
-    // Skip names we already have a headshot for, names with a static
-    // PGA_TOUR_IDS fallback, and names attempted within the retry window.
+    // Skip names with a static PGA_TOUR_IDS fallback (hard-coded, never wrong)
+    // and names attempted within the retry window. CACHED entries get
+    // refreshed after the TTL so wrong mappings can self-heal.
     const now = Date.now();
-    const missing = allRostered.filter(n => {
-      if (safeHeadshots[n]) return false;
+    const toFetch = allRostered.filter(n => {
       if (PGA_TOUR_IDS[n]) return false;
       const lastAttempt = fetchAttemptsRef.current.get(n);
       if (lastAttempt && (now - lastAttempt) < HEADSHOT_RETRY_MS) return false;
       return true;
     });
-    if (!missing.length) return;
+    if (!toFetch.length) return;
 
     // Stamp attempt time BEFORE the fetch so a quick second roster change
     // doesn't trigger a duplicate in-flight request for the same names.
-    missing.forEach(n => fetchAttemptsRef.current.set(n, now));
+    toFetch.forEach(n => fetchAttemptsRef.current.set(n, now));
 
-    const encoded = missing.map(n => encodeURIComponent(n)).join(',');
+    const encoded = toFetch.map(n => encodeURIComponent(n)).join(',');
     fetch(`/api/headshots?names=${encoded}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.results && Object.keys(data.results).length > 0) {
+          // CRITICAL: merge into headshots map — this OVERWRITES any stale
+          // wrong values with the freshly-fetched correct ID. The
+          // strict-matching in /api/headshots ensures we never overwrite
+          // with a wrong relative's ID; if the player can't be uniquely
+          // identified, they're absent from results (preserving any
+          // existing value, but at least not making it worse).
           updateHeadshots(prev => ({ ...(prev || {}), ...data.results }));
           const found = Object.keys(data.results).length;
-          const notFound = missing.length - found;
+          const notFound = toFetch.length - found;
           console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found (will retry in ${HEADSHOT_RETRY_MS / 1000}s if still missing)`);
           // Persist to player documents for future loads
           import('./api/firebase').then(({ playersApi }) => {
@@ -295,6 +293,22 @@ const FantasyGolfLeague = () => {
   }, [loading, loadErrors, failureToastShown]);
 
 
+  // ── Admin login ────────────────────────────────────────────────────────────
+  const handleAdminLogin = async () => {
+    const hashed = await hashPassword(adminPassword);
+    if (hashed === COMMISSIONER_PASSWORD_HASH) {
+      // Blur input to dismiss keyboard and reset iOS zoom
+      if (document.activeElement) document.activeElement.blur();
+      setIsCommissioner(true);
+      setShowAdminLoginPopover(false);
+      setAdminPassword('');
+      setActiveTab('admin');
+    } else {
+      alert('Incorrect password');
+      setAdminPassword('');
+    }
+  };
+
   // ── Manager login ──────────────────────────────────────────────────────────
   const handleManagerLogin = (result) => {
     // result = { teamId } — resolve display name from loaded teams
@@ -307,9 +321,6 @@ const FantasyGolfLeague = () => {
       setTimeout(() => mv.setAttribute('content', 'width=device-width, initial-scale=1'), 300);
     }
     setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
-    // Tagged commissioners can opt into commish mode by tapping their name
-    // in the header. Login itself doesn't activate commish mode.
-    setTaggedCommissioner(team ? !!team.isCommissioner : false);
     setIsCommissioner(false);
     setShowLoginModal(false);
   };
@@ -319,7 +330,6 @@ const FantasyGolfLeague = () => {
     await managerAuthApi.logout();
     setLoggedInUser(null);
     setIsCommissioner(false);
-    setTaggedCommissioner(false);
   };
 
   if (loading) {
@@ -339,21 +349,14 @@ const FantasyGolfLeague = () => {
 
   return (
     <PullToRefresh onRefresh={refetch}>
-    <div style={{ minHeight: '100vh', color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
+    <div style={{ minHeight: '100vh', paddingBottom: 80, color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
-      {/* ── Sticky shell: header + banner + nav ──
-          Background tints gold when commish mode is active — a full-header
-          signal that complements the gold name button on the right side. */}
+      {/* ── Sticky shell: header + banner + nav ── */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 50,
-        background: isCommissioner
-          ? 'rgba(58, 47, 12, 0.97)'
-          : 'rgba(8, 18, 40, 0.97)',
+        background: 'rgba(8, 18, 40, 0.97)',
         backdropFilter: 'blur(12px)',
-        borderBottom: isCommissioner
-          ? '1px solid rgba(245,197,24,0.55)'
-          : '1px solid rgba(180,160,100,0.15)',
-        transition: 'background 0.25s, border-color 0.25s',
+        borderBottom: '1px solid rgba(180,160,100,0.15)',
       }}>
 
         {/* ── Header ── */}
@@ -381,68 +384,65 @@ const FantasyGolfLeague = () => {
 
               {/* Right side: user + login/logout */}
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                {loggedInUser && (() => {
-                  // Last name only — matches the visual weight of "2026" on
-                  // the left side of the header. Splits on whitespace and
-                  // takes the final token; works for "Aaron Jensen" →
-                  // "Jensen" and for single-word usernames.
-                  const lastName = String(loggedInUser).trim().split(/\s+/).pop();
-                  // 2026 styling — used for both the plain span and the
-                  // commish toggle button so the layout doesn't shift when
-                  // commish mode flips on/off.
-                  const baseNameStyle = {
+                {loggedInUser && (
+                  <span style={{
+                    fontSize: fontSize.base,
+                    color: 'rgba(255,255,255,0.45)',
+                    letterSpacing: 1,
+                    textTransform: 'uppercase',
                     fontFamily: "'Raleway', system-ui, sans-serif",
-                    fontSize: fontSize.lg,
-                    letterSpacing: 4,
-                    whiteSpace: 'nowrap',
-                  };
-
-                  // Tagged commissioners get a clickable name. Tapping toggles
-                  // commish mode — the gold tint signals "active". Untagged
-                  // managers see a plain span with no interaction.
-                  if (taggedCommissioner) {
-                    const toggleCommishMode = () => {
-                      setIsCommissioner(prev => {
-                        const next = !prev;
-                        // Leaving commish mode while on the Commish tab
-                        // would render nothing — bounce back to standings.
-                        if (!next && activeTab === 'admin') setActiveTab('standings');
-                        return next;
-                      });
-                    };
-                    return (
-                      <button
-                        onClick={toggleCommishMode}
-                        title={isCommissioner ? "Tap to exit Commish mode" : "Tap to enter Commish mode"}
-                        aria-label={isCommissioner ? "Exit Commish mode" : "Enter Commish mode"}
-                        aria-pressed={isCommissioner}
-                        style={{
-                          ...baseNameStyle,
-                          fontWeight: isCommissioner ? 700 : 400,
-                          color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.7)',
-                          background: 'transparent',
-                          border: 'none',
-                          padding: 0,
-                          cursor: 'pointer',
-                          transition: 'color 0.2s, font-weight 0.2s',
-                        }}
-                      >
-                        {lastName}
-                      </button>
-                    );
-                  }
-
-                  // Untagged manager — plain, non-interactive name.
-                  return (
-                    <span style={{
-                      ...baseNameStyle,
-                      fontWeight: 400,
-                      color: 'rgba(255,255,255,0.7)',
+                  }}>
+                    {loggedInUser}
+                  </span>
+                )}
+                {/* Commissioner pill — replaces the old full-width yellow banner.
+                    Click signs out of commish mode and returns to standings. */}
+                {isCommissioner && (
+                  <button
+                    onClick={() => { setIsCommissioner(false); setActiveTab('standings'); }}
+                    title="Click to exit Commissioner mode"
+                    aria-label="Exit Commissioner mode"
+                    style={{
+                      fontFamily: "'Raleway', system-ui, sans-serif",
+                      fontSize: fontSize.sm,
+                      fontWeight: 700,
+                      letterSpacing: 1.5,
+                      textTransform: 'uppercase',
+                      padding: '8px 12px',
+                      background: 'rgba(245,197,24,0.18)',
+                      border: '1px solid rgba(245,197,24,0.55)',
+                      borderRadius: 1,
+                      color: 'rgba(245,197,24,0.95)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.28)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.18)'; }}
+                  >
+                    <span style={{ fontSize: fontSize.base }}>⚙</span>
+                    <span>Commish</span>
+                  </button>
+                )}
+                {loggedInUser && !isCommissioner && (
+                    <button onClick={handleLogout} aria-label="Sign out of your account" style={{
+                      fontFamily: "'Raleway', system-ui, sans-serif",
+                      fontSize: fontSize.sm,
+                      letterSpacing: 1.5,
+                      textTransform: 'uppercase',
+                      padding: '8px 14px',
+                      background: 'rgba(180,60,60,0.12)',
+                      border: '1px solid rgba(180,60,60,0.3)',
+                      borderRadius: 1,
+                      color: 'rgba(220,120,120,0.8)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
                     }}>
-                      {lastName}
-                    </span>
-                  );
-                })()}
+                      Sign Out
+                    </button>
+                )}
                 {!loggedInUser && !isCommissioner && (
                     <button onClick={() => setShowLoginModal(true)} aria-label="Open sign-in dialog" style={{
                       fontFamily: "'Raleway', system-ui, sans-serif",
@@ -468,7 +468,7 @@ const FantasyGolfLeague = () => {
         {/* (Old full-width yellow Commissioner banner removed in Wave 3 — replaced
             by the gold "⚙ Commish" pill in the header right side above. Saves
             ~30px of vertical real-estate on every commish screen.) */}
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
             <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
               {(() => {
@@ -497,15 +497,124 @@ const FantasyGolfLeague = () => {
           </div>
         </div>
 
-        {/* Nav moved to fixed bottom bar (see below the <main> element). */}
+        {/* ── Navigation ── */}
+        <nav style={{ maxWidth: 1100, margin: "0 auto", padding: "0 16px", position: "relative" }}>
+        <div className="sfgl-nav-row" style={{ display: "flex", gap: 0, paddingBottom: 8, overflowX: "auto" }}>
+          {TABS.map(tab => {
+            const isActive = activeTab === tab.id;
+            const isAdminPopover = tab.id === 'admin' && showAdminLoginPopover;
+            return (
+              <button
+                key={tab.id}
+                className="sfgl-tab"
+                onClick={() => {
+                  if (tab.id === 'admin' && !isCommissioner) {
+                    setShowAdminLoginPopover(prev => !prev);
+                    return;
+                  }
+                  setShowAdminLoginPopover(false);
+                  setActiveTab(tab.id);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  padding: '10px 12px',
+                  borderRadius: 2,
+                  fontSize: fontSize.md,
+                  fontWeight: 400,
+                  letterSpacing: 0.5,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  border: isActive
+                    ? '1px solid rgba(255,255,255,0.2)'
+                    : '1px solid transparent',
+                  background: isActive
+                    ? 'rgba(255,255,255,0.08)'
+                    : isAdminPopover
+                      ? 'rgba(255,255,255,0.06)'
+                      : 'rgba(255,255,255,0.04)',
+                  color: isActive
+                    ? 'rgba(255,255,255,0.95)'
+                    : 'rgba(255,255,255,0.78)',
+                  boxShadow: isActive ? 'inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
+                  outline: 'none', // focus-visible handled by CSS class in app-global.css
+                }}
+              >
+                <tab.Icon style={{ width: 13, height: 13 }} />
+                <span className="sfgl-tab-label" style={{
+                  fontFamily: "'Raleway', system-ui, sans-serif",
+                  fontSize: fontSize.md,
+                  fontWeight: 500,
+                  letterSpacing: '1px',
+                }}>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Admin password popover */}
+        {showAdminLoginPopover && !isCommissioner && (
+          <div style={{
+            position: 'absolute', right: 12, top: '100%', marginTop: 4,
+            background: '#0f1d35',
+            border: '1px solid rgba(180,160,100,0.25)',
+            borderRadius: 2,
+            padding: 10,
+            boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
+            zIndex: 50,
+            display: 'flex',
+            gap: 8,
+          }}>
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              autoFocus
+              autoComplete="current-password"
+              placeholder="Password"
+              value={adminPassword}
+              onChange={e => setAdminPassword(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAdminLogin(); }}
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 1,
+                padding: '7px 10px',
+                fontSize: 16,
+                width: 160,
+                color: 'white',
+                outline: 'none',
+              }}
+            />
+            <button onClick={handleAdminLogin} style={{
+              background: '#1c3a5e',
+              border: '1px solid rgba(180,160,100,0.25)',
+              borderRadius: 1,
+              padding: '7px 14px',
+              fontSize: fontSize.base,
+              fontWeight: 600,
+              color: 'rgba(180,160,100,0.9)',
+              cursor: 'pointer',
+              letterSpacing: 1,
+            }}>
+              Enter
+            </button>
+          </div>
+        )}
+        </nav>
       </div>{/* end sticky shell */}
 
       {/* ── Main content ── */}
-      <main className="sfgl-main-content" style={{ maxWidth: 1100, margin: "0 auto", paddingTop: 16, paddingLeft: 16, paddingRight: 16 }}>
+      <main className="sfgl-main-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 80px" }}>
 
         <ErrorBoundary key={activeTab} tabName={activeTab}>
           {activeTab === 'standings' && (
             <StandingsView teams={resolvedTeams} tournaments={safeTournaments} transactions={safeTransactions} />
+          )}
+          {activeTab === 'results' && (
+            <ResultsView teams={resolvedTeams} tournaments={safeTournaments} transactions={safeTransactions} />
           )}
           {activeTab === 'rosters' && (
             <RostersView
@@ -546,8 +655,6 @@ const FantasyGolfLeague = () => {
               tournaments={safeTournaments}
               isCommissioner={isCommissioner}
               setTournaments={updateTournaments}
-              teams={resolvedTeams}
-              transactions={safeTransactions}
             />
           )}
           {activeTab === 'admin' && isCommissioner && (
@@ -578,79 +685,6 @@ const FantasyGolfLeague = () => {
           )}
         </ErrorBoundary>
       </main>
-
-      {/* ── Bottom Navigation (fixed) ──
-          Mobile-first: nav lives at the bottom of the viewport. Generous
-          paddingBottom (24px base + safe-area-inset) keeps tap targets well
-          clear of the iOS home indicator / Siri activation zone, which on
-          iPhone X+ extends ~34px up from the screen edge. */}
-      <nav
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          zIndex: 50,
-          background: 'rgba(8, 18, 40, 0.97)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderTop: '1px solid rgba(180,160,100,0.15)',
-          paddingTop: 6,
-          paddingBottom: 'calc(24px + env(safe-area-inset-bottom))',
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 600,
-            margin: '0 auto',
-            padding: '0 4px',
-            display: 'flex',
-            gap: 0,
-            position: 'relative',
-          }}
-        >
-          {TABS.filter(tab => tab.id !== 'admin' || isCommissioner).map(tab => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                className="sfgl-tab"
-                onClick={() => setActiveTab(tab.id)}
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 3,
-                  padding: '6px 4px',
-                  minHeight: 48,
-                  border: 'none',
-                  background: isActive
-                    ? 'rgba(255,255,255,0.07)'
-                    : 'transparent',
-                  borderRadius: 6,
-                  color: isActive
-                    ? 'rgba(255,255,255,0.95)'
-                    : 'rgba(255,255,255,0.55)',
-                  cursor: 'pointer',
-                  transition: 'all 0.18s',
-                  outline: 'none',
-                }}
-              >
-                <tab.Icon style={{ width: 20, height: 20 }} />
-                <span style={{
-                  fontFamily: "'Raleway', system-ui, sans-serif",
-                  fontSize: 10,
-                  fontWeight: 500,
-                  letterSpacing: 0.5,
-                  whiteSpace: 'nowrap',
-                }}>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
 
       {/* ── Manager Login Modal ── */}
       {showLoginModal && (

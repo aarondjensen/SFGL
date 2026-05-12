@@ -4,10 +4,13 @@
  * Drop-in replacement for supabase.js. Exports the exact same API surface so
  * no component code needs to change — only the import path.
  *
- * Wave I additions:
- *   • transactionsApi.getById — was being called as `getById?.()` in
- *     TransactionsView.jsx but never implemented, so the "refresh status
- *     before delete" check the comment promises was silently never running.
+ * Import path to use everywhere (was '../api/firebase'):
+ *   import { ... } from '../api/firebase';
+ *
+ * Firebase services used:
+ *   • Firestore  — all league data (replaces every Supabase table)
+ *   • No Firebase Auth — manager auth stays localStorage-based (unchanged)
+ *   • No Firebase Storage — headshots still served from CDN / manual overrides
  *
  * Firestore collections → former Supabase tables:
  *   players            → /players/{name}
@@ -45,7 +48,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 
-// ── Firebase config ──────────────────────────────────────────────────────────
+// ── Firebase config — values come from environment variables ─────────────────
+// Vite exposes env vars prefixed with VITE_
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -55,10 +59,13 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+// Avoid re-initialising on hot reload
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
-// ── Alias cache ──────────────────────────────────────────────────────────────
+// ── Alias cache — maps alternate player names to canonical doc IDs ────────────
+// Populated lazily from player docs that have an 'aliases' array field.
+// Invalidated whenever aliases are written or a player is deleted.
 let _aliasCache = null;
 async function getAliasMap() {
   if (_aliasCache) return _aliasCache;
@@ -75,20 +82,25 @@ async function getAliasMap() {
 function invalidateAliasCache() { _aliasCache = null; }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
+
+/** Return all documents from a collection as an array of plain objects. */
 async function _getAll(collectionName) {
   const snap = await getDocs(collection(db, collectionName));
   return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
 }
 
+/** Return all documents ordered by a field. */
 async function _getAllOrdered(collectionName, field, dir = 'asc') {
   const q = query(collection(db, collectionName), orderBy(field, dir));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
 }
 
+/** Delete every document in a collection using a batched write. */
 async function _deleteAll(collectionName) {
   const snap = await getDocs(collection(db, collectionName));
   if (snap.empty) return;
+  // Firestore batch limit is 500 ops; chunk if needed
   const chunks = [];
   let batch = writeBatch(db);
   let count = 0;
@@ -101,6 +113,12 @@ async function _deleteAll(collectionName) {
   await Promise.all(chunks.map(b => b.commit()));
 }
 
+/**
+ * Wave-A subscribe helper: attaches an onSnapshot listener with consistent
+ * error handling. Returns the unsubscribe function. Errors during snapshot
+ * delivery are logged but never thrown — a transient Firestore error
+ * shouldn't tear down the rest of the app.
+ */
 function _subscribeOrdered(collectionName, field, mapDocs, callback, dir = 'asc') {
   const q = query(collection(db, collectionName), orderBy(field, dir));
   return onSnapshot(
@@ -117,6 +135,11 @@ function _subscribeOrdered(collectionName, field, mapDocs, callback, dir = 'asc'
   );
 }
 
+// ── Transaction dedup (shared between getAll + subscribe) ───────────────────
+// Same logic that's been in transactionsApi.getAll since the Supabase migration:
+// • Prefer `txId` as the dedup key when present.
+// • Fall back to a composite of (team, type, player, droppedPlayer,
+//   tournamentIndex, status, segment) for legacy rows without a txId.
 function _dedupeTransactions(rows) {
   const seen = new Set();
   const out = [];
@@ -145,11 +168,12 @@ export const playersApi = {
     return snap.exists() ? { _id: snap.id, ...snap.data() } : null;
   },
 
+  // Get top N players by world rank, excluding LIV players
   async getTopRanked(n = 50) {
     const rankedQ = query(
       collection(db, 'players'),
       orderBy('world_rank', 'asc'),
-      limit(700)
+      limit(700) // covers full OWGR list (~600) plus buffer
     );
     const rankedSnap = await getDocs(rankedQ);
     return rankedSnap.docs
@@ -165,8 +189,13 @@ export const playersApi = {
       .slice(0, n);
   },
 
+  // Search players by name prefix (case-sensitive Firestore range query)
   async searchByName(searchTerm, maxResults = 20) {
     if (!searchTerm || searchTerm.length < 2) return [];
+    // Firestore prefix search is case-sensitive and only matches from the start of the doc ID.
+    // We run two queries: one for the raw term (handles first-name prefix like "Ror"),
+    // and one capitalized (handles "rory" -> "Rory"). Then we also fetch all ranked players
+    // and filter client-side for last-name / substring matches.
     const capitalize = s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
     const makeRange = (term) => {
       const end = term.slice(0, -1) + String.fromCharCode(term.charCodeAt(term.length - 1) + 1);
@@ -181,6 +210,8 @@ export const playersApi = {
     const seen = new Set();
     const results = [];
     const addDoc = d => {
+      // d.id IS the canonical name (it's the doc ID we wrote it under).
+      // No alias resolution needed.
       const name = d.id;
       if (!seen.has(name)) {
         seen.add(name);
@@ -190,6 +221,7 @@ export const playersApi = {
     snapRaw.docs.forEach(addDoc);
     snapCap.docs.forEach(addDoc);
 
+    // Also search all ranked players client-side for substring/last-name matches
     try {
       const allRanked = await this.getTopRanked(700);
       const lower = searchTerm.toLowerCase();
@@ -204,8 +236,11 @@ export const playersApi = {
     return results.slice(0, maxResults);
   },
 
+  // Get specific players by name (for rostered players)
   async getByNames(names) {
     if (!names?.length) return [];
+    // Firestore doesn't support IN queries on document IDs efficiently for large sets
+    // Fetch individually but in parallel
     const results = await Promise.all(
       names.map(name => getDoc(doc(db, 'players', name))
         .then(snap => snap.exists() ? {
@@ -222,11 +257,14 @@ export const playersApi = {
   },
 
   async upsertMany(players) {
+    const timestamp = Date.now();
+    // Check alias map — if a player name is an alias for a canonical doc, use that doc ID
     const aliasMap = await getAliasMap();
     const BATCH_SIZE = 499;
     for (let i = 0; i < players.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       players.slice(i, i + BATCH_SIZE).forEach(p => {
+        // Resolve via static aliases first, then dynamic Firebase aliases
         const canonicalName = aliasMap[p.name] || resolveAlias(p.name);
         const row = { name: canonicalName };
         if (p.worldRank   !== undefined) row.world_rank   = p.worldRank ?? null;
@@ -250,6 +288,29 @@ export const playersApi = {
     invalidateAliasCache();
   },
 
+  /**
+   * Explicitly clears espn_id for the given player names. Used by the
+   * admin "Rebuild Headshots" handler when a stale wrong ID is cached
+   * (e.g. Alex Fitzpatrick getting Matt Fitzpatrick's ID). The regular
+   * upsertMany path skips null/undefined espnId values to avoid
+   * accidentally clearing during partial updates — this method is the
+   * deliberate, explicit clear.
+   */
+  async clearEspnIds(names) {
+    if (!Array.isArray(names) || names.length === 0) return;
+    const BATCH_SIZE = 250;
+    for (let i = 0; i < names.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      names.slice(i, i + BATCH_SIZE).forEach(name => {
+        const canonicalName = aliasMap[name] || resolveAlias(name);
+        batch.set(doc(db, 'players', canonicalName), { espn_id: null }, { merge: true });
+      });
+      await batch.commit();
+    }
+  },
+
+  // Add an alias to a player doc — e.g. addAlias('Nicolas Echavarria', 'Nico Echavarria')
+  // After this, any OWGR sync writing 'Nico Echavarria' will update the 'Nicolas Echavarria' doc
   async addAlias(canonicalName, aliasName) {
     const ref = doc(db, 'players', canonicalName);
     const snap = await getDoc(ref);
@@ -322,15 +383,17 @@ export const playersApi = {
 };
 
 // ============================================================================
-// LEGACY API WRAPPERS
+// LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
 import { resolveAlias } from '../constants/nameAliases.js';
 
+
 const PLAYER_CACHE_KEY = 'sfgl-player-cache';
-const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000;
+const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 export const playerRankingsApi = {
   async getAll() {
+    // Try localStorage cache first — avoids 10k Firestore reads on every load
     try {
       const cached = localStorage.getItem(PLAYER_CACHE_KEY);
       if (cached) {
@@ -341,6 +404,7 @@ export const playerRankingsApi = {
       }
     } catch (_) {}
 
+    // Cache miss or expired — fetch from Firestore
     const players = await playersApi.getAllForApp();
     try {
       localStorage.setItem(PLAYER_CACHE_KEY, JSON.stringify({ players, timestamp: Date.now() }));
@@ -357,6 +421,18 @@ export const playerRankingsApi = {
 
 export const headshotsApi = {
   async getAll() { return playersApi.getHeadshotsMap(); },
+
+  /**
+   * Wave A fix: previously a deprecated no-op that just `console.warn`-ed.
+   * useLeague.updateHeadshots was calling this on every headshot update,
+   * which meant the centralized persistence path never wrote to Firebase —
+   * headshots only landed in the DB through the explicit playersApi.upsertMany
+   * call in App.jsx. If that explicit call ever got skipped, the headshot
+   * was lost on next load.
+   *
+   * Now setAll properly persists. Accepts either a map { name: espnId } (the
+   * shape useLeague passes) or an array of { name, espnId } objects.
+   */
   async setAll(map) {
     if (!map) return;
     let entries;
@@ -388,16 +464,29 @@ export const playerStatsApi = {
 export const teamsApi = {
   async getAll() {
     const teams = await _getAllOrdered('teams', 'name');
+    // Ensure every team has a lineup array — older documents may not have one
     return teams.map(t => ({ ...t, lineup: t.lineup || [] }));
   },
 
   async setAll(teams) {
+    // Wave A hotfix: previously this did `_deleteAll('teams')` followed by a
+    // batch insert — destructive, multi-step, and pre-Wave-A it didn't matter
+    // because real-time subscriptions weren't actually wired up. Now they are,
+    // and the delete-all phase emits a stream of intermediate snapshots
+    // (8 teams → 7 → 6 → ... → 0 → 8) to every subscribed client, including
+    // the one issuing the write. That caused mulligans, lineups, and any
+    // other team-level fields to flicker / reset during the write window.
+    //
+    // Replaced with an upsert (idempotent per-doc writes) plus a targeted
+    // delete of any docs that exist remotely but aren't in the local set.
+    // Snapshots now arrive as a single coherent emission per write.
     if (!Array.isArray(teams)) return [];
     const snap = await getDocs(collection(db, 'teams'));
     const remoteIds = new Set(snap.docs.map(d => d.id));
     const localIds = new Set(teams.map(t => t.id || t.name));
 
     const BATCH_SIZE = 499;
+    // Upsert all locals
     for (let i = 0; i < teams.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       teams.slice(i, i + BATCH_SIZE).forEach(team => {
@@ -406,6 +495,7 @@ export const teamsApi = {
       });
       await batch.commit();
     }
+    // Delete any remote docs that no longer exist locally
     const toDelete = [...remoteIds].filter(id => !localIds.has(id));
     if (toDelete.length) {
       const batch = writeBatch(db);
@@ -420,6 +510,12 @@ export const teamsApi = {
     return updates;
   },
 
+  /**
+   * Wave A fix: real-time subscription. useLeague has been calling this
+   * since the Wave 8 changes, but no implementation existed — every call
+   * threw silently and the subscription block in useLeague was a no-op.
+   * Now wired through onSnapshot. Returns the unsubscribe function.
+   */
   subscribe(callback) {
     return _subscribeOrdered('teams', 'name', (docs) =>
       docs.map(t => ({ ...t, lineup: t.lineup || [] })),
@@ -437,6 +533,9 @@ export const tournamentsApi = {
   },
 
   async setAll(tournaments) {
+    // Same Wave A hotfix as teamsApi.setAll — see comment there. Real-time
+    // subscriptions made the delete-all-then-insert pattern emit transient
+    // empty / partial snapshots that clobbered local state mid-write.
     if (!Array.isArray(tournaments)) return [];
     const snap = await getDocs(collection(db, 'tournaments'));
     const remoteIds = new Set(snap.docs.map(d => d.id));
@@ -465,6 +564,9 @@ export const tournamentsApi = {
     return updates;
   },
 
+  /**
+   * Wave A fix: real-time subscription via onSnapshot.
+   */
   subscribe(callback) {
     return _subscribeOrdered('tournaments', 'start_date', null, callback);
   },
@@ -480,25 +582,6 @@ export const transactionsApi = {
     );
     const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     return _dedupeTransactions(data);
-  },
-
-  /**
-   * Wave I: previously this method was being called as `getById?.()` in
-   * TransactionsView.jsx but never actually existed — the optional-chain
-   * silently no-oped, so the comment-promised "refresh status before delete"
-   * check never ran. Now implemented for real.
-   *
-   * Returns { id, ...data } | null. Catches errors so callers don't have to.
-   */
-  async getById(id) {
-    if (!id) return null;
-    try {
-      const snap = await getDoc(doc(db, 'transactions', id));
-      return snap.exists() ? { id: snap.id, ...snap.data() } : null;
-    } catch (e) {
-      console.warn('[transactionsApi.getById] error:', e);
-      return null;
-    }
   },
 
   async add(transaction) {
@@ -546,14 +629,17 @@ export const transactionsApi = {
       }
     });
 
+    // Detect remote transactions that were deleted locally and remove them from Firebase
     const localTxIds = new Set(localTransactions.filter(t => t.txId).map(t => t.txId));
     const localIds   = new Set(localTransactions.filter(t => t.id).map(t => t.id));
     const toDelete = remote.filter(tx => {
-      if (tx.txId && localTxIds.has(tx.txId)) return false;
-      if (tx.id   && localIds.has(tx.id))     return false;
+      if (tx.txId && localTxIds.has(tx.txId)) return false; // still exists locally
+      if (tx.id   && localIds.has(tx.id))     return false; // still exists locally
+      // If remote tx has neither txId nor id match in local, it was deleted
       return true;
     });
 
+    // Batch inserts
     if (toInsert.length > 0) {
       const BATCH_SIZE = 499;
       for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
@@ -565,6 +651,7 @@ export const transactionsApi = {
       }
     }
 
+    // Individual updates (preserving ids)
     for (const tx of toUpdate) {
       if (tx.id) {
         const { id, ...rest } = tx;
@@ -574,6 +661,7 @@ export const transactionsApi = {
       }
     }
 
+    // Delete removed transactions from Firebase
     if (toDelete.length > 0) {
       const BATCH_SIZE = 499;
       for (let i = 0; i < toDelete.length; i += BATCH_SIZE) {
@@ -585,9 +673,15 @@ export const transactionsApi = {
       }
     }
 
+    // Return only what the local state should have (no more merging back deleted items)
     return localTransactions;
   },
 
+  /**
+   * Wave A fix: real-time subscription via onSnapshot. Applies the same
+   * dedup logic that getAll() uses so subscribers and direct fetchers see
+   * identical shapes.
+   */
   subscribe(callback) {
     const q = query(collection(db, 'transactions'), orderBy('timestamp', 'desc'));
     return onSnapshot(
@@ -626,6 +720,10 @@ export const settingsApi = {
     return settings;
   },
 
+  /**
+   * Wave A fix: real-time subscription. Emits the full {key: value} settings
+   * object whenever any league_settings doc changes — same shape as getAll().
+   */
   subscribe(callback) {
     return onSnapshot(
       collection(db, 'league_settings'),
@@ -674,6 +772,8 @@ export const draftStateApi = {
 
 // ============================================================================
 // MANAGER AUTH API
+// Credentials stored in sfgl_data (via sfglDataApi). Sessions in localStorage.
+// Identical behaviour to supabase.js.
 // ============================================================================
 const CREDS_KEY = 'manager_credentials';
 
@@ -708,6 +808,7 @@ export const managerAuthApi = {
     );
     if (!entry) throw new Error('Invalid name or password');
     const [teamId, cred] = entry;
+    // Auto-migrate legacy plain-text → hashed
     if (cred.password && !cred.passwordHash) {
       creds[teamId] = { name: cred.name, passwordHash };
       await sfglDataApi.set(CREDS_KEY, creds);
@@ -774,6 +875,7 @@ export const draftPicksApi = {
 
 // ============================================================================
 // TOURNAMENT RESULTS API
+// Document ID: `${tournamentName}__${season}`  (double-underscore separator)
 // ============================================================================
 const _resultDocId = (tournamentName, season) =>
   `${tournamentName}__${season}`.replace(/[/]/g, '_');
@@ -859,7 +961,7 @@ export const tournamentResultsApi = {
 };
 
 // ============================================================================
-// SFGL DATA API  (generic key-value store)
+// SFGL DATA API  (generic key-value store — replaces sfgl_data table)
 // ============================================================================
 export const sfglDataApi = {
   async get(key) {
