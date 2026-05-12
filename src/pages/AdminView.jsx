@@ -846,14 +846,35 @@ export const AdminView = ({
 
       // Send results email to all managers
       try {
+        // Build player breakdowns with the full set of fields the new
+        // email template renders: unlimited (blue color), limited (gold
+        // color), roundsLed (R1/R2/R3 badges), bonus (added to earnings
+        // total). Stripping any of these would leave the email looking
+        // wrong vs the in-app TournamentsView.
         const teamResultsForEmail = finalTeams.filter(t => resultsData.teams[t.id]).map(t => ({
           team: t.name,
           totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
+          players: (resultsData.teams[t.id].players || []).map(p => ({
+            name: p.name,
+            earnings: p.earnings || 0,
+            bonus: p.bonus || 0,
+            limited: !!p.limited,
+            unlimited: !!p.unlimited,
+            roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
+          })),
         }));
+        // If the auto-award fired, ship the swing winner banner info too
+        // so the email leads with the celebration. Without this, the swing
+        // win would only appear in the next month's standings refresh.
+        const swingWinnerInfo = autoAward ? {
+          segment: swingSegment,
+          team: autoAward.updatedTransactions[autoAward.updatedTransactions.length - 1]?.team,
+          pot: autoAward.updatedTransactions[autoAward.updatedTransactions.length - 1]?.amount || 0,
+        } : undefined;
         await fetch('/api/cron?action=notify-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
+          body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo }),
         });
         dialog.showToast('📧 Results emails sent', 'success');
       } catch (emailErr) {
@@ -1203,15 +1224,36 @@ export const AdminView = ({
         .map(team => ({
           team: team.name,
           totalEarnings: t.results.teams[team.id].totalEarnings || 0,
-          // Include player breakdown so the new email template can render it
+          // Include the full player breakdown so the email template can
+          // render player names with the right color, round-leader badges,
+          // and bonus-inclusive earnings totals.
           players: (t.results.teams[team.id].players || []).map(p => ({
-            name: p.name, earnings: p.earnings || 0, limited: !!p.limited,
+            name: p.name,
+            earnings: p.earnings || 0,
+            bonus: p.bonus || 0,
+            limited: !!p.limited,
+            unlimited: !!p.unlimited,
+            roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
           })),
         }));
+      // If this tournament was the final event of its swing AND a
+      // swing_winner tx exists for that segment, include the celebration
+      // banner in the resend too — keeps the email faithful to what would
+      // have been sent at the original processing time.
+      const tSegment = getTournamentSegment(t);
+      const swingTx = transactions.find(tx => tx.type === 'swing_winner' && tx.segment === tSegment);
+      const swingTournaments = tournaments.filter(tt => getTournamentSegment(tt) === tSegment);
+      const isFinalEventOfSwing = swingTournaments.every(tt => tt.completed)
+        && swingTournaments[swingTournaments.length - 1]?.name === selectedTourney;
+      const swingWinnerInfo = (swingTx && isFinalEventOfSwing) ? {
+        segment: tSegment,
+        team: swingTx.team,
+        pot: swingTx.amount || 0,
+      } : undefined;
       const resp = await fetch('/api/cron?action=notify-results', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail }),
+        body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data?.error || 'Resend failed');

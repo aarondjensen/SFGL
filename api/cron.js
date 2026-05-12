@@ -75,11 +75,119 @@ function buildWaiverResultsEmail(processed, recipientTeam) {
   return wrap(`<h2 style="font-family:${FONT_STACK};font-size:18px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">⏰ Waiver Results</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Processed ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>${rows}`);
 }
 
-function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam) {
+// ── Segment + swing helpers (server-side, mirror AdminView client-side) ──
+
+// Resolve a tournament's segment. Prefer the explicit segment field; fall
+// back to date-derived inference when missing (older data).
+function getSegmentForTournamentServer(t) {
+  if (t?.segment) return t.segment;
+  // Date-based fallback: parse a month out of the tournament's dates field
+  // (e.g. "May 7-10") and map to the standard SFGL swings.
+  const d = String(t?.dates || '').toLowerCase();
+  if (d.match(/jan|feb|mar/))                                    return 'Spring Swing';
+  if (d.match(/apr|may/))                                        return 'Spring Swing';
+  if (d.match(/jun|jul/))                                        return 'Summer Swing';
+  if (d.match(/aug|sep/))                                        return 'Fall Swing';
+  return null;
+}
+
+// Compute the fee pot for a swing — match the client-side computeSwingPot.
+// Used by the auto-award path below.
+function computeSwingPotServer(transactions, tournaments, swingSegment) {
+  if (!swingSegment) return 0;
+  const swingIndexes = new Set(
+    (tournaments || [])
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => getSegmentForTournamentServer(t) === swingSegment)
+      .map(({ i }) => i)
+  );
+  return (transactions || [])
+    .filter(tx => {
+      if ((tx.fee || 0) <= 0) return false;
+      if (tx.status === 'failed') return false;
+      if (tx.type === 'swing_winner') return false;
+      return tx.tournamentIndex !== undefined
+        ? swingIndexes.has(tx.tournamentIndex)
+        : tx.segment === swingSegment;
+    })
+    .reduce((sum, tx) => sum + (tx.fee || 0), 0);
+}
+
+// Auto-award helper for server-side processing. Same conditions as the
+// client-side maybeAutoAwardSwing in AdminView. Returns { updatedTeams,
+// newSwingTx, summary } when an award should fire, or null otherwise.
+function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transactions) {
+  if (!swingSegment) return null;
+  if (transactions.some(tx => tx.type === 'swing_winner' && tx.segment === swingSegment)) return null;
+
+  const swingTournaments = (tournaments || []).filter(t => getSegmentForTournamentServer(t) === swingSegment);
+  if (swingTournaments.length === 0) return null;
+  if (!swingTournaments.every(t => t.completed)) return null;
+
+  const rankedTournaments = swingTournaments.filter(t => t.results?.teams);
+  if (rankedTournaments.length === 0) return null;
+
+  const byTeam = {};
+  rankedTournaments.forEach(t => {
+    Object.entries(t.results.teams).forEach(([id, tr]) => {
+      byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
+    });
+  });
+  const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
+  if (!winnerEntry) return null;
+  const [winnerId] = winnerEntry;
+  const winnerTeam = (teams || []).find(t => t.id === winnerId);
+  if (!winnerTeam) return null;
+
+  const pot = computeSwingPotServer(transactions, tournaments, swingSegment);
+  if (pot === 0) return null;
+
+  const lastSegTourney = rankedTournaments.reduce((last, tt) => {
+    const idx = tournaments.indexOf(tt);
+    return idx > (last?.idx ?? -1) ? { t: tt, idx } : last;
+  }, null);
+
+  const newSwingTx = {
+    txId: `swing-${swingSegment}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    team: winnerTeam.name,
+    type: 'swing_winner',
+    player: winnerTeam.owner,
+    fee: 0,
+    amount: pot,
+    segment: swingSegment,
+    date: new Date().toLocaleDateString(),
+    timestamp: Date.now(),
+    status: 'completed',
+    tournamentIndex: lastSegTourney?.idx ?? undefined,
+    note: swingSegment + ' winner pot (auto-awarded by cron)',
+  };
+
+  const updatedTeams = teams.map(t =>
+    t.id === winnerId
+      ? { ...t, earnings: (t.earnings || 0) + pot }
+      : t
+  );
+
+  return {
+    updatedTeams,
+    newSwingTx,
+    pot,
+    winnerTeamName: winnerTeam.name,
+  };
+}
+
+function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam, swingWinnerInfo) {
   // Defensive: handleNotifyResults takes teamResults from the client body, so
   // bad payloads can land here. Always render *something* informative.
   const list = Array.isArray(teamResults) ? teamResults : [];
   const sorted = [...list].sort((a, b) => (b.totalEarnings || 0) - (a.totalEarnings || 0));
+
+  // ── Swing winner banner (optional) ──
+  // When this tournament was the final event of a swing AND a swing winner
+  // was auto-awarded, the caller passes swingWinnerInfo so we render a
+  // celebratory banner above the tournament results. Same color logic as
+  // the in-app StandingsView swing card (gold accent for the winner).
+  const swingBanner = swingWinnerInfo ? `<div style="padding:18px 16px;background:linear-gradient(180deg,rgba(245,197,24,0.12),rgba(245,197,24,0.04));border:1px solid rgba(245,197,24,0.35);border-radius:4px;margin:0 0 22px;text-align:center;"><div style="font-family:${FONT_STACK};font-size:10px;color:rgba(245,197,24,0.85);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:0 0 6px;">🏆 ${swingWinnerInfo.segment || 'Swing'} Complete</div><div style="font-family:${FONT_STACK};font-size:18px;color:#ffffff;font-weight:600;margin:0 0 4px;">${swingWinnerInfo.team || ''}</div><div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.7);font-weight:400;">wins the $${(swingWinnerInfo.pot || 0).toLocaleString()} pot</div></div>` : '';
 
   // ── Team standings rows ──
   // Each row shows rank · team · earnings, with the recipient's row highlighted
@@ -94,19 +202,41 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam)
     const bg          = isMe    ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)';
     const leftBorder  = isMe    ? 'border-left:3px solid #ffffff;' : isFirst ? 'border-left:3px solid rgba(245,197,24,0.55);' : '';
 
-    // Player breakdown (optional). Earnings highlighted green if >0, muted
-    // otherwise so it's clear at a glance who contributed.
+    // Player breakdown (optional). Mirrors TournamentsView's PlayerSlotGrid
+    // color logic: unlimited=blue, limited=gold, default=white. Dim variant
+    // when the player earned $0 (showEarnings=true with earnings=0). Earnings
+    // text is green when positive, muted otherwise. Round-leader badges
+    // (R1/R2/R3 orange pills) appear inline next to the player name.
     const players = Array.isArray(tr.players) ? tr.players : [];
     const playerRows = players.map(p => {
       const earned = (p.earnings || 0) > 0;
-      const star = p.limited ? '★ ' : '';
-      return `<tr><td style="font-family:${FONT_STACK};font-size:11px;color:rgba(255,255,255,0.6);padding:2px 0;font-weight:400;">${star}${p.name || ''}</td><td style="font-family:${FONT_STACK};font-size:11px;color:${earned ? '#50b478' : 'rgba(255,255,255,0.35)'};padding:2px 0;text-align:right;font-weight:500;">$${(p.earnings || 0).toLocaleString()}</td></tr>`;
+      const totalEarnings = (p.earnings || 0) + (p.bonus || 0);
+      // Name color matches TournamentsView playerNameColor()
+      let nameColor;
+      if (p.unlimited)    nameColor = earned ? 'rgba(100,180,255,0.95)' : 'rgba(100,180,255,0.45)';
+      else if (p.limited) nameColor = earned ? 'rgba(245,197,24,0.95)'  : 'rgba(245,197,24,0.45)';
+      else                nameColor = earned ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.35)';
+
+      // Round leader badges — orange pills, one per round led (R1/R2/R3).
+      // Email clients vary on flex support, so use inline-block spans
+      // separated by hair-spaces for reliable cross-client rendering.
+      const rounds = Array.isArray(p.roundsLed) ? p.roundsLed : [];
+      const roundBadges = rounds.length ? rounds.map(rl => `<span style="display:inline-block;padding:1px 5px;margin-left:4px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;font-family:${FONT_STACK};vertical-align:middle;letter-spacing:0.5px;">R${rl.round || rl}</span>`).join('') : '';
+
+      return `<tr><td style="font-family:${FONT_STACK};font-size:11px;color:${nameColor};padding:2px 0;font-weight:400;">${p.name || ''}${roundBadges}</td><td style="font-family:${FONT_STACK};font-size:11px;color:${totalEarnings > 0 ? '#50b478' : 'rgba(255,255,255,0.35)'};padding:2px 0;text-align:right;font-weight:500;">$${totalEarnings.toLocaleString()}</td></tr>`;
     }).join('');
 
     return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${tr.team}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${(tr.totalEarnings || 0).toLocaleString()}</td></tr></table>${playerRows ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);">${playerRows}</table>` : ''}</div>`;
   }).join('') : `<div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.5);padding:24px;text-align:center;background:rgba(255,255,255,0.03);border-radius:3px;font-weight:400;">Team results unavailable for this email. Check the app for the latest standings.</div>`;
 
-  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">🏆 ${tournamentName}</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Tournament Results</p>${rows}`);
+  // ── Color-coded player legend ──
+  // Subtle footer to explain the name colors — same palette as RostersView
+  // / TournamentsView so the visual language is consistent across the app
+  // and the email. Only renders if at least one team has player breakdowns.
+  const hasPlayerData = sorted.some(tr => Array.isArray(tr.players) && tr.players.length > 0);
+  const legend = hasPlayerData ? `<div style="margin:14px 0 0;padding:10px 12px;background:rgba(255,255,255,0.02);border-radius:3px;font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:0.4px;font-weight:400;text-align:center;"><span style="color:rgba(245,197,24,0.95);font-weight:600;">●</span> Limited &nbsp;&nbsp;<span style="color:rgba(100,180,255,0.95);font-weight:600;">●</span> Unlimited &nbsp;&nbsp;<span style="display:inline-block;padding:1px 5px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;letter-spacing:0.5px;">R#</span> Round Leader</div>` : '';
+
+  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">🏆 ${tournamentName}</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Tournament Results</p>${swingBanner}${rows}${legend}`);
 }
 
 function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
@@ -317,7 +447,7 @@ async function handleLineupReminder(res) {
 // ── Action: notify results ──────────────────────────────────────────────────
 
 async function handleNotifyResults(req, res) {
-  const { tournamentName, teamResults } = req.body || {};
+  const { tournamentName, teamResults, swingWinnerInfo } = req.body || {};
   if (!tournamentName || !teamResults?.length) return res.status(400).json({ error: 'Missing tournamentName or teamResults' });
 
   const settings = await loadSettings();
@@ -327,7 +457,7 @@ async function handleNotifyResults(req, res) {
 
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName));
+      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo));
       results.push({ team: teamName, success: true });
     } catch (err) { results.push({ team: teamName, error: err.message }); }
   }
@@ -513,11 +643,21 @@ async function handleProcessResults(res) {
   const nx = newTournaments.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
   if (nx !== -1) { newTournaments.forEach(nt => { nt.playing = false; }); newTournaments[nx].playing = true; }
 
+  // ── Auto-award swing winner if this was the final event of its swing ──
+  // Mirrors the client-side handleManualEntry path. Loads transactions so
+  // computeSwingPotServer has fee totals and so we can append the new
+  // swing_winner tx to Firestore.
+  const txSnap = await db.collection('transactions').get();
+  const allTransactions = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const swingSegment = getSegmentForTournamentServer(newTournaments[ti]);
+  const autoAward = maybeAutoAwardSwingServer(swingSegment, newTournaments, updatedTeams, allTransactions);
+  const finalTeams = autoAward?.updatedTeams || updatedTeams;
+
   // Write everything to Firebase
   const batch = db.batch();
 
-  // Update teams
-  for (const team of updatedTeams) {
+  // Update teams (using auto-award-adjusted earnings if applicable)
+  for (const team of finalTeams) {
     batch.update(db.collection('teams').doc(team.id), {
       roster: team.roster,
       earnings: team.earnings,
@@ -531,14 +671,21 @@ async function handleProcessResults(res) {
   batch.set(db.collection('sfgl_data').doc('fantasy-golf-global-stats'), { key: 'fantasy-golf-global-stats', value: newStats });
   batch.set(db.collection('sfgl_data').doc('last_auto_results'), { key: 'last_auto_results', value: today });
 
+  // Append swing winner transaction if auto-awarded. New doc; let Firestore
+  // generate the doc id and use our txId as the dedup key.
+  if (autoAward) {
+    const newTxRef = db.collection('transactions').doc();
+    batch.set(newTxRef, autoAward.newSwingTx);
+  }
+
   await batch.commit();
 
   // Email results to all managers
   const managerEmails = getEmailMap(settings, teams);
-  // Include player data so the email template can render the per-team
-  // player breakdown (name + earnings). Star-marked (limited) players are
-  // also flagged for the template.
-  const teamResultsForEmail = updatedTeams
+  // Full player breakdown so the template can render the color-coded names,
+  // round-leader badges, and bonus-inclusive earnings totals — matches the
+  // shape sent from AdminView's handleManualEntry.
+  const teamResultsForEmail = finalTeams
     .filter(t => resultsData.teams[t.id])
     .map(t => ({
       team: t.name,
@@ -546,14 +693,25 @@ async function handleProcessResults(res) {
       players: (resultsData.teams[t.id].players || []).map(p => ({
         name: p.name,
         earnings: p.earnings || 0,
+        bonus: p.bonus || 0,
         limited: !!p.limited,
+        unlimited: !!p.unlimited,
+        roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
       })),
     }));
+
+  // Build swing winner banner info if applicable. This causes the email
+  // template to lead with a celebration banner above the tournament rows.
+  const swingWinnerInfoForEmail = autoAward ? {
+    segment: swingSegment,
+    team: autoAward.winnerTeamName,
+    pot: autoAward.pot,
+  } : undefined;
 
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournament.name} — SFGL Results`, buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName));
+      await sendEmail(email, `🏆 ${tournament.name} — SFGL Results`, buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName, swingWinnerInfoForEmail));
       emailResults.push({ team: teamName, success: true });
     } catch (err) { emailResults.push({ team: teamName, error: err.message }); }
   }
@@ -564,6 +722,7 @@ async function handleProcessResults(res) {
     teamsScored: Object.keys(resultsData.teams).length,
     playersLoaded: players.length,
     emailsSent: emailResults.filter(r => r.success).length,
+    swingAutoAwarded: autoAward ? `${swingSegment} → ${autoAward.winnerTeamName} ($${autoAward.pot.toLocaleString()})` : null,
   });
 }
 
