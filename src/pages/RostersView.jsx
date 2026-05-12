@@ -704,6 +704,17 @@ export const RostersView = ({
     return map;
   }, [allPlayers]);
 
+  // Build a full player-directory lookup (name → full player record). The
+  // Stats panel's PGAT view reads seasonEarnings/eventsPlayed/cutsMade from
+  // here — those fields are synced from pgatour.com via the admin
+  // "Sync PGAT Stats" button. Replaces the previous globalPlayerStats
+  // path which drifted whenever SFGL processing missed a player.
+  const playerDirectoryMap = React.useMemo(() => {
+    const map = {};
+    (allPlayers || []).forEach(p => { if (p.name) map[p.name] = p; });
+    return map;
+  }, [allPlayers]);
+
   const sortedRoster = React.useMemo(() => {
     const baseRoster = rosterView === 'playing'
       ? getSortedRoster(currentRoster).filter(p => tournamentField?.has(
@@ -733,24 +744,24 @@ export const RostersView = ({
         av = rA || 9999; bv = rB || 9999;
       } else if (sortCol === 'cuts') {
         // Cuts means different things per statsView:
-        //   sfgl  → "in our lineup AND earned > $0" (tracked by sfglCutsMap)
-        //   pgaTour → total PGA cuts made (tracked by globalPlayerStats.cutsMade)
-        const ga = sfglCutsMap[a.name]?.cuts ?? 0;
-        const gb = sfglCutsMap[b.name]?.cuts ?? 0;
-        const pa = globalPlayerStats?.[a.name]?.cutsMade ?? 0;
-        const pb = globalPlayerStats?.[b.name]?.cutsMade ?? 0;
+        //   sfgl  → "in our lineup AND earned > $0" (tracked by sfglStatsMap)
+        //   pgaTour → real cuts made (synced from pgatour.com, falls back to legacy stat)
+        const ga = sfglStatsMap[a.name]?.cuts ?? 0;
+        const gb = sfglStatsMap[b.name]?.cuts ?? 0;
+        const pa = playerDirectoryMap[a.name]?.cutsMade ?? globalPlayerStats?.[a.name]?.cutsMade ?? 0;
+        const pb = playerDirectoryMap[b.name]?.cutsMade ?? globalPlayerStats?.[b.name]?.cutsMade ?? 0;
         av = statsView === 'sfgl' ? ga : pa;
         bv = statsView === 'sfgl' ? gb : pb;
       } else if (sortCol === 'earnings') {
         // Earnings sort tracks the toggle — SFGL → derived from results,
-        // PGAT → pgaTourEarnings. Reads the SAME source as the displayed
-        // value so sort order always matches what the user sees.
+        // PGAT → seasonEarnings from synced player directory (falls back to
+        // legacy globalPlayerStats counter when the sync hasn't run yet).
         av = statsView === 'sfgl'
           ? (sfglStatsMap[a.name]?.earnings || 0)
-          : (globalPlayerStats?.[a.name]?.pgaTourEarnings || 0);
+          : (playerDirectoryMap[a.name]?.seasonEarnings ?? globalPlayerStats?.[a.name]?.pgaTourEarnings ?? 0);
         bv = statsView === 'sfgl'
           ? (sfglStatsMap[b.name]?.earnings || 0)
-          : (globalPlayerStats?.[b.name]?.pgaTourEarnings || 0);
+          : (playerDirectoryMap[b.name]?.seasonEarnings ?? globalPlayerStats?.[b.name]?.pgaTourEarnings ?? 0);
       }
       // Always push players without data to the bottom
       if (!aHasData && !bHasData) return 0;
@@ -759,7 +770,7 @@ export const RostersView = ({
       if (av === bv) return 0;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
-  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglStatsMap, rosterView, tournamentField, statsView, globalPlayerStats, worldRankMap]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglStatsMap, rosterView, tournamentField, statsView, globalPlayerStats, worldRankMap, playerDirectoryMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!team) return null;
 
@@ -1025,9 +1036,7 @@ export const RostersView = ({
                     OWGR{sortArrow('owgr')}
                   </th>
                   <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
-                    {statsView === 'sfgl'
-                      ? (isMobile ? 'Cuts' : 'Cuts / Starts')
-                      : (isMobile ? 'Cuts' : 'Cuts Made')}{sortArrow('cuts')}
+                    {isMobile ? 'Cuts' : 'Cuts / Starts'}{sortArrow('cuts')}
                   </th>
                   <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)') }}>
                     {statsView === 'sfgl' ? 'Earnings' : 'PGA $'}{sortArrow('earnings')}
@@ -1278,34 +1287,35 @@ export const RostersView = ({
                     {infoView === 'stats' && (() => {
                       const owgr = worldRankMap[player.name] || null;
                       const sfglEntry = sfglStatsMap[player.name] || { cuts: 0, starts: 0, earnings: 0 };
-                      const pgaStats = globalPlayerStats?.[player.name] || {};
+                      // PGAT view: read from the player directory which is
+                      // populated by the admin "Sync PGAT Stats" sync. These
+                      // fields come from pgatour.com — real season earnings,
+                      // real events-played, real cuts-made. Fall back to
+                      // globalPlayerStats (the legacy incremental counter)
+                      // when the sync hasn't run yet so old data shows
+                      // something rather than $0 across the board.
+                      const dir = playerDirectoryMap[player.name] || {};
+                      const legacyPga = globalPlayerStats?.[player.name] || {};
+                      const pgaEarnings = dir.seasonEarnings ?? legacyPga.pgaTourEarnings ?? 0;
+                      const pgaCuts     = dir.cutsMade       ?? legacyPga.cutsMade       ?? 0;
+                      const pgaEvents   = dir.eventsPlayed   ?? legacyPga.eventsPlayed   ?? 0;
 
                       // Cuts column: dual-meaning per statsView
-                      //   sfgl  → "started in our lineup AND earned >$0" — meaningful ratio
-                      //   pgaTour → total cuts made across all SFGL-tracked PGA events.
-                      // The PGA Tour view shows a count rather than a ratio: our
-                      // processTournamentData only increments eventsPlayed for
-                      // players who earned > $0 (because earningsMap is filtered
-                      // to earn-positive players upstream), so eventsPlayed ===
-                      // cutsMade always — the ratio would always read "X/X" and
-                      // is therefore meaningless.
+                      //   sfgl  → "started in our lineup AND earned >$0" (cuts/starts ratio)
+                      //   pgaTour → cuts made / events played (real PGA data)
                       let cutsDisplay;
                       if (statsView === 'sfgl') {
                         cutsDisplay = `${sfglEntry.cuts}/${sfglEntry.starts}`;
                       } else {
-                        cutsDisplay = String(pgaStats.cutsMade || 0);
+                        cutsDisplay = pgaEvents > 0 ? `${pgaCuts}/${pgaEvents}` : String(pgaCuts);
                       }
 
-                      // Earnings column — SFGL pulls from the derived
-                      // sfglStatsMap (matches what the Tournaments page
-                      // shows). PGA $ still uses globalPlayerStats which
-                      // is also maintained per-tournament but doesn't
-                      // suffer the same name-mismatch class of bugs since
-                      // it's keyed on the player name exactly as the
-                      // PGA results emit it.
+                      // Earnings column — SFGL from the derived sfglStatsMap
+                      // (matches Tournaments page). PGA $ from the synced
+                      // player directory (matches pgatour.com).
                       const amount = statsView === 'sfgl'
                         ? (sfglEntry.earnings || 0)
-                        : (pgaStats.pgaTourEarnings || 0);
+                        : pgaEarnings;
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
                         <>
