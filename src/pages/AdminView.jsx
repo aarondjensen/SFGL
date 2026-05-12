@@ -1784,6 +1784,79 @@ export const AdminView = ({
     }
   };
 
+  // ── Rebuild Headshots ──────────────────────────────────────────────────────
+  // When a stale wrong ESPN ID is cached for a player (e.g. Matt
+  // Fitzpatrick's ID stored under Alex Fitzpatrick's name), the normal
+  // auto-fetch can't fix it: the strict findInMap in the endpoint returns
+  // null for ambiguous lookups, and "null" doesn't overwrite an existing
+  // value via the upsert path. This handler explicitly clears espn_id for
+  // every rostered player and then triggers a fresh fetch — so the strict
+  // matcher's results (correct ID, or initials fallback) become canonical.
+  const [hsRebuildStatus,  setHsRebuildStatus]  = useState(null);
+  const [hsRebuildSummary, setHsRebuildSummary] = useState('');
+
+  const handleRebuildHeadshots = async () => {
+    const ok = await dialog.showConfirm(
+      'Rebuild Headshot Map',
+      'This clears the cached ESPN ID for every rostered player and re-fetches fresh IDs. Players who can\'t be uniquely identified will fall back to initials avatars (better than showing the wrong face).\n\nContinue?',
+      { confirmText: 'Rebuild' }
+    );
+    if (!ok) return;
+
+    setHsRebuildStatus('working');
+    setHsRebuildSummary('');
+    try {
+      const rostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))].filter(Boolean);
+      if (!rostered.length) throw new Error('No rostered players found');
+
+      // 1. Clear Firestore (explicit null write — bypasses the upsert path
+      //    that skips null espnIds).
+      await playersApi.clearEspnIds(rostered);
+
+      // 2. Clear in-memory map so the UI immediately stops showing stale
+      //    faces. Falls back to initials until the refetch completes.
+      setHeadshots(() => ({}));
+
+      // 3. Immediate refetch via the endpoint. This bypasses the auto-fetch
+      //    useEffect's TTL ref (which would block a rapid second fetch).
+      const encoded = rostered.map(n => encodeURIComponent(n)).join(',');
+      const resp = await fetch(`/api/headshots?names=${encoded}`);
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data?.error || `Headshot endpoint returned ${resp.status}`);
+
+      const results = data?.results || {};
+      const notFound = data?.notFound || [];
+      const foundCount = Object.keys(results).length;
+
+      // 4. Apply new IDs to client state and persist to Firestore.
+      if (foundCount > 0) {
+        setHeadshots(prev => ({ ...(prev || {}), ...results }));
+        await playersApi.upsertMany(
+          Object.entries(results).map(([name, espnId]) => ({ name, espnId }))
+        );
+      }
+
+      // Log unresolved names so the commish can see exactly who fell back.
+      // These are usually lower-tier players who didn't play in any of the
+      // ESPN_EVENT_IDS the endpoint indexes — solvable by adding more event
+      // IDs to api/headshots.js or by manual override.
+      if (notFound.length) {
+        console.warn('[RebuildHeadshots] Players not uniquely identifiable in ESPN index:', notFound);
+        console.warn('[RebuildHeadshots] These players now use the initials-avatar fallback. To fix specific players, add an ESPN event ID where they played to api/headshots.js ESPN_EVENT_IDS.');
+      }
+
+      setHsRebuildStatus(notFound.length > 0 ? 'warning' : 'done');
+      const parts = [`✓ ${foundCount}/${rostered.length} headshots rebuilt`];
+      if (notFound.length) {
+        parts.push(`${notFound.length} fell back to initials: ${notFound.slice(0, 4).join(', ')}${notFound.length > 4 ? ` +${notFound.length - 4} more` : ''} (see console)`);
+      }
+      setHsRebuildSummary(parts.join(' · '));
+    } catch (err) {
+      setHsRebuildStatus('error');
+      setHsRebuildSummary(err.message || 'Rebuild failed');
+    }
+  };
+
   // ── LIV roster sync ───────────────────────────────────────────────────────
   const [livSyncStatus, setLivSyncStatus] = useState(null);
   const [livSyncSummary, setLivSyncSummary] = useState('');
@@ -2203,6 +2276,37 @@ export const AdminView = ({
             lineHeight: 1.5,
           }}>
             {pgatSummary}
+          </div>
+        )}
+      </div>
+
+      {/* ── 3c. Rebuild Headshot Map ── */}
+      {/* Used when a stale wrong ESPN ID is cached for a player (e.g. Alex
+          Fitzpatrick showing Matt Fitzpatrick's face). The normal auto-fetch
+          can't overwrite a wrong-but-cached value when the new lookup returns
+          null (ambiguous match). This handler explicitly clears and refetches. */}
+      <div style={S.section}>
+        <div style={S.title}>🖼️ Rebuild Headshot Map</div>
+        <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+          Clears cached ESPN IDs and re-fetches fresh ones. Use when a player shows the wrong face.
+        </div>
+        <button
+          onClick={handleRebuildHeadshots}
+          disabled={hsRebuildStatus === 'working'}
+          style={{ ...S.btn, ...(hsRebuildStatus === 'working' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+        >
+          {hsRebuildStatus === 'working' ? '⏳ Rebuilding…' : '🔄 Rebuild Headshots'}
+        </button>
+        {hsRebuildSummary && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+            background: hsRebuildStatus === 'error' ? colors.dangerBg : hsRebuildStatus === 'warning' ? 'rgba(200,170,60,0.1)' : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${hsRebuildStatus === 'error' ? colors.dangerBorder : hsRebuildStatus === 'warning' ? 'rgba(200,170,60,0.4)' : 'rgba(80,160,100,0.3)'}`,
+            color: hsRebuildStatus === 'error' ? colors.danger : hsRebuildStatus === 'warning' ? 'rgba(220,190,80,0.95)' : colors.success,
+            wordBreak: 'break-word',
+            lineHeight: 1.5,
+          }}>
+            {hsRebuildSummary}
           </div>
         )}
       </div>
