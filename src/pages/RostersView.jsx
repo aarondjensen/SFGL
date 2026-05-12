@@ -464,8 +464,8 @@ export const RostersView = ({
       return { ...t, lineup: newLineup };
     });
     updateTeams(newTeams); // writes to teamsApi (Firebase) + localStorage
-    if (!isInLineup) dialog.showToast(`${lastName} added to lineup`, 'success');
-    else dialog.showToast(`${lastName} removed from lineup`, 'info');
+    if (!isInLineup) dialog.showToast(`${lastName} added to lineup`, 'success', { position: 'top' });
+    else dialog.showToast(`${lastName} removed from lineup`, 'info', { position: 'top' });
   }, [team, teams, updateTeams, dialog]);
 
 
@@ -983,10 +983,10 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '46%' : '50%' }} />
-              <col style={{ width: isMobile ? '17%' : '12.5%' }} />
-              <col style={{ width: isMobile ? '17%' : '12.5%' }} />
-              <col style={{ width: isMobile ? '20%' : '25%' }} />
+              <col style={{ width: isMobile ? '52%' : '56%' }} />
+              <col style={{ width: isMobile ? '14%' : '11%' }} />
+              <col style={{ width: isMobile ? '14%' : '11%' }} />
+              <col style={{ width: isMobile ? '20%' : '22%' }} />
             </colgroup>
             <thead>
               {/* Row 1: desktop only — toggles in thead */}
@@ -1038,8 +1038,8 @@ export const RostersView = ({
                   <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
                     {isMobile ? 'Cuts' : 'Cuts / Starts'}{sortArrow('cuts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)') }}>
-                    {statsView === 'sfgl' ? 'Earnings' : 'PGA $'}{sortArrow('earnings')}
+                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(245,197,24,0.9)') }}>
+                    Earnings{sortArrow('earnings')}
                   </th>
                 </>)}
               </tr>
@@ -1161,7 +1161,14 @@ export const RostersView = ({
                               </span>
                             )}
                             {player.unlimited && (
-                              <span style={{ fontSize: 10, color: isBenched ? dimColor : 'rgba(100,140,220,0.9)', flexShrink: 0 }}>♾️</span>
+                              <span style={{
+                                fontFamily: fonts.sans,
+                                fontSize: 14,
+                                fontWeight: 700,
+                                lineHeight: 1,
+                                color: isBenched ? 'rgba(100,140,220,0.4)' : 'rgba(100,140,220,0.9)',
+                                flexShrink: 0,
+                              }} title="Unlimited starts">∞</span>
                             )}
                           </div>
                           <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
@@ -1312,11 +1319,13 @@ export const RostersView = ({
 
                       // Earnings column — SFGL from the derived sfglStatsMap
                       // (matches Tournaments page). PGA $ from the synced
-                      // player directory (matches pgatour.com).
+                      // player directory (matches pgatour.com). Both use the
+                      // same green so the visual weight is identical across
+                      // the toggle.
                       const amount = statsView === 'sfgl'
                         ? (sfglEntry.earnings || 0)
                         : pgaEarnings;
-                      const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
+                      const posColor = colors.earningsGreen;
                       return (
                         <>
                           <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{owgr ? `#${owgr}` : '—'}</td>

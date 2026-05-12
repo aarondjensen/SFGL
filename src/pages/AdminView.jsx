@@ -1668,6 +1668,12 @@ export const AdminView = ({
       const fetched = Array.isArray(data.players) ? data.players : [];
       if (!fetched.length) throw new Error('No player stats returned');
 
+      // Diagnostic: dump full payload to console so we can see exactly what
+      // pgatour.com is returning. Top 20 by earnings is usually enough to
+      // confirm whether the expected players are there.
+      console.log('[PGAT Sync] Endpoint returned', fetched.length, 'players. Source attempts:', data.sourceAttempts);
+      console.log('[PGAT Sync] Top 20 by earnings:', fetched.slice(0, 20).map(p => `${p.name}: $${(p.earnings || 0).toLocaleString()} (${p.cutsMade || 0}/${p.eventsPlayed || 0})`));
+
       // Normalize names for comparison (lowercase, strip accents, trim).
       // Mirrors the normalizePlayerName approach used elsewhere in the app
       // for the Nordic letter handling (ø → o, æ → ae).
@@ -1681,8 +1687,19 @@ export const AdminView = ({
       const lookup = new Map();
       (allPlayers || []).forEach(p => { if (p.name) lookup.set(normalize(p.name), p); });
 
+      // What players are on a current SFGL roster? We care most about these —
+      // any roster player without matched PGAT data shows up in the Stats
+      // panel with $0 or stale legacy data. Surfacing this list in the toast
+      // lets the commish see exactly which players are missing.
+      const rosteredNames = new Set(
+        teams.flatMap(t => (t.roster || []).map(p => normalize(p.name)).filter(Boolean))
+      );
+
+      const matchedRostered = new Set();
       const updates = [];
-      const unmatched = [];
+      const unmatchedRostered = [];
+
+      // First pass: match every fetched player against our directory.
       fetched.forEach(({ name, earnings, eventsPlayed, cutsMade }) => {
         const norm = normalize(name);
         const existing = lookup.get(norm);
@@ -1694,10 +1711,10 @@ export const AdminView = ({
             cutsMade:       cutsMade || 0,
             statsLastSynced: new Date().toISOString(),
           });
+          if (rosteredNames.has(norm)) matchedRostered.add(norm);
         } else if ((earnings || 0) > 0) {
-          // Player isn't in our directory yet but has earnings — add them
-          // so the data is available if they're rostered later. Skip
-          // zero-earnings unmatched names to avoid bloating the directory.
+          // Player not in directory — add them so they're available if
+          // rostered later.
           updates.push({
             name,
             seasonEarnings: earnings || 0,
@@ -1705,9 +1722,26 @@ export const AdminView = ({
             cutsMade:       cutsMade || 0,
             statsLastSynced: new Date().toISOString(),
           });
-          unmatched.push(name);
         }
       });
+
+      // Second pass: which rostered players DIDN'T match anyone in the fetch?
+      // These are the ones whose Stats panel will show stale data.
+      rosteredNames.forEach(rn => {
+        if (matchedRostered.has(rn)) return;
+        // Find the canonical name from any team's roster for the report
+        const display = teams
+          .flatMap(t => (t.roster || []).map(p => p.name))
+          .find(n => normalize(n) === rn);
+        if (display) unmatchedRostered.push(display);
+      });
+
+      // Diagnostic: log which roster players failed to match so we can see
+      // the spelling difference and fix the parser or add a name alias.
+      if (unmatchedRostered.length) {
+        console.warn('[PGAT Sync] Roster players NOT matched by PGAT fetch:', unmatchedRostered);
+        console.warn('[PGAT Sync] (Check the "Top 20 by earnings" log above — are they spelled differently? Outside top earners?)');
+      }
 
       if (!updates.length) throw new Error('No matching players to update');
 
@@ -1731,9 +1765,19 @@ export const AdminView = ({
       } catch (_) { /* non-critical */ }
 
       setPgatLastSynced(new Date().toISOString());
-      setPgatStatus('done');
-      const matchedCount = updates.length - unmatched.length;
-      setPgatSummary(`✓ ${fetched.length} fetched · ${matchedCount} matched to roster directory${unmatched.length ? ` · ${unmatched.length} added` : ''}`);
+      setPgatStatus(unmatchedRostered.length > 0 ? 'warning' : 'done');
+      // Summary lists unmatched roster players right in the toast so the
+      // commish doesn't have to open the console to find them.
+      const rosterMatchedCount = matchedRostered.size;
+      const rosterTotal = rosteredNames.size;
+      const parts = [
+        `✓ ${fetched.length} fetched`,
+        `${rosterMatchedCount}/${rosterTotal} rostered players matched`,
+      ];
+      if (unmatchedRostered.length) {
+        parts.push(`Missing: ${unmatchedRostered.slice(0, 5).join(', ')}${unmatchedRostered.length > 5 ? ` +${unmatchedRostered.length - 5} more` : ''} (see console)`);
+      }
+      setPgatSummary(parts.join(' · '));
     } catch (err) {
       setPgatStatus('error');
       setPgatSummary(err.message || 'PGAT sync failed');
@@ -2152,10 +2196,11 @@ export const AdminView = ({
         {pgatSummary && (
           <div style={{
             marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
-            background: pgatStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-            border: `1px solid ${pgatStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-            color: pgatStatus === 'error' ? colors.danger : colors.success,
+            background: pgatStatus === 'error' ? colors.dangerBg : pgatStatus === 'warning' ? 'rgba(200,170,60,0.1)' : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${pgatStatus === 'error' ? colors.dangerBorder : pgatStatus === 'warning' ? 'rgba(200,170,60,0.4)' : 'rgba(80,160,100,0.3)'}`,
+            color: pgatStatus === 'error' ? colors.danger : pgatStatus === 'warning' ? 'rgba(220,190,80,0.95)' : colors.success,
             wordBreak: 'break-word',
+            lineHeight: 1.5,
           }}>
             {pgatSummary}
           </div>

@@ -117,24 +117,15 @@ html {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ── Main content clearance for fixed bottom nav ──
-   Base 110px clears the bottom nav on browsers without env() support.
-   The @supports block below adds the iOS safe-area inset on top for
-   notched phones, putting the lowest content row well clear of the
-   home indicator / Siri activation zone. */
-.sfgl-main-content {
-  padding-bottom: 110px;
-}
-
 /* ── Safe area padding for notched phones (iPhone X+) ── */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   /* Bottom-sheet modals (AddDropPlayerModal) */
   .sfgl-bottom-sheet {
     padding-bottom: env(safe-area-inset-bottom);
   }
-  /* Main content area — adds safe-area on top of base 110px */
+  /* Main content area — already has padding-bottom: 80px, add safe area on top */
   .sfgl-main-content {
-    padding-bottom: calc(110px + env(safe-area-inset-bottom));
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
   }
 }
 
@@ -148,6 +139,10 @@ html { scrollbar-gutter: stable; }
 @keyframes sfgl-slideUp {
   from { transform: translateY(100%); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes sfgl-slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
 }
 @keyframes sfgl-scaleIn {
   from { transform: scale(0.96); opacity: 0; }

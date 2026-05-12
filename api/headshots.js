@@ -13,13 +13,22 @@ const HEADERS = {
   'Accept': 'application/json',
 };
 
-// Recent 2026 PGA Tour event ESPN IDs — Signature/Major fields for maximum coverage
+// Recent 2026 PGA Tour event ESPN IDs — Signature + full-field events for max coverage.
+// Signature events have small fields (~75) of top players. Full-field events
+// include lower-tier players who don't qualify for Signatures (e.g. Alex
+// Fitzpatrick at Truist 2026). Mixing both ensures we index headshots for
+// the widest possible roster.
+//
+// To update: find new IDs at https://www.espn.com/golf/leaderboard?tournamentId=XXXXXXX
+// — open a recent tournament's leaderboard and the ID is in the URL.
 const ESPN_EVENT_IDS = [
   '401811942', // RBC Heritage 2026 (Signature — 82 players)
   '401811940', // Masters 2026
-  '401811938', // THE PLAYERS 2026 (Signature — large field)
+  '401811938', // THE PLAYERS 2026 (Signature)
   '401811934', // Arnold Palmer Invitational 2026
   '401811932', // Genesis Invitational 2026
+  '401811943', // Truist Championship 2026 (full-field, includes Alex Fitzpatrick et al)
+  '401811935', // Cognizant Classic 2026 (full-field — opposite week from a Signature)
 ];
 
 export default async function handler(req, res) {
@@ -110,30 +119,43 @@ async function buildPlayerMap(eventIds) {
 }
 
 // ── Fuzzy name lookup ────────────────────────────────────────────────────────
+// Strategy:
+//   1. Exact normalized match (best)
+//   2. Last-name match AND first-initial must agree (prevents brother/relative
+//      collisions like Alex vs Matt Fitzpatrick, Tom vs Kevin Kim, etc)
+//   3. If multiple last-name matches, narrow by first-initial
+//
+// Critical: when only one last-name match exists, we still REQUIRE the first
+// initial to match. Otherwise we incorrectly returned the wrong relative's
+// ID whenever the actual player wasn't in our indexed events (e.g. Alex
+// Fitzpatrick at a lower-tier tournament our ESPN_EVENT_IDS don't include).
+// Returning null lets the client fall back to an initials-avatar — which is
+// preferable to displaying the wrong player's face.
 function findInMap(map, name) {
   const norm = normalize(name);
 
-  // Exact match
+  // 1. Exact match
   if (map.has(norm)) return map.get(norm);
 
-  // Last name only
+  // 2. Last-name + first-initial match (strict)
   const parts = norm.split(' ');
   const lastName = parts[parts.length - 1];
   const firstInitial = parts[0]?.[0];
+  if (!lastName || !firstInitial) return null;
 
-  // Find all entries with same last name
   const lastNameMatches = [...map.entries()].filter(([key]) => {
     const keyParts = key.split(' ');
     return keyParts[keyParts.length - 1] === lastName;
   });
 
-  if (lastNameMatches.length === 1) return lastNameMatches[0][1];
+  // Filter to entries whose first initial agrees with the request.
+  const initialMatches = lastNameMatches.filter(([key]) => key.startsWith(firstInitial));
 
-  // Narrow by first initial
-  if (lastNameMatches.length > 1 && firstInitial) {
-    const match = lastNameMatches.find(([key]) => key.startsWith(firstInitial));
-    if (match) return match[1];
-  }
+  // Exactly one match with correct initial → safe to return.
+  if (initialMatches.length === 1) return initialMatches[0][1];
 
+  // Multiple matches with same first initial (e.g. multiple "S. Kim"s): too
+  // ambiguous to disambiguate further without more name parts; return null.
+  // Caller falls back to the initials avatar so we never show wrong faces.
   return null;
 }
