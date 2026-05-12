@@ -203,14 +203,13 @@ const maybeAutoAwardSwing = (swingSegment, tournaments, teams, transactions) => 
     note: swingSegment + ' winner pot (auto-awarded)',
   };
 
-  const updatedTeams = teams.map(t =>
-    t.id === winnerId
-      ? { ...t, earnings: (t.earnings || 0) + pot }
-      : t
-  );
-
+  // Note: the pot is a side-prize visible only in TransactionsView. It does
+  // NOT add to team.earnings, and consequently does not appear in Season or
+  // Swing standings (which derive from tournament.results). Keeping the pot
+  // out of standings simplifies the data model — the team's "earnings" stays
+  // a pure sum of tournament winnings.
   return {
-    updatedTeams,
+    updatedTeams: teams,
     updatedTransactions: [...transactions, newSwingTx],
     summary: `${swingSegment} complete — $${pot.toLocaleString()} to ${winnerTeam.name}`,
   };
@@ -1079,19 +1078,10 @@ export const AdminView = ({
 
       if (swingCascade) {
         try {
-          // 1. Reverse old swing pot credit from whoever was awarded
-          const oldWinnerTeam = finalTeams.find(t => t.name === existingSwingTx.team);
-          if (oldWinnerTeam) {
-            finalTeams = finalTeams.map(t =>
-              t.id === oldWinnerTeam.id
-                ? { ...t, earnings: Math.max(0, (t.earnings || 0) - (existingSwingTx.amount || 0)) }
-                : t
-            );
-          }
-
-          // 2. Recompute swing standings against the NEW tournament results (newT).
-          // Ranking requires results; pot calc uses the canonical helper
-          // (works across all tournaments in the swing regardless of results).
+          // Swing pot is a side-prize that does NOT affect team.earnings,
+          // so the cascade only needs to swap the swing_winner tx — no
+          // reversal of credits, no new credit. Determine the new winner
+          // by ranking against the freshly-reprocessed tournament results.
           const rankedSegmentTournaments = newT.filter(tt => tt.completed && getTournamentSegment(tt) === tSegment && tt.results?.teams);
           const byTeam = {};
           rankedSegmentTournaments.forEach(tt => {
@@ -1105,12 +1095,12 @@ export const AdminView = ({
             const [winnerId] = winnerEntry;
             const newWinnerTeam = finalTeams.find(t => t.id === winnerId);
 
-            // 3. Recompute pot via the canonical helper — matches what the
+            // Recompute pot via the canonical helper — matches what the
             // dropdown, leader panel, and TransactionsView all display.
             const newPot = computeSwingPot(transactions, newT, tSegment);
 
-            // 4. Drop the old swing_winner tx, append the new one.
-            // Tag tournamentIndex to the last ranked tournament so the tx
+            // Drop the old swing_winner tx, append the new one. Tag
+            // tournamentIndex to the last ranked tournament so the tx
             // sorts naturally with other transactions in TransactionsView.
             const lastSegTourney = rankedSegmentTournaments.reduce((last, tt) => {
               const idx = newT.indexOf(tt);
@@ -1134,15 +1124,6 @@ export const AdminView = ({
             finalTransactions = transactions
               .filter(tx => !(tx.type === 'swing_winner' && tx.segment === tSegment))
               .concat(newSwingTx);
-
-            // 5. Credit the new winner with the (re)computed pot
-            if (newWinnerTeam) {
-              finalTeams = finalTeams.map(t =>
-                t.id === winnerId
-                  ? { ...t, earnings: (t.earnings || 0) + newPot }
-                  : t
-              );
-            }
 
             // For the toast — surface whether the winner actually changed
             const sameWinner = newWinnerTeam?.name === existingSwingTx.team;
@@ -1387,8 +1368,19 @@ export const AdminView = ({
   const handleProcessAll = async (pending) => {
     if (!pending.length) return;
     if (!await dialog.showConfirm('Process All Waivers', 'Process ' + pending.length + ' pending claim' + (pending.length !== 1 ? 's' : '') + '?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims.', { confirmText: 'Process All' })) return;
-    const em = {}; teams.forEach(t => { em[t.name] = t.earnings || 0; });
-    const pm = {}; [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
+    // Derive each team's current season earnings from tournament.results so
+    // waiver priority isn't affected by drift in the stored team.earnings
+    // field. Mirrors StandingsView's seasonTotals derivation.
+    const derivedEarnings = {};
+    teams.forEach(t => { derivedEarnings[t.id] = 0; });
+    tournaments.forEach(t => {
+      if (!t.completed || !t.results?.teams) return;
+      Object.entries(t.results.teams).forEach(([teamId, result]) => {
+        if (derivedEarnings[teamId] !== undefined) derivedEarnings[teamId] += (result.totalEarnings || 0);
+      });
+    });
+    const em = {}; teams.forEach(t => { em[t.name] = derivedEarnings[t.id] || 0; });
+    const pm = {}; [...teams].sort((a, b) => (derivedEarnings[a.id] || 0) - (derivedEarnings[b.id] || 0)).forEach((t, i) => { pm[t.name] = i; });
     let nextLastPlace = teams.length; // counter for pushing winners to back of priority
     const byTeam = {}; pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
     Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
@@ -1500,13 +1492,9 @@ export const AdminView = ({
       note: swingAwardSeg + ' winner pot',
     };
 
-    const newTeams = teams.map(t =>
-      t.id === winnerId
-        ? { ...t, earnings: (t.earnings || 0) + pot }
-        : t
-    );
-
-    updateTeams(newTeams);
+    // Pot is a side-prize tracked in transactions only — does NOT add to
+    // team.earnings. Standings derive from tournament.results and
+    // intentionally exclude the pot.
     setTransactions(prev => [...prev, newTx]);
     // Persistence handled by setTransactions (= updateTransactions); sfglDataApi write below is backup.
     await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(e => console.error('sfgl tx:', e));
@@ -1519,6 +1507,13 @@ export const AdminView = ({
   const [owgrStatus, setOwgrStatus] = useState(null);
   const [owgrSummary, setOwgrSummary] = useState('');
   const [owgrLastSynced, setOwgrLastSynced] = useState(null);
+
+  // PGA Tour season stats (earnings / events played / cuts made). Same
+  // pattern as OWGR — admin runs sync, results upserted into `players`
+  // collection so RostersView displays player.seasonEarnings et al.
+  const [pgatStatus,     setPgatStatus]     = useState(null);
+  const [pgatSummary,    setPgatSummary]    = useState('');
+  const [pgatLastSynced, setPgatLastSynced] = useState(() => settings?.pgatStatsLastSynced || null);
 
   // ── Merge Players ─────────────────────────────────────────────────────────
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -1644,6 +1639,104 @@ export const AdminView = ({
     } catch (err) {
       setOwgrStatus('error');
       setOwgrSummary(err.message || 'OWGR sync failed');
+    }
+  };
+
+  // ── PGA Tour season stats sync ────────────────────────────────────────────
+  // Fetches official money/events/cuts from pgatour.com. The "PGA $" column
+  // in RostersView displays this data — replacing the stale-prone
+  // globalPlayerStats incremental counter that drifts from SFGL processing.
+  //
+  // Match strategy: try exact name first (case-insensitive). If not found,
+  // try a normalized form (lowercase, accent-stripped). New players are
+  // added so the table can still surface their data if they get rostered
+  // later. The PGA Tour name format is generally stable so collisions
+  // between different real-world players are rare; we still log any
+  // unmatched names for the commish to review.
+  const handleSyncPgatStats = async () => {
+    setPgatStatus('fetching');
+    setPgatSummary('');
+    try {
+      const resp = await fetch('/api/pgat-stats');
+      const data = await resp.json();
+      if (!resp.ok) {
+        // Surface the attempts array if the endpoint returned one — useful
+        // diagnostic when PGA Tour changes their URL structure.
+        const detail = data.attempts ? ' — ' + JSON.stringify(data.attempts) : '';
+        throw new Error((data.error || 'PGAT fetch failed') + detail);
+      }
+      const fetched = Array.isArray(data.players) ? data.players : [];
+      if (!fetched.length) throw new Error('No player stats returned');
+
+      // Normalize names for comparison (lowercase, strip accents, trim).
+      // Mirrors the normalizePlayerName approach used elsewhere in the app
+      // for the Nordic letter handling (ø → o, æ → ae).
+      const normalize = (s) => String(s || '')
+        .toLowerCase()
+        .replace(/ø/g, 'o').replace(/æ/g, 'ae')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const lookup = new Map();
+      (allPlayers || []).forEach(p => { if (p.name) lookup.set(normalize(p.name), p); });
+
+      const updates = [];
+      const unmatched = [];
+      fetched.forEach(({ name, earnings, eventsPlayed, cutsMade }) => {
+        const norm = normalize(name);
+        const existing = lookup.get(norm);
+        if (existing) {
+          updates.push({
+            name: existing.name,
+            seasonEarnings: earnings || 0,
+            eventsPlayed:   eventsPlayed || 0,
+            cutsMade:       cutsMade || 0,
+            statsLastSynced: new Date().toISOString(),
+          });
+        } else if ((earnings || 0) > 0) {
+          // Player isn't in our directory yet but has earnings — add them
+          // so the data is available if they're rostered later. Skip
+          // zero-earnings unmatched names to avoid bloating the directory.
+          updates.push({
+            name,
+            seasonEarnings: earnings || 0,
+            eventsPlayed:   eventsPlayed || 0,
+            cutsMade:       cutsMade || 0,
+            statsLastSynced: new Date().toISOString(),
+          });
+          unmatched.push(name);
+        }
+      });
+
+      if (!updates.length) throw new Error('No matching players to update');
+
+      await playersApi.upsertMany(updates);
+
+      // Update in-memory allPlayers so the Stats view reflects immediately
+      // without requiring a page reload.
+      const updatedByName = new Map(updates.map(u => [u.name, u]));
+      const nextPlayers = (allPlayers || []).map(p => {
+        const u = updatedByName.get(p.name);
+        return u ? { ...p, ...u } : p;
+      });
+      // Append any "added" players that didn't exist before
+      const existingNames = new Set(nextPlayers.map(p => p.name));
+      updates.forEach(u => { if (!existingNames.has(u.name)) nextPlayers.push(u); });
+      setAllPlayers(nextPlayers);
+
+      // Persist sync timestamp to settings so the UI can show "last synced"
+      try {
+        await sfglDataApi.set(STORAGE_KEYS.SETTINGS, { ...settings, pgatStatsLastSynced: new Date().toISOString() });
+      } catch (_) { /* non-critical */ }
+
+      setPgatLastSynced(new Date().toISOString());
+      setPgatStatus('done');
+      const matchedCount = updates.length - unmatched.length;
+      setPgatSummary(`✓ ${fetched.length} fetched · ${matchedCount} matched to roster directory${unmatched.length ? ` · ${unmatched.length} added` : ''}`);
+    } catch (err) {
+      setPgatStatus('error');
+      setPgatSummary(err.message || 'PGAT sync failed');
     }
   };
 
@@ -2037,6 +2130,34 @@ export const AdminView = ({
             color: owgrStatus === 'error' ? colors.danger : colors.success,
           }}>
             {owgrSummary}
+          </div>
+        )}
+      </div>
+
+      {/* ── 3b. Update PGAT Stats ── */}
+      <div style={S.section}>
+        <div style={S.title}>💰 Update PGAT Stats</div>
+        {pgatLastSynced && (
+          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+            Last synced: {new Date(pgatLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
+        <button
+          onClick={handleSyncPgatStats}
+          disabled={pgatStatus === 'fetching'}
+          style={{ ...S.btn, ...(pgatStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+        >
+          {pgatStatus === 'fetching' ? '⏳ Fetching…' : '🔄 Sync PGAT Stats'}
+        </button>
+        {pgatSummary && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
+            background: pgatStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+            border: `1px solid ${pgatStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+            color: pgatStatus === 'error' ? colors.danger : colors.success,
+            wordBreak: 'break-word',
+          }}>
+            {pgatSummary}
           </div>
         )}
       </div>
