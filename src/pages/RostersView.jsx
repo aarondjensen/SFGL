@@ -11,7 +11,7 @@ import {
   getCurrentTournamentIndex,
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
-import { theme, colors, fonts, fontSize } from '../theme.js';
+import { theme, colors, fonts } from '../theme.js';
 import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
@@ -88,17 +88,15 @@ const TeamDropdown = ({ teams, value, onChange }) => {
   }, []);
 
   return (
-    <div ref={ref} style={{ position: 'relative', minWidth: 160, flex: 1 }}>
+    <div ref={ref} style={{ position: 'relative', minWidth: 160 }}>
       <button
         onClick={() => setOpen(o => !o)}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-          padding: '8px 14px', borderRadius: 2, cursor: 'pointer', width: '100%',
-          background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
-          border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
-          fontFamily: fonts.sans, fontSize: fontSize.lg, fontWeight: 700,
-          letterSpacing: '2px', textTransform: 'uppercase',
-          color: colors.textPrimary, textAlign: 'left',
+          padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
+          background: '#0f1d35', border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
+          fontFamily: fonts.serif, fontSize: 14, fontWeight: 700,
+          color: 'rgba(255,255,255,0.9)', textAlign: 'left',
           transition: 'border-color 0.15s', whiteSpace: 'nowrap',
         }}
       >
@@ -406,7 +404,7 @@ export const RostersView = ({
   const [statsView,         setStatsView]         = useState('sfgl');
   const [rosterView,        setRosterView]        = useState('full'); // 'full' | 'playing'
   const [infoView,          setInfoView]          = useState('info'); // 'info' | 'stats'
-  const [sortCol,           setSortCol]           = useState(null);  // null | 'teeTime' | 'odds' | 'starts' | 'cuts' | 'earnings'
+  const [sortCol,           setSortCol]           = useState(null);  // null | 'teeTime' | 'odds' | 'owgr' | 'cuts' | 'earnings'
   const [sortDir,           setSortDir]           = useState('asc');
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
   const [lineupMode,        setLineupMode]        = useState(false);
@@ -673,6 +671,14 @@ export const RostersView = ({
     return () => { cancelled = true; clearInterval(interval); };
   }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Build a name->worldRank lookup from allPlayers for the OWGR stats column.
+  // Declared before sortedRoster so the OWGR sort case can read from it.
+  const worldRankMap = React.useMemo(() => {
+    const map = {};
+    (allPlayers || []).forEach(p => { if (p.worldRank) map[p.name] = p.worldRank; });
+    return map;
+  }, [allPlayers]);
+
   const sortedRoster = React.useMemo(() => {
     const baseRoster = rosterView === 'playing'
       ? getSortedRoster(currentRoster).filter(p => tournamentField?.has(
@@ -694,12 +700,32 @@ export const RostersView = ({
         aHasData = !!rawA; bHasData = !!rawB;
         const toNum = o => { if (!o) return 0; const n = parseInt(String(o).replace('+',''), 10); return isNaN(n) ? 0 : n; };
         av = toNum(rawA); bv = toNum(rawB);
-      } else if (sortCol === 'starts') {
-        av = sfglCutsMap[a.name]?.starts ?? a.starts ?? 0; bv = sfglCutsMap[b.name]?.starts ?? b.starts ?? 0;
+      } else if (sortCol === 'owgr') {
+        // OWGR is a rank — lower is better. Players without a world rank
+        // (no rank stored) get pushed to the bottom via the aHasData gate.
+        const rA = worldRankMap[a.name]; const rB = worldRankMap[b.name];
+        aHasData = !!rA; bHasData = !!rB;
+        av = rA || 9999; bv = rB || 9999;
       } else if (sortCol === 'cuts') {
-        av = sfglCutsMap[a.name]?.cuts ?? 0; bv = sfglCutsMap[b.name]?.cuts ?? 0;
+        // Cuts means different things per statsView:
+        //   sfgl  → "in our lineup AND earned > $0" (tracked by sfglCutsMap)
+        //   pgaTour → total PGA cuts made (tracked by globalPlayerStats.cutsMade)
+        const ga = sfglCutsMap[a.name]?.cuts ?? 0;
+        const gb = sfglCutsMap[b.name]?.cuts ?? 0;
+        const pa = globalPlayerStats?.[a.name]?.cutsMade ?? 0;
+        const pb = globalPlayerStats?.[b.name]?.cutsMade ?? 0;
+        av = statsView === 'sfgl' ? ga : pa;
+        bv = statsView === 'sfgl' ? gb : pb;
       } else if (sortCol === 'earnings') {
-        av = a.sfglEarnings || 0; bv = b.sfglEarnings || 0;
+        // Earnings sort tracks the toggle — SFGL → sfglEarnings, PGAT → pgaTourEarnings
+        // Without this, you'd see PGA $ values in the column but the sort would
+        // be ordered by SFGL $ — the rows would appear shuffled.
+        av = statsView === 'sfgl'
+          ? (a.sfglEarnings || 0)
+          : (globalPlayerStats?.[a.name]?.pgaTourEarnings || 0);
+        bv = statsView === 'sfgl'
+          ? (b.sfglEarnings || 0)
+          : (globalPlayerStats?.[b.name]?.pgaTourEarnings || 0);
       }
       // Always push players without data to the bottom
       if (!aHasData && !bHasData) return 0;
@@ -708,14 +734,7 @@ export const RostersView = ({
       if (av === bv) return 0;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
-  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglCutsMap, rosterView, tournamentField]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Build a name->worldRank lookup from allPlayers for the OWGR stats column
-  const worldRankMap = React.useMemo(() => {
-    const map = {};
-    (allPlayers || []).forEach(p => { if (p.worldRank) map[p.name] = p.worldRank; });
-    return map;
-  }, [allPlayers]);
+  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglCutsMap, rosterView, tournamentField, statsView, globalPlayerStats, worldRankMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!team) return null;
 
@@ -973,13 +992,17 @@ export const RostersView = ({
                   <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
                     Odds{sortArrow('odds')}
                   </th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell }} />
+                  <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', color: 'rgba(255,255,255,0.85)' }}>
+                    {liveData?.players?.length ? 'Pos' : ''}
+                  </th>
                 </>) : (<>
-                  <th scope="col" onClick={() => toggleSort('starts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('starts', 'rgba(100,180,255,0.9)') }}>
-                    OWGR{sortArrow('starts')}
+                  <th scope="col" onClick={() => toggleSort('owgr')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('owgr', 'rgba(100,180,255,0.9)') }}>
+                    OWGR{sortArrow('owgr')}
                   </th>
                   <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
-                    {isMobile ? 'Cuts' : 'Cuts Made'}{sortArrow('cuts')}
+                    {statsView === 'sfgl'
+                      ? (isMobile ? 'Cuts' : 'Cuts / Starts')
+                      : (isMobile ? 'Cuts' : 'Cuts Made')}{sortArrow('cuts')}
                   </th>
                   <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(80,180,120,0.9)') }}>
                     {statsView === 'sfgl' ? 'Earnings' : 'PGA $'}{sortArrow('earnings')}
@@ -1082,7 +1105,7 @@ export const RostersView = ({
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <span style={{
-                              fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 500,
+                              fontFamily: fonts.sans, fontSize: isMobile ? 14 : 15, fontWeight: 500,
                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               color: player.limited
                                 ? (isBenched ? 'rgba(245,197,24,0.4)' : colors.textGold)
@@ -1100,7 +1123,7 @@ export const RostersView = ({
                                 fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
                                 color: isBenched ? 'rgba(245,197,24,0.35)' : colors.textGoldDim,
                               }}>
-                                {sfglCutsMap[player.name]?.starts ?? player.starts}/{MAX_LIMITED_STARTS}
+                                {sfglCutsMap[player.name]?.starts ?? 0}/{MAX_LIMITED_STARTS}
                               </span>
                             )}
                             {player.unlimited && (
@@ -1155,7 +1178,13 @@ export const RostersView = ({
                         } else if (live?.isWD) {
                           col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>WD</td>;
                         } else if (hasStarted) {
-                          const scoreColor = live.score?.startsWith('-') ? colors.danger : colors.textPrimary;
+                          // Golf scoring: under par (-) is GOOD → green; over par (+) is BAD → red.
+                          // Old code had this reversed (-3 rendered as red/danger).
+                          const isUnder = live.score?.startsWith('-');
+                          const isOver  = live.score?.startsWith('+');
+                          const scoreColor = isUnder ? colors.earningsGreen
+                                          : isOver  ? colors.danger
+                                          : colors.textPrimary;
                           col1 = (
                             <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 13 : 15, color: isBenched ? dimColor : scoreColor, fontWeight: 600 }}>
                               {live.score || 'E'}
@@ -1182,23 +1211,73 @@ export const RostersView = ({
                         </td>
                       );
 
-                      return <>{col1}{col2}<td /></>;
+                      // Col 3: Position + thru indicator (when live data available).
+                      // Previously this column rendered an empty <td/>. Now it
+                      // surfaces the player's current tournament position (e.g.
+                      // "T15") and how far they are through the current round
+                      // (e.g. "thru 12" or "F" for finished). When there's no
+                      // live data, it stays empty so the layout doesn't shift.
+                      let col3 = <td />;
+                      if (liveData?.players?.length) {
+                        // Re-find live entry (same multi-strategy match logic as col1)
+                        const rosterLast = normName.split(' ').slice(-1)[0];
+                        const live = liveData.players.find(p => normalize(p.name) === normName)
+                          || liveData.players.find(p => {
+                            const ln = normalize(p.name).split(' ').slice(-1)[0];
+                            return ln === rosterLast && rosterLast.length > 3;
+                          });
+                        if (live && !live.isCut && !live.isWD) {
+                          const thruNum = live.thru ? parseInt(live.thru, 10) : NaN;
+                          const isFinished = live.thru === 'F';
+                          const isMidRound = !isNaN(thruNum) && thruNum > 0 && thruNum < 18;
+                          // Position alone is most useful piece. Thru indicator
+                          // shows under it as small secondary text.
+                          const pos = live.position || '';
+                          col3 = (
+                            <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 11 : 13, color: isBenched ? dimColor : colors.textPrimary, lineHeight: 1.2 }}>
+                              <div>{pos || <span style={{ opacity: 0.25 }}>—</span>}</div>
+                              {(isFinished || isMidRound) && (
+                                <div style={{ fontSize: 9, color: isBenched ? dimColor : colors.textMuted, marginTop: 1 }}>
+                                  {isFinished ? 'F' : `thru ${live.thru}`}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        }
+                      }
+
+                      return <>{col1}{col2}{col3}</>;
                     })()}
 
                     {/* ── Stats columns: OWGR + Cuts + Earnings ── */}
                     {infoView === 'stats' && (() => {
                       const owgr = worldRankMap[player.name] || null;
                       const sfglEntry = sfglCutsMap[player.name] || { cuts: 0, starts: 0 };
-                      // Cuts col: SFGL = cuts/starts ratio, PGAT = PGA Tour cuts made
-                      const cuts = statsView === 'sfgl' ? sfglEntry.cuts : (globalPlayerStats[player.name]?.cutsMade || 0);
-                      const cutsOf = statsView === 'sfgl' ? sfglEntry.starts : (globalPlayerStats[player.name]?.eventsPlayed || 0);
-                      // Earnings col: SFGL = SFGL earnings, PGAT = PGA Tour earnings
-                      const amount = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (globalPlayerStats[player.name]?.pgaTourEarnings || 0);
+                      const pgaStats = globalPlayerStats?.[player.name] || {};
+
+                      // Cuts column: dual-meaning per statsView
+                      //   sfgl  → "started in our lineup AND earned >$0" — meaningful ratio
+                      //   pgaTour → total cuts made across all SFGL-tracked PGA events.
+                      // The PGA Tour view shows a count rather than a ratio: our
+                      // processTournamentData only increments eventsPlayed for
+                      // players who earned > $0 (because earningsMap is filtered
+                      // to earn-positive players upstream), so eventsPlayed ===
+                      // cutsMade always — the ratio would always read "X/X" and
+                      // is therefore meaningless.
+                      let cutsDisplay;
+                      if (statsView === 'sfgl') {
+                        cutsDisplay = `${sfglEntry.cuts}/${sfglEntry.starts}`;
+                      } else {
+                        cutsDisplay = String(pgaStats.cutsMade || 0);
+                      }
+
+                      // Earnings column: SFGL = sfglEarnings, PGAT = pgaTourEarnings
+                      const amount = statsView === 'sfgl' ? (player.sfglEarnings || 0) : (pgaStats.pgaTourEarnings || 0);
                       const posColor = statsView === 'sfgl' ? colors.earningsGreen : colors.earningsGreenLight;
                       return (
                         <>
                           <td style={{ padding: isMobile ? '7px 6px' : '8px 16px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{owgr ? `#${owgr}` : '—'}</td>
-                          <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{cuts}/{cutsOf}</td>
+                          <td style={{ padding: isMobile ? '7px 4px' : '8px 16px', textAlign: 'center', fontFamily: fonts.sans, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : colors.textPrimary }}>{cutsDisplay}</td>
                           <td style={{ padding: isMobile ? '7px 8px 7px 4px' : '8px 16px', textAlign: 'right', ...theme.statNum, fontSize: isMobile ? 13 : 15, fontWeight: 600, color: isBenched ? dimColor : (amount > 0 ? posColor : colors.textMuted) }}>${amount.toLocaleString()}</td>
                         </>
                       );
