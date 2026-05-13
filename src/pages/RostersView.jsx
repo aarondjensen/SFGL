@@ -450,23 +450,65 @@ export const RostersView = ({
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
     const isInLineup = (team.lineup || []).includes(player.name);
+    const isBackup = team.backup === player.name;
     const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
-    if (!isInLineup && activeLineupCount >= LINEUP_SIZE) {
-      dialog.showToast(`You can only have ${LINEUP_SIZE} starters`, 'error'); return;
-    }
-    if (!isInLineup && player.limited && player.starts >= MAX_LIMITED_STARTS) {
-      dialog.showToast('This player has reached their 12-start limit', 'error'); return;
-    }
+    const allowBackup = !!activeTournament?.isMajor;
     const lastName = player.name.split(' ').pop();
-    const newTeams = teams.map(t => {
-      if (t.id !== team.id) return t;
-      const newLineup = isInLineup ? t.lineup.filter(p => p !== player.name) : [...t.lineup, player.name];
-      return { ...t, lineup: newLineup };
-    });
-    updateTeams(newTeams); // writes to teamsApi (Firebase) + localStorage
-    if (!isInLineup) dialog.showToast(`${lastName} added to lineup`, 'success', { position: 'top' });
-    else dialog.showToast(`${lastName} removed from lineup`, 'info', { position: 'top' });
-  }, [team, teams, updateTeams, dialog]);
+
+    // Case 1: Player IS a starter — remove from lineup.
+    if (isInLineup) {
+      const newTeams = teams.map(t =>
+        t.id !== team.id ? t : { ...t, lineup: t.lineup.filter(p => p !== player.name) }
+      );
+      updateTeams(newTeams);
+      dialog.showToast(`${lastName} removed from lineup`, 'info', { position: 'top' });
+      return;
+    }
+
+    // Case 2: Player IS the backup — clear backup.
+    if (isBackup) {
+      const newTeams = teams.map(t =>
+        t.id !== team.id ? t : { ...t, backup: null }
+      );
+      updateTeams(newTeams);
+      dialog.showToast(`${lastName} removed as backup`, 'info', { position: 'top' });
+      return;
+    }
+
+    // Case 3: Adding new player. Starts full + Major + no backup yet → fill backup.
+    // Otherwise: add to starters if there's room, error if not.
+    if (activeLineupCount >= LINEUP_SIZE) {
+      if (allowBackup && !team.backup) {
+        // Limited start limit check ONLY applies when they'd actually start.
+        // As a backup they sit on the bench; only counts if commish promotes
+        // them, which happens via team.lineup → covered by the starter path.
+        const newTeams = teams.map(t =>
+          t.id !== team.id ? t : { ...t, backup: player.name }
+        );
+        updateTeams(newTeams);
+        dialog.showToast(`${lastName} set as backup`, 'success', { position: 'top' });
+        return;
+      }
+      // No room and either not Major or backup already set → error.
+      dialog.showToast(
+        allowBackup ? `Lineup + backup full — tap a player to remove first` : `You can only have ${LINEUP_SIZE} starters`,
+        'error', { position: 'top' }
+      );
+      return;
+    }
+
+    // Adding to starters — Limited start limit check applies here.
+    if (player.limited && player.starts >= MAX_LIMITED_STARTS) {
+      dialog.showToast('This player has reached their 12-start limit', 'error', { position: 'top' });
+      return;
+    }
+
+    const newTeams = teams.map(t =>
+      t.id !== team.id ? t : { ...t, lineup: [...(t.lineup || []), player.name] }
+    );
+    updateTeams(newTeams);
+    dialog.showToast(`${lastName} added to lineup`, 'success', { position: 'top' });
+  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE]);
 
 
   const pendingWaivers = useMemo(() => {
@@ -888,12 +930,37 @@ export const RostersView = ({
           })()}
           </div>
 
-        {/* Lineup slots — always show 5: filled headshots + silhouette placeholders */}
+        {/* Major-week backup banner — appears above the lineup slots so the
+            UX is self-explanatory the first time a manager sees it. */}
+        {activeTournament?.isMajor && canEditLineup && (
+          <div style={{
+            padding: '6px 12px',
+            background: 'rgba(245,197,24,0.06)',
+            borderTop: `1px solid rgba(245,197,24,0.2)`,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span style={{ fontSize: 11 }}>🏆</span>
+            <span style={{
+              fontFamily: fonts.sans, fontSize: 10, letterSpacing: 0.5,
+              color: 'rgba(245,197,24,0.85)', flex: 1,
+            }}>
+              <strong>Major week</strong> — pick a 6th player as backup in case a starter withdraws
+            </span>
+          </div>
+        )}
+
+        {/* Lineup slots — always show 5: filled headshots + silhouette placeholders.
+            On Major weeks, render a 6th "Backup" slot afterward, visually
+            subordinate (smaller, dotted border, labeled). */}
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, paddingBottom: 6, minHeight: 72 }}>
           <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flexWrap: 'nowrap', overflow: 'visible' }}>
             {(() => {
               const lineupPlayers = getSortedRoster(currentRoster).filter(p => (team.lineup || []).includes(p.name));
               const emptySlots = Math.max(0, LINEUP_SIZE - lineupPlayers.length);
+              const backupPlayer = team.backup
+                ? currentRoster.find(p => p.name === team.backup)
+                : null;
+              const showBackupSlot = !!activeTournament?.isMajor;
               return (
                 <>
                   {lineupPlayers.map(player => {
@@ -940,6 +1007,85 @@ export const RostersView = ({
                       </div>
                     </div>
                   ))}
+
+                  {/* ── Backup slot (Major weeks only) ──
+                      Visually subordinate: divider on the left to separate it
+                      from starters, smaller circle (38 vs 44), dotted gold
+                      border, "Backup" label. Either renders the backup player
+                      headshot (with remove on tap) or an empty placeholder. */}
+                  {showBackupSlot && (
+                    <>
+                      <div style={{
+                        alignSelf: 'center', width: 1, height: 36,
+                        background: 'rgba(255,255,255,0.1)',
+                        margin: isMobile ? '0 2px' : '0 4px',
+                      }} />
+                      {backupPlayer ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48 }}>
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (canEditLineup) togglePlayerInLineup(backupPlayer);
+                            }}
+                            style={{
+                              width: 38, height: 38, borderRadius: '50%',
+                              border: `2px dotted rgba(245,197,24,0.55)`,
+                              padding: 1,
+                              overflow: 'hidden',
+                              cursor: canEditLineup ? 'pointer' : 'default',
+                              position: 'relative',
+                            }}
+                            title={canEditLineup ? `Remove ${backupPlayer.name} as backup` : backupPlayer.name}
+                          >
+                            <img
+                              src={getPlayerHeadshot(backupPlayer.name, backupPlayer.limited, headshots)}
+                              alt={backupPlayer.name}
+                              onError={(e) => { e.currentTarget.src = getPlayerHeadshotFallback(backupPlayer.name, backupPlayer.limited); }}
+                              style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block' }}
+                            />
+                          </div>
+                          <div style={{
+                            fontSize: 9, fontFamily: fonts.sans, marginTop: 3,
+                            color: 'rgba(245,197,24,0.85)', letterSpacing: 0.3,
+                            textAlign: 'center', width: '100%',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            fontWeight: 600,
+                          }}>
+                            {backupPlayer.name.split(' ').pop()}
+                          </div>
+                          <div style={{ fontSize: 8, fontFamily: fonts.sans, color: 'rgba(245,197,24,0.5)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                            Backup
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48, cursor: canEditLineup ? 'pointer' : 'default' }}
+                          onClick={(e) => { e.stopPropagation(); if (canEditLineup) setLineupMode(true); }}
+                        >
+                          <div style={{
+                            width: 38, height: 38, borderRadius: '50%',
+                            background: lineupMode ? 'rgba(245,197,24,0.06)' : 'rgba(255,255,255,0.03)',
+                            border: `2px dotted ${canEditLineup ? (lineupMode ? 'rgba(245,197,24,0.6)' : 'rgba(245,197,24,0.35)') : 'rgba(255,255,255,0.12)'}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.15s',
+                          }}>
+                            <span style={{
+                              fontSize: 17, fontWeight: 300, lineHeight: 1,
+                              color: canEditLineup ? (lineupMode ? 'rgba(245,197,24,0.85)' : 'rgba(245,197,24,0.45)') : 'rgba(255,255,255,0.15)',
+                            }}>+</span>
+                          </div>
+                          <div style={{
+                            fontSize: 8, fontFamily: fonts.sans, marginTop: 3,
+                            textAlign: 'center', width: '100%',
+                            color: canEditLineup ? 'rgba(245,197,24,0.6)' : 'rgba(255,255,255,0.15)',
+                            letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600,
+                          }}>
+                            {canEditLineup ? 'Backup' : '—'}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </>
               );
             })()}
