@@ -408,6 +408,12 @@ export const RostersView = ({
   const [sortDir,           setSortDir]           = useState('asc');
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
   const [lineupMode,        setLineupMode]        = useState(false);
+  // pickingBackup: explicit "next tap fills the backup slot" mode. Set when
+  // the user taps the empty backup placeholder; cleared after a player is
+  // picked or after Cancel is pressed. Lets the user designate a backup at
+  // ANY point — not just after filling all 5 starters (which was the bug
+  // in the original implementation).
+  const [pickingBackup,     setPickingBackup]     = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
@@ -455,6 +461,51 @@ export const RostersView = ({
     const allowBackup = !!activeTournament?.isMajor;
     const lastName = player.name.split(' ').pop();
 
+    // ── EXPLICIT "picking backup" mode ──────────────────────────────────────
+    // User tapped the empty backup placeholder first → next player tap fills
+    // backup, regardless of starter count. This was the bug: previously the
+    // ONLY way to set backup was to fill all 5 starters then tap a 6th. Now
+    // it's an intentional, discoverable action.
+    if (pickingBackup) {
+      // Clear mode now so any error path also exits the mode rather than
+      // stranding the user in it.
+      setPickingBackup(false);
+
+      if (!allowBackup) {
+        // Major flag toggled off mid-flow — silently ignore.
+        return;
+      }
+
+      // If they tapped the player who's ALREADY the backup, treat as cancel
+      // (they don't want to re-set themselves; nothing to do).
+      if (isBackup) {
+        dialog.showToast('Backup selection cancelled', 'info', { position: 'top' });
+        return;
+      }
+
+      // If they tapped a player who's currently a starter, move them out of
+      // starters and into the backup slot. (Avoids a player being in both.)
+      const newTeams = teams.map(t => {
+        if (t.id !== team.id) return t;
+        return {
+          ...t,
+          backup: player.name,
+          lineup: (t.lineup || []).filter(n => n !== player.name),
+        };
+      });
+      updateTeams(newTeams);
+      dialog.showToast(
+        isInLineup
+          ? `${lastName} moved from starter to backup`
+          : `${lastName} set as backup`,
+        'success',
+        { position: 'top' }
+      );
+      return;
+    }
+
+    // ── Default mode (starter tap-to-toggle) ────────────────────────────────
+
     // Case 1: Player IS a starter — remove from lineup.
     if (isInLineup) {
       const newTeams = teams.map(t =>
@@ -475,8 +526,10 @@ export const RostersView = ({
       return;
     }
 
-    // Case 3: Adding new player. Starts full + Major + no backup yet → fill backup.
-    // Otherwise: add to starters if there's room, error if not.
+    // Case 3: Adding new player. Starts full + Major + no backup yet → fill
+    // backup (implicit overflow path — backup also gets set if user
+    // organically fills the 6th tap after 5 starters). Otherwise: add to
+    // starters if there's room, error if not.
     if (activeLineupCount >= LINEUP_SIZE) {
       if (allowBackup && !team.backup) {
         // Limited start limit check ONLY applies when they'd actually start.
@@ -508,7 +561,7 @@ export const RostersView = ({
     );
     updateTeams(newTeams);
     dialog.showToast(`${lastName} added to lineup`, 'success', { position: 'top' });
-  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE]);
+  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE, pickingBackup]);
 
 
   const pendingWaivers = useMemo(() => {
@@ -837,7 +890,7 @@ export const RostersView = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'hidden' }}
-      onClick={() => { if (lineupMode) setLineupMode(false); }}
+      onClick={() => { if (lineupMode) { setLineupMode(false); setPickingBackup(false); } }}
     >      {/* ── Team selector + lineup headshots ── */}
       <div style={{
         ...theme.card,
@@ -851,7 +904,7 @@ export const RostersView = ({
             <TeamDropdown
               teams={teams}
               value={selectedTeam || ''}
-              onChange={id => { setSelectedTeam(id); setLineupMode(false); setRosterView('full'); }}
+              onChange={id => { setSelectedTeam(id); setLineupMode(false); setPickingBackup(false); setRosterView('full'); }}
             />
             {/* Mulligan status — stacked Reg + Sig/Maj indicators.
                 Used count is derived from the transaction history (see
@@ -935,17 +988,43 @@ export const RostersView = ({
         {activeTournament?.isMajor && canEditLineup && (
           <div style={{
             padding: '6px 12px',
-            background: 'rgba(245,197,24,0.06)',
-            borderTop: `1px solid rgba(245,197,24,0.2)`,
+            background: pickingBackup ? 'rgba(245,197,24,0.14)' : 'rgba(245,197,24,0.06)',
+            borderTop: `1px solid rgba(245,197,24,${pickingBackup ? 0.5 : 0.2})`,
             display: 'flex', alignItems: 'center', gap: 8,
+            transition: 'all 0.18s',
           }}>
             <span style={{ fontSize: 11 }}>🏆</span>
             <span style={{
               fontFamily: fonts.sans, fontSize: 10, letterSpacing: 0.5,
-              color: 'rgba(245,197,24,0.85)', flex: 1,
+              color: pickingBackup ? 'rgba(245,197,24,1)' : 'rgba(245,197,24,0.85)',
+              flex: 1,
+              fontWeight: pickingBackup ? 700 : 400,
             }}>
-              <strong>Major week</strong> — pick a 6th player as backup in case a starter withdraws
+              {pickingBackup ? (
+                <>Pick a backup — <strong>tap any player below</strong> to designate them</>
+              ) : (
+                <><strong>Major week</strong> — pick a 6th player as backup in case a starter withdraws</>
+              )}
             </span>
+            {pickingBackup && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setPickingBackup(false); }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(245,197,24,0.5)',
+                  borderRadius: 2,
+                  color: 'rgba(245,197,24,0.95)',
+                  fontFamily: fonts.sans, fontSize: 9, fontWeight: 600,
+                  letterSpacing: 0.5, textTransform: 'uppercase',
+                  padding: '3px 8px',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+                aria-label="Cancel backup selection"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         )}
 
@@ -1060,24 +1139,44 @@ export const RostersView = ({
                       ) : (
                         <div
                           style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48, cursor: canEditLineup ? 'pointer' : 'default' }}
-                          onClick={(e) => { e.stopPropagation(); if (canEditLineup) setLineupMode(true); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!canEditLineup) return;
+                            // Toggle picking-backup mode. Also ensure lineupMode
+                            // is on so the roster table renders tap-to-add
+                            // affordances (highlights, etc) and the user can
+                            // see where to tap next.
+                            setLineupMode(true);
+                            setPickingBackup(prev => !prev);
+                          }}
                         >
                           <div style={{
                             width: 38, height: 38, borderRadius: '50%',
-                            background: lineupMode ? 'rgba(245,197,24,0.06)' : 'rgba(255,255,255,0.03)',
-                            border: `2px dotted ${canEditLineup ? (lineupMode ? 'rgba(245,197,24,0.6)' : 'rgba(245,197,24,0.35)') : 'rgba(255,255,255,0.12)'}`,
+                            // When pickingBackup is on, the slot pulses gold to
+                            // signal "this is where your next tap lands."
+                            background: pickingBackup
+                              ? 'rgba(245,197,24,0.18)'
+                              : lineupMode ? 'rgba(245,197,24,0.06)' : 'rgba(255,255,255,0.03)',
+                            border: `2px dotted ${canEditLineup
+                              ? (pickingBackup ? 'rgba(245,197,24,0.95)' : (lineupMode ? 'rgba(245,197,24,0.6)' : 'rgba(245,197,24,0.35)'))
+                              : 'rgba(255,255,255,0.12)'}`,
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             transition: 'all 0.15s',
+                            boxShadow: pickingBackup ? '0 0 0 3px rgba(245,197,24,0.15)' : 'none',
                           }}>
                             <span style={{
                               fontSize: 17, fontWeight: 300, lineHeight: 1,
-                              color: canEditLineup ? (lineupMode ? 'rgba(245,197,24,0.85)' : 'rgba(245,197,24,0.45)') : 'rgba(255,255,255,0.15)',
+                              color: canEditLineup
+                                ? (pickingBackup ? 'rgba(245,197,24,1)' : (lineupMode ? 'rgba(245,197,24,0.85)' : 'rgba(245,197,24,0.45)'))
+                                : 'rgba(255,255,255,0.15)',
                             }}>+</span>
                           </div>
                           <div style={{
                             fontSize: 8, fontFamily: fonts.sans, marginTop: 3,
                             textAlign: 'center', width: '100%',
-                            color: canEditLineup ? 'rgba(245,197,24,0.6)' : 'rgba(255,255,255,0.15)',
+                            color: pickingBackup
+                              ? 'rgba(245,197,24,1)'
+                              : canEditLineup ? 'rgba(245,197,24,0.6)' : 'rgba(255,255,255,0.15)',
                             letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600,
                           }}>
                             {canEditLineup ? 'Backup' : '—'}
@@ -1103,7 +1202,7 @@ export const RostersView = ({
       )}
 
       {/* ── Action buttons + roster table ── */}
-      <div style={{ ...theme.card }} onClick={() => { if (lineupMode) setLineupMode(false); }}>
+      <div style={{ ...theme.card }} onClick={() => { if (lineupMode) { setLineupMode(false); setPickingBackup(false); } }}>
 
 
 
