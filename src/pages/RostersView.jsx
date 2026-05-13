@@ -1016,48 +1016,46 @@ export const RostersView = ({
           })()}
           </div>
 
-        {/* Major-week backup banner — appears above the lineup slots so the
-            UX is self-explanatory the first time a manager sees it. */}
-        {activeTournament?.isMajor && canEditLineup && (
+        {/* Backup-picking banner — appears only while pickingBackup is active.
+            The passive 'Major week — pick a 6th player...' explainer was
+            removed; the gold dotted backup slot in the lineup row is already
+            self-explanatory. The instructional prompt + Cancel button are
+            still shown when actively picking so the user has a way to exit
+            the mode. */}
+        {activeTournament?.isMajor && canEditLineup && pickingBackup && (
           <div style={{
             padding: '6px 12px',
-            background: pickingBackup ? 'rgba(245,197,24,0.14)' : 'rgba(245,197,24,0.06)',
-            borderTop: `1px solid rgba(245,197,24,${pickingBackup ? 0.5 : 0.2})`,
+            background: 'rgba(245,197,24,0.14)',
+            borderTop: `1px solid rgba(245,197,24,0.5)`,
             display: 'flex', alignItems: 'center', gap: 8,
             transition: 'all 0.18s',
           }}>
             <span style={{ fontSize: 11 }}>🏆</span>
             <span style={{
               fontFamily: fonts.sans, fontSize: 10, letterSpacing: 0.5,
-              color: pickingBackup ? 'rgba(245,197,24,1)' : 'rgba(245,197,24,0.85)',
+              color: 'rgba(245,197,24,1)',
               flex: 1,
-              fontWeight: pickingBackup ? 700 : 400,
+              fontWeight: 700,
             }}>
-              {pickingBackup ? (
-                <>Pick a backup — <strong>tap any player below</strong> to designate them</>
-              ) : (
-                <><strong>Major week</strong> — pick a 6th player as backup in case a starter withdraws</>
-              )}
+              Pick a backup — <strong>tap any player below</strong> to designate them
             </span>
-            {pickingBackup && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setPickingBackup(false); }}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid rgba(245,197,24,0.5)',
-                  borderRadius: 2,
-                  color: 'rgba(245,197,24,0.95)',
-                  fontFamily: fonts.sans, fontSize: 9, fontWeight: 600,
-                  letterSpacing: 0.5, textTransform: 'uppercase',
-                  padding: '3px 8px',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
-                aria-label="Cancel backup selection"
-              >
-                Cancel
-              </button>
-            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); setPickingBackup(false); }}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(245,197,24,0.5)',
+                borderRadius: 2,
+                color: 'rgba(245,197,24,0.95)',
+                fontFamily: fonts.sans, fontSize: 9, fontWeight: 600,
+                letterSpacing: 0.5, textTransform: 'uppercase',
+                padding: '3px 8px',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+              aria-label="Cancel backup selection"
+            >
+              Cancel
+            </button>
           </div>
         )}
 
@@ -1394,14 +1392,21 @@ export const RostersView = ({
                               // Backup gets the same colored border as a
                               // starter (gold for limited, blue for unlimited,
                               // white for regular) so they read as "in the
-                              // active lineup picture" rather than as bench.
+                              // Backup gets a dotted gray border that matches
+                              // the lineup-card backup slot — same visual
+                              // language across both views. Starters keep
+                              // their tier-colored solid border.
                               border: isEditing
-                                ? (isInLineup || isBackup)
-                                  ? `3px solid ${playerBorderColor(player)}`
-                                  : `2px solid ${colors.borderSubtle}`
-                                : (isInLineup || isBackup)
-                                  ? `2px solid ${playerBorderColor(player)}`
-                                  : `1px solid ${colors.borderSubtle}`,
+                                ? isBackup
+                                  ? `2px dotted rgba(255,255,255,0.35)`
+                                  : isInLineup
+                                    ? `3px solid ${playerBorderColor(player)}`
+                                    : `2px solid ${colors.borderSubtle}`
+                                : isBackup
+                                  ? `2px dotted rgba(255,255,255,0.35)`
+                                  : isInLineup
+                                    ? `2px solid ${playerBorderColor(player)}`
+                                    : `1px solid ${colors.borderSubtle}`,
                               transition: 'all 0.15s',
                             }}
                           />
