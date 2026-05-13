@@ -162,14 +162,11 @@ function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transaction
     note: swingSegment + ' winner pot (auto-awarded by cron)',
   };
 
-  const updatedTeams = teams.map(t =>
-    t.id === winnerId
-      ? { ...t, earnings: (t.earnings || 0) + pot }
-      : t
-  );
-
+  // Pot is a side-prize tracked in transactions only — does NOT add to
+  // team.earnings, so standings (which derive from tournament.results)
+  // remain unaffected. Mirrors the client-side maybeAutoAwardSwing.
   return {
-    updatedTeams,
+    updatedTeams: teams,
     newSwingTx,
     pot,
     winnerTeamName: winnerTeam.name,
@@ -304,10 +301,25 @@ async function handleWaivers(res) {
     return res.json({ status: 'no_pending', message: 'No pending waiver claims' });
   }
 
-  // Load teams
+  // Load teams + tournaments (tournaments needed to derive current
+  // earnings for the waiver tie-breaker).
   let teams = await loadTeams();
-  const em = {}; teams.forEach(t => { em[t.name] = t.earnings || 0; });
-  const pm = {}; [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
+  const sfglTournamentsSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
+  const tournamentsForWaivers = sfglTournamentsSnap.exists ? sfglTournamentsSnap.data().value : [];
+
+  // Derive each team's current season earnings from tournament.results so
+  // waiver priority isn't affected by drift in the stored team.earnings
+  // field. Mirrors the client-side fix in handleProcessAll.
+  const derivedEarnings = {};
+  teams.forEach(t => { derivedEarnings[t.id] = 0; });
+  tournamentsForWaivers.forEach(t => {
+    if (!t.completed || !t.results?.teams) return;
+    Object.entries(t.results.teams).forEach(([teamId, result]) => {
+      if (derivedEarnings[teamId] !== undefined) derivedEarnings[teamId] += (result.totalEarnings || 0);
+    });
+  });
+  const em = {}; teams.forEach(t => { em[t.name] = derivedEarnings[t.id] || 0; });
+  const pm = {}; [...teams].sort((a, b) => (derivedEarnings[a.id] || 0) - (derivedEarnings[b.id] || 0)).forEach((t, i) => { pm[t.name] = i; });
   let nextLastPlace = teams.length;
 
   const byTeam = {};
@@ -642,6 +654,7 @@ async function handleProcessResults(res) {
       earnings: (team.earnings || 0) + totalEarnings,
       segmentEarnings: (team.segmentEarnings || 0) + totalEarnings,
       lineup: [],
+      backup: null,
     };
   });
 
@@ -670,6 +683,7 @@ async function handleProcessResults(res) {
       earnings: team.earnings,
       segmentEarnings: team.segmentEarnings,
       lineup: team.lineup,
+      backup: team.backup || null,
     });
   }
 

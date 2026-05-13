@@ -375,6 +375,10 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
       earnings: (team.earnings || 0) + totalEarnings,
       segmentEarnings: (team.segmentEarnings || 0) + totalEarnings,
       lineup: [],
+      // Clear backup designation alongside lineup so the field is fresh for
+      // the next tournament. The backup was only meaningful for THIS event;
+      // it shouldn't carry over.
+      backup: null,
     };
   });
 
@@ -463,8 +467,12 @@ const MergePlayersPanel = ({
 // Lives at module level (not inside the AdminView render) so internal state
 // — and the dropdown elements — don't remount and lose focus between
 // keystrokes when the parent re-renders.
-const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, rostersByTeamId, S }) => {
+const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, rostersByTeamId, S, tournament, dialog }) => {
   const [expanded, setExpanded] = useState(false);
+  // Per-team UI state for the promotion picker — when set, shows the
+  // "which starter is being replaced?" selector inline within that team's row.
+  const [promotingTeamId, setPromotingTeamId] = useState(null);
+  const isMajor = !!tournament?.isMajor;
 
   const updateTeamLineup = (teamId, slotIndex, playerName) => {
     setManualEntry(prev => {
@@ -627,6 +635,100 @@ const TeamLineupsEditor = ({ teams, manualEntry, setManualEntry, lineupSize, ros
                     );
                   })}
                 </div>
+
+                {/* ── Backup section (Major weeks only) ─────────────────────
+                    Shows the manager's backup designation. The commish can
+                    "Promote" — pick which starter is being replaced and the
+                    backup tags into that slot. After promotion, the backup
+                    appears as a regular starter in the 5-slot dropdowns above. */}
+                {isMajor && team.backup && (() => {
+                  const isAlreadyPromoted = lineup.includes(team.backup);
+                  return (
+                    <div style={{
+                      marginTop: 8, padding: '8px 10px',
+                      background: isAlreadyPromoted ? 'rgba(80,180,120,0.06)' : 'rgba(245,197,24,0.06)',
+                      border: `1px dashed ${isAlreadyPromoted ? 'rgba(80,180,120,0.3)' : 'rgba(245,197,24,0.4)'}`,
+                      borderRadius: 3,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textSecondary }}>
+                          <span style={{ fontWeight: 700, color: isAlreadyPromoted ? colors.earningsGreen : colors.textGold, letterSpacing: 0.5 }}>
+                            {isAlreadyPromoted ? '✓ PROMOTED' : 'BACKUP'}:
+                          </span>{' '}
+                          <span style={{ fontWeight: 600, color: colors.textPrimary }}>{team.backup}</span>
+                        </span>
+                        {!isAlreadyPromoted && lineup.length > 0 && promotingTeamId !== team.id && (
+                          <button
+                            type="button"
+                            onClick={() => setPromotingTeamId(team.id)}
+                            style={{
+                              padding: '4px 10px',
+                              background: 'rgba(245,197,24,0.15)',
+                              border: '1px solid rgba(245,197,24,0.4)',
+                              borderRadius: 2, color: colors.textGold,
+                              fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
+                              letterSpacing: 0.5, textTransform: 'uppercase', cursor: 'pointer',
+                            }}
+                          >
+                            ↑ Promote
+                          </button>
+                        )}
+                        {promotingTeamId === team.id && (
+                          <button
+                            type="button"
+                            onClick={() => setPromotingTeamId(null)}
+                            style={{
+                              padding: '4px 10px',
+                              background: 'transparent', border: `1px solid ${colors.borderSubtle}`,
+                              borderRadius: 2, color: colors.textMuted,
+                              fontFamily: fonts.sans, fontSize: 10, letterSpacing: 0.5,
+                              textTransform: 'uppercase', cursor: 'pointer',
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                      {/* Promotion picker — appears when commish clicks Promote.
+                          Shows the 5 current starters as buttons; tap one to
+                          replace them with the backup. */}
+                      {promotingTeamId === team.id && !isAlreadyPromoted && (
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,197,24,0.25)' }}>
+                          <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
+                            Which starter is being replaced?
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {lineup.map((starterName, slotIdx) => (
+                              <button
+                                key={`${starterName}-${slotIdx}`}
+                                type="button"
+                                onClick={() => {
+                                  // Swap in: place team.backup in the slot
+                                  // currently held by starterName.
+                                  updateTeamLineup(team.id, slotIdx, team.backup);
+                                  setPromotingTeamId(null);
+                                  if (dialog?.showToast) {
+                                    dialog.showToast(`Promoted ${team.backup} → replaced ${starterName}`, 'success');
+                                  }
+                                }}
+                                style={{
+                                  padding: '6px 10px',
+                                  background: 'rgba(255,255,255,0.04)',
+                                  border: '1px solid rgba(200,80,80,0.4)',
+                                  borderRadius: 2, color: colors.textPrimary,
+                                  fontFamily: fonts.sans, fontSize: 11,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                ✕ {starterName}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
             } catch (rowErr) {
@@ -1969,7 +2071,7 @@ export const AdminView = ({
           }
         }} style={S.select}>
           <option value="">Choose tournament...</option>
-          {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
+          {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.isMajor ? '🏆 ' : t.isSignature ? '⭐ ' : ''}{t.name}</option>)}
         </select>
 
         {/* Fetch button — auto-fills earnings + round leaders */}
@@ -2011,6 +2113,8 @@ export const AdminView = ({
               lineupSize={settings?.lineupSize ?? 5}
               rostersByTeamId={rostersByTeamIdForSelectedTourney}
               S={S}
+              tournament={tournaments.find(t => t.name === selectedTourney)}
+              dialog={dialog}
             />
 
             {/* Process / Reprocess */}
