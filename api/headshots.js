@@ -49,8 +49,11 @@ const MANUAL_OVERRIDES = {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  // Cache for 6 hours — ESPN IDs don't change
-  res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=43200');
+  // Cache for 1 hour — short enough that manual override updates propagate
+  // quickly; long enough that repeated client renders within an hour share
+  // the same ESPN fetch. Was previously 6h but the long window made it
+  // hard to roll out fixes for ambiguous-name bugs like Alex/Matt Fitzpatrick.
+  res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=21600');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { names, eventId, debug } = req.query;
