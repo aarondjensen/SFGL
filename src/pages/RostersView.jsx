@@ -1141,7 +1141,10 @@ export const RostersView = ({
                             }}
                             style={{
                               width: 38, height: 38, borderRadius: '50%',
-                              border: `2px dotted rgba(245,197,24,0.55)`,
+                              // Gray dotted border — signals "designated, on
+                              // standby". Gold reserved for limited-tier
+                              // players so we don't create visual collision.
+                              border: `2px dotted rgba(255,255,255,0.35)`,
                               padding: 1,
                               overflow: 'hidden',
                               cursor: canEditLineup ? 'pointer' : 'default',
@@ -1158,14 +1161,14 @@ export const RostersView = ({
                           </div>
                           <div style={{
                             fontSize: 9, fontFamily: fonts.sans, marginTop: 3,
-                            color: 'rgba(245,197,24,0.85)', letterSpacing: 0.3,
+                            color: 'rgba(255,255,255,0.7)', letterSpacing: 0.3,
                             textAlign: 'center', width: '100%',
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                             fontWeight: 600,
                           }}>
                             {backupPlayer.name.split(' ').pop()}
                           </div>
-                          <div style={{ fontSize: 8, fontFamily: fonts.sans, color: 'rgba(245,197,24,0.5)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                          <div style={{ fontSize: 8, fontFamily: fonts.sans, color: 'rgba(255,255,255,0.4)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
                             Backup
                           </div>
                         </div>
@@ -1325,6 +1328,11 @@ export const RostersView = ({
             <tbody>
               {sortedRoster.map(player => {
                 const isInLineup     = (team.lineup || []).includes(player.name);
+                // Backup is treated as visually active — bright headshot,
+                // colored border, no benching. Mechanically they only count
+                // if commish promotes them to starter, but in the UI they
+                // belong to "this week's lineup picture".
+                const isBackup       = team.backup === player.name;
                 const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
                 const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
                 const hasLineup      = (team.lineup || []).length > 0;
@@ -1333,7 +1341,8 @@ export const RostersView = ({
                 // i.e. tee times are posted (firstTeeTime exists) or lineup window is open.
                 // Between events the lineup carries over from the prior week and should not dim.
                 const tournamentActive = !!(firstTeeTime || lineupOpen);
-                const isBenched      = tournamentActive && hasLineup && !isInLineup && !isEditing;
+                // Backup excluded from benching — they're part of the active lineup picture.
+                const isBenched      = tournamentActive && hasLineup && !isInLineup && !isBackup && !isEditing;
                 const dimColor       = 'rgba(255,255,255,0.45)';
                 const rowClickable   = isEditing && isOwnTeam && (isInLineup || canAddToLineup);
 
@@ -1378,12 +1387,19 @@ export const RostersView = ({
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
-                              opacity: isBenched ? 0.5 : isEditing && !isInLineup && !canAddToLineup ? 0.25 : isEditing && !isInLineup ? 0.55 : 1,
+                              // Backup excluded from the dimmed editing states —
+                              // their headshot reads as fully active alongside
+                              // the starters' headshots in the lineup card.
+                              opacity: isBenched ? 0.5 : isEditing && !isInLineup && !isBackup && !canAddToLineup ? 0.25 : isEditing && !isInLineup && !isBackup ? 0.55 : 1,
+                              // Backup gets the same colored border as a
+                              // starter (gold for limited, blue for unlimited,
+                              // white for regular) so they read as "in the
+                              // active lineup picture" rather than as bench.
                               border: isEditing
-                                ? isInLineup
+                                ? (isInLineup || isBackup)
                                   ? `3px solid ${playerBorderColor(player)}`
                                   : `2px solid ${colors.borderSubtle}`
-                                : isInLineup
+                                : (isInLineup || isBackup)
                                   ? `2px solid ${playerBorderColor(player)}`
                                   : `1px solid ${colors.borderSubtle}`,
                               transition: 'all 0.15s',
