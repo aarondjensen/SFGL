@@ -367,10 +367,20 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
         )}
         {player.limited && (player.stars || 1) > 0 && (
           <div style={{
-            position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(15,25,45,0.88)', borderRadius: 6,
-            padding: '0px 3px', lineHeight: 1, zIndex: 5,
-            fontSize: 8, letterSpacing: 1,
+            // Sit the badge OVER the bottom edge of the circle rather than
+            // dangling below — that way the visual height of all lineup
+            // headshots is identical (44px), the name comes at the same
+            // y-position whether or not there are stars, and the row reads
+            // as one cleanly-aligned set of avatars.
+            position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(8,16,32,0.92)',
+            borderRadius: 5,
+            padding: '1px 3px',
+            lineHeight: 1,
+            zIndex: 5,
+            fontSize: 8,
+            letterSpacing: 1,
+            border: '1px solid rgba(245,197,24,0.35)',
           }}>
             {'⭐'.repeat(player.stars || 1)}
           </div>
@@ -817,9 +827,32 @@ export const RostersView = ({
         ))
       : getSortedRoster(currentRoster);
     const roster = baseRoster;
-    if (!sortCol) return roster;
+
+    // ── Tier primary sort ──
+    // Limited players always come first, then Unlimited, then regular. This
+    // is a HARD tier separation — column sorts (odds, OWGR, etc) apply only
+    // within a tier, never across them. Prevents a regular-tier player from
+    // appearing between two Limited players just because their odds slot
+    // them there. The tier IS the structure; the column sort orders within.
+    const tierRank = (p) => {
+      if (p.limited)   return 0;  // Top tier
+      if (p.unlimited) return 1;  // Mid tier
+      return 2;                   // Regular
+    };
+
+    if (!sortCol) {
+      // No column sort — still enforce tier grouping. Within each tier the
+      // baseRoster order (from getSortedRoster) is preserved via a stable sort.
+      return [...roster].sort((a, b) => tierRank(a) - tierRank(b));
+    }
     const normalize = normalizeNordic;
     return [...roster].sort((a, b) => {
+      // First: tier rank — Limited < Unlimited < Regular. If different
+      // tiers, tier order wins regardless of column-sort direction.
+      const tierDiff = tierRank(a) - tierRank(b);
+      if (tierDiff !== 0) return tierDiff;
+
+      // Same tier — apply the column-specific sort logic.
       let av, bv, aHasData = true, bHasData = true;
       if (sortCol === 'teeTime') {
         const rawA = teeTimeMap[normalize(a.name)]; const rawB = teeTimeMap[normalize(b.name)];
