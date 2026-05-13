@@ -1318,6 +1318,16 @@ export const RostersView = ({
                           onClick={(e) => {
                             e.stopPropagation();
                             if (canEditLineup && isOwnTeam) {
+                              // When pickingBackup is active, ALWAYS dispatch
+                              // to togglePlayerInLineup — its pickingBackup
+                              // branch handles routing to the backup slot. We
+                              // need to bypass the canAddToLineup gate because
+                              // a backup pick is valid even when starters are
+                              // full.
+                              if (pickingBackup) {
+                                togglePlayerInLineup(player);
+                                return;
+                              }
                               if (!lineupMode) {
                                 setLineupMode(true);
                                 // If clicking a non-lineup player with room, add them
