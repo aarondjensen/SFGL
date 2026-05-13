@@ -298,6 +298,9 @@ export const playersApi = {
    */
   async clearEspnIds(names) {
     if (!Array.isArray(names) || names.length === 0) return;
+    // Resolve alias map once for the whole call — same pattern as upsertMany
+    // above. Without this, the function ReferenceErrors on `aliasMap`.
+    const aliasMap = await getAliasMap();
     const BATCH_SIZE = 250;
     for (let i = 0; i < names.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
