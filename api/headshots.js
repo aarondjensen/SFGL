@@ -31,6 +31,21 @@ const ESPN_EVENT_IDS = [
   '401811935', // Cognizant Classic 2026 (full-field — opposite week from a Signature)
 ];
 
+// ── Manual overrides ─────────────────────────────────────────────────────
+// Verified ESPN athlete IDs for names that the event-index strict-matcher
+// can't reliably resolve. Most often this is brothers/cousins/Jr-Sr pairs
+// (Alex vs Matt Fitzpatrick, Tom vs Kevin Kim, etc) where ESPN's leaderboard
+// dumps may only include one of them — leaving the other to fall back to
+// an ambiguous or wrong match.
+//
+// Each entry takes precedence over event-index lookup. Keys MUST be in the
+// same normalized form findInMap uses: lowercased, accent-stripped, single-
+// spaced. Verify each ID against the ESPN profile URL:
+//   https://www.espn.com/golf/player/_/id/{ID}/{name-slug}
+const MANUAL_OVERRIDES = {
+  'alex fitzpatrick': '4364865', // verified at .../id/4364865/alex-fitzpatrick
+};
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -47,6 +62,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         totalPlayers: playerMap.size,
         sample: [...playerMap.entries()].slice(0, 10).map(([name, p]) => ({ name, espnId: p.espnId })),
+        manualOverrides: Object.keys(MANUAL_OVERRIDES),
       });
     }
 
@@ -59,6 +75,14 @@ export default async function handler(req, res) {
     const notFound = [];
 
     for (const name of requestedNames) {
+      // 1. Manual overrides take precedence — these are verified IDs that
+      //    bypass the strict-matcher entirely to avoid brother-collisions.
+      const normalized = normalize(name);
+      if (MANUAL_OVERRIDES[normalized]) {
+        results[name] = MANUAL_OVERRIDES[normalized];
+        continue;
+      }
+      // 2. Otherwise fall through to the event-index strict-matcher.
       const player = findInMap(playerMap, name);
       if (player?.espnId) results[name] = player.espnId;
       else notFound.push(name);
