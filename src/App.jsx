@@ -256,53 +256,23 @@ const FantasyGolfLeague = () => {
     fetch(`/api/headshots?names=${encoded}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (!data) return;
-
-        // Resolved names → merge fresh IDs over any stale values.
-        if (data.results && Object.keys(data.results).length > 0) {
+        if (data?.results && Object.keys(data.results).length > 0) {
           // CRITICAL: merge into headshots map — this OVERWRITES any stale
           // wrong values with the freshly-fetched correct ID. The
           // strict-matching in /api/headshots ensures we never overwrite
           // with a wrong relative's ID; if the player can't be uniquely
-          // identified, they're absent from results.
+          // identified, they're absent from results (preserving any
+          // existing value, but at least not making it worse).
           updateHeadshots(prev => ({ ...(prev || {}), ...data.results }));
+          const found = Object.keys(data.results).length;
+          const notFound = toFetch.length - found;
+          console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found (will retry in ${HEADSHOT_RETRY_MS / 1000}s if still missing)`);
           // Persist to player documents for future loads
           import('./api/firebase').then(({ playersApi }) => {
             const toSave = Object.entries(data.results).map(([name, espnId]) => ({ name, espnId }));
             if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
           }).catch(() => {});
         }
-
-        // ── Unresolved names → CLEAR stale wrong values ──
-        // When the strict-matcher returns null (ambiguous brothers,
-        // not-in-event-index, etc), we ACTIVELY clear any cached ID for
-        // that player rather than leaving it untouched. Reason: a cached
-        // value with no current confirmation could be the WRONG ID
-        // (e.g. Alex Fitzpatrick cached as Matt Fitzpatrick's ID before
-        // the strict matcher was deployed). Clearing makes the UI fall
-        // back to the initials avatar, which is always preferable to
-        // displaying the wrong person's face.
-        //
-        // If the player has a static PGA_TOUR_IDS fallback, this clear
-        // is harmless — that fallback applies regardless of what's in
-        // the dynamic map.
-        const unresolved = Array.isArray(data.notFound) ? data.notFound : [];
-        if (unresolved.length > 0) {
-          updateHeadshots(prev => {
-            if (!prev) return prev;
-            const next = { ...prev };
-            unresolved.forEach(name => { delete next[name]; });
-            return next;
-          });
-          import('./api/firebase').then(({ playersApi }) => {
-            if (typeof playersApi.clearEspnIds === 'function') {
-              playersApi.clearEspnIds(unresolved).catch(() => {});
-            }
-          }).catch(() => {});
-        }
-
-        const found = Object.keys(data.results || {}).length;
-        console.log(`✓ Auto-fetched ${found} headshot IDs · ${unresolved.length} unresolved (cleared to fall back to initials)`);
       })
       .catch(() => {});
   }, [loading, resolvedTeams]); // eslint-disable-line react-hooks/exhaustive-deps
