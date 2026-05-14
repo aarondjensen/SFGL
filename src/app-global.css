@@ -19,13 +19,6 @@
  */
 
 /* ── Body defaults (was: document.body.style.fontFamily in App.jsx) ── */
-/* Wave D hotfix: also reset html/body margin and color so the page background
-   set by App.jsx's root div (#111d2e) extends edge-to-edge. The previous
-   reset was an inadvertent side effect of LoginPage.css's global universal
-   selector — once that was correctly scoped to .sfgl-login-root in Wave D,
-   the browser's default 8px body margin re-appeared and showed up as a white
-   sliver around the app. The reset belongs here, not in a lazy-loaded
-   page-specific stylesheet. */
 html, body {
   margin: 0;
   padding: 0;
@@ -201,4 +194,26 @@ html { scrollbar-gutter: stable; }
 }
 .sfgl-text-pulse {
   animation: sfgl-text-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ============================================================================
+ * REDUCED MOTION — respect the user's OS-level "Reduce Motion" preference.
+ * iOS: Settings → Accessibility → Motion → Reduce Motion
+ * macOS: System Settings → Accessibility → Display → Reduce Motion
+ * When enabled, kill all decorative animations (pulses, spinners, slide-ins).
+ * The pull-to-refresh ball still rotates with finger movement (driven by
+ * inline transform, not animation), so the gesture still feels responsive.
+ * ============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .sfgl-logo-load,
+  .sfgl-dot,
+  .sfgl-pulse-ready,
+  .sfgl-text-pulse {
+    animation: none !important;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
