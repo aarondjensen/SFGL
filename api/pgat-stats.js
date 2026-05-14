@@ -136,15 +136,18 @@ function parseCbsMoneyList(html) {
     const earnings = moneyToNumber(moneyMatch[0]);
     if (!earnings || earnings < 1000) continue;
 
-    // Events cell — index 7 (8th column)
+    // Events cell — index 7 (8th column). CBS renders "—" (em-dash) for
+    // players who aren't FedExCup-eligible (non-members, suspended players,
+    // etc.). For those rows, leave eventsPlayed as null so the sync handler
+    // doesn't overwrite existing legacy data with a bogus 0.
     const eventsTxt = stripTags(cells[7] || '');
-    const eventsPlayed = intFromAny(eventsTxt) || 0;
+    const eventsPlayed = /^\d+$/.test(eventsTxt) ? parseInt(eventsTxt, 10) : null;
 
     out.push({
       name,
       earnings,
-      eventsPlayed,
-      cutsMade: 0, // CBS table doesn't expose this; client falls back to legacy stats
+      eventsPlayed,    // null if CBS rendered "—" — sync skips writing it
+      cutsMade: null,  // CBS table doesn't have a Cuts column at all
     });
   }
 
