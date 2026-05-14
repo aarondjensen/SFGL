@@ -312,6 +312,15 @@ export const playersApi = {
     }
   },
 
+  // Returns a map of { aliasName: canonicalName } sourced from each player
+  // doc's `aliases` array. Used by clients that need to resolve incoming
+  // external names (e.g. PGA Tour field data using "Nicolas Echavarria"
+  // when the roster has "Nico Echavarria" after a merge) to whatever
+  // canonical form the rosters use.
+  async getAliasMap() {
+    return getAliasMap();
+  },
+
   // Add an alias to a player doc — e.g. addAlias('Nicolas Echavarria', 'Nico Echavarria')
   // After this, any OWGR sync writing 'Nico Echavarria' will update the 'Nicolas Echavarria' doc
   async addAlias(canonicalName, aliasName) {
