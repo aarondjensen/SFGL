@@ -367,37 +367,32 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
         )}
         {player.limited && (player.stars || 1) > 0 && (
           <div style={{
-            // Sit the badge OVER the bottom edge of the circle rather than
-            // dangling below — that way the visual height of all lineup
-            // headshots is identical (44px), the name comes at the same
-            // y-position whether or not there are stars, and the row reads
-            // as one cleanly-aligned set of avatars.
-            position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(8,16,32,0.92)',
-            borderRadius: 5,
-            padding: '1px 4px',
+            // Match the main-roster stars styling exactly so the two views
+            // share visual language. The badge dangles BELOW the headshot
+            // (bottom: -4) with the same dark blue pill, no gold border.
+            // Name alignment across the row is preserved by the fixed
+            // marginTop on the name container below — accounts for the
+            // dangling-star space whether stars are present or not.
+            position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(15,25,45,0.88)',
+            borderRadius: 6,
+            padding: '0px 3px',
             lineHeight: 1,
             zIndex: 5,
-            fontSize: 8,
-            border: '1px solid rgba(245,197,24,0.35)',
-            // Render stars as flex children with explicit gap rather than as
-            // one string with letter-spacing. letter-spacing applies AFTER
-            // each character (including the last), adding asymmetric trailing
-            // space that shifts the visual content off-center within the box.
-            // inline-flex + gap centers each emoji on the box's centerline
-            // regardless of star count.
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 1,
+            fontSize: 7,
+            letterSpacing: 0.5,
+            pointerEvents: 'none',
           }}>
-            {Array.from({ length: player.stars || 1 }, (_, i) => (
-              <span key={i} style={{ display: 'inline-block', lineHeight: 1 }}>⭐</span>
-            ))}
+            {'⭐'.repeat(player.stars || 1)}
           </div>
         )}
       </div>
       <div style={{
-        fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 3,
+        // Fixed marginTop reserves space for the dangling stars badge below
+        // the headshot, so names align across the row whether a given
+        // player has stars or not. Was 3 when stars overlapped the
+        // headshot; bumped to 9 once stars dangle below.
+        fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 9,
         textAlign: 'center', width: '100%',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         color: player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
