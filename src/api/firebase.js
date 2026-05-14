@@ -159,6 +159,13 @@ function _dedupeTransactions(rows) {
 // PLAYERS API
 // ============================================================================
 export const playersApi = {
+  // Exposed for components/hooks that need to resolve alternate names
+  // to canonical IDs without going through upsertMany. The internal
+  // module-level getAliasMap() is the actual implementation; this is
+  // a thin pass-through so the call works as a method too.
+  getAliasMap,
+  invalidateAliasCache,
+
   async getAll() {
     return _getAllOrdered('players', 'world_rank');
   },
