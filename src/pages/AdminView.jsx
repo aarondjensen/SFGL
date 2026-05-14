@@ -1592,7 +1592,7 @@ export const AdminView = ({
       // pgatour.com is returning. Top 20 by earnings is usually enough to
       // confirm whether the expected players are there.
       console.log('[PGAT Sync] Endpoint returned', fetched.length, 'players. Source attempts:', data.sourceAttempts);
-      console.log('[PGAT Sync] Top 20 by earnings:', fetched.slice(0, 20).map(p => `${p.name}: $${(p.earnings || 0).toLocaleString()} (${p.cutsMade || 0}/${p.eventsPlayed || 0})`));
+      console.log('[PGAT Sync] Top 20 by earnings:', fetched.slice(0, 20).map(p => `${p.name}: $${(p.earnings || 0).toLocaleString()} (${p.cutsMade ?? '—'}/${p.eventsPlayed ?? '—'})`));
 
       // Normalize names for comparison (lowercase, strip accents, trim).
       // Mirrors the normalizePlayerName approach used elsewhere in the app
@@ -1620,28 +1620,37 @@ export const AdminView = ({
       const unmatchedRostered = [];
 
       // First pass: match every fetched player against our directory.
+      // Build each upsert payload conditionally: only include eventsPlayed
+      // and cutsMade when CBS actually returned a real value. CBS doesn't
+      // have a Cuts column at all (always null), and renders "—" in the
+      // Events column for non-FedExCup-eligible players (also null). Writing
+      // 0 for those would clobber whatever the legacy globalPlayerStats
+      // fallback in RostersView could otherwise surface.
+      const buildUpdate = (name, earnings, eventsPlayed, cutsMade) => {
+        const payload = {
+          name,
+          seasonEarnings: earnings || 0,
+          statsLastSynced: new Date().toISOString(),
+        };
+        if (eventsPlayed !== null && eventsPlayed !== undefined) {
+          payload.eventsPlayed = eventsPlayed;
+        }
+        if (cutsMade !== null && cutsMade !== undefined) {
+          payload.cutsMade = cutsMade;
+        }
+        return payload;
+      };
+
       fetched.forEach(({ name, earnings, eventsPlayed, cutsMade }) => {
         const norm = normalize(name);
         const existing = lookup.get(norm);
         if (existing) {
-          updates.push({
-            name: existing.name,
-            seasonEarnings: earnings || 0,
-            eventsPlayed:   eventsPlayed || 0,
-            cutsMade:       cutsMade || 0,
-            statsLastSynced: new Date().toISOString(),
-          });
+          updates.push(buildUpdate(existing.name, earnings, eventsPlayed, cutsMade));
           if (rosteredNames.has(norm)) matchedRostered.add(norm);
         } else if ((earnings || 0) > 0) {
           // Player not in directory — add them so they're available if
           // rostered later.
-          updates.push({
-            name,
-            seasonEarnings: earnings || 0,
-            eventsPlayed:   eventsPlayed || 0,
-            cutsMade:       cutsMade || 0,
-            statsLastSynced: new Date().toISOString(),
-          });
+          updates.push(buildUpdate(name, earnings, eventsPlayed, cutsMade));
         }
       });
 
