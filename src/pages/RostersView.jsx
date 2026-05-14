@@ -12,7 +12,7 @@ import {
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts } from '../theme.js';
-import { teamsApi } from '../api/firebase';
+import { teamsApi, playersApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
@@ -336,6 +336,15 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
           alt=""
           style={{
             width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
+            // box-sizing border-box so the 2px border is INCLUDED in the
+            // 44px width. Without this, the default content-box sizing
+            // made the rendered img 48px wide while the container stayed
+            // at 44 — the image overflowed on the right by 4px, putting
+            // its visual center 2px right of the container center. Stars
+            // centered on the container then appeared 2px left of the
+            // visible ball. Border-box keeps the ball geometry tight to
+            // the 44px box so stars sit perfectly under it.
+            boxSizing: 'border-box',
             border: `2px solid ${playerBorderColor(player)}`,
             transition: 'opacity 0.15s',
             opacity: showRemove ? 0.55 : 1,
@@ -370,14 +379,19 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
             position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
             background: 'rgba(15,25,45,0.88)', borderRadius: 6,
             padding: '0px 3px', lineHeight: 1, zIndex: 5,
-            fontSize: 8, letterSpacing: 1,
+            fontSize: 7, letterSpacing: 0.5,
+            pointerEvents: 'none',
           }}>
             {'⭐'.repeat(player.stars || 1)}
           </div>
         )}
       </div>
       <div style={{
-        fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 3,
+        // Fixed marginTop reserves space for the dangling stars badge below
+        // the headshot, so names align across the row whether a given
+        // player has stars or not. Was 3 when stars overlapped the
+        // headshot; bumped to 9 once stars dangle below.
+        fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 9,
         textAlign: 'center', width: '100%',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         color: player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
@@ -418,6 +432,24 @@ export const RostersView = ({
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
   const [tournamentField,   setTournamentField]   = useState(null);
+  // ── Dynamic alias map from Firebase ─────────────────────────────────────
+  // Maps external/legacy names (e.g. "Nicolas Echavarria" as PGA Tour
+  // returns it) to the canonical roster name ("Nico Echavarria" after
+  // the commish merged them). Used during field/teeTime/odds ingest so
+  // the playing badge, tee times, odds, and headshot-ID lookups all hit
+  // on roster names after a merge — not just on the original PGA names.
+  //
+  // null = loading (or failed silently). The field-fetching effect waits
+  // for this to be non-null before fetching, so we never ingest with an
+  // empty alias map and then have to re-fetch.
+  const [aliasMap,          setAliasMap]          = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    playersApi.getAliasMap()
+      .then(map => { if (!cancelled) setAliasMap(map || {}); })
+      .catch(() => { if (!cancelled) setAliasMap({}); }); // fall back to empty
+    return () => { cancelled = true; };
+  }, []);
   const [teeTimeMap,        setTeeTimeMap]        = useState({}); // { playerName: '8:04 AM' }
   const [fieldPlayerIds,    setFieldPlayerIds]    = useState({}); // { playerName: espnId }
   const [oddsMap,           setOddsMap]           = useState({}); // { playerName: '+2000' }
@@ -678,12 +710,21 @@ export const RostersView = ({
     tournaments.find(t => !t.completed)
   )?.name || null;
   const _lastFetchedTournament = React.useRef(null);
+  // Fields effect: waits for aliasMap to be loaded (non-null) before
+  // running. This guarantees we never ingest field data with no alias
+  // resolution applied — which would leave the playing badge / tee
+  // times / odds keyed on PGA Tour names while the roster uses the
+  // canonical merged names.
   useEffect(() => {
     if (!_fieldTournamentName) return;
+    if (aliasMap === null) return; // wait for alias map (or its failure → {})
     // Don't re-run if we already have tee times for this tournament
     if (_lastFetchedTournament.current === _fieldTournamentName && Object.keys(teeTimeMap).length > 0) return;
     let cancelled = false;
     const normalize = normalizeNordic;
+    // Resolve any name through the dynamic alias map to its canonical roster
+    // form. If the name isn't an alias, returns it unchanged.
+    const resolve = (name) => aliasMap[name] || name;
 
     const fetchField = () => {
       fetch('/api/field?t=' + Date.now())
@@ -691,18 +732,33 @@ export const RostersView = ({
         .then(data => {
           if (cancelled || !data?.players?.length) return;
           _lastFetchedTournament.current = _fieldTournamentName;
-          setTournamentField(new Set(data.players.map(normalize)));
+          // Resolve → normalize. Order matters: alias map is keyed by
+          // unnormalized display names (matches what addAlias stores),
+          // so we resolve first, then normalize for the lookup key.
+          setTournamentField(new Set(data.players.map(n => normalize(resolve(n)))));
           if (data.teeTimes?.length) {
             const ttMap = {};
-            data.teeTimes.forEach(({ name, teeTime }) => { ttMap[normalize(name)] = teeTime; });
+            data.teeTimes.forEach(({ name, teeTime }) => {
+              ttMap[normalize(resolve(name))] = teeTime;
+            });
             setTeeTimeMap(ttMap);
           }
           if (data.playerIds && Object.keys(data.playerIds).length) {
-            setFieldPlayerIds(data.playerIds);
+            // playerIds is keyed by display name (not normalized) — used
+            // by headshot lookups that match by player.name directly. Re-key
+            // through the alias map so post-merge roster names land on the
+            // right ID.
+            const ids = {};
+            Object.entries(data.playerIds).forEach(([name, id]) => {
+              ids[resolve(name)] = id;
+            });
+            setFieldPlayerIds(ids);
           }
           if (data.odds?.length) {
             const oMap = {};
-            data.odds.forEach(({ name, odds }) => { oMap[normalize(name)] = odds; });
+            data.odds.forEach(({ name, odds }) => {
+              oMap[normalize(resolve(name))] = odds;
+            });
             setOddsMap(oMap);
           }
         })
@@ -712,7 +768,7 @@ export const RostersView = ({
     fetchField();
     const interval = setInterval(fetchField, 30 * 60 * 1000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [_fieldTournamentName, aliasMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Odds are now fetched as part of the field fetch above
 
@@ -817,9 +873,32 @@ export const RostersView = ({
         ))
       : getSortedRoster(currentRoster);
     const roster = baseRoster;
-    if (!sortCol) return roster;
+
+    // ── Tier primary sort ──
+    // Limited players always come first, then Unlimited, then regular. This
+    // is a HARD tier separation — column sorts (odds, OWGR, etc) apply only
+    // within a tier, never across them. Prevents a regular-tier player from
+    // appearing between two Limited players just because their odds slot
+    // them there. The tier IS the structure; the column sort orders within.
+    const tierRank = (p) => {
+      if (p.limited)   return 0;  // Top tier
+      if (p.unlimited) return 1;  // Mid tier
+      return 2;                   // Regular
+    };
+
+    if (!sortCol) {
+      // No column sort — still enforce tier grouping. Within each tier the
+      // baseRoster order (from getSortedRoster) is preserved via a stable sort.
+      return [...roster].sort((a, b) => tierRank(a) - tierRank(b));
+    }
     const normalize = normalizeNordic;
     return [...roster].sort((a, b) => {
+      // First: tier rank — Limited < Unlimited < Regular. If different
+      // tiers, tier order wins regardless of column-sort direction.
+      const tierDiff = tierRank(a) - tierRank(b);
+      if (tierDiff !== 0) return tierDiff;
+
+      // Same tier — apply the column-specific sort logic.
       let av, bv, aHasData = true, bHasData = true;
       if (sortCol === 'teeTime') {
         const rawA = teeTimeMap[normalize(a.name)]; const rawB = teeTimeMap[normalize(b.name)];
@@ -983,48 +1062,46 @@ export const RostersView = ({
           })()}
           </div>
 
-        {/* Major-week backup banner — appears above the lineup slots so the
-            UX is self-explanatory the first time a manager sees it. */}
-        {activeTournament?.isMajor && canEditLineup && (
+        {/* Backup-picking banner — appears only while pickingBackup is active.
+            The passive 'Major week — pick a 6th player...' explainer was
+            removed; the gold dotted backup slot in the lineup row is already
+            self-explanatory. The instructional prompt + Cancel button are
+            still shown when actively picking so the user has a way to exit
+            the mode. */}
+        {activeTournament?.isMajor && canEditLineup && pickingBackup && (
           <div style={{
             padding: '6px 12px',
-            background: pickingBackup ? 'rgba(245,197,24,0.14)' : 'rgba(245,197,24,0.06)',
-            borderTop: `1px solid rgba(245,197,24,${pickingBackup ? 0.5 : 0.2})`,
+            background: 'rgba(245,197,24,0.14)',
+            borderTop: `1px solid rgba(245,197,24,0.5)`,
             display: 'flex', alignItems: 'center', gap: 8,
             transition: 'all 0.18s',
           }}>
             <span style={{ fontSize: 11 }}>🏆</span>
             <span style={{
               fontFamily: fonts.sans, fontSize: 10, letterSpacing: 0.5,
-              color: pickingBackup ? 'rgba(245,197,24,1)' : 'rgba(245,197,24,0.85)',
+              color: 'rgba(245,197,24,1)',
               flex: 1,
-              fontWeight: pickingBackup ? 700 : 400,
+              fontWeight: 700,
             }}>
-              {pickingBackup ? (
-                <>Pick a backup — <strong>tap any player below</strong> to designate them</>
-              ) : (
-                <><strong>Major week</strong> — pick a 6th player as backup in case a starter withdraws</>
-              )}
+              Pick a backup — <strong>tap any player below</strong> to designate them
             </span>
-            {pickingBackup && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setPickingBackup(false); }}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid rgba(245,197,24,0.5)',
-                  borderRadius: 2,
-                  color: 'rgba(245,197,24,0.95)',
-                  fontFamily: fonts.sans, fontSize: 9, fontWeight: 600,
-                  letterSpacing: 0.5, textTransform: 'uppercase',
-                  padding: '3px 8px',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
-                aria-label="Cancel backup selection"
-              >
-                Cancel
-              </button>
-            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); setPickingBackup(false); }}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(245,197,24,0.5)',
+                borderRadius: 2,
+                color: 'rgba(245,197,24,0.95)',
+                fontFamily: fonts.sans, fontSize: 9, fontWeight: 600,
+                letterSpacing: 0.5, textTransform: 'uppercase',
+                padding: '3px 8px',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+              aria-label="Cancel backup selection"
+            >
+              Cancel
+            </button>
           </div>
         )}
 
@@ -1088,10 +1165,9 @@ export const RostersView = ({
                   ))}
 
                   {/* ── Backup slot (Major weeks only) ──
-                      Visually subordinate: divider on the left to separate it
-                      from starters, smaller circle (38 vs 44), dotted gold
-                      border, "Backup" label. Either renders the backup player
-                      headshot (with remove on tap) or an empty placeholder. */}
+                      Same size as starter slots (44px circle, 56px column).
+                      Visual differentiation comes from the dotted gray
+                      border and the "Backup" label, NOT from a smaller size. */}
                   {showBackupSlot && (
                     <>
                       <div style={{
@@ -1100,15 +1176,23 @@ export const RostersView = ({
                         margin: isMobile ? '0 2px' : '0 4px',
                       }} />
                       {backupPlayer ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56 }}>
                           <div
                             onClick={(e) => {
                               e.stopPropagation();
                               if (canEditLineup) togglePlayerInLineup(backupPlayer);
                             }}
                             style={{
-                              width: 38, height: 38, borderRadius: '50%',
-                              border: `2px dotted rgba(245,197,24,0.55)`,
+                              width: 44, height: 44, borderRadius: '50%',
+                              // box-sizing border-box so 44x44 includes the
+                              // border + padding. Without this, the default
+                              // content-box made the outer rendered size 50x50,
+                              // visually larger than the 44x44 starters.
+                              boxSizing: 'border-box',
+                              // Gray dotted border — signals "designated, on
+                              // standby". Gold reserved for limited-tier
+                              // players so we don't create visual collision.
+                              border: `2px dotted rgba(255,255,255,0.35)`,
                               padding: 1,
                               overflow: 'hidden',
                               cursor: canEditLineup ? 'pointer' : 'default',
@@ -1124,21 +1208,21 @@ export const RostersView = ({
                             />
                           </div>
                           <div style={{
-                            fontSize: 9, fontFamily: fonts.sans, marginTop: 3,
-                            color: 'rgba(245,197,24,0.85)', letterSpacing: 0.3,
+                            fontSize: 11, fontFamily: fonts.sans, marginTop: 3,
+                            color: 'rgba(255,255,255,0.7)', letterSpacing: 0.3,
                             textAlign: 'center', width: '100%',
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                             fontWeight: 600,
                           }}>
                             {backupPlayer.name.split(' ').pop()}
                           </div>
-                          <div style={{ fontSize: 8, fontFamily: fonts.sans, color: 'rgba(245,197,24,0.5)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                          <div style={{ fontSize: 8, fontFamily: fonts.sans, color: 'rgba(255,255,255,0.4)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
                             Backup
                           </div>
                         </div>
                       ) : (
                         <div
-                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48, cursor: canEditLineup ? 'pointer' : 'default' }}
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, cursor: canEditLineup ? 'pointer' : 'default' }}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (!canEditLineup) return;
@@ -1151,7 +1235,11 @@ export const RostersView = ({
                           }}
                         >
                           <div style={{
-                            width: 38, height: 38, borderRadius: '50%',
+                            width: 44, height: 44, borderRadius: '50%',
+                            // box-sizing border-box so 44x44 includes the
+                            // dotted border (matches filled-backup and the
+                            // 44x44 starter dimensions).
+                            boxSizing: 'border-box',
                             // When pickingBackup is on, the slot pulses gold to
                             // signal "this is where your next tap lands."
                             background: pickingBackup
@@ -1165,7 +1253,7 @@ export const RostersView = ({
                             boxShadow: pickingBackup ? '0 0 0 3px rgba(245,197,24,0.15)' : 'none',
                           }}>
                             <span style={{
-                              fontSize: 17, fontWeight: 300, lineHeight: 1,
+                              fontSize: 20, fontWeight: 300, lineHeight: 1,
                               color: canEditLineup
                                 ? (pickingBackup ? 'rgba(245,197,24,1)' : (lineupMode ? 'rgba(245,197,24,0.85)' : 'rgba(245,197,24,0.45)'))
                                 : 'rgba(255,255,255,0.15)',
@@ -1292,6 +1380,11 @@ export const RostersView = ({
             <tbody>
               {sortedRoster.map(player => {
                 const isInLineup     = (team.lineup || []).includes(player.name);
+                // Backup is treated as visually active — bright headshot,
+                // colored border, no benching. Mechanically they only count
+                // if commish promotes them to starter, but in the UI they
+                // belong to "this week's lineup picture".
+                const isBackup       = team.backup === player.name;
                 const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
                 const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
                 const hasLineup      = (team.lineup || []).length > 0;
@@ -1300,7 +1393,8 @@ export const RostersView = ({
                 // i.e. tee times are posted (firstTeeTime exists) or lineup window is open.
                 // Between events the lineup carries over from the prior week and should not dim.
                 const tournamentActive = !!(firstTeeTime || lineupOpen);
-                const isBenched      = tournamentActive && hasLineup && !isInLineup && !isEditing;
+                // Backup excluded from benching — they're part of the active lineup picture.
+                const isBenched      = tournamentActive && hasLineup && !isInLineup && !isBackup && !isEditing;
                 const dimColor       = 'rgba(255,255,255,0.45)';
                 const rowClickable   = isEditing && isOwnTeam && (isInLineup || canAddToLineup);
 
@@ -1345,14 +1439,28 @@ export const RostersView = ({
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
-                              opacity: isBenched ? 0.5 : isEditing && !isInLineup && !canAddToLineup ? 0.25 : isEditing && !isInLineup ? 0.55 : 1,
+                              // Backup excluded from the dimmed editing states —
+                              // their headshot reads as fully active alongside
+                              // the starters' headshots in the lineup card.
+                              opacity: isBenched ? 0.5 : isEditing && !isInLineup && !isBackup && !canAddToLineup ? 0.25 : isEditing && !isInLineup && !isBackup ? 0.55 : 1,
+                              // Backup gets the same colored border as a
+                              // starter (gold for limited, blue for unlimited,
+                              // white for regular) so they read as "in the
+                              // Backup gets a dotted gray border that matches
+                              // the lineup-card backup slot — same visual
+                              // language across both views. Starters keep
+                              // their tier-colored solid border.
                               border: isEditing
-                                ? isInLineup
-                                  ? `3px solid ${playerBorderColor(player)}`
-                                  : `2px solid ${colors.borderSubtle}`
-                                : isInLineup
-                                  ? `2px solid ${playerBorderColor(player)}`
-                                  : `1px solid ${colors.borderSubtle}`,
+                                ? isBackup
+                                  ? `2px dotted rgba(255,255,255,0.35)`
+                                  : isInLineup
+                                    ? `3px solid ${playerBorderColor(player)}`
+                                    : `2px solid ${colors.borderSubtle}`
+                                : isBackup
+                                  ? `2px dotted rgba(255,255,255,0.35)`
+                                  : isInLineup
+                                    ? `2px solid ${playerBorderColor(player)}`
+                                    : `1px solid ${colors.borderSubtle}`,
                               transition: 'all 0.15s',
                             }}
                           />

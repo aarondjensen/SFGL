@@ -8,11 +8,41 @@
 
 const ESPN_BASE = 'https://a.espncdn.com/i/headshots/golf/players/full';
 
+// ── Manual overrides ─────────────────────────────────────────────────────
+// Hard-coded ESPN athlete IDs that take precedence over whatever's in the
+// headshotMap. Used for names where the indexed-event lookup can't reliably
+// disambiguate brothers, cousins, Jr/Sr pairs, etc.
+//
+// CLIENT-SIDE override is the most reliable layer — it applies regardless
+// of what the api/headshots endpoint returned, what's in Firestore, or
+// what's in the constants PGA_TOUR_IDS fallback. Even if the API serves
+// the wrong ID (stale Vercel CDN cache, old deploy, etc.), the display
+// will still resolve to the correct face.
+//
+// Verify each ID at https://www.espn.com/golf/player/_/id/{ID}
+//
+// To add a player here: find their ESPN profile URL, copy the numeric ID
+// from /id/{ID}, add an entry with the exact display name (case-sensitive)
+// the app uses. Both display and any uses of `headshotMap[player.name]`
+// will hit this map first.
+const MANUAL_OVERRIDES = {
+  'Alex Fitzpatrick': '4364865', // .../id/4364865/alex-fitzpatrick — Matt's brother
+};
+
 /**
  * Returns an ordered array of image URLs to try for a player.
  * Falls back gracefully if no entry in the headshotMap.
+ *
+ * Lookup order:
+ *   1. MANUAL_OVERRIDES (hard-coded, verified IDs — bulletproof against
+ *      bad data anywhere upstream).
+ *   2. headshotMap (from /api/headshots fetch / Firestore).
+ *   3. Empty array → caller falls back to initials avatar.
  */
 export const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
+  const override = MANUAL_OVERRIDES[playerName];
+  if (override) return [`${ESPN_BASE}/${override}.png`];
+
   const val = headshotMap[playerName];
   if (!val) return [];
   if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];

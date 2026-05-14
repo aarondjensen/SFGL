@@ -173,11 +173,41 @@ function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transaction
   };
 }
 
-function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam, swingWinnerInfo) {
+function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam, swingWinnerInfo, seasonStandings) {
   // Defensive: handleNotifyResults takes teamResults from the client body, so
   // bad payloads can land here. Always render *something* informative.
   const list = Array.isArray(teamResults) ? teamResults : [];
   const sorted = [...list].sort((a, b) => (b.totalEarnings || 0) - (a.totalEarnings || 0));
+
+  // ── Overall Season Standings card (top of email) ──
+  // Renders a leaderboard of season-to-date totals before this tournament's
+  // breakdown. Each row shows rank · team · season total · "+$X this week"
+  // delta so the reader sees both the standing AND the shift caused by this
+  // event. Hidden when caller doesn't supply seasonStandings (older call
+  // sites / unit tests / very first event of the season).
+  const standingsList = Array.isArray(seasonStandings) ? seasonStandings : [];
+  // Build a lookup so we can annotate each season-row with this-week's earnings.
+  const thisWeekByTeam = {};
+  list.forEach(tr => { thisWeekByTeam[tr.team] = tr.totalEarnings || 0; });
+
+  const standingsCard = standingsList.length ? `<div style="padding:14px 16px;background:linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02));border:1px solid rgba(255,255,255,0.08);border-radius:4px;margin:0 0 18px;">
+    <div style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:0 0 10px;">📊 Season Standings</div>
+    ${standingsList.map((s, i) => {
+      const isMe = s.team === recipientTeam;
+      const isFirst = i === 0;
+      const rankColor = isFirst ? '#f5c518' : 'rgba(255,255,255,0.4)';
+      const teamColor = isMe ? '#ffffff' : 'rgba(255,255,255,0.85)';
+      const delta = thisWeekByTeam[s.team] || 0;
+      const deltaText = delta > 0
+        ? `<span style="font-family:${FONT_STACK};font-size:10px;color:rgba(80,180,120,0.85);font-weight:500;margin-left:6px;">+$${delta.toLocaleString()}</span>`
+        : '';
+      // Same row layout as the per-tournament rows below for visual rhythm,
+      // but no player breakdown sub-table — keeps the card compact at the
+      // top of the email so it doesn't dwarf the tournament-specific
+      // detail that follows.
+      return `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:4px;${isMe ? 'background:rgba(255,255,255,0.04);' : ''}"><tr><td width="22" style="font-family:${FONT_STACK};font-size:13px;font-weight:700;color:${rankColor};vertical-align:middle;padding:4px 0 4px 4px;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:13px;font-weight:${isMe ? '700' : '500'};color:${teamColor};vertical-align:middle;padding:4px 0;">${s.team}${deltaText}</td><td style="font-family:${FONT_STACK};font-size:13px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;padding:4px 4px 4px 0;">$${(s.totalEarnings || 0).toLocaleString()}</td></tr></table>`;
+    }).join('')}
+  </div>` : '';
 
   // ── Swing winner banner (optional) ──
   // When this tournament was the final event of a swing AND a swing winner
@@ -185,6 +215,11 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
   // celebratory banner above the tournament results. Same color logic as
   // the in-app StandingsView swing card (gold accent for the winner).
   const swingBanner = swingWinnerInfo ? `<div style="padding:18px 16px;background:linear-gradient(180deg,rgba(245,197,24,0.12),rgba(245,197,24,0.04));border:1px solid rgba(245,197,24,0.35);border-radius:4px;margin:0 0 22px;text-align:center;"><div style="font-family:${FONT_STACK};font-size:10px;color:rgba(245,197,24,0.85);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:0 0 6px;">🏆 ${swingWinnerInfo.segment || 'Swing'} Complete</div><div style="font-family:${FONT_STACK};font-size:18px;color:#ffffff;font-weight:600;margin:0 0 4px;">${swingWinnerInfo.team || ''}</div><div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.7);font-weight:400;">wins the $${(swingWinnerInfo.pot || 0).toLocaleString()} pot</div></div>` : '';
+
+  // ── Section header for the per-tournament breakdown ──
+  // Only render when we have actual rows; keeps very-first-event emails
+  // (with no season standings yet) from getting an awkward leading header.
+  const tournamentHeader = sorted.length ? `<div style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:0 0 10px;">⛳ This Tournament</div>` : '';
 
   // ── Team standings rows ──
   // Each row shows rank · team · earnings, with the recipient's row highlighted
@@ -233,7 +268,7 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
   const hasPlayerData = sorted.some(tr => Array.isArray(tr.players) && tr.players.length > 0);
   const legend = hasPlayerData ? `<div style="margin:14px 0 0;padding:10px 12px;background:rgba(255,255,255,0.02);border-radius:3px;font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:0.4px;font-weight:400;text-align:center;"><span style="color:rgba(245,197,24,0.95);font-weight:600;">●</span> Limited &nbsp;&nbsp;<span style="color:rgba(100,180,255,0.95);font-weight:600;">●</span> Unlimited &nbsp;&nbsp;<span style="display:inline-block;padding:1px 5px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;letter-spacing:0.5px;">R#</span> Round Leader</div>` : '';
 
-  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">🏆 ${tournamentName}</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Tournament Results</p>${swingBanner}${rows}${legend}`);
+  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">🏆 ${tournamentName}</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Tournament Results</p>${standingsCard}${swingBanner}${tournamentHeader}${rows}${legend}`);
 }
 
 function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
@@ -459,7 +494,7 @@ async function handleLineupReminder(res) {
 // ── Action: notify results ──────────────────────────────────────────────────
 
 async function handleNotifyResults(req, res) {
-  const { tournamentName, teamResults, swingWinnerInfo } = req.body || {};
+  const { tournamentName, teamResults, swingWinnerInfo, seasonStandings } = req.body || {};
   if (!tournamentName || !teamResults?.length) return res.status(400).json({ error: 'Missing tournamentName or teamResults' });
 
   const settings = await loadSettings();
@@ -469,7 +504,7 @@ async function handleNotifyResults(req, res) {
 
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo));
+      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo, seasonStandings));
       results.push({ team: teamName, success: true });
     } catch (err) { results.push({ team: teamName, error: err.message }); }
   }
@@ -628,6 +663,7 @@ async function handleProcessResults(res) {
         name: s.playerName,
         earnings: s.earnings,
         limited: team.roster.find(p => p.name === s.playerName)?.limited || false,
+        unlimited: team.roster.find(p => p.name === s.playerName)?.unlimited || false,
         bonus: playersWithBonuses[s.playerName]?.total || 0,
         roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
         wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
@@ -711,14 +747,17 @@ async function handleProcessResults(res) {
     .map(t => ({
       team: t.name,
       totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
-      players: (resultsData.teams[t.id].players || []).map(p => ({
-        name: p.name,
-        earnings: p.earnings || 0,
-        bonus: p.bonus || 0,
-        limited: !!p.limited,
-        unlimited: !!p.unlimited,
-        roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
-      })),
+      players: (resultsData.teams[t.id].players || []).map(p => {
+        const rosterEntry = (t.roster || []).find(rp => rp.name === p.name);
+        return {
+          name: p.name,
+          earnings: p.earnings || 0,
+          bonus: p.bonus || 0,
+          limited: rosterEntry?.limited ?? !!p.limited,
+          unlimited: rosterEntry?.unlimited ?? !!p.unlimited,
+          roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
+        };
+      }),
     }));
 
   // Build swing winner banner info if applicable. This causes the email
@@ -729,10 +768,30 @@ async function handleProcessResults(res) {
     pot: autoAward.pot,
   } : undefined;
 
+  // ── Compute season standings ──
+  // Sums each team's totalEarnings across every completed tournament (using
+  // the just-updated newTournaments array so this week's results are
+  // included). Derived from results.teams[id].totalEarnings — the same
+  // source the in-app StandingsView uses — so the email matches what
+  // managers see when they next open the app.
+  const seasonStandingsForEmail = (() => {
+    const totals = {};
+    teams.forEach(t => { totals[t.id] = 0; });
+    newTournaments.forEach(tt => {
+      if (!tt.completed || !tt.results?.teams) return;
+      Object.entries(tt.results.teams).forEach(([tid, r]) => {
+        if (totals[tid] !== undefined) totals[tid] += (r.totalEarnings || 0);
+      });
+    });
+    return teams
+      .map(t => ({ team: t.name, totalEarnings: totals[t.id] || 0 }))
+      .sort((a, b) => b.totalEarnings - a.totalEarnings);
+  })();
+
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournament.name} — SFGL Results`, buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName, swingWinnerInfoForEmail));
+      await sendEmail(email, `🏆 ${tournament.name} — SFGL Results`, buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName, swingWinnerInfoForEmail, seasonStandingsForEmail));
       emailResults.push({ team: teamName, success: true });
     } catch (err) { emailResults.push({ team: teamName, error: err.message }); }
   }
@@ -749,13 +808,165 @@ async function handleProcessResults(res) {
 
 // ── Router ──────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PGAT Stats Sync
+// ─────────────────────────────────────────────────────────────────────────────
+// Scrapes pgatour.com __NEXT_DATA__ for season earnings/events/cuts. Lives
+// inside cron.js (instead of its own api/pgat-stats.js file) so the commish
+// doesn't have to remember to deploy a separate function — adding endpoints
+// is the most reliably-forgotten deploy step.
+//
+// Called from AdminView's "Sync PGAT Stats" button via:
+//   GET /api/cron?action=pgat-stats
+// No auth required (parallel to notify-results).
+const PGAT_STATS_URLS = [
+  'https://www.pgatour.com/stats/detail/02671',          // Money Earned
+  'https://www.pgatour.com/stats/category/money/02671',  // alternate route
+  'https://www.pgatour.com/fedexcup/standings',          // FedEx Cup (includes earnings)
+];
+
+const PGAT_FETCH_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.5',
+  'Referer': 'https://www.pgatour.com/',
+};
+
+function pgatExtractNextData(html) {
+  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  try { return JSON.parse(m[1]); } catch { return null; }
+}
+
+function pgatParseStatsFromNextData(nd) {
+  const NAME_KEYS  = ['displayName', 'playerName', 'name', 'fullName'];
+  const MONEY_KEYS = ['money', 'earnings', 'officialMoney', 'moneyEarned', 'amount', 'statValue'];
+  const EVENT_KEYS = ['events', 'eventsPlayed', 'tournaments', 'tournamentsPlayed', 'starts'];
+  const CUTS_KEYS  = ['cutsMade', 'cuts', 'madeCuts'];
+
+  const map = new Map();
+  const numFromAny = (raw) => {
+    if (raw === null || raw === undefined) return null;
+    if (typeof raw === 'number' && isFinite(raw)) return raw;
+    if (typeof raw === 'string') {
+      const cleaned = raw.replace(/[$,]/g, '').trim();
+      const n = parseFloat(cleaned);
+      return isNaN(n) ? null : n;
+    }
+    return null;
+  };
+  const findOne = (obj, keys) => {
+    if (!obj || typeof obj !== 'object') return null;
+    for (const k of keys) {
+      if (k in obj) { const v = numFromAny(obj[k]); if (v !== null) return v; }
+    }
+    return null;
+  };
+  const findName = (obj) => {
+    if (!obj || typeof obj !== 'object') return null;
+    const src = obj.player || obj;
+    for (const k of NAME_KEYS) {
+      if (typeof src[k] === 'string' && src[k].trim().length > 2) return src[k].trim();
+    }
+    return null;
+  };
+  const walk = (obj) => {
+    if (!obj || typeof obj !== 'object') return;
+    if (Array.isArray(obj)) { obj.forEach(walk); return; }
+    const name = findName(obj);
+    if (name) {
+      let earnings = findOne(obj, MONEY_KEYS) ?? findOne(obj.player || {}, MONEY_KEYS);
+      let events   = findOne(obj, EVENT_KEYS) ?? findOne(obj.player || {}, EVENT_KEYS);
+      let cuts     = findOne(obj, CUTS_KEYS)  ?? findOne(obj.player || {}, CUTS_KEYS);
+      if (Array.isArray(obj.stats)) {
+        for (const s of obj.stats) {
+          const sn = String(s?.statName || s?.name || '').toLowerCase();
+          const sv = numFromAny(s?.value ?? s?.statValue);
+          if (sv === null) continue;
+          if (earnings === null && /money|earning/.test(sn)) earnings = sv;
+          if (events   === null && /event|start/.test(sn))   events   = sv;
+          if (cuts     === null && /cut/.test(sn))           cuts     = sv;
+        }
+      }
+      if (earnings !== null || events !== null || cuts !== null) {
+        const prev = map.get(name) || { earnings: 0, eventsPlayed: 0, cutsMade: 0 };
+        map.set(name, {
+          earnings:     Math.max(prev.earnings,     earnings || 0),
+          eventsPlayed: Math.max(prev.eventsPlayed, events   || 0),
+          cutsMade:     Math.max(prev.cutsMade,     cuts     || 0),
+        });
+      }
+    }
+    Object.values(obj).forEach(walk);
+  };
+  walk(nd);
+  return [...map.entries()].map(([name, stats]) => ({ name, ...stats }));
+}
+
+async function pgatFetchAndParse(url, timeoutMs = 7000) {
+  // Per-fetch AbortController timeout so a slow PGA Tour URL can't burn the
+  // whole 10s Vercel Hobby budget. Without this, sequential fetches with
+  // unbounded latency triggered Vercel's HTML "function timed out" page,
+  // which the client then choked on with "Unexpected token 'T'" trying to
+  // parse the HTML as JSON.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, { headers: PGAT_FETCH_HEADERS, signal: controller.signal });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
+    const html = await resp.text();
+    const nd = pgatExtractNextData(html);
+    if (!nd) throw new Error(`No __NEXT_DATA__ on ${url}`);
+    return pgatParseStatsFromNextData(nd);
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`Timeout (${timeoutMs}ms) fetching ${url}`);
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function handlePgatStats(res) {
+  // Fire all 3 URLs in parallel — overall finishes in ~7s max regardless of
+  // PGA Tour latency, well under Vercel's 10s Hobby-plan limit.
+  const results = await Promise.allSettled(
+    PGAT_STATS_URLS.map(url => pgatFetchAndParse(url))
+  );
+  const tried = [];
+  let bestPlayers = [];
+  let lastError = null;
+  results.forEach((r, i) => {
+    const url = PGAT_STATS_URLS[i];
+    if (r.status === 'fulfilled') {
+      const players = r.value;
+      const withEarnings = players.filter(p => (p.earnings || 0) > 0);
+      tried.push({ url, count: withEarnings.length });
+      if (withEarnings.length > bestPlayers.length) bestPlayers = withEarnings;
+    } else {
+      lastError = r.reason?.message || String(r.reason);
+      tried.push({ url, error: lastError });
+    }
+  });
+  if (bestPlayers.length === 0) {
+    return res.status(502).json({ error: 'No PGA Tour stats data could be parsed', attempts: tried, lastError });
+  }
+  return res.status(200).json({
+    players: bestPlayers.sort((a, b) => b.earnings - a.earnings),
+    count: bestPlayers.length,
+    sourceAttempts: tried,
+  });
+}
+
 export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
   const action = req.query.action || '';
 
-  // Cron actions require auth; notify-results is called from the client (no auth needed)
-  if (action !== 'notify-results' && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
+  // Cron actions require auth. Client-callable actions are exempted:
+  //   - notify-results: triggered from AdminView after processing
+  //   - pgat-stats:     triggered from AdminView's Sync button
+  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats']);
+  if (!NO_AUTH_ACTIONS.has(action) && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -765,7 +976,8 @@ export default async function handler(req, res) {
       case 'lineup-reminder':   return await handleLineupReminder(res);
       case 'process-results':   return await handleProcessResults(res);
       case 'notify-results':    return await handleNotifyResults(req, res);
-      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results' });
+      case 'pgat-stats':        return await handlePgatStats(res);
+      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);
