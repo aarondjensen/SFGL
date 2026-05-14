@@ -1574,7 +1574,10 @@ export const AdminView = ({
     setPgatStatus('fetching');
     setPgatSummary('');
     try {
-      const resp = await fetch('/api/pgat-stats');
+      // Cache-buster: appends ?t=<timestamp> so the fetch bypasses any stale
+      // CDN cache (Vercel previously cached an error response with a 6-hour
+      // TTL, and we want every Sync to hit a fresh function invocation).
+      const resp = await fetch('/api/pgat-stats?t=' + Date.now());
       const data = await resp.json();
       if (!resp.ok) {
         // Surface the attempts array if the endpoint returned one — useful
@@ -2446,4 +2449,3 @@ export const AdminView = ({
     </div>
   );
 };
-
