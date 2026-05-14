@@ -435,9 +435,27 @@ const FantasyGolfLeague = () => {
                           padding: 0,
                           cursor: 'pointer',
                           transition: 'color 0.2s, font-weight 0.2s',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
                         }}
                       >
                         {lastName}
+                        {/* Subtle gear hint — only shown when commish access is
+                            available but not currently active. Signals "this
+                            name is tappable to enter commish mode" on devices
+                            that can't render the `title` tooltip (mobile). */}
+                        {!isCommissioner && (
+                          <Settings
+                            aria-hidden="true"
+                            style={{
+                              width: 12,
+                              height: 12,
+                              opacity: 0.5,
+                              color: 'rgba(245,197,24,0.85)',
+                            }}
+                          />
+                        )}
                       </button>
                     );
                   }
@@ -626,6 +644,7 @@ const FantasyGolfLeague = () => {
                 key={tab.id}
                 className="sfgl-tab"
                 onClick={() => setActiveTab(tab.id)}
+                aria-current={isActive ? 'page' : undefined}
                 style={{
                   flex: 1,
                   display: 'flex',
@@ -633,9 +652,16 @@ const FantasyGolfLeague = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 3,
-                  padding: '6px 4px',
+                  // Border-top reserved on every tab so the active state
+                  // doesn't shift layout. Inactive = transparent; active =
+                  // gold. Padding-top reduced by 2px to compensate so the
+                  // total visual height is unchanged.
+                  borderTop: '2px solid ' + (isActive ? '#f5c518' : 'transparent'),
+                  borderLeft: 'none',
+                  borderRight: 'none',
+                  borderBottom: 'none',
+                  padding: '4px 4px 6px',
                   minHeight: 48,
-                  border: 'none',
                   background: isActive
                     ? 'rgba(255,255,255,0.07)'
                     : 'transparent',
@@ -681,7 +707,7 @@ const FantasyGolfLeague = () => {
               style={{
                 position: 'absolute', top: 12, right: 12,
                 background: 'none', border: 'none',
-                color: 'rgba(255,255,255,0.3)',
+                color: 'rgba(255,255,255,0.55)',
                 fontSize: 20, cursor: 'pointer',
                 lineHeight: 1, zIndex: 51,
                 transition: 'color 0.2s',
@@ -689,8 +715,8 @@ const FantasyGolfLeague = () => {
                 minWidth: 44, minHeight: 44,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
-              onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.7)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.3)'}
+              onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.85)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.55)'}
             >
               ✕
             </button>

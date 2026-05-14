@@ -295,9 +295,14 @@ export const playersApi = {
    * upsertMany path skips null/undefined espnId values to avoid
    * accidentally clearing during partial updates — this method is the
    * deliberate, explicit clear.
+   *
+   * Bug fix: previously referenced `aliasMap` in scope without declaring it
+   * (the var was only defined inside upsertMany). Every call threw
+   * ReferenceError. Now resolves the alias map up front like upsertMany does.
    */
   async clearEspnIds(names) {
     if (!Array.isArray(names) || names.length === 0) return;
+    const aliasMap = await getAliasMap();
     const BATCH_SIZE = 250;
     for (let i = 0; i < names.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);

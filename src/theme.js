@@ -30,7 +30,7 @@ export const colors = {
   // Text
   textPrimary:   'rgba(255,255,255,0.9)',
   textSecondary: 'rgba(255,255,255,0.4)',
-  textMuted:     'rgba(255,255,255,0.2)',
+  textMuted:     'rgba(255,255,255,0.32)',   // bumped from 0.2 — em-dashes / empty-state were near-invisible in sunlight
   textLabel:     'rgba(255,255,255,0.25)',
   textGold:      '#f5c518',
   textGoldDim:   'rgba(245,197,24,0.45)',

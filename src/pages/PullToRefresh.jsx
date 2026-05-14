@@ -129,7 +129,7 @@ export const PullToRefresh = ({ children, onRefresh }) => {
   }, [pulling, pullY, refreshing, onRefresh]);
 
   const past     = pullY >= THRESHOLD;
-  const label    = refreshing ? 'more side action' : past ? 'Release' : 'Pull to refresh';
+  const label    = refreshing ? 'Refreshing…' : past ? 'Release' : 'Pull to refresh';
   // Map pull progress to one full rotation at threshold
   const rotation = (pullY / THRESHOLD) * 360;
 
