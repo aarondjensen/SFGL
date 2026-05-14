@@ -1970,7 +1970,7 @@ export const AdminView = ({
     setPgatStatus('fetching');
     setPgatSummary('');
     try {
-      const resp = await fetch('/api/pgat-stats');
+      const resp = await fetch('/api/cron?action=pgat-stats');
       // Check content-type BEFORE calling resp.json() so we can produce a
       // useful error when the response is Vercel's HTML error page (function
       // timeout / 504 / etc) rather than letting the JSON parser throw the
