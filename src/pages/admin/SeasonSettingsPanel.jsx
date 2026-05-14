@@ -78,6 +78,35 @@ export const SeasonSettingsPanel = ({
     (settings.waiverMinute ?? 0) !== waiverMinute
   );
 
+  // ── Results Email Schedule ──
+  // Mirrors the waiver pattern: governs when handleProcessResults in cron.js
+  // will fire (it computes earnings, marks the tournament complete, advances
+  // the schedule, and emails all managers their results). Defaults to Monday
+  // 9:00 AM ET — gives Sunday tournaments a buffer for Monday weather
+  // finishes while still emailing managers before the workday gets rolling.
+  const [resultsDay,    setResultsDay]    = React.useState(() => settings?.resultsDay    ?? 1);
+  const [resultsHour,   setResultsHour]   = React.useState(() => settings?.resultsHour   ?? 9);
+  const [resultsMinute, setResultsMinute] = React.useState(() => settings?.resultsMinute ?? 0);
+  const [resultsSaving, setResultsSaving] = React.useState(false);
+
+  const handleSaveResultsSchedule = async () => {
+    setResultsSaving(true);
+    try {
+      await setSettings({ ...settings, resultsDay, resultsHour, resultsMinute });
+      dialog.showToast(`✓ Results email ${DAY_NAMES[resultsDay]} at ${fmtETTime(resultsHour, resultsMinute)} ET`, 'success');
+    } catch (err) {
+      dialog.showToast('Error: ' + err.message, 'error');
+    } finally {
+      setResultsSaving(false);
+    }
+  };
+
+  const resultsHasUnsavedChanges = settings?.resultsDay !== undefined && (
+    settings.resultsDay !== resultsDay ||
+    settings.resultsHour !== resultsHour ||
+    (settings.resultsMinute ?? 0) !== resultsMinute
+  );
+
   // ── Draft modal ──
   const [showDraftModal, setShowDraftModal] = React.useState(false);
 
@@ -236,6 +265,53 @@ export const SeasonSettingsPanel = ({
           style={{ ...S.btn, ...disabledBtn(waiverSaving) }}
         >
           {waiverSaving ? '⏳ Saving…' : '💾 Save Waiver Schedule'}
+        </button>
+      </div>
+
+      {/* ── Results Email Schedule ── */}
+      <div style={S.section}>
+        <div style={S.title}>📧 Results Email Schedule</div>
+        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
+          Set the day and time (ET) that tournament results are processed and emailed to managers. Default is Monday at 9:00 AM ET.
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 12 }}>
+          <div style={{ flex: 1 }}>
+            <label style={S.lbl}>Day</label>
+            <select value={resultsDay} onChange={e => setResultsDay(Number(e.target.value))} style={S.select}>
+              {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={S.lbl}>Hour (ET)</label>
+            <select value={resultsHour} onChange={e => setResultsHour(Number(e.target.value))} style={S.select}>
+              {Array.from({ length: 24 }, (_, i) => (
+                <option key={i} value={i}>
+                  {i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: '0 0 80px' }}>
+            <label style={S.lbl}>Minute</label>
+            <select value={resultsMinute} onChange={e => setResultsMinute(Number(e.target.value))} style={S.select}>
+              {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => (
+                <option key={m} value={m}>:{String(m).padStart(2, '0')}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+          Current: results email {DAY_NAMES[resultsDay]} at {fmtETTime(resultsHour, resultsMinute)} ET
+          {resultsHasUnsavedChanges && (
+            <span style={{ color: colors.warning }}> · unsaved changes</span>
+          )}
+        </div>
+        <button
+          onClick={handleSaveResultsSchedule}
+          disabled={resultsSaving}
+          style={{ ...S.btn, ...disabledBtn(resultsSaving) }}
+        >
+          {resultsSaving ? '⏳ Saving…' : '💾 Save Results Schedule'}
         </button>
       </div>
 

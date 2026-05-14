@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, normalizePlayerName } from '../utils';
-import { DraftModal } from './DraftModal';
 import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi, playerRankingsApi, teamsApi } from '../api/firebase';
+// (DraftModal import removed — now used only by SeasonSettingsPanel.)
 import { seedAliasesToFirestore } from '../constants/nameAliases';
 import { theme, colors, fonts, SWINGS } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
@@ -17,6 +17,8 @@ import { CollapsibleGroup } from './admin/CollapsibleGroup';
 import { S, disabledBtn } from './admin/adminStyles';
 import { MergePlayersPanel } from './admin/MergePlayersPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
+import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
+import { DAY_NAMES, fmtETTime } from '../utils/sharedHelpers';
 
 
 
@@ -657,7 +659,8 @@ export const AdminView = ({
   const [mgCredName, setMgCredName] = useState('');
   const [mgCredPass, setMgCredPass] = useState('');
   const [mgCredSaving, setMgCredSaving] = useState(false);
-  const [showDraftModal, setShowDraftModal] = useState(false);
+  // (showDraftModal moved into ./admin/SeasonSettingsPanel — the panel
+  // owns the "Open Draft Room" button and renders the modal itself.)
   const [swingAwardSeg, setSwingAwardSeg]   = useState('');
   const [waiverRevealed, setWaiverRevealed] = useState(false);
   // (livSearch / livSaving used to live here. They moved INTO
@@ -1496,82 +1499,18 @@ export const AdminView = ({
   // ── Merge Players ─────────────────────────────────────────────────────────
   const [mergeOpen, setMergeOpen] = useState(false);
 
-  // ── Season Settings ────────────────────────────────────────────────────────
-  const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsOpen,   setSettingsOpen]   = useState(false);
-  const [settingsDraft,  setSettingsDraft]  = useState(null);
-
-  const getSettingsDraft = () => ({
-    bonusR1Regular:   settings?.bonusR1Regular   ?? 20000,
-    bonusR2Regular:   settings?.bonusR2Regular   ?? 40000,
-    bonusR3Regular:   settings?.bonusR3Regular   ?? 60000,
-    bonusR1Major:     settings?.bonusR1Major     ?? 40000,
-    bonusR2Major:     settings?.bonusR2Major     ?? 80000,
-    bonusR3Major:     settings?.bonusR3Major     ?? 120000,
-    feeFA:            settings?.feeFA            ?? 1,
-    feeWaiver:        settings?.feeWaiver        ?? 2,
-    rosterLimit:      settings?.rosterLimit      ?? 13,
-    lineupSize:       settings?.lineupSize       ?? 5,
-    maxLimitedStarts: settings?.maxLimitedStarts ?? 12,
-  });
-
-  const handleSaveSettings = async () => {
-    if (!settingsDraft) return;
-    setSettingsSaving(true);
-    try {
-      await setSettings({ ...settings, ...settingsDraft });
-      setSettingsDraft(null);
-      dialog.showToast('✓ Season settings saved', 'success');
-    } catch (err) {
-      dialog.showToast('Error: ' + err.message, 'error');
-    } finally { setSettingsSaving(false); }
-  };
-
-  // ── Waiver Schedule ────────────────────────────────────────────────────────
-  const [waiverDay,    setWaiverDay]    = useState(() => settings?.waiverDay    ?? 2); // 0=Sun…6=Sat, default Tue=2
-  const [waiverHour,   setWaiverHour]   = useState(() => settings?.waiverHour   ?? 20); // 24h ET, default 20=8pm
-  const [waiverMinute, setWaiverMinute] = useState(() => settings?.waiverMinute ?? 0);  // 0–59, default :00
-  const [waiverSaving, setWaiverSaving] = useState(false);
-  const [emailDraft,   setEmailDraft]   = useState(null); // { teamId: 'email@...' } — null = no unsaved changes
-
-  // ── Results Email Schedule ────────────────────────────────────────────────
-  // Mirrors the waiver pattern: governs when handleProcessResults in cron.js
-  // will fire (it computes earnings, marks the tournament complete, advances
-  // the schedule, and emails all managers their results). Defaults to Monday
-  // 9:00 AM ET — gives Sunday tournaments a buffer for Monday weather
-  // finishes while still emailing managers before the workday gets rolling.
-  const [resultsDay,    setResultsDay]    = useState(() => settings?.resultsDay    ?? 1); // default Mon=1
-  const [resultsHour,   setResultsHour]   = useState(() => settings?.resultsHour   ?? 9);  // 24h ET, default 9am
-  const [resultsMinute, setResultsMinute] = useState(() => settings?.resultsMinute ?? 0);
-  const [resultsSaving, setResultsSaving] = useState(false);
-
-  const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const fmtWaiverTime = (h, m) => {
-    const hr = h % 12 || 12;
-    const ampm = h < 12 ? 'AM' : 'PM';
-    const min = String(m).padStart(2, '0');
-    return `${hr}:${min} ${ampm}`;
-  };
-
-  const handleSaveWaiverSchedule = async () => {
-    setWaiverSaving(true);
-    try {
-      await setSettings({ ...settings, waiverDay, waiverHour, waiverMinute });
-      dialog.showToast(`✓ Waivers process ${DAY_NAMES[waiverDay]} at ${fmtWaiverTime(waiverHour, waiverMinute)} ET`, 'success');
-    } catch (err) {
-      dialog.showToast('Error: ' + err.message, 'error');
-    } finally { setWaiverSaving(false); }
-  };
-
-  const handleSaveResultsSchedule = async () => {
-    setResultsSaving(true);
-    try {
-      await setSettings({ ...settings, resultsDay, resultsHour, resultsMinute });
-      dialog.showToast(`✓ Results email ${DAY_NAMES[resultsDay]} at ${fmtWaiverTime(resultsHour, resultsMinute)} ET`, 'success');
-    } catch (err) {
-      dialog.showToast('Error: ' + err.message, 'error');
-    } finally { setResultsSaving(false); }
-  };
+  // ── Season / Waiver / Results / Draft state + handlers ────────────────────
+  // All moved INTO ./admin/SeasonSettingsPanel.jsx. The panel owns the editor
+  // state for season settings, waiver schedule, results email schedule, and
+  // the draft modal toggle. AdminView no longer needs to declare or save them.
+  //
+  // The persisted values still live on `settings` (Firestore), so anywhere
+  // outside the panel that needs them reads via `settings.waiverDay ?? 2`
+  // (see e.g. the "process now!" banner in the WaiverProcessingPanel area).
+  //
+  // DAY_NAMES and fmtETTime are now imported from utils/sharedHelpers.js
+  // (was duplicated inline before).
+  const [emailDraft,   setEmailDraft]   = useState(null); // { teamId: 'email@...' } — null = no unsaved changes — Manager Emails section
 
   const handleSyncOwgr = async () => {
     setOwgrStatus('fetching');
@@ -2027,9 +1966,11 @@ export const AdminView = ({
           const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
           const etMin  = now.getUTCMinutes();
           const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay();
-          const wd = waiverDay ?? 2;
-          const wh = waiverHour ?? 20;
-          const wm = waiverMinute ?? 0;
+          // Read from persisted settings (not local edit state, which used
+          // to be lifted into AdminView but now lives inside SeasonSettingsPanel).
+          const wd = settings?.waiverDay    ?? 2;
+          const wh = settings?.waiverHour   ?? 20;
+          const wm = settings?.waiverMinute ?? 0;
           const isReadyToProcess = etDay === wd && (etHour * 60 + etMin) >= (wh * 60 + wm) && pending.length > 0;
           if (!isReadyToProcess) return null;
           return (
@@ -2039,7 +1980,7 @@ export const AdminView = ({
             }}>
               <span style={{ fontSize: 14 }}>⏰</span>
               <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,190,80,0.9)', fontWeight: 600 }}>
-                Past {fmtWaiverTime(wh, wm)} ET {DAY_NAMES[wd]} — process now!
+                Past {fmtETTime(wh, wm)} ET {DAY_NAMES[wd]} — process now!
               </div>
             </div>
           );
@@ -2068,9 +2009,9 @@ export const AdminView = ({
               const etHour = (now.getUTCHours() + 24 + etOffset) % 24;
               const etMin  = now.getUTCMinutes();
               const etDay  = new Date(now.getTime() + etOffset * 3600 * 1000).getUTCDay();
-              const wd = waiverDay ?? 2;
-              const wh = waiverHour ?? 20;
-              const wm = waiverMinute ?? 0;
+              const wd = settings?.waiverDay    ?? 2;
+              const wh = settings?.waiverHour   ?? 20;
+              const wm = settings?.waiverMinute ?? 0;
               const ready = etDay === wd && (etHour * 60 + etMin) >= (wh * 60 + wm);
               return (
                 <button onClick={() => setWaiverRevealed(true)} style={ready
@@ -2488,163 +2429,20 @@ export const AdminView = ({
       </CollapsibleGroup>
 
       <CollapsibleGroup title="League Settings" icon="⚙️">
-      {/* ── Season Settings ── */}
-      <div style={S.section}>
-        <button onClick={() => { setSettingsOpen(o => !o); setSettingsDraft(null); }}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          <div style={S.title}>⚙️ Season Settings</div>
-          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{settingsOpen ? '▲ close' : '▼ edit'}</span>
-        </button>
-        {settingsOpen && (() => {
-          const isEditing = settingsDraft !== null && typeof settingsDraft === 'object';
-          const draft = settingsDraft || getSettingsDraft();
-          const set = (key, val) => setSettingsDraft({ ...(settingsDraft || getSettingsDraft()), [key]: val });
-          const numInput = (key, label, min = 0, dollar = false) => (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <label style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</label>
-              <div style={{ position: 'relative' }}>
-                {dollar && <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontFamily: fonts.mono, fontSize: 13, color: colors.textMuted, pointerEvents: 'none' }}>$</span>}
-                <input type="number" min={min} value={draft[key]} onChange={e => set(key, Number(e.target.value))}
-                  style={{ ...theme.input, marginBottom: 0, fontSize: 13, textAlign: dollar ? 'right' : 'center', paddingLeft: dollar ? 18 : undefined, width: '100%', border: isEditing ? '1px solid rgba(220,170,60,0.5)' : undefined }} />
-              </div>
-            </div>
-          );
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4 }}>
-              <div style={{ ...theme.smallText, color: colors.textMuted }}>⚠️ Changes apply immediately to all league calculations.</div>
-              <div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Round Leader Bonuses</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                  {numInput('bonusR1Regular', 'R1 — Regular', 0, true)}
-                  {numInput('bonusR2Regular', 'R2 — Regular', 0, true)}
-                  {numInput('bonusR3Regular', 'R3 — Regular', 0, true)}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  {numInput('bonusR1Major', 'R1 — Major', 0, true)}
-                  {numInput('bonusR2Major', 'R2 — Major', 0, true)}
-                  {numInput('bonusR3Major', 'R3 — Major', 0, true)}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Transaction Fees ($)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {numInput('feeFA', 'Free Agent', 0, true)}
-                  {numInput('feeWaiver', 'Waiver Claim', 0, true)}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: colors.textGold, marginBottom: 8 }}>Roster Rules</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  {numInput('rosterLimit', 'Roster Size', 1)}
-                  {numInput('lineupSize', 'Lineup Size', 1)}
-                  {numInput('maxLimitedStarts', 'Max ★ Starts', 1)}
-                </div>
-              </div>
-              {isEditing && (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={async () => { const ok = await dialog.showConfirm('Save Season Settings', 'These changes affect all league calculations immediately. Are you sure?', { confirmText: 'Yes, Save', type: 'warning' }); if (ok) handleSaveSettings(); }}
-                    disabled={settingsSaving} style={{ ...S.btn, flex: 1, ...(settingsSaving ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>
-                    {settingsSaving ? '⏳ Saving…' : '✓ Save Season Settings'}
-                  </button>
-                  <button onClick={() => setSettingsDraft(null)} style={{ ...theme.btnSecondary, flex: 0, padding: '10px 16px', whiteSpace: 'nowrap' }}>Discard</button>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-      </div>
-
-      {/* ── Waiver Schedule ── */}
-      <div style={S.section}>
-        <div style={S.title}>🗓️ Waiver Schedule</div>
-        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-          Set the day and time (ET) that waiver claims are processed each week. Default is Tuesday at 8:00 PM ET.
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 12 }}>
-          <div style={{ flex: 1 }}>
-            <label style={S.lbl}>Day</label>
-            <select value={waiverDay} onChange={e => setWaiverDay(Number(e.target.value))} style={S.select}>
-              {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
-            </select>
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={S.lbl}>Hour (ET)</label>
-            <select value={waiverHour} onChange={e => setWaiverHour(Number(e.target.value))} style={S.select}>
-              {Array.from({ length: 24 }, (_, i) => (
-                <option key={i} value={i}>{i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`}</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ flex: '0 0 80px' }}>
-            <label style={S.lbl}>Minute</label>
-            <select value={waiverMinute} onChange={e => setWaiverMinute(Number(e.target.value))} style={S.select}>
-              {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => (
-                <option key={m} value={m}>:{String(m).padStart(2, '0')}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-          Current: waivers process {DAY_NAMES[waiverDay]} at {fmtWaiverTime(waiverHour, waiverMinute)} ET
-          {settings?.waiverDay !== undefined && (settings.waiverDay !== waiverDay || settings.waiverHour !== waiverHour || (settings.waiverMinute ?? 0) !== waiverMinute) && (
-            <span style={{ color: colors.warning }}> · unsaved changes</span>
-          )}
-        </div>
-        <button onClick={handleSaveWaiverSchedule} disabled={waiverSaving}
-          style={{ ...S.btn, ...(waiverSaving ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>
-          {waiverSaving ? '⏳ Saving…' : '💾 Save Waiver Schedule'}
-        </button>
-      </div>
-
-      {/* ── Results Email Schedule ── */}
-      <div style={S.section}>
-        <div style={S.title}>📧 Results Email Schedule</div>
-        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-          Set the day and time (ET) that tournament results are processed and emailed to managers. Default is Monday at 9:00 AM ET.
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 12 }}>
-          <div style={{ flex: 1 }}>
-            <label style={S.lbl}>Day</label>
-            <select value={resultsDay} onChange={e => setResultsDay(Number(e.target.value))} style={S.select}>
-              {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
-            </select>
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={S.lbl}>Hour (ET)</label>
-            <select value={resultsHour} onChange={e => setResultsHour(Number(e.target.value))} style={S.select}>
-              {Array.from({ length: 24 }, (_, i) => (
-                <option key={i} value={i}>{i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`}</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ flex: '0 0 80px' }}>
-            <label style={S.lbl}>Minute</label>
-            <select value={resultsMinute} onChange={e => setResultsMinute(Number(e.target.value))} style={S.select}>
-              {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => (
-                <option key={m} value={m}>:{String(m).padStart(2, '0')}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-          Current: results email {DAY_NAMES[resultsDay]} at {fmtWaiverTime(resultsHour, resultsMinute)} ET
-          {settings?.resultsDay !== undefined && (settings.resultsDay !== resultsDay || settings.resultsHour !== resultsHour || (settings.resultsMinute ?? 0) !== resultsMinute) && (
-            <span style={{ color: colors.warning }}> · unsaved changes</span>
-          )}
-        </div>
-        <button onClick={handleSaveResultsSchedule} disabled={resultsSaving}
-          style={{ ...S.btn, ...(resultsSaving ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>
-          {resultsSaving ? '⏳ Saving…' : '💾 Save Results Schedule'}
-        </button>
-      </div>
-
-      <div style={S.section}>
-        <div style={S.title}>🎯 Draft</div>
-        <button onClick={() => setShowDraftModal(true)} style={S.btn}>Open Draft Room</button>
-      </div>
+      {/* All four sections (Season Settings, Waiver Schedule, Results Email
+          Schedule, Draft) are now rendered by SeasonSettingsPanel — Wave I
+          extraction. The panel also owns the DraftModal lifecycle, so AdminView
+          no longer has a `showDraftModal` state or trailing `<DraftModal />`
+          render at the bottom of this view. */}
+      <SeasonSettingsPanel
+        settings={settings}
+        setSettings={setSettings}
+        teams={teams}
+        allPlayers={allPlayers}
+        updateTeams={updateTeams}
+        headshots={headshots}
+      />
       </CollapsibleGroup>
-
-      {showDraftModal && <DraftModal teams={teams} allPlayers={allPlayers} updateTeams={updateTeams} onClose={() => setShowDraftModal(false)} headshots={headshots} />}
     </div>
   );
 };
