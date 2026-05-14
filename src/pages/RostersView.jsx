@@ -1142,6 +1142,11 @@ export const RostersView = ({
                             }}
                             style={{
                               width: 44, height: 44, borderRadius: '50%',
+                              // box-sizing border-box so 44x44 includes the
+                              // border + padding. Without this, the default
+                              // content-box made the outer rendered size 50x50,
+                              // visually larger than the 44x44 starters.
+                              boxSizing: 'border-box',
                               // Gray dotted border — signals "designated, on
                               // standby". Gold reserved for limited-tier
                               // players so we don't create visual collision.
@@ -1189,6 +1194,10 @@ export const RostersView = ({
                         >
                           <div style={{
                             width: 44, height: 44, borderRadius: '50%',
+                            // box-sizing border-box so 44x44 includes the
+                            // dotted border (matches filled-backup and the
+                            // 44x44 starter dimensions).
+                            boxSizing: 'border-box',
                             // When pickingBackup is on, the slot pulses gold to
                             // signal "this is where your next tap lands."
                             background: pickingBackup
