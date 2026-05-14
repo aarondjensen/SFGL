@@ -260,25 +260,74 @@ export const playersApi = {
     const timestamp = Date.now();
     // Check alias map — if a player name is an alias for a canonical doc, use that doc ID
     const aliasMap = await getAliasMap();
+    // Set of canonical names = values of aliasMap. Used to skip the static
+    // alias fallback when a name is ALREADY canonical in the dynamic map.
+    // Without this, the static map could re-route a merged canonical (e.g.
+    // 'Nico Echavarria') back to its old alternate ('Nicolas Echavarria'),
+    // re-creating the doc that the user just deleted via merge.
+    const canonicalSet = new Set(Object.values(aliasMap));
     const BATCH_SIZE = 499;
+    let skipped = 0;
     for (let i = 0; i < players.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       players.slice(i, i + BATCH_SIZE).forEach(p => {
-        // Resolve via static aliases first, then dynamic Firebase aliases
-        const canonicalName = aliasMap[p.name] || resolveAlias(p.name);
+        // Resolution priority:
+        //   1. Dynamic alias map (p.name IS an alias → use canonical)
+        //   2. p.name is itself a canonical in dynamic map → keep as-is
+        //   3. Static fallback (legacy aliases not yet seeded into Firestore)
+        let canonicalName = aliasMap[p.name];
+        if (!canonicalName) {
+          canonicalName = canonicalSet.has(p.name) ? p.name : resolveAlias(p.name);
+        }
+        // Defensive: skip rows with empty/invalid canonical names. Without
+        // this, a bad source row throws an opaque Firestore error that
+        // kills the entire batch.
+        if (typeof canonicalName !== 'string' || canonicalName.trim().length === 0) {
+          console.warn('[playersApi.upsertMany] skipping row with invalid name:', p);
+          skipped++;
+          return;
+        }
+        // Firestore doc IDs disallow forward slashes. Normalize them out to
+        // prevent a crash on rare edge-case names (e.g. doubles-team formats).
+        if (canonicalName.includes('/')) {
+          canonicalName = canonicalName.replace(/\//g, ' ');
+        }
         const row = { name: canonicalName };
         if (p.worldRank   !== undefined) row.world_rank   = p.worldRank ?? null;
         if (p.espnId      !== undefined && p.espnId !== null) row.espn_id = p.espnId;
         if (p.headshotUrl !== undefined) row.headshot_url = p.headshotUrl ?? null;
         if (p.stats       !== undefined) row.career_stats = p.stats ?? {};
         if (p.isLiv       !== undefined) row.is_liv       = p.isLiv ?? false;
+        // PGAT season stats — added when the commish runs Admin → Sync PGAT
+        // Stats. Without these field-mappings the sync silently dropped its
+        // payload and RostersView kept showing stale earnings.
+        if (p.seasonEarnings   !== undefined) row.season_earnings   = p.seasonEarnings   ?? 0;
+        if (p.eventsPlayed     !== undefined) row.events_played     = p.eventsPlayed     ?? 0;
+        if (p.cutsMade         !== undefined) row.cuts_made         = p.cutsMade         ?? 0;
+        if (p.statsLastSynced  !== undefined) row.stats_last_synced = p.statsLastSynced  ?? null;
         batch.set(doc(db, 'players', canonicalName), row, { merge: true });
       });
-      await batch.commit();
+      try {
+        await batch.commit();
+      } catch (err) {
+        // Surface the BATCH index in the error so the caller can locate the
+        // bad row when debugging. The default Firestore error message
+        // doesn't identify which player in a 499-row batch caused the
+        // failure.
+        console.error(`[playersApi.upsertMany] batch ${Math.floor(i / BATCH_SIZE)} failed (rows ${i}..${i + BATCH_SIZE - 1}):`, err);
+        throw err;
+      }
     }
+    if (skipped > 0) console.warn(`[playersApi.upsertMany] skipped ${skipped} invalid row(s)`);
     await setDoc(
       doc(db, 'app_metadata', 'players_last_updated'),
-      { key: 'players_last_updated', value: Date.now().toString() }
+      // ISO string — unambiguous and reliably parseable by new Date().
+      // Old code wrote Date.now().toString() (a numeric string), which JS
+      // engines parse as YYYY format and return Invalid Date for the
+      // typical 13-digit millisecond timestamps. That stale legacy value
+      // was the root of the "Last synced: Invalid Date" rendering in
+      // AdminView's OWGR section.
+      { key: 'players_last_updated', value: new Date().toISOString() }
     );
     return players;
   },
@@ -302,16 +351,35 @@ export const playersApi = {
    */
   async clearEspnIds(names) {
     if (!Array.isArray(names) || names.length === 0) return;
-    const aliasMap = await getAliasMap();
     const BATCH_SIZE = 250;
     for (let i = 0; i < names.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       names.slice(i, i + BATCH_SIZE).forEach(name => {
-        const canonicalName = aliasMap[name] || resolveAlias(name);
+        // Same resolution priority as upsertMany — dynamic alias wins, then
+        // canonical-set passthrough, then static fallback. Stops the static
+        // map from re-routing already-merged canonical names.
+        let canonicalName = aliasMap[name];
+        if (!canonicalName) {
+          canonicalName = canonicalSet.has(name) ? name : resolveAlias(name);
+        }
+        if (typeof canonicalName !== 'string' || canonicalName.trim().length === 0) {
+          console.warn('[playersApi.clearEspnIds] skipping invalid name:', name);
+          return;
+        }
+        if (canonicalName.includes('/')) canonicalName = canonicalName.replace(/\//g, ' ');
         batch.set(doc(db, 'players', canonicalName), { espn_id: null }, { merge: true });
       });
       await batch.commit();
     }
+  },
+
+  // Returns a map of { aliasName: canonicalName } sourced from each player
+  // doc's `aliases` array. Used by clients that need to resolve incoming
+  // external names (e.g. PGA Tour field data using "Nicolas Echavarria"
+  // when the roster has "Nico Echavarria" after a merge) to whatever
+  // canonical form the rosters use.
+  async getAliasMap() {
+    return getAliasMap();
   },
 
   // Add an alias to a player doc — e.g. addAlias('Nicolas Echavarria', 'Nico Echavarria')
@@ -341,12 +409,19 @@ export const playersApi = {
   async getAllForApp() {
     const players = await this.getAll();
     return players.map(p => ({
-      name:        p.name,
-      worldRank:   p.world_rank,
-      espnId:   p.espn_id,
-      headshotUrl: p.headshot_url,
-      stats:       p.career_stats,
-      isLiv:       p.is_liv,
+      name:             p.name,
+      worldRank:        p.world_rank,
+      espnId:           p.espn_id,
+      headshotUrl:      p.headshot_url,
+      stats:            p.career_stats,
+      isLiv:            p.is_liv,
+      // PGAT season stats — written by Admin → Sync PGAT Stats. Read by
+      // RostersView (playerDirectoryMap[name].seasonEarnings etc) to
+      // display per-player season earnings, events, and cuts.
+      seasonEarnings:   p.season_earnings,
+      eventsPlayed:     p.events_played,
+      cutsMade:         p.cuts_made,
+      statsLastSynced:  p.stats_last_synced,
     }));
   },
 

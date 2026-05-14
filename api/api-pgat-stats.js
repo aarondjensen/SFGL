@@ -128,13 +128,26 @@ function parseStatsFromNextData(nd) {
   return [...map.entries()].map(([name, stats]) => ({ name, ...stats }));
 }
 
-async function fetchAndParse(url) {
-  const resp = await fetch(url, { headers: HEADERS });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
-  const html = await resp.text();
-  const nd = extractNextData(html);
-  if (!nd) throw new Error(`No __NEXT_DATA__ on ${url}`);
-  return parseStatsFromNextData(nd);
+async function fetchAndParse(url, timeoutMs = 7000) {
+  // AbortController timeout — bounds each fetch to timeoutMs so a single
+  // slow URL can't burn the whole 10s Vercel budget. Without this, the
+  // function would time out (returning Vercel's HTML error page) instead
+  // of falling through to other URLs or returning a clean JSON error.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, { headers: HEADERS, signal: controller.signal });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
+    const html = await resp.text();
+    const nd = extractNextData(html);
+    if (!nd) throw new Error(`No __NEXT_DATA__ on ${url}`);
+    return parseStatsFromNextData(nd);
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`Timeout (${timeoutMs}ms) fetching ${url}`);
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export default async function handler(req, res) {
@@ -144,24 +157,31 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=43200');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // Fire all 3 URLs in parallel rather than sequentially. Each has its own
+  // 7-second AbortController timeout, so the overall request resolves in
+  // ~7 seconds max — comfortably under Vercel's 10s Hobby-plan limit.
+  // Sequential made cumulative time the sum of all 3 latencies, which
+  // routinely hit Vercel's 10s timeout and triggered an HTML error page.
+  const results = await Promise.allSettled(
+    STATS_URLS.map(url => fetchAndParse(url))
+  );
+
   const tried = [];
   let bestPlayers = [];
   let lastError = null;
 
-  for (const url of STATS_URLS) {
-    try {
-      const players = await fetchAndParse(url);
+  results.forEach((r, i) => {
+    const url = STATS_URLS[i];
+    if (r.status === 'fulfilled') {
+      const players = r.value;
       const withEarnings = players.filter(p => (p.earnings || 0) > 0);
       tried.push({ url, count: withEarnings.length });
       if (withEarnings.length > bestPlayers.length) bestPlayers = withEarnings;
-      // If we got a reasonable amount of data (50+ players with earnings),
-      // accept this source and stop trying alternates.
-      if (withEarnings.length >= 50) break;
-    } catch (err) {
-      lastError = err.message;
-      tried.push({ url, error: err.message });
+    } else {
+      lastError = r.reason?.message || String(r.reason);
+      tried.push({ url, error: lastError });
     }
-  }
+  });
 
   if (bestPlayers.length === 0) {
     return res.status(502).json({
