@@ -343,6 +343,7 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
         name: s.playerName,
         earnings: s.earnings,
         limited: team.roster.find(p => p.name === s.playerName)?.limited || false,
+        unlimited: team.roster.find(p => p.name === s.playerName)?.unlimited || false,
         bonus: playersWithBonuses[s.playerName]?.total || 0,
         roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
         wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
@@ -386,9 +387,9 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
 };
 
 const MergePlayersPanel = ({
-  allPlayers, teams, transactions,
-  dialog, updateTeams, setTransactions,
-  theme, colors, fonts, S, sfglDataApi, playersApi, STORAGE_KEYS, disabledBtn,
+  allPlayers, teams, transactions, tournaments, headshots,
+  dialog, updateTeams, setTransactions, setTournaments, setHeadshots, setAllPlayers,
+  theme, colors, fonts, S, sfglDataApi, playersApi, tournamentResultsApi, STORAGE_KEYS, disabledBtn,
 }) => {
   const [search1, setSearch1] = React.useState('');
   const [search2, setSearch2] = React.useState('');
@@ -407,18 +408,153 @@ const MergePlayersPanel = ({
   const dStyle = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#0f1d35', border: `1px solid ${colors.border}`, borderRadius: 3, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' };
   const oStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` };
 
+  // ── Rewrite tournament results to use player2 in place of player1 ────────
+  // Renames player1 → player2 in every tournament's `results.teams[teamId]`:
+  //   • players[].name (the breakdown shown in StandingsView / TransactionsView)
+  // AND in `full_lineups[teamId]` / `roster_snapshots[teamId]` if they're
+  // stored on the tournament. Returns { newTournaments, touchedNames } so
+  // the caller can persist to Firebase + update state. Idempotent — calling
+  // it twice is a no-op on the second pass.
+  const rewriteTournaments = (tournamentsList) => {
+    const touched = [];
+    const newList = tournamentsList.map(t => {
+      if (!t.results) return t;
+      let changed = false;
+      const teams = t.results.teams || {};
+      const newTeams = {};
+      for (const [tid, teamResult] of Object.entries(teams)) {
+        const players = teamResult.players || [];
+        const newPlayers = players.map(p => {
+          if (p.name === player1) { changed = true; return { ...p, name: player2 }; }
+          return p;
+        });
+        newTeams[tid] = { ...teamResult, players: newPlayers };
+      }
+      const fullLineups = t.results.full_lineups || {};
+      const newFullLineups = {};
+      for (const [tid, names] of Object.entries(fullLineups)) {
+        const renamed = (names || []).map(n => {
+          if (n === player1) { changed = true; return player2; }
+          return n;
+        });
+        newFullLineups[tid] = renamed;
+      }
+      const rosterSnapshots = t.results.roster_snapshots || {};
+      const newRosterSnapshots = {};
+      for (const [tid, names] of Object.entries(rosterSnapshots)) {
+        const renamed = (names || []).map(n => {
+          if (n === player1) { changed = true; return player2; }
+          return n;
+        });
+        newRosterSnapshots[tid] = renamed;
+      }
+      if (!changed) return t;
+      touched.push(t.name);
+      return {
+        ...t,
+        results: {
+          ...t.results,
+          teams: newTeams,
+          full_lineups: newFullLineups,
+          roster_snapshots: newRosterSnapshots,
+        },
+      };
+    });
+    return { newTournaments: newList, touchedNames: touched };
+  };
+
   const doMerge = async () => {
     if (!player1 || !player2 || player1 === player2) { setError('Select two different players'); return; }
     if (!await dialog.showConfirm('Merge Players', `Rename "${player1}" → "${player2}" everywhere?`, { type: 'danger', confirmText: 'Merge' })) return;
     setStatus('merging'); setError('');
     try {
-      const uTeams = teams.map(t => ({ ...t, roster: (t.roster||[]).map(p => p.name===player1?{...p,name:player2}:p), lineup: (t.lineup||[]).map(n=>n===player1?player2:n) }));
-      const uTx = transactions.map(tx => ({ ...tx, ...(tx.player===player1&&{player:player2}), ...(tx.droppedPlayer===player1&&{droppedPlayer:player2}) }));
-      await Promise.all([...uTeams.map(t=>teamsApi.update(t.id,t)), sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS,uTx), playersApi.addAlias(player2,player1).catch(()=>{}), playersApi.delete(player1).catch(()=>{})]);
-      updateTeams(uTeams); setTransactions(uTx); setStatus('done');
-      dialog.showToast(`Merged "${player1}" → "${player2}"`, 'success');
+      // ── Build new state ──
+      const uTeams = teams.map(t => ({
+        ...t,
+        roster: (t.roster || []).map(p => p.name === player1 ? { ...p, name: player2 } : p),
+        lineup: (t.lineup || []).map(n => n === player1 ? player2 : n),
+        // backup field too — added in major-week feature
+        backup: t.backup === player1 ? player2 : t.backup,
+      }));
+      const uTx = transactions.map(tx => ({
+        ...tx,
+        ...(tx.player === player1 && { player: player2 }),
+        ...(tx.droppedPlayer === player1 && { droppedPlayer: player2 }),
+      }));
+
+      // Rewrite tournament results so historical standings + per-tournament
+      // breakdowns show the canonical name. tournaments is optional (older
+      // call sites may not pass it) — guard defensively.
+      const { newTournaments, touchedNames } = tournaments
+        ? rewriteTournaments(tournaments)
+        : { newTournaments: null, touchedNames: [] };
+
+      // ── Persist to Firebase ──
+      const writes = [
+        ...uTeams.map(t => teamsApi.update(t.id, t)),
+        sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, uTx),
+        playersApi.addAlias(player2, player1).catch(() => {}),
+        playersApi.delete(player1).catch(() => {}),
+      ];
+      // Save tournament data + any results that contained the old name.
+      // tournament_results docs live in a separate collection from sfglData,
+      // so each touched tournament needs a save() call to update its players[]
+      // arrays in Firestore.
+      if (newTournaments && setTournaments) {
+        writes.push(sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newTournaments));
+        if (tournamentResultsApi && touchedNames.length) {
+          for (const tournamentName of touchedNames) {
+            const t = newTournaments.find(x => x.name === tournamentName);
+            if (!t?.results) continue;
+            // Re-save the entire result doc with renamed players. Idempotent.
+            writes.push(tournamentResultsApi.save({
+              tournamentName,
+              teamResults:     t.results.teams,
+              earningsMap:     t.results.earnings_map,
+              roundLeaders:    t.results.round_leaders,
+              fullLineups:     t.results.full_lineups,
+              rosterSnapshots: t.results.roster_snapshots,
+              isManualEntry:   t.results.is_manual_entry,
+            }).catch(() => {}));
+          }
+        }
+      }
+      await Promise.all(writes);
+
+      // ── Update in-memory state ──
+      updateTeams(uTeams);
+      setTransactions(uTx);
+      if (newTournaments && setTournaments) setTournaments(newTournaments);
+
+      // Rename the headshots-map key so post-merge UI doesn't break the
+      // avatar until next full refresh. headshots is { name: espnId }; if
+      // the old name has a value but the new one doesn't, carry it over.
+      if (headshots && setHeadshots && headshots[player1] && !headshots[player2]) {
+        setHeadshots(prev => {
+          if (!prev) return prev;
+          const next = { ...prev };
+          next[player2] = next[player1];
+          delete next[player1];
+          return next;
+        });
+      }
+
+      // Filter the merged-away player out of allPlayers so the search
+      // results in this panel and elsewhere don't list a name that no
+      // longer has a player doc.
+      if (allPlayers && setAllPlayers) {
+        setAllPlayers(prev => (prev || []).filter(p => p.name !== player1));
+      }
+
+      setStatus('done');
+      dialog.showToast(
+        touchedNames.length
+          ? `Merged "${player1}" → "${player2}" — updated ${touchedNames.length} tournament${touchedNames.length === 1 ? '' : 's'}`
+          : `Merged "${player1}" → "${player2}"`,
+        'success'
+      );
       setPlayer1(null); setPlayer2(null); setSearch1(''); setSearch2('');
-    } catch (err) { setStatus('error'); setError(err.message||'Merge failed'); }
+    } catch (err) { setStatus('error'); setError(err.message || 'Merge failed'); }
   };
 
   return (
@@ -968,14 +1104,19 @@ export const AdminView = ({
         const teamResultsForEmail = finalTeams.filter(t => resultsData.teams[t.id]).map(t => ({
           team: t.name,
           totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
-          players: (resultsData.teams[t.id].players || []).map(p => ({
-            name: p.name,
-            earnings: p.earnings || 0,
-            bonus: p.bonus || 0,
-            limited: !!p.limited,
-            unlimited: !!p.unlimited,
-            roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
-          })),
+          players: (resultsData.teams[t.id].players || []).map(p => {
+            // Backfill limited/unlimited from team.roster — see same
+            // pattern in handleResendResultsEmail above for rationale.
+            const rosterEntry = (t.roster || []).find(rp => rp.name === p.name);
+            return {
+              name: p.name,
+              earnings: p.earnings || 0,
+              bonus: p.bonus || 0,
+              limited: rosterEntry?.limited ?? !!p.limited,
+              unlimited: rosterEntry?.unlimited ?? !!p.unlimited,
+              roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
+            };
+          }),
         }));
         // If the auto-award fired, ship the swing winner banner info too
         // so the email leads with the celebration. Without this, the swing
@@ -985,10 +1126,28 @@ export const AdminView = ({
           team: autoAward.updatedTransactions[autoAward.updatedTransactions.length - 1]?.team,
           pot: autoAward.updatedTransactions[autoAward.updatedTransactions.length - 1]?.amount || 0,
         } : undefined;
+        // ── Compute season standings for the email's top card ──
+        // Sum each team's totalEarnings across all completed tournaments
+        // (using newT — the post-processing array — so this week is included).
+        // Same derivation StandingsView uses; ensures the email matches the
+        // in-app view when managers open the app.
+        const seasonStandings = (() => {
+          const totals = {};
+          finalTeams.forEach(team => { totals[team.id] = 0; });
+          newT.forEach(tt => {
+            if (!tt.completed || !tt.results?.teams) return;
+            Object.entries(tt.results.teams).forEach(([tid, r]) => {
+              if (totals[tid] !== undefined) totals[tid] += (r.totalEarnings || 0);
+            });
+          });
+          return finalTeams
+            .map(team => ({ team: team.name, totalEarnings: totals[team.id] || 0 }))
+            .sort((a, b) => b.totalEarnings - a.totalEarnings);
+        })();
         await fetch('/api/cron?action=notify-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo }),
+          body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo, seasonStandings }),
         });
         dialog.showToast('📧 Results emails sent', 'success');
       } catch (emailErr) {
@@ -1323,14 +1482,22 @@ export const AdminView = ({
           // Include the full player breakdown so the email template can
           // render player names with the right color, round-leader badges,
           // and bonus-inclusive earnings totals.
-          players: (t.results.teams[team.id].players || []).map(p => ({
-            name: p.name,
-            earnings: p.earnings || 0,
-            bonus: p.bonus || 0,
-            limited: !!p.limited,
-            unlimited: !!p.unlimited,
-            roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
-          })),
+          players: (t.results.teams[team.id].players || []).map(p => {
+            // Backfill limited/unlimited from current team.roster when the
+            // stored result didn't include them (tournaments processed
+            // before the unlimited flag was added). Falls back to the
+            // stored value if the player isn't on the current roster
+            // anymore (e.g. dropped/traded since the event).
+            const rosterEntry = (team.roster || []).find(rp => rp.name === p.name);
+            return {
+              name: p.name,
+              earnings: p.earnings || 0,
+              bonus: p.bonus || 0,
+              limited: rosterEntry?.limited ?? !!p.limited,
+              unlimited: rosterEntry?.unlimited ?? !!p.unlimited,
+              roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
+            };
+          }),
         }));
       // If this tournament was the final event of its swing AND a
       // swing_winner tx exists for that segment, include the celebration
@@ -1346,10 +1513,26 @@ export const AdminView = ({
         team: swingTx.team,
         pot: swingTx.amount || 0,
       } : undefined;
+      // Season standings as of NOW — sums all completed tournaments' team
+      // earnings. Resend reflects current state (could be different from the
+      // moment of original send if reprocesses or later events happened).
+      const seasonStandings = (() => {
+        const totals = {};
+        teams.forEach(team => { totals[team.id] = 0; });
+        tournaments.forEach(tt => {
+          if (!tt.completed || !tt.results?.teams) return;
+          Object.entries(tt.results.teams).forEach(([tid, r]) => {
+            if (totals[tid] !== undefined) totals[tid] += (r.totalEarnings || 0);
+          });
+        });
+        return teams
+          .map(team => ({ team: team.name, totalEarnings: totals[team.id] || 0 }))
+          .sort((a, b) => b.totalEarnings - a.totalEarnings);
+      })();
       const resp = await fetch('/api/cron?action=notify-results', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo }),
+        body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo, seasonStandings }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data?.error || 'Resend failed');
@@ -2590,9 +2773,11 @@ export const AdminView = ({
         </button>
         {mergeOpen && <MergePlayersPanel
           allPlayers={allPlayers} teams={teams} transactions={transactions}
+          tournaments={tournaments} headshots={headshots}
           dialog={dialog} updateTeams={updateTeams} setTransactions={setTransactions}
+          setTournaments={setTournaments} setHeadshots={setHeadshots} setAllPlayers={setAllPlayers}
           theme={theme} colors={colors} fonts={fonts} S={S}
-          sfglDataApi={sfglDataApi} playersApi={playersApi}
+          sfglDataApi={sfglDataApi} playersApi={playersApi} tournamentResultsApi={tournamentResultsApi}
           STORAGE_KEYS={STORAGE_KEYS} disabledBtn={disabledBtn}
         />}
       </div>
@@ -2881,4 +3066,3 @@ export const AdminView = ({
     </div>
   );
 };
-
