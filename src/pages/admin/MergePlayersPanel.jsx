@@ -2,6 +2,12 @@
 // ============================================================================
 // Merge two player names into one canonical entry. Extracted from AdminView.
 // Wave I cleanup — was already a self-contained sub-component, now in its own file.
+//
+// Contract: this panel renders ONLY the form contents (description + inputs +
+// merge button) as a fragment. The callsite is responsible for the surrounding
+// S.section box, the S.title header, and any collapse-toggle behaviour.
+// This matches the historic inline structure so the swap is a pure refactor
+// with no DOM-level changes.
 // ============================================================================
 
 import React from 'react';
@@ -105,8 +111,7 @@ export const MergePlayersPanel = ({
   };
 
   return (
-    <div style={S.section}>
-      <div style={S.title}>🔀 Merge Players</div>
+    <>
       <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
         Fix name mismatches — renames a player everywhere in rosters, transactions and Firebase.
       </div>
@@ -193,6 +198,6 @@ export const MergePlayersPanel = ({
       >
         {status === 'merging' ? '⏳ Merging…' : '🔀 Merge Players'}
       </button>
-    </div>
+    </>
   );
 };
