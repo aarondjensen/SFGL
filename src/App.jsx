@@ -652,25 +652,19 @@ const FantasyGolfLeague = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 3,
-                  // Border-top reserved on every tab so the active state
-                  // doesn't shift layout. Inactive = transparent; active =
-                  // gold. Padding-top reduced by 2px to compensate so the
-                  // total visual height is unchanged.
-                  borderTop: '2px solid ' + (isActive ? '#f5c518' : 'transparent'),
-                  borderLeft: 'none',
-                  borderRight: 'none',
-                  borderBottom: 'none',
-                  padding: '4px 4px 6px',
+                  // Active state is colour-only — icon + label both turn
+                  // gold (#f5c518). No border, no background fill, no
+                  // layout shift. Matches Option 5 from the design preview.
+                  border: 'none',
+                  padding: '6px 4px 8px',
                   minHeight: 48,
-                  background: isActive
-                    ? 'rgba(255,255,255,0.07)'
-                    : 'transparent',
+                  background: 'transparent',
                   borderRadius: 6,
                   color: isActive
-                    ? 'rgba(255,255,255,0.95)'
+                    ? '#f5c518'
                     : 'rgba(255,255,255,0.55)',
                   cursor: 'pointer',
-                  transition: 'all 0.18s',
+                  transition: 'color 0.18s',
                   outline: 'none',
                 }}
               >
