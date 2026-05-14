@@ -321,7 +321,13 @@ export const playersApi = {
     if (skipped > 0) console.warn(`[playersApi.upsertMany] skipped ${skipped} invalid row(s)`);
     await setDoc(
       doc(db, 'app_metadata', 'players_last_updated'),
-      { key: 'players_last_updated', value: Date.now().toString() }
+      // ISO string — unambiguous and reliably parseable by new Date().
+      // Old code wrote Date.now().toString() (a numeric string), which JS
+      // engines parse as YYYY format and return Invalid Date for the
+      // typical 13-digit millisecond timestamps. That stale legacy value
+      // was the root of the "Last synced: Invalid Date" rendering in
+      // AdminView's OWGR section.
+      { key: 'players_last_updated', value: new Date().toISOString() }
     );
     return players;
   },
