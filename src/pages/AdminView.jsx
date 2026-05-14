@@ -13,6 +13,34 @@ import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
 // Persists open/closed state in localStorage so a refresh remembers what the
 // commish had collapsed.
 const CG_STATE_KEY = 'sfgl-admin-group-state';
+
+// ── Defensive last-synced timestamp formatter ───────────────────────────────
+// Sync timestamps in Firebase have come in TWO shapes historically:
+//   (a) ISO string ("2026-05-14T01:34:56.789Z") — written by handleSyncOwgr /
+//       handleSyncPgatStats via new Date().toISOString()
+//   (b) Numeric string ("1715648096789") — written by playersApi.upsertMany
+//       via Date.now().toString() (legacy, now corrected)
+// `new Date(numericString)` returns Invalid Date in most JS engines — which
+// is why the OWGR last-synced row sometimes rendered "Invalid Date" after a
+// PGAT sync touched players_last_updated. This helper handles both shapes
+// AND any Date instance, returning the same formatted string or null.
+const formatLastSynced = (val) => {
+  if (val == null || val === '') return null;
+  let date;
+  const s = typeof val === 'number' ? String(val) : String(val);
+  // Pure-numeric strings → parse as millisecond timestamp
+  if (/^\d{10,}$/.test(s)) {
+    date = new Date(parseInt(s, 10));
+  } else {
+    date = new Date(s);
+  }
+  if (isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+};
+
 const _readGroupState = () => {
   try { return JSON.parse(localStorage.getItem(CG_STATE_KEY) || '{}') || {}; }
   catch { return {}; }
@@ -1943,6 +1971,18 @@ export const AdminView = ({
     setPgatSummary('');
     try {
       const resp = await fetch('/api/pgat-stats');
+      // Check content-type BEFORE calling resp.json() so we can produce a
+      // useful error when the response is Vercel's HTML error page (function
+      // timeout / 504 / etc) rather than letting the JSON parser throw the
+      // cryptic "Unexpected token 'T'..." SyntaxError.
+      const ct = resp.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        const preview = (await resp.text()).replace(/\s+/g, ' ').trim().slice(0, 100);
+        const msg = (resp.status === 504 || resp.status === 408 || resp.status === 502)
+          ? `PGAT sync timed out (status ${resp.status}) — PGA Tour site is slow. Try again in 30s.`
+          : `PGAT endpoint returned non-JSON (status ${resp.status}). Body starts: "${preview}…"`;
+        throw new Error(msg);
+      }
       const data = await resp.json();
       if (!resp.ok) {
         // Surface the attempts array if the endpoint returned one — useful
@@ -2514,11 +2554,14 @@ export const AdminView = ({
       {/* ── 3. Update OWGR Rankings ── */}
       <div style={S.section}>
         <div style={S.title}>🌍 Update OWGR Rankings</div>
-        {(owgrLastSynced || rankingsLastUpdated) && (
-          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Last synced: {new Date(owgrLastSynced || rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
+        {(() => {
+          const formatted = formatLastSynced(owgrLastSynced || rankingsLastUpdated);
+          return formatted ? (
+            <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+              Last synced: {formatted}
+            </div>
+          ) : null;
+        })()}
         <button
           onClick={handleSyncOwgr}
           disabled={owgrStatus === 'fetching'}
@@ -2541,11 +2584,14 @@ export const AdminView = ({
       {/* ── 3b. Update PGAT Stats ── */}
       <div style={S.section}>
         <div style={S.title}>💰 Update PGAT Stats</div>
-        {pgatLastSynced && (
-          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Last synced: {new Date(pgatLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
+        {(() => {
+          const formatted = formatLastSynced(pgatLastSynced);
+          return formatted ? (
+            <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+              Last synced: {formatted}
+            </div>
+          ) : null;
+        })()}
         <button
           onClick={handleSyncPgatStats}
           disabled={pgatStatus === 'fetching'}
@@ -2601,11 +2647,14 @@ export const AdminView = ({
       {/* ── 4. LIV Golf Sync ── */}
       <div style={S.section}>
         <div style={S.title}>🚫 LIV Golf — Sync Roster</div>
-        {(livLastSynced || settings?.livRosterLastSynced) && (
-          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Last synced: {new Date(livLastSynced || settings?.livRosterLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
+        {(() => {
+          const formatted = formatLastSynced(livLastSynced || settings?.livRosterLastSynced);
+          return formatted ? (
+            <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+              Last synced: {formatted}
+            </div>
+          ) : null;
+        })()}
         <button
           onClick={handleSyncLiv}
           disabled={livSyncStatus === 'fetching'}
