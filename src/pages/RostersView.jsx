@@ -12,7 +12,7 @@ import {
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts } from '../theme.js';
-import { teamsApi } from '../api/firebase';
+import { teamsApi, playersApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
@@ -432,6 +432,24 @@ export const RostersView = ({
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
   const [tournamentField,   setTournamentField]   = useState(null);
+  // ── Dynamic alias map from Firebase ─────────────────────────────────────
+  // Maps external/legacy names (e.g. "Nicolas Echavarria" as PGA Tour
+  // returns it) to the canonical roster name ("Nico Echavarria" after
+  // the commish merged them). Used during field/teeTime/odds ingest so
+  // the playing badge, tee times, odds, and headshot-ID lookups all hit
+  // on roster names after a merge — not just on the original PGA names.
+  //
+  // null = loading (or failed silently). The field-fetching effect waits
+  // for this to be non-null before fetching, so we never ingest with an
+  // empty alias map and then have to re-fetch.
+  const [aliasMap,          setAliasMap]          = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    playersApi.getAliasMap()
+      .then(map => { if (!cancelled) setAliasMap(map || {}); })
+      .catch(() => { if (!cancelled) setAliasMap({}); }); // fall back to empty
+    return () => { cancelled = true; };
+  }, []);
   const [teeTimeMap,        setTeeTimeMap]        = useState({}); // { playerName: '8:04 AM' }
   const [fieldPlayerIds,    setFieldPlayerIds]    = useState({}); // { playerName: espnId }
   const [oddsMap,           setOddsMap]           = useState({}); // { playerName: '+2000' }
@@ -692,12 +710,21 @@ export const RostersView = ({
     tournaments.find(t => !t.completed)
   )?.name || null;
   const _lastFetchedTournament = React.useRef(null);
+  // Fields effect: waits for aliasMap to be loaded (non-null) before
+  // running. This guarantees we never ingest field data with no alias
+  // resolution applied — which would leave the playing badge / tee
+  // times / odds keyed on PGA Tour names while the roster uses the
+  // canonical merged names.
   useEffect(() => {
     if (!_fieldTournamentName) return;
+    if (aliasMap === null) return; // wait for alias map (or its failure → {})
     // Don't re-run if we already have tee times for this tournament
     if (_lastFetchedTournament.current === _fieldTournamentName && Object.keys(teeTimeMap).length > 0) return;
     let cancelled = false;
     const normalize = normalizeNordic;
+    // Resolve any name through the dynamic alias map to its canonical roster
+    // form. If the name isn't an alias, returns it unchanged.
+    const resolve = (name) => aliasMap[name] || name;
 
     const fetchField = () => {
       fetch('/api/field?t=' + Date.now())
@@ -705,18 +732,33 @@ export const RostersView = ({
         .then(data => {
           if (cancelled || !data?.players?.length) return;
           _lastFetchedTournament.current = _fieldTournamentName;
-          setTournamentField(new Set(data.players.map(normalize)));
+          // Resolve → normalize. Order matters: alias map is keyed by
+          // unnormalized display names (matches what addAlias stores),
+          // so we resolve first, then normalize for the lookup key.
+          setTournamentField(new Set(data.players.map(n => normalize(resolve(n)))));
           if (data.teeTimes?.length) {
             const ttMap = {};
-            data.teeTimes.forEach(({ name, teeTime }) => { ttMap[normalize(name)] = teeTime; });
+            data.teeTimes.forEach(({ name, teeTime }) => {
+              ttMap[normalize(resolve(name))] = teeTime;
+            });
             setTeeTimeMap(ttMap);
           }
           if (data.playerIds && Object.keys(data.playerIds).length) {
-            setFieldPlayerIds(data.playerIds);
+            // playerIds is keyed by display name (not normalized) — used
+            // by headshot lookups that match by player.name directly. Re-key
+            // through the alias map so post-merge roster names land on the
+            // right ID.
+            const ids = {};
+            Object.entries(data.playerIds).forEach(([name, id]) => {
+              ids[resolve(name)] = id;
+            });
+            setFieldPlayerIds(ids);
           }
           if (data.odds?.length) {
             const oMap = {};
-            data.odds.forEach(({ name, odds }) => { oMap[normalize(name)] = odds; });
+            data.odds.forEach(({ name, odds }) => {
+              oMap[normalize(resolve(name))] = odds;
+            });
             setOddsMap(oMap);
           }
         })
@@ -726,7 +768,7 @@ export const RostersView = ({
     fetchField();
     const interval = setInterval(fetchField, 30 * 60 * 1000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [_fieldTournamentName, aliasMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Odds are now fetched as part of the field fetch above
 
