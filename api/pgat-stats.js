@@ -1,77 +1,52 @@
 // api/pgat-stats.js — Vercel serverless function
 // =====================================================================
-// v4 — ESPN was returning Akamai bot-detection placeholders (202 with 2KB
-// of HTML and no table data). This version tries:
-//   1. ESPN with FULL Chrome headers (Sec-Fetch-* hints) to defeat Akamai
-//   2. CBS Sports money list as a fallback (lighter bot detection)
-// Debug mode always surfaces the body preview so we can see exactly what
-// each source returns.
+// v5 — Switch primary source to CBS Sports money list.
 //
-// RESPONSE: { players: [{ name, earnings, eventsPlayed, cutsMade }], count }
+// ESPN's golf stats pages are protected by AWS WAF bot detection — they
+// return a 202 with a tiny JS challenge page instead of the data. No way
+// to defeat that from a serverless function. CBS Sports works fine.
+//
+// CBS Sports table columns:
+//   Rank | Golfer | Ctry | Earnings | Wins | Top-10 | Top-25 | Events |
+//   AVG Score | Strokes | Rounds
+// (No "Cuts Made" column — that field stays at 0; the client falls back
+//  to globalPlayerStats[name]?.cutsMade as before.)
+//
+// CBS HTML structure for the Golfer cell — two <a> tags per row:
+//   <a href="/golf/players/3117436/cameron-young/">C. Young</a>
+//   <a href="/golf/players/3117436/cameron-young/">Cameron Young</a>
+// We pick the SECOND one (full name). Fallback: parse the href slug.
+//
+// Cache behaviour:
+//   • 200 success → s-maxage=21600 (6h CDN cache)
+//   • 502 error   → no-store (never cache errors — this was a v3 bug
+//                   where stale 502s lingered on the CDN for 6h)
+//
+// Debug mode (?debug=1):
+//   • Cache-Control: no-store
+//   • Returns body previews + per-URL diagnostics + sample players
 
-const ESPN_HTML_URLS = [
-  'https://www.espn.com/golf/stats/player/_/table/general/sort/amount/dir/desc/count/300',
-  'https://www.espn.com/golf/stats/player/_/table/general/sort/amount/dir/desc',
-];
-
-// CBS Sports money list — alternate source with the same data set.
-// Cleaner table structure, less bot detection in my experience.
-const CBS_HTML_URLS = [
-  'https://www.cbssports.com/golf/leaderboard/pga/money-leaders/',
+const CBS_URLS = [
   'https://www.cbssports.com/golf/rankings/money-list/',
 ];
 
-// Full Chrome-on-Windows header set. Akamai checks for Sec-Fetch-*
-// "client hints" that automated tools typically omit.
+// ESPN kept as a fallback in case CBS ever breaks. Currently bot-blocked
+// but maybe will work again someday.
+const ESPN_URLS = [
+  'https://www.espn.com/golf/stats/player/_/table/general/sort/amount/dir/desc/count/300',
+];
+
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.9',
-  'Accept-Encoding': 'gzip, deflate, br, zstd',
   'Cache-Control': 'max-age=0',
-  'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-  'Sec-Ch-Ua-Mobile': '?0',
-  'Sec-Ch-Ua-Platform': '"Windows"',
+  'Upgrade-Insecure-Requests': '1',
   'Sec-Fetch-Dest': 'document',
   'Sec-Fetch-Mode': 'navigate',
   'Sec-Fetch-Site': 'none',
   'Sec-Fetch-User': '?1',
-  'Upgrade-Insecure-Requests': '1',
 };
-
-// ---------------------------------------------------------------------
-// JSON extraction — bracket counting
-// ---------------------------------------------------------------------
-function extractAssignmentJson(html, varPatterns) {
-  for (const pat of varPatterns) {
-    const idx = html.search(pat);
-    if (idx === -1) continue;
-    const eqIdx = html.indexOf('=', idx);
-    if (eqIdx === -1) continue;
-    const startIdx = html.indexOf('{', eqIdx);
-    if (startIdx === -1) continue;
-    let depth = 0, i = startIdx, inStr = false, strCh = '', esc = false;
-    for (; i < html.length; i++) {
-      const c = html[i];
-      if (inStr) {
-        if (esc) { esc = false; continue; }
-        if (c === '\\') { esc = true; continue; }
-        if (c === strCh) inStr = false;
-        continue;
-      }
-      if (c === '"' || c === "'") { inStr = true; strCh = c; continue; }
-      if (c === '{') depth++;
-      else if (c === '}') {
-        depth--;
-        if (depth === 0) {
-          const jsonStr = html.slice(startIdx, i + 1);
-          try { return JSON.parse(jsonStr); } catch { return null; }
-        }
-      }
-    }
-  }
-  return null;
-}
 
 // ---------------------------------------------------------------------
 // Value coercion
@@ -94,250 +69,177 @@ function intFromAny(raw) {
   return isNaN(n) ? null : n;
 }
 
-// ---------------------------------------------------------------------
-// Parser — walks JSON looking for player+earnings combinations
-// ---------------------------------------------------------------------
-function parsePlayersFromJson(payload) {
-  const map = new Map();
-  const MONEY_KEYS = ['amount', 'money', 'officialMoney', 'EARNINGS', 'earnings'];
-  const EVENT_KEYS = ['tournamentsPlayed', 'eventsPlayed', 'tournaments', 'EVNTS', 'events'];
-  const CUTS_KEYS  = ['cutsMade', 'cuts', 'CUTS', 'madeCuts'];
-  const NAME_KEYS  = ['fullName', 'displayName', 'name', 'playerName', 'athleteName'];
-
-  const findVal = (obj, keys) => {
-    if (!obj || typeof obj !== 'object') return null;
-    for (const k of keys) if (k in obj) return obj[k];
-    return null;
-  };
-
-  const findName = (obj) => {
-    if (!obj || typeof obj !== 'object') return null;
-    for (const k of NAME_KEYS) {
-      if (typeof obj[k] === 'string' && obj[k].includes(' ')) return obj[k].trim();
-    }
-    const sub = obj.athlete || obj.player;
-    if (sub && typeof sub === 'object') {
-      for (const k of NAME_KEYS) {
-        if (typeof sub[k] === 'string' && sub[k].includes(' ')) return sub[k].trim();
-      }
-      if (typeof sub.firstName === 'string' && typeof sub.lastName === 'string') {
-        const n = (sub.firstName + ' ' + sub.lastName).trim();
-        if (n.includes(' ')) return n;
-      }
-    }
-    if (typeof obj.firstName === 'string' && typeof obj.lastName === 'string') {
-      const n = (obj.firstName + ' ' + obj.lastName).trim();
-      if (n.includes(' ')) return n;
-    }
-    return null;
-  };
-
-  const upsert = (name, money, events, cuts) => {
-    if (!name || name.length < 4 || name.length > 40) return;
-    if (!/^[A-Za-zÀ-ÿ' .-]+$/.test(name)) return;
-    const prev = map.get(name) || { earnings: 0, eventsPlayed: 0, cutsMade: 0 };
-    map.set(name, {
-      earnings:     Math.max(prev.earnings,     money  || 0),
-      eventsPlayed: Math.max(prev.eventsPlayed, events || 0),
-      cutsMade:     Math.max(prev.cutsMade,     cuts   || 0),
-    });
-  };
-
-  const tryTabular = (obj) => {
-    if (!obj || typeof obj !== 'object') return;
-    const rows = obj.rows || obj.rowsdata || obj.players;
-    const headers = obj.headers || obj.cols || obj.columns;
-    if (!Array.isArray(rows) || !Array.isArray(headers)) return;
-    if (rows.length === 0 || headers.length === 0) return;
-    const norm = headers.map(h =>
-      typeof h === 'string' ? h.toUpperCase() : String(h?.text || h?.label || h?.key || h?.title || '').toUpperCase()
-    );
-    const moneyIdx  = norm.findIndex(h => /EARNING|AMOUNT|MONEY/.test(h));
-    const eventsIdx = norm.findIndex(h => /EVNTS|EVENTS|TOURN/.test(h));
-    const cutsIdx   = norm.findIndex(h => /CUTS/.test(h));
-    const nameIdx   = norm.findIndex(h => /PLAYER|NAME|ATHLETE/.test(h));
-    if (moneyIdx < 0 && eventsIdx < 0 && cutsIdx < 0) return;
-
-    rows.forEach(row => {
-      if (!Array.isArray(row)) return;
-      const cell = (i) => {
-        if (i < 0 || i >= row.length) return null;
-        const c = row[i];
-        if (c === null || c === undefined) return null;
-        if (typeof c === 'string' || typeof c === 'number') return c;
-        return c.text ?? c.value ?? c.displayValue ?? c.statValue ?? null;
-      };
-      let name = cell(nameIdx);
-      if (typeof name === 'string') name = name.replace(/<[^>]+>/g, '').trim();
-      const money  = moneyToNumber(cell(moneyIdx));
-      const events = intFromAny(cell(eventsIdx));
-      const cuts   = intFromAny(cell(cutsIdx));
-      if (name && (money !== null || events !== null || cuts !== null)) {
-        upsert(name, money, events, cuts);
-      }
-    });
-  };
-
-  const visit = (obj, depth = 0) => {
-    if (!obj || typeof obj !== 'object' || depth > 50) return;
-    if (Array.isArray(obj)) { obj.forEach(o => visit(o, depth + 1)); return; }
-
-    tryTabular(obj);
-
-    const name = findName(obj);
-    if (name) {
-      const money  = moneyToNumber(findVal(obj, MONEY_KEYS));
-      const events = intFromAny(findVal(obj, EVENT_KEYS));
-      const cuts   = intFromAny(findVal(obj, CUTS_KEYS));
-      const realMoney  = (money  !== null && money >= 1000) ? money : null;
-      const realEvents = (events !== null && events >= 0 && events <= 50) ? events : null;
-      const realCuts   = (cuts   !== null && cuts   >= 0 && cuts   <= 50) ? cuts : null;
-      if (realMoney !== null || realEvents !== null || realCuts !== null) {
-        upsert(name, realMoney, realEvents, realCuts);
-      }
-    }
-
-    for (const k in obj) {
-      const v = obj[k];
-      if (v && typeof v === 'object') visit(v, depth + 1);
-    }
-  };
-
-  visit(payload);
-  return [...map.entries()].map(([name, stats]) => ({ name, ...stats }));
+function stripTags(s) {
+  return String(s || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // ---------------------------------------------------------------------
-// Generic HTML table parser — works for any standard <table><tr><td> page
-// Handles both ESPN (when not bot-blocked) and CBS Sports tables.
+// CBS-specific parser — knows the column positions and the dual-<a>-tag
+// name pattern.
 // ---------------------------------------------------------------------
-function parsePlayersFromHtmlFallback(html) {
+function parseCbsMoneyList(html) {
   const out = [];
   const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
   const cellRe = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g;
-  const stripTags = s => s.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  let rowM;
+
+  while ((rowM = rowRe.exec(html)) !== null) {
+    const cells = [];
+    let cellM;
+    cellRe.lastIndex = 0;
+    while ((cellM = cellRe.exec(rowM[1])) !== null) cells.push(cellM[1]);
+
+    // CBS money-list rows have 11 cells: rank | golfer | ctry | earnings |
+    // wins | top-10 | top-25 | events | avg | strokes | rounds
+    if (cells.length < 8) continue;
+
+    // First cell must be a rank number (filters out header row + footer)
+    const rankTxt = stripTags(cells[0]);
+    if (!/^\d+$/.test(rankTxt)) continue;
+
+    // Golfer cell — two <a> tags. Take the SECOND one's text (full name).
+    // Fallback to first if only one exists, or derive from href slug.
+    const golferCell = cells[1];
+    const linkMatches = [...golferCell.matchAll(/<a[^>]*href="([^"]*)"[^>]*>([^<]+)<\/a>/g)];
+    let name = null;
+    if (linkMatches.length >= 2) {
+      name = linkMatches[1][2].trim();          // second <a> → full name
+    } else if (linkMatches.length === 1) {
+      // Single <a> — could be abbrev only. Try to derive full name from URL slug.
+      const href = linkMatches[0][1];
+      const slugMatch = href.match(/\/players\/\d+\/([^/]+)\/?/);
+      if (slugMatch) {
+        // Slug like "cameron-young" → "Cameron Young"
+        name = slugMatch[1]
+          .split('-')
+          .filter(Boolean)
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ');
+      } else {
+        name = linkMatches[0][2].trim();
+      }
+    }
+    if (!name) continue;
+    if (name.length < 4 || name.length > 50) continue;
+
+    // Earnings cell — must contain $
+    const earningsCell = cells[3];
+    const moneyMatch = stripTags(earningsCell).match(/\$([\d,]+)/);
+    if (!moneyMatch) continue;
+    const earnings = moneyToNumber(moneyMatch[0]);
+    if (!earnings || earnings < 1000) continue;
+
+    // Events cell — index 7 (8th column)
+    const eventsTxt = stripTags(cells[7] || '');
+    const eventsPlayed = intFromAny(eventsTxt) || 0;
+
+    out.push({
+      name,
+      earnings,
+      eventsPlayed,
+      cutsMade: 0, // CBS table doesn't expose this; client falls back to legacy stats
+    });
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------
+// Generic fallback parser — for ESPN if it ever comes back or any other
+// source with the same general shape. Same logic as v4.
+// ---------------------------------------------------------------------
+function parseGenericHtmlTable(html) {
+  const out = [];
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
+  const cellRe = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g;
   let rowM;
   while ((rowM = rowRe.exec(html)) !== null) {
     const cells = [];
     let cellM;
     cellRe.lastIndex = 0;
     while ((cellM = cellRe.exec(rowM[1])) !== null) cells.push(cellM[1]);
-    if (cells.length < 4) continue;
+    if (cells.length < 5) continue;
 
-    // Find name: prefer text inside <a> tag; fall back to any cell with a
-    // "First Last" shape.
     let name = null;
     for (const c of cells) {
-      const aMatch = c.match(/<a[^>]*>([^<]{4,40})<\/a>/);
-      if (aMatch) {
-        const candidate = aMatch[1].trim();
-        if (candidate.includes(' ') && /^[A-Za-zÀ-ÿ' .-]+$/.test(candidate)) {
-          name = candidate;
-          break;
-        }
-      }
-    }
-    if (!name) {
-      for (const c of cells) {
-        const txt = stripTags(c);
-        if (txt.length >= 4 && txt.length <= 40 && txt.includes(' ') && /^[A-Za-zÀ-ÿ' .-]+$/.test(txt)) {
-          name = txt; break;
-        }
+      const aMatches = [...c.matchAll(/<a[^>]*>([^<]{4,40})<\/a>/g)];
+      if (aMatches.length === 0) continue;
+      // Prefer the last <a> (in dual-link tables, this is usually the full name)
+      const candidate = aMatches[aMatches.length - 1][1].trim();
+      if (candidate.includes(' ') && /^[A-Za-zÀ-ÿ' .-]+$/.test(candidate)) {
+        name = candidate;
+        break;
       }
     }
     if (!name) continue;
 
-    // Find money: any cell containing $ followed by digits/commas
     const moneyCell = cells.find(c => /\$[\d,]+/.test(stripTags(c)));
     const money = moneyCell ? moneyToNumber(stripTags(moneyCell).match(/\$[\d,]+/)[0]) : null;
     if (money === null || money < 1000) continue;
 
-    // Events and cuts: take the first two reasonable small integers we see
-    // in cells AFTER the money cell. Heuristic — not perfect but works on
-    // most standard money-list tables.
-    let events = null, cuts = null;
+    let events = null;
     const moneyIdx = cells.indexOf(moneyCell);
     for (let i = moneyIdx + 1; i < cells.length; i++) {
       const t = stripTags(cells[i]);
       if (!/^\d+$/.test(t)) continue;
       const n = parseInt(t, 10);
       if (n > 50) continue;
-      if (events === null) { events = n; continue; }
-      if (cuts === null)   { cuts = n;   break; }
+      if (events === null) { events = n; break; }
     }
-    out.push({ name, earnings: money, eventsPlayed: events || 0, cutsMade: cuts || 0 });
+    out.push({ name, earnings: money, eventsPlayed: events || 0, cutsMade: 0 });
   }
   return out;
 }
 
 // ---------------------------------------------------------------------
-// Fetch + parse one URL
+// Fetch a single URL and parse with the appropriate strategy
 // ---------------------------------------------------------------------
 async function fetchAndParse(url, timeoutMs = 7000) {
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), timeoutMs);
   let status = null;
   let bodyPreview = null;
-  let parseDetail = null;
   try {
     const resp = await fetch(url, { headers: HEADERS, signal: controller.signal });
     status = resp.status;
     const text = await resp.text();
-    bodyPreview = text.slice(0, 4000); // truncated to keep debug response sane
+    bodyPreview = text.slice(0, 2000);
     if (!resp.ok) {
       return { players: [], debug: { url, status, bodyBytes: text.length, bodyPreview, error: `HTTP ${status}` } };
     }
 
-    let parsed = null;
-    if (resp.headers.get('content-type')?.includes('application/json')) {
-      try { parsed = JSON.parse(text); } catch { /* not JSON */ }
-    }
-
-    let extracted = null;
-    let extractedAt = -1;
-    if (!parsed) {
-      const patterns = [
-        /window\[['"]__espnfitt__['"]\]/,
-        /window\.__espnfitt__/,
-        /__espnfitt__\s*=\s*\{/,
-        /__INITIAL_STATE__\s*=\s*\{/,
-        /__NEXT_DATA__\s*=\s*\{/,
-        /window\.__data\s*=\s*\{/,
-      ];
-      patterns.forEach((p) => {
-        if (extractedAt === -1) {
-          const i = text.search(p);
-          if (i !== -1) extractedAt = i;
-        }
-      });
-      extracted = extractAssignmentJson(text, patterns);
-    }
-
-    const root = parsed || extracted;
-    let players = root ? parsePlayersFromJson(root) : [];
-    let parseMethod = root ? 'json' : 'none';
+    // Pick parser based on which host we hit
+    const isCbs = url.includes('cbssports.com');
+    let players = isCbs ? parseCbsMoneyList(text) : [];
+    let parseMethod = isCbs ? 'cbs-money-list' : 'none';
 
     if (!players.length) {
-      players = parsePlayersFromHtmlFallback(text);
-      if (players.length) parseMethod = 'html-fallback';
+      players = parseGenericHtmlTable(text);
+      if (players.length) parseMethod = 'generic-html';
     }
 
-    parseDetail = {
-      contentType: resp.headers.get('content-type') || '',
-      bodyBytes: text.length,
-      espnfittFound: extractedAt !== -1,
-      espnfittOffset: extractedAt,
-      jsonExtracted: !!root,
-      trCount: (text.match(/<tr[^>]*>/g) || []).length,
-      tdCount: (text.match(/<td[^>]*>/g) || []).length,
-      hasDollarSign: text.indexOf('$') !== -1,
-      dollarMatches: (text.match(/\$[\d,]+/g) || []).slice(0, 5),
-      parseMethod,
-      playersFound: players.length,
-      bodyPreview,
+    return {
+      players,
+      debug: {
+        url,
+        status,
+        contentType: resp.headers.get('content-type') || '',
+        bodyBytes: text.length,
+        trCount: (text.match(/<tr[^>]*>/g) || []).length,
+        tdCount: (text.match(/<td[^>]*>/g) || []).length,
+        dollarMatches: (text.match(/\$[\d,]+/g) || []).slice(0, 5),
+        parseMethod,
+        playersFound: players.length,
+        bodyPreview,
+      },
     };
-
-    return { players, debug: { url, status, ...parseDetail } };
   } catch (err) {
     const msg = err.name === 'AbortError' ? `Timeout (${timeoutMs}ms)` : (err.message || String(err));
     return { players: [], debug: { url, status, error: msg, bodyPreview } };
@@ -356,14 +258,8 @@ export default async function handler(req, res) {
 
   const isDebug = req.query?.debug === '1' || req.url?.includes('debug=1');
 
-  if (!isDebug) {
-    res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=43200');
-  } else {
-    res.setHeader('Cache-Control', 'no-store');
-  }
-
-  // Try ESPN first (most complete data), then CBS Sports as a fallback.
-  const allUrls = [...ESPN_HTML_URLS, ...CBS_HTML_URLS];
+  // CBS works; ESPN is bot-blocked. CBS first.
+  const allUrls = [...CBS_URLS, ...ESPN_URLS];
 
   const debugLog = [];
   let bestPlayers = [];
@@ -376,6 +272,7 @@ export default async function handler(req, res) {
   }
 
   if (isDebug) {
+    res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({
       bestPlayerCount: bestPlayers.length,
       samplePlayers: bestPlayers.slice(0, 10),
@@ -384,6 +281,10 @@ export default async function handler(req, res) {
   }
 
   if (bestPlayers.length === 0) {
+    // CRITICAL: don't cache error responses. The v3 bug was that 502s
+    // got s-maxage=21600 same as 200s, leaving stale errors on the CDN
+    // for 6 hours after a fix was deployed.
+    res.setHeader('Cache-Control', 'no-store');
     return res.status(502).json({
       error: 'No PGA Tour stats data could be parsed',
       hint: 'Hit /api/pgat-stats?debug=1 for diagnostics',
@@ -397,6 +298,8 @@ export default async function handler(req, res) {
     });
   }
 
+  // Success — cache for 6 hours on the CDN.
+  res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=43200');
   return res.status(200).json({
     players: bestPlayers.sort((a, b) => b.earnings - a.earnings),
     count: bestPlayers.length,
