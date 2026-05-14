@@ -375,14 +375,24 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
             position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)',
             background: 'rgba(8,16,32,0.92)',
             borderRadius: 5,
-            padding: '1px 3px',
+            padding: '1px 4px',
             lineHeight: 1,
             zIndex: 5,
             fontSize: 8,
-            letterSpacing: 1,
             border: '1px solid rgba(245,197,24,0.35)',
+            // Render stars as flex children with explicit gap rather than as
+            // one string with letter-spacing. letter-spacing applies AFTER
+            // each character (including the last), adding asymmetric trailing
+            // space that shifts the visual content off-center within the box.
+            // inline-flex + gap centers each emoji on the box's centerline
+            // regardless of star count.
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 1,
           }}>
-            {'⭐'.repeat(player.stars || 1)}
+            {Array.from({ length: player.stars || 1 }, (_, i) => (
+              <span key={i} style={{ display: 'inline-block', lineHeight: 1 }}>⭐</span>
+            ))}
           </div>
         )}
       </div>
@@ -1119,10 +1129,9 @@ export const RostersView = ({
                   ))}
 
                   {/* ── Backup slot (Major weeks only) ──
-                      Visually subordinate: divider on the left to separate it
-                      from starters, smaller circle (38 vs 44), dotted gold
-                      border, "Backup" label. Either renders the backup player
-                      headshot (with remove on tap) or an empty placeholder. */}
+                      Same size as starter slots (44px circle, 56px column).
+                      Visual differentiation comes from the dotted gray
+                      border and the "Backup" label, NOT from a smaller size. */}
                   {showBackupSlot && (
                     <>
                       <div style={{
@@ -1131,14 +1140,14 @@ export const RostersView = ({
                         margin: isMobile ? '0 2px' : '0 4px',
                       }} />
                       {backupPlayer ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56 }}>
                           <div
                             onClick={(e) => {
                               e.stopPropagation();
                               if (canEditLineup) togglePlayerInLineup(backupPlayer);
                             }}
                             style={{
-                              width: 38, height: 38, borderRadius: '50%',
+                              width: 44, height: 44, borderRadius: '50%',
                               // Gray dotted border — signals "designated, on
                               // standby". Gold reserved for limited-tier
                               // players so we don't create visual collision.
@@ -1158,7 +1167,7 @@ export const RostersView = ({
                             />
                           </div>
                           <div style={{
-                            fontSize: 9, fontFamily: fonts.sans, marginTop: 3,
+                            fontSize: 11, fontFamily: fonts.sans, marginTop: 3,
                             color: 'rgba(255,255,255,0.7)', letterSpacing: 0.3,
                             textAlign: 'center', width: '100%',
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -1172,7 +1181,7 @@ export const RostersView = ({
                         </div>
                       ) : (
                         <div
-                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48, cursor: canEditLineup ? 'pointer' : 'default' }}
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, cursor: canEditLineup ? 'pointer' : 'default' }}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (!canEditLineup) return;
@@ -1185,7 +1194,7 @@ export const RostersView = ({
                           }}
                         >
                           <div style={{
-                            width: 38, height: 38, borderRadius: '50%',
+                            width: 44, height: 44, borderRadius: '50%',
                             // When pickingBackup is on, the slot pulses gold to
                             // signal "this is where your next tap lands."
                             background: pickingBackup
@@ -1199,7 +1208,7 @@ export const RostersView = ({
                             boxShadow: pickingBackup ? '0 0 0 3px rgba(245,197,24,0.15)' : 'none',
                           }}>
                             <span style={{
-                              fontSize: 17, fontWeight: 300, lineHeight: 1,
+                              fontSize: 20, fontWeight: 300, lineHeight: 1,
                               color: canEditLineup
                                 ? (pickingBackup ? 'rgba(245,197,24,1)' : (lineupMode ? 'rgba(245,197,24,0.85)' : 'rgba(245,197,24,0.45)'))
                                 : 'rgba(255,255,255,0.15)',
