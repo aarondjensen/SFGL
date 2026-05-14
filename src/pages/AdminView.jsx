@@ -7,99 +7,14 @@ import { seedAliasesToFirestore } from '../constants/nameAliases';
 import { theme, colors, fonts, SWINGS } from '../theme.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
 
-
-// ── Wave E: CollapsibleGroup ────────────────────────────────────────────────
-// Wraps a set of related admin sections into a collapsible accordion group.
-// Persists open/closed state in localStorage so a refresh remembers what the
-// commish had collapsed.
-const CG_STATE_KEY = 'sfgl-admin-group-state';
-
-// ── Defensive last-synced timestamp formatter ───────────────────────────────
-// Sync timestamps in Firebase have come in TWO shapes historically:
-//   (a) ISO string ("2026-05-14T01:34:56.789Z") — written by handleSyncOwgr /
-//       handleSyncPgatStats via new Date().toISOString()
-//   (b) Numeric string ("1715648096789") — written by playersApi.upsertMany
-//       via Date.now().toString() (legacy, now corrected)
-// `new Date(numericString)` returns Invalid Date in most JS engines — which
-// is why the OWGR last-synced row sometimes rendered "Invalid Date" after a
-// PGAT sync touched players_last_updated. This helper handles both shapes
-// AND any Date instance, returning the same formatted string or null.
-const formatLastSynced = (val) => {
-  if (val == null || val === '') return null;
-  let date;
-  const s = typeof val === 'number' ? String(val) : String(val);
-  // Pure-numeric strings → parse as millisecond timestamp
-  if (/^\d{10,}$/.test(s)) {
-    date = new Date(parseInt(s, 10));
-  } else {
-    date = new Date(s);
-  }
-  if (isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
-};
-
-const _readGroupState = () => {
-  try { return JSON.parse(localStorage.getItem(CG_STATE_KEY) || '{}') || {}; }
-  catch { return {}; }
-};
-const _writeGroupState = (state) => {
-  try { localStorage.setItem(CG_STATE_KEY, JSON.stringify(state)); } catch {}
-};
-
-const CollapsibleGroup = ({ title, icon, children }) => {
-  // Default each group to OPEN. Commish can collapse to focus on one group.
-  const [open, setOpen] = React.useState(() => {
-    const s = _readGroupState();
-    return s[title] !== false; // treat undefined or true as open
-  });
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    const s = _readGroupState();
-    s[title] = next;
-    _writeGroupState(s);
-  };
-  return (
-    <div style={{ marginBottom: open ? 0 : 4 }}>
-      <button
-        onClick={toggle}
-        aria-expanded={open}
-        aria-label={(open ? 'Collapse ' : 'Expand ') + title + ' group'}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          width: '100%', padding: '10px 14px', marginBottom: open ? 8 : 0,
-          background: 'rgba(20, 45, 80, 0.45)',
-          border: '1px solid rgba(180,160,100,0.18)',
-          borderRadius: 4,
-          cursor: 'pointer',
-          fontFamily: fonts.sans,
-          fontSize: 11, fontWeight: 700,
-          letterSpacing: '2px', textTransform: 'uppercase',
-          color: 'rgba(245,197,24,0.92)',
-          transition: 'background 0.15s, border-color 0.15s',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(20,45,80,0.65)'; }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(20,45,80,0.45)'; }}
-      >
-        <span style={{ fontSize: 13 }}>{icon}</span>
-        <span style={{ flex: 1, textAlign: 'left' }}>{title}</span>
-        <span style={{
-          fontSize: 11, color: 'rgba(245,197,24,0.6)',
-          transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
-          transition: 'transform 0.15s',
-        }}>▼</span>
-      </button>
-      {open && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
-};
+// Wave I cleanup: CollapsibleGroup and the admin S/disabledBtn style tokens
+// used to live inline in this file. They've been moved to siblings in the
+// ./admin/ subfolder so other panels (DataSyncPanel, etc.) can share them as
+// we wire them up. CollapsibleGroup now also supports an optional `badge`
+// prop for showing pending counts on the group header — Tournament Operations
+// will use that once we swap WaiverProcessingPanel in (Batch 3).
+import { CollapsibleGroup } from './admin/CollapsibleGroup';
+import { S, disabledBtn } from './admin/adminStyles';
 
 
 
@@ -371,7 +286,6 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
         name: s.playerName,
         earnings: s.earnings,
         limited: team.roster.find(p => p.name === s.playerName)?.limited || false,
-        unlimited: team.roster.find(p => p.name === s.playerName)?.unlimited || false,
         bonus: playersWithBonuses[s.playerName]?.total || 0,
         roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
         wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
@@ -415,9 +329,9 @@ const processTournamentData = (tournament, tournamentData, teams, globalPlayerSt
 };
 
 const MergePlayersPanel = ({
-  allPlayers, teams, transactions, tournaments, headshots,
-  dialog, updateTeams, setTransactions, setTournaments, setHeadshots, setAllPlayers,
-  theme, colors, fonts, S, sfglDataApi, playersApi, tournamentResultsApi, STORAGE_KEYS, disabledBtn,
+  allPlayers, teams, transactions,
+  dialog, updateTeams, setTransactions,
+  theme, colors, fonts, S, sfglDataApi, playersApi, STORAGE_KEYS, disabledBtn,
 }) => {
   const [search1, setSearch1] = React.useState('');
   const [search2, setSearch2] = React.useState('');
@@ -436,153 +350,18 @@ const MergePlayersPanel = ({
   const dStyle = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#0f1d35', border: `1px solid ${colors.border}`, borderRadius: 3, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' };
   const oStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary, cursor: 'pointer', borderBottom: `1px solid ${colors.borderSubtle}` };
 
-  // ── Rewrite tournament results to use player2 in place of player1 ────────
-  // Renames player1 → player2 in every tournament's `results.teams[teamId]`:
-  //   • players[].name (the breakdown shown in StandingsView / TransactionsView)
-  // AND in `full_lineups[teamId]` / `roster_snapshots[teamId]` if they're
-  // stored on the tournament. Returns { newTournaments, touchedNames } so
-  // the caller can persist to Firebase + update state. Idempotent — calling
-  // it twice is a no-op on the second pass.
-  const rewriteTournaments = (tournamentsList) => {
-    const touched = [];
-    const newList = tournamentsList.map(t => {
-      if (!t.results) return t;
-      let changed = false;
-      const teams = t.results.teams || {};
-      const newTeams = {};
-      for (const [tid, teamResult] of Object.entries(teams)) {
-        const players = teamResult.players || [];
-        const newPlayers = players.map(p => {
-          if (p.name === player1) { changed = true; return { ...p, name: player2 }; }
-          return p;
-        });
-        newTeams[tid] = { ...teamResult, players: newPlayers };
-      }
-      const fullLineups = t.results.full_lineups || {};
-      const newFullLineups = {};
-      for (const [tid, names] of Object.entries(fullLineups)) {
-        const renamed = (names || []).map(n => {
-          if (n === player1) { changed = true; return player2; }
-          return n;
-        });
-        newFullLineups[tid] = renamed;
-      }
-      const rosterSnapshots = t.results.roster_snapshots || {};
-      const newRosterSnapshots = {};
-      for (const [tid, names] of Object.entries(rosterSnapshots)) {
-        const renamed = (names || []).map(n => {
-          if (n === player1) { changed = true; return player2; }
-          return n;
-        });
-        newRosterSnapshots[tid] = renamed;
-      }
-      if (!changed) return t;
-      touched.push(t.name);
-      return {
-        ...t,
-        results: {
-          ...t.results,
-          teams: newTeams,
-          full_lineups: newFullLineups,
-          roster_snapshots: newRosterSnapshots,
-        },
-      };
-    });
-    return { newTournaments: newList, touchedNames: touched };
-  };
-
   const doMerge = async () => {
     if (!player1 || !player2 || player1 === player2) { setError('Select two different players'); return; }
     if (!await dialog.showConfirm('Merge Players', `Rename "${player1}" → "${player2}" everywhere?`, { type: 'danger', confirmText: 'Merge' })) return;
     setStatus('merging'); setError('');
     try {
-      // ── Build new state ──
-      const uTeams = teams.map(t => ({
-        ...t,
-        roster: (t.roster || []).map(p => p.name === player1 ? { ...p, name: player2 } : p),
-        lineup: (t.lineup || []).map(n => n === player1 ? player2 : n),
-        // backup field too — added in major-week feature
-        backup: t.backup === player1 ? player2 : t.backup,
-      }));
-      const uTx = transactions.map(tx => ({
-        ...tx,
-        ...(tx.player === player1 && { player: player2 }),
-        ...(tx.droppedPlayer === player1 && { droppedPlayer: player2 }),
-      }));
-
-      // Rewrite tournament results so historical standings + per-tournament
-      // breakdowns show the canonical name. tournaments is optional (older
-      // call sites may not pass it) — guard defensively.
-      const { newTournaments, touchedNames } = tournaments
-        ? rewriteTournaments(tournaments)
-        : { newTournaments: null, touchedNames: [] };
-
-      // ── Persist to Firebase ──
-      const writes = [
-        ...uTeams.map(t => teamsApi.update(t.id, t)),
-        sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, uTx),
-        playersApi.addAlias(player2, player1).catch(() => {}),
-        playersApi.delete(player1).catch(() => {}),
-      ];
-      // Save tournament data + any results that contained the old name.
-      // tournament_results docs live in a separate collection from sfglData,
-      // so each touched tournament needs a save() call to update its players[]
-      // arrays in Firestore.
-      if (newTournaments && setTournaments) {
-        writes.push(sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newTournaments));
-        if (tournamentResultsApi && touchedNames.length) {
-          for (const tournamentName of touchedNames) {
-            const t = newTournaments.find(x => x.name === tournamentName);
-            if (!t?.results) continue;
-            // Re-save the entire result doc with renamed players. Idempotent.
-            writes.push(tournamentResultsApi.save({
-              tournamentName,
-              teamResults:     t.results.teams,
-              earningsMap:     t.results.earnings_map,
-              roundLeaders:    t.results.round_leaders,
-              fullLineups:     t.results.full_lineups,
-              rosterSnapshots: t.results.roster_snapshots,
-              isManualEntry:   t.results.is_manual_entry,
-            }).catch(() => {}));
-          }
-        }
-      }
-      await Promise.all(writes);
-
-      // ── Update in-memory state ──
-      updateTeams(uTeams);
-      setTransactions(uTx);
-      if (newTournaments && setTournaments) setTournaments(newTournaments);
-
-      // Rename the headshots-map key so post-merge UI doesn't break the
-      // avatar until next full refresh. headshots is { name: espnId }; if
-      // the old name has a value but the new one doesn't, carry it over.
-      if (headshots && setHeadshots && headshots[player1] && !headshots[player2]) {
-        setHeadshots(prev => {
-          if (!prev) return prev;
-          const next = { ...prev };
-          next[player2] = next[player1];
-          delete next[player1];
-          return next;
-        });
-      }
-
-      // Filter the merged-away player out of allPlayers so the search
-      // results in this panel and elsewhere don't list a name that no
-      // longer has a player doc.
-      if (allPlayers && setAllPlayers) {
-        setAllPlayers(prev => (prev || []).filter(p => p.name !== player1));
-      }
-
-      setStatus('done');
-      dialog.showToast(
-        touchedNames.length
-          ? `Merged "${player1}" → "${player2}" — updated ${touchedNames.length} tournament${touchedNames.length === 1 ? '' : 's'}`
-          : `Merged "${player1}" → "${player2}"`,
-        'success'
-      );
+      const uTeams = teams.map(t => ({ ...t, roster: (t.roster||[]).map(p => p.name===player1?{...p,name:player2}:p), lineup: (t.lineup||[]).map(n=>n===player1?player2:n) }));
+      const uTx = transactions.map(tx => ({ ...tx, ...(tx.player===player1&&{player:player2}), ...(tx.droppedPlayer===player1&&{droppedPlayer:player2}) }));
+      await Promise.all([...uTeams.map(t=>teamsApi.update(t.id,t)), sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS,uTx), playersApi.addAlias(player2,player1).catch(()=>{}), playersApi.delete(player1).catch(()=>{})]);
+      updateTeams(uTeams); setTransactions(uTx); setStatus('done');
+      dialog.showToast(`Merged "${player1}" → "${player2}"`, 'success');
       setPlayer1(null); setPlayer2(null); setSearch1(''); setSearch2('');
-    } catch (err) { setStatus('error'); setError(err.message || 'Merge failed'); }
+    } catch (err) { setStatus('error'); setError(err.message||'Merge failed'); }
   };
 
   return (
@@ -974,17 +753,9 @@ export const AdminView = ({
     if (active && !selectedTourney) setSelectedTourney(active.name);
   }, [tournaments, selectedTourney]);
 
-  const S = {
-    section: { background: colors.cardBg, border: `1px solid ${colors.border}`, borderRadius: 4, padding: '16px 18px', marginBottom: 12 },
-    title: { fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '1.8px', textTransform: 'uppercase', color: colors.sectionHeaderBlue, marginBottom: 12 },
-    btn: { ...theme.btnPrimary, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
-    btnSec: { ...theme.btnSecondary, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
-    btnDgr: { ...theme.btnDanger, width: '100%', padding: '10px 16px', textAlign: 'center', display: 'block', cursor: 'pointer' },
-    input: { ...theme.input, marginBottom: 8 },
-    select: { ...theme.select, marginBottom: 8, color: colors.textPrimary, backgroundColor: '#0d1b2e', appearance: 'none', WebkitAppearance: 'none' },
-    lbl: { ...theme.label, display: 'block', marginBottom: 6 },
-  };
-  const disabledBtn = (disabled) => disabled ? { opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' } : {};
+  // (S and disabledBtn used to be defined here inline. They moved to
+  // ./admin/adminStyles.jsx — see imports at the top of this file. The
+  // tokens are identical to what was here; only the source location changed.)
 
 
 
@@ -1132,19 +903,14 @@ export const AdminView = ({
         const teamResultsForEmail = finalTeams.filter(t => resultsData.teams[t.id]).map(t => ({
           team: t.name,
           totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
-          players: (resultsData.teams[t.id].players || []).map(p => {
-            // Backfill limited/unlimited from team.roster — see same
-            // pattern in handleResendResultsEmail above for rationale.
-            const rosterEntry = (t.roster || []).find(rp => rp.name === p.name);
-            return {
-              name: p.name,
-              earnings: p.earnings || 0,
-              bonus: p.bonus || 0,
-              limited: rosterEntry?.limited ?? !!p.limited,
-              unlimited: rosterEntry?.unlimited ?? !!p.unlimited,
-              roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
-            };
-          }),
+          players: (resultsData.teams[t.id].players || []).map(p => ({
+            name: p.name,
+            earnings: p.earnings || 0,
+            bonus: p.bonus || 0,
+            limited: !!p.limited,
+            unlimited: !!p.unlimited,
+            roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
+          })),
         }));
         // If the auto-award fired, ship the swing winner banner info too
         // so the email leads with the celebration. Without this, the swing
@@ -1154,28 +920,10 @@ export const AdminView = ({
           team: autoAward.updatedTransactions[autoAward.updatedTransactions.length - 1]?.team,
           pot: autoAward.updatedTransactions[autoAward.updatedTransactions.length - 1]?.amount || 0,
         } : undefined;
-        // ── Compute season standings for the email's top card ──
-        // Sum each team's totalEarnings across all completed tournaments
-        // (using newT — the post-processing array — so this week is included).
-        // Same derivation StandingsView uses; ensures the email matches the
-        // in-app view when managers open the app.
-        const seasonStandings = (() => {
-          const totals = {};
-          finalTeams.forEach(team => { totals[team.id] = 0; });
-          newT.forEach(tt => {
-            if (!tt.completed || !tt.results?.teams) return;
-            Object.entries(tt.results.teams).forEach(([tid, r]) => {
-              if (totals[tid] !== undefined) totals[tid] += (r.totalEarnings || 0);
-            });
-          });
-          return finalTeams
-            .map(team => ({ team: team.name, totalEarnings: totals[team.id] || 0 }))
-            .sort((a, b) => b.totalEarnings - a.totalEarnings);
-        })();
         await fetch('/api/cron?action=notify-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo, seasonStandings }),
+          body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo }),
         });
         dialog.showToast('📧 Results emails sent', 'success');
       } catch (emailErr) {
@@ -1510,22 +1258,14 @@ export const AdminView = ({
           // Include the full player breakdown so the email template can
           // render player names with the right color, round-leader badges,
           // and bonus-inclusive earnings totals.
-          players: (t.results.teams[team.id].players || []).map(p => {
-            // Backfill limited/unlimited from current team.roster when the
-            // stored result didn't include them (tournaments processed
-            // before the unlimited flag was added). Falls back to the
-            // stored value if the player isn't on the current roster
-            // anymore (e.g. dropped/traded since the event).
-            const rosterEntry = (team.roster || []).find(rp => rp.name === p.name);
-            return {
-              name: p.name,
-              earnings: p.earnings || 0,
-              bonus: p.bonus || 0,
-              limited: rosterEntry?.limited ?? !!p.limited,
-              unlimited: rosterEntry?.unlimited ?? !!p.unlimited,
-              roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
-            };
-          }),
+          players: (t.results.teams[team.id].players || []).map(p => ({
+            name: p.name,
+            earnings: p.earnings || 0,
+            bonus: p.bonus || 0,
+            limited: !!p.limited,
+            unlimited: !!p.unlimited,
+            roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
+          })),
         }));
       // If this tournament was the final event of its swing AND a
       // swing_winner tx exists for that segment, include the celebration
@@ -1541,26 +1281,10 @@ export const AdminView = ({
         team: swingTx.team,
         pot: swingTx.amount || 0,
       } : undefined;
-      // Season standings as of NOW — sums all completed tournaments' team
-      // earnings. Resend reflects current state (could be different from the
-      // moment of original send if reprocesses or later events happened).
-      const seasonStandings = (() => {
-        const totals = {};
-        teams.forEach(team => { totals[team.id] = 0; });
-        tournaments.forEach(tt => {
-          if (!tt.completed || !tt.results?.teams) return;
-          Object.entries(tt.results.teams).forEach(([tid, r]) => {
-            if (totals[tid] !== undefined) totals[tid] += (r.totalEarnings || 0);
-          });
-        });
-        return teams
-          .map(team => ({ team: team.name, totalEarnings: totals[team.id] || 0 }))
-          .sort((a, b) => b.totalEarnings - a.totalEarnings);
-      })();
       const resp = await fetch('/api/cron?action=notify-results', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo, seasonStandings }),
+        body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data?.error || 'Resend failed');
@@ -1970,19 +1694,7 @@ export const AdminView = ({
     setPgatStatus('fetching');
     setPgatSummary('');
     try {
-      const resp = await fetch('/api/cron?action=pgat-stats');
-      // Check content-type BEFORE calling resp.json() so we can produce a
-      // useful error when the response is Vercel's HTML error page (function
-      // timeout / 504 / etc) rather than letting the JSON parser throw the
-      // cryptic "Unexpected token 'T'..." SyntaxError.
-      const ct = resp.headers.get('content-type') || '';
-      if (!ct.includes('application/json')) {
-        const preview = (await resp.text()).replace(/\s+/g, ' ').trim().slice(0, 100);
-        const msg = (resp.status === 504 || resp.status === 408 || resp.status === 502)
-          ? `PGAT sync timed out (status ${resp.status}) — PGA Tour site is slow. Try again in 30s.`
-          : `PGAT endpoint returned non-JSON (status ${resp.status}). Body starts: "${preview}…"`;
-        throw new Error(msg);
-      }
+      const resp = await fetch('/api/pgat-stats');
       const data = await resp.json();
       if (!resp.ok) {
         // Surface the attempts array if the endpoint returned one — useful
@@ -2554,14 +2266,11 @@ export const AdminView = ({
       {/* ── 3. Update OWGR Rankings ── */}
       <div style={S.section}>
         <div style={S.title}>🌍 Update OWGR Rankings</div>
-        {(() => {
-          const formatted = formatLastSynced(owgrLastSynced || rankingsLastUpdated);
-          return formatted ? (
-            <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-              Last synced: {formatted}
-            </div>
-          ) : null;
-        })()}
+        {(owgrLastSynced || rankingsLastUpdated) && (
+          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+            Last synced: {new Date(owgrLastSynced || rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
         <button
           onClick={handleSyncOwgr}
           disabled={owgrStatus === 'fetching'}
@@ -2584,14 +2293,11 @@ export const AdminView = ({
       {/* ── 3b. Update PGAT Stats ── */}
       <div style={S.section}>
         <div style={S.title}>💰 Update PGAT Stats</div>
-        {(() => {
-          const formatted = formatLastSynced(pgatLastSynced);
-          return formatted ? (
-            <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-              Last synced: {formatted}
-            </div>
-          ) : null;
-        })()}
+        {pgatLastSynced && (
+          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+            Last synced: {new Date(pgatLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
         <button
           onClick={handleSyncPgatStats}
           disabled={pgatStatus === 'fetching'}
@@ -2647,14 +2353,11 @@ export const AdminView = ({
       {/* ── 4. LIV Golf Sync ── */}
       <div style={S.section}>
         <div style={S.title}>🚫 LIV Golf — Sync Roster</div>
-        {(() => {
-          const formatted = formatLastSynced(livLastSynced || settings?.livRosterLastSynced);
-          return formatted ? (
-            <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-              Last synced: {formatted}
-            </div>
-          ) : null;
-        })()}
+        {(livLastSynced || settings?.livRosterLastSynced) && (
+          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+            Last synced: {new Date(livLastSynced || settings?.livRosterLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
         <button
           onClick={handleSyncLiv}
           disabled={livSyncStatus === 'fetching'}
@@ -2822,11 +2525,9 @@ export const AdminView = ({
         </button>
         {mergeOpen && <MergePlayersPanel
           allPlayers={allPlayers} teams={teams} transactions={transactions}
-          tournaments={tournaments} headshots={headshots}
           dialog={dialog} updateTeams={updateTeams} setTransactions={setTransactions}
-          setTournaments={setTournaments} setHeadshots={setHeadshots} setAllPlayers={setAllPlayers}
           theme={theme} colors={colors} fonts={fonts} S={S}
-          sfglDataApi={sfglDataApi} playersApi={playersApi} tournamentResultsApi={tournamentResultsApi}
+          sfglDataApi={sfglDataApi} playersApi={playersApi}
           STORAGE_KEYS={STORAGE_KEYS} disabledBtn={disabledBtn}
         />}
       </div>
@@ -3115,3 +2816,4 @@ export const AdminView = ({
     </div>
   );
 };
+
