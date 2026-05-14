@@ -336,6 +336,15 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
           alt=""
           style={{
             width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
+            // box-sizing border-box so the 2px border is INCLUDED in the
+            // 44px width. Without this, the default content-box sizing
+            // made the rendered img 48px wide while the container stayed
+            // at 44 — the image overflowed on the right by 4px, putting
+            // its visual center 2px right of the container center. Stars
+            // centered on the container then appeared 2px left of the
+            // visible ball. Border-box keeps the ball geometry tight to
+            // the 44px box so stars sit perfectly under it.
+            boxSizing: 'border-box',
             border: `2px solid ${playerBorderColor(player)}`,
             transition: 'opacity 0.15s',
             opacity: showRemove ? 0.55 : 1,
