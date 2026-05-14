@@ -1,36 +1,41 @@
 // api/pgat-stats.js — Vercel serverless function
 // =====================================================================
-// Fetches PGA Tour season earnings, events played, and cuts made.
+// Fetches PGA Tour season earnings, events played, and cuts made from ESPN.
 //
-// HISTORY OF THIS FILE:
-//   v1 tried pgatour.com/stats/detail/02671 + alternates. Two problems:
-//     (a) 02671 is FedExCup points, NOT money — the parser was returning
-//         point totals (~327) interpreted as dollars.
-//     (b) pgatour.com stats pages render their tables CLIENT-SIDE via JS,
-//         so the SSR'd HTML doesn't contain row data at all. Even with
-//         the right stat ID, scraping the rendered HTML returns 0 players.
-//   v2 (this version) switches the source to ESPN. ESPN's golf stats pages
-//   ARE server-rendered: they embed a window.__espnfitt__ JSON blob that
-//   contains every player row with earnings + events + cuts in one place.
-//   ESPN's table structure has been stable for ~10 years.
+// HISTORY:
+//   v1: scraped pgatour.com/stats/detail/02671 — FedExCup points (wrong stat ID)
+//   v2: scraped ESPN HTML — pattern matching failed, 0 rows parsed
+//   v3 (this): adds debug mode so admin can see what ESPN actually returns,
+//              plus better JSON extraction (bracket counting instead of regex)
+//              and an attempt at ESPN's site.api JSON endpoint as a primary
+//              path that bypasses HTML scraping entirely.
 //
-// PRIMARY SOURCE:  https://www.espn.com/golf/stats/player/_/table/general/sort/amount/dir/desc
-//   • Already sorted by official money won, descending
-//   • Default page shows ~50 players; add /count/200 for more
-//   • Same single page contains EARNINGS, EVNTS (tournaments played), and CUTS (cuts made)
-//   • Updated nightly by ESPN's data feed
+// PRIMARY DATA SOURCE — ESPN golf stats page (HTML with embedded JSON):
+//   https://www.espn.com/golf/stats/player/_/table/general/sort/amount/dir/desc/count/300
+// FALLBACK — ESPN site.api JSON endpoint:
+//   https://site.api.espn.com/apis/site/v2/sports/golf/pga/statistics
 //
-// RESPONSE SHAPE: { players: [{ name, earnings, eventsPlayed, cutsMade }], count }
-// On failure: 502 with { error, attempts } so admin can diagnose from the toast.
+// DEBUG MODE — hit /api/pgat-stats?debug=1 to get raw diagnostics:
+//   • HTTP status from each URL
+//   • First 8KB of HTML returned
+//   • Whether __espnfitt__ JSON blob was found and at what offset
+//   • Number of <tr> elements detected
+//   • Sample of parsed players (first 5)
+//
+// RESPONSE: { players: [{ name, earnings, eventsPlayed, cutsMade }], count }
 
-// ESPN stats URLs. We fetch the amount-sorted one with count=300 — enough
-// headroom to cover every PGA Tour player who's earned anything this season.
-const ESPN_URLS = [
+const ESPN_HTML_URLS = [
   'https://www.espn.com/golf/stats/player/_/table/general/sort/amount/dir/desc/count/300',
   'https://www.espn.com/golf/stats/player/_/table/general/sort/amount/dir/desc',
 ];
 
-// Browser-like headers reduce the chance of being served a bot-blocked page.
+// ESPN's site API often serves the same data as JSON. May or may not exist
+// for this stats type — included as a hopeful primary path.
+const ESPN_API_URLS = [
+  'https://site.api.espn.com/apis/site/v2/sports/golf/pga/leaders?lang=en&region=us',
+  'https://site.api.espn.com/apis/common/v3/sports/golf/pga/statistics',
+];
+
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -38,26 +43,52 @@ const HEADERS = {
   'Referer': 'https://www.espn.com/',
 };
 
-// ESPN inlines all page data in a <script> assignment:
-//   window['__espnfitt__'] = { ...giant JSON... };
-// Extract and parse the JSON. The exact assignment shape varies slightly
-// across ESPN page templates — we try a few patterns.
-function extractEspnPayload(html) {
-  const patterns = [
-    /window\[['"]__espnfitt__['"]\]\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/,
-    /window\.__espnfitt__\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/,
-  ];
-  for (const re of patterns) {
-    const m = html.match(re);
-    if (!m) continue;
-    try { return JSON.parse(m[1]); } catch { /* try next */ }
+// ---------------------------------------------------------------------
+// JSON extraction — bracket counting (robust against huge nested payloads)
+// ---------------------------------------------------------------------
+// ESPN inlines page state with an assignment like:
+//   window['__espnfitt__'] = { ... massive JSON ... };
+// A naive regex won't reliably find the matching `}` for the outer object
+// when the payload is hundreds of KB and deeply nested. Instead, locate the
+// `=` after the variable name and then count braces character-by-character
+// to find the true matching `}`.
+function extractAssignmentJson(html, varPatterns) {
+  for (const pat of varPatterns) {
+    const idx = html.search(pat);
+    if (idx === -1) continue;
+    // Find the `=` after the matched variable name
+    const eqIdx = html.indexOf('=', idx);
+    if (eqIdx === -1) continue;
+    // Find the first `{` after the `=`
+    const startIdx = html.indexOf('{', eqIdx);
+    if (startIdx === -1) continue;
+    // Count braces, respecting strings and escape characters
+    let depth = 0, i = startIdx, inStr = false, strCh = '', esc = false;
+    for (; i < html.length; i++) {
+      const c = html[i];
+      if (inStr) {
+        if (esc) { esc = false; continue; }
+        if (c === '\\') { esc = true; continue; }
+        if (c === strCh) inStr = false;
+        continue;
+      }
+      if (c === '"' || c === "'") { inStr = true; strCh = c; continue; }
+      if (c === '{') depth++;
+      else if (c === '}') {
+        depth--;
+        if (depth === 0) {
+          const jsonStr = html.slice(startIdx, i + 1);
+          try { return JSON.parse(jsonStr); } catch { return null; }
+        }
+      }
+    }
   }
   return null;
 }
 
-// Coerce ESPN's money values to numbers. ESPN sometimes serves the raw
-// integer ("amount": 6246430) and sometimes the formatted string
-// ("$6,246,430"). Be permissive.
+// ---------------------------------------------------------------------
+// Value coercion helpers
+// ---------------------------------------------------------------------
 function moneyToNumber(raw) {
   if (raw === null || raw === undefined) return null;
   if (typeof raw === 'number' && isFinite(raw)) return raw;
@@ -76,36 +107,19 @@ function intFromAny(raw) {
   return isNaN(n) ? null : n;
 }
 
-// Walk the ESPN page payload looking for the player table rows.
-// ESPN's page structure varies, so we cast a fairly wide net.
-function parsePlayersFromEspn(payload) {
+// ---------------------------------------------------------------------
+// Parser — walks any JSON tree looking for player+earnings combinations
+// ---------------------------------------------------------------------
+function parsePlayersFromJson(payload) {
   const map = new Map();
+  const MONEY_KEYS = ['amount', 'money', 'officialMoney', 'EARNINGS', 'earnings'];
+  const EVENT_KEYS = ['tournamentsPlayed', 'eventsPlayed', 'tournaments', 'EVNTS', 'events'];
+  const CUTS_KEYS  = ['cutsMade', 'cuts', 'CUTS', 'madeCuts'];
+  const NAME_KEYS  = ['fullName', 'displayName', 'name', 'playerName', 'athleteName'];
 
-  const MONEY_KEYS  = ['amount', 'money', 'officialMoney', 'EARNINGS', 'earnings'];
-  const EVENT_KEYS  = ['tournamentsPlayed', 'eventsPlayed', 'tournaments', 'EVNTS', 'events'];
-  const CUTS_KEYS   = ['cutsMade', 'cuts', 'CUTS', 'madeCuts'];
-  const NAME_KEYS   = ['fullName', 'displayName', 'name', 'playerName', 'athleteName'];
-
-  const findMoney = (obj) => {
+  const findVal = (obj, keys) => {
     if (!obj || typeof obj !== 'object') return null;
-    for (const k of MONEY_KEYS) {
-      if (k in obj) {
-        const v = moneyToNumber(obj[k]);
-        if (v !== null && v >= 1000) return v; // sanity floor — under $1k is junk
-      }
-    }
-    return null;
-  };
-  const findInt = (obj, keys, max = 50) => {
-    if (!obj || typeof obj !== 'object') return null;
-    for (const k of keys) {
-      if (k in obj) {
-        const v = intFromAny(obj[k]);
-        // PGA Tour season events cap around 35. A bigger value almost
-        // certainly means we matched the wrong field.
-        if (v !== null && v >= 0 && v <= max) return v;
-      }
-    }
+    for (const k of keys) if (k in obj) return obj[k];
     return null;
   };
 
@@ -132,9 +146,7 @@ function parsePlayersFromEspn(payload) {
   };
 
   const upsert = (name, money, events, cuts) => {
-    if (!name) return;
-    if (name.length < 4 || name.length > 40) return;
-    // Allow letters, hyphens, apostrophes, periods, spaces, and accented chars
+    if (!name || name.length < 4 || name.length > 40) return;
     if (!/^[A-Za-zÀ-ÿ' .-]+$/.test(name)) return;
     const prev = map.get(name) || { earnings: 0, eventsPlayed: 0, cutsMade: 0 };
     map.set(name, {
@@ -144,78 +156,78 @@ function parsePlayersFromEspn(payload) {
     });
   };
 
-  // ESPN often serves stats as a tabular `rows` array where each row is an
-  // array of cell values (positional, in column order). We map column index
-  // → field by looking at the headers.
-  const tryParseTabularRows = (obj) => {
-    if (!obj || typeof obj !== 'object') return false;
+  // Tabular rows: { headers: [...], rows: [[...], [...]] }
+  const tryTabular = (obj) => {
+    if (!obj || typeof obj !== 'object') return;
     const rows = obj.rows || obj.rowsdata || obj.players;
     const headers = obj.headers || obj.cols || obj.columns;
-    if (!Array.isArray(rows) || !Array.isArray(headers)) return false;
-    if (rows.length === 0 || headers.length === 0) return false;
+    if (!Array.isArray(rows) || !Array.isArray(headers)) return;
+    if (rows.length === 0 || headers.length === 0) return;
     const norm = headers.map(h =>
-      typeof h === 'string' ? h.toUpperCase() : String(h?.text || h?.label || h?.key || '').toUpperCase()
+      typeof h === 'string' ? h.toUpperCase() : String(h?.text || h?.label || h?.key || h?.title || '').toUpperCase()
     );
     const moneyIdx  = norm.findIndex(h => /EARNING|AMOUNT|MONEY/.test(h));
     const eventsIdx = norm.findIndex(h => /EVNTS|EVENTS|TOURN/.test(h));
     const cutsIdx   = norm.findIndex(h => /CUTS/.test(h));
     const nameIdx   = norm.findIndex(h => /PLAYER|NAME|ATHLETE/.test(h));
-    if (moneyIdx < 0 && eventsIdx < 0 && cutsIdx < 0) return false;
+    if (moneyIdx < 0 && eventsIdx < 0 && cutsIdx < 0) return;
 
     rows.forEach(row => {
       if (!Array.isArray(row)) return;
-      const cellVal = (i) => {
+      const cell = (i) => {
         if (i < 0 || i >= row.length) return null;
         const c = row[i];
         if (c === null || c === undefined) return null;
         if (typeof c === 'string' || typeof c === 'number') return c;
-        return c.text ?? c.value ?? c.displayValue ?? null;
+        return c.text ?? c.value ?? c.displayValue ?? c.statValue ?? null;
       };
-      const rawName = cellVal(nameIdx);
-      let name = null;
-      if (typeof rawName === 'string') {
-        name = rawName.replace(/<[^>]+>/g, '').trim();
-      }
-      const money  = moneyToNumber(cellVal(moneyIdx));
-      const events = intFromAny(cellVal(eventsIdx));
-      const cuts   = intFromAny(cellVal(cutsIdx));
-      if (name && name.includes(' ') && (money !== null || events !== null || cuts !== null)) {
+      let name = cell(nameIdx);
+      if (typeof name === 'string') name = name.replace(/<[^>]+>/g, '').trim();
+      const money  = moneyToNumber(cell(moneyIdx));
+      const events = intFromAny(cell(eventsIdx));
+      const cuts   = intFromAny(cell(cutsIdx));
+      if (name && (money !== null || events !== null || cuts !== null)) {
         upsert(name, money, events, cuts);
       }
     });
-    return true;
   };
 
-  const visit = (obj) => {
-    if (!obj || typeof obj !== 'object') return;
-    if (Array.isArray(obj)) { obj.forEach(visit); return; }
+  const visit = (obj, depth = 0) => {
+    if (!obj || typeof obj !== 'object' || depth > 50) return;
+    if (Array.isArray(obj)) { obj.forEach(o => visit(o, depth + 1)); return; }
 
-    tryParseTabularRows(obj);
+    tryTabular(obj);
 
     const name = findName(obj);
     if (name) {
-      const money  = findMoney(obj);
-      const events = findInt(obj, EVENT_KEYS, 50);
-      const cuts   = findInt(obj, CUTS_KEYS, 50);
-      if (money !== null || events !== null || cuts !== null) {
-        upsert(name, money, events, cuts);
+      const moneyRaw  = findVal(obj, MONEY_KEYS);
+      const eventsRaw = findVal(obj, EVENT_KEYS);
+      const cutsRaw   = findVal(obj, CUTS_KEYS);
+      const money  = moneyToNumber(moneyRaw);
+      const events = intFromAny(eventsRaw);
+      const cuts   = intFromAny(cutsRaw);
+      // Reject if "money" looks like it's actually FedExCup points (< $1k for any real PGA Tour player)
+      const realMoney = (money !== null && money >= 1000) ? money : null;
+      const realEvents = (events !== null && events >= 0 && events <= 50) ? events : null;
+      const realCuts   = (cuts   !== null && cuts   >= 0 && cuts   <= 50) ? cuts   : null;
+      if (realMoney !== null || realEvents !== null || realCuts !== null) {
+        upsert(name, realMoney, realEvents, realCuts);
       }
     }
 
     for (const k in obj) {
       const v = obj[k];
-      if (v && typeof v === 'object') visit(v);
+      if (v && typeof v === 'object') visit(v, depth + 1);
     }
   };
 
   visit(payload);
-
   return [...map.entries()].map(([name, stats]) => ({ name, ...stats }));
 }
 
-// Final fallback: parse the rendered HTML table directly. Used only when
-// extractEspnPayload returns null (ESPN changed their inline payload format)
-// but the table HTML is still recognizable.
+// ---------------------------------------------------------------------
+// HTML fallback parser — for if ESPN ever stops embedding JSON
+// ---------------------------------------------------------------------
 function parsePlayersFromHtmlFallback(html) {
   const out = [];
   const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
@@ -225,9 +237,7 @@ function parsePlayersFromHtmlFallback(html) {
     const cells = [];
     let cellM;
     cellRe.lastIndex = 0;
-    while ((cellM = cellRe.exec(rowM[1])) !== null) {
-      cells.push(cellM[1]);
-    }
+    while ((cellM = cellRe.exec(rowM[1])) !== null) cells.push(cellM[1]);
     if (cells.length < 5) continue;
     const nameCell = cells.find(c => /<a[^>]*>([^<]{4,})<\/a>/.test(c));
     if (!nameCell) continue;
@@ -254,63 +264,136 @@ function parsePlayersFromHtmlFallback(html) {
   return out;
 }
 
+// ---------------------------------------------------------------------
+// Fetch + parse one URL. Returns { players, debug } so we can surface
+// what was actually received when nothing parses out.
+// ---------------------------------------------------------------------
 async function fetchAndParse(url, timeoutMs = 7000) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const tid = setTimeout(() => controller.abort(), timeoutMs);
+  let status = null;
+  let bodyPreview = null;
+  let parseDetail = null;
   try {
     const resp = await fetch(url, { headers: HEADERS, signal: controller.signal });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
-    const html = await resp.text();
-    const payload = extractEspnPayload(html);
-    let players = payload ? parsePlayersFromEspn(payload) : [];
-    if (!players.length) {
-      players = parsePlayersFromHtmlFallback(html);
+    status = resp.status;
+    const text = await resp.text();
+    bodyPreview = text.slice(0, 8000);
+    if (!resp.ok) {
+      return { players: [], debug: { url, status, bodyPreview, error: `HTTP ${status}` } };
     }
-    return players;
+
+    // Try parsing as JSON first (in case URL is the site.api endpoint)
+    let parsed = null;
+    if (resp.headers.get('content-type')?.includes('application/json')) {
+      try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+    }
+
+    // If HTML, try to extract the __espnfitt__ JSON blob
+    let extracted = null;
+    let extractedAt = -1;
+    if (!parsed) {
+      // Search patterns for ESPN's inlined state. Each is a regex that matches
+      // the variable-name prefix before the JSON assignment.
+      const patterns = [
+        /window\[['"]__espnfitt__['"]\]/,
+        /window\.__espnfitt__/,
+        /__espnfitt__\s*=\s*\{/,
+        /window\[['"]espn['"]\]/,
+        /var\s+espn\s*=/,
+      ];
+      // Detect whether any pattern is present at all (for debug output)
+      patterns.forEach((p) => {
+        if (extractedAt === -1) {
+          const i = text.search(p);
+          if (i !== -1) extractedAt = i;
+        }
+      });
+      extracted = extractAssignmentJson(text, patterns);
+    }
+
+    const root = parsed || extracted;
+    let players = root ? parsePlayersFromJson(root) : [];
+    let parseMethod = root ? 'json' : 'none';
+
+    if (!players.length) {
+      // HTML fallback
+      players = parsePlayersFromHtmlFallback(text);
+      if (players.length) parseMethod = 'html-fallback';
+    }
+
+    parseDetail = {
+      contentType: resp.headers.get('content-type') || '',
+      bodyBytes: text.length,
+      espnfittFound: extractedAt !== -1,
+      espnfittOffset: extractedAt,
+      jsonExtracted: !!root,
+      trCount: (text.match(/<tr[^>]*>/g) || []).length,
+      tdCount: (text.match(/<td[^>]*>/g) || []).length,
+      hasDollarSign: text.indexOf('$') !== -1,
+      dollarMatches: (text.match(/\$[\d,]+/g) || []).slice(0, 5),
+      parseMethod,
+      playersFound: players.length,
+    };
+
+    return { players, debug: { url, status, ...parseDetail } };
   } catch (err) {
-    if (err.name === 'AbortError') throw new Error(`Timeout (${timeoutMs}ms) fetching ${url}`);
-    throw err;
+    const msg = err.name === 'AbortError' ? `Timeout (${timeoutMs}ms)` : (err.message || String(err));
+    return { players: [], debug: { url, status, error: msg, bodyPreview } };
   } finally {
-    clearTimeout(timeoutId);
+    clearTimeout(tid);
   }
 }
 
+// ---------------------------------------------------------------------
+// Handler
+// ---------------------------------------------------------------------
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=43200');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Try URLs sequentially — the first one (count/300) should always work;
-  // the second is a fallback in case ESPN's count parameter ever breaks.
-  const tried = [];
-  let bestPlayers = [];
-  let lastError = null;
+  const isDebug = req.query?.debug === '1' || req.url?.includes('debug=1');
 
-  for (const url of ESPN_URLS) {
-    try {
-      const players = await fetchAndParse(url);
-      const withEarnings = players.filter(p => (p.earnings || 0) > 0);
-      tried.push({ url, count: withEarnings.length });
-      if (withEarnings.length > bestPlayers.length) bestPlayers = withEarnings;
-      if (withEarnings.length >= 50) break;
-    } catch (err) {
-      lastError = err?.message || String(err);
-      tried.push({ url, error: lastError });
-    }
+  // Try API URLs first (cleanest if they work), then HTML URLs.
+  const allUrls = [...ESPN_API_URLS, ...ESPN_HTML_URLS];
+
+  // Don't cache the debug response
+  if (!isDebug) {
+    res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=43200');
+  } else {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+
+  const debugLog = [];
+  let bestPlayers = [];
+
+  for (const url of allUrls) {
+    const { players, debug } = await fetchAndParse(url);
+    debugLog.push(debug);
+    if (players.length > bestPlayers.length) bestPlayers = players;
+    // Once we've got a healthy batch, stop trying alternates (except in debug)
+    if (!isDebug && bestPlayers.length >= 50) break;
+  }
+
+  if (isDebug) {
+    return res.status(200).json({
+      bestPlayerCount: bestPlayers.length,
+      samplePlayers: bestPlayers.slice(0, 10),
+      attempts: debugLog,
+    });
   }
 
   if (bestPlayers.length === 0) {
     return res.status(502).json({
       error: 'No PGA Tour stats data could be parsed',
-      attempts: tried,
-      lastError,
+      attempts: debugLog.map(d => ({ url: d.url, status: d.status, error: d.error, espnfittFound: d.espnfittFound, trCount: d.trCount })),
     });
   }
 
   return res.status(200).json({
     players: bestPlayers.sort((a, b) => b.earnings - a.earnings),
     count: bestPlayers.length,
-    sourceAttempts: tried,
+    sourceAttempts: debugLog.map(d => ({ url: d.url, count: d.playersFound, parseMethod: d.parseMethod })),
   });
 }
