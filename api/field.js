@@ -37,6 +37,54 @@ function formatTeeTime(iso) {
   } catch { return null; }
 }
 
+// Pick the right tee time per player when the PGA Tour field page contains
+// data for multiple rounds (R1, R2, R3, R4) inside the same __NEXT_DATA__.
+//
+// Before this helper existed the parser used naive last-write-wins on
+// teeTimeMap[name] = ..., which meant whichever round happened to be
+// traversed last in __NEXT_DATA__ won — typically R2 — so during R1 the
+// roster page showed afternoon-wave players with their *Friday* (R2)
+// tee times instead of their Thursday afternoon ones.
+//
+// Rule used here:
+//   • Prefer the earliest upcoming tee time (≥ now). This gives the
+//     correct "next tee" for any player who hasn't started their next
+//     round yet, regardless of which round we're in.
+//   • If no upcoming time exists (player has played all stored rounds),
+//     fall back to the latest past time so something still renders.
+//
+// `teeTimeMap[name]`     — the human-formatted "8:24 AM" string we serve.
+// `teeTimeISOMap[name]`  — the underlying ISO string, used here for cmp.
+function makeTeeTimeRecorder(teeTimeMap, teeTimeISOMap) {
+  const nowMs = Date.now();
+  return function setTeeTime(name, iso) {
+    if (!name || !iso || typeof iso !== 'string') return;
+    const newMs = new Date(iso).getTime();
+    if (isNaN(newMs)) return;
+    const existingIso = teeTimeISOMap[name];
+    if (!existingIso) {
+      teeTimeISOMap[name] = iso;
+      teeTimeMap[name] = formatTeeTime(iso);
+      return;
+    }
+    const existingMs = new Date(existingIso).getTime();
+    const newIsFuture = newMs >= nowMs;
+    const existingIsFuture = existingMs >= nowMs;
+    let shouldReplace = false;
+    if (newIsFuture && !existingIsFuture) {
+      shouldReplace = true;                       // future beats past
+    } else if (newIsFuture && existingIsFuture) {
+      shouldReplace = newMs < existingMs;         // earliest upcoming wins
+    } else if (!newIsFuture && !existingIsFuture) {
+      shouldReplace = newMs > existingMs;         // most recent past wins
+    }
+    if (shouldReplace) {
+      teeTimeISOMap[name] = iso;
+      teeTimeMap[name] = formatTeeTime(iso);
+    }
+  };
+}
+
 // ── Known name aliases — maps API name variants to canonical names ──────────────
 //
 // ⚠ KEEP IN SYNC with `src/constants/nameAliases.js` — that file is the source
@@ -112,7 +160,11 @@ function parseFieldPage(nd) {
   const playerNames = new Set();
   const playerIdMap = {};   // name → pga tour id
   const teeTimeMap  = {};   // name → "8:24 AM"
+  const teeTimeISOMap = {}; // name → ISO string (internal — used to compare across rounds)
   const oddsMap     = {};   // name → "+700"
+
+  // See makeTeeTimeRecorder for why this exists (multi-round disambiguation).
+  const setTeeTime = makeTeeTimeRecorder(teeTimeMap, teeTimeISOMap);
 
   walkAll(nd, obj => {
     // Player with id + name
@@ -131,20 +183,19 @@ function parseFieldPage(nd) {
       // Individual tee time on player object
       const tt = obj.teeTime || obj.teeTimeLocal || obj.startTime;
       if (tt && typeof tt === 'string') {
-        const formatted = formatTeeTime(tt);
-        if (formatted) teeTimeMap[canonicalName(name) || name] = formatted;
+        setTeeTime(canonicalName(name) || name, tt);
       }
     }
 
     // Tee time group: { teeTime, players: [...] }
     if ((obj.teeTime || obj.startTime) && Array.isArray(obj.players) && obj.players.length) {
-      const tt = formatTeeTime(obj.teeTime || obj.startTime);
-      if (tt) {
+      const ttIso = obj.teeTime || obj.startTime;
+      if (typeof ttIso === 'string') {
         obj.players.forEach(p => {
           const pn = p.displayName?.trim()
             || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
           if (pn) {
-            teeTimeMap[canonicalName(pn) || pn] = tt;
+            setTeeTime(canonicalName(pn) || pn, ttIso);
             if (p.id) playerIdMap[canonicalName(pn) || pn] = String(p.id);
           }
         });
