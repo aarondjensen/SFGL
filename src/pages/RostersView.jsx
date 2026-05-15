@@ -1561,15 +1561,17 @@ export const RostersView = ({
                       // something rather than $0 across the board.
                       const dir = playerDirectoryMap[player.name] || {};
                       const legacyPga = globalPlayerStats?.[player.name] || {};
+                      // With v7, dir.* values are sourced from pgatour.com
+                      // player profile /results pages — the same data the
+                      // PGA Tour app shows. Use ?? so 0 (a valid number,
+                      // e.g. a player who hasn't played any events yet) is
+                      // preferred over the legacy fallback. Legacy
+                      // globalPlayerStats only kicks in when dir.* is null
+                      // (player not in PGA Tour FedExCup standings — e.g.
+                      // some LIV players or amateurs).
                       const pgaEarnings = dir.seasonEarnings ?? legacyPga.pgaTourEarnings ?? 0;
-                      // CBS doesn't have a Cuts column at all, and renders "—" for
-                      // events when a player isn't FedExCup-eligible (Aldrich Potgieter,
-                      // Harry Hall, Max Homa, etc.). The current PGAT sync writes 0 for
-                      // both in those cases. Treating 0 as "no data" here makes the
-                      // fallback chain pick up the legacy globalPlayerStats values that
-                      // were populated by SFGL tournament processing.
-                      const pgaCuts     = (dir.cutsMade     || legacyPga.cutsMade)     || 0;
-                      const pgaEvents   = (dir.eventsPlayed || legacyPga.eventsPlayed) || 0;
+                      const pgaCuts     = dir.cutsMade       ?? legacyPga.cutsMade       ?? 0;
+                      const pgaEvents   = dir.eventsPlayed   ?? legacyPga.eventsPlayed   ?? 0;
 
                       // Cuts column: dual-meaning per statsView
                       //   sfgl  → "started in our lineup AND earned >$0" (cuts/starts ratio)
