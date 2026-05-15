@@ -1574,25 +1574,38 @@ export const AdminView = ({
     setPgatStatus('fetching');
     setPgatSummary('');
     try {
-      // Cache-buster: appends ?t=<timestamp> so the fetch bypasses any stale
-      // CDN cache (Vercel previously cached an error response with a 6-hour
-      // TTL, and we want every Sync to hit a fresh function invocation).
-      const resp = await fetch('/api/pgat-stats?t=' + Date.now());
+      // Build the rostered-player list FIRST so we can send it to the API.
+      // The API does two things:
+      //   1. CBS Sports money list — broad earnings sweep for ~200 players
+      //   2. For each name in the roster param, fetches that player's
+      //      pgatour.com /results page and parses accurate season stats
+      //      (Events, Cuts, Earnings, Wins). Profile data wins over CBS.
+      const rosterNamesArr = Array.from(new Set(
+        teams.flatMap(t => (t.roster || []).map(p => p?.name).filter(Boolean))
+      ));
+      const rosterParam = rosterNamesArr.map(n => encodeURIComponent(n)).join(',');
+
+      // Cache-buster + roster param. Roster-enriched responses are NOT cached
+      // (each call is roster-specific) so we always get fresh profile data.
+      const url = '/api/pgat-stats?t=' + Date.now() +
+                  (rosterParam ? '&roster=' + rosterParam : '');
+      const resp = await fetch(url);
       const data = await resp.json();
       if (!resp.ok) {
-        // Surface the attempts array if the endpoint returned one — useful
-        // diagnostic when PGA Tour changes their URL structure.
         const detail = data.attempts ? ' — ' + JSON.stringify(data.attempts) : '';
         throw new Error((data.error || 'PGAT fetch failed') + detail);
       }
       const fetched = Array.isArray(data.players) ? data.players : [];
       if (!fetched.length) throw new Error('No player stats returned');
 
-      // Diagnostic: dump full payload to console so we can see exactly what
-      // pgatour.com is returning. Top 20 by earnings is usually enough to
-      // confirm whether the expected players are there.
-      console.log('[PGAT Sync] Endpoint returned', fetched.length, 'players. Source attempts:', data.sourceAttempts);
-      console.log('[PGAT Sync] Top 20 by earnings:', fetched.slice(0, 20).map(p => `${p.name}: $${(p.earnings || 0).toLocaleString()} (${p.cutsMade ?? '—'}/${p.eventsPlayed ?? '—'})`));
+      // Diagnostic logs — surface which rostered players were enriched via
+      // PGA Tour profile pages vs. which fell back to CBS-only data.
+      console.log('[PGAT Sync] Endpoint returned', fetched.length, 'players.');
+      console.log('[PGAT Sync]   ' + (data.rosteredEnriched || 0) + ' of ' + rosterNamesArr.length + ' rostered players enriched from pgatour.com profiles');
+      if (data.rosteredMissing && data.rosteredMissing.length > 0) {
+        console.log('[PGAT Sync] Rostered players NOT enriched (will use CBS or legacy fallback):', data.rosteredMissing);
+      }
+      console.log('[PGAT Sync] Top 20 by earnings:', fetched.slice(0, 20).map(p => `${p.name}: $${(p.earnings || 0).toLocaleString()} (${p.cutsMade ?? '—'}/${p.eventsPlayed ?? '—'}) [${p.source || 'cbs'}]`));
 
       // Normalize names for comparison (lowercase, strip accents, trim).
       // Mirrors the normalizePlayerName approach used elsewhere in the app
