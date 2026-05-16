@@ -29,7 +29,7 @@ if (typeof window !== 'undefined') {
 }
 
 import { DialogProvider } from './pages/DialogContext';
-import { ErrorBoundary }  from './pages/ErrorBoundary';
+import { ErrorBoundary, addGlobalErrorReporters }  from './pages/ErrorBoundary';
 import { PullToRefresh }  from './pages/PullToRefresh';
 
 // ── Eagerly loaded views (shown on first visit / lightweight) ──────────────
@@ -119,6 +119,16 @@ const FantasyGolfLeague = () => {
 
   // ── Google Fonts is now loaded statically from index.html (Wave 1 cleanup) ──
   // Loading-screen styles + body font are in app-global.css.
+
+  // ── Production error reporting ────────────────────────────────────────────
+  // Wires window-level error + unhandledrejection listeners to POST sanitized
+  // reports to /api/log-error. The reporter is rate-limited (5/session, 60s
+  // dedupe) so a render-loop error can't spam the commish's inbox. React
+  // errors are already covered by the ErrorBoundary in the JSX below — this
+  // effect catches the async/event-handler errors React can't see.
+  useEffect(() => {
+    return addGlobalErrorReporters();
+  }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
   useEffect(() => {

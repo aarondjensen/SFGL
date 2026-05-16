@@ -1118,7 +1118,7 @@ export const RostersView = ({
                           >
                             <img
                               src={getPlayerHeadshot(backupPlayer.name, backupPlayer.limited, headshots)}
-                              alt={backupPlayer.name}
+                              alt=""
                               onError={(e) => { e.currentTarget.src = getPlayerHeadshotFallback(backupPlayer.name, backupPlayer.limited); }}
                               style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block' }}
                             />
