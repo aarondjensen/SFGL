@@ -1,5 +1,5 @@
-// cleanup-players.js
-// Run once from your project root: node cleanup-players.js
+// scripts/cleanup-players.js
+// Run once from your project root: node scripts/cleanup-players.js
 // Deletes all documents in the 'players' collection where the document ID
 // is a pure number (legacy numeric IDs from old RapidAPI import).
 //
