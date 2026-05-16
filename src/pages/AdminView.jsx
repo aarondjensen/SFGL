@@ -21,6 +21,7 @@ import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
 import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
 import { MergePlayersPanel } from './admin/MergePlayersPanel';
 import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
+import { SwingWinnerPanel } from './admin/SwingWinnerPanel';
 import { DAY_NAMES, fmtETTime } from '../utils/sharedHelpers';
 
 
@@ -659,7 +660,7 @@ export const AdminView = ({
   // (mgCred* state moved into ./admin/ManagerAccountsPanel — Batch 3d extraction)
   // (showDraftModal moved into ./admin/SeasonSettingsPanel — the panel
   // owns the "Open Draft Room" button and renders the modal itself.)
-  const [swingAwardSeg, setSwingAwardSeg]   = useState('');
+  // (swingAwardSeg moved into ./admin/SwingWinnerPanel — Batch 3f extraction)
   const [waiverRevealed, setWaiverRevealed] = useState(false);
   // (livSearch / livSaving used to live here. They moved INTO
   // ./admin/LivIneligiblePanel — only that panel reads them, so the
@@ -814,7 +815,7 @@ export const AdminView = ({
       // the pot now instead of requiring a separate manual click. The
       // manual button still exists in the Award Swing Winner panel as a
       // backup for re-awarding after corrections.
-      const swingSegment = getTournamentSegment(newT[ti]);
+      const swingSegment = getSegmentForTournament(newT[ti]);
       const autoAward = maybeAutoAwardSwing(swingSegment, newT, newTeams, transactions);
       const finalTeams       = autoAward?.updatedTeams        || newTeams;
       const finalTransactions = autoAward?.updatedTransactions || transactions;
@@ -902,7 +903,7 @@ export const AdminView = ({
     });
 
     // Will reprocessing this tournament cascade into a swing-winner change?
-    const tSegment = getTournamentSegment(tournament);
+    const tSegment = getSegmentForTournament(tournament);
     const existingSwingTx = transactions.find(tx => tx.type === 'swing_winner' && tx.segment === tSegment);
     const swingCascade = !!existingSwingTx;
 
@@ -1061,7 +1062,7 @@ export const AdminView = ({
           // so the cascade only needs to swap the swing_winner tx — no
           // reversal of credits, no new credit. Determine the new winner
           // by ranking against the freshly-reprocessed tournament results.
-          const rankedSegmentTournaments = newT.filter(tt => tt.completed && getTournamentSegment(tt) === tSegment && tt.results?.teams);
+          const rankedSegmentTournaments = newT.filter(tt => tt.completed && getSegmentForTournament(tt) === tSegment && tt.results?.teams);
           const byTeam = {};
           rankedSegmentTournaments.forEach(tt => {
             Object.entries(tt.results.teams).forEach(([id, tr]) => {
@@ -1213,9 +1214,9 @@ export const AdminView = ({
       // swing_winner tx exists for that segment, include the celebration
       // banner in the resend too — keeps the email faithful to what would
       // have been sent at the original processing time.
-      const tSegment = getTournamentSegment(t);
+      const tSegment = getSegmentForTournament(t);
       const swingTx = transactions.find(tx => tx.type === 'swing_winner' && tx.segment === tSegment);
-      const swingTournaments = tournaments.filter(tt => getTournamentSegment(tt) === tSegment);
+      const swingTournaments = tournaments.filter(tt => getSegmentForTournament(tt) === tSegment);
       const isFinalEventOfSwing = swingTournaments.every(tt => tt.completed)
         && swingTournaments[swingTournaments.length - 1]?.name === selectedTourney;
       const swingWinnerInfo = (swingTx && isFinalEventOfSwing) ? {
@@ -1395,86 +1396,9 @@ export const AdminView = ({
   // handleSetLogin moved into ./admin/ManagerAccountsPanel (Batch 3d)
 
   // ── Award Swing Winner ──────────────────────────────────────────────────
-  // SWINGS now imported from theme — single source of truth (was duplicated here)
-  // Segment-from-tournament resolution uses the canonical helper from utils.
-  // (Wave C.5 — was a local re-implementation here that disagreed with
-  // utils on edge cases. Both supported t.dates fallback; the utils version
-  // also tries t.startDate which is more robust.)
-  const getTournamentSegment = getSegmentForTournament;
-
-  const handleSwingWinner = async () => {
-    if (!swingAwardSeg) return;
-
-    // ── Pot calculation ──
-    // Use the canonical computeSwingPot helper so the displayed pot here
-    // matches the dropdown, the leader panel, and TransactionsView. Fees
-    // count regardless of whether their tournaments have computed results
-    // (fees are collected at transaction time, not result time).
-    const pot = computeSwingPot(transactions, tournaments, swingAwardSeg);
-
-    if (pot === 0) {
-      dialog.showToast('No fees collected for ' + swingAwardSeg, 'error');
-      return;
-    }
-
-    // ── Winner determination ──
-    // For ranking we DO need tournament results — can't rank teams by
-    // earnings without earnings data. Different filter than the pot calc.
-    const rankedTournaments = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
-    if (!rankedTournaments.length) {
-      dialog.showToast('No completed results found for ' + swingAwardSeg + '. Reprocess at least one tournament first.', 'error');
-      return;
-    }
-
-    const byTeam = {};
-    rankedTournaments.forEach(t => {
-      Object.entries(t.results.teams).forEach(([id, tr]) => {
-        byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
-      });
-    });
-
-    // Debug: log what we found so issues are visible in console
-    console.log('[SwingWinner] Swing:', swingAwardSeg);
-    console.log('[SwingWinner] Pot ($):', pot);
-    console.log('[SwingWinner] Tournaments used for ranking:', rankedTournaments.map(t => t.name + ' (segment=' + t.segment + ', dates=' + t.dates + ')'));
-    console.log('[SwingWinner] Earnings by team:', Object.entries(byTeam).map(([id, e]) => { const t = teams.find(x => x.id === id); return (t?.name || id) + ': $' + e.toLocaleString(); }));
-
-    const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
-    if (!winnerEntry) { dialog.showToast('Could not determine winner', 'error'); return; }
-    const [winnerId, winnerEarnings] = winnerEntry;
-    const winnerTeam = teams.find(t => t.id === winnerId);
-    if (!winnerTeam) { dialog.showToast('Winner team not found', 'error'); return; }
-
-    const msg = swingAwardSeg + ' complete. Winner: ' + winnerTeam.name + ' (' + winnerTeam.owner + '). Swing: $' + winnerEarnings.toLocaleString() + '. Pot: $' + pot.toLocaleString() + '. Award pot?';
-    const ok = await dialog.showConfirm('Award Swing Winner', msg, { confirmText: 'Award $' + pot.toLocaleString() });
-    if (!ok) return;
-
-    const lastSwingTournament = rankedTournaments.reduce((last, t) => {
-      const idx = tournaments.indexOf(t);
-      return idx > (last?.idx ?? -1) ? { t, idx } : last;
-    }, null);
-
-    const newTx = {
-      txId: `swing-${swingAwardSeg}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      team: winnerTeam.name, type: 'swing_winner', player: winnerTeam.owner,
-      fee: 0, amount: pot, segment: swingAwardSeg,
-      date: new Date().toLocaleDateString(),
-      timestamp: Date.now(),
-      status: 'completed',
-      tournamentIndex: lastSwingTournament?.idx ?? undefined,
-      note: swingAwardSeg + ' winner pot',
-    };
-
-    // Pot is a side-prize tracked in transactions only — does NOT add to
-    // team.earnings. Standings derive from tournament.results and
-    // intentionally exclude the pot.
-    setTransactions(prev => [...prev, newTx]);
-    // Persistence handled by setTransactions (= updateTransactions); sfglDataApi write below is backup.
-    await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, newTx]).catch(e => console.error('sfgl tx:', e));
-
-    dialog.showToast('🏆 ' + winnerTeam.name + ' awarded $' + pot.toLocaleString() + ' for ' + swingAwardSeg, 'success');
-    setSwingAwardSeg('');
-  };
+  // handleSwingWinner + swingAwardSeg state moved into ./admin/SwingWinnerPanel
+  // (Batch 3f). The panel uses computeSwingAward from utils/swingAward.js
+  // (same helper the auto-award path uses) — single source of truth.
 
   // ── Data sync state/handlers ─────────────────────────────────────────────
   // OWGR, PGAT Stats, Headshot Rebuild, LIV Roster, and Static Alias sync are
@@ -1496,350 +1420,8 @@ export const AdminView = ({
   //
   // DAY_NAMES and fmtETTime are now imported from utils/sharedHelpers.js
   // (was duplicated inline before).
-  const [emailDraft,   setEmailDraft]   = useState(null); // { teamId: 'email@...' } — null = no unsaved changes — Manager Emails section
+  // (emailDraft state moved into ./admin/ManagerAccountsPanel — Batch 3d)
 
-  const handleSyncOwgr = async () => {
-    setOwgrStatus('fetching');
-    setOwgrSummary('');
-    try {
-      const resp = await fetch('/api/owgr');
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'OWGR fetch failed');
-      const cleanName = n => n.replace(/\s*\([^)]*\)\s*$/, '').trim();
-      const fetched = (data.players || [])
-        .map(({ name, worldRank }) => ({ name: cleanName(name), worldRank }))
-        .filter(p => p.name && p.name.includes(' '));
-      if (!fetched.length) throw new Error('No ranking data returned');
-
-      let updatedPlayers = [...allPlayers];
-      let updated = 0, added = 0;
-      fetched.forEach(({ name, worldRank }) => {
-        const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-        if (idx >= 0) { updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank }; updated++; }
-        else { updatedPlayers.push({ name, worldRank }); added++; }
-      });
-      await playersApi.upsertMany(fetched.map(({ name, worldRank }) => ({ name, worldRank })));
-
-      // Fetch ESPN IDs for all rostered players and save them
-      try {
-        const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
-        if (allRostered.length) {
-          const hsResp = await fetch(`/api/headshots?names=${allRostered.map(n => encodeURIComponent(n)).join(',')}`);
-          if (hsResp.ok) {
-            const hsData = await hsResp.json();
-            const toSave = Object.entries(hsData.results || {}).map(([name, espnId]) => ({ name, espnId }));
-            if (toSave.length) await playersApi.upsertMany(toSave);
-          }
-        }
-      } catch (_) { /* non-critical */ }
-
-      setAllPlayers(updatedPlayers);
-      await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
-      await playerRankingsApi.invalidateCache().catch(() => {});
-      setOwgrLastSynced(new Date().toISOString());
-      setOwgrStatus('done');
-      setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new`);
-    } catch (err) {
-      setOwgrStatus('error');
-      setOwgrSummary(err.message || 'OWGR sync failed');
-    }
-  };
-
-  // ── PGA Tour season stats sync ────────────────────────────────────────────
-  // Fetches official money/events/cuts from pgatour.com. The "PGA $" column
-  // in RostersView displays this data — replacing the stale-prone
-  // globalPlayerStats incremental counter that drifts from SFGL processing.
-  //
-  // Match strategy: try exact name first (case-insensitive). If not found,
-  // try a normalized form (lowercase, accent-stripped). New players are
-  // added so the table can still surface their data if they get rostered
-  // later. The PGA Tour name format is generally stable so collisions
-  // between different real-world players are rare; we still log any
-  // unmatched names for the commish to review.
-  const handleSyncPgatStats = async () => {
-    setPgatStatus('fetching');
-    setPgatSummary('');
-    try {
-      const resp = await fetch('/api/pgat-stats');
-      const data = await resp.json();
-      if (!resp.ok) {
-        // Surface the attempts array if the endpoint returned one — useful
-        // diagnostic when PGA Tour changes their URL structure.
-        const detail = data.attempts ? ' — ' + JSON.stringify(data.attempts) : '';
-        throw new Error((data.error || 'PGAT fetch failed') + detail);
-      }
-      const fetched = Array.isArray(data.players) ? data.players : [];
-      if (!fetched.length) throw new Error('No player stats returned');
-
-      // Diagnostic: dump full payload to console so we can see exactly what
-      // pgatour.com is returning. Top 20 by earnings is usually enough to
-      // confirm whether the expected players are there.
-      console.log('[PGAT Sync] Endpoint returned', fetched.length, 'players. Source attempts:', data.sourceAttempts);
-      console.log('[PGAT Sync] Top 20 by earnings:', fetched.slice(0, 20).map(p => `${p.name}: $${(p.earnings || 0).toLocaleString()} (${p.cutsMade || 0}/${p.eventsPlayed || 0})`));
-
-      // Normalize names for comparison (lowercase, strip accents, trim).
-      // Mirrors the normalizePlayerName approach used elsewhere in the app
-      // for the Nordic letter handling (ø → o, æ → ae).
-      const normalize = (s) => String(s || '')
-        .toLowerCase()
-        .replace(/ø/g, 'o').replace(/æ/g, 'ae')
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      const lookup = new Map();
-      (allPlayers || []).forEach(p => { if (p.name) lookup.set(normalize(p.name), p); });
-
-      // What players are on a current SFGL roster? We care most about these —
-      // any roster player without matched PGAT data shows up in the Stats
-      // panel with $0 or stale legacy data. Surfacing this list in the toast
-      // lets the commish see exactly which players are missing.
-      const rosteredNames = new Set(
-        teams.flatMap(t => (t.roster || []).map(p => normalize(p.name)).filter(Boolean))
-      );
-
-      const matchedRostered = new Set();
-      const updates = [];
-      const unmatchedRostered = [];
-
-      // First pass: match every fetched player against our directory.
-      fetched.forEach(({ name, earnings, eventsPlayed, cutsMade }) => {
-        const norm = normalize(name);
-        const existing = lookup.get(norm);
-        if (existing) {
-          updates.push({
-            name: existing.name,
-            seasonEarnings: earnings || 0,
-            eventsPlayed:   eventsPlayed || 0,
-            cutsMade:       cutsMade || 0,
-            statsLastSynced: new Date().toISOString(),
-          });
-          if (rosteredNames.has(norm)) matchedRostered.add(norm);
-        } else if ((earnings || 0) > 0) {
-          // Player not in directory — add them so they're available if
-          // rostered later.
-          updates.push({
-            name,
-            seasonEarnings: earnings || 0,
-            eventsPlayed:   eventsPlayed || 0,
-            cutsMade:       cutsMade || 0,
-            statsLastSynced: new Date().toISOString(),
-          });
-        }
-      });
-
-      // Second pass: which rostered players DIDN'T match anyone in the fetch?
-      // These are the ones whose Stats panel will show stale data.
-      rosteredNames.forEach(rn => {
-        if (matchedRostered.has(rn)) return;
-        // Find the canonical name from any team's roster for the report
-        const display = teams
-          .flatMap(t => (t.roster || []).map(p => p.name))
-          .find(n => normalize(n) === rn);
-        if (display) unmatchedRostered.push(display);
-      });
-
-      // Diagnostic: log which roster players failed to match so we can see
-      // the spelling difference and fix the parser or add a name alias.
-      if (unmatchedRostered.length) {
-        console.warn('[PGAT Sync] Roster players NOT matched by PGAT fetch:', unmatchedRostered);
-        console.warn('[PGAT Sync] (Check the "Top 20 by earnings" log above — are they spelled differently? Outside top earners?)');
-      }
-
-      if (!updates.length) throw new Error('No matching players to update');
-
-      await playersApi.upsertMany(updates);
-
-      // Update in-memory allPlayers so the Stats view reflects immediately
-      // without requiring a page reload.
-      const updatedByName = new Map(updates.map(u => [u.name, u]));
-      const nextPlayers = (allPlayers || []).map(p => {
-        const u = updatedByName.get(p.name);
-        return u ? { ...p, ...u } : p;
-      });
-      // Append any "added" players that didn't exist before
-      const existingNames = new Set(nextPlayers.map(p => p.name));
-      updates.forEach(u => { if (!existingNames.has(u.name)) nextPlayers.push(u); });
-      setAllPlayers(nextPlayers);
-
-      // Persist sync timestamp to settings so the UI can show "last synced"
-      try {
-        await sfglDataApi.set(STORAGE_KEYS.SETTINGS, { ...settings, pgatStatsLastSynced: new Date().toISOString() });
-      } catch (_) { /* non-critical */ }
-
-      setPgatLastSynced(new Date().toISOString());
-      setPgatStatus(unmatchedRostered.length > 0 ? 'warning' : 'done');
-      // Summary lists unmatched roster players right in the toast so the
-      // commish doesn't have to open the console to find them.
-      const rosterMatchedCount = matchedRostered.size;
-      const rosterTotal = rosteredNames.size;
-      const parts = [
-        `✓ ${fetched.length} fetched`,
-        `${rosterMatchedCount}/${rosterTotal} rostered players matched`,
-      ];
-      if (unmatchedRostered.length) {
-        parts.push(`Missing: ${unmatchedRostered.slice(0, 5).join(', ')}${unmatchedRostered.length > 5 ? ` +${unmatchedRostered.length - 5} more` : ''} (see console)`);
-      }
-      setPgatSummary(parts.join(' · '));
-    } catch (err) {
-      setPgatStatus('error');
-      setPgatSummary(err.message || 'PGAT sync failed');
-    }
-  };
-
-  // ── Rebuild Headshots ──────────────────────────────────────────────────────
-  // When a stale wrong ESPN ID is cached for a player (e.g. Matt
-  // Fitzpatrick's ID stored under Alex Fitzpatrick's name), the normal
-  // auto-fetch can't fix it: the strict findInMap in the endpoint returns
-  // null for ambiguous lookups, and "null" doesn't overwrite an existing
-  // value via the upsert path. This handler explicitly clears espn_id for
-  // every rostered player and then triggers a fresh fetch — so the strict
-  // matcher's results (correct ID, or initials fallback) become canonical.
-  const [hsRebuildStatus,  setHsRebuildStatus]  = useState(null);
-  const [hsRebuildSummary, setHsRebuildSummary] = useState('');
-
-  const handleRebuildHeadshots = async () => {
-    const ok = await dialog.showConfirm(
-      'Rebuild Headshot Map',
-      'This clears the cached ESPN ID for every rostered player and re-fetches fresh IDs. Players who can\'t be uniquely identified will fall back to initials avatars (better than showing the wrong face).\n\nContinue?',
-      { confirmText: 'Rebuild' }
-    );
-    if (!ok) return;
-
-    setHsRebuildStatus('working');
-    setHsRebuildSummary('');
-    try {
-      const rostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))].filter(Boolean);
-      if (!rostered.length) throw new Error('No rostered players found');
-
-      // 1. Clear Firestore (explicit null write — bypasses the upsert path
-      //    that skips null espnIds).
-      await playersApi.clearEspnIds(rostered);
-
-      // 2. Clear in-memory map so the UI immediately stops showing stale
-      //    faces. Falls back to initials until the refetch completes.
-      setHeadshots(() => ({}));
-
-      // 3. Immediate refetch via the endpoint. This bypasses the auto-fetch
-      //    useEffect's TTL ref (which would block a rapid second fetch).
-      const encoded = rostered.map(n => encodeURIComponent(n)).join(',');
-      const resp = await fetch(`/api/headshots?names=${encoded}`);
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || `Headshot endpoint returned ${resp.status}`);
-
-      const results = data?.results || {};
-      const notFound = data?.notFound || [];
-      const foundCount = Object.keys(results).length;
-
-      // 4. Apply new IDs to client state and persist to Firestore.
-      if (foundCount > 0) {
-        setHeadshots(prev => ({ ...(prev || {}), ...results }));
-        await playersApi.upsertMany(
-          Object.entries(results).map(([name, espnId]) => ({ name, espnId }))
-        );
-      }
-
-      // Log unresolved names so the commish can see exactly who fell back.
-      // These are usually lower-tier players who didn't play in any of the
-      // ESPN_EVENT_IDS the endpoint indexes — solvable by adding more event
-      // IDs to api/headshots.js or by manual override.
-      if (notFound.length) {
-        console.warn('[RebuildHeadshots] Players not uniquely identifiable in ESPN index:', notFound);
-        console.warn('[RebuildHeadshots] These players now use the initials-avatar fallback. To fix specific players, add an ESPN event ID where they played to api/headshots.js ESPN_EVENT_IDS.');
-      }
-
-      setHsRebuildStatus(notFound.length > 0 ? 'warning' : 'done');
-      const parts = [`✓ ${foundCount}/${rostered.length} headshots rebuilt`];
-      if (notFound.length) {
-        parts.push(`${notFound.length} fell back to initials: ${notFound.slice(0, 4).join(', ')}${notFound.length > 4 ? ` +${notFound.length - 4} more` : ''} (see console)`);
-      }
-      setHsRebuildSummary(parts.join(' · '));
-    } catch (err) {
-      setHsRebuildStatus('error');
-      setHsRebuildSummary(err.message || 'Rebuild failed');
-    }
-  };
-
-  // ── LIV roster sync ───────────────────────────────────────────────────────
-  const [livSyncStatus, setLivSyncStatus] = useState(null);
-  const [livSyncSummary, setLivSyncSummary] = useState('');
-  const [livLastSynced, setLivLastSynced] = useState(() => settings?.livRosterLastSynced || null);
-
-  const handleSyncLiv = async () => {
-    setLivSyncStatus('fetching');
-    setLivSyncSummary('');
-    try {
-      const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
-      const toFlag = LIV_GOLF_ROSTER.filter(name =>
-        !allPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
-      );
-      const toUnflag = allPlayers.filter(p =>
-        p.isLiv && !livRosterLower.has(p.name.toLowerCase())
-      );
-      if (toFlag.length === 0 && toUnflag.length === 0) {
-        setLivSyncStatus('done');
-        setLivSyncSummary('✓ LIV roster already matches DB — no changes needed');
-        return;
-      }
-      const livWrites = [
-        ...toFlag.map(name => ({ name, isLiv: true })),
-        ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
-      ];
-      await playersApi.upsertMany(livWrites);
-      setAllPlayers(prev => {
-        const updated = [...prev];
-        toFlag.forEach(name => {
-          const idx = updated.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: true };
-          else updated.push({ name, isLiv: true, worldRank: null });
-        });
-        toUnflag.forEach(u => {
-          const idx = updated.findIndex(p => p.name === u.name);
-          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: false };
-        });
-        return updated;
-      });
-      const parts = [
-        toFlag.length   > 0 ? `${toFlag.length} tagged` : '',
-        toUnflag.length > 0 ? `${toUnflag.length} unflagged` : '',
-      ].filter(Boolean).join(' · ');
-      const livTs = new Date().toISOString();
-      setLivLastSynced(livTs);
-      setSettings({ ...settings, livRosterLastSynced: livTs }).catch(() => {});
-      setLivSyncStatus('done');
-      setLivSyncSummary(`✓ LIV roster synced · ${parts}`);
-    } catch (err) {
-      setLivSyncStatus('error');
-      setLivSyncSummary(err.message || 'LIV sync failed');
-    }
-  };
-
-  // ── Static alias sync ─────────────────────────────────────────────────────
-  // One-shot migration: pushes the historical entries from
-  // src/constants/nameAliases.js into Firestore as dynamic aliases on each
-  // canonical player doc. Idempotent — safe to re-run. Once Aaron has run
-  // this and confirmed all entries migrated, the static map becomes a pure
-  // fallback (still used by upsertMany when the dynamic map misses).
-  const [aliasSyncStatus, setAliasSyncStatus] = useState(null);
-  const [aliasSyncSummary, setAliasSyncSummary] = useState('');
-  const handleSeedAliases = async () => {
-    setAliasSyncStatus('fetching');
-    setAliasSyncSummary('');
-    try {
-      const r = await seedAliasesToFirestore(playersApi);
-      const parts = [
-        r.added          > 0 ? `${r.added} added` : '',
-        r.alreadyPresent > 0 ? `${r.alreadyPresent} already present` : '',
-        r.skipped        > 0 ? `${r.skipped} skipped` : '',
-      ].filter(Boolean).join(' · ') || 'no entries to process';
-      const detail = r.errors.length ? '\n• ' + r.errors.join('\n• ') : '';
-      setAliasSyncStatus(r.errors.length && r.added === 0 && r.alreadyPresent === 0 ? 'error' : 'done');
-      setAliasSyncSummary(`✓ Static aliases synced · ${parts}${detail}`);
-    } catch (err) {
-      setAliasSyncStatus('error');
-      setAliasSyncSummary(err.message || 'Alias sync failed');
-    }
-  };
 
   const pending = transactions.map((tx, i) => ({ ...tx, _idx: i })).filter(tx => tx.status === 'pending' && tx.type === 'waiver');
 
@@ -2091,42 +1673,13 @@ export const AdminView = ({
       </div>
 
       {/* ── 4. Award Swing Winner ── */}
-      <div style={S.section}>
-        <div style={S.title}>🏆 Award Swing Winner</div>
-        <label style={S.lbl}>Swing</label>
-        <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
-          <option value="">Select swing...</option>
-          {SWINGS.map(s => {
-            const pot = computeSwingPot(transactions, tournaments, s);
-            const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
-            return (
-              <option key={s} value={s} disabled={alreadyAwarded}>
-                {s}{pot > 0 ? ' · $' + pot.toLocaleString() + ' pot' : ''}{alreadyAwarded ? ' ✓ awarded' : ''}
-              </option>
-            );
-          })}
-        </select>
-        {swingAwardSeg && (() => {
-          const pot = computeSwingPot(transactions, tournaments, swingAwardSeg);
-          const swingTourneys = tournaments.filter(t => t.completed && getTournamentSegment(t) === swingAwardSeg && t.results?.teams);
-          const byTeam = {};
-          swingTourneys.forEach(t => Object.entries(t.results.teams).forEach(([id, tr]) => { byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0); }));
-          const topEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
-          const leader = topEntry ? teams.find(t => t.id === topEntry[0]) : null;
-          return (
-            <div style={{ ...theme.smallText, marginBottom: 10, padding: '8px 10px', background: colors.inputBg, borderRadius: 3, border: `1px solid ${colors.borderSubtle}` }}>
-              {leader
-                ? <span>🏆 Leader: <span style={{ color: colors.textGold, fontWeight: 600 }}>{leader.name}</span> · ${(topEntry[1] || 0).toLocaleString()} · <span style={{ color: colors.earningsGreen }}>Pot: ${pot.toLocaleString()}</span></span>
-                : <span style={{ color: colors.textMuted }}>No completed results for this swing yet</span>
-              }
-            </div>
-          );
-        })()}
-        <button onClick={handleSwingWinner} disabled={!swingAwardSeg}
-          style={{ ...S.btn, ...disabledBtn(!swingAwardSeg) }}>
-          🏆 Award Swing Winner
-        </button>
-      </div>
+      <SwingWinnerPanel
+        tournaments={tournaments}
+        teams={teams}
+        transactions={transactions}
+        setTransactions={setTransactions}
+        STORAGE_KEYS={STORAGE_KEYS}
+      />
       </CollapsibleGroup>
 
       <CollapsibleGroup title="Data Sync" icon="🔄">
@@ -2246,3 +1799,4 @@ export const AdminView = ({
     </div>
   );
 };
+

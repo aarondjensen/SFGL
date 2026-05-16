@@ -68,11 +68,20 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
     note: `${segment} winner pot`,
   };
 
-  const updatedTeams = (teams || []).map(t =>
-    t.id === leader.teamId
-      ? { ...t, earnings: (t.earnings || 0) + pot }
-      : t
-  );
+  // ── Design note: pot does NOT add to team.earnings ──────────────────────
+  // The swing pot is real money collected from manager transactions (waiver
+  // fees, etc.) and is tracked exclusively in the `transactions` collection.
+  // `team.earnings`, by contrast, is the fantasy-golf total — the sum of
+  // PGA Tour earnings of each team's starting-lineup players, derived from
+  // `tournament.results`. The two are conceptually different ledgers and
+  // must NEVER mix: adding the pot to team.earnings would inflate the
+  // displayed standings AND the waiver-priority calculation that uses
+  // team.earnings as input.
+  //
+  // We return `updatedTeams: teams` (unchanged) for backward compatibility
+  // with callers that destructure `award.updatedTeams` — they get the same
+  // teams array they passed in, no mutation.
+  const updatedTeams = teams || [];
 
   return {
     segment,

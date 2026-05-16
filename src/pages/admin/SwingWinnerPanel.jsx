@@ -19,7 +19,7 @@ import { getSwingLeader, getSwingPot } from '../../utils/sharedHelpers';
 import { computeSwingAward } from '../../utils/swingAward';
 
 export const SwingWinnerPanel = ({
-  tournaments, teams, transactions, setTransactions, updateTeams,
+  tournaments, teams, transactions, setTransactions,
   STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
@@ -60,7 +60,11 @@ export const SwingWinnerPanel = ({
     // Debug logging — useful when results look unexpected
     console.log('[SwingWinner] Manual award:', award.segment, '→', award.winnerTeam.name, '$' + award.pot.toLocaleString());
 
-    updateTeams(award.updatedTeams);
+    // Note: we intentionally do NOT call updateTeams here. The swing pot is
+    // real money tracked exclusively in transactions; team.earnings is the
+    // fantasy-golf total derived from tournament.results. computeSwingAward
+    // returns `updatedTeams: teams` (unchanged) for backward-compat with the
+    // tournament-processing auto-award path that destructures it.
     setTransactions(prev => [...prev, award.newTx]);
     await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, award.newTx]).catch(e => console.error('sfgl tx:', e));
 
