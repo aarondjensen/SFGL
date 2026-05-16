@@ -78,10 +78,15 @@ export const S = {
 export const disabledBtn = (disabled) =>
   disabled ? { opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' } : {};
 
-// ── Status banner shared by sync panels (OWGR / LIV / Aliases) ──────────────
+// ── Status banner shared by sync panels (OWGR / PGAT / LIV / Aliases) ──────
+// status: 'fetching' | 'done' | 'error' | 'warning' | null
+//   error   → red banner
+//   warning → gold banner (partial success — e.g. some roster players missed)
+//   done    → green banner
 export const SyncStatusBanner = ({ status, summary }) => {
   if (!summary) return null;
   const isError = status === 'error';
+  const isWarning = status === 'warning';
   return (
     <div style={{
       marginTop: 10,
@@ -90,9 +95,17 @@ export const SyncStatusBanner = ({ status, summary }) => {
       fontSize: 12,
       fontFamily: fonts.sans,
       whiteSpace: 'pre-wrap',
-      background: isError ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-      border: `1px solid ${isError ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-      color: isError ? colors.danger : colors.success,
+      wordBreak: 'break-word',
+      lineHeight: 1.5,
+      background: isError ? colors.dangerBg
+                : isWarning ? 'rgba(200,170,60,0.1)'
+                : 'rgba(80,160,100,0.1)',
+      border: '1px solid ' + (isError ? colors.dangerBorder
+                            : isWarning ? 'rgba(200,170,60,0.4)'
+                            : 'rgba(80,160,100,0.3)'),
+      color: isError ? colors.danger
+           : isWarning ? 'rgba(220,190,80,0.95)'
+           : colors.success,
     }}>
       {summary}
     </div>
