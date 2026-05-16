@@ -1561,6 +1561,14 @@ export const RostersView = ({
                       // something rather than $0 across the board.
                       const dir = playerDirectoryMap[player.name] || {};
                       const legacyPga = globalPlayerStats?.[player.name] || {};
+                      // With v7, dir.* values are sourced from pgatour.com
+                      // player profile /results pages — the same data the
+                      // PGA Tour app shows. Use ?? so 0 (a valid number,
+                      // e.g. a player who hasn't played any events yet) is
+                      // preferred over the legacy fallback. Legacy
+                      // globalPlayerStats only kicks in when dir.* is null
+                      // (player not in PGA Tour FedExCup standings — e.g.
+                      // some LIV players or amateurs).
                       const pgaEarnings = dir.seasonEarnings ?? legacyPga.pgaTourEarnings ?? 0;
                       const pgaCuts     = dir.cutsMade       ?? legacyPga.cutsMade       ?? 0;
                       const pgaEvents   = dir.eventsPlayed   ?? legacyPga.eventsPlayed   ?? 0;
