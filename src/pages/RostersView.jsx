@@ -15,6 +15,13 @@ import { theme, colors, fonts } from '../theme.js';
 import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 
+// Wave J Part 1: TeamDropdown and LineupHeadshot extracted into ./rosters/
+// to start carving up this 1600-line file. playerBorderColor moved into
+// ./rosters/helpers for shared use between RostersView and LineupHeadshot.
+import { TeamDropdown } from './rosters/TeamDropdown';
+import { LineupHeadshot } from './rosters/LineupHeadshot';
+import { playerBorderColor } from './rosters/helpers';
+
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
 // Thin wrappers preserve the (name, isLimited, headshotMap) call signature
 // used throughout this file — headshotUtils uses (name, headshotMap, isLimited).
@@ -51,11 +58,7 @@ const normalizeNordic = (s) => (s || '')
   .replace(/\s+/g, ' ')
   .trim();
 
-// ── Border color by player type ───────────────────────────────────────────────
-const playerBorderColor = (player) =>
-  player.limited   ? 'rgba(245,197,24,0.9)' :
-  player.unlimited ? 'rgba(100,140,220,0.9)' :
-  'rgba(255,255,255,0.85)';
+// ── Border color by player type — moved to ./rosters/helpers (Wave J Part 1) ──
 
 // ── Mobile display name helper ───────────────────────────────────────────────
 const useIsMobile = () => {
@@ -75,66 +78,6 @@ const displayName = (fullName, isMobile) => {
   return parts[0][0] + '. ' + parts[parts.length - 1];
 };
 
-// ── Custom team dropdown — stays dark on all browsers ─────────────────────────
-const TeamDropdown = ({ teams, value, onChange }) => {
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef(null);
-  const selected = teams.find(t => t.id === value);
-
-  React.useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  return (
-    <div ref={ref} style={{ position: 'relative', minWidth: 160 }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-          padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
-          background: '#0f1d35', border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
-          fontFamily: fonts.serif, fontSize: 14, fontWeight: 700,
-          color: 'rgba(255,255,255,0.9)', textAlign: 'left',
-          transition: 'border-color 0.15s', whiteSpace: 'nowrap',
-        }}
-      >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {selected?.name ?? '—'}
-        </span>
-        <span style={{ fontSize: 9, opacity: 0.6, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, zIndex: 100, marginTop: 2,
-          minWidth: '100%', width: 'max-content',
-          maxHeight: '60vh', overflowY: 'auto',
-          background: '#0f1d35', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 2,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-        }} className="sfgl-modal-scroll">
-          {teams.map(t => (
-            <button key={t.id} onClick={() => { onChange(t.id); setOpen(false); }}
-              style={{
-                display: 'block', width: '100%', padding: '11px 14px', textAlign: 'left', cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                background: t.id === value ? 'rgba(245,197,24,0.12)' : 'transparent',
-                border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)',
-                fontFamily: fonts.serif, fontSize: 13, fontWeight: t.id === value ? 700 : 400,
-                color: t.id === value ? colors.textGold : 'rgba(255,255,255,0.85)',
-                transition: 'background 0.1s',
-              }}
-              onMouseEnter={e => { if (t.id !== value) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
-              onMouseLeave={e => { if (t.id !== value) e.currentTarget.style.background = 'transparent'; }}
-            >
-              {t.name}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 // ── Waiver Priority Manager ───────────────────────────────────────────────────
 const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor, disabled = false, width = 88, colors, fonts }) => (
@@ -285,108 +228,6 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
   );
 };
 
-// ── Main RostersView ──────────────────────────────────────────────────────────
-// ── LineupHeadshot — shows ×-remove button on hover when editable ─────────────
-const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayerIds = {}, canEdit, onRemove }) => {
-  const [hovered, setHovered] = React.useState(false);
-  const [tapped, setTapped]   = React.useState(false);
-  const containerRef = React.useRef(null);
-  const isMobileDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
-
-  // Reset tapped state when user touches anywhere outside this headshot
-  React.useEffect(() => {
-    if (!tapped) return;
-    const handler = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setTapped(false);
-      }
-    };
-    document.addEventListener('touchstart', handler, { passive: true });
-    return () => document.removeEventListener('touchstart', handler);
-  }, [tapped]);
-
-  // Reset tapped when lineup edit mode is exited
-  React.useEffect(() => {
-    if (!canEdit) setTapped(false);
-  }, [canEdit]);
-
-  // On mobile: first tap reveals the × badge, second tap (on the ×) removes.
-  // Tapping elsewhere resets. On desktop: hover reveals ×.
-  const showRemove = canEdit && (hovered || tapped);
-
-  return (
-    <div
-      ref={containerRef}
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, overflow: 'visible' }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); setTapped(false); }}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (!canEdit) return;
-        if (isMobileDevice) {
-          if (tapped) { onRemove(); setTapped(false); }
-          else setTapped(true);
-        }
-      }}
-    >
-      <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
-        <img
-          src={getPlayerHeadshot(player.name, player.limited, headshots)}
-          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
-          alt=""
-          style={{
-            width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
-            border: `2px solid ${playerBorderColor(player)}`,
-            transition: 'opacity 0.15s',
-            opacity: showRemove ? 0.55 : 1,
-          }}
-        />
-        {showRemove && (
-          <button
-            onClick={e => { e.stopPropagation(); onRemove(); setTapped(false); }}
-            style={{
-              position: 'absolute', top: -3, right: -3,
-              width: 18, height: 18, borderRadius: '50%',
-              background: 'rgba(220,60,60,0.92)',
-              border: '1.5px solid rgba(255,255,255,0.25)',
-              color: '#fff',
-              fontSize: 11, fontWeight: 700, lineHeight: 1,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
-              padding: 0,
-              zIndex: 10,
-              transition: 'transform 0.1s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.15)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-            title={'Remove ' + player.name + ' from lineup'}
-          >
-            {'\u00D7'}
-          </button>
-        )}
-        {player.limited && (player.stars || 1) > 0 && (
-          <div style={{
-            position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(15,25,45,0.88)', borderRadius: 6,
-            padding: '0px 3px', lineHeight: 1, zIndex: 5,
-            fontSize: 8, letterSpacing: 1,
-          }}>
-            {'⭐'.repeat(player.stars || 1)}
-          </div>
-        )}
-      </div>
-      <div style={{
-        fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 3,
-        textAlign: 'center', width: '100%',
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        color: player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
-      }}>
-        {lastName}
-      </div>
-    </div>
-  );
-};
 
 export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
