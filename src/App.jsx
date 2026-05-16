@@ -79,9 +79,80 @@ const TABS = [
   { id: 'admin',        label: 'Commish',      Icon: Settings   },
 ];
 
+// Valid tab IDs as a Set — used to validate URL hash values before applying
+// them to state (so `#foo` or `#anythingrandom` doesn't crash the app or
+// leave it in a no-tab-rendered limbo). Defined at module level so the
+// Set isn't recreated on every render.
+const VALID_TAB_IDS = new Set(TABS.map(t => t.id));
+
+// Read the current URL hash and return the corresponding valid tab ID, or
+// null if the hash is empty / invalid. Browser hashes include the leading
+// '#' character, which we strip before lookup.
+const getTabFromHash = () => {
+  if (typeof window === 'undefined') return null;
+  const raw = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
+  return VALID_TAB_IDS.has(raw) ? raw : null;
+};
+
 // ── App shell ───────────────────────────────────────────────────────────────
 const FantasyGolfLeague = () => {
-  const [activeTab,             setActiveTab]             = useState('standings');
+  // Initial tab: read the URL hash (#rosters, #admin, etc) on first mount so
+  // deep links / page refreshes land on the right tab. Falls back to
+  // 'standings' for empty / invalid hashes. Lazy initializer ensures this
+  // runs exactly once on mount, not on every render.
+  const [activeTab, setActiveTab] = useState(() => getTabFromHash() || 'standings');
+
+  // ── URL hash routing ────────────────────────────────────────────────────
+  // Two-way sync between activeTab and window.location.hash so the browser
+  // back/forward buttons navigate tabs, deep links work, and refresh keeps
+  // the user on the same tab.
+  //
+  //   • activeTab change → write '#tab' to URL (creates a history entry)
+  //   • hashchange event → read URL and update state (browser back/forward)
+  //
+  // Both sides guard against echo loops by checking whether the new value
+  // actually differs from the current one before triggering an update.
+  //
+  // The 'standings' default tab does NOT write a hash to the URL — keeps
+  // the homepage URL clean (sfglgolf.com instead of sfglgolf.com/#standings).
+  // The hashchange listener still treats empty hash as 'standings'.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const current = (window.location.hash || '').replace(/^#/, '').toLowerCase();
+    if (activeTab === 'standings') {
+      // Strip the hash for the default tab — cosmetic, keeps URLs clean.
+      // Use pushState so back/forward still navigates between tabs
+      // (replaceState would erase history). Skipping the bare-already case.
+      if (current && current !== '') {
+        history.pushState(null, '', window.location.pathname + window.location.search);
+        // pushState doesn't fire hashchange; manually dispatch so any other
+        // listeners (none currently, but future-safe) see the navigation.
+        // Note: not strictly needed for our own state since activeTab is
+        // already 'standings' — included for completeness.
+      }
+    } else if (current !== activeTab) {
+      // Non-default tab — sync URL. This creates a history entry, which is
+      // what we want: each tab switch becomes browser back/forward-navigable.
+      window.location.hash = activeTab;
+    }
+  }, [activeTab]);
+
+  // Listen for browser back/forward navigation. The hashchange event fires
+  // when the URL's hash changes — either from our setActiveTab effect above
+  // (echo, guarded by the equality check) or from a user-driven nav action.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = () => {
+      const next = getTabFromHash() || 'standings';
+      // Only update if it actually differs — prevents an infinite loop with
+      // the writer effect above. React would no-op anyway but skipping the
+      // call is cleaner.
+      setActiveTab(prev => prev === next ? prev : next);
+    };
+    window.addEventListener('hashchange', handler);
+    return () => window.removeEventListener('hashchange', handler);
+  }, []);
+
   const [selectedTeam,          setSelectedTeam]          = useState(null);
   const [isCommissioner,        setIsCommissioner]        = useState(false);
   // Tagged via team.isCommissioner. Determines whether the user is *allowed*
