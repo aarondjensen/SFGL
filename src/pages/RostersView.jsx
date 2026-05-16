@@ -324,6 +324,20 @@ export const RostersView = ({
         return;
       }
 
+      // Hard rule: a limited player at the 12-start cap cannot be in the
+      // lineup card at all — not as starter, not as backup. Backup is a
+      // promotion path to starter, so allowing a capped player here would
+      // mean the only legal action is to leave them sitting in the slot
+      // unable to be promoted, which is just visual noise.
+      if (player.limited && (player.starts || 0) >= MAX_LIMITED_STARTS) {
+        dialog.showToast(
+          `${lastName} has reached the ${MAX_LIMITED_STARTS}-start limit and can't be in the lineup`,
+          'error',
+          { position: 'top' }
+        );
+        return;
+      }
+
       // If they tapped a player who's currently a starter, move them out of
       // starters and into the backup slot. (Avoids a player being in both.)
       const newTeams = teams.map(t => {
@@ -367,15 +381,26 @@ export const RostersView = ({
       return;
     }
 
-    // Case 3: Adding new player. Starts full + Major + no backup yet → fill
-    // backup (implicit overflow path — backup also gets set if user
-    // organically fills the 6th tap after 5 starters). Otherwise: add to
-    // starters if there's room, error if not.
+    // Case 3: Adding new player. Hard rule first: limited players at the
+    // 12-start cap can't be in the lineup card at all (neither as starter
+    // nor as backup). Backup is just a deferred starter, so allowing them
+    // in the backup slot would create a dead state where the slot is
+    // occupied but the player can never be promoted.
+    if (player.limited && (player.starts || 0) >= MAX_LIMITED_STARTS) {
+      dialog.showToast(
+        `${lastName} has reached the ${MAX_LIMITED_STARTS}-start limit and can't be in the lineup`,
+        'error',
+        { position: 'top' }
+      );
+      return;
+    }
+
+    // Starts full + Major + no backup yet → fill backup (implicit overflow
+    // path — backup also gets set if user organically fills the 6th tap
+    // after 5 starters). Otherwise: add to starters if there's room, error
+    // if not.
     if (activeLineupCount >= LINEUP_SIZE) {
       if (allowBackup && !team.backup) {
-        // Limited start limit check ONLY applies when they'd actually start.
-        // As a backup they sit on the bench; only counts if commish promotes
-        // them, which happens via team.lineup → covered by the starter path.
         const newTeams = teams.map(t =>
           t.id !== team.id ? t : { ...t, backup: player.name }
         );
@@ -391,11 +416,8 @@ export const RostersView = ({
       return;
     }
 
-    // Adding to starters — Limited start limit check applies here.
-    if (player.limited && player.starts >= MAX_LIMITED_STARTS) {
-      dialog.showToast('This player has reached their 12-start limit', 'error', { position: 'top' });
-      return;
-    }
+    // Cap check for limited players is hoisted above (top of Case 3) so the
+    // rule applies to both starter and backup assignment uniformly.
 
     const newTeams = teams.map(t =>
       t.id !== team.id ? t : { ...t, lineup: [...(t.lineup || []), player.name] }
@@ -557,23 +579,73 @@ export const RostersView = ({
 
   // Odds are now fetched as part of the field fetch above
 
-  // Real-time lineup sync — polls Firebase every 30s so changes on desktop
-  // appear on mobile without a manual refresh
+  // Real-time lineup sync — polls Firebase every 90s so changes on desktop
+  // appear on mobile without a manual refresh.
+  //
+  // Wave J Round 2 race-condition fix:
+  // Without this safeguard, the poll could clobber a fresh local edit. The
+  // scenario: user taps to swap A→B at t=89s, our local state updates and
+  // `updateTeams` writes to Firebase, but Firebase propagation can take
+  // 0.5–2s. The poll then fires at t=90s and reads the still-old server
+  // lineup — `freshLineup !== currentLineup` is true, so the poll
+  // overwrites the user's brand-new edit, silently undoing it.
+  //
+  // Fix: track the timestamp of the most recent local lineup change. If
+  // the poll fires within SYNC_GRACE_MS of a local edit, skip the overwrite.
+  // The local state is the source of truth during that window; the next
+  // poll will pick up the (now-committed) Firebase state. The grace window
+  // is short enough that desktop→mobile sync still feels real-time, but
+  // long enough to absorb Firebase write latency.
+  const lastLocalLineupEditAt = React.useRef(0);
+  // Record local edits so the poller knows to back off. We watch team.lineup
+  // and team.backup — any change here is a local edit (initial mount excluded
+  // because the ref starts at 0).
+  useEffect(() => {
+    // Initial mount: don't trip the grace window — we want the first poll
+    // to fetch freely. Subsequent changes are real edits.
+    if (lastLocalLineupEditAt.current === 0) {
+      lastLocalLineupEditAt.current = -1; // sentinel: "mounted, no edits yet"
+      return;
+    }
+    lastLocalLineupEditAt.current = Date.now();
+  }, [team?.lineup, team?.backup]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!team) return;
     let cancelled = false;
+    const SYNC_GRACE_MS = 5000; // 5s window after a local edit during which the poll won't overwrite
     const poll = () => {
+      // Skip this poll if the user made a local edit very recently — the
+      // Firebase write from that edit may not have propagated yet, and
+      // overwriting with stale server data would undo the user's action.
+      const sinceEdit = Date.now() - lastLocalLineupEditAt.current;
+      if (lastLocalLineupEditAt.current > 0 && sinceEdit < SYNC_GRACE_MS) {
+        return;
+      }
       teamsApi.getAll().then(freshTeams => {
         if (cancelled) return;
+        // Re-check the grace window AFTER the network call too — the user
+        // could have tapped while the fetch was in-flight.
+        const sinceEditAfter = Date.now() - lastLocalLineupEditAt.current;
+        if (lastLocalLineupEditAt.current > 0 && sinceEditAfter < SYNC_GRACE_MS) {
+          return;
+        }
         const fresh = freshTeams.find(t => t.id === team.id);
         const freshLineup = fresh?.lineup || [];
         const currentLineup = team.lineup || [];
-        if (fresh && JSON.stringify(freshLineup) !== JSON.stringify(currentLineup)) {
+        const freshBackup = fresh?.backup || null;
+        const currentBackup = team.backup || null;
+        // Compare BOTH lineup and backup — the prior version only compared
+        // lineup, meaning a stale-server `backup` could overwrite a local
+        // backup edit even when the lineup matched.
+        const lineupChanged = JSON.stringify(freshLineup) !== JSON.stringify(currentLineup);
+        const backupChanged = freshBackup !== currentBackup;
+        if (fresh && (lineupChanged || backupChanged)) {
           updateTeams(freshTeams.map(t => ({ ...t, lineup: t.lineup || [] })));
         }
       }).catch(() => {});
     };
-    const interval = setInterval(poll, 90000); // every 90s (was 30s — reduces Firebase reads)
+    const interval = setInterval(poll, 90000); // every 90s — reduces Firebase reads
     return () => { cancelled = true; clearInterval(interval); };
   }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -738,6 +810,18 @@ export const RostersView = ({
         padding: 12,
         background: 'linear-gradient(135deg, rgba(18,46,82,0.4) 0%, rgba(255,255,255,0.02) 100%)',
         overflow: 'visible',
+        // Wave J Round 2: subtle gold border + glow when in lineupMode so the
+        // user has a visual anchor for "you're currently editing." Tap outside
+        // the card exits lineupMode, and the border returns to default —
+        // gives a quiet acknowledgment that changes are saved (they auto-save
+        // on every toggle; this is just the affordance that says "done").
+        ...(lineupMode && canEditLineup ? {
+          border: '1px solid rgba(245,197,24,0.45)',
+          boxShadow: '0 0 0 1px rgba(245,197,24,0.15), 0 4px 16px rgba(245,197,24,0.08)',
+          transition: 'border-color 0.18s, box-shadow 0.18s',
+        } : {
+          transition: 'border-color 0.18s, box-shadow 0.18s',
+        }),
       }}>
         {/* Row 1: Team selector + Add/Search button */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, overflow: 'visible' }}>
@@ -824,50 +908,17 @@ export const RostersView = ({
           })()}
           </div>
 
-        {/* Major-week backup banner — appears above the lineup slots so the
-            UX is self-explanatory the first time a manager sees it. */}
-        {activeTournament?.isMajor && canEditLineup && (
-          <div style={{
-            padding: '6px 12px',
-            background: pickingBackup ? 'rgba(245,197,24,0.14)' : 'rgba(245,197,24,0.06)',
-            borderTop: `1px solid rgba(245,197,24,${pickingBackup ? 0.5 : 0.2})`,
-            display: 'flex', alignItems: 'center', gap: 8,
-            transition: 'all 0.18s',
-          }}>
-            <span style={{ fontSize: 11 }}>🏆</span>
-            <span style={{
-              fontFamily: fonts.sans, fontSize: 10, letterSpacing: 0.5,
-              color: pickingBackup ? 'rgba(245,197,24,1)' : 'rgba(245,197,24,0.85)',
-              flex: 1,
-              fontWeight: pickingBackup ? 700 : 400,
-            }}>
-              {pickingBackup ? (
-                <>Pick a backup — <strong>tap any player below</strong> to designate them</>
-              ) : (
-                <><strong>Major week</strong> — pick a 6th player as backup in case a starter withdraws</>
-              )}
-            </span>
-            {pickingBackup && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setPickingBackup(false); }}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid rgba(245,197,24,0.5)',
-                  borderRadius: 2,
-                  color: 'rgba(245,197,24,0.95)',
-                  fontFamily: fonts.sans, fontSize: 9, fontWeight: 600,
-                  letterSpacing: 0.5, textTransform: 'uppercase',
-                  padding: '3px 8px',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
-                aria-label="Cancel backup selection"
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        )}
+        {/* Backup-slot UX note (kept for future maintainers):
+            On Major weeks, a 6th "Backup" slot appears alongside the 5 starter
+            slots. Tapping it pulses gold + lights up `pickingBackup` mode,
+            and the next tap on any roster player fills the backup slot. Tap
+            outside (anywhere on the card or roster table that isn't a player
+            tap) to exit either mode — mirrors how starter mode exits.
+            Wave J Round 2: removed the explanatory banner + Cancel button
+            that used to live here. They created an asymmetric "this is a
+            special mode" feel relative to starter selection. The slot's
+            gold pulse + "Backup" label already convey what to tap, and
+            tap-outside exits cleanly.  */}
 
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders.
             On Major weeks, render a 6th "Backup" slot afterward, visually
@@ -1197,22 +1248,38 @@ export const RostersView = ({
                               transition: 'all 0.15s',
                             }}
                           />
-                          {isEditing && isInLineup && (
+                          {/* Add/remove badges (Wave J Round 2): show whenever
+                              the user can edit (not gated on lineupMode). The
+                              prior behavior gated on lineupMode, which meant
+                              the first tap toggled the player AND made the
+                              badge appear — felt like "magic state appears."
+                              Showing badges all the time when editable makes
+                              the affordance honest: "tap to add" / "tap to
+                              remove" is always visible. Subtle opacity gates
+                              on isEditing keep them less prominent until the
+                              user is actively in lineupMode. */}
+                          {canEditLineup && isOwnTeam && isInLineup && (
                             <div style={{
                               position: 'absolute', top: -3, right: -3,
                               width: 14, height: 14, borderRadius: '50%',
                               background: 'rgba(220,60,60,0.9)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              // Slightly dimmer when not in active edit mode —
+                              // visible but doesn't shout.
+                              opacity: isEditing ? 1 : 0.6,
+                              transition: 'opacity 0.15s',
                             }}>
                               <span style={{ color: '#fff', fontSize: 9, fontWeight: 900 }}>✕</span>
                             </div>
                           )}
-                          {isEditing && !isInLineup && canAddToLineup && (
+                          {canEditLineup && isOwnTeam && !isInLineup && canAddToLineup && (
                             <div style={{
                               position: 'absolute', top: -3, right: -3,
                               width: 14, height: 14, borderRadius: '50%',
                               background: 'rgba(80,195,120,0.9)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              opacity: isEditing ? 1 : 0.6,
+                              transition: 'opacity 0.15s',
                             }}>
                               <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>+</span>
                             </div>
