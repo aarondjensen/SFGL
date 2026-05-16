@@ -74,12 +74,18 @@ const PositionBadge = ({ position, isWinner, swingAccent }) => {
 };
 
 // ── Total/Behind toggle (compact, lives in card header) ────────────────────
+// When `accentColor` is passed (i.e. on the swing card), the toggle fully
+// tints to that swing's color: outer border, active pill background, active
+// pill border, and the active button's label all use swing color. Without
+// the accent (i.e. the Season card), the toggle uses neutral chrome to
+// match the gold-emphasized card border instead.
 const MetricToggle = ({ value, onChange, accentColor }) => (
   <div style={{
     display: 'inline-flex',
     position: 'relative',
     background: 'rgba(255,255,255,0.04)',
-    border: '1px solid rgba(180,160,100,0.2)',
+    // Outer border: tinted to swing color when present; falls back to neutral.
+    border: `1px solid ${accentColor ? getSwingColorAt(accentColor, 0.35) : 'rgba(180,160,100,0.2)'}`,
     borderRadius: 4,
     padding: 3,
     width: 150,
@@ -92,33 +98,44 @@ const MetricToggle = ({ value, onChange, accentColor }) => (
       left: value === 'behind' ? 'calc(50% + 1px)' : 3,
       width: 'calc(50% - 4px)',
       borderRadius: 2,
-      background: accentColor ? getSwingColorAt(accentColor, 0.18) : 'rgba(255,255,255,0.1)',
-      border: `1px solid ${accentColor ? getSwingColorAt(accentColor, 0.45) : 'rgba(255,255,255,0.3)'}`,
-      transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
+      // Active pill: stronger swing-color presence — bumped from 0.18 → 0.28
+      // background opacity and 0.45 → 0.7 border opacity so the swing tint
+      // is clearly readable, not just "it might be slightly green-ish."
+      background: accentColor ? getSwingColorAt(accentColor, 0.28) : 'rgba(255,255,255,0.1)',
+      border: `1px solid ${accentColor ? getSwingColorAt(accentColor, 0.7) : 'rgba(255,255,255,0.3)'}`,
+      transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1), background 0.22s, border-color 0.22s',
       pointerEvents: 'none',
     }} />
     {[
       ['total',  'Total'],
       ['behind', 'Behind'],
-    ].map(([key, label]) => (
-      <button
-        key={key}
-        onClick={() => onChange(key)}
-        style={{
-          flex: 1, position: 'relative', zIndex: 1,
-          padding: '4px 0',
-          background: 'none', border: 'none',
-          fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700,
-          letterSpacing: '1px', textTransform: 'uppercase',
-          color: value === key ? colors.textPrimary : colors.textMuted,
-          cursor: 'pointer',
-          transition: 'color 0.18s',
-          borderRadius: 2,
-        }}
-      >
-        {label}
-      </button>
-    ))}
+    ].map(([key, label]) => {
+      const isActive = value === key;
+      return (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          style={{
+            flex: 1, position: 'relative', zIndex: 1,
+            padding: '4px 0',
+            background: 'none', border: 'none',
+            fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700,
+            letterSpacing: '1px', textTransform: 'uppercase',
+            // Active label: tinted to swing color so it reads as a unified
+            // colored element. Inactive: muted. Without an accent, falls back
+            // to plain white-on-muted (Season card behavior preserved).
+            color: isActive
+              ? (accentColor ? getSwingColorAt(accentColor, 1) : colors.textPrimary)
+              : colors.textMuted,
+            cursor: 'pointer',
+            transition: 'color 0.18s',
+            borderRadius: 2,
+          }}
+        >
+          {label}
+        </button>
+      );
+    })}
   </div>
 );
 
