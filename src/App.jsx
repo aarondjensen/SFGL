@@ -564,7 +564,6 @@ const FantasyGolfLeague = () => {
                 updateTeams={updateTeams}
                 setTournaments={updateTournaments}
                 isCommissioner={isCommissioner}
-                STORAGE_KEYS={STORAGE_KEYS}
                 settings={settings}
               />
             </Suspense>
@@ -600,7 +599,6 @@ const FantasyGolfLeague = () => {
                 setHeadshots={updateHeadshots}
                 updateRankings={updateRankings}
                 rankingsLastUpdated={rankingsLastUpdated}
-                STORAGE_KEYS={STORAGE_KEYS}
               />
             </Suspense>
           )}

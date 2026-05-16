@@ -14,12 +14,12 @@ import React from 'react';
 import { useDialog } from '../DialogContext';
 import { theme, colors, fonts } from '../../theme.js';
 import { sfglDataApi, playersApi, teamsApi } from '../../api/firebase';
+import { STORAGE_KEYS } from '../../constants';
 import { S, disabledBtn } from './adminStyles';
 
 export const MergePlayersPanel = ({
   allPlayers, teams, transactions,
   updateTeams, setTransactions,
-  STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
 
