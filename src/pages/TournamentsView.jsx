@@ -399,6 +399,68 @@ export const TournamentsView = ({
     setLocalTournaments(prev => prev.map((t, i) => i === index ? { ...t, ...patch } : t));
   };
 
+  // Wave J Round 4 — Edit Schedule: enable any-row edits.
+  // Previously edit mode only supported field changes on existing rows; rows
+  // could not be added or deleted from the UI. Now the commish can fully
+  // manage the schedule in this view without touching Firestore directly.
+  const deleteRow = async (index) => {
+    const t = localTournaments[index];
+    if (!t) return;
+    if (t.completed) {
+      dialog.showToast(`Can't delete "${t.name}" — it has processed results. Reprocess to clear first if needed.`, 'error');
+      return;
+    }
+    const ok = await dialog.showConfirm(
+      'Delete tournament',
+      `Remove "${t.name}" from the schedule? You can re-add it later, but lineup history tied to it would be lost.`,
+      { type: 'danger', confirmText: 'Delete', cancelText: 'Cancel' }
+    );
+    if (!ok) return;
+    setLocalTournaments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const addRow = () => {
+    // Find the latest start date to seed the new row a week later — keeps the
+    // newly-added row near the bottom of the schedule rather than top.
+    const latest = [...localTournaments]
+      .filter(t => t.start_date)
+      .sort((a, b) => String(b.start_date).localeCompare(String(a.start_date)))[0];
+    let seedDate = '';
+    if (latest?.start_date) {
+      const d = new Date(latest.start_date + 'T12:00:00Z');
+      if (!isNaN(d.getTime())) {
+        d.setUTCDate(d.getUTCDate() + 7);
+        seedDate = d.toISOString().slice(0, 10);
+      }
+    }
+    // Generate a placeholder name that's unique. The name field is used as
+    // the Firestore doc ID (tournamentsApi.setAll), so duplicates would
+    // collapse on save — we add a numeric suffix to avoid that.
+    let baseName = 'New Tournament';
+    let candidate = baseName;
+    let n = 2;
+    const existing = new Set(localTournaments.map(t => t.name));
+    while (existing.has(candidate)) { candidate = `${baseName} ${n++}`; }
+    setLocalTournaments(prev => [
+      ...prev,
+      {
+        name: candidate,
+        dates: '',
+        location: '',
+        course: '',
+        start_date: seedDate,
+        completed: false,
+        playing: false,
+        isSignature: false,
+        isMajor: false,
+        isAlternate: false,
+        segment: null,
+        lockHour: 7,
+        results: null,
+      },
+    ]);
+  };
+
   const completed = completedSorted;
   const upcoming  = localTournaments.filter(t => !t.completed);
 
@@ -769,8 +831,8 @@ export const TournamentsView = ({
       <thead>
         <tr>
           {editMode ? (
-            ['Active', 'Type', 'Tournament', 'Dates', 'Location / Course', 'Swing', 'Lock'].map(h => (
-              <th key={h} style={{ ...theme.tableHeaderCell, fontSize: fontSize.sm }}>{h}</th>
+            ['Active', 'Type', 'Tournament', 'Dates', 'Location / Course', 'Swing', 'Lock', ''].map((h, i) => (
+              <th key={h || `c${i}`} style={{ ...theme.tableHeaderCell, fontSize: fontSize.sm }}>{h}</th>
             ))
           ) : (
             [{ label: '' }, { label: 'Tournament' }, { label: 'Dates' }, { label: 'Location' }].map(({ label }) => (
@@ -930,6 +992,29 @@ export const TournamentsView = ({
                     ))}
                   </select>
                 </td>
+
+                {/* Delete row — Wave J Round 4. Refuses to delete tournaments
+                    with processed results (they have data tied to them that
+                    matters historically). Confirms before deleting otherwise. */}
+                <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                  <button
+                    onClick={() => deleteRow(realIndex)}
+                    disabled={t.completed}
+                    title={t.completed ? 'Completed tournaments cannot be deleted from the UI' : `Delete ${t.name}`}
+                    style={{
+                      background: 'transparent',
+                      border: `1px solid ${t.completed ? colors.borderSubtle : 'rgba(220,60,60,0.3)'}`,
+                      borderRadius: 3,
+                      color: t.completed ? colors.textMuted : 'rgba(220,60,60,0.9)',
+                      cursor: t.completed ? 'not-allowed' : 'pointer',
+                      width: 24, height: 24,
+                      fontSize: 14, lineHeight: 1,
+                      opacity: t.completed ? 0.4 : 1,
+                    }}
+                  >
+                    ✕
+                  </button>
+                </td>
               </tr>
             );
           }
@@ -1037,6 +1122,30 @@ export const TournamentsView = ({
             </React.Fragment>
           );
         })}
+        {/* Add row — visible only in edit mode and only for the upcoming
+            table (so a new event lands among future events, not in the
+            completed history). Renders as a single full-width "+ Add
+            Tournament" button row matching the table's edit chrome. */}
+        {editMode && kind === 'upcoming' && (
+          <tr>
+            <td colSpan={8} style={{ padding: '10px 8px', textAlign: 'center', borderTop: `1px dashed ${colors.borderSubtle}` }}>
+              <button
+                onClick={addRow}
+                style={{
+                  ...theme.btnSecondary,
+                  padding: '6px 14px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ fontSize: 14, lineHeight: 1, fontWeight: 700 }}>+</span>
+                Add Tournament
+              </button>
+            </td>
+          </tr>
+        )}
       </tbody>
     </table>
   );

@@ -23,6 +23,7 @@ import { DataSyncPanel } from './admin/DataSyncPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
 import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
 import { MergePlayersPanel } from './admin/MergePlayersPanel';
+import { ScheduleImportPanel } from './admin/ScheduleImportPanel';
 import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
 import { SwingWinnerPanel } from './admin/SwingWinnerPanel';
 import { TournamentResultsPanel } from './admin/TournamentResultsPanel';
@@ -341,6 +342,14 @@ export const AdminView = ({
         allPlayers={allPlayers}
         updateTeams={updateTeams}
         headshots={headshots}
+      />
+      {/* ── Schedule Import ──
+          Bulk-import a season's PGA Tour schedule from pgatour.com. Used at
+          season rollover to populate the new year's tournaments without
+          typing each one by hand. */}
+      <ScheduleImportPanel
+        tournaments={tournaments}
+        setTournaments={setTournaments}
       />
       </CollapsibleGroup>
     </div>
