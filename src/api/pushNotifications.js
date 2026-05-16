@@ -222,6 +222,87 @@ export const getTokensForTeam = async (teamId) => {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 };
 
+// ── Notification preferences (Wave J Round 6 batch 3) ──────────────────────
+// Per-team, per-event toggles stored at team.notificationPrefs. Missing keys
+// fall through to defaults (most are ON; batch 4 events are OFF).
+//
+// Used by the UserSettingsModal to render the toggle UI.
+
+// Event definitions — single source of truth for label, description, and
+// default. Server-side cron.js + push.js mirror this DEFAULTS_ON set, so
+// keep the two in sync when adding new events.
+export const NOTIFICATION_EVENTS = [
+  // Batch 3 (default ON) — wired now
+  { key: 'waiverWon',       label: 'Waiver claim won',     desc: 'Your waiver claim was successful',     batch: 3, default: true  },
+  { key: 'waiverLost',      label: 'Waiver claim lost',    desc: 'Your waiver lost the tiebreaker',      batch: 3, default: true  },
+  { key: 'lineupLock',      label: 'Lineup lock reminder', desc: "You haven't set a lineup yet",         batch: 3, default: true  },
+  { key: 'commishModified', label: 'Commish edited roster', desc: 'A commissioner modified your team',   batch: 3, default: true  },
+  // Batch 4 (default OFF) — placeholder, not yet wired
+  // { key: 'faProcessed',     label: 'Free agent processed', desc: 'Your free agent claim was processed', batch: 4, default: false },
+  // { key: 'resultsProcessed', label: 'Results processed',  desc: 'Tournament results are in',           batch: 4, default: false },
+  // { key: 'otherTeamWaiver', label: 'Other team\'s waiver', desc: 'Another team won a waiver claim',    batch: 4, default: false },
+  // { key: 'otherTeamFa',     label: 'Other team\'s FA',     desc: 'Another team picked up a free agent', batch: 4, default: false },
+  // { key: 'swingWinner',     label: 'Swing winner announced', desc: 'A swing pot was awarded',          batch: 4, default: false },
+];
+
+/**
+ * Effective preference for a single event on a team. Honors stored value;
+ * falls through to the event's default if unset.
+ */
+export const getEventPref = (team, eventKey) => {
+  const event = NOTIFICATION_EVENTS.find(e => e.key === eventKey);
+  if (!event) return false;
+  const stored = team?.notificationPrefs?.[eventKey];
+  if (typeof stored === 'boolean') return stored;
+  return event.default;
+};
+
+/**
+ * Effective prefs map for a team — every known event key mapped to its
+ * effective (stored-or-default) boolean. Used by the modal to render the
+ * toggles with the right initial state.
+ */
+export const getEffectivePrefs = (team) => {
+  const map = {};
+  NOTIFICATION_EVENTS.forEach(e => { map[e.key] = getEventPref(team, e.key); });
+  return map;
+};
+
+/**
+ * Trigger a commish-authorized push (test or commishModified events).
+ *
+ * Used by AdminView (test pushes) and TransactionsView (when commish modifies
+ * a manager's roster). Uses the same commish-team-lookup auth as test pushes
+ * — no CRON_SECRET required client-side.
+ *
+ * @param {Object} opts
+ * @param {string} opts.event            — 'test' or 'commishModified'
+ * @param {string} opts.commishTeamId    — current commish's teamId (auth check)
+ * @param {string|string[]} opts.recipients — 'all' or array of teamIds
+ * @param {string} opts.title            — notification heading
+ * @param {string} opts.body             — notification body
+ * @param {string} [opts.deepLink]       — optional URL hash
+ */
+export const sendCommishPush = async ({ event, commishTeamId, recipients, title, body, deepLink = '#standings' }) => {
+  const resp = await fetch('/api/push', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event,
+      title,
+      body,
+      deepLink,
+      recipients,
+      asCommishOfTeamId: commishTeamId,
+    }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    throw new Error(data.error || `HTTP ${resp.status}`);
+  }
+  return data;
+};
+
 /**
  * Trigger a test push from the commissioner's AdminView.
  *
@@ -240,23 +321,7 @@ export const getTokensForTeam = async (teamId) => {
  * Returns the API response: { sent, failed, totalTokens, cleanedUp }.
  */
 export const sendTestPush = async ({ commishTeamId, recipients, title, body, deepLink = '#standings' }) => {
-  const resp = await fetch('/api/push', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      event: 'test',
-      title,
-      body,
-      deepLink,
-      recipients,
-      asCommishOfTeamId: commishTeamId,
-    }),
-  });
-  const data = await resp.json();
-  if (!resp.ok) {
-    throw new Error(data.error || `HTTP ${resp.status}`);
-  }
-  return data;
+  return sendCommishPush({ event: 'test', commishTeamId, recipients, title, body, deepLink });
 };
 
 // ── Foreground message handler (auto-bound on import) ───────────────────────

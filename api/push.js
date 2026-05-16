@@ -69,27 +69,33 @@ export default async function handler(req, res) {
   // Two auth paths:
   //   1. Server-to-server (cron jobs, future event triggers): Bearer CRON_SECRET.
   //      Used for all production push triggers (waiver results etc).
-  //   2. Commish-driven test pushes: event must be 'test' AND the request must
-  //      include asCommishOfTeamId pointing at a team with isCommissioner=true.
-  //      Used by the "Send test push" button in AdminView. The commish can't
-  //      send real event pushes — only test pings — through this path.
+  //   2. Commish-driven events: a defined whitelist of event types AND the
+  //      request must include asCommishOfTeamId pointing at a team with
+  //      isCommissioner=true. Used by AdminView test pushes and by
+  //      TransactionsView when a commish manually adds/edits/deletes a
+  //      transaction on someone else's team.
   //
   // This split avoids exposing CRON_SECRET to the browser while still letting
-  // the AdminView test button function. Not bulletproof (someone who knows a
-  // commish's teamId could spoof a test push to themselves) but the blast
-  // radius is limited to "test" pushes to existing tokens.
+  // AdminView and TransactionsView trigger pushes. Not bulletproof (someone
+  // who knows a commish's teamId could spoof a push to themselves or another
+  // manager) but the event whitelist limits blast radius to event types the
+  // app actually wants to dispatch.
+  const COMMISH_ALLOWED_EVENTS = new Set([
+    'test',             // diagnostic pushes from AdminView
+    'commishModified',  // commish-modified-roster pushes from TransactionsView
+  ]);
   const expectedSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.authorization || '';
   const providedSecret = authHeader.replace(/^Bearer\s+/i, '');
   const isCronAuth = expectedSecret && providedSecret === expectedSecret;
 
   if (!isCronAuth) {
-    // Try the commish-test auth path
-    if (event !== 'test') {
-      return res.status(401).json({ error: 'unauthorized: non-test events require CRON_SECRET' });
+    // Try the commish auth path
+    if (!COMMISH_ALLOWED_EVENTS.has(event)) {
+      return res.status(401).json({ error: `unauthorized: event '${event}' requires CRON_SECRET` });
     }
     if (!asCommishOfTeamId) {
-      return res.status(401).json({ error: 'unauthorized: test events require asCommishOfTeamId' });
+      return res.status(401).json({ error: `unauthorized: '${event}' events require asCommishOfTeamId` });
     }
     try {
       const teamSnap = await db.collection('teams').doc(asCommishOfTeamId).get();
@@ -128,8 +134,47 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'failed to fetch recipient tokens', details: err.message });
   }
 
+  // ── Apply per-event preferences (Wave J Round 6 batch 3) ────────────────
+  // Each team can disable specific event types via team.notificationPrefs.
+  // We filter the token list here before sending.
+  //
+  // Special cases:
+  //   • event='test' → bypass prefs entirely (diagnostic must always deliver)
+  //   • event not in DEFAULTS_ON → require explicit opt-in (default OFF)
+  //   • event in DEFAULTS_ON → fire unless explicit prefs[event] === false
+  //
+  // We batch-load all relevant team docs once instead of one Firestore read
+  // per token, since multiple tokens from the same team would otherwise
+  // duplicate the lookup.
+  const DEFAULTS_ON = new Set(['waiverWon', 'waiverLost', 'lineupLock', 'commishModified']);
+  let skipped = 0;
+  if (event !== 'test' && tokenDocs.length > 0) {
+    const teamIds = [...new Set(tokenDocs.map(t => t.teamId).filter(Boolean))];
+    const teamPrefs = {};  // teamId → prefs map
+    try {
+      // Batch-load — chunked by 30 (Firestore 'in' limit)
+      for (let i = 0; i < teamIds.length; i += 30) {
+        const chunk = teamIds.slice(i, i + 30);
+        const teamSnap = await db.collection('teams').where('__name__', 'in', chunk).get();
+        teamSnap.forEach(d => { teamPrefs[d.id] = d.data()?.notificationPrefs || {}; });
+      }
+    } catch (err) {
+      console.warn('[push] prefs batch load failed:', err.message);
+      // On lookup failure, fail safe by dropping all sends
+      return res.status(500).json({ error: 'prefs lookup failed', details: err.message });
+    }
+    const before = tokenDocs.length;
+    tokenDocs = tokenDocs.filter(t => {
+      const prefs = teamPrefs[t.teamId];
+      if (!prefs) return DEFAULTS_ON.has(event);  // no prefs map → defaults
+      if (typeof prefs[event] === 'boolean') return prefs[event];
+      return DEFAULTS_ON.has(event);  // unset key → defaults
+    });
+    skipped = before - tokenDocs.length;
+  }
+
   if (tokenDocs.length === 0) {
-    return res.status(200).json({ sent: 0, failed: 0, totalTokens: 0, cleanedUp: 0, message: 'no tokens to send to' });
+    return res.status(200).json({ sent: 0, failed: 0, totalTokens: 0, cleanedUp: 0, skipped, message: skipped > 0 ? 'all recipients opted out' : 'no tokens to send to' });
   }
 
   // ── Build the FCM message payload ────────────────────────────────────────
@@ -205,5 +250,6 @@ export default async function handler(req, res) {
     failed,
     totalTokens: tokenDocs.length,
     cleanedUp,
+    skipped,
   });
 }

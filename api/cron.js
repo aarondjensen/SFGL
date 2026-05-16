@@ -9,6 +9,7 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getMessaging } from 'firebase-admin/messaging';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
 
@@ -20,6 +21,116 @@ function getApp() {
 }
 
 const db = getFirestore(getApp());
+const messaging = getMessaging(getApp());
+
+// ── Push notifications (Wave J Round 6 batch 3) ─────────────────────────────
+// Helper for sending pushes to a single team's subscribed devices, with
+// per-event preference checking. Mirrors the logic in /api/push.js but is
+// called directly from server-side cron handlers (no HTTP hop needed).
+//
+// Default-ON events (will fire unless explicitly disabled):
+//   waiverWon, waiverLost, lineupLock, commishModified
+// Default-OFF events (require explicit opt-in — batch 4):
+//   faProcessed, resultsProcessed, otherTeamWaiver, otherTeamFa, swingWinner
+//
+// Skip behavior:
+//   • teamId not found → silent skip
+//   • team has prefs map AND the specific event key is false → silent skip
+//   • team has no prefs map at all → fall through to defaults (DEFAULTS_ON)
+//   • no subscribed devices → silent skip
+//
+// Returns { sent, failed, skipped, cleanedUp } per push attempt.
+
+const DEFAULTS_ON = new Set([
+  'waiverWon', 'waiverLost', 'lineupLock', 'commishModified',
+]);
+
+async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
+  if (!teamId || !event) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+
+  // Check this team's per-event prefs. Missing prefs map → defaults apply.
+  // Missing event key inside prefs → defaults apply.
+  try {
+    const teamSnap = await db.collection('teams').doc(teamId).get();
+    if (!teamSnap.exists) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+    const prefs = teamSnap.data()?.notificationPrefs;
+    if (prefs && typeof prefs[event] === 'boolean') {
+      if (prefs[event] === false) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+    } else {
+      // No explicit pref — fall through to default
+      if (!DEFAULTS_ON.has(event)) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+    }
+  } catch (err) {
+    console.warn(`[push] prefs check failed for team ${teamId}:`, err.message);
+    // Fail safe: don't send if we couldn't verify prefs
+    return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+  }
+
+  // Fetch tokens for this team
+  let tokenDocs;
+  try {
+    const tokSnap = await db.collection('pushTokens').where('teamId', '==', teamId).get();
+    tokenDocs = tokSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.warn(`[push] token fetch failed for team ${teamId}:`, err.message);
+    return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+  }
+  if (tokenDocs.length === 0) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+
+  // Send to each token in parallel
+  let sent = 0;
+  let failed = 0;
+  const invalidTokens = [];
+
+  await Promise.all(tokenDocs.map(async (tokDoc) => {
+    const message = {
+      token: tokDoc.token || tokDoc.id,
+      notification: { title, body },
+      data: {
+        eventType: String(event),
+        deepLink:  String(deepLink || '#standings'),
+      },
+      webpush: {
+        notification: {
+          icon: '/web-app-manifest-192x192.png',
+          badge: '/web-app-manifest-192x192.png',
+        },
+        fcmOptions: {
+          link: deepLink
+            ? `https://sfglgolf.com/${deepLink.startsWith('#') ? deepLink : '#' + deepLink}`
+            : 'https://sfglgolf.com/',
+        },
+      },
+    };
+    try {
+      await messaging.send(message);
+      sent++;
+    } catch (err) {
+      failed++;
+      const code = err.errorInfo?.code || err.code || '';
+      if (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token')) {
+        invalidTokens.push(tokDoc.id);
+      } else {
+        console.warn(`[push] send failed (${code}):`, err.message);
+      }
+    }
+  }));
+
+  // Clean up dead tokens
+  let cleanedUp = 0;
+  if (invalidTokens.length > 0) {
+    try {
+      const batch = db.batch();
+      invalidTokens.forEach(id => batch.delete(db.collection('pushTokens').doc(id)));
+      await batch.commit();
+      cleanedUp = invalidTokens.length;
+    } catch (err) {
+      console.warn('[push] dead-token cleanup failed:', err.message);
+    }
+  }
+
+  return { sent, failed, skipped: 0, cleanedUp };
+}
 
 // ── Brevo email ─────────────────────────────────────────────────────────────
 
@@ -120,14 +231,7 @@ function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transaction
   if (!swingSegment) return null;
   if (transactions.some(tx => tx.type === 'swing_winner' && tx.segment === swingSegment)) return null;
 
-  // Exclude alternate events from swing-completion logic — they collect fees
-  // but don't count toward whether the swing is "done". Mirrors the
-  // !t.isAlternate filter in src/utils/swingAward.js. Without this, an
-  // alternate event mid-swing would be required to be `completed` before
-  // the auto-award fires, blocking the legitimate end-of-swing award.
-  const swingTournaments = (tournaments || []).filter(t =>
-    getSegmentForTournamentServer(t) === swingSegment && !t.isAlternate
-  );
+  const swingTournaments = (tournaments || []).filter(t => getSegmentForTournamentServer(t) === swingSegment);
   if (swingTournaments.length === 0) return null;
   if (!swingTournaments.every(t => t.completed)) return null;
 
@@ -442,6 +546,51 @@ async function handleWaivers(res) {
   batch.set(db.collection('sfgl_data').doc('last_auto_waiver'), { key: 'last_auto_waiver', value: today });
   await batch.commit();
 
+  // ── Push notifications (Wave J Round 6 batch 3) ───────────────────────────
+  // Fire a push per result. Wins get a 'waiverWon' push; losses due to
+  // tiebreaker get a 'waiverLost' push. Other failure reasons (already
+  // rostered, already dropped) don't generate pushes — those are state-drift
+  // edge cases the manager doesn't need to be interrupted for.
+  //
+  // Each push goes through sendPushToTeam which checks the team's
+  // notificationPrefs before sending — managers can opt out per event type.
+  // Failures here don't block the response: pushes are best-effort.
+  const pushResults = [];
+  for (const r of processedResults) {
+    const team = teams.find(t => t.name === r.team);
+    if (!team?.id) continue;
+
+    if (r.status === 'processed') {
+      try {
+        const result = await sendPushToTeam({
+          teamId: team.id,
+          event: 'waiverWon',
+          title: '🏆 Waiver claim won',
+          body: r.droppedPlayer
+            ? `You added ${r.player} and dropped ${r.droppedPlayer}.`
+            : `You added ${r.player}.`,
+          deepLink: '#transactions',
+        });
+        pushResults.push({ team: team.name, event: 'waiverWon', ...result });
+      } catch (err) {
+        console.warn(`[push] waiverWon failed for ${team.name}:`, err.message);
+      }
+    } else if (r.status === 'failed' && r.failReason?.startsWith('Lost tiebreaker')) {
+      try {
+        const result = await sendPushToTeam({
+          teamId: team.id,
+          event: 'waiverLost',
+          title: '⏰ Waiver claim lost',
+          body: `Your claim for ${r.player} lost the tiebreaker. ${r.failReason.replace(/^Lost tiebreaker to /, 'Went to ')}`,
+          deepLink: '#transactions',
+        });
+        pushResults.push({ team: team.name, event: 'waiverLost', ...result });
+      } catch (err) {
+        console.warn(`[push] waiverLost failed for ${team.name}:`, err.message);
+      }
+    }
+  }
+
   // Send emails
   const managerEmails = getEmailMap(settings, teams);
   const emailResults = [];
@@ -457,6 +606,7 @@ async function handleWaivers(res) {
     status: 'processed', processed: applied.length,
     failed: processedResults.filter(r => r.status === 'failed').length,
     emailsSent: emailResults.filter(r => r.success).length,
+    pushesSent: pushResults.reduce((sum, p) => sum + (p.sent || 0), 0),
     details: processedResults.map(r => ({ team: r.team, player: r.player, status: r.status, failReason: r.failReason })),
   });
 }
@@ -486,8 +636,25 @@ async function handleLineupReminder(res) {
 
   for (const team of teams) {
     const email = managerEmails[team.name];
-    if (!email) continue;
     if (team.lineup && team.lineup.length > 0) { results.push({ team: team.name, skipped: true }); continue; }
+    // Push notification — sent to all subscribed devices for this team,
+    // gated by their notificationPrefs.lineupLock setting (default ON).
+    // Independent of email — managers without an email on file still get
+    // pushes if they've subscribed devices.
+    try {
+      const pushResult = await sendPushToTeam({
+        teamId: team.id,
+        event: 'lineupLock',
+        title: '⛳ Lineup lock today',
+        body: `Set your lineup for ${activeTourney.name} — locks at ${lockTime} ET.`,
+        deepLink: '#rosters',
+      });
+      results.push({ team: team.name, pushSent: pushResult.sent });
+    } catch (err) {
+      console.warn(`[push] lineupLock failed for ${team.name}:`, err.message);
+    }
+    // Email — only if an email is on file
+    if (!email) continue;
     try {
       await sendEmail(email, `⛳ Lineups lock today — ${activeTourney.name}`, buildLineupReminderEmail(activeTourney.name, lockTime, team.name));
       results.push({ team: team.name, success: true });
@@ -719,11 +886,7 @@ async function handleProcessResults(res) {
   // Write everything to Firebase
   const batch = db.batch();
 
-  // Update teams. `finalTeams` is identical to `updatedTeams` — the auto-award
-  // doesn't mutate team.earnings (the swing pot is real money tracked only in
-  // transactions, not the fantasy-golf standings derived from tournament.results).
-  // See the design note in src/utils/swingAward.js. Kept as `finalTeams` for
-  // symmetry with the auto-award contract that returns `updatedTeams`.
+  // Update teams (using auto-award-adjusted earnings if applicable)
   for (const team of finalTeams) {
     batch.update(db.collection('teams').doc(team.id), {
       roster: team.roster,
