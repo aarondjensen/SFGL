@@ -120,7 +120,14 @@ function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transaction
   if (!swingSegment) return null;
   if (transactions.some(tx => tx.type === 'swing_winner' && tx.segment === swingSegment)) return null;
 
-  const swingTournaments = (tournaments || []).filter(t => getSegmentForTournamentServer(t) === swingSegment);
+  // Exclude alternate events from swing-completion logic — they collect fees
+  // but don't count toward whether the swing is "done". Mirrors the
+  // !t.isAlternate filter in src/utils/swingAward.js. Without this, an
+  // alternate event mid-swing would be required to be `completed` before
+  // the auto-award fires, blocking the legitimate end-of-swing award.
+  const swingTournaments = (tournaments || []).filter(t =>
+    getSegmentForTournamentServer(t) === swingSegment && !t.isAlternate
+  );
   if (swingTournaments.length === 0) return null;
   if (!swingTournaments.every(t => t.completed)) return null;
 
@@ -712,7 +719,11 @@ async function handleProcessResults(res) {
   // Write everything to Firebase
   const batch = db.batch();
 
-  // Update teams (using auto-award-adjusted earnings if applicable)
+  // Update teams. `finalTeams` is identical to `updatedTeams` — the auto-award
+  // doesn't mutate team.earnings (the swing pot is real money tracked only in
+  // transactions, not the fantasy-golf standings derived from tournament.results).
+  // See the design note in src/utils/swingAward.js. Kept as `finalTeams` for
+  // symmetry with the auto-award contract that returns `updatedTeams`.
   for (const team of finalTeams) {
     batch.update(db.collection('teams').doc(team.id), {
       roster: team.roster,
