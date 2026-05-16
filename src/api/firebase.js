@@ -17,7 +17,7 @@
 //   tournaments.js   — tournamentsApi + tournamentResultsApi
 //   transactions.js  — transactionsApi
 //   admin.js         — settingsApi + draftStateApi + managerAuthApi + draftPicksApi
-//   storage.js       — sfglDataApi + globalPlayerStatsApi
+//   data.js          — sfglDataApi + globalPlayerStatsApi (the /sfgl_data/{key} collection)
 //
 // Firestore collections (unchanged):
 //   players, app_metadata, teams, tournaments, transactions, league_settings,
@@ -56,4 +56,4 @@ export {
 export {
   sfglDataApi,
   globalPlayerStatsApi,
-} from './storage';
+} from './data';
