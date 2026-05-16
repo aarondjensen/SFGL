@@ -34,7 +34,15 @@ const playerNameColor = (p, showEarnings) => {
 };
 
 // ── Player slot grid — 5-column layout under each team's row in expansions ──
-const PlayerSlotGrid = ({ players, showEarnings }) => {
+// Three modes (controlled by props):
+//   • showEarnings        — completed tournament: name + $ + round-leader badges
+//   • showLive            — active tournament: name + position + score · thru
+//   • neither             — upcoming: name + "—" placeholder
+//
+// In `showLive` mode, each player record should have `live` populated with
+// the matched leaderboard entry (or be missing it if the player isn't in
+// the field or no live data is available yet — handled gracefully below).
+const PlayerSlotGrid = ({ players, showEarnings, showLive }) => {
   // Always 5 columns — pad with nulls for empty slots
   const slots = Array.from({ length: 5 }, (_, i) => players[i] || null);
   return (
@@ -57,17 +65,52 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                   }}>🚨</span>
                 )}
               </div>
-              {/* Line 2: earnings (base + bonus combined) */}
+              {/* Line 2: earnings ($) / live position / placeholder */}
               {showEarnings ? (
                 <div style={{ whiteSpace: 'nowrap' }}>
                   <span style={{ ...theme.statNum, fontSize: fontSize.sm, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
                     ${((p.earnings || 0) + (p.bonus || 0)).toLocaleString()}
                   </span>
                 </div>
+              ) : showLive ? (
+                // Live mode: show position + score, or CUT/WD, or "—" if not yet
+                // matched. Keeps the same vertical rhythm as the $ row above.
+                (() => {
+                  const live = p.live;
+                  if (!live) {
+                    return <div style={{ color: colors.textMuted, fontSize: fontSize.xs }}>—</div>;
+                  }
+                  if (live.isCut) {
+                    return <div style={{ color: colors.textMuted, fontSize: fontSize.xs, fontWeight: 700 }}>CUT</div>;
+                  }
+                  if (live.isWD) {
+                    return <div style={{ color: colors.textMuted, fontSize: fontSize.xs, fontWeight: 700 }}>WD</div>;
+                  }
+                  const pos = live.position || '—';
+                  const score = live.score || '';
+                  // Score color: under par green, over red, even white-muted
+                  const scoreColor = score.startsWith('-')
+                    ? colors.earningsGreen
+                    : score.startsWith('+')
+                      ? 'rgba(255,120,120,0.9)'
+                      : colors.textSecondary;
+                  return (
+                    <div style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                      <span style={{ fontFamily: fonts.mono, fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: 600 }}>
+                        {pos}
+                      </span>
+                      {score && (
+                        <span style={{ fontFamily: fonts.mono, fontSize: fontSize.xs, color: scoreColor }}>
+                          {score}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()
               ) : (
                 <div style={{ color: colors.textMuted }}>—</div>
               )}
-              {/* Line 3: round leader badges (only if any) */}
+              {/* Line 3a: round leader badges (completed only) */}
               {showEarnings && p.roundsLed?.length > 0 && (
                 <div style={{ display: 'flex', gap: 2, marginTop: 1 }}>
                   {p.roundsLed.map((rl, ri) => (
@@ -80,6 +123,25 @@ const PlayerSlotGrid = ({ players, showEarnings }) => {
                   ))}
                 </div>
               )}
+              {/* Line 3b: thru indicator (active only). Shows "F" for finished
+                  or "thru N" mid-round. Omitted entirely when the player
+                  hasn't started (no useful indicator to show — the position
+                  column already says "—" in that case). */}
+              {showLive && p.live && !p.live.isCut && !p.live.isWD && (() => {
+                const thru = p.live.thru;
+                const thruNum = thru ? parseInt(thru, 10) : NaN;
+                const isFinished = thru === 'F' || thru === 'F*';
+                const isMidRound = !isNaN(thruNum) && thruNum > 0 && thruNum < 18;
+                let label = null;
+                if (isFinished) label = 'F';
+                else if (isMidRound) label = `thru ${thru}`;
+                if (!label) return null;
+                return (
+                  <div style={{ fontSize: 9, color: colors.textMuted, marginTop: 1 }}>
+                    {label}
+                  </div>
+                );
+              })()}
             </>
           ) : (
             <span style={{ color: 'rgba(255,255,255,0.1)' }}>—</span>
@@ -140,17 +202,115 @@ export const TournamentsView = ({
     [localTournaments]
   );
 
-  // Auto-expand the most recent completed event once data has loaded. We
-  // gate on `hasAutoExpanded` so a user's explicit collapse isn't undone
+  // Auto-expand the most relevant event on first load. Priority:
+  //   1. Active (in-progress) tournament — managers want to see live positions
+  //   2. Most recent completed — falls back to the prior behavior
+  // We gate on `hasAutoExpanded` so a user's explicit collapse isn't undone
   // by a re-render that triggers this effect again.
   useEffect(() => {
-    if (!hasAutoExpanded && completedSorted.length > 0) {
+    if (hasAutoExpanded) return;
+    const active = localTournaments.find(t => t.playing && !t.completed);
+    if (active) {
+      setExpandedTournament(active.name);
+      setHasAutoExpanded(true);
+    } else if (completedSorted.length > 0) {
       setExpandedTournament(completedSorted[0].name);
       setHasAutoExpanded(true);
     }
-  }, [completedSorted.length, hasAutoExpanded]);
+  }, [completedSorted.length, hasAutoExpanded, localTournaments]);
 
   const toggleExpansion = (name) => setExpandedTournament(prev => prev === name ? null : name);
+
+  // ── Live leaderboard fetch for the active tournament ──────────────────────
+  // Mirrors the same pattern as RostersView: poll /api/live every 5 min,
+  // discard any data whose tournamentName doesn't fuzzy-match the active
+  // tournament (so we never show scores from the wrong event when the commish
+  // is behind on processing).
+  const [liveData, setLiveData] = useState(null);
+  const activeTournamentForLive = localTournaments.find(t => t.playing && !t.completed);
+  useEffect(() => {
+    setLiveData(null);
+    if (!activeTournamentForLive) return;
+    let cancelled = false;
+    let interval = null;
+
+    const fuzzyMatch = (liveName, appName) => {
+      if (!liveName || !appName) return false;
+      const norm = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+      const a = norm(liveName);
+      const b = norm(appName);
+      if (a === b) return true;
+      if (a.includes(b) || b.includes(a)) return true;
+      const sig = s => s.split(/\s+/).filter(w => w.length > 2);
+      const aw = sig(a);
+      const bw = sig(b);
+      const overlap = bw.filter(w => aw.includes(w)).length;
+      return overlap >= Math.min(2, bw.length);
+    };
+
+    const fetchLive = () => {
+      fetch('/api/live')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (cancelled) return;
+          if (!data?.players?.length) { setLiveData(null); return; }
+          const liveTournament = data.tournamentName || data.eventName || '';
+          if (liveTournament && !fuzzyMatch(liveTournament, activeTournamentForLive.name)) {
+            setLiveData(null);
+            return;
+          }
+          setLiveData(data);
+        })
+        .catch(() => {});
+    };
+
+    fetchLive();
+    interval = setInterval(fetchLive, 5 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeTournamentForLive?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Normalize player name for fuzzy-matching against live data. Mirrors the
+  // pattern in RostersView (lowercase, strip diacritics, hyphens→spaces).
+  const normalize = (s) => (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/ß/g, 'ss')
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Build a name-keyed live-player map once per liveData update so the
+  // active-tournament expansion doesn't re-scan the players array per row.
+  // Tries exact match first, then last-name match (≥4 chars to avoid false
+  // positives), then substring match.
+  const liveByName = useMemo(() => {
+    if (!liveData?.players?.length) return null;
+    const exact = new Map();
+    const lastName = new Map();
+    liveData.players.forEach(lp => {
+      const n = normalize(lp.name);
+      exact.set(n, lp);
+      const ln = n.split(' ').slice(-1)[0];
+      if (ln && ln.length >= 4 && !lastName.has(ln)) lastName.set(ln, lp);
+    });
+    const find = (rosterName) => {
+      const n = normalize(rosterName);
+      const e = exact.get(n);
+      if (e) return e;
+      const ln = n.split(' ').slice(-1)[0];
+      if (ln && ln.length >= 4) {
+        const byLast = lastName.get(ln);
+        if (byLast) return byLast;
+      }
+      // Last resort: substring scan (rare path, only when no last-name match)
+      return liveData.players.find(lp => {
+        const ln2 = normalize(lp.name);
+        return ln2.includes(n) || n.includes(ln2);
+      }) || null;
+    };
+    return { find };
+  }, [liveData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Schedule editing logic (existing) ─────────────────────────────────────
   const formatTeeTime = (date) => {
@@ -265,6 +425,153 @@ export const TournamentsView = ({
       }}>
         In Progress
       </span>
+    );
+  };
+
+  // Helper: build the team-standings JSX for the ACTIVE tournament expansion.
+  // Mirrors renderTournamentExpansion's structure but ranks teams by the
+  // sum of live scores of their starters (under par is better), and shows
+  // each player's position / score / thru instead of earnings.
+  //
+  // Teams without a submitted lineup still render but show a "No lineup
+  // submitted" message in place of the player grid. The team-level total
+  // shows "—" when nothing in the lineup has live data yet (pre-tournament).
+  const renderActiveTournamentExpansion = (tournament) => {
+    const tIdx = tournaments.indexOf(tournament);
+
+    // Build enriched player records for each team's lineup. Each player gets:
+    //   • roster flags (limited / unlimited)
+    //   • mulligan detection (using mulliganMap, same as completed view)
+    //   • live data (position, score, thru, isCut, isWD, teeTime) if matched
+    const enrichForActive = (playerName) => {
+      const tMap = mulliganMap[tIdx];
+      const isMullIn = !!tMap?.ins[playerName];
+      const isMullOut = !!tMap?.outs[playerName];
+      // For active tournaments we want to display whoever IS currently in
+      // the lineup, not the original. Lineup is the source of truth.
+      const flags = rosterFlagMap[playerName] || { limited: false, unlimited: false };
+      const live = liveByName ? liveByName.find(playerName) : null;
+      return {
+        name: playerName,
+        limited: flags.limited,
+        unlimited: flags.unlimited,
+        mulliganIn: isMullIn,
+        replacedPlayer: isMullIn ? tMap.ins[playerName] : null,
+        live,
+      };
+    };
+
+    // Per-team aggregate score (sum of live scores; under par = better).
+    // Returns null when nothing in the lineup has any live data yet, so the
+    // UI can show "—" rather than a misleading "+0".
+    const teamScoreSummary = (lineup) => {
+      const liveStarters = lineup
+        .map(name => liveByName?.find(name))
+        .filter(lp => lp && !lp.isCut && !lp.isWD);
+      if (liveStarters.length === 0) return null;
+      // Sum strokes-relative-to-par across starters. Parse "+3" / "-2" / "E".
+      const toNum = (s) => {
+        if (!s) return 0;
+        if (s === 'E') return 0;
+        const n = parseInt(s, 10);
+        return isNaN(n) ? 0 : n;
+      };
+      const total = liveStarters.reduce((sum, lp) => sum + toNum(lp.score), 0);
+      const cuts = lineup.filter(name => {
+        const lp = liveByName?.find(name);
+        return lp?.isCut || lp?.isWD;
+      }).length;
+      return { total, cuts, livePlayers: liveStarters.length };
+    };
+
+    // Rank teams: best (lowest) sum first; teams with no live data sort last.
+    const rankedTeams = teams
+      .map(team => {
+        const lineup = Array.isArray(team.lineup) ? team.lineup : [];
+        const summary = teamScoreSummary(lineup);
+        return { ...team, lineup, summary };
+      })
+      .filter(team => team.lineup.length > 0)  // only teams that submitted
+      .sort((a, b) => {
+        // Teams with no live summary sort last (push nulls down)
+        if (a.summary === null && b.summary === null) return 0;
+        if (a.summary === null) return 1;
+        if (b.summary === null) return -1;
+        return a.summary.total - b.summary.total;
+      });
+
+    if (rankedTeams.length === 0) {
+      return (
+        <div style={{ ...theme.emptyState, padding: '14px 14px' }}>
+          No teams have submitted lineups for this tournament yet.
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        {rankedTeams.map((team, rank) => {
+          const lineup = team.lineup;
+          const players = lineup.map(enrichForActive);
+          const summary = team.summary;
+          // Display team-aggregate score: "+5" / "-3" / "E", or "—" if nothing live.
+          let totalLabel = '—';
+          let totalColor = colors.textMuted;
+          if (summary !== null) {
+            const t = summary.total;
+            totalLabel = t === 0 ? 'E' : t > 0 ? `+${t}` : `${t}`;
+            totalColor = t < 0 ? colors.earningsGreen : t > 0 ? 'rgba(255,120,120,0.9)' : colors.textSecondary;
+          }
+          return (
+            <div key={team.id}
+              style={{
+                padding: '6px 14px',
+                borderBottom: `1px solid ${colors.borderSubtle}`,
+                background: rank === 0 && summary ? 'rgba(180,160,100,0.04)' : 'transparent',
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = rank === 0 && summary ? 'rgba(180,160,100,0.07)' : 'rgba(255,255,255,0.04)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = rank === 0 && summary ? 'rgba(180,160,100,0.04)' : 'transparent'; }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <span style={{
+                  fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center',
+                  fontFamily: fonts.serif,
+                  color: rank === 0 && summary ? colors.textGold : colors.textMuted,
+                }}>
+                  {rank + 1}
+                </span>
+                <span style={{ ...theme.bodyText, color: colors.textPrimary }}>{team.name}</span>
+                <span style={{
+                  ...theme.statNum, fontSize: fontSize.base, fontWeight: 600,
+                  color: totalColor,
+                  marginLeft: 2,
+                  fontFamily: fonts.mono,
+                }}>
+                  {totalLabel}
+                </span>
+                {summary && summary.cuts > 0 && (
+                  <span style={{ fontSize: fontSize.xs, color: colors.textMuted, marginLeft: 4 }}>
+                    ({summary.cuts} CUT)
+                  </span>
+                )}
+              </div>
+              <PlayerSlotGrid players={players} showLive />
+            </div>
+          );
+        })}
+        {/* Footer disclaimer — keep users honest about projection vs. actual */}
+        <div style={{
+          padding: '6px 14px',
+          fontSize: fontSize.xs,
+          color: colors.textMuted,
+          textAlign: 'center',
+          fontStyle: 'italic',
+          borderTop: `1px solid ${colors.borderSubtle}`,
+        }}>
+          Live — updates every 5 minutes. Earnings post when results are finalized.
+        </div>
+      </div>
     );
   };
 
@@ -530,7 +837,11 @@ export const TournamentsView = ({
           }
 
           // ── Read-only row ──
-          const isExpandable = kind === 'completed' && !editMode;
+          // Active (currently-playing) tournaments are also expandable — they
+          // show submitted lineups + live positions instead of completed-event
+          // earnings. Completed tournaments keep the existing earnings view.
+          const isActive = t.playing && !t.completed;
+          const isExpandable = !editMode && (kind === 'completed' || isActive);
           const isExpanded = isExpandable && expandedTournament === t.name;
           return (
             <React.Fragment key={t.name}>
@@ -614,11 +925,14 @@ export const TournamentsView = ({
                 </div>
               </td>
             </tr>
-            {/* Expansion row — team standings + player breakdowns inline */}
+            {/* Expansion row — team standings + player breakdowns inline.
+                Routes to the active renderer when the tournament is currently
+                being played (shows live positions), otherwise the completed
+                renderer (shows earnings). */}
             {isExpanded && (
               <tr>
                 <td colSpan={4} style={{ padding: 0, background: 'rgba(0,0,0,0.15)', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                  {renderTournamentExpansion(t)}
+                  {isActive ? renderActiveTournamentExpansion(t) : renderTournamentExpansion(t)}
                 </td>
               </tr>
             )}
