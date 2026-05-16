@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, normalizePlayerName } from '../utils';
-import { managerAuthApi, tournamentResultsApi, sfglDataApi, playersApi, playerRankingsApi, teamsApi } from '../api/firebase';
+import { tournamentResultsApi, sfglDataApi, playersApi, teamsApi } from '../api/firebase';
 // (DraftModal import removed — now used only by SeasonSettingsPanel.)
-import { seedAliasesToFirestore } from '../constants/nameAliases';
+// (seedAliasesToFirestore and LIV_GOLF_ROSTER imports removed — now used
+//  only by DataSyncPanel.)
 import { theme, colors, fonts, SWINGS } from '../theme.js';
-import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
+import { BONUSES_REGULAR, BONUSES_MAJOR } from '../constants';
 
 // Wave I cleanup: CollapsibleGroup and the admin S/disabledBtn style tokens
 // used to live inline in this file. They've been moved to siblings in the
@@ -15,8 +16,10 @@ import { BONUSES_REGULAR, BONUSES_MAJOR, LIV_GOLF_ROSTER } from '../constants';
 // will use that once we swap WaiverProcessingPanel in (Batch 3).
 import { CollapsibleGroup } from './admin/CollapsibleGroup';
 import { S, disabledBtn } from './admin/adminStyles';
-import { MergePlayersPanel } from './admin/MergePlayersPanel';
+import { DataSyncPanel } from './admin/DataSyncPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
+import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
+import { MergePlayersPanel } from './admin/MergePlayersPanel';
 import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
 import { DAY_NAMES, fmtETTime } from '../utils/sharedHelpers';
 
@@ -653,12 +656,7 @@ export const AdminView = ({
 }) => {
   const [selectedTourney, setSelectedTourney] = useState('');
   const [manualEntry, setManualEntry] = useState({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
-  const [mgCredTeam, setMgCredTeam] = useState('');
-
-
-  const [mgCredName, setMgCredName] = useState('');
-  const [mgCredPass, setMgCredPass] = useState('');
-  const [mgCredSaving, setMgCredSaving] = useState(false);
+  // (mgCred* state moved into ./admin/ManagerAccountsPanel — Batch 3d extraction)
   // (showDraftModal moved into ./admin/SeasonSettingsPanel — the panel
   // owns the "Open Draft Room" button and renders the modal itself.)
   const [swingAwardSeg, setSwingAwardSeg]   = useState('');
@@ -1394,13 +1392,7 @@ export const AdminView = ({
   };
 
   // ── Manager Login ────────────────────────────────────────────────────────
-  const handleSetLogin = async () => {
-    if (!mgCredTeam || !mgCredName || !mgCredPass) return;
-    setMgCredSaving(true);
-    try { await managerAuthApi.setCredentials(mgCredTeam, mgCredName, mgCredPass); dialog.showToast('Login set for ' + mgCredName, 'success'); setMgCredTeam(''); setMgCredName(''); setMgCredPass(''); }
-    catch (e) { dialog.showToast('Failed: ' + e.message, 'error'); }
-    setMgCredSaving(false);
-  };
+  // handleSetLogin moved into ./admin/ManagerAccountsPanel (Batch 3d)
 
   // ── Award Swing Winner ──────────────────────────────────────────────────
   // SWINGS now imported from theme — single source of truth (was duplicated here)
@@ -1484,17 +1476,11 @@ export const AdminView = ({
     setSwingAwardSeg('');
   };
 
-  // ── Combined OWGR + LIV sync ─────────────────────────────────────────────
-  const [owgrStatus, setOwgrStatus] = useState(null);
-  const [owgrSummary, setOwgrSummary] = useState('');
-  const [owgrLastSynced, setOwgrLastSynced] = useState(null);
-
-  // PGA Tour season stats (earnings / events played / cuts made). Same
-  // pattern as OWGR — admin runs sync, results upserted into `players`
-  // collection so RostersView displays player.seasonEarnings et al.
-  const [pgatStatus,     setPgatStatus]     = useState(null);
-  const [pgatSummary,    setPgatSummary]    = useState('');
-  const [pgatLastSynced, setPgatLastSynced] = useState(() => settings?.pgatStatsLastSynced || null);
+  // ── Data sync state/handlers ─────────────────────────────────────────────
+  // OWGR, PGAT Stats, Headshot Rebuild, LIV Roster, and Static Alias sync are
+  // ALL extracted into ./admin/DataSyncPanel.jsx (Batch 3e). The panel owns
+  // its own state and uses the SyncStatusBanner/LastSyncedLine helpers from
+  // ./admin/adminStyles for visual consistency.
 
   // ── Merge Players ─────────────────────────────────────────────────────────
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -1510,350 +1496,8 @@ export const AdminView = ({
   //
   // DAY_NAMES and fmtETTime are now imported from utils/sharedHelpers.js
   // (was duplicated inline before).
-  const [emailDraft,   setEmailDraft]   = useState(null); // { teamId: 'email@...' } — null = no unsaved changes — Manager Emails section
+  // (emailDraft state moved into ./admin/ManagerAccountsPanel — Batch 3d)
 
-  const handleSyncOwgr = async () => {
-    setOwgrStatus('fetching');
-    setOwgrSummary('');
-    try {
-      const resp = await fetch('/api/owgr');
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'OWGR fetch failed');
-      const cleanName = n => n.replace(/\s*\([^)]*\)\s*$/, '').trim();
-      const fetched = (data.players || [])
-        .map(({ name, worldRank }) => ({ name: cleanName(name), worldRank }))
-        .filter(p => p.name && p.name.includes(' '));
-      if (!fetched.length) throw new Error('No ranking data returned');
-
-      let updatedPlayers = [...allPlayers];
-      let updated = 0, added = 0;
-      fetched.forEach(({ name, worldRank }) => {
-        const idx = updatedPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-        if (idx >= 0) { updatedPlayers[idx] = { ...updatedPlayers[idx], worldRank }; updated++; }
-        else { updatedPlayers.push({ name, worldRank }); added++; }
-      });
-      await playersApi.upsertMany(fetched.map(({ name, worldRank }) => ({ name, worldRank })));
-
-      // Fetch ESPN IDs for all rostered players and save them
-      try {
-        const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
-        if (allRostered.length) {
-          const hsResp = await fetch(`/api/headshots?names=${allRostered.map(n => encodeURIComponent(n)).join(',')}`);
-          if (hsResp.ok) {
-            const hsData = await hsResp.json();
-            const toSave = Object.entries(hsData.results || {}).map(([name, espnId]) => ({ name, espnId }));
-            if (toSave.length) await playersApi.upsertMany(toSave);
-          }
-        }
-      } catch (_) { /* non-critical */ }
-
-      setAllPlayers(updatedPlayers);
-      await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
-      await playerRankingsApi.invalidateCache().catch(() => {});
-      setOwgrLastSynced(new Date().toISOString());
-      setOwgrStatus('done');
-      setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new`);
-    } catch (err) {
-      setOwgrStatus('error');
-      setOwgrSummary(err.message || 'OWGR sync failed');
-    }
-  };
-
-  // ── PGA Tour season stats sync ────────────────────────────────────────────
-  // Fetches official money/events/cuts from pgatour.com. The "PGA $" column
-  // in RostersView displays this data — replacing the stale-prone
-  // globalPlayerStats incremental counter that drifts from SFGL processing.
-  //
-  // Match strategy: try exact name first (case-insensitive). If not found,
-  // try a normalized form (lowercase, accent-stripped). New players are
-  // added so the table can still surface their data if they get rostered
-  // later. The PGA Tour name format is generally stable so collisions
-  // between different real-world players are rare; we still log any
-  // unmatched names for the commish to review.
-  const handleSyncPgatStats = async () => {
-    setPgatStatus('fetching');
-    setPgatSummary('');
-    try {
-      const resp = await fetch('/api/pgat-stats');
-      const data = await resp.json();
-      if (!resp.ok) {
-        // Surface the attempts array if the endpoint returned one — useful
-        // diagnostic when PGA Tour changes their URL structure.
-        const detail = data.attempts ? ' — ' + JSON.stringify(data.attempts) : '';
-        throw new Error((data.error || 'PGAT fetch failed') + detail);
-      }
-      const fetched = Array.isArray(data.players) ? data.players : [];
-      if (!fetched.length) throw new Error('No player stats returned');
-
-      // Diagnostic: dump full payload to console so we can see exactly what
-      // pgatour.com is returning. Top 20 by earnings is usually enough to
-      // confirm whether the expected players are there.
-      console.log('[PGAT Sync] Endpoint returned', fetched.length, 'players. Source attempts:', data.sourceAttempts);
-      console.log('[PGAT Sync] Top 20 by earnings:', fetched.slice(0, 20).map(p => `${p.name}: $${(p.earnings || 0).toLocaleString()} (${p.cutsMade || 0}/${p.eventsPlayed || 0})`));
-
-      // Normalize names for comparison (lowercase, strip accents, trim).
-      // Mirrors the normalizePlayerName approach used elsewhere in the app
-      // for the Nordic letter handling (ø → o, æ → ae).
-      const normalize = (s) => String(s || '')
-        .toLowerCase()
-        .replace(/ø/g, 'o').replace(/æ/g, 'ae')
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      const lookup = new Map();
-      (allPlayers || []).forEach(p => { if (p.name) lookup.set(normalize(p.name), p); });
-
-      // What players are on a current SFGL roster? We care most about these —
-      // any roster player without matched PGAT data shows up in the Stats
-      // panel with $0 or stale legacy data. Surfacing this list in the toast
-      // lets the commish see exactly which players are missing.
-      const rosteredNames = new Set(
-        teams.flatMap(t => (t.roster || []).map(p => normalize(p.name)).filter(Boolean))
-      );
-
-      const matchedRostered = new Set();
-      const updates = [];
-      const unmatchedRostered = [];
-
-      // First pass: match every fetched player against our directory.
-      fetched.forEach(({ name, earnings, eventsPlayed, cutsMade }) => {
-        const norm = normalize(name);
-        const existing = lookup.get(norm);
-        if (existing) {
-          updates.push({
-            name: existing.name,
-            seasonEarnings: earnings || 0,
-            eventsPlayed:   eventsPlayed || 0,
-            cutsMade:       cutsMade || 0,
-            statsLastSynced: new Date().toISOString(),
-          });
-          if (rosteredNames.has(norm)) matchedRostered.add(norm);
-        } else if ((earnings || 0) > 0) {
-          // Player not in directory — add them so they're available if
-          // rostered later.
-          updates.push({
-            name,
-            seasonEarnings: earnings || 0,
-            eventsPlayed:   eventsPlayed || 0,
-            cutsMade:       cutsMade || 0,
-            statsLastSynced: new Date().toISOString(),
-          });
-        }
-      });
-
-      // Second pass: which rostered players DIDN'T match anyone in the fetch?
-      // These are the ones whose Stats panel will show stale data.
-      rosteredNames.forEach(rn => {
-        if (matchedRostered.has(rn)) return;
-        // Find the canonical name from any team's roster for the report
-        const display = teams
-          .flatMap(t => (t.roster || []).map(p => p.name))
-          .find(n => normalize(n) === rn);
-        if (display) unmatchedRostered.push(display);
-      });
-
-      // Diagnostic: log which roster players failed to match so we can see
-      // the spelling difference and fix the parser or add a name alias.
-      if (unmatchedRostered.length) {
-        console.warn('[PGAT Sync] Roster players NOT matched by PGAT fetch:', unmatchedRostered);
-        console.warn('[PGAT Sync] (Check the "Top 20 by earnings" log above — are they spelled differently? Outside top earners?)');
-      }
-
-      if (!updates.length) throw new Error('No matching players to update');
-
-      await playersApi.upsertMany(updates);
-
-      // Update in-memory allPlayers so the Stats view reflects immediately
-      // without requiring a page reload.
-      const updatedByName = new Map(updates.map(u => [u.name, u]));
-      const nextPlayers = (allPlayers || []).map(p => {
-        const u = updatedByName.get(p.name);
-        return u ? { ...p, ...u } : p;
-      });
-      // Append any "added" players that didn't exist before
-      const existingNames = new Set(nextPlayers.map(p => p.name));
-      updates.forEach(u => { if (!existingNames.has(u.name)) nextPlayers.push(u); });
-      setAllPlayers(nextPlayers);
-
-      // Persist sync timestamp to settings so the UI can show "last synced"
-      try {
-        await sfglDataApi.set(STORAGE_KEYS.SETTINGS, { ...settings, pgatStatsLastSynced: new Date().toISOString() });
-      } catch (_) { /* non-critical */ }
-
-      setPgatLastSynced(new Date().toISOString());
-      setPgatStatus(unmatchedRostered.length > 0 ? 'warning' : 'done');
-      // Summary lists unmatched roster players right in the toast so the
-      // commish doesn't have to open the console to find them.
-      const rosterMatchedCount = matchedRostered.size;
-      const rosterTotal = rosteredNames.size;
-      const parts = [
-        `✓ ${fetched.length} fetched`,
-        `${rosterMatchedCount}/${rosterTotal} rostered players matched`,
-      ];
-      if (unmatchedRostered.length) {
-        parts.push(`Missing: ${unmatchedRostered.slice(0, 5).join(', ')}${unmatchedRostered.length > 5 ? ` +${unmatchedRostered.length - 5} more` : ''} (see console)`);
-      }
-      setPgatSummary(parts.join(' · '));
-    } catch (err) {
-      setPgatStatus('error');
-      setPgatSummary(err.message || 'PGAT sync failed');
-    }
-  };
-
-  // ── Rebuild Headshots ──────────────────────────────────────────────────────
-  // When a stale wrong ESPN ID is cached for a player (e.g. Matt
-  // Fitzpatrick's ID stored under Alex Fitzpatrick's name), the normal
-  // auto-fetch can't fix it: the strict findInMap in the endpoint returns
-  // null for ambiguous lookups, and "null" doesn't overwrite an existing
-  // value via the upsert path. This handler explicitly clears espn_id for
-  // every rostered player and then triggers a fresh fetch — so the strict
-  // matcher's results (correct ID, or initials fallback) become canonical.
-  const [hsRebuildStatus,  setHsRebuildStatus]  = useState(null);
-  const [hsRebuildSummary, setHsRebuildSummary] = useState('');
-
-  const handleRebuildHeadshots = async () => {
-    const ok = await dialog.showConfirm(
-      'Rebuild Headshot Map',
-      'This clears the cached ESPN ID for every rostered player and re-fetches fresh IDs. Players who can\'t be uniquely identified will fall back to initials avatars (better than showing the wrong face).\n\nContinue?',
-      { confirmText: 'Rebuild' }
-    );
-    if (!ok) return;
-
-    setHsRebuildStatus('working');
-    setHsRebuildSummary('');
-    try {
-      const rostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))].filter(Boolean);
-      if (!rostered.length) throw new Error('No rostered players found');
-
-      // 1. Clear Firestore (explicit null write — bypasses the upsert path
-      //    that skips null espnIds).
-      await playersApi.clearEspnIds(rostered);
-
-      // 2. Clear in-memory map so the UI immediately stops showing stale
-      //    faces. Falls back to initials until the refetch completes.
-      setHeadshots(() => ({}));
-
-      // 3. Immediate refetch via the endpoint. This bypasses the auto-fetch
-      //    useEffect's TTL ref (which would block a rapid second fetch).
-      const encoded = rostered.map(n => encodeURIComponent(n)).join(',');
-      const resp = await fetch(`/api/headshots?names=${encoded}`);
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || `Headshot endpoint returned ${resp.status}`);
-
-      const results = data?.results || {};
-      const notFound = data?.notFound || [];
-      const foundCount = Object.keys(results).length;
-
-      // 4. Apply new IDs to client state and persist to Firestore.
-      if (foundCount > 0) {
-        setHeadshots(prev => ({ ...(prev || {}), ...results }));
-        await playersApi.upsertMany(
-          Object.entries(results).map(([name, espnId]) => ({ name, espnId }))
-        );
-      }
-
-      // Log unresolved names so the commish can see exactly who fell back.
-      // These are usually lower-tier players who didn't play in any of the
-      // ESPN_EVENT_IDS the endpoint indexes — solvable by adding more event
-      // IDs to api/headshots.js or by manual override.
-      if (notFound.length) {
-        console.warn('[RebuildHeadshots] Players not uniquely identifiable in ESPN index:', notFound);
-        console.warn('[RebuildHeadshots] These players now use the initials-avatar fallback. To fix specific players, add an ESPN event ID where they played to api/headshots.js ESPN_EVENT_IDS.');
-      }
-
-      setHsRebuildStatus(notFound.length > 0 ? 'warning' : 'done');
-      const parts = [`✓ ${foundCount}/${rostered.length} headshots rebuilt`];
-      if (notFound.length) {
-        parts.push(`${notFound.length} fell back to initials: ${notFound.slice(0, 4).join(', ')}${notFound.length > 4 ? ` +${notFound.length - 4} more` : ''} (see console)`);
-      }
-      setHsRebuildSummary(parts.join(' · '));
-    } catch (err) {
-      setHsRebuildStatus('error');
-      setHsRebuildSummary(err.message || 'Rebuild failed');
-    }
-  };
-
-  // ── LIV roster sync ───────────────────────────────────────────────────────
-  const [livSyncStatus, setLivSyncStatus] = useState(null);
-  const [livSyncSummary, setLivSyncSummary] = useState('');
-  const [livLastSynced, setLivLastSynced] = useState(() => settings?.livRosterLastSynced || null);
-
-  const handleSyncLiv = async () => {
-    setLivSyncStatus('fetching');
-    setLivSyncSummary('');
-    try {
-      const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
-      const toFlag = LIV_GOLF_ROSTER.filter(name =>
-        !allPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
-      );
-      const toUnflag = allPlayers.filter(p =>
-        p.isLiv && !livRosterLower.has(p.name.toLowerCase())
-      );
-      if (toFlag.length === 0 && toUnflag.length === 0) {
-        setLivSyncStatus('done');
-        setLivSyncSummary('✓ LIV roster already matches DB — no changes needed');
-        return;
-      }
-      const livWrites = [
-        ...toFlag.map(name => ({ name, isLiv: true })),
-        ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
-      ];
-      await playersApi.upsertMany(livWrites);
-      setAllPlayers(prev => {
-        const updated = [...prev];
-        toFlag.forEach(name => {
-          const idx = updated.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: true };
-          else updated.push({ name, isLiv: true, worldRank: null });
-        });
-        toUnflag.forEach(u => {
-          const idx = updated.findIndex(p => p.name === u.name);
-          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: false };
-        });
-        return updated;
-      });
-      const parts = [
-        toFlag.length   > 0 ? `${toFlag.length} tagged` : '',
-        toUnflag.length > 0 ? `${toUnflag.length} unflagged` : '',
-      ].filter(Boolean).join(' · ');
-      const livTs = new Date().toISOString();
-      setLivLastSynced(livTs);
-      setSettings({ ...settings, livRosterLastSynced: livTs }).catch(() => {});
-      setLivSyncStatus('done');
-      setLivSyncSummary(`✓ LIV roster synced · ${parts}`);
-    } catch (err) {
-      setLivSyncStatus('error');
-      setLivSyncSummary(err.message || 'LIV sync failed');
-    }
-  };
-
-  // ── Static alias sync ─────────────────────────────────────────────────────
-  // One-shot migration: pushes the historical entries from
-  // src/constants/nameAliases.js into Firestore as dynamic aliases on each
-  // canonical player doc. Idempotent — safe to re-run. Once Aaron has run
-  // this and confirmed all entries migrated, the static map becomes a pure
-  // fallback (still used by upsertMany when the dynamic map misses).
-  const [aliasSyncStatus, setAliasSyncStatus] = useState(null);
-  const [aliasSyncSummary, setAliasSyncSummary] = useState('');
-  const handleSeedAliases = async () => {
-    setAliasSyncStatus('fetching');
-    setAliasSyncSummary('');
-    try {
-      const r = await seedAliasesToFirestore(playersApi);
-      const parts = [
-        r.added          > 0 ? `${r.added} added` : '',
-        r.alreadyPresent > 0 ? `${r.alreadyPresent} already present` : '',
-        r.skipped        > 0 ? `${r.skipped} skipped` : '',
-      ].filter(Boolean).join(' · ') || 'no entries to process';
-      const detail = r.errors.length ? '\n• ' + r.errors.join('\n• ') : '';
-      setAliasSyncStatus(r.errors.length && r.added === 0 && r.alreadyPresent === 0 ? 'error' : 'done');
-      setAliasSyncSummary(`✓ Static aliases synced · ${parts}${detail}`);
-    } catch (err) {
-      setAliasSyncStatus('error');
-      setAliasSyncSummary(err.message || 'Alias sync failed');
-    }
-  };
 
   const pending = transactions.map((tx, i) => ({ ...tx, _idx: i })).filter(tx => tx.status === 'pending' && tx.type === 'waiver');
 
@@ -2144,145 +1788,15 @@ export const AdminView = ({
       </CollapsibleGroup>
 
       <CollapsibleGroup title="Data Sync" icon="🔄">
-
-      {/* ── 3. Update OWGR Rankings ── */}
-      <div style={S.section}>
-        <div style={S.title}>🌍 Update OWGR Rankings</div>
-        {(owgrLastSynced || rankingsLastUpdated) && (
-          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Last synced: {new Date(owgrLastSynced || rankingsLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
-        <button
-          onClick={handleSyncOwgr}
-          disabled={owgrStatus === 'fetching'}
-          style={{ ...S.btn, ...(owgrStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-        >
-          {owgrStatus === 'fetching' ? '⏳ Fetching…' : '🔄 Sync OWGR Rankings'}
-        </button>
-        {owgrSummary && (
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
-            background: owgrStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-            border: `1px solid ${owgrStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-            color: owgrStatus === 'error' ? colors.danger : colors.success,
-          }}>
-            {owgrSummary}
-          </div>
-        )}
-      </div>
-
-      {/* ── 3b. Update PGAT Stats ── */}
-      <div style={S.section}>
-        <div style={S.title}>💰 Update PGAT Stats</div>
-        {pgatLastSynced && (
-          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Last synced: {new Date(pgatLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
-        <button
-          onClick={handleSyncPgatStats}
-          disabled={pgatStatus === 'fetching'}
-          style={{ ...S.btn, ...(pgatStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-        >
-          {pgatStatus === 'fetching' ? '⏳ Fetching…' : '🔄 Sync PGAT Stats'}
-        </button>
-        {pgatSummary && (
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
-            background: pgatStatus === 'error' ? colors.dangerBg : pgatStatus === 'warning' ? 'rgba(200,170,60,0.1)' : 'rgba(80,160,100,0.1)',
-            border: `1px solid ${pgatStatus === 'error' ? colors.dangerBorder : pgatStatus === 'warning' ? 'rgba(200,170,60,0.4)' : 'rgba(80,160,100,0.3)'}`,
-            color: pgatStatus === 'error' ? colors.danger : pgatStatus === 'warning' ? 'rgba(220,190,80,0.95)' : colors.success,
-            wordBreak: 'break-word',
-            lineHeight: 1.5,
-          }}>
-            {pgatSummary}
-          </div>
-        )}
-      </div>
-
-      {/* ── 3c. Rebuild Headshot Map ── */}
-      {/* Used when a stale wrong ESPN ID is cached for a player (e.g. Alex
-          Fitzpatrick showing Matt Fitzpatrick's face). The normal auto-fetch
-          can't overwrite a wrong-but-cached value when the new lookup returns
-          null (ambiguous match). This handler explicitly clears and refetches. */}
-      <div style={S.section}>
-        <div style={S.title}>🖼️ Rebuild Headshot Map</div>
-        <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-          Clears cached ESPN IDs and re-fetches fresh ones. Use when a player shows the wrong face.
-        </div>
-        <button
-          onClick={handleRebuildHeadshots}
-          disabled={hsRebuildStatus === 'working'}
-          style={{ ...S.btn, ...(hsRebuildStatus === 'working' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-        >
-          {hsRebuildStatus === 'working' ? '⏳ Rebuilding…' : '🔄 Rebuild Headshots'}
-        </button>
-        {hsRebuildSummary && (
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
-            background: hsRebuildStatus === 'error' ? colors.dangerBg : hsRebuildStatus === 'warning' ? 'rgba(200,170,60,0.1)' : 'rgba(80,160,100,0.1)',
-            border: `1px solid ${hsRebuildStatus === 'error' ? colors.dangerBorder : hsRebuildStatus === 'warning' ? 'rgba(200,170,60,0.4)' : 'rgba(80,160,100,0.3)'}`,
-            color: hsRebuildStatus === 'error' ? colors.danger : hsRebuildStatus === 'warning' ? 'rgba(220,190,80,0.95)' : colors.success,
-            wordBreak: 'break-word',
-            lineHeight: 1.5,
-          }}>
-            {hsRebuildSummary}
-          </div>
-        )}
-      </div>
-
-      {/* ── 4. LIV Golf Sync ── */}
-      <div style={S.section}>
-        <div style={S.title}>🚫 LIV Golf — Sync Roster</div>
-        {(livLastSynced || settings?.livRosterLastSynced) && (
-          <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-            Last synced: {new Date(livLastSynced || settings?.livRosterLastSynced).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
-        <button
-          onClick={handleSyncLiv}
-          disabled={livSyncStatus === 'fetching'}
-          style={{ ...S.btn, ...(livSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-        >
-          {livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync LIV Roster'}
-        </button>
-        {livSyncSummary && (
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans,
-            background: livSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-            border: `1px solid ${livSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-            color: livSyncStatus === 'error' ? colors.danger : colors.success,
-          }}>
-            {livSyncSummary}
-          </div>
-        )}
-      </div>
-
-      {/* ── 5. Static Alias Sync (one-time migration) ── */}
-      <div style={S.section}>
-        <div style={S.title}>🔗 Static Aliases — Sync to Firestore</div>
-        <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
-          Copies the historical aliases hard-coded in <code>nameAliases.js</code> into Firestore as dynamic aliases on each canonical player doc. Run once after deploying. Idempotent — safe to re-run. New aliases going forward should use the Merge Players feature instead.
-        </div>
-        <button
-          onClick={handleSeedAliases}
-          disabled={aliasSyncStatus === 'fetching'}
-          style={{ ...S.btn, ...(aliasSyncStatus === 'fetching' ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-        >
-          {aliasSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync Static Aliases'}
-        </button>
-        {aliasSyncSummary && (
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 3, fontSize: 12, fontFamily: fonts.sans, whiteSpace: 'pre-wrap',
-            background: aliasSyncStatus === 'error' ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-            border: `1px solid ${aliasSyncStatus === 'error' ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-            color: aliasSyncStatus === 'error' ? colors.danger : colors.success,
-          }}>
-            {aliasSyncSummary}
-          </div>
-        )}
-      </div>
+      <DataSyncPanel
+        allPlayers={allPlayers}
+        setAllPlayers={setAllPlayers}
+        teams={teams}
+        rankingsLastUpdated={rankingsLastUpdated}
+        settings={settings}
+        setSettings={setSettings}
+        setHeadshots={setHeadshots}
+      />
 
       {/* ── 6. LIV Golf Ineligible Players ── */}
       {/* Extracted to ./admin/LivIneligiblePanel.jsx in Wave I cleanup.
@@ -2307,63 +1821,7 @@ export const AdminView = ({
       </CollapsibleGroup>
 
       <CollapsibleGroup title="Manager Accounts" icon="👥">
-      {/* ── 7. Manager Login Credentials ── */}
-      <div style={S.section}>
-        <div style={S.title}>🔑 Manager Login Credentials</div>
-        <label style={S.lbl}>Team</label>
-        <select value={mgCredTeam} onChange={e => { setMgCredTeam(e.target.value); setMgCredName(teams.find(x => x.id === e.target.value)?.owner || ''); }} style={S.select}>
-          <option value="">Select team...</option>
-          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
-        </select>
-        <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
-        <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
-        <button onClick={handleSetLogin} disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
-          style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}>
-          {mgCredSaving ? 'Saving...' : 'Set Login'}
-        </button>
-      </div>
-
-      {/* ── Manager Emails ── */}
-      <div style={S.section}>
-        <div style={S.title}>📧 Manager Emails</div>
-        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-          Set email addresses for each manager. Used for waiver results, tournament results, and lineup reminders.
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-          {teams.map(t => {
-            const currentEmail = (settings.managerEmails || {})[t.id] || '';
-            return (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary, width: 120, flexShrink: 0 }}>{t.name}</span>
-                <input
-                  type="email"
-                  placeholder="email@example.com"
-                  value={emailDraft?.[t.id] ?? currentEmail}
-                  onChange={e => setEmailDraft(prev => ({ ...(prev || {}), [t.id]: e.target.value }))}
-                  style={{ ...theme.input, flex: 1, fontSize: 12, padding: '7px 10px' }}
-                />
-              </div>
-            );
-          })}
-        </div>
-        <button
-          onClick={async () => {
-            if (!emailDraft) return;
-            const merged = { ...(settings.managerEmails || {}), ...emailDraft };
-            try {
-              await setSettings({ ...settings, managerEmails: merged });
-              dialog.showToast('✓ Manager emails saved', 'success');
-              setEmailDraft(null);
-            } catch (err) {
-              dialog.showToast('Error: ' + err.message, 'error');
-            }
-          }}
-          disabled={!emailDraft}
-          style={{ ...S.btn, ...(!emailDraft ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}
-        >
-          💾 Save Emails
-        </button>
-      </div>
+      <ManagerAccountsPanel teams={teams} settings={settings} setSettings={setSettings} />
       {/* ── Commissioner Status ── */}
       <div style={S.section}>
         <div style={S.title}>👑 Commissioner Status</div>
