@@ -56,6 +56,7 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
   const tournamentIndex = (allTournaments || []).indexOf(lastTourney);
 
   const newTx = {
+    txId: `swing-${segment}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     team: winnerTeam.name,
     type: 'swing_winner',
     player: winnerTeam.owner,
@@ -63,6 +64,7 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
     amount: pot,
     segment,
     date: new Date().toLocaleDateString(),
+    timestamp: Date.now(),
     status: 'completed',
     tournamentIndex: tournamentIndex >= 0 ? tournamentIndex : undefined,
     note: `${segment} winner pot`,
@@ -90,6 +92,7 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
     pot,
     newTx,
     updatedTeams,
+    summary: `${segment} complete — $${pot.toLocaleString()} to ${winnerTeam.name}`,
   };
 };
 
