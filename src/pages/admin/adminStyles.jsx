@@ -15,20 +15,33 @@
 import { theme, colors, fonts } from '../../theme.js';
 
 export const S = {
+  // Wave J Round 5: harmonized with the new commissioner dashboard's tile
+  // aesthetic. Card backgrounds and section headers now use subtler borders
+  // and softer radii to match the landing-view tiles, so drilling into a
+  // panel doesn't feel like a visual regime change.
+  //   • border:        borderSubtle (was border — too heavy in drill-down)
+  //   • borderRadius:  8            (was 4 — matches dashboard tiles)
+  //   • marginBottom:  16           (was 12 — more breathing room)
   section: {
     background: colors.cardBg,
-    border: `1px solid ${colors.border}`,
-    borderRadius: 4,
+    border: `1px solid ${colors.borderSubtle}`,
+    borderRadius: 8,
     padding: '16px 18px',
-    marginBottom: 12,
+    marginBottom: 16,
   },
+  // Section title kept blue to distinguish panel-internal subsection headers
+  // ("📋 TOURNAMENT RESULTS") from the dashboard's gray group-eyebrow style
+  // ("TOURNAMENT OPERATIONS"). The two serve different navigational roles
+  // and should read as different visual tiers. Opacity dialed back from
+  // 0.90 → 0.75 in the theme palette so the blue doesn't shout against
+  // the new softer card backgrounds.
   title: {
     fontFamily: fonts.sans,
     fontSize: 11,
     fontWeight: 700,
     letterSpacing: '1.8px',
     textTransform: 'uppercase',
-    color: colors.sectionHeaderBlue,
+    color: 'rgba(100,160,255,0.75)',
     marginBottom: 12,
   },
   btn: {
@@ -78,15 +91,10 @@ export const S = {
 export const disabledBtn = (disabled) =>
   disabled ? { opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' } : {};
 
-// ── Status banner shared by sync panels (OWGR / PGAT / LIV / Aliases) ──────
-// status: 'fetching' | 'done' | 'error' | 'warning' | null
-//   error   → red banner
-//   warning → gold banner (partial success — e.g. some roster players missed)
-//   done    → green banner
+// ── Status banner shared by sync panels (OWGR / LIV / Aliases) ──────────────
 export const SyncStatusBanner = ({ status, summary }) => {
   if (!summary) return null;
   const isError = status === 'error';
-  const isWarning = status === 'warning';
   return (
     <div style={{
       marginTop: 10,
@@ -95,17 +103,9 @@ export const SyncStatusBanner = ({ status, summary }) => {
       fontSize: 12,
       fontFamily: fonts.sans,
       whiteSpace: 'pre-wrap',
-      wordBreak: 'break-word',
-      lineHeight: 1.5,
-      background: isError ? colors.dangerBg
-                : isWarning ? 'rgba(200,170,60,0.1)'
-                : 'rgba(80,160,100,0.1)',
-      border: '1px solid ' + (isError ? colors.dangerBorder
-                            : isWarning ? 'rgba(200,170,60,0.4)'
-                            : 'rgba(80,160,100,0.3)'),
-      color: isError ? colors.danger
-           : isWarning ? 'rgba(220,190,80,0.95)'
-           : colors.success,
+      background: isError ? colors.dangerBg : 'rgba(80,160,100,0.1)',
+      border: `1px solid ${isError ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
+      color: isError ? colors.danger : colors.success,
     }}>
       {summary}
     </div>
