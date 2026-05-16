@@ -284,7 +284,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
-export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner }) => {
+export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner, settings = {}, STORAGE_KEYS }) => {
   const [filterTeam,   setFilterTeam]   = useState('all');
   const [filterSwing,  setFilterSwing]  = useState('all');
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
@@ -482,6 +482,21 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
 
     const tournamentIndex = parseInt(addTxTourney);
     const isBlocked = addTxType === 'waiver blocked';
+    // Wave J fix: previously `fee: isBlocked ? 0 : 0` — a hardcoded zero for
+    // every transaction type, which is why commish-entered waivers showed
+    // $0 in the transaction history (and didn't contribute to swing pots).
+    // Now mirrors the per-type fee logic from AddDropPlayerModal: waivers
+    // get settings.feeWaiver (default $2), free agents get settings.feeFA
+    // (default $1), blocked/failed waivers stay $0 (no fee charged when the
+    // claim didn't succeed), and other types (drop, mulligan) stay $0.
+    const FEE_WAIVER = settings.feeWaiver ?? 2;
+    const FEE_FA     = settings.feeFA     ?? 1;
+    let txFee = 0;
+    if (!isBlocked) {
+      if (addTxType === 'waiver')        txFee = FEE_WAIVER;
+      else if (addTxType === 'free agent') txFee = FEE_FA;
+      // drop / mulligan / other types remain $0
+    }
     const newTx = {
       txId: `manual-${addTxTeam}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team: addTxTeam,
@@ -490,7 +505,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       droppedPlayer: addTxType === 'mulligan' ? playerOutName || undefined
                    : addTxType === 'drop'     ? undefined
                    : playerOutName || undefined,
-      fee: isBlocked ? 0 : 0,
+      fee: txFee,
       segment: tournaments[tournamentIndex]?.segment || '',
       date: new Date().toLocaleDateString(),
       timestamp: Date.now(),
