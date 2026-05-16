@@ -445,27 +445,9 @@ const FantasyGolfLeague = () => {
                           padding: 0,
                           cursor: 'pointer',
                           transition: 'color 0.2s, font-weight 0.2s',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
                         }}
                       >
                         {lastName}
-                        {/* Subtle gear hint — only shown when commish access is
-                            available but not currently active. Signals "this
-                            name is tappable to enter commish mode" on devices
-                            that can't render the `title` tooltip (mobile). */}
-                        {!isCommissioner && (
-                          <Settings
-                            aria-hidden="true"
-                            style={{
-                              width: 12,
-                              height: 12,
-                              opacity: 0.5,
-                              color: 'rgba(245,197,24,0.85)',
-                            }}
-                          />
-                        )}
                       </button>
                     );
                   }
