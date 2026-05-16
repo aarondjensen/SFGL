@@ -56,6 +56,29 @@ export const UserSettingsModal = ({
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushBusy,       setPushBusy]       = useState(false);
 
+  // Whether the Notifications section is expanded. Persisted in localStorage
+  // so the user's preference sticks across modal opens. Defaults to expanded
+  // for new users so the subscribe button is discoverable.
+  //
+  // When batch 3 lands and the section contains 4+ event toggles, we may
+  // flip this default to collapsed — but for now (just one button + a
+  // "coming soon" note), expanded is the right default.
+  const NOTIFS_EXPAND_KEY = 'sfgl.userSettings.notifsExpanded';
+  const [notifsExpanded, setNotifsExpanded] = useState(() => {
+    try {
+      const stored = localStorage.getItem(NOTIFS_EXPAND_KEY);
+      // If not set yet, default to true. Otherwise honor the stored value.
+      return stored === null ? true : stored === 'true';
+    } catch { return true; }
+  });
+  const toggleNotifsExpanded = () => {
+    setNotifsExpanded(prev => {
+      const next = !prev;
+      try { localStorage.setItem(NOTIFS_EXPAND_KEY, String(next)); } catch {}
+      return next;
+    });
+  };
+
   // Re-check status whenever the modal opens (subscription state can change
   // between opens — e.g. user denied permission externally, or revoked
   // notification access in browser settings).
@@ -253,33 +276,41 @@ export const UserSettingsModal = ({
             </div>
           )}
 
-          {/* Push notifications */}
+          {/* Push notifications — collapsible section. Header acts as the
+              toggle. Status pill on the right shows current state at a
+              glance even when collapsed (green dot = subscribed, etc) so
+              users don't need to expand just to check their state. */}
           <div style={{ marginBottom: 18 }}>
-            <div style={{
-              fontFamily: fonts.sans,
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '1.8px',
-              textTransform: 'uppercase',
-              color: colors.textMuted,
-              marginBottom: 8,
-            }}>
-              Notifications
-            </div>
-
-            {/* Status row */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '10px 12px',
-              background: 'rgba(255,255,255,0.02)',
-              border: `1px solid ${colors.borderSubtle}`,
-              borderRadius: 6,
-              marginBottom: 8,
-            }}>
-              <div style={{
-                width: 8, height: 8, borderRadius: '50%',
+            <button
+              onClick={toggleNotifsExpanded}
+              aria-expanded={notifsExpanded}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                padding: '4px 0',
+                marginBottom: notifsExpanded ? 8 : 0,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <span style={{
+                fontFamily: fonts.sans,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '1.8px',
+                textTransform: 'uppercase',
+                color: colors.textMuted,
+              }}>
+                Notifications
+              </span>
+              {/* Compact status dot — visible even when section is collapsed
+                  so users can see their subscription state at a glance */}
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%',
                 background: !pushSupported
                   ? colors.textMuted
                   : pushSubscribed
@@ -287,79 +318,118 @@ export const UserSettingsModal = ({
                     : pushPermission === 'denied'
                       ? colors.danger
                       : colors.textMuted,
+                opacity: 0.85,
                 flexShrink: 0,
               }} />
-              <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
-                {!pushSupported
-                  ? 'Not supported in this browser'
-                  : pushSubscribed
-                    ? 'Enabled on this device'
-                    : pushPermission === 'denied'
-                      ? 'Blocked — enable in browser settings'
-                      : 'Not enabled on this device'}
-              </div>
-            </div>
+              <span style={{ flex: 1 }} />
+              <span style={{
+                fontFamily: fonts.sans,
+                fontSize: 11,
+                color: colors.textMuted,
+                transform: notifsExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+                transition: 'transform 0.15s',
+                display: 'inline-block',
+                lineHeight: 1,
+              }}>▼</span>
+            </button>
 
-            {/* Subscribe/unsubscribe action */}
-            {pushSupported && pushPermission !== 'denied' && (
-              <button
-                onClick={pushSubscribed ? handleUnsubscribe : handleSubscribe}
-                disabled={pushBusy || !userTeam}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  background: pushSubscribed
-                    ? 'rgba(255,255,255,0.03)'
-                    : 'rgba(80,195,120,0.1)',
-                  border: `1px solid ${pushSubscribed
-                    ? colors.borderSubtle
-                    : 'rgba(80,195,120,0.35)'}`,
+            {notifsExpanded && (
+              <>
+                {/* Status row */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px 12px',
+                  background: 'rgba(255,255,255,0.02)',
+                  border: `1px solid ${colors.borderSubtle}`,
                   borderRadius: 6,
-                  color: pushSubscribed ? colors.textSecondary : colors.earningsGreen,
-                  cursor: pushBusy || !userTeam ? 'not-allowed' : 'pointer',
-                  fontFamily: fonts.sans,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  opacity: pushBusy || !userTeam ? 0.5 : 1,
-                  transition: 'background 0.15s, border-color 0.15s',
-                }}
-              >
-                {pushBusy
-                  ? 'Working…'
-                  : pushSubscribed
-                    ? 'Disable on this device'
-                    : 'Enable notifications on this device'}
-              </button>
-            )}
+                  marginBottom: 8,
+                }}>
+                  <div style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: !pushSupported
+                      ? colors.textMuted
+                      : pushSubscribed
+                        ? colors.earningsGreen
+                        : pushPermission === 'denied'
+                          ? colors.danger
+                          : colors.textMuted,
+                    flexShrink: 0,
+                  }} />
+                  <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+                    {!pushSupported
+                      ? 'Not supported in this browser'
+                      : pushSubscribed
+                        ? 'Enabled on this device'
+                        : pushPermission === 'denied'
+                          ? 'Blocked — enable in browser settings'
+                          : 'Not enabled on this device'}
+                  </div>
+                </div>
 
-            {/* Help text for unsupported / denied */}
-            {!pushSupported && (
-              <div style={{
-                fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
-                marginTop: 8, lineHeight: 1.5,
-              }}>
-                <strong>iPhone:</strong> add SFGL to your home screen (Safari → Share → Add to Home Screen), then open the app from the icon and revisit this screen.
-                <br />
-                <strong>Other browsers:</strong> notifications require a recent version of Chrome, Edge, or Firefox.
-              </div>
-            )}
-            {pushPermission === 'denied' && (
-              <div style={{
-                fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
-                marginTop: 8, lineHeight: 1.5,
-              }}>
-                Notifications are blocked. Open your browser settings for sfglgolf.com and allow notifications, then return here.
-              </div>
-            )}
+                {/* Subscribe/unsubscribe action */}
+                {pushSupported && pushPermission !== 'denied' && (
+                  <button
+                    onClick={pushSubscribed ? handleUnsubscribe : handleSubscribe}
+                    disabled={pushBusy || !userTeam}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      background: pushSubscribed
+                        ? 'rgba(255,255,255,0.03)'
+                        : 'rgba(80,195,120,0.1)',
+                      border: `1px solid ${pushSubscribed
+                        ? colors.borderSubtle
+                        : 'rgba(80,195,120,0.35)'}`,
+                      borderRadius: 6,
+                      color: pushSubscribed ? colors.textSecondary : colors.earningsGreen,
+                      cursor: pushBusy || !userTeam ? 'not-allowed' : 'pointer',
+                      fontFamily: fonts.sans,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      opacity: pushBusy || !userTeam ? 0.5 : 1,
+                      transition: 'background 0.15s, border-color 0.15s',
+                    }}
+                  >
+                    {pushBusy
+                      ? 'Working…'
+                      : pushSubscribed
+                        ? 'Disable on this device'
+                        : 'Enable notifications on this device'}
+                  </button>
+                )}
 
-            {/* Forward-looking note about per-event prefs (coming in batch 3) */}
-            {pushSubscribed && (
-              <div style={{
-                fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
-                marginTop: 10, lineHeight: 1.5, fontStyle: 'italic',
-              }}>
-                Per-event notification preferences (waivers, free agents, etc.) are coming soon.
-              </div>
+                {/* Help text for unsupported / denied */}
+                {!pushSupported && (
+                  <div style={{
+                    fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
+                    marginTop: 8, lineHeight: 1.5,
+                  }}>
+                    <strong>iPhone:</strong> add SFGL to your home screen (Safari → Share → Add to Home Screen), then open the app from the icon and revisit this screen.
+                    <br />
+                    <strong>Other browsers:</strong> notifications require a recent version of Chrome, Edge, or Firefox.
+                  </div>
+                )}
+                {pushPermission === 'denied' && (
+                  <div style={{
+                    fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
+                    marginTop: 8, lineHeight: 1.5,
+                  }}>
+                    Notifications are blocked. Open your browser settings for sfglgolf.com and allow notifications, then return here.
+                  </div>
+                )}
+
+                {/* Forward-looking note about per-event prefs (coming in batch 3) */}
+                {pushSubscribed && (
+                  <div style={{
+                    fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
+                    marginTop: 10, lineHeight: 1.5, fontStyle: 'italic',
+                  }}>
+                    Per-event notification preferences (waivers, free agents, etc.) are coming soon.
+                  </div>
+                )}
+              </>
             )}
           </div>
 
