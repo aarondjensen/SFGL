@@ -88,12 +88,15 @@ const PlayerSlotGrid = ({ players, showEarnings, showLive }) => {
                   }
                   const pos = live.position || '—';
                   const score = live.score || '';
-                  // Score color: under par green, over red, even white-muted
+                  // Golf-traditional: under par is RED (the "good" highlight,
+                  // matches broadcast convention), over par is muted (de-
+                  // emphasized, not punitive), even par is primary text.
+                  // Same convention as RostersView's live score column.
                   const scoreColor = score.startsWith('-')
-                    ? colors.earningsGreen
+                    ? colors.danger
                     : score.startsWith('+')
-                      ? 'rgba(255,120,120,0.9)'
-                      : colors.textSecondary;
+                      ? colors.textMuted
+                      : colors.textPrimary;
                   return (
                     <div style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: 4 }}>
                       <span style={{ fontFamily: fonts.mono, fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: 600 }}>
@@ -520,7 +523,8 @@ export const TournamentsView = ({
           if (summary !== null) {
             const t = summary.total;
             totalLabel = t === 0 ? 'E' : t > 0 ? `+${t}` : `${t}`;
-            totalColor = t < 0 ? colors.earningsGreen : t > 0 ? 'rgba(255,120,120,0.9)' : colors.textSecondary;
+            // Golf-traditional: under par is red, over is muted, even is primary
+            totalColor = t < 0 ? colors.danger : t > 0 ? colors.textMuted : colors.textPrimary;
           }
           return (
             <div key={team.id}
