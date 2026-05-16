@@ -19,6 +19,13 @@
  */
 
 /* ── Body defaults (was: document.body.style.fontFamily in App.jsx) ── */
+/* Wave D hotfix: also reset html/body margin and color so the page background
+   set by App.jsx's root div (#111d2e) extends edge-to-edge. The previous
+   reset was an inadvertent side effect of LoginPage.css's global universal
+   selector — once that was correctly scoped to .sfgl-login-root in Wave D,
+   the browser's default 8px body margin re-appeared and showed up as a white
+   sliver around the app. The reset belongs here, not in a lazy-loaded
+   page-specific stylesheet. */
 html, body {
   margin: 0;
   padding: 0;
@@ -197,23 +204,21 @@ html { scrollbar-gutter: stable; }
 }
 
 /* ============================================================================
- * REDUCED MOTION — respect the user's OS-level "Reduce Motion" preference.
- * iOS: Settings → Accessibility → Motion → Reduce Motion
- * macOS: System Settings → Accessibility → Display → Reduce Motion
- * When enabled, kill all decorative animations (pulses, spinners, slide-ins).
- * The pull-to-refresh ball still rotates with finger movement (driven by
- * inline transform, not animation), so the gesture still feels responsive.
+ * ADMIN DASHBOARD — Wave J Round 5 tile grid
+ * Used by the new commissioner dashboard landing view in AdminView.
+ * Mobile-first: full-width tiles stacked. ≥600px viewport: 2 tiles per row.
+ * The tile content itself is inline-styled in AdminView (icon, label, desc,
+ * badge layout); this class only owns the grid container layout so it can
+ * be responsive without inline media queries.
  * ============================================================================ */
-@media (prefers-reduced-motion: reduce) {
-  .sfgl-logo-load,
-  .sfgl-dot,
-  .sfgl-pulse-ready,
-  .sfgl-text-pulse {
-    animation: none !important;
-  }
-  * {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+.admin-tile-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+@media (min-width: 600px) {
+  .admin-tile-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }

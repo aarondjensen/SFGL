@@ -1,24 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useDialog } from './DialogContext';
-import { getSegmentForTournament } from '../utils';
-import { sfglDataApi, playersApi, teamsApi } from '../api/firebase';
-// (DraftModal import removed — now used only by SeasonSettingsPanel.)
-// (seedAliasesToFirestore and LIV_GOLF_ROSTER imports removed — now used
-//  only by DataSyncPanel.)
-// (BONUSES_REGULAR/BONUSES_MAJOR/normalizePlayerName/SWINGS/getSegmentByDate/
-//  tournamentResultsApi imports removed — now only used by extracted panels,
-//  not AdminView itself. Batch 3g swap.)
-import { theme, colors, fonts } from '../theme.js';
-import { STORAGE_KEYS } from '../constants';
+import { theme, colors, fonts, SWINGS } from '../theme.js';
+import { computeSwingAward } from '../utils/swingAward';
 
-// Wave I cleanup: CollapsibleGroup and the admin S/disabledBtn style tokens
-// used to live inline in this file. They've been moved to siblings in the
-// ./admin/ subfolder so other panels (DataSyncPanel, etc.) can share them as
-// we wire them up. CollapsibleGroup supports an optional `badge` prop for
-// showing pending counts on the group header — Tournament Operations uses it
-// for the "N pending" waiver count.
-import { CollapsibleGroup } from './admin/CollapsibleGroup';
-import { S, disabledBtn } from './admin/adminStyles';
+// Panel imports — each becomes a drillable section in the new architecture.
+import { S } from './admin/adminStyles';
 import { DataSyncPanel } from './admin/DataSyncPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
 import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
@@ -29,50 +15,47 @@ import { SwingWinnerPanel } from './admin/SwingWinnerPanel';
 import { TournamentResultsPanel } from './admin/TournamentResultsPanel';
 import { WaiverProcessingPanel } from './admin/WaiverProcessingPanel';
 
-// ── Effective-roster helper ─────────────────────────────────────────────────
-// Used by the useMemo below to feed TournamentResultsPanel a roster snapshot
-// that matches what RostersView shows — current team.roster augmented by any
-// processed transactions that haven't synced back into team.roster yet.
-// Mirrors the same logic used by AddDropPlayerModal (lines 195-203 in
-// /mnt/project) and RostersView's useRoster hook so the three views agree on
-// roster contents.
+// ── Wave J Round 5: Commissioner Dashboard ───────────────────────────────────
+// Refactored from a wall of stacked accordion panels into a dashboard-as-
+// landing experience inspired by the MnQ Golf League admin pattern. Key
+// changes:
 //
-// Strategy: start from team.roster as the baseline (persisted live roster),
-// then apply every processed-or-completed transaction for this team.
-// Idempotent for synced data; corrective for de-synced data (e.g. a waiver
-// was processed but team.roster hasn't been written back to Firestore yet).
+//  1. Landing view shows an actionable status banner ("3 pending waivers",
+//     "Spring Swing awaiting award", etc.) + grouped section tiles.
+//  2. Each panel is reachable by tapping its tile — full-bleed drill-down
+//     with a Back button to return to the dashboard.
+//  3. Mobile-first: tiles are full-width on narrow viewports, two-up on
+//     wider screens (see app-global.css → .admin-tile-grid).
+//  4. Panels themselves are unchanged — only the wrapper navigation is new.
 //
-// Permissive on matching to avoid edge cases where team names have trailing
-// whitespace or case mismatches between transaction records and team docs.
+// This architecture scales better than the previous "expand-everything
+// accordion" pattern: the commish lands on the page seeing what needs their
+// attention NOW, rather than a flat wall of admin tooling.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Effective-roster helper — unchanged from prior version. Used to feed
+// TournamentResultsPanel a roster snapshot that matches what RostersView
+// shows (current team.roster + processed transactions not yet synced).
 const getEffectiveRoster = (team, allTransactions) => {
   if (!team) return [];
   const teamKey = String(team.name || '').trim().toLowerCase();
-  // Only keep roster entries with a usable string name; downstream code
-  // sorts by name and crashes on undefined/non-string values.
   let roster = (team.roster || []).filter(p => p && typeof p.name === 'string' && p.name.length > 0);
-  // Defensive copy so we don't mutate the prop
   roster = roster.map(p => ({ ...p }));
 
   (allTransactions || [])
     .filter(tx => {
-      // Match team (normalized for whitespace/case)
       if (String(tx.team || '').trim().toLowerCase() !== teamKey) return false;
-      // Exclude transaction types that don't represent roster changes
-      if (tx.type === 'mulligan') return false;       // lineup swap, not roster
-      if (tx.type === 'swing_winner') return false;   // tx.player is owner name, not a player
-      // Exclude pending (not yet effective) and failed (didn't go through)
+      if (tx.type === 'mulligan') return false;
+      if (tx.type === 'swing_winner') return false;
       if (tx.status === 'pending') return false;
       if (tx.status === 'failed')  return false;
       return true;
     })
     .sort((a, b) => (a.tournamentIndex ?? 0) - (b.tournamentIndex ?? 0))
     .forEach(tx => {
-      // Drop first, then add — handles add-then-drop and drop-then-readd
-      // sequences correctly when sorted by tournament index.
       if (tx.droppedPlayer && typeof tx.droppedPlayer === 'string') {
         roster = roster.filter(p => p.name !== tx.droppedPlayer);
       }
-      // Only accept string player values, never undefined/objects/etc.
       if (typeof tx.player === 'string' && tx.player.length > 0 && !roster.some(p => p.name === tx.player)) {
         roster.push({ name: tx.player, limited: !!tx.limited });
       }
@@ -80,6 +63,63 @@ const getEffectiveRoster = (team, allTransactions) => {
 
   return roster;
 };
+
+// ── Chevron arrow used in status-banner rows + section tiles ──
+const ChevronRight = ({ size = 14, color }) => (
+  <span style={{
+    color: color || colors.textMuted,
+    fontSize: size,
+    lineHeight: 1,
+    flexShrink: 0,
+    fontFamily: fonts.sans,
+  }}>›</span>
+);
+
+// ── Back-bar at the top of each drilled-in panel view ──
+const BackBar = ({ label, onBack }) => (
+  <div style={{
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '4px 0 16px 0',
+    marginBottom: 12,
+    borderBottom: `1px solid ${colors.borderSubtle}`,
+  }}>
+    <button
+      onClick={onBack}
+      style={{
+        background: 'rgba(255,255,255,0.05)',
+        border: `1px solid ${colors.borderSubtle}`,
+        borderRadius: 4,
+        color: colors.textPrimary,
+        cursor: 'pointer',
+        padding: '6px 12px 6px 8px',
+        fontFamily: fonts.sans,
+        fontSize: 12,
+        fontWeight: 600,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        flexShrink: 0,
+      }}
+      aria-label="Back to dashboard"
+    >
+      <span style={{ fontSize: 16, lineHeight: 1, marginTop: -1 }}>‹</span>
+      Dashboard
+    </button>
+    <span style={{
+      fontFamily: fonts.sans,
+      fontSize: 12,
+      fontWeight: 700,
+      letterSpacing: '1.8px',
+      textTransform: 'uppercase',
+      color: colors.textSecondary,
+      marginLeft: 8,
+    }}>
+      {label}
+    </span>
+  </div>
+);
 
 export const AdminView = ({
   isCommissioner, setIsCommissioner, setActiveTab,
@@ -91,26 +131,12 @@ export const AdminView = ({
   headshots, setHeadshots,
   updateRankings, rankingsLastUpdated,
 }) => {
-  // (selectedTourney, manualEntry, pgaFetching state + the active-tournament
-  //  useEffect ALL moved into ./admin/TournamentResultsPanel — Batch 3g swap)
-  // (mgCred* state moved into ./admin/ManagerAccountsPanel — Batch 3d extraction)
-  // (showDraftModal moved into ./admin/SeasonSettingsPanel — the panel
-  // owns the "Open Draft Room" button and renders the modal itself.)
-  // (swingAwardSeg moved into ./admin/SwingWinnerPanel — Batch 3f extraction)
-  // (waiverRevealed moved into ./admin/WaiverProcessingPanel — Batch 3h extraction)
-  // (livSearch / livSaving used to live here. They moved INTO
-  // ./admin/LivIneligiblePanel — only that panel reads them, so the
-  // state belongs there.)
   const dialog = useDialog();
 
-  // ── Effective roster snapshot ──
-  // The TournamentResultsPanel's lineup editor needs the same roster
-  // RostersView shows — current team.roster augmented by any processed
-  // transactions that haven't synced back into team.roster yet. Without
-  // this, players added via waivers mid-week are invisible in the lineup
-  // dropdowns even though RostersView displays them. See getEffectiveRoster's
-  // comment for details. Computed here so it's memoized once per teams+tx
-  // change, then passed down to the panel as a prop.
+  // The currently-drilled-in section. null = dashboard landing view.
+  const [section, setSection] = useState(null);
+
+  // Per-team effective-roster snapshot (mirrors RostersView's roster logic).
   const rostersByTeamIdForSelectedTourney = useMemo(() => {
     const map = {};
     const safeTeams = Array.isArray(teams) ? teams : [];
@@ -120,7 +146,6 @@ export const AdminView = ({
       try {
         map[t.id] = getEffectiveRoster(t, safeTx);
       } catch (err) {
-        // Catch keeps a single bad team from crashing the whole editor.
         console.warn('[AdminView] roster snapshot failed for', t.name, err);
         map[t.id] = t.roster || [];
       }
@@ -128,231 +153,640 @@ export const AdminView = ({
     return map;
   }, [teams, transactions]);
 
-  // (S and disabledBtn used to be defined here inline. They moved to
-  // ./admin/adminStyles.jsx — see imports at the top of this file. The
-  // tokens are identical to what was here; only the source location changed.)
+  // ── Alert detection ────────────────────────────────────────────────────
+  // Each alert maps to a section the commish can jump to. Tier ranking:
+  //   action  → needs the commish to DO something now
+  //   warn    → data hygiene issues
+  //   info    → informational only
 
+  // 1. Pending waivers
+  const pendingWaivers = useMemo(
+    () => (transactions || []).filter(tx => tx.status === 'pending' && tx.type === 'waiver'),
+    [transactions]
+  );
 
+  // 2. Tournament ready to mark complete — playing && past end-of-tournament.
+  //    Heuristic: today is past startDate + 5 days (Thu start → Tue after Sun).
+  const tournamentsReadyToComplete = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return (tournaments || []).filter(t => {
+      if (!t.playing || t.completed) return false;
+      const start = t.start_date || t.startDate;
+      if (!start) return false;
+      const sd = new Date(start + 'T12:00:00Z');
+      if (isNaN(sd.getTime())) return false;
+      sd.setUTCDate(sd.getUTCDate() + 5);
+      return today.getTime() >= sd.getTime();
+    });
+  }, [tournaments]);
 
-  // ── Results: PGA Tour fetch ───────────────────────────────────────
+  // 3. Of those, the ones with no results yet — distinct alert level.
+  const tournamentsNeedingProcess = useMemo(
+    () => tournamentsReadyToComplete.filter(t => !t.results?.teams),
+    [tournamentsReadyToComplete]
+  );
 
-  // ── Results: manual entry ────────────────────────────────────────────────
+  // 4. Swings ready to award — shared logic with the auto-award + manual panel
+  const swingsReadyToAward = useMemo(() => {
+    const list = [];
+    SWINGS.forEach(segment => {
+      const result = computeSwingAward({
+        segment,
+        allTournaments: tournaments,
+        transactions,
+        teams,
+      });
+      if (result) list.push({ segment, winnerName: result.winnerTeam?.name, pot: result.pot });
+    });
+    return list;
+  }, [tournaments, transactions, teams]);
 
-  // ── Results: reprocess completed tournament ─────────────────────────────
+  // 5. Lineup not set — teams missing lineup for the next imminent event.
+  //    Imminent = startDate within 7 days. Only surfaces non-alternate events.
+  const teamsWithoutLineup = useMemo(() => {
+    const nextEvent = (tournaments || []).find(t => !t.completed && !t.isAlternate);
+    if (!nextEvent) return { count: 0, eventName: null };
+    const start = nextEvent.start_date || nextEvent.startDate;
+    if (!start) return { count: 0, eventName: null };
+    const sd = new Date(start + 'T12:00:00Z');
+    const now = new Date();
+    const daysToStart = (sd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysToStart < -1 || daysToStart > 7) return { count: 0, eventName: null };
+    const missing = (teams || []).filter(t => !Array.isArray(t.lineup) || t.lineup.length === 0).length;
+    return { count: missing, eventName: nextEvent.name };
+  }, [teams, tournaments]);
 
-  // ── Resend results email for an already-completed tournament ─────────────
-  // Used when (a) the auto-cron email failed to render properly, or (b) the
-  // commish wants to test changes to the email template without waiting for
-  // next Monday. Doesn't touch any data — only re-fires the email via the
-  // notify-results endpoint, which has no same-day lockout.
+  // 6. Schedule rows with missing data (post-bulk-import cleanup)
+  const incompleteScheduleRows = useMemo(() => {
+    return (tournaments || []).filter(t => {
+      const hasName = t.name && t.name.trim().length > 0 && t.name !== '(unknown)' && !t.name.startsWith('New Tournament');
+      const hasDates = (t.dates && t.dates.trim().length > 0) || (t.start_date && String(t.start_date).length > 0);
+      return !hasName || !hasDates;
+    }).length;
+  }, [tournaments]);
 
+  // 7. Data sync stale — OWGR / PGAT data older than 7 days
+  const dataSyncAlerts = useMemo(() => {
+    const items = [];
+    const STALE_DAYS = 7;
+    const now = Date.now();
+    const owgrTs = rankingsLastUpdated;
+    const pgatTs = settings?.pgatStatsLastSynced;
+    if (owgrTs) {
+      const ageDays = (now - new Date(owgrTs).getTime()) / (1000 * 60 * 60 * 24);
+      if (ageDays > STALE_DAYS) items.push({ source: 'OWGR rankings', days: Math.floor(ageDays) });
+    } else {
+      items.push({ source: 'OWGR rankings', days: null, never: true });
+    }
+    if (pgatTs) {
+      const ageDays = (now - new Date(pgatTs).getTime()) / (1000 * 60 * 60 * 24);
+      if (ageDays > STALE_DAYS) items.push({ source: 'PGAT stats', days: Math.floor(ageDays) });
+    }
+    return items;
+  }, [rankingsLastUpdated, settings?.pgatStatsLastSynced]);
 
+  // 8. LIV-flagged players still on rosters
+  const livOnRosters = useMemo(() => {
+    const livNames = new Set(
+      (allPlayers || []).filter(p => p.isLiv).map(p => p.name.toLowerCase())
+    );
+    if (livNames.size === 0) return [];
+    const offenders = [];
+    (teams || []).forEach(team => {
+      (team.roster || []).forEach(p => {
+        if (p?.name && livNames.has(p.name.toLowerCase())) {
+          offenders.push({ team: team.name, player: p.name });
+        }
+      });
+    });
+    return offenders;
+  }, [teams, allPlayers]);
 
-  // ── Waivers ──────────────────────────────────────────────────────────────
-  // buildRoster, applyWaiver, handleProcessSingle, handleProcessAll, and
-  // the waiverRevealed state ALL moved into ./admin/WaiverProcessingPanel
-  // (Batch 3h). The panel computes `pending` internally; AdminView also
-  // computes it once below so it can pass `${pending.length} pending` as
-  // a badge on the Tournament Operations CollapsibleGroup header (so the
-  // commish sees the attention-needed count before expanding).
+  // Build the flat alerts list, priority-ordered top→bottom.
+  const alerts = [];
+  if (pendingWaivers.length > 0) {
+    alerts.push({
+      level: 'action',
+      text: `${pendingWaivers.length} pending waiver${pendingWaivers.length === 1 ? '' : 's'} to process`,
+      jump: 'waivers',
+    });
+  }
+  swingsReadyToAward.forEach(s => {
+    alerts.push({
+      level: 'action',
+      text: `${s.segment} ready to award${s.winnerName ? ` — ${s.winnerName} leads` : ''}`,
+      jump: 'swing_winner',
+    });
+  });
+  if (tournamentsNeedingProcess.length > 0) {
+    tournamentsNeedingProcess.forEach(t => {
+      alerts.push({
+        level: 'action',
+        text: `Process results for "${t.name}"`,
+        jump: 'results',
+      });
+    });
+  } else if (tournamentsReadyToComplete.length > 0) {
+    tournamentsReadyToComplete.forEach(t => {
+      alerts.push({
+        level: 'action',
+        text: `"${t.name}" ready to mark complete`,
+        jump: 'results',
+      });
+    });
+  }
+  if (livOnRosters.length > 0) {
+    alerts.push({
+      level: 'warn',
+      text: `${livOnRosters.length} LIV-flagged player${livOnRosters.length === 1 ? '' : 's'} on rosters`,
+      jump: 'liv_flag',
+    });
+  }
+  if (incompleteScheduleRows > 0) {
+    alerts.push({
+      level: 'warn',
+      text: `${incompleteScheduleRows} schedule entr${incompleteScheduleRows === 1 ? 'y' : 'ies'} missing data`,
+      jump: null,  // schedule edit lives in TournamentsView, not AdminView
+    });
+  }
+  if (teamsWithoutLineup.count > 0 && teamsWithoutLineup.eventName) {
+    alerts.push({
+      level: 'info',
+      text: `${teamsWithoutLineup.count} team${teamsWithoutLineup.count === 1 ? '' : 's'} ${teamsWithoutLineup.count === 1 ? 'has' : 'have'} no lineup for "${teamsWithoutLineup.eventName}"`,
+      jump: null,
+    });
+  }
+  dataSyncAlerts.forEach(s => {
+    alerts.push({
+      level: 'info',
+      text: s.never
+        ? `${s.source} never synced`
+        : `${s.source} last synced ${s.days} day${s.days === 1 ? '' : 's'} ago`,
+      jump: 'data_sync',
+    });
+  });
 
-  // ── Manager Login ────────────────────────────────────────────────────────
-  // handleSetLogin moved into ./admin/ManagerAccountsPanel (Batch 3d)
+  // ── Section catalog ────────────────────────────────────────────────────
+  const groups = [
+    {
+      title: 'Tournament Operations',
+      tiles: [
+        {
+          id: 'results', icon: '🏆', label: 'Tournament Results',
+          desc: tournamentsNeedingProcess.length > 0
+            ? `${tournamentsNeedingProcess.length} ready to process`
+            : 'Process & manage events',
+          badge: tournamentsNeedingProcess.length > 0
+            ? { count: tournamentsNeedingProcess.length, level: 'action' }
+            : null,
+        },
+        {
+          id: 'waivers', icon: '📨', label: 'Waiver Claims',
+          desc: pendingWaivers.length > 0
+            ? `${pendingWaivers.length} pending`
+            : 'Process pending waivers',
+          badge: pendingWaivers.length > 0
+            ? { count: pendingWaivers.length, level: 'action' }
+            : null,
+        },
+        {
+          id: 'swing_winner', icon: '🥇', label: 'Swing Winners',
+          desc: swingsReadyToAward.length > 0
+            ? `${swingsReadyToAward.length} ready to award`
+            : 'Award swing pot winners',
+          badge: swingsReadyToAward.length > 0
+            ? { count: swingsReadyToAward.length, level: 'action' }
+            : null,
+        },
+      ],
+    },
+    {
+      title: 'Player Data',
+      tiles: [
+        {
+          id: 'data_sync', icon: '🔄', label: 'Data Sync',
+          desc: dataSyncAlerts.length > 0
+            ? `${dataSyncAlerts.length} source${dataSyncAlerts.length === 1 ? '' : 's'} stale`
+            : 'OWGR, PGAT stats, headshots',
+          badge: dataSyncAlerts.length > 0
+            ? { count: dataSyncAlerts.length, level: 'info' }
+            : null,
+        },
+        {
+          id: 'liv_flag', icon: '🚫', label: 'LIV Ineligible',
+          desc: livOnRosters.length > 0
+            ? `${livOnRosters.length} on rosters`
+            : 'Flag LIV-eligible players',
+          badge: livOnRosters.length > 0
+            ? { count: livOnRosters.length, level: 'warn' }
+            : null,
+        },
+        {
+          id: 'merge', icon: '🔀', label: 'Merge Players',
+          desc: 'Resolve duplicate name records',
+        },
+      ],
+    },
+    {
+      title: 'People',
+      tiles: [
+        {
+          id: 'managers', icon: '👥', label: 'Manager Accounts',
+          desc: `${teams.length} team${teams.length === 1 ? '' : 's'}`,
+        },
+        {
+          id: 'commish', icon: '👑', label: 'Commissioner Status',
+          desc: `${teams.filter(t => t.isCommissioner).length} commish tagged`,
+        },
+      ],
+    },
+    {
+      title: 'League Setup',
+      tiles: [
+        {
+          id: 'settings', icon: '⚙️', label: 'Season Settings',
+          desc: 'Schedule, waivers, draft, email',
+        },
+        {
+          id: 'import', icon: '📥', label: 'Import Schedule',
+          desc: 'Bulk import next season from PGA Tour',
+        },
+      ],
+    },
+  ];
 
-  // ── Award Swing Winner ──────────────────────────────────────────────────
-  // handleSwingWinner + swingAwardSeg state moved into ./admin/SwingWinnerPanel
-  // (Batch 3f). The panel uses computeSwingAward from utils/swingAward.js
-  // (same helper the auto-award path uses) — single source of truth.
+  // ── Section renderer ───────────────────────────────────────────────────
+  const renderSection = () => {
+    const back = () => setSection(null);
+    switch (section) {
+      case 'results':
+        return (
+          <>
+            <BackBar label="Tournament Results" onBack={back} />
+            <TournamentResultsPanel
+              tournaments={tournaments}
+              setTournaments={setTournaments}
+              teams={teams}
+              updateTeams={updateTeams}
+              transactions={transactions}
+              setTransactions={setTransactions}
+              globalPlayerStats={globalPlayerStats}
+              setGlobalPlayerStats={setGlobalPlayerStats}
+              settings={settings}
+              rostersByTeamId={rostersByTeamIdForSelectedTourney}
+            />
+          </>
+        );
+      case 'waivers':
+        return (
+          <>
+            <BackBar label="Waiver Claims" onBack={back} />
+            <WaiverProcessingPanel
+              transactions={transactions}
+              setTransactions={setTransactions}
+              teams={teams}
+              updateTeams={updateTeams}
+              tournaments={tournaments}
+              settings={settings}
+            />
+          </>
+        );
+      case 'swing_winner':
+        return (
+          <>
+            <BackBar label="Swing Winners" onBack={back} />
+            <SwingWinnerPanel
+              tournaments={tournaments}
+              teams={teams}
+              transactions={transactions}
+              setTransactions={setTransactions}
+            />
+          </>
+        );
+      case 'data_sync':
+        return (
+          <>
+            <BackBar label="Data Sync" onBack={back} />
+            <DataSyncPanel
+              allPlayers={allPlayers}
+              setAllPlayers={setAllPlayers}
+              teams={teams}
+              rankingsLastUpdated={rankingsLastUpdated}
+              settings={settings}
+              setSettings={setSettings}
+              setHeadshots={setHeadshots}
+            />
+          </>
+        );
+      case 'liv_flag':
+        return (
+          <>
+            <BackBar label="LIV Ineligible Players" onBack={back} />
+            <LivIneligiblePanel allPlayers={allPlayers} setAllPlayers={setAllPlayers} />
+          </>
+        );
+      case 'merge':
+        return (
+          <>
+            <BackBar label="Merge Players" onBack={back} />
+            <MergePlayersPanel
+              allPlayers={allPlayers}
+              teams={teams}
+              transactions={transactions}
+              updateTeams={updateTeams}
+              setTransactions={setTransactions}
+            />
+          </>
+        );
+      case 'managers':
+        return (
+          <>
+            <BackBar label="Manager Accounts" onBack={back} />
+            <ManagerAccountsPanel teams={teams} settings={settings} setSettings={setSettings} />
+          </>
+        );
+      case 'commish':
+        return (
+          <>
+            <BackBar label="Commissioner Status" onBack={back} />
+            <div style={S.section}>
+              <div style={S.title}>👑 Commissioner Status</div>
+              <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
+                Tag managers as commissioners. Tagged managers see the Commish tab automatically when logged in — no password required.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {teams.map(t => {
+                  const tagged = !!t.isCommissioner;
+                  return (
+                    <label key={t.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 10px',
+                      background: tagged ? 'rgba(245,197,24,0.06)' : 'transparent',
+                      border: `1px solid ${tagged ? 'rgba(245,197,24,0.3)' : colors.borderSubtle}`,
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      transition: 'background 0.15s, border-color 0.15s',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={tagged}
+                        onChange={e => {
+                          const next = e.target.checked;
+                          const newTeams = teams.map(tt =>
+                            tt.id === t.id ? { ...tt, isCommissioner: next } : tt
+                          );
+                          updateTeams(newTeams);
+                          dialog.showToast(
+                            next
+                              ? `${t.name} is now a commissioner`
+                              : `${t.name} is no longer a commissioner`,
+                            'success'
+                          );
+                        }}
+                        style={{ accentColor: colors.textGold, width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: colors.textPrimary }}>
+                          {t.name}
+                        </div>
+                        <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>
+                          {t.owner}
+                        </div>
+                      </div>
+                      {tagged && (
+                        <span style={{
+                          fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
+                          letterSpacing: '1px', textTransform: 'uppercase',
+                          color: 'rgba(245,197,24,0.95)',
+                          border: '1px solid rgba(245,197,24,0.4)',
+                          padding: '2px 6px', borderRadius: 2,
+                          flexShrink: 0,
+                        }}>
+                          Commish
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        );
+      case 'settings':
+        return (
+          <>
+            <BackBar label="Season Settings" onBack={back} />
+            <SeasonSettingsPanel
+              settings={settings}
+              setSettings={setSettings}
+              teams={teams}
+              allPlayers={allPlayers}
+              updateTeams={updateTeams}
+              headshots={headshots}
+            />
+          </>
+        );
+      case 'import':
+        return (
+          <>
+            <BackBar label="Import Schedule" onBack={back} />
+            <ScheduleImportPanel
+              tournaments={tournaments}
+              setTournaments={setTournaments}
+            />
+          </>
+        );
+      default:
+        return null;
+    }
+  };
 
-  // ── Data sync state/handlers ─────────────────────────────────────────────
-  // OWGR, PGAT Stats, Headshot Rebuild, LIV Roster, and Static Alias sync are
-  // ALL extracted into ./admin/DataSyncPanel.jsx (Batch 3e). The panel owns
-  // its own state and uses the SyncStatusBanner/LastSyncedLine helpers from
-  // ./admin/adminStyles for visual consistency.
+  // Drilled-in: full-bleed section view
+  if (section) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: 40 }}>
+        {renderSection()}
+      </div>
+    );
+  }
 
-  // ── Merge Players ─────────────────────────────────────────────────────────
-  const [mergeOpen, setMergeOpen] = useState(false);
+  // ── Dashboard landing view ─────────────────────────────────────────────
+  const levelColor = (level) =>
+    level === 'action' ? colors.earningsGreen :
+    level === 'warn'   ? colors.warning :
+                         'rgba(100,160,255,0.85)';
 
-  // ── Season / Waiver / Results / Draft state + handlers ────────────────────
-  // All moved INTO ./admin/SeasonSettingsPanel.jsx. The panel owns the editor
-  // state for season settings, waiver schedule, results email schedule, and
-  // the draft modal toggle. AdminView no longer needs to declare or save them.
-  //
-  // The persisted values still live on `settings` (Firestore), so anywhere
-  // outside the panel that needs them reads via `settings.waiverDay ?? 2`
-  // (see e.g. the "process now!" banner in the WaiverProcessingPanel area).
-  //
-  // DAY_NAMES and fmtETTime are now imported from utils/sharedHelpers.js
-  // (was duplicated inline before).
-  // (emailDraft state moved into ./admin/ManagerAccountsPanel — Batch 3d)
+  const levelBgTint = (level) =>
+    level === 'action' ? 'rgba(80,195,120,0.06)' :
+    level === 'warn'   ? colors.warningBg :
+                         'rgba(100,160,255,0.06)';
 
-
-  const pending = transactions.map((tx, i) => ({ ...tx, _idx: i })).filter(tx => tx.status === 'pending' && tx.type === 'waiver');
+  const levelBorder = (level) =>
+    level === 'action' ? 'rgba(80,195,120,0.3)' :
+    level === 'warn'   ? colors.warningBorder :
+                         'rgba(100,160,255,0.3)';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 40 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 40 }}>
 
-      <CollapsibleGroup
-        title="Tournament Operations"
-        icon="🏆"
-        badge={pending.length > 0 ? `${pending.length} pending` : undefined}
-      >
-
-      {/* ── 1. Tournament Results ── */}
-      <TournamentResultsPanel
-        tournaments={tournaments}
-        setTournaments={setTournaments}
-        teams={teams}
-        updateTeams={updateTeams}
-        transactions={transactions}
-        setTransactions={setTransactions}
-        globalPlayerStats={globalPlayerStats}
-        setGlobalPlayerStats={setGlobalPlayerStats}
-        settings={settings}
-        rostersByTeamId={rostersByTeamIdForSelectedTourney}
-      />
-
-      {/* ── 2. Process Waivers ── */}
-      <WaiverProcessingPanel
-        transactions={transactions}
-        setTransactions={setTransactions}
-        teams={teams}
-        updateTeams={updateTeams}
-        tournaments={tournaments}
-        settings={settings}
-      />
-
-      {/* ── 4. Award Swing Winner ── */}
-      <SwingWinnerPanel
-        tournaments={tournaments}
-        teams={teams}
-        transactions={transactions}
-        setTransactions={setTransactions}
-      />
-      </CollapsibleGroup>
-
-      <CollapsibleGroup title="Data Sync" icon="🔄">
-      <DataSyncPanel
-        allPlayers={allPlayers}
-        setAllPlayers={setAllPlayers}
-        teams={teams}
-        rankingsLastUpdated={rankingsLastUpdated}
-        settings={settings}
-        setSettings={setSettings}
-        setHeadshots={setHeadshots}
-      />
-
-      {/* ── 6. LIV Golf Ineligible Players ── */}
-      {/* Extracted to ./admin/LivIneligiblePanel.jsx in Wave I cleanup.
-          The panel renders its own S.section wrapper + title; AdminView
-          just hands it the player list and a setter. */}
-      <LivIneligiblePanel allPlayers={allPlayers} setAllPlayers={setAllPlayers} />
-
-      {/* ── 7. Draft ── */}
-      {/* ── Merge Players ── */}
-      <div style={S.section}>
-        <button onClick={() => setMergeOpen(o => !o)}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          <div style={S.title}>🔀 Merge Players</div>
-          <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, paddingBottom: 12 }}>{mergeOpen ? '▲' : '▼'}</span>
-        </button>
-        {mergeOpen && <MergePlayersPanel
-          allPlayers={allPlayers} teams={teams} transactions={transactions}
-          updateTeams={updateTeams} setTransactions={setTransactions}
-        />}
-      </div>
-      </CollapsibleGroup>
-
-      <CollapsibleGroup title="Manager Accounts" icon="👥">
-      <ManagerAccountsPanel teams={teams} settings={settings} setSettings={setSettings} />
-      {/* ── Commissioner Status ── */}
-      <div style={S.section}>
-        <div style={S.title}>👑 Commissioner Status</div>
-        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-          Tag managers as commissioners. Tagged managers see the Commish tab automatically when logged in — no password required.
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {teams.map(t => {
-            const tagged = !!t.isCommissioner;
-            return (
-              <label key={t.id} style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 10px',
-                background: tagged ? 'rgba(245,197,24,0.06)' : 'transparent',
-                border: `1px solid ${tagged ? 'rgba(245,197,24,0.3)' : colors.borderSubtle}`,
-                borderRadius: 4,
-                cursor: 'pointer',
-                transition: 'background 0.15s, border-color 0.15s',
-              }}>
-                <input
-                  type="checkbox"
-                  checked={tagged}
-                  onChange={e => {
-                    const next = e.target.checked;
-                    const newTeams = teams.map(tt =>
-                      tt.id === t.id ? { ...tt, isCommissioner: next } : tt
-                    );
-                    updateTeams(newTeams);
-                    dialog.showToast(
-                      next
-                        ? `${t.name} is now a commissioner`
-                        : `${t.name} is no longer a commissioner`,
-                      'success'
-                    );
+      {/* ── Status banner ── */}
+      {alerts.length > 0 ? (
+        <div>
+          <div style={{
+            fontFamily: fonts.sans,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '1.8px',
+            textTransform: 'uppercase',
+            color: colors.textMuted,
+            marginBottom: 8,
+          }}>
+            Needs Attention
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {alerts.map((alert, i) => {
+              const isClickable = !!alert.jump;
+              return (
+                <button
+                  key={i}
+                  onClick={isClickable ? () => setSection(alert.jump) : undefined}
+                  disabled={!isClickable}
+                  style={{
+                    width: '100%',
+                    background: levelBgTint(alert.level),
+                    border: `1px solid ${levelBorder(alert.level)}`,
+                    borderRadius: 6,
+                    padding: '10px 14px',
+                    cursor: isClickable ? 'pointer' : 'default',
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    transition: 'background 0.15s, border-color 0.15s',
                   }}
-                  style={{ accentColor: colors.textGold, width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: colors.textPrimary }}>
-                    {t.name}
+                >
+                  <div style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: levelColor(alert.level),
+                    flexShrink: 0,
+                  }} />
+                  <div style={{
+                    flex: 1,
+                    fontFamily: fonts.sans,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: colors.textPrimary,
+                  }}>
+                    {alert.text}
                   </div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>
-                    {t.owner}
+                  {isClickable && <ChevronRight color={colors.textMuted} />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div style={{
+          padding: '14px 16px',
+          background: 'rgba(80,195,120,0.05)',
+          border: '1px solid rgba(80,195,120,0.2)',
+          borderRadius: 6,
+          fontFamily: fonts.sans,
+          fontSize: 13,
+          color: colors.textSecondary,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}>
+          <span style={{ fontSize: 16 }}>✓</span>
+          <span>All clear — nothing needs your attention right now.</span>
+        </div>
+      )}
+
+      {/* ── Section tiles, grouped ── */}
+      {groups.map(group => (
+        <div key={group.title}>
+          <div style={{
+            fontFamily: fonts.sans,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '1.8px',
+            textTransform: 'uppercase',
+            color: colors.textMuted,
+            marginBottom: 8,
+          }}>
+            {group.title}
+          </div>
+          <div className="admin-tile-grid">
+            {group.tiles.map(tile => (
+              <button
+                key={tile.id}
+                onClick={() => setSection(tile.id)}
+                style={{
+                  background: colors.cardBg,
+                  border: `1px solid ${colors.borderSubtle}`,
+                  borderRadius: 8,
+                  padding: '14px 14px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  transition: 'background 0.15s, border-color 0.15s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = colors.cardBgHover;
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = colors.cardBg;
+                  e.currentTarget.style.borderColor = colors.borderSubtle;
+                }}
+              >
+                <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>{tile.icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: fonts.sans,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: colors.textPrimary,
+                  }}>
+                    {tile.label}
+                  </div>
+                  <div style={{
+                    fontFamily: fonts.sans,
+                    fontSize: 11,
+                    color: colors.textMuted,
+                    marginTop: 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {tile.desc}
                   </div>
                 </div>
-                {tagged && (
-                  <span style={{
-                    fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
-                    letterSpacing: '1px', textTransform: 'uppercase',
-                    color: 'rgba(245,197,24,0.95)',
-                    border: '1px solid rgba(245,197,24,0.4)',
-                    padding: '2px 6px', borderRadius: 2,
+                {tile.badge && (
+                  <div style={{
+                    minWidth: 22, height: 22, borderRadius: 11, padding: '0 7px',
+                    background: levelBgTint(tile.badge.level),
+                    border: `1px solid ${levelBorder(tile.badge.level)}`,
+                    color: levelColor(tile.badge.level),
+                    fontFamily: fonts.sans,
+                    fontSize: 11, fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
                     flexShrink: 0,
                   }}>
-                    Commish
-                  </span>
+                    {tile.badge.count}
+                  </div>
                 )}
-              </label>
-            );
-          })}
+                <ChevronRight color={colors.textMuted} size={16} />
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      </CollapsibleGroup>
-
-      <CollapsibleGroup title="League Settings" icon="⚙️">
-      {/* All four sections (Season Settings, Waiver Schedule, Results Email
-          Schedule, Draft) are now rendered by SeasonSettingsPanel — Wave I
-          extraction. The panel also owns the DraftModal lifecycle, so AdminView
-          no longer has a `showDraftModal` state or trailing `<DraftModal />`
-          render at the bottom of this view. */}
-      <SeasonSettingsPanel
-        settings={settings}
-        setSettings={setSettings}
-        teams={teams}
-        allPlayers={allPlayers}
-        updateTeams={updateTeams}
-        headshots={headshots}
-      />
-      {/* ── Schedule Import ──
-          Bulk-import a season's PGA Tour schedule from pgatour.com. Used at
-          season rollover to populate the new year's tournaments without
-          typing each one by hand. */}
-      <ScheduleImportPanel
-        tournaments={tournaments}
-        setTournaments={setTournaments}
-      />
-      </CollapsibleGroup>
+      ))}
     </div>
   );
 };
-
