@@ -8,12 +8,17 @@ import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 import { TournamentBadges } from './TournamentBadges';
 
-const ALTERNATE_KEYWORDS = ['Puerto Rico', 'Zurich', 'Corales', 'Myrtle Beach', 'ISCO', 'Barracuda'];
-
-const isAlternate = (t) => {
-  if (t.isAlternate !== undefined) return t.isAlternate;
-  return ALTERNATE_KEYWORDS.some(kw => t.name.includes(kw));
-};
+// Alternate-event detection: relies on the explicit `isAlternate` flag the
+// commish sets via the "Alt" toggle in the schedule editor.
+//
+// Previously this also fell back to a keyword-matching list — name-substring
+// matching against ['Puerto Rico', 'Zurich', 'Corales', 'Myrtle Beach', 'ISCO',
+// 'Barracuda']. That worked when those event names were stable but went stale
+// every time the PGA renamed or rescheduled an event, AND it disagreed with
+// the strict-flag-only logic used by StandingsView/swingAward/cron — which
+// led to subtle inconsistencies (one view treats an event as alternate, the
+// other doesn't). Now there's one source of truth: the flag.
+const isAlternate = (t) => !!t.isAlternate;
 
 // ── Result rendering helpers (merged in from former ResultsView) ─────────────
 const GOLD_BRIGHT = '#f5c518';
@@ -229,10 +234,22 @@ export const TournamentsView = ({
   // discard any data whose tournamentName doesn't fuzzy-match the active
   // tournament (so we never show scores from the wrong event when the commish
   // is behind on processing).
+  //
+  // Wave J Round 3 improvements:
+  //   • Pause polling when the tab is hidden (Page Visibility API), refetch
+  //     immediately on re-show. Prevents wasted /api/live calls when the
+  //     phone is in someone's pocket all weekend, and gives them fresh data
+  //     the moment they re-open the app instead of waiting up to 5 min for
+  //     the next tick.
+  //   • Track the last successful fetch timestamp so the UI can render
+  //     "Updated N min ago" — helps managers see at-a-glance whether the
+  //     scoreboard is current.
   const [liveData, setLiveData] = useState(null);
+  const [lastLiveFetchAt, setLastLiveFetchAt] = useState(null);
   const activeTournamentForLive = localTournaments.find(t => t.playing && !t.completed);
   useEffect(() => {
     setLiveData(null);
+    setLastLiveFetchAt(null);
     if (!activeTournamentForLive) return;
     let cancelled = false;
     let interval = null;
@@ -263,13 +280,34 @@ export const TournamentsView = ({
             return;
           }
           setLiveData(data);
+          setLastLiveFetchAt(Date.now());
         })
         .catch(() => {});
     };
 
+    // Visibility handler: pause interval when hidden, fetch+resume on show.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (interval) { clearInterval(interval); interval = null; }
+      } else {
+        // Tab became visible — refetch immediately and resume polling
+        fetchLive();
+        if (!interval) interval = setInterval(fetchLive, 5 * 60 * 1000);
+      }
+    };
+
+    // Initial fetch + start interval only if tab is currently visible
     fetchLive();
-    interval = setInterval(fetchLive, 5 * 60 * 1000);
-    return () => { cancelled = true; clearInterval(interval); };
+    if (document.visibilityState !== 'hidden') {
+      interval = setInterval(fetchLive, 5 * 60 * 1000);
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [activeTournamentForLive?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Normalize player name for fuzzy-matching against live data. Mirrors the
@@ -322,6 +360,23 @@ export const TournamentsView = ({
     const hours = date.getHours(); const minutes = date.getMinutes();
     const ampm = hours >= 12 ? 'PM' : 'AM';
     return `${days[date.getDay()]} ${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${ampm} ET`;
+  };
+
+  // Format a timestamp as "X min ago" / "just now" — used in the active
+  // tournament expansion footer to surface freshness of live scoreboard data.
+  // Granularity: under-a-minute → "just now"; < 1h → "Nm ago"; ≥1h → "Nh ago".
+  // We re-derive this on each render rather than ticking on an interval —
+  // re-renders happen frequently enough (poll, visibility events) that a
+  // separate ticker would be overkill for a casual freshness indicator.
+  const formatRelative = (ts) => {
+    if (!ts) return '';
+    const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (diffSec < 30) return 'just now';
+    if (diffSec < 60) return `${diffSec}s ago`;
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    return `${diffHr}h ago`;
   };
 
   const activeTournament = localTournaments.find(t => t.playing && !t.completed);
@@ -400,6 +455,14 @@ export const TournamentsView = ({
   // this view — see Standings tab for swing-level team standings.)
 
   // ── Status badge component ──
+  // Active (in-progress) tournament badge. Designed to be clearly distinct
+  // from a static date label — fantasy managers should be able to spot the
+  // live event the moment they open the tab.
+  //
+  // Visual urgency comes from a tiny pulsing red dot next to the "Live" label.
+  // The badge background is still tinted by swing color (so it visually
+  // belongs to that swing) but the LIVE dot punches through with the
+  // universal "active right now" signal.
   const StatusBadge = ({ tournament }) => {
     const isActive = tournament.playing && !tournament.completed;
     if (!isActive) return null;
@@ -413,20 +476,33 @@ export const TournamentsView = ({
     return (
       <span style={{
         ...theme.badge,
-        background: getSwingColorAt(segment, 0.15),
-        border:    `1px solid ${getSwingColorAt(segment, 0.40)}`,
-        color:      getSwingColorAt(segment, 0.90),
-        // Override base badge sizing to match the original tighter inline version
-        // (TournamentsView's row height is tight; the default 2px 8px padding
-        // with 10px font and 1px letter-spacing is a hair too big).
-        padding: '2px 6px',
+        background: getSwingColorAt(segment, 0.18),
+        border:    `1px solid ${getSwingColorAt(segment, 0.50)}`,
+        color:      getSwingColorAt(segment, 0.95),
+        padding: '3px 8px',
         fontSize: fontSize.xs,
-        letterSpacing: 0,
-        textTransform: 'none',
-        gap: 3,
+        fontWeight: 700,
+        letterSpacing: 0.5,
+        textTransform: 'uppercase',
+        gap: 5,
         whiteSpace: 'nowrap',
+        display: 'inline-flex',
+        alignItems: 'center',
       }}>
-        In Progress
+        {/* Pulsing red dot — universal "live now" indicator. The pulse uses
+            the shared sfgl-pulse keyframes already defined in app-global.css
+            (originally used by the loading-screen logo). Faster pulse cycle
+            for active broadcast-style urgency. */}
+        <span style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: 'rgb(220, 60, 60)',
+          boxShadow: '0 0 4px rgba(220,60,60,0.7)',
+          animation: 'sfgl-pulse 1.4s ease-in-out infinite',
+          flexShrink: 0,
+        }} />
+        Live
       </span>
     );
   };
@@ -464,22 +540,34 @@ export const TournamentsView = ({
       };
     };
 
-    // Per-team aggregate score (sum of live scores; under par = better).
-    // Returns null when nothing in the lineup has any live data yet, so the
-    // UI can show "—" rather than a misleading "+0".
+    // Per-team aggregate score (sum of live tournament-cumulative scores;
+    // under par = better, lower = better rank).
+    //
+    // Confirmed against /api/live (api/live.js line 136-138): `live.score` is
+    // derived from `scoringData.total` which is the player's CUMULATIVE
+    // tournament-relative-to-par (e.g. "-5" through 3 rounds = combined -5).
+    // The endpoint ALSO exposes `live.totalScore` as a pre-parsed number;
+    // we use the numeric form here to avoid string parsing every render and
+    // to be unambiguous about what we're summing.
+    //
+    // Returns null when nothing in the lineup has any live data yet (e.g.
+    // pre-tournament Wednesday before tee times), so the UI can show "—"
+    // rather than a misleading "E".
     const teamScoreSummary = (lineup) => {
       const liveStarters = lineup
         .map(name => liveByName?.find(name))
         .filter(lp => lp && !lp.isCut && !lp.isWD);
       if (liveStarters.length === 0) return null;
-      // Sum strokes-relative-to-par across starters. Parse "+3" / "-2" / "E".
-      const toNum = (s) => {
-        if (!s) return 0;
-        if (s === 'E') return 0;
+      // Prefer totalScore numeric; fall back to parsing live.score for safety
+      // in case an older live.js endpoint doesn't expose totalScore yet.
+      const toNum = (lp) => {
+        if (typeof lp.totalScore === 'number') return lp.totalScore;
+        const s = lp.score;
+        if (!s || s === 'E') return 0;
         const n = parseInt(s, 10);
         return isNaN(n) ? 0 : n;
       };
-      const total = liveStarters.reduce((sum, lp) => sum + toNum(lp.score), 0);
+      const total = liveStarters.reduce((sum, lp) => sum + toNum(lp), 0);
       const cuts = lineup.filter(name => {
         const lp = liveByName?.find(name);
         return lp?.isCut || lp?.isWD;
@@ -564,7 +652,9 @@ export const TournamentsView = ({
             </div>
           );
         })}
-        {/* Footer disclaimer — keep users honest about projection vs. actual */}
+        {/* Footer disclaimer + last-updated indicator. Shows how stale the
+            data is so the user can trust the scoreboard. Re-renders every
+            30s via the parent's poll cycle and visibility change. */}
         <div style={{
           padding: '6px 14px',
           fontSize: fontSize.xs,
@@ -573,7 +663,11 @@ export const TournamentsView = ({
           fontStyle: 'italic',
           borderTop: `1px solid ${colors.borderSubtle}`,
         }}>
-          Live — updates every 5 minutes. Earnings post when results are finalized.
+          {lastLiveFetchAt ? (
+            <>Updated {formatRelative(lastLiveFetchAt)} · auto-refreshes every 5 min · earnings post when results are finalized</>
+          ) : (
+            <>Loading live scores… · earnings post when results are finalized</>
+          )}
         </div>
       </div>
     );
@@ -950,9 +1044,29 @@ export const TournamentsView = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* ── Edit button (commissioner only) ── */}
+      {/* ── Edit / Save / Cancel buttons (commissioner only) ──
+          In view mode: single Edit Schedule button.
+          In edit mode: Cancel (discards local changes) + Save Changes (commits).
+          Cancel rolls localTournaments back to the latest tournaments prop,
+          so any in-flight edits are dropped. Useful when you tap Edit by
+          mistake or change your mind mid-edit. */}
       {isCommissioner && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          {editMode && (
+            <button
+              onClick={() => {
+                setLocalTournaments(tournaments);  // discard local edits
+                setEditMode(false);
+              }}
+              style={{
+                ...theme.btnSecondary,
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '8px 14px', flexShrink: 0,
+              }}
+            >
+              Cancel
+            </button>
+          )}
           <button
             onClick={() => editMode ? saveChanges() : setEditMode(true)}
             style={{
