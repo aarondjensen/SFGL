@@ -28,6 +28,7 @@ import React from 'react';
 import { useDialog } from '../DialogContext';
 import { theme, colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
+import { STORAGE_KEYS } from '../../constants';
 import { processTournamentData } from './processTournamentData';
 import {
   computeSwingAward,
@@ -122,7 +123,6 @@ export const TournamentResultsPanel = ({
   globalPlayerStats, setGlobalPlayerStats,
   settings,
   rostersByTeamId,        // { teamId: [{name, limited, ...}] } — transactions-aware roster snapshot
-  STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
   const [selectedTourney, setSelectedTourney] = React.useState('');

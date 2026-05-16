@@ -6,7 +6,7 @@ import { tournamentResultsApi, sfglDataApi, playersApi, teamsApi } from '../api/
 // (seedAliasesToFirestore and LIV_GOLF_ROSTER imports removed — now used
 //  only by DataSyncPanel.)
 import { theme, colors, fonts, SWINGS } from '../theme.js';
-import { BONUSES_REGULAR, BONUSES_MAJOR } from '../constants';
+import { BONUSES_REGULAR, BONUSES_MAJOR, STORAGE_KEYS } from '../constants';
 
 // Wave I cleanup: CollapsibleGroup and the admin S/disabledBtn style tokens
 // used to live inline in this file. They've been moved to siblings in the
@@ -654,7 +654,6 @@ export const AdminView = ({
   allPlayers, setAllPlayers, globalPlayerStats, setGlobalPlayerStats,
   headshots, setHeadshots,
   updateRankings, rankingsLastUpdated,
-  STORAGE_KEYS,
 }) => {
   const [selectedTourney, setSelectedTourney] = useState('');
   const [manualEntry, setManualEntry] = useState({ round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} });
@@ -1440,7 +1439,6 @@ export const AdminView = ({
         updateTeams={updateTeams}
         tournaments={tournaments}
         settings={settings}
-        STORAGE_KEYS={STORAGE_KEYS}
       />
 
       {/* ── 4. Award Swing Winner ── */}
@@ -1449,7 +1447,6 @@ export const AdminView = ({
         teams={teams}
         transactions={transactions}
         setTransactions={setTransactions}
-        STORAGE_KEYS={STORAGE_KEYS}
       />
       </CollapsibleGroup>
 
@@ -1481,7 +1478,6 @@ export const AdminView = ({
         {mergeOpen && <MergePlayersPanel
           allPlayers={allPlayers} teams={teams} transactions={transactions}
           updateTeams={updateTeams} setTransactions={setTransactions}
-          STORAGE_KEYS={STORAGE_KEYS}
         />}
       </div>
       </CollapsibleGroup>

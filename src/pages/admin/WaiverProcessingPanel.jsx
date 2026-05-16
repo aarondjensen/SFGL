@@ -9,6 +9,7 @@ import React from 'react';
 import { useDialog } from '../DialogContext';
 import { theme, colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
+import { STORAGE_KEYS } from '../../constants';
 import { S } from './adminStyles';
 import { getETClock, fmtETTime, DAY_NAMES } from '../../utils/sharedHelpers';
 
@@ -38,7 +39,6 @@ export const WaiverProcessingPanel = ({
   teams, updateTeams,
   tournaments,
   settings,
-  STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
   const [waiverRevealed, setWaiverRevealed] = React.useState(false);

@@ -284,7 +284,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
-export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner, STORAGE_KEYS }) => {
+export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner }) => {
   const [filterTeam,   setFilterTeam]   = useState('all');
   const [filterSwing,  setFilterSwing]  = useState('all');
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }

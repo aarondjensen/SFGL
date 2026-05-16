@@ -14,13 +14,13 @@ import { useDialog } from '../DialogContext';
 import { theme, colors } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { SWINGS } from '../../theme.js';
+import { STORAGE_KEYS } from '../../constants';
 import { S, disabledBtn } from './adminStyles';
 import { getSwingLeader, getSwingPot } from '../../utils/sharedHelpers';
 import { computeSwingAward } from '../../utils/swingAward';
 
 export const SwingWinnerPanel = ({
   tournaments, teams, transactions, setTransactions,
-  STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
   const [swingAwardSeg, setSwingAwardSeg] = React.useState('');
