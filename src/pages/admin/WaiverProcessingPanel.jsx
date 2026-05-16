@@ -36,6 +36,7 @@ const applyWaiver = (t, w) => {
 export const WaiverProcessingPanel = ({
   transactions, setTransactions,
   teams, updateTeams,
+  tournaments,
   settings,
   STORAGE_KEYS,
 }) => {
@@ -106,9 +107,20 @@ export const WaiverProcessingPanel = ({
     );
     if (!ok) return;
 
-    const em = {}; teams.forEach(t => { em[t.name] = t.earnings || 0; });
+    // Derive each team's current season earnings from tournament.results so
+    // waiver priority isn't affected by drift in the stored team.earnings
+    // field. Mirrors StandingsView's seasonTotals derivation.
+    const derivedEarnings = {};
+    teams.forEach(t => { derivedEarnings[t.id] = 0; });
+    (tournaments || []).forEach(t => {
+      if (!t.completed || !t.results?.teams) return;
+      Object.entries(t.results.teams).forEach(([teamId, result]) => {
+        if (derivedEarnings[teamId] !== undefined) derivedEarnings[teamId] += (result.totalEarnings || 0);
+      });
+    });
+    const em = {}; teams.forEach(t => { em[t.name] = derivedEarnings[t.id] || 0; });
     const pm = {};
-    [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
+    [...teams].sort((a, b) => (derivedEarnings[a.id] || 0) - (derivedEarnings[b.id] || 0)).forEach((t, i) => { pm[t.name] = i; });
     let nextLastPlace = teams.length;
 
     const byTeam = {};
