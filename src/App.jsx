@@ -613,6 +613,7 @@ const FantasyGolfLeague = () => {
                 setTournaments={updateTournaments}
                 isCommissioner={isCommissioner}
                 settings={settings}
+                loggedInUser={loggedInUser}
               />
             </Suspense>
           )}
@@ -774,6 +775,7 @@ const FantasyGolfLeague = () => {
         onClose={() => setShowUserSettings(false)}
         loggedInUser={loggedInUser}
         teams={resolvedTeams}
+        updateTeams={updateTeams}
         isCommissioner={isCommissioner}
         setIsCommissioner={setIsCommissioner}
         taggedCommissioner={taggedCommissioner}

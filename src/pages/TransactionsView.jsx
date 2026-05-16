@@ -5,6 +5,7 @@ import { getSegmentByDate, getSegmentForTournament, getCurrentTournamentIndex, m
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
+import { sendCommishPush } from '../api/pushNotifications';
 
 // shortName imported from utils (see abbreviateName)
 
@@ -284,7 +285,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
-export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner, settings = {}, STORAGE_KEYS }) => {
+export const TransactionsView = ({ transactions, tournaments = [], teams, allPlayers = [], setTransactions, updateTeams, setTournaments, isCommissioner, settings = {}, loggedInUser, STORAGE_KEYS }) => {
   const [filterTeam,   setFilterTeam]   = useState('all');
   const [filterSwing,  setFilterSwing]  = useState('all');
   const [editingTx,    setEditingTx]    = useState(null); // { tx, txIndex }
@@ -701,6 +702,49 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     // setTransactions is updateTransactions from useLeague — it handles
     // both local state, localStorage, and Firebase sync internally.
     // No separate sfglDataApi.set needed (that caused race conditions).
+
+    // ── Push notification (Wave J Round 6 batch 3) ─────────────────────────
+    // Notify the affected manager that the commish modified their team.
+    // Skip when:
+    //   • The transaction is a blocked/failed waiver (no real roster change)
+    //   • The commish is acting on their own team (they already know)
+    // Best-effort: failures here don't roll back the transaction add.
+    const affectedTeam = teams.find(t => t.name === addTxTeam);
+    const commishTeam = teams.find(t => t.owner === loggedInUser);
+    const shouldPush = !isBlocked
+      && affectedTeam?.id
+      && commishTeam?.id
+      && affectedTeam.id !== commishTeam.id;
+
+    if (shouldPush) {
+      const typeLabel = addTxType === 'free agent' ? 'free agent claim'
+                     : addTxType === 'drop'        ? 'player drop'
+                     : addTxType === 'mulligan'    ? 'mulligan'
+                     : addTxType === 'waiver'      ? 'waiver claim'
+                     : addTxType === 'swing_winner' ? 'swing winner award'
+                     : 'transaction';
+      const playerSummary = playerInName && playerOutName
+        ? `${playerInName} in, ${playerOutName} out`
+        : playerInName
+          ? `Added ${playerInName}`
+          : playerOutName
+            ? `Dropped ${playerOutName}`
+            : '';
+      try {
+        sendCommishPush({
+          event: 'commishModified',
+          commishTeamId: commishTeam.id,
+          recipients: [affectedTeam.id],
+          title: '👑 Commissioner edited your team',
+          body: playerSummary
+            ? `${typeLabel}: ${playerSummary}`
+            : `A ${typeLabel} was added to your team`,
+          deepLink: '#rosters',
+        }).catch(err => console.warn('[push] commishModified send failed:', err.message));
+      } catch (err) {
+        console.warn('[push] commishModified failed:', err.message);
+      }
+    }
 
     dialog.showToast('Transaction added', 'success');
     setAddTxOpen(false);

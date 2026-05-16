@@ -25,6 +25,8 @@ import {
   requestPermissionAndSubscribe,
   unsubscribe as unsubscribePush,
   getCurrentToken,
+  NOTIFICATION_EVENTS,
+  getEffectivePrefs,
 } from '../api/pushNotifications';
 
 export const UserSettingsModal = ({
@@ -32,6 +34,7 @@ export const UserSettingsModal = ({
   onClose,
   loggedInUser,
   teams,
+  updateTeams,
   isCommissioner,
   setIsCommissioner,
   taggedCommissioner,
@@ -49,6 +52,41 @@ export const UserSettingsModal = ({
     () => teams.find(t => t.owner === loggedInUser) || null,
     [teams, loggedInUser]
   );
+
+  // Effective per-event prefs for this team (stored values + defaults).
+  // Recomputed when the team list or loggedInUser changes.
+  const effectivePrefs = useMemo(
+    () => userTeam ? getEffectivePrefs(userTeam) : {},
+    [userTeam]
+  );
+
+  // Tracks pending writes per event key so we can disable toggles while
+  // their Firestore write is in flight (prevents rapid double-toggle bugs).
+  const [prefSaving, setPrefSaving] = useState({});
+
+  const handleToggleEventPref = async (eventKey) => {
+    if (!userTeam) return;
+    if (prefSaving[eventKey]) return;  // ignore while in-flight
+
+    const currentValue = effectivePrefs[eventKey];
+    const newValue = !currentValue;
+
+    // Optimistic update: write new prefs map to local state immediately
+    // via updateTeams. Realtime subscription will reconcile if needed.
+    const newPrefs = { ...(userTeam.notificationPrefs || {}), [eventKey]: newValue };
+    const newTeams = teams.map(t =>
+      t.id === userTeam.id ? { ...t, notificationPrefs: newPrefs } : t
+    );
+
+    setPrefSaving(p => ({ ...p, [eventKey]: true }));
+    try {
+      await updateTeams(newTeams);
+    } catch (err) {
+      dialog.showToast('Could not save preference: ' + err.message, 'error');
+    } finally {
+      setPrefSaving(p => ({ ...p, [eventKey]: false }));
+    }
+  };
 
   // ── Push subscription state (mirrors AdminView batch 1 panel) ──────────
   const [pushSupported,  setPushSupported]  = useState(false);
@@ -420,13 +458,79 @@ export const UserSettingsModal = ({
                   </div>
                 )}
 
-                {/* Forward-looking note about per-event prefs (coming in batch 3) */}
-                {pushSubscribed && (
-                  <div style={{
-                    fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
-                    marginTop: 10, lineHeight: 1.5, fontStyle: 'italic',
-                  }}>
-                    Per-event notification preferences (waivers, free agents, etc.) are coming soon.
+                {/* Per-event toggles (Wave J Round 6 batch 3) ─────
+                    Only batch 3 events are wired today; batch 4 will
+                    extend NOTIFICATION_EVENTS with more rows. Each toggle
+                    writes to team.notificationPrefs in Firestore so the
+                    server-side push triggers can honor the preference. */}
+                {pushSubscribed && userTeam && (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{
+                      fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
+                      marginBottom: 6, lineHeight: 1.5,
+                    }}>
+                      Choose which events trigger pushes on your subscribed devices.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {NOTIFICATION_EVENTS.map(evt => {
+                        const enabled = effectivePrefs[evt.key];
+                        const saving = !!prefSaving[evt.key];
+                        return (
+                          <label
+                            key={evt.key}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              padding: '8px 10px',
+                              background: enabled
+                                ? 'rgba(80,195,120,0.04)'
+                                : 'rgba(255,255,255,0.02)',
+                              border: `1px solid ${enabled
+                                ? 'rgba(80,195,120,0.2)'
+                                : colors.borderSubtle}`,
+                              borderRadius: 6,
+                              cursor: saving ? 'wait' : 'pointer',
+                              opacity: saving ? 0.5 : 1,
+                              transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={enabled}
+                              disabled={saving}
+                              onChange={() => handleToggleEventPref(evt.key)}
+                              style={{
+                                accentColor: colors.earningsGreen,
+                                width: 14, height: 14,
+                                cursor: saving ? 'wait' : 'pointer',
+                                flexShrink: 0,
+                              }}
+                            />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{
+                                fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
+                                color: colors.textPrimary,
+                              }}>
+                                {evt.label}
+                              </div>
+                              <div style={{
+                                fontFamily: fonts.sans, fontSize: 10.5, color: colors.textMuted,
+                                marginTop: 1,
+                              }}>
+                                {evt.desc}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div style={{
+                      fontFamily: fonts.sans, fontSize: 10.5, color: colors.textMuted,
+                      marginTop: 8, lineHeight: 1.5, fontStyle: 'italic',
+                    }}>
+                      More notification types (free agent results, swing winners, league activity) coming soon.
+                    </div>
                   </div>
                 )}
               </>
