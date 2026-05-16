@@ -31,6 +31,7 @@ if (typeof window !== 'undefined') {
 import { DialogProvider } from './pages/DialogContext';
 import { ErrorBoundary, addGlobalErrorReporters }  from './pages/ErrorBoundary';
 import { PullToRefresh }  from './pages/PullToRefresh';
+import { UserSettingsModal } from './components/UserSettingsModal';
 
 // ── Eagerly loaded views (shown on first visit / lightweight) ──────────────
 import { StandingsView }  from './pages/StandingsView';
@@ -161,6 +162,7 @@ const FantasyGolfLeague = () => {
   const [taggedCommissioner,    setTaggedCommissioner]    = useState(false);
   const [loggedInUser,          setLoggedInUser]          = useState(null);
   const [showLoginModal,        setShowLoginModal]        = useState(false);
+  const [showUserSettings,      setShowUserSettings]      = useState(false);
   // (Password popover state removed — commish access is granted by team tag,
   // not by password. See handleManagerLogin and the AdminView Manager Accounts
   // panel for how the tag is set.)
@@ -478,9 +480,8 @@ const FantasyGolfLeague = () => {
                   // takes the final token; works for "Aaron Jensen" →
                   // "Jensen" and for single-word usernames.
                   const lastName = String(loggedInUser).trim().split(/\s+/).pop();
-                  // 2026 styling — used for both the plain span and the
-                  // commish toggle button so the layout doesn't shift when
-                  // commish mode flips on/off.
+                  // 2026 styling — used for the button so the layout doesn't
+                  // shift when commish mode flips on/off.
                   const baseNameStyle = {
                     fontFamily: "'Raleway', system-ui, sans-serif",
                     fontSize: fontSize.lg,
@@ -488,50 +489,34 @@ const FantasyGolfLeague = () => {
                     whiteSpace: 'nowrap',
                   };
 
-                  // Tagged commissioners get a clickable name. Tapping toggles
-                  // commish mode — the gold tint signals "active". Untagged
-                  // managers see a plain span with no interaction.
-                  if (taggedCommissioner) {
-                    const toggleCommishMode = () => {
-                      setIsCommissioner(prev => {
-                        const next = !prev;
-                        // Leaving commish mode while on the Commish tab
-                        // would render nothing — bounce back to standings.
-                        if (!next && activeTab === 'admin') setActiveTab('standings');
-                        return next;
-                      });
-                    };
-                    return (
-                      <button
-                        onClick={toggleCommishMode}
-                        title={isCommissioner ? "Tap to exit Commish mode" : "Tap to enter Commish mode"}
-                        aria-label={isCommissioner ? "Exit Commish mode" : "Enter Commish mode"}
-                        aria-pressed={isCommissioner}
-                        style={{
-                          ...baseNameStyle,
-                          fontWeight: isCommissioner ? 700 : 400,
-                          color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.7)',
-                          background: 'transparent',
-                          border: 'none',
-                          padding: 0,
-                          cursor: 'pointer',
-                          transition: 'color 0.2s, font-weight 0.2s',
-                        }}
-                      >
-                        {lastName}
-                      </button>
-                    );
-                  }
-
-                  // Untagged manager — plain, non-interactive name.
+                  // Wave J Round 6 batch 2: name-tap now opens the user
+                  // settings modal for ALL logged-in users (not just
+                  // commissioners). The modal contains commish-mode toggle
+                  // (for tagged users), push notification subscription
+                  // controls, and logout. Previously this button only
+                  // existed for tagged commissioners and only toggled
+                  // commish mode — now it's a proper user menu.
+                  //
+                  // Commissioners in active commish mode keep the gold
+                  // tint as a visual indicator that mode is engaged.
                   return (
-                    <span style={{
-                      ...baseNameStyle,
-                      fontWeight: 400,
-                      color: 'rgba(255,255,255,0.7)',
-                    }}>
+                    <button
+                      onClick={() => setShowUserSettings(true)}
+                      title="Open account settings"
+                      aria-label="Open account settings"
+                      style={{
+                        ...baseNameStyle,
+                        fontWeight: isCommissioner ? 700 : 400,
+                        color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.7)',
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        transition: 'color 0.2s, font-weight 0.2s',
+                      }}
+                    >
                       {lastName}
-                    </span>
+                    </button>
                   );
                 })()}
                 {!loggedInUser && !isCommissioner && (
@@ -779,6 +764,23 @@ const FantasyGolfLeague = () => {
           </div>
         </div>
       )}
+
+      {/* ── User Settings Modal (Wave J Round 6 batch 2) ── */}
+      {/* Opened by tapping the user's name in the header. Replaces the
+          previous tap-to-toggle-commish behavior — that toggle is now an
+          option inside the modal, alongside push notifications and logout. */}
+      <UserSettingsModal
+        isOpen={showUserSettings}
+        onClose={() => setShowUserSettings(false)}
+        loggedInUser={loggedInUser}
+        teams={resolvedTeams}
+        isCommissioner={isCommissioner}
+        setIsCommissioner={setIsCommissioner}
+        taggedCommissioner={taggedCommissioner}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onLogout={handleLogout}
+      />
     </div>
     </PullToRefresh>
   );
