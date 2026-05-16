@@ -471,6 +471,68 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const playerInName  = addTxPlayerIn?.name  || null;
     const playerOutName = addTxPlayerOut?.name || null;
 
+    // ── Mulligan validation ──────────────────────────────────────────────
+    // League rule: each team gets exactly 1 Regular and 1 Sig/Major mulligan
+    // per season (see the manager-facing display in RostersView).
+    // RostersView only RENDERS the used/available indicator; nothing in the
+    // commish-side `+ Add` modal previously enforced the limit. A commish
+    // adding a second mulligan of the same type would silently create a
+    // duplicate transaction, double-decrement the team-doc legacy counter,
+    // and (if the tournament was already processed) re-run the lineup swap
+    // — potentially overwriting the first mulligan's player swap with a
+    // different one, corrupting the stored results.
+    //
+    // This guard blocks the duplicate creation outright. There's no
+    // override path — if the commish needs to correct a bad mulligan
+    // record, they should delete the existing one (red X on the tx row)
+    // first, then add the correct one.
+    //
+    // Also validates that IN and OUT players are both specified — a
+    // mulligan with no IN or no OUT is meaningless and would leave a
+    // corrupt transaction record in the history.
+    if (addTxType === 'mulligan') {
+      const targetTournament = tournaments[parseInt(addTxTourney)];
+      const targetIsSigOrMajor = !!(targetTournament?.isSignature || targetTournament?.isMajor);
+      const targetTypeLabel = targetIsSigOrMajor ? 'Signature/Major' : 'Regular';
+
+      // Count this team's existing non-failed mulligans of the same event type.
+      // Failed mulligans don't consume the allowance (failure = mulligan
+      // wasn't actually used). Mirrors the logic in RostersView's
+      // `mulligansUsed` memo so the commish view and the manager view agree
+      // on what counts.
+      const existing = transactions.filter(tx => {
+        if (tx.type !== 'mulligan') return false;
+        if (tx.team !== addTxTeam) return false;
+        if (tx.status === 'failed') return false;
+        const txT = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
+        const txIsSigOrMajor = !!(txT && (txT.isSignature || txT.isMajor));
+        return txIsSigOrMajor === targetIsSigOrMajor;
+      });
+
+      if (existing.length > 0) {
+        const usedAt = existing
+          .map(tx => tournaments[tx.tournamentIndex]?.name)
+          .filter(Boolean)
+          .join(', ') || 'an earlier event';
+        dialog.showToast(
+          `${addTxTeam} already used their ${targetTypeLabel} mulligan this season (${usedAt}). Each team gets 1 per type.`,
+          'error'
+        );
+        return;
+      }
+
+      // Require both IN and OUT players for mulligans. The lineup swap
+      // logic below depends on both being present; without them the
+      // transaction record is meaningless data clutter.
+      if (!playerInName || !playerOutName) {
+        dialog.showToast(
+          'Mulligan requires both an OUT player (the one being replaced) and an IN player (the replacement).',
+          'error'
+        );
+        return;
+      }
+    }
+
     const ok = await dialog.showConfirm(
       'Add Manual Transaction',
       'Add ' + addTxType + ' for ' + addTxTeam + ' at ' + tournaments[parseInt(addTxTourney)]?.name +
