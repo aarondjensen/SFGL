@@ -662,6 +662,7 @@ const FantasyGolfLeague = () => {
                 setHeadshots={updateHeadshots}
                 updateRankings={updateRankings}
                 rankingsLastUpdated={rankingsLastUpdated}
+                loggedInUser={loggedInUser}
               />
             </Suspense>
           )}

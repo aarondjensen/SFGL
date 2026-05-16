@@ -1,7 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useDialog } from './DialogContext';
 import { theme, colors, fonts, SWINGS } from '../theme.js';
 import { computeSwingAward } from '../utils/swingAward';
+import {
+  isPushSupported,
+  getNotificationPermission,
+  requestPermissionAndSubscribe,
+  unsubscribe as unsubscribePush,
+  getCurrentToken,
+  sendTestPush,
+} from '../api/pushNotifications';
 
 // Panel imports — each becomes a drillable section in the new architecture.
 import { S } from './admin/adminStyles';
@@ -130,6 +138,7 @@ export const AdminView = ({
   allPlayers, setAllPlayers, globalPlayerStats, setGlobalPlayerStats,
   headshots, setHeadshots,
   updateRankings, rankingsLastUpdated,
+  loggedInUser,
 }) => {
   const dialog = useDialog();
 
@@ -152,6 +161,144 @@ export const AdminView = ({
     });
     return map;
   }, [teams, transactions]);
+
+  // ── Push notifications state ───────────────────────────────────────────
+  // Tracks the commish's own device subscription status so the test panel
+  // can show the right UI (subscribe / unsubscribe / test). All loaded
+  // async on mount via the effect below.
+  const [pushSupported,    setPushSupported]    = useState(false);
+  const [pushPermission,   setPushPermission]   = useState('default');
+  const [pushSubscribed,   setPushSubscribed]   = useState(false);
+  const [pushBusy,         setPushBusy]         = useState(false);
+  const [pushLastResult,   setPushLastResult]   = useState(null);  // last test push API response, for status display
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const supported = await isPushSupported();
+      if (cancelled) return;
+      setPushSupported(supported);
+      setPushPermission(getNotificationPermission());
+      setPushSubscribed(!!getCurrentToken());
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Find the commish's own team (matched by team.owner === loggedInUser).
+  // Used as the auth identity for the test-push API call and as the teamId
+  // the device subscription is tied to.
+  const commishTeam = useMemo(() => {
+    if (!loggedInUser) return null;
+    return teams.find(t => t.owner === loggedInUser) || null;
+  }, [teams, loggedInUser]);
+
+  const handleSubscribePush = async () => {
+    if (!commishTeam?.id) {
+      dialog.showToast('Could not identify your team for subscription. Are you logged in?', 'error');
+      return;
+    }
+    setPushBusy(true);
+    try {
+      const result = await requestPermissionAndSubscribe(commishTeam.id);
+      if (result.ok) {
+        setPushSubscribed(true);
+        setPushPermission('granted');
+        dialog.showToast('✓ Push notifications enabled on this device', 'success');
+      } else {
+        const messages = {
+          unsupported:  'Push notifications aren\u2019t supported in this browser. On iPhone, add SFGL to your home screen first (Safari → Share → Add to Home Screen).',
+          denied:       'Permission denied. Enable notifications for SFGL in your browser settings to receive pushes.',
+          no_vapid:     'Server not configured for push (missing VAPID key). Contact the developer.',
+          sw_failed:    'Service worker registration failed. Try refreshing the page.',
+          token_failed: 'Could not register with the push service. Try again.',
+          save_failed:  'Permission granted but failed to save subscription to Firestore. Try again.',
+        };
+        dialog.showToast(messages[result.reason] || `Push setup failed: ${result.reason}`, 'error');
+      }
+    } catch (err) {
+      console.error('[push] subscribe error:', err);
+      dialog.showToast('Push subscription failed: ' + err.message, 'error');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleUnsubscribePush = async () => {
+    setPushBusy(true);
+    try {
+      await unsubscribePush();
+      setPushSubscribed(false);
+      dialog.showToast('Unsubscribed from push notifications on this device', 'success');
+    } catch (err) {
+      console.error('[push] unsubscribe error:', err);
+      dialog.showToast('Unsubscribe failed: ' + err.message, 'error');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleTestPushSelf = async () => {
+    if (!commishTeam?.id) {
+      dialog.showToast('Could not identify your team. Are you logged in?', 'error');
+      return;
+    }
+    setPushBusy(true);
+    setPushLastResult(null);
+    try {
+      const result = await sendTestPush({
+        commishTeamId: commishTeam.id,
+        recipients:    [commishTeam.id],
+        title:         'SFGL test push',
+        body:          `Test from ${new Date().toLocaleTimeString()}. If you see this, pushes are working.`,
+        deepLink:      '#admin',
+      });
+      setPushLastResult(result);
+      if (result.sent > 0) {
+        dialog.showToast(`✓ Test push sent — ${result.sent} delivered, ${result.failed} failed`, 'success');
+      } else if (result.totalTokens === 0) {
+        dialog.showToast('No subscribed devices found for your team. Subscribe this device first.', 'error');
+      } else {
+        dialog.showToast(`Test push failed — 0 of ${result.totalTokens} delivered`, 'error');
+      }
+    } catch (err) {
+      console.error('[push] test push error:', err);
+      dialog.showToast('Test push failed: ' + err.message, 'error');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleTestPushAll = async () => {
+    if (!commishTeam?.id) {
+      dialog.showToast('Could not identify your team. Are you logged in?', 'error');
+      return;
+    }
+    const ok = await dialog.showConfirm(
+      'Send test push to all managers?',
+      'This will send a notification to every device that has subscribed to SFGL pushes across all teams. Use sparingly — managers will get a real notification.',
+      { type: 'warning', confirmText: 'Send to all', cancelText: 'Cancel' }
+    );
+    if (!ok) return;
+    setPushBusy(true);
+    setPushLastResult(null);
+    try {
+      const result = await sendTestPush({
+        commishTeamId: commishTeam.id,
+        recipients:    'all',
+        title:         'SFGL test broadcast',
+        body:          `Test push from the commissioner at ${new Date().toLocaleTimeString()}. You can ignore this.`,
+        deepLink:      '#standings',
+      });
+      setPushLastResult(result);
+      dialog.showToast(`Test push sent: ${result.sent} delivered, ${result.failed} failed (across ${result.totalTokens} devices)`,
+        result.sent > 0 ? 'success' : 'error');
+    } catch (err) {
+      console.error('[push] test broadcast error:', err);
+      dialog.showToast('Test broadcast failed: ' + err.message, 'error');
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   // ── Alert detection ────────────────────────────────────────────────────
   // Each alert maps to a section the commish can jump to. Tier ranking:
@@ -570,6 +717,135 @@ export const AdminView = ({
                   );
                 })}
               </div>
+            </div>
+
+            {/* ── Push Notifications (Wave J Round 6 — batch 1 scaffolding) ──
+                Lets the commish enable pushes on their device + send test
+                pushes to themselves or to all subscribed managers. Real event
+                triggers (waiver results etc) come in later batches; this
+                panel exists so we can verify the FCM plumbing end-to-end. */}
+            <div style={S.section}>
+              <div style={S.title}>🔔 Push Notifications</div>
+              <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
+                Manage push notifications for SFGL. Real event triggers (waiver results, lineup locks, etc.) come online in a future update. For now this panel lets you verify pushes work on your device.
+                <div style={{ marginTop: 6, fontSize: 11, opacity: 0.75 }}>
+                  <strong>iPhone users:</strong> Add SFGL to your home screen first (Safari → Share → Add to Home Screen), then open the app from the home-screen icon before subscribing. Pushes don't work in regular Safari.
+                </div>
+              </div>
+
+              {/* Status row */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '8px 10px',
+                background: 'rgba(255,255,255,0.02)',
+                border: `1px solid ${colors.borderSubtle}`,
+                borderRadius: 4,
+                marginBottom: 12,
+              }}>
+                <div style={{
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: !pushSupported
+                    ? colors.textMuted
+                    : pushSubscribed
+                      ? colors.earningsGreen
+                      : pushPermission === 'denied'
+                        ? colors.danger
+                        : colors.textMuted,
+                  flexShrink: 0,
+                }} />
+                <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+                  {!pushSupported
+                    ? 'Push notifications not supported in this browser.'
+                    : pushSubscribed
+                      ? `This device is subscribed${commishTeam ? ` as ${commishTeam.name}` : ''}.`
+                      : pushPermission === 'denied'
+                        ? 'Permission denied — enable notifications in your browser settings.'
+                        : 'This device is not subscribed.'}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {!pushSubscribed && pushSupported && pushPermission !== 'denied' && (
+                  <button
+                    onClick={handleSubscribePush}
+                    disabled={pushBusy || !commishTeam}
+                    style={{
+                      ...theme.btnPrimary,
+                      padding: '10px 16px',
+                      cursor: pushBusy || !commishTeam ? 'not-allowed' : 'pointer',
+                      opacity: pushBusy || !commishTeam ? 0.5 : 1,
+                    }}
+                  >
+                    {pushBusy ? 'Subscribing…' : 'Subscribe this device to push notifications'}
+                  </button>
+                )}
+                {pushSubscribed && (
+                  <>
+                    <button
+                      onClick={handleTestPushSelf}
+                      disabled={pushBusy}
+                      style={{
+                        ...theme.btnPrimary,
+                        padding: '10px 16px',
+                        cursor: pushBusy ? 'not-allowed' : 'pointer',
+                        opacity: pushBusy ? 0.5 : 1,
+                      }}
+                    >
+                      {pushBusy ? 'Sending…' : 'Send test push to my device'}
+                    </button>
+                    <button
+                      onClick={handleUnsubscribePush}
+                      disabled={pushBusy}
+                      style={{
+                        ...theme.btnSecondary,
+                        padding: '8px 14px',
+                        cursor: pushBusy ? 'not-allowed' : 'pointer',
+                        opacity: pushBusy ? 0.5 : 1,
+                      }}
+                    >
+                      Unsubscribe this device
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={handleTestPushAll}
+                  disabled={pushBusy || !commishTeam}
+                  style={{
+                    ...theme.btnSecondary,
+                    padding: '8px 14px',
+                    cursor: pushBusy || !commishTeam ? 'not-allowed' : 'pointer',
+                    opacity: pushBusy || !commishTeam ? 0.5 : 1,
+                    color: colors.warning,
+                    borderColor: colors.warningBorder,
+                  }}
+                >
+                  {pushBusy ? 'Sending…' : '⚠ Send test push to ALL subscribed managers'}
+                </button>
+              </div>
+
+              {/* Last test result */}
+              {pushLastResult && (
+                <div style={{
+                  marginTop: 10,
+                  padding: '8px 10px',
+                  background: pushLastResult.sent > 0
+                    ? 'rgba(80,195,120,0.06)'
+                    : 'rgba(220,80,80,0.06)',
+                  border: `1px solid ${pushLastResult.sent > 0
+                    ? 'rgba(80,195,120,0.3)'
+                    : 'rgba(220,80,80,0.3)'}`,
+                  borderRadius: 4,
+                  fontFamily: fonts.sans,
+                  fontSize: 11,
+                  color: colors.textSecondary,
+                }}>
+                  Last test: {pushLastResult.sent} delivered · {pushLastResult.failed} failed · {pushLastResult.totalTokens} total devices targeted
+                  {pushLastResult.cleanedUp > 0 && ` · ${pushLastResult.cleanedUp} dead tokens cleaned up`}
+                </div>
+              )}
             </div>
           </>
         );
