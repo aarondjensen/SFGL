@@ -254,7 +254,9 @@ export const UserSettingsModal = ({
         {/* ── Body ── */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
 
-          {/* Commish mode toggle — only for tagged commissioners */}
+          {/* Commish mode toggle — only for tagged commissioners. Same
+              pill-toggle shape as the "Notifications on this device" row
+              below; yellow accent (commish color) instead of green. */}
           {taggedCommissioner && (
             <div style={{ marginBottom: 18 }}>
               <div style={{
@@ -269,38 +271,84 @@ export const UserSettingsModal = ({
                 Commissioner
               </div>
               <button
+                type="button"
+                role="switch"
+                aria-checked={isCommissioner}
+                aria-label={`Commissioner mode: ${isCommissioner ? 'on' : 'off'}`}
                 onClick={handleCommishToggle}
                 style={{
-                  width: '100%',
-                  padding: '12px 14px',
-                  background: isCommissioner
-                    ? 'rgba(245,197,24,0.08)'
-                    : 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${isCommissioner
-                    ? 'rgba(245,197,24,0.35)'
-                    : colors.borderSubtle}`,
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  textAlign: 'left',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
+                  padding: '10px 12px',
+                  background: isCommissioner
+                    ? 'rgba(245,197,24,0.08)'
+                    : 'rgba(255,255,255,0.02)',
+                  border: `1px solid ${isCommissioner
+                    ? 'rgba(245,197,24,0.4)'
+                    : colors.borderSubtle}`,
+                  borderRadius: 6,
+                  cursor: 'pointer',
                   transition: 'background 0.15s, border-color 0.15s',
+                  textAlign: 'left',
+                  width: '100%',
+                  fontFamily: fonts.sans,
                 }}
               >
-                <span style={{ fontSize: 18, lineHeight: 1 }}>👑</span>
+                <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>👑</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontFamily: fonts.sans, fontSize: 13, fontWeight: 600,
+                    fontFamily: fonts.sans,
+                    fontSize: 13,
+                    fontWeight: 600,
                     color: isCommissioner ? 'rgba(245,197,24,0.95)' : colors.textPrimary,
                   }}>
-                    {isCommissioner ? 'Exit Commish Mode' : 'Enter Commish Mode'}
+                    Commissioner Mode
                   </div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, marginTop: 1 }}>
+                  <div style={{
+                    fontFamily: fonts.sans,
+                    fontSize: 11,
+                    color: colors.textMuted,
+                    marginTop: 1,
+                  }}>
                     {isCommissioner
-                      ? 'Currently in commish mode'
+                      ? 'Admin tools and Commish tab visible'
                       : 'Access admin tools and Commish tab'}
                   </div>
+                </div>
+                {/* Bright yellow toggle pill */}
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: 'relative',
+                    width: 36,
+                    height: 20,
+                    borderRadius: 10,
+                    background: isCommissioner
+                      ? 'rgba(255,215,0,0.95)'
+                      : 'rgba(255,255,255,0.12)',
+                    border: `1px solid ${isCommissioner
+                      ? 'rgba(255,215,0,1)'
+                      : 'rgba(255,255,255,0.18)'}`,
+                    boxShadow: isCommissioner
+                      ? '0 0 8px rgba(255,215,0,0.4)'
+                      : 'none',
+                    transition: 'background 0.18s, border-color 0.18s, box-shadow 0.18s',
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: 2,
+                    width: 14,
+                    height: 14,
+                    borderRadius: '50%',
+                    background: '#fff',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                    transform: isCommissioner ? 'translateX(16px)' : 'translateX(0)',
+                    transition: 'transform 0.18s ease',
+                  }} />
                 </div>
               </button>
             </div>
