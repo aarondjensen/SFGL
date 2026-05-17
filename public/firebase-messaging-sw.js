@@ -38,12 +38,12 @@ importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-comp
 // vars, so they need to be baked in. Find them in:
 //   Firebase Console → Project Settings → General → Your apps → Web app config
 firebase.initializeApp({
-  apiKey: "AIzaSyCjbWvK_wdmUmdUn43G20LSdwHbebdRGig",
-  authDomain: "sfgl-ad892.firebaseapp.com",
-  projectId: "sfgl-ad892",
-  storageBucket: "sfgl-ad892.firebasestorage.app",
-  messagingSenderId: "737106270109",
-  appId: "1:737106270109:web:014704ee9dabc248d04174"
+  apiKey:            'REPLACE_WITH_VITE_FIREBASE_API_KEY',
+  authDomain:        'REPLACE_WITH_VITE_FIREBASE_AUTH_DOMAIN',
+  projectId:         'REPLACE_WITH_VITE_FIREBASE_PROJECT_ID',
+  storageBucket:     'REPLACE_WITH_VITE_FIREBASE_STORAGE_BUCKET',
+  messagingSenderId: 'REPLACE_WITH_VITE_FIREBASE_MESSAGING_SENDER_ID',
+  appId:             'REPLACE_WITH_VITE_FIREBASE_APP_ID',
 });
 
 const messaging = firebase.messaging();
@@ -78,6 +78,18 @@ messaging.onBackgroundMessage((payload) => {
     // Show on iOS even if app is in foreground (default is to suppress)
     requireInteraction: false,
   };
+
+  // Set the home-screen badge indicator. The Badging API doesn't exist on
+  // every browser/version, so feature-detect first. We pass no count
+  // argument — iOS only renders a dot regardless of value, and on Android
+  // Chrome a generic indicator is enough since we don't track precise
+  // unread state. The call is best-effort: a failure here mustn't block
+  // showing the actual notification banner.
+  if ('setAppBadge' in self.navigator) {
+    self.navigator.setAppBadge().catch(err => {
+      console.log('[SW] setAppBadge failed (non-fatal):', err?.message);
+    });
+  }
 
   return self.registration.showNotification(title, options);
 });

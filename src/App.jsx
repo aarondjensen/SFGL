@@ -203,6 +203,36 @@ const FantasyGolfLeague = () => {
     return addGlobalErrorReporters();
   }, []);
 
+  // ── Clear the home-screen badge when the app is visible ───────────────────
+  // The service worker calls navigator.setAppBadge() when a background push
+  // arrives, which shows a red dot on the installed PWA's home-screen icon
+  // (iOS 16.4+ for Add-to-Home-Screen installs; Android Chrome). Once the
+  // user has the app open, the dot should clear — they're already here, the
+  // "unread" state is moot.
+  //
+  // Cleared in two places:
+  //   1. On mount  — covers fresh app opens (cold start from icon tap).
+  //   2. On visibilitychange → 'visible' — covers tab-switch returns where
+  //      the React tree was never unmounted (still resident from earlier).
+  //
+  // Feature-detected with the 'in' check because the Badging API isn't
+  // implemented on every browser/version. Best-effort: a clear failure
+  // shouldn't break anything else.
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    const clearBadge = () => {
+      if ('clearAppBadge' in navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      }
+    };
+    const onVisChange = () => {
+      if (document.visibilityState === 'visible') clearBadge();
+    };
+    clearBadge(); // initial mount — clear whatever the SW had set
+    document.addEventListener('visibilitychange', onVisChange);
+    return () => document.removeEventListener('visibilitychange', onVisChange);
+  }, []);
+
   // ── Restore session on page load ──────────────────────────────────────────
   useEffect(() => {
     managerAuthApi.getCurrentSession().then(session => {
@@ -719,7 +749,7 @@ const FantasyGolfLeague = () => {
                 <tab.Icon style={{ width: 20, height: 20 }} />
                 <span style={{
                   fontFamily: "'Raleway', system-ui, sans-serif",
-                  fontSize: 10,
+                  fontSize: fontSize.xs,
                   fontWeight: 500,
                   letterSpacing: 0.5,
                   whiteSpace: 'nowrap',
@@ -750,7 +780,7 @@ const FantasyGolfLeague = () => {
                 position: 'absolute', top: 12, right: 12,
                 background: 'none', border: 'none',
                 color: 'rgba(255,255,255,0.55)',
-                fontSize: 20, cursor: 'pointer',
+                fontSize: fontSize.xl, cursor: 'pointer',
                 lineHeight: 1, zIndex: 51,
                 transition: 'color 0.2s',
                 padding: 10,
