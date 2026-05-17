@@ -57,7 +57,7 @@ export default async function handler(req, res) {
   }
 
   // ── Parse + validate ──────────────────────────────────────────────────────
-  const { event, title, body, deepLink, recipients, asCommishOfTeamId } = req.body || {};
+  const { event, title, body, deepLink, recipients, asCommishOfTeamId, asTeamId } = req.body || {};
   if (!event || !title || !body) {
     return res.status(400).json({ error: 'missing required fields: event, title, body' });
   }
@@ -66,23 +66,28 @@ export default async function handler(req, res) {
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  // Two auth paths:
-  //   1. Server-to-server (cron jobs, future event triggers): Bearer CRON_SECRET.
-  //      Used for all production push triggers (waiver results etc).
-  //   2. Commish-driven events: a defined whitelist of event types AND the
-  //      request must include asCommishOfTeamId pointing at a team with
-  //      isCommissioner=true. Used by AdminView test pushes and by
-  //      TransactionsView when a commish manually adds/edits/deletes a
-  //      transaction on someone else's team.
+  // Three auth paths (most → least privileged):
+  //   1. CRON_SECRET (server-to-server). Trusted, can send any event to anyone.
+  //      Used by cron jobs (waivers, lineup-reminder, process-results).
+  //   2. Commish auth (asCommishOfTeamId + verified isCommissioner=true).
+  //      Trusted to send a defined whitelist of events. Used by AdminView
+  //      ('test') and TransactionsView ('commishModified').
+  //   3. Manager auth (asTeamId + verified team exists in the league).
+  //      Lightest verification — used for events where ANY manager triggers
+  //      a push (e.g. 'freeAgent' broadcasts to the league when a manager
+  //      adds a free agent).
   //
-  // This split avoids exposing CRON_SECRET to the browser while still letting
-  // AdminView and TransactionsView trigger pushes. Not bulletproof (someone
-  // who knows a commish's teamId could spoof a push to themselves or another
-  // manager) but the event whitelist limits blast radius to event types the
-  // app actually wants to dispatch.
+  // Auth is bounded by the per-path event whitelist, so even if someone
+  // spoofs asTeamId they can only trigger event types we've explicitly
+  // permitted via that path. For a 5-person trusted league this is
+  // appropriate; for a larger league we'd want real auth (JWTs etc).
   const COMMISH_ALLOWED_EVENTS = new Set([
     'test',             // diagnostic pushes from AdminView
     'commishModified',  // commish-modified-roster pushes from TransactionsView
+    'results',          // tournament results pushes from TournamentResultsPanel
+  ]);
+  const MANAGER_ALLOWED_EVENTS = new Set([
+    'freeAgent',        // FA add/drop broadcasts from AddDropPlayerModal
   ]);
   const expectedSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.authorization || '';
@@ -90,21 +95,35 @@ export default async function handler(req, res) {
   const isCronAuth = expectedSecret && providedSecret === expectedSecret;
 
   if (!isCronAuth) {
-    // Try the commish auth path
-    if (!COMMISH_ALLOWED_EVENTS.has(event)) {
-      return res.status(401).json({ error: `unauthorized: event '${event}' requires CRON_SECRET` });
-    }
-    if (!asCommishOfTeamId) {
-      return res.status(401).json({ error: `unauthorized: '${event}' events require asCommishOfTeamId` });
-    }
-    try {
-      const teamSnap = await db.collection('teams').doc(asCommishOfTeamId).get();
-      if (!teamSnap.exists || teamSnap.data()?.isCommissioner !== true) {
-        return res.status(403).json({ error: 'forbidden: not a commissioner team' });
+    // Try commish auth, then manager auth. Each requires a verified team ID.
+    if (COMMISH_ALLOWED_EVENTS.has(event)) {
+      if (!asCommishOfTeamId) {
+        return res.status(401).json({ error: `unauthorized: '${event}' events require asCommishOfTeamId` });
       }
-    } catch (err) {
-      console.error('[push] commish auth lookup failed:', err);
-      return res.status(500).json({ error: 'auth lookup failed' });
+      try {
+        const teamSnap = await db.collection('teams').doc(asCommishOfTeamId).get();
+        if (!teamSnap.exists || teamSnap.data()?.isCommissioner !== true) {
+          return res.status(403).json({ error: 'forbidden: not a commissioner team' });
+        }
+      } catch (err) {
+        console.error('[push] commish auth lookup failed:', err);
+        return res.status(500).json({ error: 'auth lookup failed' });
+      }
+    } else if (MANAGER_ALLOWED_EVENTS.has(event)) {
+      if (!asTeamId) {
+        return res.status(401).json({ error: `unauthorized: '${event}' events require asTeamId` });
+      }
+      try {
+        const teamSnap = await db.collection('teams').doc(asTeamId).get();
+        if (!teamSnap.exists) {
+          return res.status(403).json({ error: 'forbidden: team not found' });
+        }
+      } catch (err) {
+        console.error('[push] manager auth lookup failed:', err);
+        return res.status(500).json({ error: 'auth lookup failed' });
+      }
+    } else {
+      return res.status(401).json({ error: `unauthorized: event '${event}' requires CRON_SECRET` });
     }
   }
 
@@ -134,19 +153,24 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'failed to fetch recipient tokens', details: err.message });
   }
 
-  // ── Apply per-event preferences (Wave J Round 6 batch 3) ────────────────
+  // ── Apply per-event preferences (Wave J Round 6 batch 3-4) ─────────────
   // Each team can disable specific event types via team.notificationPrefs.
   // We filter the token list here before sending.
   //
   // Special cases:
   //   • event='test' → bypass prefs entirely (diagnostic must always deliver)
-  //   • event not in DEFAULTS_ON → require explicit opt-in (default OFF)
   //   • event in DEFAULTS_ON → fire unless explicit prefs[event] === false
+  //   • event not in DEFAULTS_ON → require explicit opt-in (default OFF)
+  //     [all current events are in DEFAULTS_ON; this branch is reserved for
+  //      future event types if we add any default-OFF ones]
   //
   // We batch-load all relevant team docs once instead of one Firestore read
   // per token, since multiple tokens from the same team would otherwise
   // duplicate the lookup.
-  const DEFAULTS_ON = new Set(['waiverWon', 'waiverLost', 'lineupLock', 'commishModified']);
+  //
+  // Keep this set in sync with cron.js DEFAULTS_ON and
+  // src/api/pushNotifications.js NOTIFICATION_EVENTS.
+  const DEFAULTS_ON = new Set(['waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified', 'leadChange']);
   let skipped = 0;
   if (event !== 'test' && tokenDocs.length > 0) {
     const teamIds = [...new Set(tokenDocs.map(t => t.teamId).filter(Boolean))];

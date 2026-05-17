@@ -97,10 +97,11 @@ export const UserSettingsModal = ({
   // Whether the Notifications section is expanded. Persisted in localStorage
   // so the user's preference sticks across modal opens. Defaults to expanded
   // for new users so the subscribe button is discoverable.
-  //
-  // When batch 3 lands and the section contains 4+ event toggles, we may
-  // flip this default to collapsed — but for now (just one button + a
-  // "coming soon" note), expanded is the right default.
+  // The section now has 6 event toggles. Expanded is still the default —
+  // the user may want to flip a toggle and the click cost of opening
+  // outweighs the visual cost of seeing the toggles by default. If we add
+  // many more events later, flipping to collapsed-by-default may become
+  // appropriate.
   const NOTIFS_EXPAND_KEY = 'sfgl.userSettings.notifsExpanded';
   const [notifsExpanded, setNotifsExpanded] = useState(() => {
     try {
@@ -556,12 +557,6 @@ export const UserSettingsModal = ({
                           </button>
                         );
                       })}
-                    </div>
-                    <div style={{
-                      fontFamily: fonts.sans, fontSize: 10.5, color: colors.textMuted,
-                      marginTop: 8, lineHeight: 1.5, fontStyle: 'italic',
-                    }}>
-                      More notification types (free agent results, swing winners, league activity) coming soon.
                     </div>
                   </div>
                 )}

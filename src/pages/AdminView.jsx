@@ -12,7 +12,7 @@ import {
 } from '../api/pushNotifications';
 
 // Panel imports — each becomes a drillable section in the new architecture.
-import { S } from './admin/adminStyles';
+import { S, M, disabledBtn } from './admin/adminStyles';
 import { DataSyncPanel } from './admin/DataSyncPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
 import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
@@ -659,29 +659,29 @@ export const AdminView = ({
         return (
           <>
             <BackBar label="Commissioner Status" onBack={back} />
-            <div style={S.section}>
-              <div style={S.title}>👑 Commissioner Status</div>
-              <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
+            <div style={M.page}>
+              <div style={M.descText}>
                 Tag managers as commissioners. Tagged managers see the Commish tab automatically when logged in — no password required.
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {teams.map(t => {
-                  const tagged = !!t.isCommissioner;
-                  return (
-                    <label key={t.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '8px 10px',
-                      background: tagged ? 'rgba(245,197,24,0.06)' : 'transparent',
-                      border: `1px solid ${tagged ? 'rgba(245,197,24,0.3)' : colors.borderSubtle}`,
-                      borderRadius: 4,
-                      cursor: 'pointer',
-                      transition: 'background 0.15s, border-color 0.15s',
-                    }}>
-                      <input
-                        type="checkbox"
-                        checked={tagged}
-                        onChange={e => {
-                          const next = e.target.checked;
+
+              {/* Commissioner tagging — toggle pills per team. Pattern
+                  mirrors the UserSettingsModal per-event notification pills:
+                  whole row is one button, pill on the right side, gold-tinted
+                  when on (matches the commish accent color), gray when off. */}
+              <div style={M.group}>
+                <div style={M.eyebrow}>Managers</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {teams.map(t => {
+                    const tagged = !!t.isCommissioner;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        role="switch"
+                        aria-checked={tagged}
+                        aria-label={`${t.name}: ${tagged ? 'is' : 'is not'} a commissioner`}
+                        onClick={() => {
+                          const next = !tagged;
                           const newTeams = teams.map(tt =>
                             tt.id === t.id ? { ...tt, isCommissioner: next } : tt
                           );
@@ -693,95 +693,117 @@ export const AdminView = ({
                             'success'
                           );
                         }}
-                        style={{ accentColor: colors.textGold, width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: colors.textPrimary }}>
-                          {t.name}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '10px 12px',
+                          background: tagged
+                            ? 'rgba(245,197,24,0.06)'
+                            : 'rgba(255,255,255,0.02)',
+                          border: `1px solid ${tagged
+                            ? 'rgba(245,197,24,0.3)'
+                            : colors.borderSubtle}`,
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          transition: 'background 0.15s, border-color 0.15s',
+                          textAlign: 'left',
+                          width: '100%',
+                          fontFamily: fonts.sans,
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            fontFamily: fonts.sans, fontSize: 13, fontWeight: 600,
+                            color: colors.textPrimary,
+                          }}>
+                            {t.name}
+                          </div>
+                          <div style={{
+                            fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
+                            marginTop: 1,
+                          }}>
+                            {t.owner}
+                          </div>
                         </div>
-                        <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>
-                          {t.owner}
+                        {/* Toggle pill — same shape as UserSettingsModal */}
+                        <div
+                          aria-hidden="true"
+                          style={{
+                            position: 'relative',
+                            width: 36,
+                            height: 20,
+                            borderRadius: 10,
+                            background: tagged
+                              ? 'rgba(245,197,24,0.65)'
+                              : 'rgba(255,255,255,0.12)',
+                            border: `1px solid ${tagged
+                              ? 'rgba(245,197,24,0.85)'
+                              : 'rgba(255,255,255,0.18)'}`,
+                            transition: 'background 0.18s, border-color 0.18s',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <div style={{
+                            position: 'absolute',
+                            top: 2,
+                            left: 2,
+                            width: 14,
+                            height: 14,
+                            borderRadius: '50%',
+                            background: '#fff',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                            transform: tagged ? 'translateX(16px)' : 'translateX(0)',
+                            transition: 'transform 0.18s ease',
+                          }} />
                         </div>
-                      </div>
-                      {tagged && (
-                        <span style={{
-                          fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
-                          letterSpacing: '1px', textTransform: 'uppercase',
-                          color: 'rgba(245,197,24,0.95)',
-                          border: '1px solid rgba(245,197,24,0.4)',
-                          padding: '2px 6px', borderRadius: 2,
-                          flexShrink: 0,
-                        }}>
-                          Commish
-                        </span>
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* ── Push Notifications (Wave J Round 6 — batch 1 scaffolding) ──
-                Lets the commish enable pushes on their device + send test
-                pushes to themselves or to all subscribed managers. Real event
-                triggers (waiver results etc) come in later batches; this
-                panel exists so we can verify the FCM plumbing end-to-end. */}
-            <div style={S.section}>
-              <div style={S.title}>🔔 Push Notifications</div>
-              <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-                Manage push notifications for SFGL. Real event triggers (waiver results, lineup locks, etc.) come online in a future update. For now this panel lets you verify pushes work on your device.
-                <div style={{ marginTop: 6, fontSize: 11, opacity: 0.75 }}>
-                  <strong>iPhone users:</strong> Add SFGL to your home screen first (Safari → Share → Add to Home Screen), then open the app from the home-screen icon before subscribing. Pushes don't work in regular Safari.
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Status row */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '8px 10px',
-                background: 'rgba(255,255,255,0.02)',
-                border: `1px solid ${colors.borderSubtle}`,
-                borderRadius: 4,
-                marginBottom: 12,
-              }}>
-                <div style={{
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: !pushSupported
-                    ? colors.textMuted
-                    : pushSubscribed
-                      ? colors.earningsGreen
-                      : pushPermission === 'denied'
-                        ? colors.danger
-                        : colors.textMuted,
-                  flexShrink: 0,
-                }} />
-                <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
-                  {!pushSupported
-                    ? 'Push notifications not supported in this browser.'
-                    : pushSubscribed
-                      ? `This device is subscribed${commishTeam ? ` as ${commishTeam.name}` : ''}.`
-                      : pushPermission === 'denied'
-                        ? 'Permission denied — enable notifications in your browser settings.'
-                        : 'This device is not subscribed.'}
+              {/* ── Push Notifications group ── */}
+              <div style={M.group}>
+                <div style={M.eyebrow}>🔔 Push Notifications (test)</div>
+                <div style={M.descText}>
+                  Subscribe this device, send a test push to yourself, or broadcast a test to all subscribed managers.
+                  <div style={{ marginTop: 6, fontSize: 11, opacity: 0.75 }}>
+                    <strong style={{ color: colors.textPrimary }}>iPhone:</strong> Add SFGL to your home screen first (Safari → Share → Add to Home Screen), then open the app from the icon before subscribing.
+                  </div>
                 </div>
-              </div>
 
-              {/* Action buttons */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {/* Status row */}
+                <div style={M.statusRow}>
+                  <div style={M.statusDot(
+                    !pushSupported
+                      ? colors.textMuted
+                      : pushSubscribed
+                        ? colors.earningsGreen
+                        : pushPermission === 'denied'
+                          ? colors.danger
+                          : colors.textMuted
+                  )} />
+                  <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+                    {!pushSupported
+                      ? 'Push notifications not supported in this browser'
+                      : pushSubscribed
+                        ? `Subscribed${commishTeam ? ` as ${commishTeam.name}` : ''}`
+                        : pushPermission === 'denied'
+                          ? 'Permission denied — enable in browser settings'
+                          : 'This device is not subscribed'}
+                  </div>
+                </div>
+
+                {/* Action buttons */}
                 {!pushSubscribed && pushSupported && pushPermission !== 'denied' && (
                   <button
                     onClick={handleSubscribePush}
                     disabled={pushBusy || !commishTeam}
-                    style={{
-                      ...theme.btnPrimary,
-                      padding: '10px 16px',
-                      cursor: pushBusy || !commishTeam ? 'not-allowed' : 'pointer',
-                      opacity: pushBusy || !commishTeam ? 0.5 : 1,
-                    }}
+                    className="modal-feel-lift modal-feel-primary"
+                    style={{ ...M.btnPrimary, ...disabledBtn(pushBusy || !commishTeam) }}
                   >
-                    {pushBusy ? 'Subscribing…' : 'Subscribe this device to push notifications'}
+                    {pushBusy ? 'Subscribing…' : 'Subscribe this device'}
                   </button>
                 )}
                 {pushSubscribed && (
@@ -789,24 +811,16 @@ export const AdminView = ({
                     <button
                       onClick={handleTestPushSelf}
                       disabled={pushBusy}
-                      style={{
-                        ...theme.btnPrimary,
-                        padding: '10px 16px',
-                        cursor: pushBusy ? 'not-allowed' : 'pointer',
-                        opacity: pushBusy ? 0.5 : 1,
-                      }}
+                      className="modal-feel-lift modal-feel-primary"
+                      style={{ ...M.btnPrimary, ...disabledBtn(pushBusy) }}
                     >
                       {pushBusy ? 'Sending…' : 'Send test push to my device'}
                     </button>
                     <button
                       onClick={handleUnsubscribePush}
                       disabled={pushBusy}
-                      style={{
-                        ...theme.btnSecondary,
-                        padding: '8px 14px',
-                        cursor: pushBusy ? 'not-allowed' : 'pointer',
-                        opacity: pushBusy ? 0.5 : 1,
-                      }}
+                      className="modal-feel-lift"
+                      style={{ ...M.btnSecondary, ...disabledBtn(pushBusy) }}
                     >
                       Unsubscribe this device
                     </button>
@@ -815,39 +829,33 @@ export const AdminView = ({
                 <button
                   onClick={handleTestPushAll}
                   disabled={pushBusy || !commishTeam}
-                  style={{
-                    ...theme.btnSecondary,
-                    padding: '8px 14px',
-                    cursor: pushBusy || !commishTeam ? 'not-allowed' : 'pointer',
-                    opacity: pushBusy || !commishTeam ? 0.5 : 1,
-                    color: colors.warning,
-                    borderColor: colors.warningBorder,
-                  }}
+                  className="modal-feel-lift modal-feel-warning"
+                  style={{ ...M.btnWarning, ...disabledBtn(pushBusy || !commishTeam) }}
                 >
                   {pushBusy ? 'Sending…' : '⚠ Send test push to ALL subscribed managers'}
                 </button>
-              </div>
 
-              {/* Last test result */}
-              {pushLastResult && (
-                <div style={{
-                  marginTop: 10,
-                  padding: '8px 10px',
-                  background: pushLastResult.sent > 0
-                    ? 'rgba(80,195,120,0.06)'
-                    : 'rgba(220,80,80,0.06)',
-                  border: `1px solid ${pushLastResult.sent > 0
-                    ? 'rgba(80,195,120,0.3)'
-                    : 'rgba(220,80,80,0.3)'}`,
-                  borderRadius: 4,
-                  fontFamily: fonts.sans,
-                  fontSize: 11,
-                  color: colors.textSecondary,
-                }}>
-                  Last test: {pushLastResult.sent} delivered · {pushLastResult.failed} failed · {pushLastResult.totalTokens} total devices targeted
-                  {pushLastResult.cleanedUp > 0 && ` · ${pushLastResult.cleanedUp} dead tokens cleaned up`}
-                </div>
-              )}
+                {/* Last test result */}
+                {pushLastResult && (
+                  <div style={{
+                    padding: '10px 12px',
+                    background: pushLastResult.sent > 0
+                      ? 'rgba(80,195,120,0.06)'
+                      : 'rgba(220,80,80,0.06)',
+                    border: `1px solid ${pushLastResult.sent > 0
+                      ? 'rgba(80,195,120,0.3)'
+                      : 'rgba(220,80,80,0.3)'}`,
+                    borderRadius: 6,
+                    fontFamily: fonts.sans,
+                    fontSize: 11,
+                    color: colors.textSecondary,
+                    lineHeight: 1.5,
+                  }}>
+                    Last test: {pushLastResult.sent} delivered · {pushLastResult.failed} failed · {pushLastResult.totalTokens} total devices targeted
+                    {pushLastResult.cleanedUp > 0 && ` · ${pushLastResult.cleanedUp} dead tokens cleaned up`}
+                  </div>
+                )}
+              </div>
             </div>
           </>
         );

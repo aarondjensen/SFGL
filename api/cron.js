@@ -49,7 +49,7 @@ const messaging = getMessaging(getApp());
 // Returns { sent, failed, skipped, cleanedUp } per push attempt.
 
 const DEFAULTS_ON = new Set([
-  'waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified',
+  'waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified', 'leadChange',
 ]);
 
 async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
@@ -1201,6 +1201,180 @@ async function handlePgatStats(res) {
   });
 }
 
+// ── Action: lead-watch ──────────────────────────────────────────────────────
+//
+// Monitors live tournament leaderboard for lead changes and sends a push to
+// any team whose starting lineup includes the new leader. Fires only during
+// round 2 or later — round 1 is too noisy with morning/afternoon waves
+// spread across hours.
+//
+// Cadence: cron-job.org pings every 10 minutes. The handler is cheap when
+// there's no live tournament (early return after checking activeTourney).
+//
+// Rate limiting: a given team+player combo won't get pinged more than once
+// per 30 minutes. Prevents Sunday-final-round spam if a player ping-pongs at
+// the top.
+//
+// State storage: sfgl_data/leadWatch — single doc with:
+//   {
+//     tournamentName: string,           // discriminator
+//     round:          number,
+//     leaderNames:    string[],         // sorted, deduplicated current-leader set
+//     lastFired:      { "teamId:playerName": ISO timestamp }
+//   }
+//
+// Reset behavior: when tournamentName changes, the doc is fully overwritten
+// with the new state. The lastFired map is per-tournament — no carryover.
+async function handleLeadWatch(res) {
+  // 1. Fetch live leaderboard via the existing /api/live endpoint
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : 'https://sfglgolf.com';
+
+  let liveData;
+  try {
+    const resp = await fetch(`${baseUrl}/api/live`);
+    if (!resp.ok) return res.json({ status: 'live_fetch_failed', http: resp.status });
+    liveData = await resp.json();
+  } catch (err) {
+    return res.json({ status: 'live_fetch_error', error: err.message });
+  }
+
+  if (!liveData?.players?.length) return res.json({ status: 'no_players' });
+
+  // 2. Gate: round 2 or later. The /api/live `round` field can be a number
+  //    or string depending on PGA Tour's payload; coerce defensively.
+  const round = parseInt(liveData.round, 10);
+  if (!Number.isFinite(round) || round < 2) {
+    return res.json({ status: 'round_too_early', round: liveData.round });
+  }
+
+  const tournamentName = liveData.tournamentName || liveData.eventName || '';
+  if (!tournamentName) return res.json({ status: 'no_tournament_name' });
+
+  // 3. Compute the current leader-set. A player counts as "leading" when
+  //    position is '1' or 'T1'. Sort alphabetically for stable comparison
+  //    across runs (set-equality doesn't depend on order, but JSON-stringify
+  //    does).
+  const isLeaderPos = (pos) => pos === '1' || pos === 'T1';
+  const currentLeaders = liveData.players
+    .filter(p => p.name && isLeaderPos(p.position) && !p.isCut && !p.isWD)
+    .map(p => p.name);
+  const currentLeaderSet = [...new Set(currentLeaders)].sort();
+
+  if (currentLeaderSet.length === 0) {
+    return res.json({ status: 'no_current_leader' });
+  }
+
+  // 4. Load previous state. If tournament changed, treat as fresh start.
+  const stateRef = db.collection('sfgl_data').doc('leadWatch');
+  const stateSnap = await stateRef.get();
+  const prevState = stateSnap.exists ? stateSnap.data().value || {} : {};
+  const sameTournament = prevState.tournamentName === tournamentName;
+  const prevLeaderSet = sameTournament ? (prevState.leaderNames || []) : [];
+  const lastFired = sameTournament ? (prevState.lastFired || {}) : {};
+
+  // 5. Identify NEW leaders — names in the current set that weren't in the
+  //    previous set. These are who "took the lead" this poll cycle.
+  //    Players who were already in the leader set don't get re-pinged
+  //    (otherwise a 3-way tie at T1 would re-fire on every poll).
+  const prevLeaderNameSet = new Set(prevLeaderSet);
+  const newLeaders = currentLeaderSet.filter(n => !prevLeaderNameSet.has(n));
+
+  // No new leaders — leader-set is the same or smaller. Update state anyway
+  // (in case round number advanced) and exit.
+  if (newLeaders.length === 0) {
+    await stateRef.set({
+      key: 'leadWatch',
+      value: {
+        tournamentName,
+        round,
+        leaderNames: currentLeaderSet,
+        lastFired,
+      },
+    });
+    return res.json({ status: 'no_change', leaders: currentLeaderSet });
+  }
+
+  // 6. For each new leader × each team with that player in lineup, send a
+  //    push (rate-limited). The 30-minute window is per team+player —
+  //    different teams sharing the same player get separate budgets.
+  const teams = await loadTeams();
+  const newFired = { ...lastFired };
+  const RATE_LIMIT_MS = 30 * 60 * 1000;
+  const now = Date.now();
+  const sends = [];
+
+  for (const leaderName of newLeaders) {
+    const leaderNorm = normalizeName(leaderName);
+    // Determine the leader's score string for the push body (e.g. "-12").
+    const leaderPlayer = liveData.players.find(p => normalizeName(p.name) === leaderNorm);
+    const scoreStr = leaderPlayer?.score || '';
+    const thruStr  = leaderPlayer?.thru  || '';
+    const isCoLeader = currentLeaderSet.length > 1;
+
+    for (const team of teams) {
+      const lineup = team.lineup || [];
+      const inLineup = lineup.some(n => normalizeName(n) === leaderNorm);
+      if (!inLineup) continue;
+
+      const rateKey = `${team.id}:${leaderName}`;
+      const lastTs = Date.parse(newFired[rateKey] || 0);
+      if (Number.isFinite(lastTs) && (now - lastTs) < RATE_LIMIT_MS) {
+        sends.push({ team: team.name, player: leaderName, skipped: 'rate_limited' });
+        continue;
+      }
+
+      // Build the push. Co-leader gets a slightly softer headline than sole
+      // leader to be honest about the state of play.
+      const title = isCoLeader
+        ? `🏌 ${leaderName} is tied for the lead`
+        : `🏌 ${leaderName} takes the lead`;
+      const bodyParts = [];
+      if (scoreStr) bodyParts.push(`${scoreStr}`);
+      if (thruStr)  bodyParts.push(`thru ${thruStr}`);
+      bodyParts.push(`at ${tournamentName}`);
+      const body = bodyParts.join(' · ');
+
+      try {
+        const pushResult = await sendPushToTeam({
+          teamId: team.id,
+          event: 'leadChange',
+          title,
+          body,
+          deepLink: '#rosters',
+        });
+        newFired[rateKey] = new Date(now).toISOString();
+        sends.push({ team: team.name, player: leaderName, sent: pushResult.sent, failed: pushResult.failed });
+      } catch (err) {
+        sends.push({ team: team.name, player: leaderName, error: err.message });
+      }
+    }
+  }
+
+  // 7. Persist new state (always, even when no sends fired — leaderNames
+  //    advances regardless).
+  await stateRef.set({
+    key: 'leadWatch',
+    value: {
+      tournamentName,
+      round,
+      leaderNames: currentLeaderSet,
+      lastFired: newFired,
+    },
+  });
+
+  return res.json({
+    status: 'sent',
+    tournament: tournamentName,
+    round,
+    prevLeaders: prevLeaderSet,
+    currentLeaders: currentLeaderSet,
+    newLeaders,
+    sends,
+  });
+}
+
 export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
@@ -1221,7 +1395,8 @@ export default async function handler(req, res) {
       case 'process-results':   return await handleProcessResults(res);
       case 'notify-results':    return await handleNotifyResults(req, res);
       case 'pgat-stats':        return await handlePgatStats(res);
-      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats' });
+      case 'lead-watch':        return await handleLeadWatch(res);
+      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);
