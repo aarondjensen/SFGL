@@ -1,10 +1,10 @@
 // src/pages/admin/LivIneligiblePanel.jsx
 // ============================================================================
-// LIV-flagged player management. Search for non-LIV players to flag, and
-// display existing flags as removable chips.
-//
-// Wave J Round 6 follow-up: restyled to modal-feel — flat container, eyebrow
-// headings, lifted rows, lighter chrome. Functional behavior unchanged.
+// LIV-flagged player management. Three operations:
+//   1. Bulk sync from LIV_GOLF_ROSTER constant — applies code-level changes
+//      to Firestore (used after deploying an updated LIV roster).
+//   2. Search to add — find a single non-LIV player and flag them.
+//   3. List of currently-flagged players — remove individual flags.
 // ============================================================================
 
 import React from 'react';
@@ -12,12 +12,21 @@ import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
 import { playersApi } from '../../api/firebase';
 import { LIV_GOLF_ROSTER } from '../../constants';
-import { M } from './adminStyles';
+import { M, SyncStatusBanner, LastSyncedLine, disabledBtn } from './adminStyles';
 
-export const LivIneligiblePanel = ({ allPlayers, setAllPlayers }) => {
+export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSettings }) => {
   const dialog = useDialog();
   const [livSearch, setLivSearch] = React.useState('');
   const [livSaving, setLivSaving] = React.useState({});
+
+  // ── Bulk roster sync state (moved from DataSyncPanel) ──
+  // Reads LIV_GOLF_ROSTER from the codebase, then flags any unflagged player
+  // in the constant AND unflags any DB-flagged player no longer in it. The
+  // "last synced" timestamp persists via settings.livRosterLastSynced so it
+  // survives reloads.
+  const [livSyncStatus, setLivSyncStatus] = React.useState(null);
+  const [livSyncSummary, setLivSyncSummary] = React.useState('');
+  const [livLastSynced, setLivLastSynced] = React.useState(() => settings?.livRosterLastSynced || null);
 
   const livPlayers = allPlayers.filter(p => p.isLiv).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -67,10 +76,81 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers }) => {
     }
   };
 
+  // Bulk sync: make Firestore match LIV_GOLF_ROSTER. Computes the diff, then
+  // batch-upserts. Idempotent — a no-op when the DB already matches.
+  const handleSyncLivRoster = async () => {
+    setLivSyncStatus('fetching');
+    setLivSyncSummary('');
+    try {
+      const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
+      const toFlag = LIV_GOLF_ROSTER.filter(name =>
+        !allPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
+      );
+      const toUnflag = allPlayers.filter(p =>
+        p.isLiv && !livRosterLower.has(p.name.toLowerCase())
+      );
+      if (toFlag.length === 0 && toUnflag.length === 0) {
+        setLivSyncStatus('done');
+        setLivSyncSummary('✓ LIV roster already matches DB — no changes needed');
+        return;
+      }
+      const livWrites = [
+        ...toFlag.map(name => ({ name, isLiv: true })),
+        ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
+      ];
+      await playersApi.upsertMany(livWrites);
+      setAllPlayers(prev => {
+        const updated = [...prev];
+        toFlag.forEach(name => {
+          const idx = updated.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: true };
+          else updated.push({ name, isLiv: true, worldRank: null });
+        });
+        toUnflag.forEach(u => {
+          const idx = updated.findIndex(p => p.name === u.name);
+          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: false };
+        });
+        return updated;
+      });
+      const parts = [
+        toFlag.length   > 0 ? `${toFlag.length} tagged` : '',
+        toUnflag.length > 0 ? `${toUnflag.length} unflagged` : '',
+      ].filter(Boolean).join(' · ');
+      const livTs = new Date().toISOString();
+      setLivLastSynced(livTs);
+      if (setSettings) {
+        setSettings({ ...settings, livRosterLastSynced: livTs }).catch(() => {});
+      }
+      setLivSyncStatus('done');
+      setLivSyncSummary(`✓ LIV roster synced · ${parts}`);
+    } catch (err) {
+      setLivSyncStatus('error');
+      setLivSyncSummary(err.message || 'LIV sync failed');
+    }
+  };
+
   return (
     <div style={M.page}>
       <div style={M.descText}>
         Players flagged as LIV are hidden from the add/drop modal and waiver system.
+      </div>
+
+      {/* ── Bulk roster sync (from constants) ── */}
+      <div style={M.group}>
+        <div style={M.eyebrow}>🔄 Sync from LIV roster</div>
+        <div style={M.descText}>
+          Applies the latest <code style={{ fontFamily: 'monospace', fontSize: 11, opacity: 0.9 }}>LIV_GOLF_ROSTER</code> from the codebase. Flags any new defectors and unflags anyone who left LIV. Run after deploying a roster update.
+        </div>
+        <LastSyncedLine timestamp={livLastSynced || settings?.livRosterLastSynced} />
+        <button
+          onClick={handleSyncLivRoster}
+          disabled={livSyncStatus === 'fetching'}
+          className="modal-feel-lift modal-feel-primary"
+          style={{ ...M.btnPrimary, ...disabledBtn(livSyncStatus === 'fetching') }}
+        >
+          {livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync LIV Roster'}
+        </button>
+        <SyncStatusBanner status={livSyncStatus} summary={livSyncSummary} />
       </div>
 
       {/* Search field */}

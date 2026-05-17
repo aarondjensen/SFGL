@@ -1,10 +1,12 @@
 // src/pages/admin/ManagerAccountsPanel.jsx
 // ============================================================================
-// Manager login credentials + email addresses. Two related sections kept
-// together because they're conceptually one "manager accounts" subject.
+// All things "manager accounts" in one panel:
+//   1. Login credentials — set a manager's login name + password
+//   2. Manager emails — for waiver/results/lineup notifications
+//   3. Commissioner status — tag managers as commissioners (admin access)
 //
-// Wave J Round 6 follow-up: restyled to modal-feel — flat layout, eyebrow
-// headings, lighter inputs and buttons. Functional behavior unchanged.
+// The commissioner-tagging section was previously its own admin tile; merged
+// in here since it's just another per-manager attribute.
 // ============================================================================
 
 import React from 'react';
@@ -13,7 +15,7 @@ import { colors, fonts } from '../../theme.js';
 import { managerAuthApi } from '../../api/firebase';
 import { M, disabledBtn } from './adminStyles';
 
-export const ManagerAccountsPanel = ({ teams, settings, setSettings }) => {
+export const ManagerAccountsPanel = ({ teams, settings, setSettings, updateTeams }) => {
   const dialog = useDialog();
 
   // ── Credentials state ──
@@ -140,6 +142,113 @@ export const ManagerAccountsPanel = ({ teams, settings, setSettings }) => {
         >
           💾 Save Emails
         </button>
+      </div>
+
+      {/* ── Commissioner Status ── */}
+      <div style={M.group}>
+        <div style={M.eyebrow}>👑 Commissioner Status</div>
+        <div style={M.descText}>
+          Tag managers as commissioners. Tagged managers see the Commish tab automatically when logged in — no password required.
+        </div>
+
+        {/* Toggle pills per team. Same shape as UserSettingsModal's per-event
+            toggle pattern — whole row is one button, pill on the right side,
+            gold-tinted when on, gray when off. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {teams.map(t => {
+            const tagged = !!t.isCommissioner;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="switch"
+                aria-checked={tagged}
+                aria-label={`${t.name}: ${tagged ? 'is' : 'is not'} a commissioner`}
+                onClick={() => {
+                  const next = !tagged;
+                  const newTeams = teams.map(tt =>
+                    tt.id === t.id ? { ...tt, isCommissioner: next } : tt
+                  );
+                  updateTeams(newTeams);
+                  dialog.showToast(
+                    next
+                      ? `${t.name} is now a commissioner`
+                      : `${t.name} is no longer a commissioner`,
+                    'success'
+                  );
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px 12px',
+                  background: tagged
+                    ? 'rgba(245,197,24,0.06)'
+                    : 'rgba(255,255,255,0.02)',
+                  border: `1px solid ${tagged
+                    ? 'rgba(245,197,24,0.3)'
+                    : colors.borderSubtle}`,
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s, border-color 0.15s',
+                  textAlign: 'left',
+                  width: '100%',
+                  fontFamily: fonts.sans,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: fonts.sans,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: colors.textPrimary,
+                  }}>
+                    {t.name}
+                  </div>
+                  <div style={{
+                    fontFamily: fonts.sans,
+                    fontSize: 11,
+                    color: colors.textMuted,
+                    marginTop: 1,
+                  }}>
+                    {t.owner}
+                  </div>
+                </div>
+                {/* Toggle pill */}
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: 'relative',
+                    width: 36,
+                    height: 20,
+                    borderRadius: 10,
+                    background: tagged
+                      ? 'rgba(245,197,24,0.65)'
+                      : 'rgba(255,255,255,0.12)',
+                    border: `1px solid ${tagged
+                      ? 'rgba(245,197,24,0.85)'
+                      : 'rgba(255,255,255,0.18)'}`,
+                    transition: 'background 0.18s, border-color 0.18s',
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: 2,
+                    width: 14,
+                    height: 14,
+                    borderRadius: '50%',
+                    background: '#fff',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                    transform: tagged ? 'translateX(16px)' : 'translateX(0)',
+                    transition: 'transform 0.18s ease',
+                  }} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

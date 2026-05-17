@@ -1,11 +1,10 @@
 // src/pages/admin/SeasonSettingsPanel.jsx
 // ============================================================================
-// League settings — five groups in one panel:
+// League settings — four groups in one panel:
 //   • Season Settings — bonus amounts, fees, roster rules (collapsible)
 //   • Waiver Schedule — day/hour/minute of weekly waiver processing
 //   • Results Schedule — day/hour/minute of weekly results auto-processing
 //   • Lineup Reminder Schedule — day/hour/minute of lineup-lock reminder
-//   • Draft — opens the DraftModal
 //
 // Wave J Round 6 follow-up: restyled to modal-feel — flat container, eyebrow
 // headings, lifted buttons, collapsible Season Settings via lift-row header.
@@ -16,7 +15,6 @@
 import React from 'react';
 import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
-import { DraftModal } from '../DraftModal';
 import { M, disabledBtn } from './adminStyles';
 import { DAY_NAMES, fmtETTime } from '../../utils/sharedHelpers';
 
@@ -86,7 +84,6 @@ const ScheduleEditor = ({
 
 export const SeasonSettingsPanel = ({
   settings, setSettings,
-  teams, allPlayers, updateTeams, headshots,
 }) => {
   const dialog = useDialog();
 
@@ -194,9 +191,6 @@ export const SeasonSettingsPanel = ({
     settings.lineupReminderHour !== reminderHour ||
     (settings.lineupReminderMinute ?? 0) !== reminderMinute
   );
-
-  // ── Draft modal ──
-  const [showDraftModal, setShowDraftModal] = React.useState(false);
 
   // Numeric input helper used in the collapsible Season Settings section.
   // Renders a $ prefix for dollar fields and right-aligns the value; plain
@@ -446,31 +440,6 @@ export const SeasonSettingsPanel = ({
       }}>
         <strong style={{ color: 'rgba(100,160,255,0.95)' }}>How timing works:</strong> the times above act as gates inside the scheduled cron job — cron-job.org must be pinging the SFGL URL at-or-before your configured time for the action to fire then. If the ping schedule is sparser, the action runs at the next ping after your configured time rather than exactly at it.
       </div>
-
-      {/* ── Draft ── */}
-      <div style={M.group}>
-        <div style={M.eyebrow}>🎯 Draft</div>
-        <div style={M.descText}>
-          Open the live draft room for pre-season player selection.
-        </div>
-        <button
-          onClick={() => setShowDraftModal(true)}
-          className="modal-feel-lift modal-feel-primary"
-          style={M.btnPrimary}
-        >
-          Open Draft Room
-        </button>
-      </div>
-
-      {showDraftModal && (
-        <DraftModal
-          teams={teams}
-          allPlayers={allPlayers}
-          updateTeams={updateTeams}
-          onClose={() => setShowDraftModal(false)}
-          headshots={headshots}
-        />
-      )}
     </div>
   );
 };
