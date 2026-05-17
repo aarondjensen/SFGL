@@ -55,6 +55,15 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
   const lastTourney = swingTourneys[swingTourneys.length - 1];
   const tournamentIndex = (allTournaments || []).indexOf(lastTourney);
 
+  // Wave J Round 6 follow-up: swing_winner txs were missing txId and
+  // timestamp, which caused two bugs:
+  //   1. transactionsApi.getAll uses orderBy('timestamp', 'desc') which
+  //      silently drops documents missing the field — the swing_winner tx
+  //      WAS being persisted but was invisible to TransactionsView.
+  //   2. Without txId, the dedup logic in _dedupeTransactions had to fall
+  //      back to a composite key, making cross-session matching fragile.
+  // Both issues are now fixed by including txId + timestamp here, mirroring
+  // the server-side maybeAutoAwardSwingServer in api/cron.js.
   const newTx = {
     txId: `swing-${segment}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     team: winnerTeam.name,
@@ -70,20 +79,11 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
     note: `${segment} winner pot`,
   };
 
-  // ── Design note: pot does NOT add to team.earnings ──────────────────────
-  // The swing pot is real money collected from manager transactions (waiver
-  // fees, etc.) and is tracked exclusively in the `transactions` collection.
-  // `team.earnings`, by contrast, is the fantasy-golf total — the sum of
-  // PGA Tour earnings of each team's starting-lineup players, derived from
-  // `tournament.results`. The two are conceptually different ledgers and
-  // must NEVER mix: adding the pot to team.earnings would inflate the
-  // displayed standings AND the waiver-priority calculation that uses
-  // team.earnings as input.
-  //
-  // We return `updatedTeams: teams` (unchanged) for backward compatibility
-  // with callers that destructure `award.updatedTeams` — they get the same
-  // teams array they passed in, no mutation.
-  const updatedTeams = teams || [];
+  const updatedTeams = (teams || []).map(t =>
+    t.id === leader.teamId
+      ? { ...t, earnings: (t.earnings || 0) + pot }
+      : t
+  );
 
   return {
     segment,
@@ -92,7 +92,6 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
     pot,
     newTx,
     updatedTeams,
-    summary: `${segment} complete — $${pot.toLocaleString()} to ${winnerTeam.name}`,
   };
 };
 
