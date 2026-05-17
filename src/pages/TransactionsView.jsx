@@ -6,6 +6,7 @@ import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 import { sendCommishPush } from '../api/pushNotifications';
+import { M, disabledBtn } from './admin/adminStyles';
 
 // shortName imported from utils (see abbreviateName)
 
@@ -855,312 +856,479 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         {/* ── Commissioner: Add Manual Transaction panel — toggled by the
             inline button inside the Transaction History card header below ── */}
         {isCommissioner && addTxOpen && (
-          <div style={theme.card}>
-            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {/* Team */}
-                <div>
-                  <div style={{ ...theme.label, marginBottom: 4 }}>Team</div>
-                  <select value={addTxTeam} onChange={e => setAddTxTeam(e.target.value)} style={{ ...theme.select, width: '100%' }}>
-                    <option value="">Select team...</option>
-                    {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                  </select>
+          <div style={{
+            background: '#0f1d35',
+            border: `1px solid ${colors.borderSubtle}`,
+            // Subtle blue accent stripe — commish-only signal, lighter than
+            // the heavy green/orange stripes on AddDropPlayerModal because
+            // this isn't a manager-facing destructive action.
+            borderTop: `2px solid rgba(245,197,24,0.6)`,
+            borderRadius: 10,
+            marginBottom: 16,
+            overflow: 'hidden',
+          }}>
+            {/* ── Header ── */}
+            <div style={{
+              padding: '14px 18px',
+              borderBottom: `1px solid ${colors.borderSubtle}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{
+                  fontFamily: fonts.sans,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '1.8px',
+                  textTransform: 'uppercase',
+                  color: 'rgba(245,197,24,0.95)',
+                }}>
+                  👑 Commissioner
                 </div>
-
-                {/* Tournament */}
-                <div>
-                  <div style={{ ...theme.label, marginBottom: 4 }}>Tournament</div>
-                  <select value={addTxTourney} onChange={e => setAddTxTourney(e.target.value)} style={{ ...theme.select, width: '100%' }}>
-                    <option value="">Select tournament...</option>
-                    {(() => {
-                      // Wave C.5: was a local 14-day-window implementation;
-                      // now uses the canonical getCurrentTournamentIndex which
-                      // does Sun-Sat week math. The fallback chain (next
-                      // non-completed → last) means we always have an answer.
-                      const dateWeekIdx = getCurrentTournamentIndex(tournaments);
-                      return tournaments.map((t, i) => {
-                        let hint = '';
-                        if (t.playing) hint = ' (active)';
-                        if (i === dateWeekIdx) hint = ' ← this week';
-                        return (
-                          <option key={t.name} value={i}>
-                            {t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}{hint}
-                          </option>
-                        );
-                      });
-                    })()}
-                  </select>
+                <div style={{
+                  fontFamily: fonts.sans,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: colors.textPrimary,
+                  marginTop: 2,
+                }}>
+                  Add Manual Transaction
                 </div>
+              </div>
+              <button
+                onClick={() => setAddTxOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: colors.textSecondary,
+                  padding: 4,
+                }}
+                aria-label="Close add transaction panel"
+              >
+                <X style={{ width: 18, height: 18 }} />
+              </button>
+            </div>
 
-                {/* Type */}
-                <div>
-                  <div style={{ ...theme.label, marginBottom: 4 }}>Type</div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {['waiver', 'waiver blocked', 'fa', 'mulligan'].map(type => (
-                      <button key={type} onClick={() => {
-                        // Only reset tournament/players when type ACTUALLY changes
-                        if (type === addTxType) return;
-                        setAddTxType(type);
-                        setAddTxPlayerIn(null); setAddTxSearchIn('');
-                        setAddTxPlayerOut(null); setAddTxSearchOut('');
-                        // Always re-default tournament when type changes (commish can still override)
-                        {
+            {/* ── Body ── */}
+            <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+              {/* Team */}
+              <div style={M.group}>
+                <div style={M.eyebrow}>Team</div>
+                <select
+                  value={addTxTeam}
+                  onChange={e => setAddTxTeam(e.target.value)}
+                  style={M.select}
+                >
+                  <option value="">Select team...</option>
+                  {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                </select>
+              </div>
+
+              {/* Tournament */}
+              <div style={M.group}>
+                <div style={M.eyebrow}>Tournament</div>
+                <select
+                  value={addTxTourney}
+                  onChange={e => setAddTxTourney(e.target.value)}
+                  style={M.select}
+                >
+                  <option value="">Select tournament...</option>
+                  {(() => {
+                    const dateWeekIdx = getCurrentTournamentIndex(tournaments);
+                    return tournaments.map((t, i) => {
+                      let hint = '';
+                      if (t.playing) hint = ' (active)';
+                      if (i === dateWeekIdx) hint = ' ← this week';
+                      return (
+                        <option key={t.name} value={i}>
+                          {t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}{hint}
+                        </option>
+                      );
+                    });
+                  })()}
+                </select>
+              </div>
+
+              {/* Type — segmented pill control */}
+              <div style={M.group}>
+                <div style={M.eyebrow}>Type</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {['waiver', 'waiver blocked', 'fa', 'mulligan'].map(type => {
+                    const isActive = addTxType === type;
+                    return (
+                      <button
+                        key={type}
+                        onClick={() => {
+                          if (type === addTxType) return;
+                          setAddTxType(type);
+                          setAddTxPlayerIn(null); setAddTxSearchIn('');
+                          setAddTxPlayerOut(null); setAddTxSearchOut('');
                           if (type === 'mulligan') {
-                            // Mulligan → current playing tournament
                             const idx = tournaments.findIndex(t => t.playing);
                             if (idx >= 0) setAddTxTourney(String(idx));
                           } else {
-                            // FA/waiver/drop → date-based current tournament week.
-                            // Wave C.5: was a local 14-day-window implementation;
-                            // now uses canonical getCurrentTournamentIndex (Sun-Sat
-                            // week with built-in next-non-completed fallback).
                             const found = getCurrentTournamentIndex(tournaments);
                             if (found >= 0) setAddTxTourney(String(found));
                           }
-                        }
-                      }} style={{
-                        flex: 1, padding: '7px 4px', borderRadius: 2, fontSize: 11,
-                        fontFamily: fonts.sans, fontWeight: 600, cursor: 'pointer',
-                        background: addTxType === type ? colors.buttonNavy : 'transparent',
-                        border: '1px solid ' + (addTxType === type ? colors.border : colors.borderInput),
-                        color: addTxType === type ? colors.textGold : colors.textSecondary,
-                      }}>
+                        }}
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          padding: '8px 4px',
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontFamily: fonts.sans,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          background: isActive
+                            ? 'rgba(245,197,24,0.08)'
+                            : 'rgba(255,255,255,0.02)',
+                          border: `1px solid ${isActive
+                            ? 'rgba(245,197,24,0.35)'
+                            : colors.borderSubtle}`,
+                          color: isActive ? colors.textGold : colors.textSecondary,
+                          textTransform: 'capitalize',
+                          transition: 'background 0.15s, border-color 0.15s',
+                        }}
+                      >
                         {type}
                       </button>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-
-                {/* Player IN — dropdown for mulligan (roster is small), search for others */}
-                {(addTxType !== 'drop') && (() => {
-                  const teamObj  = teams.find(t => t.name === addTxTeam);
-                  const validPlayer = p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim());
-
-                  // Mulligan: show a simple dropdown of the team's roster
-                  if (addTxType === 'mulligan') {
-                    const roster = (teamObj?.roster || []).filter(validPlayer);
-                    // Determine the ORIGINAL lineup for the selected tournament:
-                    // If results already processed, lineup was cleared — pull from stored results.
-                    // If a mulligan was already applied to results, reconstruct the original
-                    // lineup by undoing the swap (replacedPlayer → original starter).
-                    const tournIdx = addTxTourney ? parseInt(addTxTourney) : -1;
-                    const tournament = tournIdx >= 0 ? tournaments[tournIdx] : null;
-                    const storedPlayers = tournament?.results?.teams?.[teamObj?.id]?.players || [];
-                    // Reconstruct original lineup: for any player with mulliganIn/replacedPlayer,
-                    // use the replacedPlayer (original starter) instead of the swapped-in player.
-                    const originalLineup = storedPlayers.map(p => {
-                      if (p.mulliganIn && p.replacedPlayer) return p.replacedPlayer;
-                      return p.name || p;
-                    }).filter(Boolean);
-                    const currentLineup = teamObj?.lineup || [];
-                    const lineup = new Set(originalLineup.length > 0 ? originalLineup : currentLineup);
-                    // For mulligan IN, show roster players NOT in the original lineup (the bench)
-                    const benchPlayers = roster.filter(p => !lineup.has(p.name));
-                    // Fallback: show all roster players if bench is empty
-                    const pool = benchPlayers.length > 0 ? benchPlayers : roster;
-                    return (
-                      <div>
-                        <div style={{ ...theme.label, marginBottom: 4 }}>Player IN (from bench)</div>
-                        <select
-                          value={addTxPlayerIn?.name || ''}
-                          onChange={e => {
-                            const name = e.target.value;
-                            setAddTxPlayerIn(name ? { name } : null);
-                          }}
-                          style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4, cursor: 'pointer' }}
-                        >
-                          <option value="">— select player —</option>
-                          {pool.sort((a, b) => a.name.localeCompare(b.name)).map(p => (
-                            <option key={p.name} value={p.name}>{p.name}{p.limited ? ' ⭐' : ''}</option>
-                          ))}
-                        </select>
-                      </div>
-                    );
-                  }
-
-                  // Non-mulligan: search UI for free agents / all players
-                  const pool = addTxType === 'waiver blocked'
-                    ? allPlayers.filter(validPlayer)
-                    : allPlayers.filter(p => {
-                        if (!validPlayer(p)) return false;
-                        const allRostered = new Set(teams.flatMap(t => t.roster.map(r => r.name)));
-                        return !allRostered.has(p.name);
-                      });
-                  const filtered = pool.filter(p =>
-                    (p.name || p).toLowerCase().includes(addTxSearchIn.toLowerCase())
-                  );
-                  const label = addTxType === 'waiver blocked' ? 'Player Claimed (blocked)'
-                              : 'Player Added';
-                  return (
-                    <div>
-                      <div style={{ ...theme.label, marginBottom: 4 }}>{label}</div>
-                      {addTxPlayerIn ? (
-                        <div style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          padding: '8px 12px', borderRadius: 3, marginBottom: 4,
-                          background: 'rgba(80,180,120,0.12)', border: '1px solid rgba(80,180,120,0.35)',
-                        }}>
-                          <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.success }}>{addTxPlayerIn.name}</span>
-                          <button onClick={() => { setAddTxPlayerIn(null); setAddTxSearchIn(''); }}
-                            style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 12, padding: '0 2px' }}>✕</button>
-                        </div>
-                      ) : (
-                        <>
-                          <input
-                            type="text"
-                            placeholder="Search free agents…"
-                            value={addTxSearchIn}
-                            onChange={e => setAddTxSearchIn(e.target.value)}
-                            style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4 }}
-                            onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
-                            onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
-                          />
-                          {addTxSearchIn.length > 0 && (
-                            <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid ' + colors.borderSubtle, borderRadius: 3, marginBottom: 4 }}>
-                              {filtered.slice(0, 20).map(p => {
-                                const name = p.name || p;
-                                return (
-                                  <div key={name}
-                                    onClick={() => { setAddTxPlayerIn({ name }); setAddTxSearchIn(''); }}
-                                    style={{
-                                      padding: '8px 12px', cursor: 'pointer',
-                                      borderBottom: '1px solid ' + colors.borderSubtle,
-                                      display: 'flex', alignItems: 'center', gap: 8,
-                                      transition: 'background 0.1s',
-                                    }}
-                                    onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
-                                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                                  >
-                                    {p.worldRank && (
-                                      <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, minWidth: 26 }}>
-                                        {p.worldRank === 999 ? 'NR' : '#' + p.worldRank}
-                                      </span>
-                                    )}
-                                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>{name}</span>
-                                  </div>
-                                );
-                              })}
-                              {filtered.length === 0 && (
-                                <div style={{ padding: '10px 12px', fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>No players found</div>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Player OUT / Dropped — dropdown for mulligan, search for fa/waiver */}
-                {(addTxType === 'mulligan' || addTxType === 'fa' || addTxType === 'waiver') && (() => {
-                  const teamObj = teams.find(t => t.name === addTxTeam);
-
-                  // Mulligan: simple dropdown of lineup players (the one being swapped out)
-                  if (addTxType === 'mulligan') {
-                    // Determine ORIGINAL lineup: if results already processed, pull from stored results.
-                    // If a mulligan was already applied, reconstruct original by undoing the swap.
-                    const tournIdx = addTxTourney ? parseInt(addTxTourney) : -1;
-                    const tournament = tournIdx >= 0 ? tournaments[tournIdx] : null;
-                    const storedPlayers = tournament?.results?.teams?.[teamObj?.id]?.players || [];
-                    const originalLineup = storedPlayers.map(p => {
-                      if (p.mulliganIn && p.replacedPlayer) return p.replacedPlayer;
-                      return p.name || p;
-                    }).filter(Boolean);
-                    const currentLineup = teamObj?.lineup || [];
-                    const lineup = originalLineup.length > 0 ? originalLineup : currentLineup;
-                    const rosterMap = {};
-                    (teamObj?.roster || []).forEach(p => { rosterMap[p.name] = p; });
-                    return (
-                      <div>
-                        <div style={{ ...theme.label, marginBottom: 4 }}>Player OUT (from lineup)</div>
-                        <select
-                          value={addTxPlayerOut?.name || ''}
-                          onChange={e => {
-                            const name = e.target.value;
-                            setAddTxPlayerOut(name ? { name } : null);
-                          }}
-                          style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4, cursor: 'pointer' }}
-                        >
-                          <option value="">— select player —</option>
-                          {lineup.sort((a, b) => a.localeCompare(b)).map(name => (
-                            <option key={name} value={name}>{name}{rosterMap[name]?.limited ? ' ⭐' : ''}</option>
-                          ))}
-                        </select>
-                      </div>
-                    );
-                  }
-
-                  // FA / Waiver: search the team's roster for who to drop
-                  const pool = teamObj?.roster || [];
-                  const filtered = pool.filter(p =>
-                    (p.name || p).toLowerCase().includes(addTxSearchOut.toLowerCase())
-                  );
-                  return (
-                    <div>
-                      <div style={{ ...theme.label, marginBottom: 4 }}>Player Dropped</div>
-                      {addTxPlayerOut ? (
-                        <div style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          padding: '8px 12px', borderRadius: 3, marginBottom: 4,
-                          background: colors.dangerBg, border: '1px solid ' + colors.dangerBorder,
-                        }}>
-                          <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.danger }}>{addTxPlayerOut.name}</span>
-                          <button onClick={() => { setAddTxPlayerOut(null); setAddTxSearchOut(''); }}
-                            style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: 12, padding: '0 2px' }}>✕</button>
-                        </div>
-                      ) : (
-                        <>
-                          <input
-                            type="text"
-                            placeholder="Search roster…"
-                            value={addTxSearchOut}
-                            onChange={e => setAddTxSearchOut(e.target.value)}
-                            style={{ ...theme.input, width: '100%', boxSizing: 'border-box', marginBottom: 4 }}
-                            onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
-                            onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
-                          />
-                          {addTxSearchOut.length > 0 && (
-                            <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid ' + colors.borderSubtle, borderRadius: 3, marginBottom: 4 }}>
-                              {filtered.slice(0, 20).map(p => {
-                                const name = p.name || p;
-                                return (
-                                  <div key={name}
-                                    onClick={() => { setAddTxPlayerOut({ name }); setAddTxSearchOut(''); }}
-                                    style={{
-                                      padding: '8px 12px', cursor: 'pointer',
-                                      borderBottom: '1px solid ' + colors.borderSubtle,
-                                      display: 'flex', alignItems: 'center', gap: 8,
-                                      transition: 'background 0.1s',
-                                    }}
-                                    onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
-                                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                                  >
-                                    <span style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>{name}</span>
-                                  </div>
-                                );
-                              })}
-                              {filtered.length === 0 && (
-                                <div style={{ padding: '10px 12px', fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>No players found</div>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                <button
-                  onClick={handleAddTx}
-                  disabled={!addTxTeam || !addTxTourney}
-                  style={{
-                    ...theme.btnPrimary, width: '100%', padding: '9px 16px',
-                    opacity: (!addTxTeam || !addTxTourney) ? 0.4 : 1,
-                    cursor: (!addTxTeam || !addTxTourney) ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  Add Transaction
-                </button>
               </div>
+
+              {/* Player IN — dropdown for mulligan (roster is small), search for others */}
+              {(addTxType !== 'drop') && (() => {
+                const teamObj  = teams.find(t => t.name === addTxTeam);
+                const validPlayer = p => p.name && typeof p.name === 'string' && !/^\d+$/.test(p.name.trim());
+
+                // Mulligan: show a simple dropdown of the team's bench (or roster fallback)
+                if (addTxType === 'mulligan') {
+                  const roster = (teamObj?.roster || []).filter(validPlayer);
+                  const tournIdx = addTxTourney ? parseInt(addTxTourney) : -1;
+                  const tournament = tournIdx >= 0 ? tournaments[tournIdx] : null;
+                  const storedPlayers = tournament?.results?.teams?.[teamObj?.id]?.players || [];
+                  const originalLineup = storedPlayers.map(p => {
+                    if (p.mulliganIn && p.replacedPlayer) return p.replacedPlayer;
+                    return p.name || p;
+                  }).filter(Boolean);
+                  const currentLineup = teamObj?.lineup || [];
+                  const lineup = new Set(originalLineup.length > 0 ? originalLineup : currentLineup);
+                  const benchPlayers = roster.filter(p => !lineup.has(p.name));
+                  const pool = benchPlayers.length > 0 ? benchPlayers : roster;
+                  return (
+                    <div style={M.group}>
+                      <div style={M.eyebrow}>Player IN (from bench)</div>
+                      <select
+                        value={addTxPlayerIn?.name || ''}
+                        onChange={e => {
+                          const name = e.target.value;
+                          setAddTxPlayerIn(name ? { name } : null);
+                        }}
+                        style={M.select}
+                      >
+                        <option value="">— select player —</option>
+                        {pool.sort((a, b) => a.name.localeCompare(b.name)).map(p => (
+                          <option key={p.name} value={p.name}>{p.name}{p.limited ? ' ⭐' : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                }
+
+                // Non-mulligan: search UI for free agents / all players
+                const pool = addTxType === 'waiver blocked'
+                  ? allPlayers.filter(validPlayer)
+                  : allPlayers.filter(p => {
+                      if (!validPlayer(p)) return false;
+                      const allRostered = new Set(teams.flatMap(t => t.roster.map(r => r.name)));
+                      return !allRostered.has(p.name);
+                    });
+                const filtered = pool.filter(p =>
+                  (p.name || p).toLowerCase().includes(addTxSearchIn.toLowerCase())
+                );
+                const label = addTxType === 'waiver blocked' ? 'Player Claimed (blocked)' : 'Player Added';
+                return (
+                  <div style={M.group}>
+                    <div style={M.eyebrow}>{label}</div>
+                    {addTxPlayerIn ? (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 12px',
+                        borderRadius: 6,
+                        background: 'rgba(80,195,120,0.08)',
+                        border: '1px solid rgba(80,195,120,0.3)',
+                      }}>
+                        <span style={{
+                          fontFamily: fonts.sans,
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: colors.earningsGreen,
+                        }}>
+                          {addTxPlayerIn.name}
+                        </span>
+                        <button
+                          onClick={() => { setAddTxPlayerIn(null); setAddTxSearchIn(''); }}
+                          style={{
+                            background: 'rgba(220,80,80,0.08)',
+                            border: '1px solid rgba(220,80,80,0.3)',
+                            borderRadius: 6,
+                            width: 24,
+                            height: 24,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            color: 'rgba(230,90,90,0.8)',
+                            fontSize: 12,
+                            lineHeight: 1,
+                          }}
+                          aria-label="Clear selection"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          placeholder="Search free agents…"
+                          value={addTxSearchIn}
+                          onChange={e => setAddTxSearchIn(e.target.value)}
+                          style={{ ...M.input, fontSize: 16 }}
+                        />
+                        {addTxSearchIn.length > 0 && (
+                          <div style={{
+                            maxHeight: 200,
+                            overflowY: 'auto',
+                            border: `1px solid ${colors.borderSubtle}`,
+                            borderRadius: 6,
+                            background: 'rgba(255,255,255,0.02)',
+                            marginTop: 4,
+                          }}>
+                            {filtered.slice(0, 20).map(p => {
+                              const name = p.name || p;
+                              return (
+                                <div
+                                  key={name}
+                                  onClick={() => { setAddTxPlayerIn({ name }); setAddTxSearchIn(''); }}
+                                  style={{
+                                    padding: '10px 12px',
+                                    cursor: 'pointer',
+                                    borderBottom: `1px solid ${colors.borderSubtle}`,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    transition: 'background 0.12s',
+                                  }}
+                                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                                >
+                                  {p.worldRank && (
+                                    <span style={{
+                                      fontFamily: fonts.sans,
+                                      fontSize: 10,
+                                      color: colors.textMuted,
+                                      minWidth: 28,
+                                    }}>
+                                      {p.worldRank === 999 ? 'NR' : '#' + p.worldRank}
+                                    </span>
+                                  )}
+                                  <span style={{
+                                    fontFamily: fonts.sans,
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    color: colors.textPrimary,
+                                  }}>
+                                    {name}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {filtered.length === 0 && (
+                              <div style={{
+                                padding: '12px',
+                                fontFamily: fonts.sans,
+                                fontSize: 11,
+                                color: colors.textMuted,
+                                textAlign: 'center',
+                              }}>
+                                No players found
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Player OUT / Dropped — dropdown for mulligan, search for fa/waiver */}
+              {(addTxType === 'mulligan' || addTxType === 'fa' || addTxType === 'waiver') && (() => {
+                const teamObj = teams.find(t => t.name === addTxTeam);
+
+                if (addTxType === 'mulligan') {
+                  const tournIdx = addTxTourney ? parseInt(addTxTourney) : -1;
+                  const tournament = tournIdx >= 0 ? tournaments[tournIdx] : null;
+                  const storedPlayers = tournament?.results?.teams?.[teamObj?.id]?.players || [];
+                  const originalLineup = storedPlayers.map(p => {
+                    if (p.mulliganIn && p.replacedPlayer) return p.replacedPlayer;
+                    return p.name || p;
+                  }).filter(Boolean);
+                  const currentLineup = teamObj?.lineup || [];
+                  const lineup = originalLineup.length > 0 ? originalLineup : currentLineup;
+                  const rosterMap = {};
+                  (teamObj?.roster || []).forEach(p => { rosterMap[p.name] = p; });
+                  return (
+                    <div style={M.group}>
+                      <div style={M.eyebrow}>Player OUT (from lineup)</div>
+                      <select
+                        value={addTxPlayerOut?.name || ''}
+                        onChange={e => {
+                          const name = e.target.value;
+                          setAddTxPlayerOut(name ? { name } : null);
+                        }}
+                        style={M.select}
+                      >
+                        <option value="">— select player —</option>
+                        {lineup.sort((a, b) => a.localeCompare(b)).map(name => (
+                          <option key={name} value={name}>{name}{rosterMap[name]?.limited ? ' ⭐' : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                }
+
+                // FA / Waiver: search the team's roster
+                const pool = teamObj?.roster || [];
+                const filtered = pool.filter(p =>
+                  (p.name || p).toLowerCase().includes(addTxSearchOut.toLowerCase())
+                );
+                return (
+                  <div style={M.group}>
+                    <div style={M.eyebrow}>Player Dropped</div>
+                    {addTxPlayerOut ? (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 12px',
+                        borderRadius: 6,
+                        background: 'rgba(220,80,80,0.06)',
+                        border: '1px solid rgba(220,80,80,0.3)',
+                      }}>
+                        <span style={{
+                          fontFamily: fonts.sans,
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: colors.danger,
+                        }}>
+                          {addTxPlayerOut.name}
+                        </span>
+                        <button
+                          onClick={() => { setAddTxPlayerOut(null); setAddTxSearchOut(''); }}
+                          style={{
+                            background: 'rgba(220,80,80,0.08)',
+                            border: '1px solid rgba(220,80,80,0.3)',
+                            borderRadius: 6,
+                            width: 24,
+                            height: 24,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            color: 'rgba(230,90,90,0.8)',
+                            fontSize: 12,
+                            lineHeight: 1,
+                          }}
+                          aria-label="Clear selection"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          placeholder="Search roster…"
+                          value={addTxSearchOut}
+                          onChange={e => setAddTxSearchOut(e.target.value)}
+                          style={{ ...M.input, fontSize: 16 }}
+                        />
+                        {addTxSearchOut.length > 0 && (
+                          <div style={{
+                            maxHeight: 200,
+                            overflowY: 'auto',
+                            border: `1px solid ${colors.borderSubtle}`,
+                            borderRadius: 6,
+                            background: 'rgba(255,255,255,0.02)',
+                            marginTop: 4,
+                          }}>
+                            {filtered.slice(0, 20).map(p => {
+                              const name = p.name || p;
+                              return (
+                                <div
+                                  key={name}
+                                  onClick={() => { setAddTxPlayerOut({ name }); setAddTxSearchOut(''); }}
+                                  style={{
+                                    padding: '10px 12px',
+                                    cursor: 'pointer',
+                                    borderBottom: `1px solid ${colors.borderSubtle}`,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    transition: 'background 0.12s',
+                                  }}
+                                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                                >
+                                  <span style={{
+                                    fontFamily: fonts.sans,
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    color: colors.textPrimary,
+                                  }}>
+                                    {name}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {filtered.length === 0 && (
+                              <div style={{
+                                padding: '12px',
+                                fontFamily: fonts.sans,
+                                fontSize: 11,
+                                color: colors.textMuted,
+                                textAlign: 'center',
+                              }}>
+                                No players found
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <button
+                onClick={handleAddTx}
+                disabled={!addTxTeam || !addTxTourney}
+                className="modal-feel-lift modal-feel-primary"
+                style={{ ...M.btnPrimary, ...disabledBtn(!addTxTeam || !addTxTourney), marginTop: 4 }}
+              >
+                Add Transaction
+              </button>
+            </div>
           </div>
         )}
 
