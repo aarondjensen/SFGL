@@ -3,15 +3,12 @@
 // User-level settings modal, opened by tapping the user's last name in the
 // header. Replaces the previous "tap-name-to-toggle-commish-mode" affordance
 // — that one-tap toggle is now an option inside this modal, alongside push
-// notification subscription controls and logout.
+// notification subscription controls and per-event toggles.
 //
 // Why a single modal: SFGL had two distinct user-level actions (toggle
-// commish mode, log out) and now needs push subscription too. Three separate
-// header affordances would be visually noisy. One modal collects them.
-//
-// Push subscription logic mirrors what's in AdminView's Commissioner Status
-// panel (batch 1 scaffolding) so any manager can opt in their own device.
-// Server-side preferences and per-event toggles come in later batches.
+// commish mode, plus push subscription) and they live better grouped
+// together. The modal contains a Notifications group (master device toggle
+// + per-event preferences) and the commish-mode toggle for tagged managers.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -40,7 +37,6 @@ export const UserSettingsModal = ({
   taggedCommissioner,
   activeTab,
   setActiveTab,
-  onLogout,
 }) => {
   const dialog = useDialog();
   useModalBehavior(isOpen, onClose);
@@ -188,11 +184,6 @@ export const UserSettingsModal = ({
       return next;
     });
     onClose();
-  };
-
-  const handleLogout = () => {
-    onClose();
-    if (onLogout) onLogout();
   };
 
   if (!isOpen) return null;
@@ -374,72 +365,126 @@ export const UserSettingsModal = ({
 
             {notifsExpanded && (
               <>
-                {/* Status row */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '10px 12px',
-                  background: 'rgba(255,255,255,0.02)',
-                  border: `1px solid ${colors.borderSubtle}`,
-                  borderRadius: 6,
-                  marginBottom: 8,
-                }}>
-                  <div style={{
-                    width: 8, height: 8, borderRadius: '50%',
-                    background: !pushSupported
-                      ? colors.textMuted
-                      : pushSubscribed
-                        ? colors.earningsGreen
-                        : pushPermission === 'denied'
-                          ? colors.danger
-                          : colors.textMuted,
-                    flexShrink: 0,
-                  }} />
-                  <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
-                    {!pushSupported
-                      ? 'Not supported in this browser'
-                      : pushSubscribed
-                        ? 'Enabled on this device'
-                        : pushPermission === 'denied'
-                          ? 'Blocked — enable in browser settings'
-                          : 'Not enabled on this device'}
-                  </div>
-                </div>
+                {/* Master device toggle — iOS Settings pattern. One row owns
+                    everything: status dot, label, and the toggle pill. The
+                    pill drives subscribe/unsubscribe; status detail surfaces
+                    in the secondary label below when relevant.
+                      • not subscribed + supported + not denied → toggle off, tappable
+                      • subscribed → toggle on, tappable (turns it off)
+                      • not supported OR permission denied → toggle off, disabled
+                      • mid-subscribe/unsubscribe → toggle stays in current
+                        position, disabled, "…" suffix on the label */}
+                {(() => {
+                  const isOn = pushSubscribed;
+                  const canToggle = pushSupported
+                    && pushPermission !== 'denied'
+                    && !pushBusy
+                    && !!userTeam;
+                  const dotColor = !pushSupported
+                    ? colors.textMuted
+                    : pushSubscribed
+                      ? colors.earningsGreen
+                      : pushPermission === 'denied'
+                        ? colors.danger
+                        : colors.textMuted;
+                  // Secondary label gives the state-specific detail under
+                  // the primary "Notifications on this device" line.
+                  const detail = !pushSupported
+                    ? 'Not supported in this browser'
+                    : pushPermission === 'denied'
+                      ? 'Blocked — enable in browser settings'
+                      : pushBusy
+                        ? (pushSubscribed ? 'Turning off…' : 'Turning on…')
+                        : pushSubscribed
+                          ? 'On'
+                          : 'Off';
+                  return (
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isOn}
+                      aria-label={`Notifications on this device: ${isOn ? 'on' : 'off'}`}
+                      disabled={!canToggle}
+                      onClick={isOn ? handleUnsubscribe : handleSubscribe}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '10px 12px',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: `1px solid ${colors.borderSubtle}`,
+                        borderRadius: 6,
+                        cursor: canToggle ? 'pointer' : 'not-allowed',
+                        opacity: canToggle ? 1 : 0.7,
+                        transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
+                        textAlign: 'left',
+                        width: '100%',
+                        fontFamily: fonts.sans,
+                      }}
+                    >
+                      <div style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: dotColor,
+                        flexShrink: 0,
+                      }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontFamily: fonts.sans,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: colors.textPrimary,
+                        }}>
+                          Notifications on this device
+                        </div>
+                        <div style={{
+                          fontFamily: fonts.sans,
+                          fontSize: 10.5,
+                          color: colors.textMuted,
+                          marginTop: 1,
+                        }}>
+                          {detail}
+                        </div>
+                      </div>
+                      {/* Toggle pill — same shape as per-event pills below */}
+                      <div
+                        aria-hidden="true"
+                        style={{
+                          position: 'relative',
+                          width: 36,
+                          height: 20,
+                          borderRadius: 10,
+                          background: isOn
+                            ? 'rgba(80,195,120,0.7)'
+                            : 'rgba(255,255,255,0.12)',
+                          border: `1px solid ${isOn
+                            ? 'rgba(80,195,120,0.85)'
+                            : 'rgba(255,255,255,0.18)'}`,
+                          transition: 'background 0.18s, border-color 0.18s',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <div style={{
+                          position: 'absolute',
+                          top: 2,
+                          left: 2,
+                          width: 14,
+                          height: 14,
+                          borderRadius: '50%',
+                          background: '#fff',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                          transform: isOn ? 'translateX(16px)' : 'translateX(0)',
+                          transition: 'transform 0.18s ease',
+                        }} />
+                      </div>
+                    </button>
+                  );
+                })()}
 
-                {/* Subscribe/unsubscribe action */}
-                {pushSupported && pushPermission !== 'denied' && (
-                  <button
-                    onClick={pushSubscribed ? handleUnsubscribe : handleSubscribe}
-                    disabled={pushBusy || !userTeam}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      background: pushSubscribed
-                        ? 'rgba(255,255,255,0.03)'
-                        : 'rgba(80,195,120,0.1)',
-                      border: `1px solid ${pushSubscribed
-                        ? colors.borderSubtle
-                        : 'rgba(80,195,120,0.35)'}`,
-                      borderRadius: 6,
-                      color: pushSubscribed ? colors.textSecondary : colors.earningsGreen,
-                      cursor: pushBusy || !userTeam ? 'not-allowed' : 'pointer',
-                      fontFamily: fonts.sans,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      opacity: pushBusy || !userTeam ? 0.5 : 1,
-                      transition: 'background 0.15s, border-color 0.15s',
-                    }}
-                  >
-                    {pushBusy
-                      ? 'Working…'
-                      : pushSubscribed
-                        ? 'Disable on this device'
-                        : 'Enable notifications on this device'}
-                  </button>
-                )}
-
-                {/* Help text for unsupported / denied */}
+                {/* Help text for unsupported / denied states. Stays because
+                    a user hitting these edge cases needs the explanation —
+                    the master toggle alone won't tell them how to recover. */}
                 {!pushSupported && (
                   <div style={{
                     fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
@@ -563,41 +608,6 @@ export const UserSettingsModal = ({
               </>
             )}
           </div>
-
-          {/* Log out */}
-          {onLogout && (
-            <div>
-              <div style={{
-                fontFamily: fonts.sans,
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '1.8px',
-                textTransform: 'uppercase',
-                color: colors.textMuted,
-                marginBottom: 8,
-              }}>
-                Account
-              </div>
-              <button
-                onClick={handleLogout}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  background: 'rgba(220,80,80,0.06)',
-                  border: '1px solid rgba(220,80,80,0.3)',
-                  borderRadius: 6,
-                  color: colors.danger,
-                  cursor: 'pointer',
-                  fontFamily: fonts.sans,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  transition: 'background 0.15s, border-color 0.15s',
-                }}
-              >
-                Sign Out
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>
