@@ -769,7 +769,7 @@ const FantasyGolfLeague = () => {
       {/* ── User Settings Modal (Wave J Round 6 batch 2) ── */}
       {/* Opened by tapping the user's name in the header. Replaces the
           previous tap-to-toggle-commish behavior — that toggle is now an
-          option inside the modal, alongside push notifications and logout. */}
+          option inside the modal, alongside push notifications. */}
       <UserSettingsModal
         isOpen={showUserSettings}
         onClose={() => setShowUserSettings(false)}
@@ -781,7 +781,6 @@ const FantasyGolfLeague = () => {
         taggedCommissioner={taggedCommissioner}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onLogout={handleLogout}
       />
     </div>
     </PullToRefresh>
