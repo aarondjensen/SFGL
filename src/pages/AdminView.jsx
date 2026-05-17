@@ -582,6 +582,7 @@ export const AdminView = ({
               setGlobalPlayerStats={setGlobalPlayerStats}
               settings={settings}
               rostersByTeamId={rostersByTeamIdForSelectedTourney}
+              loggedInUser={loggedInUser}
             />
           </>
         );
@@ -608,6 +609,7 @@ export const AdminView = ({
               teams={teams}
               transactions={transactions}
               setTransactions={setTransactions}
+              updateTeams={updateTeams}
             />
           </>
         );
