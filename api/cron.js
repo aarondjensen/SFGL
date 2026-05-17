@@ -1201,6 +1201,142 @@ async function handlePgatStats(res) {
   });
 }
 
+// ── Action: owgr-rankings ───────────────────────────────────────────────────
+//
+// Refreshes OWGR world rankings from apiweb.owgr.com. Mirrors what
+// DataSyncPanel.handleSyncOwgr does on the client, but runs server-side via
+// cron so the manager doesn't have to remember to sync weekly.
+//
+// Schedule: defaults to Monday 2pm ET. OWGR publishes new rankings every
+// Monday morning, so 2pm ET gives them several hours to settle before we
+// fetch. Day/hour/minute are configurable via settings (owgrSyncDay,
+// owgrSyncHour, owgrSyncMinute) following the same pattern as waivers and
+// lineup-reminder.
+//
+// Idempotency: cron-job.org will fire on schedule but the day/hour gate
+// short-circuits any out-of-window pings. The `last_owgr_sync` doc tracks
+// whether we already ran today, so multiple in-window pings collapse to a
+// single sync.
+//
+// Data flow:
+//   1. Day/hour gate (early return if outside window)
+//   2. Day-of dedupe (early return if already synced today)
+//   3. Fetch /api/owgr internally (reuses the existing serverless function)
+//   4. Build alias map from Firestore (resolve names to canonical doc IDs)
+//   5. Batch-upsert player docs with new world_rank values
+//   6. Update app_metadata/players_last_updated (back-compat)
+//   7. Update league_settings/owgrLastSynced (authoritative — read by the
+//      DataSyncPanel through the settings subscription)
+async function handleOwgrRankings(res) {
+  const et = getETNow();
+  const settings = await loadSettings();
+
+  // Day/hour/minute gate, mirroring handleLineupReminder.
+  const targetDay    = settings?.owgrSyncDay    ?? 1;   // Mon
+  const targetHour   = settings?.owgrSyncHour   ?? 14;  // 2pm ET
+  const targetMinute = settings?.owgrSyncMinute ?? 0;
+
+  if (et.getDay() !== targetDay) {
+    return res.json({ status: 'not_target_day', targetDay });
+  }
+  if (et.getHours() < targetHour || (et.getHours() === targetHour && et.getMinutes() < targetMinute)) {
+    return res.json({ status: 'not_yet', targetHour, targetMinute });
+  }
+
+  // Day-of dedupe — collapse multiple in-window pings to one actual sync.
+  const today = et.toLocaleDateString('en-US');
+  const dedupeRef = db.collection('sfgl_data').doc('last_owgr_sync');
+  const dedupeSnap = await dedupeRef.get();
+  if (dedupeSnap.exists && dedupeSnap.data().value === today) {
+    return res.json({ status: 'already_synced_today' });
+  }
+
+  // Fetch /api/owgr internally. Reuses the existing endpoint so the OWGR
+  // scraping logic stays in one place.
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : 'https://sfglgolf.com';
+
+  let owgrData;
+  try {
+    const resp = await fetch(`${baseUrl}/api/owgr`);
+    if (!resp.ok) {
+      return res.status(502).json({ status: 'owgr_fetch_failed', http: resp.status });
+    }
+    owgrData = await resp.json();
+  } catch (err) {
+    return res.status(502).json({ status: 'owgr_fetch_error', error: err.message });
+  }
+
+  // Same parsing/cleaning as the client (DataSyncPanel.handleSyncOwgr):
+  // strip parenthetical suffixes from names, require a space (filters out
+  // single-token entries that aren't real player names).
+  const cleanName = (n) => (n || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+  const fetched = (owgrData.players || [])
+    .map(({ name, worldRank }) => ({ name: cleanName(name), worldRank }))
+    .filter(p => p.name && p.name.includes(' ') && Number.isFinite(p.worldRank));
+
+  if (!fetched.length) {
+    return res.status(502).json({ status: 'no_rankings_returned' });
+  }
+
+  // Resolve aliases — some players are stored under a canonical name (e.g.
+  // Nico Echavarria) that differs from what OWGR returns ("Nicolas
+  // Echavarria"). Without this, the alias-having player's ranking never
+  // updates via cron. Client upsertMany does the same resolution; we
+  // duplicate it here because cron can't reach the client helpers.
+  const aliasMap = {};
+  try {
+    const aliasSnap = await db.collection('players').where('aliases', '!=', null).get();
+    aliasSnap.docs.forEach(d => {
+      const data = d.data();
+      const canonical = data.name || d.id;
+      const aliases = Array.isArray(data.aliases) ? data.aliases : [];
+      aliases.forEach(a => { aliasMap[a] = canonical; });
+    });
+  } catch (err) {
+    console.warn('[owgr-sync] alias map load failed; proceeding without:', err.message);
+  }
+
+  // Batch-upsert player docs. Firestore batches cap at 500 ops per commit,
+  // so we chunk; this matches the BATCH_SIZE=499 used in playersApi.upsertMany.
+  const BATCH_SIZE = 499;
+  let upserted = 0;
+  for (let i = 0; i < fetched.length; i += BATCH_SIZE) {
+    const batch = db.batch();
+    fetched.slice(i, i + BATCH_SIZE).forEach(({ name, worldRank }) => {
+      const canonicalName = aliasMap[name] || name;
+      batch.set(
+        db.collection('players').doc(canonicalName),
+        { name: canonicalName, world_rank: worldRank },
+        { merge: true }
+      );
+      upserted++;
+    });
+    await batch.commit();
+  }
+
+  // Update both timestamp locations: app_metadata for back-compat, and
+  // league_settings.owgrLastSynced for the panel's primary source.
+  const ts = new Date().toISOString();
+  await db.collection('app_metadata').doc('players_last_updated').set({
+    key: 'players_last_updated', value: ts,
+  });
+  await db.collection('league_settings').doc('owgrLastSynced').set({
+    key: 'owgrLastSynced', value: ts,
+  });
+
+  // Mark today as synced for the dedupe gate.
+  await dedupeRef.set({ key: 'last_owgr_sync', value: today });
+
+  return res.json({
+    status: 'sent',
+    upserted,
+    aliasesApplied: Object.keys(aliasMap).length,
+    timestamp: ts,
+  });
+}
+
 // ── Action: lead-watch ──────────────────────────────────────────────────────
 //
 // Monitors live tournament leaderboard for lead changes and sends a push to
@@ -1396,7 +1532,8 @@ export default async function handler(req, res) {
       case 'notify-results':    return await handleNotifyResults(req, res);
       case 'pgat-stats':        return await handlePgatStats(res);
       case 'lead-watch':        return await handleLeadWatch(res);
-      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch' });
+      case 'owgr-rankings':     return await handleOwgrRankings(res);
+      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);

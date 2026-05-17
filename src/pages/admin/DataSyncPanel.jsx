@@ -1,19 +1,17 @@
 // src/pages/admin/DataSyncPanel.jsx
 // ============================================================================
-// Three sync operations grouped together:
-//   1. OWGR Rankings — refreshes world rankings + headshot espnIds
-//   2. LIV Roster   — flags/unflags LIV defectors based on LIV_GOLF_ROSTER constant
-//   3. Static Aliases — one-shot migration of nameAliases.js into Firestore
+// OWGR rankings sync. Single-purpose panel now — LIV roster sync moved into
+// LivIneligiblePanel where the rest of LIV management lives, and the
+// one-shot Static Aliases migration was removed (served its purpose; the
+// Merge Players feature handles new aliases going forward).
 //
-// Wave J Round 6 follow-up: restyled to modal-feel — flat page, eyebrow
-// headings, lifted buttons, lighter status banners. Functional behavior
-// unchanged.
+// OWGR is also automated weekly via cron (?action=owgr-rankings, Monday 2pm
+// ET), so this button is now primarily a "sync now" override for off-cycle
+// refreshes.
 // ============================================================================
 
 import React from 'react';
 import { playersApi, playerRankingsApi } from '../../api/firebase';
-import { seedAliasesToFirestore } from '../../constants/nameAliases';
-import { LIV_GOLF_ROSTER } from '../../constants';
 import { M, SyncStatusBanner, LastSyncedLine, disabledBtn } from './adminStyles';
 
 export const DataSyncPanel = ({
@@ -21,19 +19,16 @@ export const DataSyncPanel = ({
   rankingsLastUpdated,
   settings, setSettings,
 }) => {
-  // ── OWGR sync state ──
+  // The "last synced" timestamp lives in settings.owgrLastSynced (same
+  // pattern as livRosterLastSynced) so it survives page reloads via the
+  // settings subscription. We previously persisted to a separate
+  // app_metadata/players_last_updated doc, but useLeague doesn't subscribe
+  // to that doc — so the prop never refreshed after a sync. The settings
+  // path is the reliable source. We still call setLastUpdated() on the old
+  // doc for backward compat with any reader that hasn't migrated yet.
   const [owgrStatus, setOwgrStatus] = React.useState(null);
   const [owgrSummary, setOwgrSummary] = React.useState('');
-  const [owgrLastSynced, setOwgrLastSynced] = React.useState(null);
-
-  // ── LIV sync state ──
-  const [livSyncStatus, setLivSyncStatus] = React.useState(null);
-  const [livSyncSummary, setLivSyncSummary] = React.useState('');
-  const [livLastSynced, setLivLastSynced] = React.useState(() => settings?.livRosterLastSynced || null);
-
-  // ── Alias sync state ──
-  const [aliasSyncStatus, setAliasSyncStatus] = React.useState(null);
-  const [aliasSyncSummary, setAliasSyncSummary] = React.useState('');
+  const [owgrLastSynced, setOwgrLastSynced] = React.useState(() => settings?.owgrLastSynced || null);
 
   const handleSyncOwgr = async () => {
     setOwgrStatus('fetching');
@@ -58,7 +53,7 @@ export const DataSyncPanel = ({
       });
       await playersApi.upsertMany(fetched.map(({ name, worldRank }) => ({ name, worldRank })));
 
-      // Also fetch ESPN IDs for all rostered players (for headshots)
+      // Also fetch ESPN IDs for all rostered players (for headshots).
       try {
         const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
         if (allRostered.length) {
@@ -72,9 +67,14 @@ export const DataSyncPanel = ({
       } catch (_) { /* non-critical */ }
 
       setAllPlayers(updatedPlayers);
-      await playerRankingsApi.setLastUpdated(new Date().toISOString()).catch(() => {});
+      const owgrTs = new Date().toISOString();
+      // Back-compat: keep updating the legacy app_metadata doc so any old
+      // reader still gets a value. The authoritative source going forward
+      // is settings.owgrLastSynced, written below.
+      await playerRankingsApi.setLastUpdated(owgrTs).catch(() => {});
       await playerRankingsApi.invalidateCache().catch(() => {});
-      setOwgrLastSynced(new Date().toISOString());
+      setOwgrLastSynced(owgrTs);
+      setSettings({ ...settings, owgrLastSynced: owgrTs }).catch(() => {});
       setOwgrStatus('done');
       setOwgrSummary(`✓ ${fetched.length} rankings synced · ${updated} updated · ${added} new`);
     } catch (err) {
@@ -83,84 +83,15 @@ export const DataSyncPanel = ({
     }
   };
 
-  const handleSyncLiv = async () => {
-    setLivSyncStatus('fetching');
-    setLivSyncSummary('');
-    try {
-      const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
-      const toFlag = LIV_GOLF_ROSTER.filter(name =>
-        !allPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
-      );
-      const toUnflag = allPlayers.filter(p =>
-        p.isLiv && !livRosterLower.has(p.name.toLowerCase())
-      );
-      if (toFlag.length === 0 && toUnflag.length === 0) {
-        setLivSyncStatus('done');
-        setLivSyncSummary('✓ LIV roster already matches DB — no changes needed');
-        return;
-      }
-      const livWrites = [
-        ...toFlag.map(name => ({ name, isLiv: true })),
-        ...toUnflag.map(p => ({ name: p.name, isLiv: false })),
-      ];
-      await playersApi.upsertMany(livWrites);
-      setAllPlayers(prev => {
-        const updated = [...prev];
-        toFlag.forEach(name => {
-          const idx = updated.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: true };
-          else updated.push({ name, isLiv: true, worldRank: null });
-        });
-        toUnflag.forEach(u => {
-          const idx = updated.findIndex(p => p.name === u.name);
-          if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: false };
-        });
-        return updated;
-      });
-      const parts = [
-        toFlag.length   > 0 ? `${toFlag.length} tagged` : '',
-        toUnflag.length > 0 ? `${toUnflag.length} unflagged` : '',
-      ].filter(Boolean).join(' · ');
-      const livTs = new Date().toISOString();
-      setLivLastSynced(livTs);
-      setSettings({ ...settings, livRosterLastSynced: livTs }).catch(() => {});
-      setLivSyncStatus('done');
-      setLivSyncSummary(`✓ LIV roster synced · ${parts}`);
-    } catch (err) {
-      setLivSyncStatus('error');
-      setLivSyncSummary(err.message || 'LIV sync failed');
-    }
-  };
-
-  const handleSeedAliases = async () => {
-    setAliasSyncStatus('fetching');
-    setAliasSyncSummary('');
-    try {
-      const r = await seedAliasesToFirestore(playersApi);
-      const parts = [
-        r.added          > 0 ? `${r.added} added` : '',
-        r.alreadyPresent > 0 ? `${r.alreadyPresent} already present` : '',
-        r.skipped        > 0 ? `${r.skipped} skipped` : '',
-      ].filter(Boolean).join(' · ') || 'no entries to process';
-      const detail = r.errors.length ? '\n• ' + r.errors.join('\n• ') : '';
-      setAliasSyncStatus(r.errors.length && r.added === 0 && r.alreadyPresent === 0 ? 'error' : 'done');
-      setAliasSyncSummary(`✓ Static aliases synced · ${parts}${detail}`);
-    } catch (err) {
-      setAliasSyncStatus('error');
-      setAliasSyncSummary(err.message || 'Alias sync failed');
-    }
-  };
-
   return (
     <div style={M.page}>
       <div style={M.descText}>
-        Refresh data from external sources. Sync operations are idempotent — safe to re-run anytime.
+        Refresh OWGR world rankings. Runs automatically every Monday at 2pm ET — use this button to force an off-cycle refresh.
       </div>
 
-      {/* ── OWGR Rankings ── */}
       <div style={M.group}>
         <div style={M.eyebrow}>🌍 OWGR Rankings</div>
-        <LastSyncedLine timestamp={owgrLastSynced || rankingsLastUpdated} />
+        <LastSyncedLine timestamp={owgrLastSynced || settings?.owgrLastSynced || rankingsLastUpdated} />
         <button
           onClick={handleSyncOwgr}
           disabled={owgrStatus === 'fetching'}
@@ -170,38 +101,6 @@ export const DataSyncPanel = ({
           {owgrStatus === 'fetching' ? '⏳ Fetching…' : '🔄 Sync OWGR Rankings'}
         </button>
         <SyncStatusBanner status={owgrStatus} summary={owgrSummary} />
-      </div>
-
-      {/* ── LIV Roster Sync ── */}
-      <div style={M.group}>
-        <div style={M.eyebrow}>🚫 LIV Golf Roster</div>
-        <LastSyncedLine timestamp={livLastSynced || settings?.livRosterLastSynced} />
-        <button
-          onClick={handleSyncLiv}
-          disabled={livSyncStatus === 'fetching'}
-          className="modal-feel-lift modal-feel-primary"
-          style={{ ...M.btnPrimary, ...disabledBtn(livSyncStatus === 'fetching') }}
-        >
-          {livSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync LIV Roster'}
-        </button>
-        <SyncStatusBanner status={livSyncStatus} summary={livSyncSummary} />
-      </div>
-
-      {/* ── Static Alias Sync ── */}
-      <div style={M.group}>
-        <div style={M.eyebrow}>🔗 Static Aliases</div>
-        <div style={M.descText}>
-          Copies the historical aliases hard-coded in <code style={{ fontFamily: 'monospace', fontSize: 11, opacity: 0.9 }}>nameAliases.js</code> into Firestore as dynamic aliases on each canonical player doc. Run once after deploying. New aliases going forward should use the Merge Players feature instead.
-        </div>
-        <button
-          onClick={handleSeedAliases}
-          disabled={aliasSyncStatus === 'fetching'}
-          className="modal-feel-lift modal-feel-primary"
-          style={{ ...M.btnPrimary, ...disabledBtn(aliasSyncStatus === 'fetching') }}
-        >
-          {aliasSyncStatus === 'fetching' ? '⏳ Syncing…' : '🔄 Sync Static Aliases'}
-        </button>
-        <SyncStatusBanner status={aliasSyncStatus} summary={aliasSyncSummary} />
       </div>
     </div>
   );
