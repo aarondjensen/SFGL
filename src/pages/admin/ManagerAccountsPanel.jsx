@@ -127,7 +127,7 @@ export const ManagerAccountsPanel = ({ teams, settings, setSettings, updateTeams
                   placeholder="email@example.com"
                   value={emailDraft?.[t.id] ?? currentEmail}
                   onChange={e => setEmailDraft(prev => ({ ...(prev || {}), [t.id]: e.target.value }))}
-                  style={{ ...M.input, flex: 1, fontSize: 12, padding: '8px 10px' }}
+                  style={{ ...M.input, flex: 1 }}
                 />
               </div>
             );

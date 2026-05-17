@@ -149,7 +149,8 @@ export const M = {
   },
 
   // Selects + inputs — same shape as theme.select/input but with the lighter
-  // border treatment used in the modal.
+  // border treatment used in the modal. Both at 16px to (a) prevent iOS
+  // auto-zoom on input focus and (b) keep the two visually consistent.
   select: {
     width: '100%',
     padding: '10px 12px',
@@ -157,7 +158,7 @@ export const M = {
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
     color: colors.textPrimary,
-    fontSize: 13,
+    fontSize: 16,
     fontFamily: fonts.sans,
     appearance: 'none',
     WebkitAppearance: 'none',
@@ -170,7 +171,7 @@ export const M = {
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
     color: colors.textPrimary,
-    fontSize: 13,
+    fontSize: 16,
     fontFamily: fonts.sans,
   },
 
