@@ -12,12 +12,12 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { theme, colors, fonts } from '../../theme.js';
+import { colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { sendCommishPush } from '../../api/pushNotifications';
 import { processTournamentData } from './processTournamentData';
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
-import { S, disabledBtn } from './adminStyles';
+import { S, M, disabledBtn } from './adminStyles';
 
 // ── Round-leader dropdown (uses stored tournament lineups + R3 mulligan additions) ──
 const RoundLeaderSelect = ({
@@ -42,14 +42,14 @@ const RoundLeaderSelect = ({
   }).sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div style={{ flex: 1 }}>
-      <div style={S.lbl}>{label}</div>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={M.eyebrow}>{label}</div>
       {leaders.map((leader, idx) => (
-        <div key={idx} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+        <div key={idx} style={{ display: 'flex', gap: 4 }}>
           <select
             value={leader}
             onChange={e => { const n = [...leaders]; n[idx] = e.target.value; onChange(n); }}
-            style={{ ...theme.select, flex: 1, marginBottom: 0, fontSize: 12, padding: '7px 8px' }}
+            style={{ ...M.select, flex: 1, fontSize: 12, padding: '7px 8px' }}
           >
             <option value="">(none)</option>
             {players.map(p => <option key={p.name + p.team} value={p.name}>{p.name} — {p.team}</option>)}
@@ -57,7 +57,16 @@ const RoundLeaderSelect = ({
           {idx > 0 && (
             <button
               onClick={() => onChange(leaders.filter((_, i) => i !== idx))}
-              style={{ background: 'none', border: `1px solid ${colors.dangerBorder}`, color: colors.danger, borderRadius: 2, padding: '4px 7px', cursor: 'pointer', fontSize: 11 }}
+              style={{
+                background: 'rgba(220,80,80,0.08)',
+                border: '1px solid rgba(220,80,80,0.3)',
+                color: colors.danger,
+                borderRadius: 6,
+                padding: '4px 8px',
+                cursor: 'pointer',
+                fontSize: 11,
+                flexShrink: 0,
+              }}
               aria-label="Remove leader"
             >
               ✕
@@ -67,7 +76,16 @@ const RoundLeaderSelect = ({
       ))}
       <button
         onClick={() => onChange([...leaders, ''])}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: colors.textGoldDim, padding: 0 }}
+        style={{
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: 11,
+          color: colors.textGoldDim,
+          padding: '2px 0',
+          textAlign: 'left',
+          alignSelf: 'flex-start',
+        }}
       >
         + co-leader
       </button>
@@ -399,52 +417,99 @@ export const TournamentResultsPanel = ({
     }
   };
 
-  const isCompleted = !!tournaments.find(t => t.name === selectedTourney)?.completed;
+  const selectedTourneyObj = tournaments.find(t => t.name === selectedTourney);
+  const isCompleted = !!selectedTourneyObj?.completed;
+  const isPlaying   = !!selectedTourneyObj?.playing && !isCompleted;
+  const hasData     = manualEntry.playerEarnings.trim().length > 0;
 
   return (
-    <div style={S.section}>
-      <div style={S.title}>🏆 Tournament Results</div>
-      <label style={S.lbl}>Tournament</label>
-      <select value={selectedTourney} onChange={e => onTourneyChange(e.target.value)} style={S.select}>
-        <option value="">Choose tournament...</option>
-        {tournaments.map(t => <option key={t.name} value={t.name}>{t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}</option>)}
-      </select>
+    <div style={M.page}>
+      {/* Header description — replaces the bright S.title; BackBar already
+          shows "Tournament Results" so this is just one-line context. */}
+      <div style={M.descText}>
+        Auto-process happens at the configured weekly time. Use this panel only when you need to manually trigger or correct results.
+      </div>
 
+      {/* Tournament selector group */}
+      <div style={M.group}>
+        <div style={M.eyebrow}>Tournament</div>
+        <select
+          value={selectedTourney}
+          onChange={e => onTourneyChange(e.target.value)}
+          style={M.select}
+        >
+          <option value="">Choose tournament...</option>
+          {tournaments.map(t => (
+            <option key={t.name} value={t.name}>
+              {t.completed ? '✓ ' : t.playing ? '▶ ' : ''}{t.name}
+            </option>
+          ))}
+        </select>
+
+        {/* Status row — shows current state of the selected tournament.
+            Only renders when something is selected, so the panel doesn't
+            show a stale state pill in the default empty view. */}
+        {selectedTourney && (
+          <div style={M.statusRow}>
+            <div style={M.statusDot(
+              isCompleted ? colors.earningsGreen
+              : isPlaying ? colors.textGold
+              : colors.textMuted
+            )} />
+            <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+              {isCompleted ? 'This tournament has been processed'
+               : isPlaying ? 'Tournament currently in progress'
+               : 'Tournament not yet started'}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Fetch results button */}
       <button
         onClick={handleFetchPGAResults}
         disabled={pgaFetching || !selectedTourney}
-        style={{ ...S.btn, marginBottom: 14, ...disabledBtn(!selectedTourney || pgaFetching) }}
+        className="modal-feel-lift modal-feel-primary"
+        style={{ ...M.btnPrimary, ...disabledBtn(!selectedTourney || pgaFetching) }}
       >
         {pgaFetching ? '⏳ Fetching…' : selectedTourney ? `⛳ Get ${selectedTourney} Results` : '⛳ Get Tournament Results'}
       </button>
 
-      {manualEntry.playerEarnings.trim() && (
+      {/* Round leaders + process action — only after fetch completes */}
+      {hasData && (
         <>
-          <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 8 }}>
-            Round leaders auto-detected — override if incorrect:
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-            {[1, 2, 3].map(round => (
-              <RoundLeaderSelect
-                key={round}
-                label={`R${round} Leader`}
-                round={round}
-                leaders={manualEntry[`round${round}Leaders`]}
-                onChange={r => setManualEntry({ ...manualEntry, [`round${round}Leaders`]: r })}
-                selectedTourney={selectedTourney}
-                tournaments={tournaments}
-                transactions={transactions}
-                teams={teams}
-                manualEntry={manualEntry}
-              />
-            ))}
+          <div style={M.group}>
+            <div style={M.eyebrow}>Round Leaders</div>
+            <div style={M.descText}>
+              Auto-detected from the field results. Override if any are incorrect.
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              {[1, 2, 3].map(round => (
+                <RoundLeaderSelect
+                  key={round}
+                  label={`R${round} Leader`}
+                  round={round}
+                  leaders={manualEntry[`round${round}Leaders`]}
+                  onChange={r => setManualEntry({ ...manualEntry, [`round${round}Leaders`]: r })}
+                  selectedTourney={selectedTourney}
+                  tournaments={tournaments}
+                  transactions={transactions}
+                  teams={teams}
+                  manualEntry={manualEntry}
+                />
+              ))}
+            </div>
           </div>
 
+          {/* Process / Reprocess — primary action for the panel. Color
+              shifts to warning when reprocessing a completed tournament,
+              since that's a more destructive operation. */}
           {!isCompleted ? (
             <button
               onClick={handleManualEntry}
               disabled={!selectedTourney}
-              style={{ ...S.btn, ...disabledBtn(!selectedTourney) }}
+              className="modal-feel-lift modal-feel-primary"
+              style={{ ...M.btnPrimary, ...disabledBtn(!selectedTourney) }}
             >
               ✅ Process Results
             </button>
@@ -452,13 +517,8 @@ export const TournamentResultsPanel = ({
             <button
               onClick={handleReprocess}
               disabled={!selectedTourney}
-              style={{
-                ...S.btn,
-                background: 'rgba(220,150,50,0.12)',
-                border: '1px solid rgba(220,150,50,0.4)',
-                color: 'rgba(220,180,80,0.9)',
-                ...disabledBtn(!selectedTourney),
-              }}
+              className="modal-feel-lift modal-feel-warning"
+              style={{ ...M.btnWarning, ...disabledBtn(!selectedTourney) }}
             >
               ✏️ Reprocess Tournament
             </button>
