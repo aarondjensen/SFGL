@@ -155,40 +155,71 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers }) => {
             No LIV players flagged
           </div>
         ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {livPlayers.map(p => (
+          // iOS Settings-style list. The faint danger-tinted container
+          // background subtly signals "these are flagged" without being
+          // loud. Rows use a top border (except the first) so dividers
+          // appear between names but not on the outer edges.
+          <div style={{
+            border: `1px solid ${colors.borderSubtle}`,
+            borderRadius: 8,
+            overflow: 'hidden',
+            background: 'rgba(220,80,80,0.02)',
+          }}>
+            {livPlayers.map((p, idx) => (
               <div
                 key={p.name}
                 style={{
-                  display: 'inline-flex',
+                  display: 'flex',
                   alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 10px',
-                  borderRadius: 6,
-                  background: 'rgba(220,80,80,0.06)',
-                  border: '1px solid rgba(220,80,80,0.25)',
-                  fontSize: 12,
+                  padding: '10px 12px',
+                  borderTop: idx === 0 ? 'none' : `1px solid ${colors.borderSubtle}`,
                   fontFamily: fonts.sans,
-                  color: colors.textSecondary,
                 }}
               >
-                {p.name}
+                <span style={{
+                  flex: 1,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: colors.textPrimary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {p.name}
+                </span>
                 <button
                   disabled={livSaving[p.name]}
                   onClick={() => unflagLiv(p)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'rgba(220,100,80,0.7)',
-                    cursor: livSaving[p.name] ? 'wait' : 'pointer',
-                    fontSize: 13,
-                    padding: 0,
-                    lineHeight: 1,
-                  }}
                   title={'Remove LIV flag from ' + p.name}
                   aria-label={'Remove LIV flag from ' + p.name}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 6,
+                    background: 'rgba(220,80,80,0.06)',
+                    border: '1px solid rgba(220,80,80,0.25)',
+                    color: 'rgba(220,100,80,0.85)',
+                    cursor: livSaving[p.name] ? 'wait' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 12,
+                    lineHeight: 1,
+                    padding: 0,
+                    flexShrink: 0,
+                    transition: 'background 0.15s, border-color 0.15s',
+                  }}
+                  onMouseEnter={e => {
+                    if (livSaving[p.name]) return;
+                    e.currentTarget.style.background = 'rgba(220,80,80,0.14)';
+                    e.currentTarget.style.borderColor = 'rgba(220,80,80,0.4)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = 'rgba(220,80,80,0.06)';
+                    e.currentTarget.style.borderColor = 'rgba(220,80,80,0.25)';
+                  }}
                 >
-                  ✕
+                  {livSaving[p.name] ? '…' : '✕'}
                 </button>
               </div>
             ))}
