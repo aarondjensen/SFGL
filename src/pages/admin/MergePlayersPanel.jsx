@@ -1,25 +1,23 @@
 // src/pages/admin/MergePlayersPanel.jsx
 // ============================================================================
-// Merge two player names into one canonical entry. Extracted from AdminView.
-// Wave I cleanup — was already a self-contained sub-component, now in its own file.
+// Merge two player names into one canonical entry. Fix name mismatches —
+// renames a player everywhere in rosters, transactions, and Firebase.
 //
-// Contract: this panel renders ONLY the form contents (description + inputs +
-// merge button) as a fragment. The callsite is responsible for the surrounding
-// S.section box, the S.title header, and any collapse-toggle behaviour.
-// This matches the historic inline structure so the swap is a pure refactor
-// with no DOM-level changes.
+// Wave J Round 6 follow-up: restyled to modal-feel — flat page, eyebrow
+// headings, lighter inputs, danger-tinted merge button. Functional behavior
+// unchanged.
 // ============================================================================
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { theme, colors, fonts } from '../../theme.js';
+import { colors, fonts } from '../../theme.js';
 import { sfglDataApi, playersApi, teamsApi } from '../../api/firebase';
-import { STORAGE_KEYS } from '../../constants';
-import { S, disabledBtn } from './adminStyles';
+import { M, disabledBtn } from './adminStyles';
 
 export const MergePlayersPanel = ({
   allPlayers, teams, transactions,
   updateTeams, setTransactions,
+  STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
 
@@ -45,24 +43,43 @@ export const MergePlayersPanel = ({
     ? allNames.filter(n => n.toLowerCase().includes(search2.toLowerCase())).slice(0, 8)
     : [];
 
+  // Input styling that highlights the field when a player is locked in.
+  // Gold accent border = "this slot is committed."
   const iStyle = (sel) => ({
-    ...theme.input, width: '100%', fontSize: 13,
-    border: sel ? `1px solid ${colors.textGold}` : undefined,
+    ...M.input,
+    border: sel
+      ? `1px solid ${colors.textGold}`
+      : `1px solid ${colors.borderSubtle}`,
   });
+
+  // Autocomplete dropdown — appears beneath the input.
   const dStyle = {
-    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    zIndex: 50,
+    marginTop: 2,
     background: '#0f1d35',
-    border: `1px solid ${colors.border}`,
-    borderRadius: 3,
+    border: `1px solid ${colors.borderSubtle}`,
+    borderRadius: 6,
     boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
     overflow: 'hidden',
   };
+
   const oStyle = {
-    display: 'block', width: '100%', textAlign: 'left',
-    padding: '8px 12px', background: 'none', border: 'none',
-    fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary,
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    padding: '10px 12px',
+    background: 'none',
+    border: 'none',
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textPrimary,
     cursor: 'pointer',
     borderBottom: `1px solid ${colors.borderSubtle}`,
+    transition: 'background 0.12s',
   };
 
   const doMerge = async () => {
@@ -110,94 +127,98 @@ export const MergePlayersPanel = ({
     }
   };
 
-  return (
-    <>
-      <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-        Fix name mismatches — renames a player everywhere in rosters, transactions and Firebase.
-      </div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <label style={S.lbl}>Rename this player...</label>
-          <div style={{ position: 'relative' }}>
-            <input
-              value={player1 || search1}
-              onChange={e => { setSearch1(e.target.value); setPlayer1(null); }}
-              placeholder="Search..."
-              style={iStyle(player1)}
-            />
-            {!player1 && f1.length > 0 && (
-              <div style={dStyle}>
-                {f1.map(n => (
-                  <button key={n}
-                    onClick={() => { setPlayer1(n); setSearch1(n); }}
-                    style={oStyle}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            )}
+  // Reusable autocomplete-search field
+  const renderSearchField = (eyebrowText, value, search, setSearch, selectedPlayer, setSelectedPlayer, filteredNames) => (
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={M.eyebrow}>{eyebrowText}</div>
+      <div style={{ position: 'relative' }}>
+        <input
+          value={selectedPlayer || search}
+          onChange={e => { setSearch(e.target.value); setSelectedPlayer(null); }}
+          placeholder="Search…"
+          style={iStyle(selectedPlayer)}
+        />
+        {!selectedPlayer && filteredNames.length > 0 && (
+          <div style={dStyle}>
+            {filteredNames.map(n => (
+              <button
+                key={n}
+                onClick={() => { setSelectedPlayer(n); setSearch(n); }}
+                style={oStyle}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                {n}
+              </button>
+            ))}
           </div>
-          {player1 && (
-            <button onClick={() => { setPlayer1(null); setSearch1(''); }}
-              style={{ ...theme.btnSecondary, marginTop: 4, padding: '2px 8px', fontSize: 10 }}>
-              ✕ Clear
-            </button>
-          )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20, color: colors.textMuted, fontSize: 16 }}>→</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <label style={S.lbl}>...to this name</label>
-          <div style={{ position: 'relative' }}>
-            <input
-              value={player2 || search2}
-              onChange={e => { setSearch2(e.target.value); setPlayer2(null); }}
-              placeholder="Search..."
-              style={iStyle(player2)}
-            />
-            {!player2 && f2.length > 0 && (
-              <div style={dStyle}>
-                {f2.map(n => (
-                  <button key={n}
-                    onClick={() => { setPlayer2(n); setSearch2(n); }}
-                    style={oStyle}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {player2 && (
-            <button onClick={() => { setPlayer2(null); setSearch2(''); }}
-              style={{ ...theme.btnSecondary, marginTop: 4, padding: '2px 8px', fontSize: 10 }}>
-              ✕ Clear
-            </button>
-          )}
-        </div>
+        )}
       </div>
-      {error && (
-        <div style={{ ...theme.smallText, color: colors.danger, marginBottom: 8 }}>
-          {error}
-        </div>
+      {selectedPlayer && (
+        <button
+          onClick={() => { setSelectedPlayer(null); setSearch(''); }}
+          style={{
+            alignSelf: 'flex-start',
+            background: 'none',
+            border: 'none',
+            color: colors.textMuted,
+            fontSize: 11,
+            padding: '2px 0',
+            cursor: 'pointer',
+            fontFamily: fonts.sans,
+          }}
+        >
+          ✕ Clear
+        </button>
       )}
+    </div>
+  );
+
+  return (
+    <div style={M.page}>
+      <div style={M.descText}>
+        Fix name mismatches — renames a player everywhere in rosters, transactions, and Firebase. This action cannot be undone.
+      </div>
+
+      <div style={M.group}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+          {renderSearchField('Rename this player…', player1, search1, setSearch1, player1, setPlayer1, f1)}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            paddingTop: 22,
+            color: colors.textMuted,
+            fontSize: 18,
+            flexShrink: 0,
+          }}>
+            →
+          </div>
+          {renderSearchField('…to this name', player2, search2, setSearch2, player2, setPlayer2, f2)}
+        </div>
+
+        {error && (
+          <div style={{
+            fontFamily: fonts.sans,
+            fontSize: 11,
+            color: colors.danger,
+            padding: '6px 0',
+          }}>
+            {error}
+          </div>
+        )}
+      </div>
+
       <button
         onClick={doMerge}
         disabled={!player1 || !player2 || status === 'merging'}
+        className="modal-feel-lift modal-feel-danger"
         style={{
-          ...S.btn,
-          background: 'rgba(180,100,100,0.15)',
-          border: '1px solid rgba(200,80,80,0.4)',
-          color: 'rgba(220,120,120,0.95)',
+          ...M.btnDanger,
           ...disabledBtn(!player1 || !player2 || status === 'merging'),
         }}
       >
         {status === 'merging' ? '⏳ Merging…' : '🔀 Merge Players'}
       </button>
-    </>
+    </div>
   );
 };

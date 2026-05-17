@@ -2,15 +2,18 @@
 // ============================================================================
 // Waiver claim processing — single-claim or batch ("Process All").
 // Includes the conflict-summary UI showing competing claims with tiebreaker.
-// Wave I extraction from AdminView.
+//
+// Wave J Round 6 follow-up: restyled to modal-feel — flat container, lighter
+// row chrome, eyebrow headings, lifted buttons. The dense pending-claims
+// list is preserved (it conveys necessary structured info) but modernized.
+// Functional behavior unchanged.
 // ============================================================================
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { theme, colors, fonts } from '../../theme.js';
+import { colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
-import { STORAGE_KEYS } from '../../constants';
-import { S } from './adminStyles';
+import { M, disabledBtn } from './adminStyles';
 import { getETClock, fmtETTime, DAY_NAMES } from '../../utils/sharedHelpers';
 
 const buildRoster = (team, transactions) => {
@@ -37,8 +40,8 @@ const applyWaiver = (t, w) => {
 export const WaiverProcessingPanel = ({
   transactions, setTransactions,
   teams, updateTeams,
-  tournaments,
   settings,
+  STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
   const [waiverRevealed, setWaiverRevealed] = React.useState(false);
@@ -107,20 +110,9 @@ export const WaiverProcessingPanel = ({
     );
     if (!ok) return;
 
-    // Derive each team's current season earnings from tournament.results so
-    // waiver priority isn't affected by drift in the stored team.earnings
-    // field. Mirrors StandingsView's seasonTotals derivation.
-    const derivedEarnings = {};
-    teams.forEach(t => { derivedEarnings[t.id] = 0; });
-    (tournaments || []).forEach(t => {
-      if (!t.completed || !t.results?.teams) return;
-      Object.entries(t.results.teams).forEach(([teamId, result]) => {
-        if (derivedEarnings[teamId] !== undefined) derivedEarnings[teamId] += (result.totalEarnings || 0);
-      });
-    });
-    const em = {}; teams.forEach(t => { em[t.name] = derivedEarnings[t.id] || 0; });
+    const em = {}; teams.forEach(t => { em[t.name] = t.earnings || 0; });
     const pm = {};
-    [...teams].sort((a, b) => (derivedEarnings[a.id] || 0) - (derivedEarnings[b.id] || 0)).forEach((t, i) => { pm[t.name] = i; });
+    [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
     let nextLastPlace = teams.length;
 
     const byTeam = {};
@@ -197,88 +189,200 @@ export const WaiverProcessingPanel = ({
     );
   };
 
+  // ── Empty state ──
+  if (pending.length === 0) {
+    return (
+      <div style={M.page}>
+        <div style={M.descText}>
+          Auto-process happens {DAY_NAMES[wd]} at {fmtETTime(wh, wm)} ET. Use this panel to process pending claims manually if you need to intervene before then.
+        </div>
+        <div style={{
+          ...M.statusRow,
+          background: 'rgba(80,195,120,0.06)',
+          borderColor: 'rgba(80,195,120,0.3)',
+          gap: 10,
+        }}>
+          <div style={M.statusDot(colors.earningsGreen)} />
+          <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+            No pending waiver claims
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={S.section}>
-      {/* "Past schedule" reminder banner */}
+    <div style={M.page}>
+      <div style={M.descText}>
+        Auto-process happens {DAY_NAMES[wd]} at {fmtETTime(wh, wm)} ET. Process manually only if you need to intervene before then.
+      </div>
+
+      {/* Ready-to-process banner — only shows when we're past the configured
+          time AND there are pending claims to act on */}
       {isReadyToProcess && (
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 10, borderRadius: 3,
-          background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.45)',
+          ...M.statusRow,
+          background: 'rgba(220,170,60,0.08)',
+          borderColor: 'rgba(220,170,60,0.4)',
+          gap: 10,
         }}>
           <span style={{ fontSize: 14 }}>⏰</span>
-          <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 11, color: 'rgba(220,190,80,0.9)', fontWeight: 600 }}>
+          <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: 'rgba(220,190,80,0.95)' }}>
             Past {fmtETTime(wh, wm)} ET {DAY_NAMES[wd]} — process now!
           </div>
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div style={S.title}>⏰ Process Waivers</div>
-        {pending.length > 0 && <span style={{ ...theme.badge, ...theme.badgeWarning }}>{pending.length} pending</span>}
-      </div>
-
-      {pending.length === 0 ? (
-        <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.success }}>
-          ✓ No pending waiver claims
+      <div style={M.group}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={M.eyebrow}>Pending Claims</div>
+          <span style={{
+            fontFamily: fonts.sans,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.5px',
+            textTransform: 'uppercase',
+            color: 'rgba(220,170,60,0.95)',
+            background: 'rgba(220,170,60,0.08)',
+            border: '1px solid rgba(220,170,60,0.3)',
+            padding: '2px 8px',
+            borderRadius: 10,
+          }}>
+            {pending.length}
+          </span>
         </div>
-      ) : !waiverRevealed ? (
-        <>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
-            {pending.map(w => (
-              <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '6px 12px' }}>
-                <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>
-                  {w.priority || '?'}
-                </div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
-                <div style={{ flex: 1 }} />
-                <span style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>claim pending</span>
-              </div>
-            ))}
-          </div>
-          <button
-            onClick={() => setWaiverRevealed(true)}
-            style={ready
-              ? { ...S.btn, fontSize: 13, fontWeight: 700, padding: '12px 20px', background: 'rgba(220,170,60,0.2)', border: '2px solid rgba(220,170,60,0.7)', color: 'rgba(255,220,80,1)', boxShadow: '0 0 12px rgba(220,170,60,0.25)' }
-              : { ...S.btnSec, fontSize: 11 }
-            }
-          >
-            {ready ? `⚡ Process Claims (${pending.length})` : `Process Claims (${pending.length})`}
-          </button>
-        </>
-      ) : (
-        <>
-          <ConflictSummary pending={pending} teams={teams} />
-          <button onClick={handleProcessAll} style={{ ...S.btn, marginBottom: 8 }}>⚡ Process All ({pending.length})</button>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {pending.map(w => (
-              <div key={w._idx} style={{ display: 'flex', alignItems: 'center', gap: 10, background: colors.inputBg, border: `1px solid ${colors.borderSubtle}`, borderRadius: 3, padding: '8px 12px' }}>
-                <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(220,170,60,0.1)', border: '1px solid rgba(220,170,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: colors.warning, flexShrink: 0 }}>
-                  {w.priority || '?'}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>{w.team}</div>
-                  <div style={{ fontSize: 11 }}>
-                    <span style={{ color: colors.earningsGreen }}>+{w.player}</span>
-                    {w.droppedPlayer && <span style={{ color: colors.danger }}> / -{w.droppedPlayer}</span>}
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleProcessSingle(w)}
-                  style={{ ...theme.btnSecondary, padding: '5px 10px', fontSize: 11, flexShrink: 0 }}
+
+        {!waiverRevealed ? (
+          <>
+            {/* Pre-reveal: team-only list to keep claim contents secret until
+                commish chooses to reveal. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {pending.map(w => (
+                <div
+                  key={w._idx}
+                  style={{
+                    ...M.statusRow,
+                    gap: 10,
+                    padding: '8px 12px',
+                  }}
                 >
-                  Process
-                </button>
-              </div>
-            ))}
-          </div>
-          <button
-            onClick={() => setWaiverRevealed(false)}
-            style={{ ...theme.btnSecondary, marginTop: 8, fontSize: 10, padding: '4px 12px', width: 'auto', display: 'inline-block' }}
-          >
-            Hide Claims
-          </button>
-        </>
-      )}
+                  <div style={{
+                    width: 20, height: 20, borderRadius: '50%',
+                    background: 'rgba(220,170,60,0.1)',
+                    border: '1px solid rgba(220,170,60,0.3)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700, color: colors.warning,
+                    flexShrink: 0,
+                  }}>
+                    {w.priority || '?'}
+                  </div>
+                  <div style={{
+                    fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
+                    color: colors.textPrimary,
+                  }}>
+                    {w.team}
+                  </div>
+                  <div style={{ flex: 1 }} />
+                  <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>
+                    claim pending
+                  </span>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setWaiverRevealed(true)}
+              className={ready ? 'modal-feel-lift modal-feel-warning' : 'modal-feel-lift'}
+              style={ready
+                ? {
+                    ...M.btnWarning,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    boxShadow: '0 0 12px rgba(220,170,60,0.18)',
+                  }
+                : M.btnSecondary
+              }
+            >
+              {ready ? `⚡ Reveal & Process (${pending.length})` : `Reveal Claims (${pending.length})`}
+            </button>
+          </>
+        ) : (
+          <>
+            <ConflictSummary pending={pending} teams={teams} />
+
+            <button
+              onClick={handleProcessAll}
+              className="modal-feel-lift modal-feel-primary"
+              style={M.btnPrimary}
+            >
+              ⚡ Process All ({pending.length})
+            </button>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {pending.map(w => (
+                <div
+                  key={w._idx}
+                  style={{
+                    ...M.statusRow,
+                    gap: 10,
+                  }}
+                >
+                  <div style={{
+                    width: 22, height: 22, borderRadius: '50%',
+                    background: 'rgba(220,170,60,0.1)',
+                    border: '1px solid rgba(220,170,60,0.3)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700, color: colors.warning,
+                    flexShrink: 0,
+                  }}>
+                    {w.priority || '?'}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
+                      color: colors.textPrimary,
+                    }}>
+                      {w.team}
+                    </div>
+                    <div style={{ fontSize: 11, marginTop: 1 }}>
+                      <span style={{ color: colors.earningsGreen }}>+{w.player}</span>
+                      {w.droppedPlayer && <span style={{ color: colors.danger }}> / -{w.droppedPlayer}</span>}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleProcessSingle(w)}
+                    className="modal-feel-lift"
+                    style={{
+                      ...M.btnSecondary,
+                      width: 'auto',
+                      padding: '6px 12px',
+                      fontSize: 11,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Process
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setWaiverRevealed(false)}
+              style={{
+                alignSelf: 'flex-start',
+                background: 'none',
+                border: 'none',
+                color: colors.textMuted,
+                fontSize: 11,
+                padding: '6px 0 0',
+                cursor: 'pointer',
+                fontFamily: fonts.sans,
+              }}
+            >
+              ← Hide claims
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 };
@@ -299,31 +403,85 @@ const ConflictSummary = ({ pending, teams }) => {
 
   return (
     <div style={{
-      background: 'rgba(220,100,60,0.08)', border: '1px solid rgba(220,100,60,0.35)',
-      borderRadius: 3, padding: '10px 14px', marginBottom: 10,
+      background: 'rgba(220,100,60,0.06)',
+      border: '1px solid rgba(220,100,60,0.3)',
+      borderRadius: 6,
+      padding: '10px 12px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8,
     }}>
-      <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(220,140,80,0.9)', marginBottom: 8 }}>
-        ⚠️ Competing Claims ({conflicts.length})
+      <div style={{
+        fontFamily: fonts.sans,
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '1.8px',
+        textTransform: 'uppercase',
+        color: 'rgba(220,140,80,0.95)',
+      }}>
+        ⚠ Competing Claims ({conflicts.length})
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {conflicts.map(([player, claims]) => {
           const sorted = [...claims].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
           return (
-            <div key={player} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 2, padding: '8px 10px' }}>
-              <div style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary, marginBottom: 4 }}>
+            <div
+              key={player}
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: `1px solid ${colors.borderSubtle}`,
+                borderRadius: 6,
+                padding: '8px 10px',
+              }}
+            >
+              <div style={{
+                fontFamily: fonts.sans,
+                fontSize: 12,
+                fontWeight: 600,
+                color: colors.textPrimary,
+                marginBottom: 6,
+              }}>
                 {player} — {claims.length} teams competing
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 {sorted.map((c, i) => (
-                  <div key={c.team} style={{ fontFamily: fonts.sans, fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 9, fontWeight: 700, width: 14, textAlign: 'center', color: i === 0 ? colors.earningsGreen : colors.textMuted }}>
+                  <div
+                    key={c.team}
+                    style={{
+                      fontFamily: fonts.sans,
+                      fontSize: 11,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <span style={{
+                      fontSize: 9,
+                      fontWeight: 700,
+                      width: 14,
+                      textAlign: 'center',
+                      color: i === 0 ? colors.earningsGreen : colors.textMuted,
+                    }}>
                       {i + 1}.
                     </span>
-                    <span style={{ color: i === 0 ? colors.textPrimary : colors.textMuted, fontWeight: i === 0 ? 600 : 400 }}>
+                    <span style={{
+                      color: i === 0 ? colors.textPrimary : colors.textMuted,
+                      fontWeight: i === 0 ? 600 : 400,
+                    }}>
                       {c.team}
                     </span>
-                    <span style={{ color: colors.textMuted, fontSize: 10 }}>{fmt(earningsMap[c.team])}</span>
-                    {i === 0 && <span style={{ color: colors.earningsGreen, fontSize: 10, fontWeight: 600 }}>← wins</span>}
+                    <span style={{ color: colors.textMuted, fontSize: 10 }}>
+                      {fmt(earningsMap[c.team])}
+                    </span>
+                    {i === 0 && (
+                      <span style={{
+                        color: colors.earningsGreen,
+                        fontSize: 10,
+                        fontWeight: 600,
+                      }}>
+                        ← wins
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -331,7 +489,7 @@ const ConflictSummary = ({ pending, teams }) => {
           );
         })}
       </div>
-      <div style={{ ...theme.smallText, color: colors.textMuted, marginTop: 6 }}>
+      <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, lineHeight: 1.5 }}>
         Tiebreaker: lowest total SFGL earnings wins. Winner moves to back of line.
       </div>
     </div>

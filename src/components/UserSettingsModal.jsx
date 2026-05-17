@@ -476,13 +476,19 @@ export const UserSettingsModal = ({
                         const enabled = effectivePrefs[evt.key];
                         const saving = !!prefSaving[evt.key];
                         return (
-                          <label
+                          <button
                             key={evt.key}
+                            type="button"
+                            role="switch"
+                            aria-checked={enabled}
+                            aria-label={`${evt.label}: ${enabled ? 'enabled' : 'disabled'}`}
+                            disabled={saving}
+                            onClick={() => handleToggleEventPref(evt.key)}
                             style={{
                               display: 'flex',
                               alignItems: 'center',
                               gap: 10,
-                              padding: '8px 10px',
+                              padding: '10px 12px',
                               background: enabled
                                 ? 'rgba(80,195,120,0.04)'
                                 : 'rgba(255,255,255,0.02)',
@@ -493,20 +499,11 @@ export const UserSettingsModal = ({
                               cursor: saving ? 'wait' : 'pointer',
                               opacity: saving ? 0.5 : 1,
                               transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
+                              textAlign: 'left',
+                              width: '100%',
+                              fontFamily: fonts.sans,
                             }}
                           >
-                            <input
-                              type="checkbox"
-                              checked={enabled}
-                              disabled={saving}
-                              onChange={() => handleToggleEventPref(evt.key)}
-                              style={{
-                                accentColor: colors.earningsGreen,
-                                width: 14, height: 14,
-                                cursor: saving ? 'wait' : 'pointer',
-                                flexShrink: 0,
-                              }}
-                            />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{
                                 fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
@@ -521,7 +518,42 @@ export const UserSettingsModal = ({
                                 {evt.desc}
                               </div>
                             </div>
-                          </label>
+                            {/* Toggle pill — iOS-style track + thumb. The button
+                                wrapping the whole row handles the click; this
+                                element is purely visual.
+                                  Track: 36×20 rounded pill with green-tinted bg when on
+                                  Thumb: 14×14 circle that slides left↔right via transform */}
+                            <div
+                              aria-hidden="true"
+                              style={{
+                                position: 'relative',
+                                width: 36,
+                                height: 20,
+                                borderRadius: 10,
+                                background: enabled
+                                  ? 'rgba(80,195,120,0.7)'
+                                  : 'rgba(255,255,255,0.12)',
+                                border: `1px solid ${enabled
+                                  ? 'rgba(80,195,120,0.85)'
+                                  : 'rgba(255,255,255,0.18)'}`,
+                                transition: 'background 0.18s, border-color 0.18s',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <div style={{
+                                position: 'absolute',
+                                top: 2,
+                                left: 2,
+                                width: 14,
+                                height: 14,
+                                borderRadius: '50%',
+                                background: '#fff',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                                transform: enabled ? 'translateX(16px)' : 'translateX(0)',
+                                transition: 'transform 0.18s ease',
+                              }} />
+                            </div>
+                          </button>
                         );
                       })}
                     </div>
