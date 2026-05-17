@@ -11,16 +11,9 @@ import {
   getCurrentTournamentIndex,
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
-import { theme, colors, fonts } from '../theme.js';
+import { theme, colors, fonts, fontSize } from '../theme.js';
 import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
-
-// Wave J Part 1: TeamDropdown and LineupHeadshot extracted into ./rosters/
-// to start carving up this 1600-line file. playerBorderColor moved into
-// ./rosters/helpers for shared use between RostersView and LineupHeadshot.
-import { TeamDropdown } from './rosters/TeamDropdown';
-import { LineupHeadshot } from './rosters/LineupHeadshot';
-import { playerBorderColor } from './rosters/helpers';
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
 // Thin wrappers preserve the (name, isLimited, headshotMap) call signature
@@ -58,7 +51,11 @@ const normalizeNordic = (s) => (s || '')
   .replace(/\s+/g, ' ')
   .trim();
 
-// ── Border color by player type — moved to ./rosters/helpers (Wave J Part 1) ──
+// ── Border color by player type ───────────────────────────────────────────────
+const playerBorderColor = (player) =>
+  player.limited   ? 'rgba(245,197,24,0.9)' :
+  player.unlimited ? 'rgba(100,140,220,0.9)' :
+  'rgba(255,255,255,0.85)';
 
 // ── Mobile display name helper ───────────────────────────────────────────────
 const useIsMobile = () => {
@@ -78,6 +75,66 @@ const displayName = (fullName, isMobile) => {
   return parts[0][0] + '. ' + parts[parts.length - 1];
 };
 
+// ── Custom team dropdown — stays dark on all browsers ─────────────────────────
+const TeamDropdown = ({ teams, value, onChange }) => {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  const selected = teams.find(t => t.id === value);
+
+  React.useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={ref} style={{ position: 'relative', minWidth: 160 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
+          background: '#0f1d35', border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
+          fontFamily: fonts.serif, fontSize: fontSize.md, fontWeight: 700,
+          color: 'rgba(255,255,255,0.9)', textAlign: 'left',
+          transition: 'border-color 0.15s', whiteSpace: 'nowrap',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selected?.name ?? '—'}
+        </span>
+        <span style={{ fontSize: fontSize.xs, opacity: 0.6, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, zIndex: 100, marginTop: 2,
+          minWidth: '100%', width: 'max-content',
+          maxHeight: '60vh', overflowY: 'auto',
+          background: '#0f1d35', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 2,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+        }} className="sfgl-modal-scroll">
+          {teams.map(t => (
+            <button key={t.id} onClick={() => { onChange(t.id); setOpen(false); }}
+              style={{
+                display: 'block', width: '100%', padding: '11px 14px', textAlign: 'left', cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                background: t.id === value ? 'rgba(245,197,24,0.12)' : 'transparent',
+                border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                fontFamily: fonts.serif, fontSize: fontSize.base, fontWeight: t.id === value ? 700 : 400,
+                color: t.id === value ? colors.textGold : 'rgba(255,255,255,0.85)',
+                transition: 'background 0.1s',
+              }}
+              onMouseEnter={e => { if (t.id !== value) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
+              onMouseLeave={e => { if (t.id !== value) e.currentTarget.style.background = 'transparent'; }}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ── Waiver Priority Manager ───────────────────────────────────────────────────
 const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor, disabled = false, width = 88, colors, fonts }) => (
@@ -87,7 +144,7 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
         flex: 1, padding: '6px 0', borderRadius: 2,
         background: current === leftVal ? 'rgba(255,255,255,0.08)' : 'none',
         border: current === leftVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
-        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+        fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
         color: current === leftVal ? leftColor : colors.textMuted,
         cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
       }}>{leftLabel}</button>
@@ -95,7 +152,7 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
         flex: 1, padding: '6px 0', borderRadius: 2,
         background: current === rightVal ? 'rgba(255,255,255,0.08)' : 'none',
         border: current === rightVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
-        fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+        fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
         color: current === rightVal ? rightColor : colors.textMuted,
         cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
       }}>{rightLabel}</button>
@@ -169,7 +226,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
       borderRadius: 3, padding: 12,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: 11 }}>
+        <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: fontSize.sm }}>
           ⏰ Pending Waiver Claims ({pendingWaivers.length})
         </h3>
         <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>{waiverStatusLabel}</span>
@@ -188,19 +245,19 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                 <button onClick={() => swapPriority(index, index - 1)} disabled={index === 0}
                   style={{ background: 'none', border: 'none', cursor: index === 0 ? 'not-allowed' : 'pointer',
-                    color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 14, padding: '6px 10px', lineHeight: 1 }}>▲</button>
-                <span style={{ fontSize: 10, color: 'rgba(220,200,80,0.8)', fontWeight: 700 }}>{index + 1}</span>
+                    color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: fontSize.md, padding: '6px 10px', lineHeight: 1 }}>▲</button>
+                <span style={{ fontSize: fontSize.xs, color: 'rgba(220,200,80,0.8)', fontWeight: 700 }}>{index + 1}</span>
                 <button onClick={() => swapPriority(index, index + 1)} disabled={index === pendingWaivers.length - 1}
                   style={{ background: 'none', border: 'none', cursor: index === pendingWaivers.length - 1 ? 'not-allowed' : 'pointer',
-                    color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: 14, padding: '6px 10px', lineHeight: 1 }}>▼</button>
+                    color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: fontSize.md, padding: '6px 10px', lineHeight: 1 }}>▼</button>
               </div>
             )}
             <div style={{ flex: 1 }}>
-              <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: 12, fontWeight: 500 }}>Add: {waiver.player}</span>
+              <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 500 }}>Add: {waiver.player}</span>
               {waiver.droppedPlayer && (
                 <>
                   <span style={{ color: colors.textMuted, margin: '0 4px' }}>→</span>
-                  <span style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: 12 }}>Drop: {waiver.droppedPlayer}</span>
+                  <span style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: fontSize.sm }}>Drop: {waiver.droppedPlayer}</span>
                 </>
               )}
               <div style={{ ...theme.smallText, marginTop: 2 }}>${waiver.fee} fee · {waiver.segment || 'Current Swing'}</div>
@@ -210,7 +267,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
                 <button onClick={() => deleteWaiver(waiver)}
                   title="Withdraw this waiver claim"
                   aria-label="Withdraw this waiver claim"
-                  style={{ ...theme.btnSecondary, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✏️</button>
+                  style={{ ...theme.btnSecondary, padding: '8px 12px', fontSize: fontSize.sm, minHeight: 36 }}>✏️</button>
                 <button onClick={async () => {
                   const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
                   if (!ok) return;
@@ -218,7 +275,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
                 }}
                 title="Delete waiver claim (with confirmation)"
                 aria-label="Delete waiver claim"
-                style={{ ...theme.btnDanger, padding: '8px 12px', fontSize: 11, minHeight: 36 }}>✕</button>
+                style={{ ...theme.btnDanger, padding: '8px 12px', fontSize: fontSize.sm, minHeight: 36 }}>✕</button>
               </div>
             )}
           </div>
@@ -228,6 +285,108 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
   );
 };
 
+// ── Main RostersView ──────────────────────────────────────────────────────────
+// ── LineupHeadshot — shows ×-remove button on hover when editable ─────────────
+const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayerIds = {}, canEdit, onRemove }) => {
+  const [hovered, setHovered] = React.useState(false);
+  const [tapped, setTapped]   = React.useState(false);
+  const containerRef = React.useRef(null);
+  const isMobileDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
+
+  // Reset tapped state when user touches anywhere outside this headshot
+  React.useEffect(() => {
+    if (!tapped) return;
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setTapped(false);
+      }
+    };
+    document.addEventListener('touchstart', handler, { passive: true });
+    return () => document.removeEventListener('touchstart', handler);
+  }, [tapped]);
+
+  // Reset tapped when lineup edit mode is exited
+  React.useEffect(() => {
+    if (!canEdit) setTapped(false);
+  }, [canEdit]);
+
+  // On mobile: first tap reveals the × badge, second tap (on the ×) removes.
+  // Tapping elsewhere resets. On desktop: hover reveals ×.
+  const showRemove = canEdit && (hovered || tapped);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, overflow: 'visible' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setTapped(false); }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!canEdit) return;
+        if (isMobileDevice) {
+          if (tapped) { onRemove(); setTapped(false); }
+          else setTapped(true);
+        }
+      }}
+    >
+      <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
+        <img
+          src={getPlayerHeadshot(player.name, player.limited, headshots)}
+          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
+          alt=""
+          style={{
+            width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
+            border: `2px solid ${playerBorderColor(player)}`,
+            transition: 'opacity 0.15s',
+            opacity: showRemove ? 0.55 : 1,
+          }}
+        />
+        {showRemove && (
+          <button
+            onClick={e => { e.stopPropagation(); onRemove(); setTapped(false); }}
+            style={{
+              position: 'absolute', top: -3, right: -3,
+              width: 18, height: 18, borderRadius: '50%',
+              background: 'rgba(220,60,60,0.92)',
+              border: '1.5px solid rgba(255,255,255,0.25)',
+              color: '#fff',
+              fontSize: fontSize.sm, fontWeight: 700, lineHeight: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
+              padding: 0,
+              zIndex: 10,
+              transition: 'transform 0.1s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.15)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+            title={'Remove ' + player.name + ' from lineup'}
+          >
+            {'\u00D7'}
+          </button>
+        )}
+        {player.limited && (player.stars || 1) > 0 && (
+          <div style={{
+            position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(15,25,45,0.88)', borderRadius: 6,
+            padding: '0px 3px', lineHeight: 1, zIndex: 5,
+            fontSize: fontSize.badge, letterSpacing: 1,
+          }}>
+            {'⭐'.repeat(player.stars || 1)}
+          </div>
+        )}
+      </div>
+      <div style={{
+        fontSize: nameFontSize, fontFamily: fonts.sans, marginTop: 3,
+        textAlign: 'center', width: '100%',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        color: player.limited ? colors.textGold : player.unlimited ? 'rgba(100,140,220,0.9)' : colors.textPrimary,
+      }}>
+        {lastName}
+      </div>
+    </div>
+  );
+};
 
 export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
@@ -324,20 +483,6 @@ export const RostersView = ({
         return;
       }
 
-      // Hard rule: a limited player at the 12-start cap cannot be in the
-      // lineup card at all — not as starter, not as backup. Backup is a
-      // promotion path to starter, so allowing a capped player here would
-      // mean the only legal action is to leave them sitting in the slot
-      // unable to be promoted, which is just visual noise.
-      if (player.limited && (player.starts || 0) >= MAX_LIMITED_STARTS) {
-        dialog.showToast(
-          `${lastName} has reached the ${MAX_LIMITED_STARTS}-start limit and can't be in the lineup`,
-          'error',
-          { position: 'top' }
-        );
-        return;
-      }
-
       // If they tapped a player who's currently a starter, move them out of
       // starters and into the backup slot. (Avoids a player being in both.)
       const newTeams = teams.map(t => {
@@ -381,26 +526,15 @@ export const RostersView = ({
       return;
     }
 
-    // Case 3: Adding new player. Hard rule first: limited players at the
-    // 12-start cap can't be in the lineup card at all (neither as starter
-    // nor as backup). Backup is just a deferred starter, so allowing them
-    // in the backup slot would create a dead state where the slot is
-    // occupied but the player can never be promoted.
-    if (player.limited && (player.starts || 0) >= MAX_LIMITED_STARTS) {
-      dialog.showToast(
-        `${lastName} has reached the ${MAX_LIMITED_STARTS}-start limit and can't be in the lineup`,
-        'error',
-        { position: 'top' }
-      );
-      return;
-    }
-
-    // Starts full + Major + no backup yet → fill backup (implicit overflow
-    // path — backup also gets set if user organically fills the 6th tap
-    // after 5 starters). Otherwise: add to starters if there's room, error
-    // if not.
+    // Case 3: Adding new player. Starts full + Major + no backup yet → fill
+    // backup (implicit overflow path — backup also gets set if user
+    // organically fills the 6th tap after 5 starters). Otherwise: add to
+    // starters if there's room, error if not.
     if (activeLineupCount >= LINEUP_SIZE) {
       if (allowBackup && !team.backup) {
+        // Limited start limit check ONLY applies when they'd actually start.
+        // As a backup they sit on the bench; only counts if commish promotes
+        // them, which happens via team.lineup → covered by the starter path.
         const newTeams = teams.map(t =>
           t.id !== team.id ? t : { ...t, backup: player.name }
         );
@@ -416,8 +550,11 @@ export const RostersView = ({
       return;
     }
 
-    // Cap check for limited players is hoisted above (top of Case 3) so the
-    // rule applies to both starter and backup assignment uniformly.
+    // Adding to starters — Limited start limit check applies here.
+    if (player.limited && player.starts >= MAX_LIMITED_STARTS) {
+      dialog.showToast('This player has reached their 12-start limit', 'error', { position: 'top' });
+      return;
+    }
 
     const newTeams = teams.map(t =>
       t.id !== team.id ? t : { ...t, lineup: [...(t.lineup || []), player.name] }
@@ -579,73 +716,23 @@ export const RostersView = ({
 
   // Odds are now fetched as part of the field fetch above
 
-  // Real-time lineup sync — polls Firebase every 90s so changes on desktop
-  // appear on mobile without a manual refresh.
-  //
-  // Wave J Round 2 race-condition fix:
-  // Without this safeguard, the poll could clobber a fresh local edit. The
-  // scenario: user taps to swap A→B at t=89s, our local state updates and
-  // `updateTeams` writes to Firebase, but Firebase propagation can take
-  // 0.5–2s. The poll then fires at t=90s and reads the still-old server
-  // lineup — `freshLineup !== currentLineup` is true, so the poll
-  // overwrites the user's brand-new edit, silently undoing it.
-  //
-  // Fix: track the timestamp of the most recent local lineup change. If
-  // the poll fires within SYNC_GRACE_MS of a local edit, skip the overwrite.
-  // The local state is the source of truth during that window; the next
-  // poll will pick up the (now-committed) Firebase state. The grace window
-  // is short enough that desktop→mobile sync still feels real-time, but
-  // long enough to absorb Firebase write latency.
-  const lastLocalLineupEditAt = React.useRef(0);
-  // Record local edits so the poller knows to back off. We watch team.lineup
-  // and team.backup — any change here is a local edit (initial mount excluded
-  // because the ref starts at 0).
-  useEffect(() => {
-    // Initial mount: don't trip the grace window — we want the first poll
-    // to fetch freely. Subsequent changes are real edits.
-    if (lastLocalLineupEditAt.current === 0) {
-      lastLocalLineupEditAt.current = -1; // sentinel: "mounted, no edits yet"
-      return;
-    }
-    lastLocalLineupEditAt.current = Date.now();
-  }, [team?.lineup, team?.backup]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  // Real-time lineup sync — polls Firebase every 30s so changes on desktop
+  // appear on mobile without a manual refresh
   useEffect(() => {
     if (!team) return;
     let cancelled = false;
-    const SYNC_GRACE_MS = 5000; // 5s window after a local edit during which the poll won't overwrite
     const poll = () => {
-      // Skip this poll if the user made a local edit very recently — the
-      // Firebase write from that edit may not have propagated yet, and
-      // overwriting with stale server data would undo the user's action.
-      const sinceEdit = Date.now() - lastLocalLineupEditAt.current;
-      if (lastLocalLineupEditAt.current > 0 && sinceEdit < SYNC_GRACE_MS) {
-        return;
-      }
       teamsApi.getAll().then(freshTeams => {
         if (cancelled) return;
-        // Re-check the grace window AFTER the network call too — the user
-        // could have tapped while the fetch was in-flight.
-        const sinceEditAfter = Date.now() - lastLocalLineupEditAt.current;
-        if (lastLocalLineupEditAt.current > 0 && sinceEditAfter < SYNC_GRACE_MS) {
-          return;
-        }
         const fresh = freshTeams.find(t => t.id === team.id);
         const freshLineup = fresh?.lineup || [];
         const currentLineup = team.lineup || [];
-        const freshBackup = fresh?.backup || null;
-        const currentBackup = team.backup || null;
-        // Compare BOTH lineup and backup — the prior version only compared
-        // lineup, meaning a stale-server `backup` could overwrite a local
-        // backup edit even when the lineup matched.
-        const lineupChanged = JSON.stringify(freshLineup) !== JSON.stringify(currentLineup);
-        const backupChanged = freshBackup !== currentBackup;
-        if (fresh && (lineupChanged || backupChanged)) {
+        if (fresh && JSON.stringify(freshLineup) !== JSON.stringify(currentLineup)) {
           updateTeams(freshTeams.map(t => ({ ...t, lineup: t.lineup || [] })));
         }
       }).catch(() => {});
     };
-    const interval = setInterval(poll, 90000); // every 90s — reduces Firebase reads
+    const interval = setInterval(poll, 90000); // every 90s (was 30s — reduces Firebase reads)
     return () => { cancelled = true; clearInterval(interval); };
   }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -810,18 +897,6 @@ export const RostersView = ({
         padding: 12,
         background: 'linear-gradient(135deg, rgba(18,46,82,0.4) 0%, rgba(255,255,255,0.02) 100%)',
         overflow: 'visible',
-        // Wave J Round 2: subtle gold border + glow when in lineupMode so the
-        // user has a visual anchor for "you're currently editing." Tap outside
-        // the card exits lineupMode, and the border returns to default —
-        // gives a quiet acknowledgment that changes are saved (they auto-save
-        // on every toggle; this is just the affordance that says "done").
-        ...(lineupMode && canEditLineup ? {
-          border: '1px solid rgba(245,197,24,0.45)',
-          boxShadow: '0 0 0 1px rgba(245,197,24,0.15), 0 4px 16px rgba(245,197,24,0.08)',
-          transition: 'border-color 0.18s, box-shadow 0.18s',
-        } : {
-          transition: 'border-color 0.18s, box-shadow 0.18s',
-        }),
       }}>
         {/* Row 1: Team selector + Add/Search button */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, overflow: 'visible' }}>
@@ -856,11 +931,11 @@ export const RostersView = ({
                       transition: 'opacity 0.2s',
                     }}>
                       <span style={{
-                        fontSize: 11, lineHeight: 1,
+                        fontSize: fontSize.sm, lineHeight: 1,
                         filter: used ? 'grayscale(1)' : 'none',
                       }}>🚨</span>
                       <span style={{
-                        fontFamily: fonts.sans, fontSize: 8, fontWeight: 700,
+                        fontFamily: fonts.sans, fontSize: fontSize.badge, fontWeight: 700,
                         letterSpacing: '0.3px', textTransform: 'uppercase',
                         color: used ? usedColor : activeColor,
                         textDecoration: used ? 'line-through' : 'none',
@@ -890,7 +965,7 @@ export const RostersView = ({
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '7px 14px', borderRadius: 4, flexShrink: 0,
-                  fontFamily: fonts.sans, fontSize: 12, fontWeight: 700,
+                  fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700,
                   cursor: 'pointer', transition: 'all 0.15s',
                   background: canAdd ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)',
                   border: canAdd ? '1.5px solid rgba(80,180,120,0.5)' : '1.5px solid rgba(255,255,255,0.12)',
@@ -901,24 +976,57 @@ export const RostersView = ({
                 onMouseLeave={e => { e.currentTarget.style.background = canAdd ? 'rgba(80,180,120,0.12)' : 'rgba(255,255,255,0.04)'; }}
                 title={tournLocked ? 'Adds unavailable during tournament — opens Tuesday 8pm ET' : waiverPending ? 'Waiver claims pending — free agency opens after Commish processes' : 'Add or drop a player'}
               >
-                {canAdd && <span style={{ fontSize: 15, lineHeight: 1, fontWeight: 800 }}>+</span>}
+                {canAdd && <span style={{ fontSize: fontSize.md, lineHeight: 1, fontWeight: 800 }}>+</span>}
                 <span>{canAdd ? 'Add Player' : '🔍 Search'}</span>
               </button>
             );
           })()}
           </div>
 
-        {/* Backup-slot UX note (kept for future maintainers):
-            On Major weeks, a 6th "Backup" slot appears alongside the 5 starter
-            slots. Tapping it pulses gold + lights up `pickingBackup` mode,
-            and the next tap on any roster player fills the backup slot. Tap
-            outside (anywhere on the card or roster table that isn't a player
-            tap) to exit either mode — mirrors how starter mode exits.
-            Wave J Round 2: removed the explanatory banner + Cancel button
-            that used to live here. They created an asymmetric "this is a
-            special mode" feel relative to starter selection. The slot's
-            gold pulse + "Backup" label already convey what to tap, and
-            tap-outside exits cleanly.  */}
+        {/* Major-week backup banner — appears above the lineup slots so the
+            UX is self-explanatory the first time a manager sees it. */}
+        {activeTournament?.isMajor && canEditLineup && (
+          <div style={{
+            padding: '6px 12px',
+            background: pickingBackup ? 'rgba(245,197,24,0.14)' : 'rgba(245,197,24,0.06)',
+            borderTop: `1px solid rgba(245,197,24,${pickingBackup ? 0.5 : 0.2})`,
+            display: 'flex', alignItems: 'center', gap: 8,
+            transition: 'all 0.18s',
+          }}>
+            <span style={{ fontSize: fontSize.sm }}>🏆</span>
+            <span style={{
+              fontFamily: fonts.sans, fontSize: fontSize.xs, letterSpacing: 0.5,
+              color: pickingBackup ? 'rgba(245,197,24,1)' : 'rgba(245,197,24,0.85)',
+              flex: 1,
+              fontWeight: pickingBackup ? 700 : 400,
+            }}>
+              {pickingBackup ? (
+                <>Pick a backup — <strong>tap any player below</strong> to designate them</>
+              ) : (
+                <><strong>Major week</strong> — pick a 6th player as backup in case a starter withdraws</>
+              )}
+            </span>
+            {pickingBackup && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setPickingBackup(false); }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(245,197,24,0.5)',
+                  borderRadius: 2,
+                  color: 'rgba(245,197,24,0.95)',
+                  fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 600,
+                  letterSpacing: 0.5, textTransform: 'uppercase',
+                  padding: '3px 8px',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+                aria-label="Cancel backup selection"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders.
             On Major weeks, render a 6th "Backup" slot afterward, visually
@@ -964,12 +1072,12 @@ export const RostersView = ({
                         transition: 'all 0.15s',
                       }}>
                         <span style={{
-                          fontSize: 20, fontWeight: 300, lineHeight: 1,
+                          fontSize: fontSize.xl, fontWeight: 300, lineHeight: 1,
                           color: canEditLineup ? (lineupMode ? 'rgba(80,180,120,0.8)' : 'rgba(80,180,120,0.45)') : 'rgba(255,255,255,0.15)',
                         }}>+</span>
                       </div>
                       <div style={{
-                        fontSize: 9, fontFamily: fonts.sans, marginTop: 3,
+                        fontSize: fontSize.xs, fontFamily: fonts.sans, marginTop: 3,
                         textAlign: 'center', width: '100%',
                         color: canEditLineup ? 'rgba(80,180,120,0.5)' : 'rgba(255,255,255,0.15)',
                         letterSpacing: '0.3px',
@@ -1010,13 +1118,13 @@ export const RostersView = ({
                           >
                             <img
                               src={getPlayerHeadshot(backupPlayer.name, backupPlayer.limited, headshots)}
-                              alt=""
+                              alt={backupPlayer.name}
                               onError={(e) => { e.currentTarget.src = getPlayerHeadshotFallback(backupPlayer.name, backupPlayer.limited); }}
                               style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block' }}
                             />
                           </div>
                           <div style={{
-                            fontSize: 9, fontFamily: fonts.sans, marginTop: 3,
+                            fontSize: fontSize.xs, fontFamily: fonts.sans, marginTop: 3,
                             color: 'rgba(245,197,24,0.85)', letterSpacing: 0.3,
                             textAlign: 'center', width: '100%',
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -1024,7 +1132,7 @@ export const RostersView = ({
                           }}>
                             {backupPlayer.name.split(' ').pop()}
                           </div>
-                          <div style={{ fontSize: 8, fontFamily: fonts.sans, color: 'rgba(245,197,24,0.5)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                          <div style={{ fontSize: fontSize.badge, fontFamily: fonts.sans, color: 'rgba(245,197,24,0.5)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
                             Backup
                           </div>
                         </div>
@@ -1057,14 +1165,14 @@ export const RostersView = ({
                             boxShadow: pickingBackup ? '0 0 0 3px rgba(245,197,24,0.15)' : 'none',
                           }}>
                             <span style={{
-                              fontSize: 17, fontWeight: 300, lineHeight: 1,
+                              fontSize: fontSize.lg, fontWeight: 300, lineHeight: 1,
                               color: canEditLineup
                                 ? (pickingBackup ? 'rgba(245,197,24,1)' : (lineupMode ? 'rgba(245,197,24,0.85)' : 'rgba(245,197,24,0.45)'))
                                 : 'rgba(255,255,255,0.15)',
                             }}>+</span>
                           </div>
                           <div style={{
-                            fontSize: 8, fontFamily: fonts.sans, marginTop: 3,
+                            fontSize: fontSize.badge, fontFamily: fonts.sans, marginTop: 3,
                             textAlign: 'center', width: '100%',
                             color: pickingBackup
                               ? 'rgba(245,197,24,1)'
@@ -1155,27 +1263,27 @@ export const RostersView = ({
               )}
               {/* Row 2: column headers */}
               <tr>
-                <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
+                <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'left', color: 'rgba(255,255,255,0.85)', borderTop: `1px solid ${colors.borderSubtle}` }}>Player</th>
                 {infoView === 'info' ? (<>
-                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: isMobile ? 'right' : 'center', whiteSpace: 'nowrap', paddingRight: isMobile ? 4 : 0, ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
+                  <th scope="col" onClick={() => toggleSort('teeTime')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: isMobile ? 'right' : 'center', whiteSpace: 'nowrap', paddingRight: isMobile ? 4 : 0, ...sortHeaderStyle('teeTime', 'rgba(255,255,255,0.85)') }}>
                     {liveData?.players?.length
                       ? (liveData.players.some(p => p.thru === 'F' || (!isNaN(parseInt(p.thru, 10)) && parseInt(p.thru, 10) >= 0)) ? 'Score' : 'Tee Time')
                       : Object.keys(teeTimeMap).length > 0 ? <>Tee Time{sortArrow('teeTime')}</> : 'Field'}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
+                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
                     Odds{sortArrow('odds')}
                   </th>
-                  <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', color: 'rgba(255,255,255,0.85)' }}>
+                  <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', color: 'rgba(255,255,255,0.85)' }}>
                     {liveData?.players?.length ? 'Pos' : ''}
                   </th>
                 </>) : (<>
-                  <th scope="col" onClick={() => toggleSort('owgr')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('owgr', 'rgba(100,180,255,0.9)') }}>
+                  <th scope="col" onClick={() => toggleSort('owgr')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('owgr', 'rgba(100,180,255,0.9)') }}>
                     OWGR{sortArrow('owgr')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
+                  <th scope="col" onClick={() => toggleSort('cuts')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('cuts', 'rgba(100,180,255,0.9)') }}>
                     {isMobile ? 'Cuts' : 'Cuts / Starts'}{sortArrow('cuts')}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(245,197,24,0.9)') }}>
+                  <th scope="col" onClick={() => toggleSort('earnings')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('earnings', statsView === 'sfgl' ? 'rgba(245,197,24,0.9)' : 'rgba(245,197,24,0.9)') }}>
                     Earnings{sortArrow('earnings')}
                   </th>
                 </>)}
@@ -1248,40 +1356,24 @@ export const RostersView = ({
                               transition: 'all 0.15s',
                             }}
                           />
-                          {/* Add/remove badges (Wave J Round 2): show whenever
-                              the user can edit (not gated on lineupMode). The
-                              prior behavior gated on lineupMode, which meant
-                              the first tap toggled the player AND made the
-                              badge appear — felt like "magic state appears."
-                              Showing badges all the time when editable makes
-                              the affordance honest: "tap to add" / "tap to
-                              remove" is always visible. Subtle opacity gates
-                              on isEditing keep them less prominent until the
-                              user is actively in lineupMode. */}
-                          {canEditLineup && isOwnTeam && isInLineup && (
+                          {isEditing && isInLineup && (
                             <div style={{
                               position: 'absolute', top: -3, right: -3,
                               width: 14, height: 14, borderRadius: '50%',
                               background: 'rgba(220,60,60,0.9)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              // Slightly dimmer when not in active edit mode —
-                              // visible but doesn't shout.
-                              opacity: isEditing ? 1 : 0.6,
-                              transition: 'opacity 0.15s',
                             }}>
-                              <span style={{ color: '#fff', fontSize: 9, fontWeight: 900 }}>✕</span>
+                              <span style={{ color: '#fff', fontSize: fontSize.xs, fontWeight: 900 }}>✕</span>
                             </div>
                           )}
-                          {canEditLineup && isOwnTeam && !isInLineup && canAddToLineup && (
+                          {isEditing && !isInLineup && canAddToLineup && (
                             <div style={{
                               position: 'absolute', top: -3, right: -3,
                               width: 14, height: 14, borderRadius: '50%',
                               background: 'rgba(80,195,120,0.9)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              opacity: isEditing ? 1 : 0.6,
-                              transition: 'opacity 0.15s',
                             }}>
-                              <span style={{ color: '#fff', fontSize: 10, fontWeight: 900, lineHeight: 1 }}>+</span>
+                              <span style={{ color: '#fff', fontSize: fontSize.xs, fontWeight: 900, lineHeight: 1 }}>+</span>
                             </div>
                           )}
                           {player.limited && (player.stars || 1) > 0 && (
@@ -1289,7 +1381,7 @@ export const RostersView = ({
                               position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
                               background: 'rgba(15,25,45,0.88)', borderRadius: 6,
                               padding: '0px 3px', lineHeight: 1, zIndex: 5,
-                              fontSize: 7, letterSpacing: 0.5,
+                              fontSize: fontSize.badge, letterSpacing: 0.5,
                               pointerEvents: 'none',
                               opacity: isBenched ? 0.35 : 1,
                             }}>
@@ -1313,11 +1405,11 @@ export const RostersView = ({
                               {displayName(player.name, isMobile)}
                             </span>
                             {tournamentField?.has(normalizeNordic(player.name)) && (
-                              <span title="In this week's field" style={{ fontSize: 11, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
+                              <span title="In this week's field" style={{ fontSize: fontSize.sm, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
                             )}
                             {player.limited && (
                               <span style={{
-                                fontFamily: fonts.sans, fontSize: 10, fontWeight: 600,
+                                fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 600,
                                 color: isBenched ? 'rgba(245,197,24,0.35)' : colors.textGoldDim,
                               }}>
                                 {sfglCutsMap[player.name]?.starts ?? 0}/{MAX_LIMITED_STARTS}
@@ -1326,7 +1418,7 @@ export const RostersView = ({
                             {player.unlimited && (
                               <span style={{
                                 fontFamily: fonts.sans,
-                                fontSize: 14,
+                                fontSize: fontSize.md,
                                 fontWeight: 700,
                                 lineHeight: 1,
                                 color: isBenched ? 'rgba(100,140,220,0.4)' : 'rgba(100,140,220,0.9)',
@@ -1334,7 +1426,7 @@ export const RostersView = ({
                               }} title="Unlimited starts">∞</span>
                             )}
                           </div>
-                          <div style={{ fontSize: 10, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
+                          <div style={{ fontSize: fontSize.xs, fontFamily: fonts.sans, color: isBenched ? 'rgba(255,255,255,0.35)' : colors.textMuted }}>
                             {player.yearsOfService > 1 && <span>(Yr {player.yearsOfService})</span>}
                           </div>
                         </div>
@@ -1378,19 +1470,16 @@ export const RostersView = ({
                         const hasStarted = live && (live.thru === 'F' || (!isNaN(thruNum) && thruNum >= 0) || live.isCut || live.isWD);
 
                         if (live?.isCut) {
-                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>CUT</td>;
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: fontSize.xs, color: colors.textMuted }}>CUT</td>;
                         } else if (live?.isWD) {
-                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted }}>WD</td>;
+                          col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: fontSize.xs, color: colors.textMuted }}>WD</td>;
                         } else if (hasStarted) {
-                          // PGA Tour leaderboard convention:
-                          //   under par (-)   → red    (the classic "red numbers" on a Sunday board)
-                          //   over par (+)    → muted gray (de-emphasized, not punitive)
-                          //   even par (E/0)  → primary text
-                          // Reversed from the prior implementation, which used green for under.
+                          // Golf scoring: under par (-) is GOOD → green; over par (+) is BAD → red.
+                          // Old code had this reversed (-3 rendered as red/danger).
                           const isUnder = live.score?.startsWith('-');
                           const isOver  = live.score?.startsWith('+');
-                          const scoreColor = isUnder ? colors.danger
-                                          : isOver  ? colors.textMuted
+                          const scoreColor = isUnder ? colors.earningsGreen
+                                          : isOver  ? colors.danger
                                           : colors.textPrimary;
                           col1 = (
                             <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 13 : 15, color: isBenched ? dimColor : scoreColor, fontWeight: 600 }}>
@@ -1444,7 +1533,7 @@ export const RostersView = ({
                             <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 11 : 13, color: isBenched ? dimColor : colors.textPrimary, lineHeight: 1.2 }}>
                               <div>{pos || <span style={{ opacity: 0.25 }}>—</span>}</div>
                               {(isFinished || isMidRound) && (
-                                <div style={{ fontSize: 9, color: isBenched ? dimColor : colors.textMuted, marginTop: 1 }}>
+                                <div style={{ fontSize: fontSize.xs, color: isBenched ? dimColor : colors.textMuted, marginTop: 1 }}>
                                   {isFinished ? 'F' : `thru ${live.thru}`}
                                 </div>
                               )}
@@ -1469,14 +1558,6 @@ export const RostersView = ({
                       // something rather than $0 across the board.
                       const dir = playerDirectoryMap[player.name] || {};
                       const legacyPga = globalPlayerStats?.[player.name] || {};
-                      // With v7, dir.* values are sourced from pgatour.com
-                      // player profile /results pages — the same data the
-                      // PGA Tour app shows. Use ?? so 0 (a valid number,
-                      // e.g. a player who hasn't played any events yet) is
-                      // preferred over the legacy fallback. Legacy
-                      // globalPlayerStats only kicks in when dir.* is null
-                      // (player not in PGA Tour FedExCup standings — e.g.
-                      // some LIV players or amateurs).
                       const pgaEarnings = dir.seasonEarnings ?? legacyPga.pgaTourEarnings ?? 0;
                       const pgaCuts     = dir.cutsMade       ?? legacyPga.cutsMade       ?? 0;
                       const pgaEvents   = dir.eventsPlayed   ?? legacyPga.eventsPlayed   ?? 0;

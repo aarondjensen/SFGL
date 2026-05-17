@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useDialog } from './DialogContext';
-import { theme, colors, fonts, SWINGS } from '../theme.js';
+import { theme, colors, fonts, SWINGS, fontSize } from '../theme.js';
 import { computeSwingAward } from '../utils/swingAward';
 import {
   isPushSupported,
@@ -103,7 +103,7 @@ const BackBar = ({ label, onBack }) => (
         cursor: 'pointer',
         padding: '6px 12px 6px 8px',
         fontFamily: fonts.sans,
-        fontSize: 12,
+        fontSize: fontSize.sm,
         fontWeight: 600,
         display: 'inline-flex',
         alignItems: 'center',
@@ -112,12 +112,12 @@ const BackBar = ({ label, onBack }) => (
       }}
       aria-label="Back to dashboard"
     >
-      <span style={{ fontSize: 16, lineHeight: 1, marginTop: -1 }}>‹</span>
+      <span style={{ fontSize: fontSize.lg, lineHeight: 1, marginTop: -1 }}>‹</span>
       Dashboard
     </button>
     <span style={{
       fontFamily: fonts.sans,
-      fontSize: 12,
+      fontSize: fontSize.xs,
       fontWeight: 700,
       letterSpacing: '1.8px',
       textTransform: 'uppercase',
@@ -669,7 +669,7 @@ export const AdminView = ({
                 <div style={M.eyebrow}>🔔 Push Notifications (test)</div>
                 <div style={M.descText}>
                   Subscribe this device, send a test push to yourself, or broadcast a test to all subscribed managers.
-                  <div style={{ marginTop: 6, fontSize: 11, opacity: 0.75 }}>
+                  <div style={{ marginTop: 6, fontSize: fontSize.sm, opacity: 0.75 }}>
                     <strong style={{ color: colors.textPrimary }}>iPhone:</strong> Add SFGL to your home screen first (Safari → Share → Add to Home Screen), then open the app from the icon before subscribing.
                   </div>
                 </div>
@@ -685,7 +685,7 @@ export const AdminView = ({
                           ? colors.danger
                           : colors.textMuted
                   )} />
-                  <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+                  <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textPrimary }}>
                     {!pushSupported
                       ? 'Push notifications not supported in this browser'
                       : pushSubscribed
@@ -748,7 +748,7 @@ export const AdminView = ({
                       : 'rgba(220,80,80,0.3)'}`,
                     borderRadius: 6,
                     fontFamily: fonts.sans,
-                    fontSize: 11,
+                    fontSize: fontSize.sm,
                     color: colors.textSecondary,
                     lineHeight: 1.5,
                   }}>
@@ -818,7 +818,7 @@ export const AdminView = ({
         <div>
           <div style={{
             fontFamily: fonts.sans,
-            fontSize: 11,
+            fontSize: fontSize.xs,
             fontWeight: 700,
             letterSpacing: '1.8px',
             textTransform: 'uppercase',
@@ -857,7 +857,7 @@ export const AdminView = ({
                   <div style={{
                     flex: 1,
                     fontFamily: fonts.sans,
-                    fontSize: 13,
+                    fontSize: fontSize.base,
                     fontWeight: 600,
                     color: colors.textPrimary,
                   }}>
@@ -876,13 +876,13 @@ export const AdminView = ({
           border: '1px solid rgba(80,195,120,0.2)',
           borderRadius: 6,
           fontFamily: fonts.sans,
-          fontSize: 13,
+          fontSize: fontSize.base,
           color: colors.textSecondary,
           display: 'flex',
           alignItems: 'center',
           gap: 10,
         }}>
-          <span style={{ fontSize: 16 }}>✓</span>
+          <span style={{ fontSize: fontSize.lg }}>✓</span>
           <span>All clear — nothing needs your attention right now.</span>
         </div>
       )}
@@ -892,7 +892,7 @@ export const AdminView = ({
         <div key={group.title}>
           <div style={{
             fontFamily: fonts.sans,
-            fontSize: 11,
+            fontSize: fontSize.xs,
             fontWeight: 700,
             letterSpacing: '1.8px',
             textTransform: 'uppercase',
@@ -928,11 +928,11 @@ export const AdminView = ({
                   e.currentTarget.style.borderColor = colors.borderSubtle;
                 }}
               >
-                <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>{tile.icon}</span>
+                <span style={{ fontSize: fontSize.tileIcon, lineHeight: 1, flexShrink: 0 }}>{tile.icon}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
                     fontFamily: fonts.sans,
-                    fontSize: 14,
+                    fontSize: fontSize.md,
                     fontWeight: 600,
                     color: colors.textPrimary,
                   }}>
@@ -940,7 +940,7 @@ export const AdminView = ({
                   </div>
                   <div style={{
                     fontFamily: fonts.sans,
-                    fontSize: 11,
+                    fontSize: fontSize.sm,
                     color: colors.textMuted,
                     marginTop: 1,
                     overflow: 'hidden',
@@ -957,7 +957,7 @@ export const AdminView = ({
                     border: `1px solid ${levelBorder(tile.badge.level)}`,
                     color: levelColor(tile.badge.level),
                     fontFamily: fonts.sans,
-                    fontSize: 11, fontWeight: 800,
+                    fontSize: fontSize.sm, fontWeight: 800,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     flexShrink: 0,
                   }}>
