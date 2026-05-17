@@ -61,8 +61,14 @@ export const SwingWinnerPanel = ({
     console.log('[SwingWinner] Manual award:', award.segment, '→', award.winnerTeam.name, '$' + award.pot.toLocaleString());
 
     updateTeams(award.updatedTeams);
-    setTransactions(prev => [...prev, award.newTx]);
-    await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, award.newTx]).catch(e => console.error('sfgl tx:', e));
+    // Use array form (not callback) — updateTransactions from useLeague
+    // expects a full array, not a (prev) => next function. Other call sites
+    // that use the callback form (e.g. handleAddTx in TransactionsView,
+    // award flows in TournamentResultsPanel) may also be silently broken;
+    // they just don't get exercised often enough to hit the error.
+    const newTransactions = [...transactions, award.newTx];
+    setTransactions(newTransactions);
+    await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, newTransactions).catch(e => console.error('sfgl tx:', e));
 
     dialog.showToast('🏆 ' + award.winnerTeam.name + ' awarded $' + award.pot.toLocaleString() + ' for ' + award.segment, 'success');
     setSwingAwardSeg('');
