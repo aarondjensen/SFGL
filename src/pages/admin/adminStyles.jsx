@@ -281,20 +281,23 @@ export const M = {
 export const liftClass = 'modal-feel-lift';
 
 // ── Status banner shared by sync panels (OWGR / LIV / Aliases) ──────────────
+// Wave J Round 6 follow-up: lighter chrome (radius 6, softer borders),
+// matches the modal-feel statusRow style.
 export const SyncStatusBanner = ({ status, summary }) => {
   if (!summary) return null;
   const isError = status === 'error';
   return (
     <div style={{
-      marginTop: 10,
-      padding: '8px 12px',
-      borderRadius: 3,
+      marginTop: 8,
+      padding: '10px 12px',
+      borderRadius: 6,
       fontSize: 12,
       fontFamily: fonts.sans,
       whiteSpace: 'pre-wrap',
-      background: isError ? colors.dangerBg : 'rgba(80,160,100,0.1)',
-      border: `1px solid ${isError ? colors.dangerBorder : 'rgba(80,160,100,0.3)'}`,
-      color: isError ? colors.danger : colors.success,
+      lineHeight: 1.5,
+      background: isError ? 'rgba(220,80,80,0.06)' : 'rgba(80,195,120,0.06)',
+      border: `1px solid ${isError ? 'rgba(220,80,80,0.3)' : 'rgba(80,195,120,0.3)'}`,
+      color: isError ? colors.danger : colors.earningsGreen,
     }}>
       {summary}
     </div>
@@ -302,10 +305,17 @@ export const SyncStatusBanner = ({ status, summary }) => {
 };
 
 // ── "Last synced" line shared by sync panels ────────────────────────────────
+// Wave J Round 6 follow-up: dimmed to muted text color so it doesn't compete
+// with the eyebrow heading above it.
 export const LastSyncedLine = ({ timestamp }) => {
   if (!timestamp) return null;
   return (
-    <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+    <div style={{
+      fontFamily: fonts.sans,
+      fontSize: 11,
+      color: colors.textMuted,
+      marginTop: -2,
+    }}>
       Last synced: {new Date(timestamp).toLocaleDateString('en-US', {
         month: 'short', day: 'numeric', year: 'numeric',
         hour: '2-digit', minute: '2-digit'

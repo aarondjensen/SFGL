@@ -74,18 +74,12 @@ const PositionBadge = ({ position, isWinner, swingAccent }) => {
 };
 
 // ── Total/Behind toggle (compact, lives in card header) ────────────────────
-// When `accentColor` is passed (i.e. on the swing card), the toggle fully
-// tints to that swing's color: outer border, active pill background, active
-// pill border, and the active button's label all use swing color. Without
-// the accent (i.e. the Season card), the toggle uses neutral chrome to
-// match the gold-emphasized card border instead.
 const MetricToggle = ({ value, onChange, accentColor }) => (
   <div style={{
     display: 'inline-flex',
     position: 'relative',
     background: 'rgba(255,255,255,0.04)',
-    // Outer border: tinted to swing color when present; falls back to neutral.
-    border: `1px solid ${accentColor ? getSwingColorAt(accentColor, 0.35) : 'rgba(180,160,100,0.2)'}`,
+    border: '1px solid rgba(180,160,100,0.2)',
     borderRadius: 4,
     padding: 3,
     width: 150,
@@ -98,44 +92,33 @@ const MetricToggle = ({ value, onChange, accentColor }) => (
       left: value === 'behind' ? 'calc(50% + 1px)' : 3,
       width: 'calc(50% - 4px)',
       borderRadius: 2,
-      // Active pill: stronger swing-color presence — bumped from 0.18 → 0.28
-      // background opacity and 0.45 → 0.7 border opacity so the swing tint
-      // is clearly readable, not just "it might be slightly green-ish."
-      background: accentColor ? getSwingColorAt(accentColor, 0.28) : 'rgba(255,255,255,0.1)',
-      border: `1px solid ${accentColor ? getSwingColorAt(accentColor, 0.7) : 'rgba(255,255,255,0.3)'}`,
-      transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1), background 0.22s, border-color 0.22s',
+      background: accentColor ? getSwingColorAt(accentColor, 0.18) : 'rgba(255,255,255,0.1)',
+      border: `1px solid ${accentColor ? getSwingColorAt(accentColor, 0.45) : 'rgba(255,255,255,0.3)'}`,
+      transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
       pointerEvents: 'none',
     }} />
     {[
       ['total',  'Total'],
       ['behind', 'Behind'],
-    ].map(([key, label]) => {
-      const isActive = value === key;
-      return (
-        <button
-          key={key}
-          onClick={() => onChange(key)}
-          style={{
-            flex: 1, position: 'relative', zIndex: 1,
-            padding: '4px 0',
-            background: 'none', border: 'none',
-            fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700,
-            letterSpacing: '1px', textTransform: 'uppercase',
-            // Active label: tinted to swing color so it reads as a unified
-            // colored element. Inactive: muted. Without an accent, falls back
-            // to plain white-on-muted (Season card behavior preserved).
-            color: isActive
-              ? (accentColor ? getSwingColorAt(accentColor, 1) : colors.textPrimary)
-              : colors.textMuted,
-            cursor: 'pointer',
-            transition: 'color 0.18s',
-            borderRadius: 2,
-          }}
-        >
-          {label}
-        </button>
-      );
-    })}
+    ].map(([key, label]) => (
+      <button
+        key={key}
+        onClick={() => onChange(key)}
+        style={{
+          flex: 1, position: 'relative', zIndex: 1,
+          padding: '4px 0',
+          background: 'none', border: 'none',
+          fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700,
+          letterSpacing: '1px', textTransform: 'uppercase',
+          color: value === key ? colors.textPrimary : colors.textMuted,
+          cursor: 'pointer',
+          transition: 'color 0.18s',
+          borderRadius: 2,
+        }}
+      >
+        {label}
+      </button>
+    ))}
   </div>
 );
 
@@ -233,19 +216,13 @@ const StandingsCard = ({
                     <PositionBadge position={position} isWinner={isWinner} swingAccent={accentColor} />
                   </td>
 
-                  {/* Team name. When isWinner (complete swing's 1st place),
-                      the team name uses the standard primary color — NOT a
-                      swing-tinted color. The row background tint + position
-                      badge already signal "this is the swing winner";
-                      coloring the name too added a 4th redundant signal for
-                      one state and made the winning team's name harder to
-                      read at-a-glance against the tinted row background. */}
+                  {/* Team name */}
                   <td style={{ ...theme.tableCell, overflow: 'hidden', paddingLeft: 4, paddingRight: 4 }}>
                     <div style={{
                       ...theme.bodyText,
                       fontSize: fontSize.lg,
                       fontFamily: fonts.serif,
-                      color: colors.textPrimary,
+                      color: isWinner ? getSwingColorAt(accentColor, 1) : colors.textPrimary,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -260,7 +237,7 @@ const StandingsCard = ({
                       Total column's font treatment (mono, weight 300, tracked) at
                       a smaller size and in green. */}
                   <td style={{ ...theme.tableCell, textAlign: 'right', paddingLeft: 4, paddingRight: 8 }}>
-                    {team.hasRecentEvent ? (
+                    {team.recentEventName ? (
                       <div style={{
                         ...theme.statNumLg,
                         fontSize: fontSize.md,
@@ -290,25 +267,23 @@ const StandingsCard = ({
                         {formatEarnings(earnings)}
                       </div>
                     ) : (
-                      // Behind column: the leader's row gets a blank "—" cell
-                      // (not 🏆 or "Winner"). The position badge already carries
-                      // the leader / swing-winner meaning — repurposing the
-                      // Behind column to also say "you're #1" overloads two
-                      // signals onto the same data and made the leader's row
-                      // read inconsistently between in-progress and complete
-                      // swings. Now: the position badge is the ONLY place that
-                      // signals 1st/winner; the Behind column always shows the
-                      // gap (or "—" for the leader).
                       <div style={{
                         ...theme.statNumLg,
                         fontSize: fontSize.lg,
                         letterSpacing: 1.2,
                         fontWeight: 300,
-                        color: behind === 0
-                          ? colors.textMuted
-                          : colors.textSecondary,
+                        color: isWinner
+                          ? getSwingColorAt(accentColor, 1)
+                          : behind === 0
+                            ? (accentColor || colors.earningsGreen)
+                            : colors.textSecondary,
                       }}>
-                        {behind === 0 ? '—' : formatBehind(behind)}
+                        {isWinner
+                          ? 'Winner'
+                          : behind === 0
+                            ? '🏆'
+                            : formatBehind(behind)
+                        }
                       </div>
                     )}
                   </td>
@@ -330,49 +305,37 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   // ── Helpers shared by both cards ──────────────────────────────────────────
 
   // Given a single completed tournament's results, return:
-  //   { earningsByTeam: Map<teamId, earnings> } — or null when not completed
-  // (The "leader of the week" tracking + the eventName field have been
-  // removed since the UI doesn't render an event name in the row, only the
-  // event-earnings amount.)
+  //   { eventName, earningsByTeam: Map<teamId, earnings> }
+  // (The "leader of the week" tracking has been removed since we no longer
+  // show a leader badge in the row.)
   const summarizeTournament = (t) => {
     if (!t || !t.completed || !t.results?.teams) return null;
     const earningsByTeam = new Map();
     Object.entries(t.results.teams).forEach(([teamId, result]) => {
       earningsByTeam.set(teamId, result.totalEarnings || 0);
     });
-    return { earningsByTeam };
+    return { eventName: t.name, earningsByTeam };
   };
 
   // Build a row's recent-event fields from a tournament summary.
-  // hasRecentEvent: true if a most-recent event exists at all (drives column
-  //   presence — whole column is blank pre-season).
-  // recentEarnings:
-  //   null  → team didn't compete in this week (no lineup recorded)
-  //   N ≥ 0 → team's earnings from this week (rendered as "+$Nk" if > 0,
-  //           "—" if exactly 0)
-  // The previous version used `recentEventName` as a presence flag but never
-  // displayed the event name itself, making the field name misleading.
   const recentFieldsFor = (teamId, summary) => {
     if (!summary) {
-      return { hasRecentEvent: false, recentEarnings: null };
+      return { recentEventName: null, recentEarnings: null };
     }
     const earned = summary.earningsByTeam.get(teamId);
     if (earned === undefined) {
-      // Team didn't compete that week (no lineup, etc.)
-      return { hasRecentEvent: true, recentEarnings: null };
+      // Team didn't compete that week (no lineup, alternate event, etc.)
+      return { recentEventName: summary.eventName, recentEarnings: null };
     }
-    return { hasRecentEvent: true, recentEarnings: earned };
+    return { recentEventName: summary.eventName, recentEarnings: earned };
   };
 
   // ── Overall card ──────────────────────────────────────────────────────────
-  // Season totals exclude alternate events. Alternates can sit on the schedule
-  // for context but per league rules are "ignored completely" for SFGL math —
-  // no earnings count toward standings, no progress counts toward swings.
   const seasonTotals = useMemo(() => {
     const totals = {};
     teams.forEach(t => { totals[t.id] = 0; });
     tournaments.forEach(t => {
-      if (!t.completed || !t.results?.teams || t.isAlternate) return;
+      if (!t.completed || !t.results?.teams) return;
       Object.entries(t.results.teams).forEach(([teamId, result]) => {
         if (totals[teamId] !== undefined) totals[teamId] += (result.totalEarnings || 0);
       });
@@ -381,7 +344,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   }, [teams, tournaments]);
 
   const lastCompletedOverall = useMemo(
-    () => [...tournaments].reverse().find(t => t.completed && t.results?.teams && !t.isAlternate) || null,
+    () => [...tournaments].reverse().find(t => t.completed && t.results?.teams) || null,
     [tournaments]
   );
   const lastCompletedOverallSummary = useMemo(
@@ -400,28 +363,25 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   }, [teams, seasonTotals, lastCompletedOverallSummary]);
 
   // ── Swing card ────────────────────────────────────────────────────────────
-  // All swing math excludes alternate events. They show up on the schedule
-  // for context (TournamentsView dims them) but per league rules don't
-  // count toward swing progress, completion, or earnings.
   const swingsWithResults = useMemo(() => {
     const seen = new Set();
     tournaments.forEach(t => {
       const seg = getSegmentForTournament(t);
-      if (seg && t.completed && t.results?.teams && !t.isAlternate) seen.add(seg);
+      if (seg && t.completed && t.results?.teams) seen.add(seg);
     });
     return ALL_SWINGS.filter(s => seen.has(s));
   }, [tournaments]);
 
   const [selectedSwing, setSelectedSwing] = useState(() =>
     ALL_SWINGS.slice().reverse().find(s =>
-      tournaments.some(t => getSegmentForTournament(t) === s && t.completed && t.results?.teams && !t.isAlternate)
+      tournaments.some(t => getSegmentForTournament(t) === s && t.completed && t.results?.teams)
     ) || null
   );
 
   const lastCompletedSwing = useMemo(() => {
     if (!selectedSwing) return null;
     return [...tournaments].reverse().find(t =>
-      getSegmentForTournament(t) === selectedSwing && t.completed && t.results?.teams && !t.isAlternate
+      getSegmentForTournament(t) === selectedSwing && t.completed && t.results?.teams
     ) || null;
   }, [selectedSwing, tournaments]);
   const lastCompletedSwingSummary = useMemo(
@@ -434,7 +394,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
     const totals = {};
     teams.forEach(t => { totals[t.id] = 0; });
     tournaments.forEach(t => {
-      if (getSegmentForTournament(t) !== selectedSwing || !t.completed || !t.results?.teams || t.isAlternate) return;
+      if (getSegmentForTournament(t) !== selectedSwing || !t.completed || !t.results?.teams) return;
       Object.entries(t.results.teams).forEach(([teamId, result]) => {
         if (totals[teamId] !== undefined) totals[teamId] += (result.totalEarnings || 0);
       });
@@ -453,14 +413,9 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
       }));
   }, [selectedSwing, teams, swingTotals, lastCompletedSwingSummary]);
 
-  // Event count: numerator and denominator BOTH exclude alternates so the
-  // "X of Y" subtitle can never display an impossible value like "6 of 5".
-  // The prior version filtered the denominator (swingTotalCount) but not the
-  // numerator (swingEventCount), which would have shown an inflated count if
-  // an alternate event in the swing happened to be processed.
   const swingEventCount = useMemo(() =>
     !selectedSwing ? 0 : tournaments.filter(t =>
-      getSegmentForTournament(t) === selectedSwing && t.completed && t.results?.teams && !t.isAlternate
+      getSegmentForTournament(t) === selectedSwing && t.completed && t.results?.teams
     ).length,
     [selectedSwing, tournaments]
   );
@@ -556,24 +511,17 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
           color: swingIsComplete ? colors.textMuted : getSwingColorAt(selectedSwing, 0.7),
           lineHeight: 1.1,
         }}>
-          {/* Wave J Round 2: unified phrasing across complete / in-progress.
-              Both states use "X of Y events" so the visual rhythm is the
-              same — only the FINAL pill (and color de-emphasis) differs to
-              signal completion. Previously the complete state showed "FINAL N"
-              with no denominator while in-progress showed "X of Y", which
-              felt inconsistent at a glance. */}
-          <span style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            {swingIsComplete && (
-              <span style={{
-                color: 'rgba(245,197,24,0.9)',
-                fontWeight: 700,
-                letterSpacing: '1px',
-                textTransform: 'uppercase',
-              }}>Final</span>
-            )}
-            <span>{swingEventCount} of {swingTotalCount}</span>
-          </span>
-          <span>event{swingTotalCount !== 1 ? 's' : ''}</span>
+          {swingIsComplete ? (
+            <>
+              <span style={{ whiteSpace: 'nowrap' }}>{swingEventCount}</span>
+              <span>event{swingEventCount !== 1 ? 's' : ''}</span>
+            </>
+          ) : (
+            <>
+              <span style={{ whiteSpace: 'nowrap' }}>{swingEventCount} of {swingTotalCount}</span>
+              <span>event{swingTotalCount !== 1 ? 's' : ''}</span>
+            </>
+          )}
         </span>
       )}
     </div>
