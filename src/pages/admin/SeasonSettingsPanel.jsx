@@ -78,14 +78,13 @@ export const SeasonSettingsPanel = ({
     (settings.waiverMinute ?? 0) !== waiverMinute
   );
 
-  // ── Results Email Schedule ──
-  // Mirrors the waiver pattern: governs when handleProcessResults in cron.js
-  // will fire (it computes earnings, marks the tournament complete, advances
-  // the schedule, and emails all managers their results). Defaults to Monday
-  // 9:00 AM ET — gives Sunday tournaments a buffer for Monday weather
-  // finishes while still emailing managers before the workday gets rolling.
-  const [resultsDay,    setResultsDay]    = React.useState(() => settings?.resultsDay    ?? 1);
-  const [resultsHour,   setResultsHour]   = React.useState(() => settings?.resultsHour   ?? 9);
+  // ── Results schedule (Wave J Round 6 batch 4 follow-up) ──
+  // Was hardcoded in cron.js as Monday 9am ET (settings.resultsDay/Hour
+  // read with defaults but no UI). Now exposed for commish control. Cron's
+  // handleProcessResults already reads these settings — no server changes
+  // needed.
+  const [resultsDay,    setResultsDay]    = React.useState(() => settings?.resultsDay    ?? 1);   // Mon
+  const [resultsHour,   setResultsHour]   = React.useState(() => settings?.resultsHour   ?? 9);   // 9am
   const [resultsMinute, setResultsMinute] = React.useState(() => settings?.resultsMinute ?? 0);
   const [resultsSaving, setResultsSaving] = React.useState(false);
 
@@ -93,7 +92,7 @@ export const SeasonSettingsPanel = ({
     setResultsSaving(true);
     try {
       await setSettings({ ...settings, resultsDay, resultsHour, resultsMinute });
-      dialog.showToast(`✓ Results email ${DAY_NAMES[resultsDay]} at ${fmtETTime(resultsHour, resultsMinute)} ET`, 'success');
+      dialog.showToast(`✓ Results process ${DAY_NAMES[resultsDay]} at ${fmtETTime(resultsHour, resultsMinute)} ET`, 'success');
     } catch (err) {
       dialog.showToast('Error: ' + err.message, 'error');
     } finally {
@@ -105,6 +104,33 @@ export const SeasonSettingsPanel = ({
     settings.resultsDay !== resultsDay ||
     settings.resultsHour !== resultsHour ||
     (settings.resultsMinute ?? 0) !== resultsMinute
+  );
+
+  // ── Lineup reminder schedule (Wave J Round 6 batch 4 follow-up) ──
+  // Was hardcoded in cron.js as "any Wednesday ping" (no hour gate). Now
+  // configurable. The cron's handleLineupReminder needs an hour gate too
+  // (delivered in the matching cron.js update).
+  const [reminderDay,    setReminderDay]    = React.useState(() => settings?.lineupReminderDay    ?? 3);  // Wed
+  const [reminderHour,   setReminderHour]   = React.useState(() => settings?.lineupReminderHour   ?? 9);  // 9am ET
+  const [reminderMinute, setReminderMinute] = React.useState(() => settings?.lineupReminderMinute ?? 0);
+  const [reminderSaving, setReminderSaving] = React.useState(false);
+
+  const handleSaveReminderSchedule = async () => {
+    setReminderSaving(true);
+    try {
+      await setSettings({ ...settings, lineupReminderDay: reminderDay, lineupReminderHour: reminderHour, lineupReminderMinute: reminderMinute });
+      dialog.showToast(`✓ Lineup reminders send ${DAY_NAMES[reminderDay]} at ${fmtETTime(reminderHour, reminderMinute)} ET`, 'success');
+    } catch (err) {
+      dialog.showToast('Error: ' + err.message, 'error');
+    } finally {
+      setReminderSaving(false);
+    }
+  };
+
+  const reminderHasUnsavedChanges = settings?.lineupReminderDay !== undefined && (
+    settings.lineupReminderDay !== reminderDay ||
+    settings.lineupReminderHour !== reminderHour ||
+    (settings.lineupReminderMinute ?? 0) !== reminderMinute
   );
 
   // ── Draft modal ──
@@ -268,11 +294,11 @@ export const SeasonSettingsPanel = ({
         </button>
       </div>
 
-      {/* ── Results Email Schedule ── */}
+      {/* ── Results Schedule ── */}
       <div style={S.section}>
-        <div style={S.title}>📧 Results Email Schedule</div>
+        <div style={S.title}>🏆 Results Schedule</div>
         <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-          Set the day and time (ET) that tournament results are processed and emailed to managers. Default is Monday at 9:00 AM ET.
+          Set the day and time (ET) that tournament results are auto-processed each week. Default is Monday at 9:00 AM ET. The commish manual "Process Results" button in the Tournament Results panel is a backup for when this auto-process needs to be overridden.
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 12 }}>
           <div style={{ flex: 1 }}>
@@ -301,7 +327,7 @@ export const SeasonSettingsPanel = ({
           </div>
         </div>
         <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
-          Current: results email {DAY_NAMES[resultsDay]} at {fmtETTime(resultsHour, resultsMinute)} ET
+          Current: results process {DAY_NAMES[resultsDay]} at {fmtETTime(resultsHour, resultsMinute)} ET
           {resultsHasUnsavedChanges && (
             <span style={{ color: colors.warning }}> · unsaved changes</span>
           )}
@@ -313,6 +339,69 @@ export const SeasonSettingsPanel = ({
         >
           {resultsSaving ? '⏳ Saving…' : '💾 Save Results Schedule'}
         </button>
+      </div>
+
+      {/* ── Lineup Reminder Schedule ── */}
+      <div style={S.section}>
+        <div style={S.title}>⛳ Lineup Reminder Schedule</div>
+        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
+          Set the day and time (ET) for lineup-lock reminders. Sent to managers who haven't set a lineup yet for the upcoming tournament. Default is Wednesday at 9:00 AM ET.
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 12 }}>
+          <div style={{ flex: 1 }}>
+            <label style={S.lbl}>Day</label>
+            <select value={reminderDay} onChange={e => setReminderDay(Number(e.target.value))} style={S.select}>
+              {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={S.lbl}>Hour (ET)</label>
+            <select value={reminderHour} onChange={e => setReminderHour(Number(e.target.value))} style={S.select}>
+              {Array.from({ length: 24 }, (_, i) => (
+                <option key={i} value={i}>
+                  {i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: '0 0 80px' }}>
+            <label style={S.lbl}>Minute</label>
+            <select value={reminderMinute} onChange={e => setReminderMinute(Number(e.target.value))} style={S.select}>
+              {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => (
+                <option key={m} value={m}>:{String(m).padStart(2, '0')}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div style={{ ...theme.smallText, color: colors.textGoldDim, marginBottom: 10 }}>
+          Current: reminders send {DAY_NAMES[reminderDay]} at {fmtETTime(reminderHour, reminderMinute)} ET
+          {reminderHasUnsavedChanges && (
+            <span style={{ color: colors.warning }}> · unsaved changes</span>
+          )}
+        </div>
+        <button
+          onClick={handleSaveReminderSchedule}
+          disabled={reminderSaving}
+          style={{ ...S.btn, ...disabledBtn(reminderSaving) }}
+        >
+          {reminderSaving ? '⏳ Saving…' : '💾 Save Reminder Schedule'}
+        </button>
+      </div>
+
+      {/* Cron-schedule note ─────────────────────────────────────────────
+          Important caveat: these times act as a GATE inside the cron action,
+          not a trigger. cron-job.org has to be pinging the URL at-or-before
+          your configured time for the action to fire then. If the ping
+          schedule is sparser than this granularity, the action runs at the
+          next ping after your configured time, not exactly at it. */}
+      <div style={{
+        ...S.section,
+        background: 'rgba(100,160,255,0.04)',
+        border: '1px solid rgba(100,160,255,0.2)',
+      }}>
+        <div style={{ ...theme.smallText, color: colors.textSecondary }}>
+          <strong style={{ color: 'rgba(100,160,255,0.95)' }}>Note:</strong> Times above act as gates inside the scheduled cron job — cron-job.org must be pinging the SFGL URL at-or-before your configured time for the action to fire then. If you change the time and the corresponding cron-job.org schedule is sparser, expect the action to run at the next ping after your configured time rather than exactly at it.
+        </div>
       </div>
 
       {/* ── Draft ── */}

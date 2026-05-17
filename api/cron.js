@@ -23,26 +23,33 @@ function getApp() {
 const db = getFirestore(getApp());
 const messaging = getMessaging(getApp());
 
-// ── Push notifications (Wave J Round 6 batch 3) ─────────────────────────────
+// ── Push notifications (Wave J Round 6 batch 3-4) ───────────────────────────
 // Helper for sending pushes to a single team's subscribed devices, with
 // per-event preference checking. Mirrors the logic in /api/push.js but is
 // called directly from server-side cron handlers (no HTTP hop needed).
 //
-// Default-ON events (will fire unless explicitly disabled):
-//   waiverWon, waiverLost, lineupLock, commishModified
-// Default-OFF events (require explicit opt-in — batch 4):
-//   faProcessed, resultsProcessed, otherTeamWaiver, otherTeamFa, swingWinner
+// All current events default ON — managers must explicitly opt out via
+// team.notificationPrefs.{eventKey} = false.
+//
+// Event keys:
+//   waivers          — weekly waiver round summary (per team's own results)
+//   lineupLock       — per-team lineup missing reminder
+//   freeAgent        — any team's FA add/drop (broadcast)
+//   results          — tournament results processed (broadcast)
+//   commishModified  — your roster was edited by the commish
 //
 // Skip behavior:
 //   • teamId not found → silent skip
 //   • team has prefs map AND the specific event key is false → silent skip
 //   • team has no prefs map at all → fall through to defaults (DEFAULTS_ON)
+//   • event not in DEFAULTS_ON → require explicit opt-in (no batch 4 events
+//     are in this category — all current events default ON)
 //   • no subscribed devices → silent skip
 //
 // Returns { sent, failed, skipped, cleanedUp } per push attempt.
 
 const DEFAULTS_ON = new Set([
-  'waiverWon', 'waiverLost', 'lineupLock', 'commishModified',
+  'waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified',
 ]);
 
 async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
@@ -546,48 +553,64 @@ async function handleWaivers(res) {
   batch.set(db.collection('sfgl_data').doc('last_auto_waiver'), { key: 'last_auto_waiver', value: today });
   await batch.commit();
 
-  // ── Push notifications (Wave J Round 6 batch 3) ───────────────────────────
-  // Fire a push per result. Wins get a 'waiverWon' push; losses due to
-  // tiebreaker get a 'waiverLost' push. Other failure reasons (already
-  // rostered, already dropped) don't generate pushes — those are state-drift
-  // edge cases the manager doesn't need to be interrupted for.
+  // ── Push notifications (Wave J Round 6 batch 4) ───────────────────────────
+  // ONE push per team summarizing their personal waiver results. Replaces
+  // batch 3's per-claim model (which fired N pushes per Tuesday night for N
+  // claims, creating noise). Now: each manager gets a single notification
+  // titled "Waiver results" with a body describing their wins and losses.
   //
-  // Each push goes through sendPushToTeam which checks the team's
-  // notificationPrefs before sending — managers can opt out per event type.
-  // Failures here don't block the response: pushes are best-effort.
+  // Teams with no claims this round don't get a push at all — silence is
+  // correct when there's nothing to report. Server-side prefs check via
+  // sendPushToTeam means managers can opt out of the entire 'waivers' event
+  // if they want.
+  //
+  // Best-effort: push failures don't roll back the waiver batch.
   const pushResults = [];
-  for (const r of processedResults) {
-    const team = teams.find(t => t.name === r.team);
-    if (!team?.id) continue;
 
+  // Group results by team for the per-team summary
+  const resultsByTeam = {};
+  processedResults.forEach(r => {
+    if (!resultsByTeam[r.team]) resultsByTeam[r.team] = { won: [], lostTiebreaker: [] };
     if (r.status === 'processed') {
-      try {
-        const result = await sendPushToTeam({
-          teamId: team.id,
-          event: 'waiverWon',
-          title: '🏆 Waiver claim won',
-          body: r.droppedPlayer
-            ? `You added ${r.player} and dropped ${r.droppedPlayer}.`
-            : `You added ${r.player}.`,
-          deepLink: '#transactions',
-        });
-        pushResults.push({ team: team.name, event: 'waiverWon', ...result });
-      } catch (err) {
-        console.warn(`[push] waiverWon failed for ${team.name}:`, err.message);
-      }
+      resultsByTeam[r.team].won.push(r);
     } else if (r.status === 'failed' && r.failReason?.startsWith('Lost tiebreaker')) {
-      try {
-        const result = await sendPushToTeam({
-          teamId: team.id,
-          event: 'waiverLost',
-          title: '⏰ Waiver claim lost',
-          body: `Your claim for ${r.player} lost the tiebreaker. ${r.failReason.replace(/^Lost tiebreaker to /, 'Went to ')}`,
-          deepLink: '#transactions',
-        });
-        pushResults.push({ team: team.name, event: 'waiverLost', ...result });
-      } catch (err) {
-        console.warn(`[push] waiverLost failed for ${team.name}:`, err.message);
-      }
+      resultsByTeam[r.team].lostTiebreaker.push(r);
+    }
+    // Other failure modes (already rostered, already dropped) don't show
+    // up in the push — those are state-drift edge cases.
+  });
+
+  for (const [teamName, summary] of Object.entries(resultsByTeam)) {
+    const team = teams.find(t => t.name === teamName);
+    if (!team?.id) continue;
+    if (summary.won.length === 0 && summary.lostTiebreaker.length === 0) continue;
+
+    // Build a personalized one-line body. Examples:
+    //   "Won 1: K. Reitan"
+    //   "Won 1: K. Reitan · Lost 1: A. Smith"
+    //   "Lost 2: A. Smith, J. Day"
+    const parts = [];
+    if (summary.won.length > 0) {
+      const names = summary.won.map(r => r.player).join(', ');
+      parts.push(`Won ${summary.won.length}: ${names}`);
+    }
+    if (summary.lostTiebreaker.length > 0) {
+      const names = summary.lostTiebreaker.map(r => r.player).join(', ');
+      parts.push(`Lost ${summary.lostTiebreaker.length}: ${names}`);
+    }
+    const body = parts.join(' · ');
+
+    try {
+      const result = await sendPushToTeam({
+        teamId: team.id,
+        event: 'waivers',
+        title: '⏰ Waiver results',
+        body,
+        deepLink: '#transactions',
+      });
+      pushResults.push({ team: teamName, event: 'waivers', ...result });
+    } catch (err) {
+      console.warn(`[push] waivers failed for ${teamName}:`, err.message);
     }
   }
 
@@ -615,13 +638,32 @@ async function handleWaivers(res) {
 
 async function handleLineupReminder(res) {
   const et = getETNow();
-  if (et.getDay() !== 3) return res.json({ status: 'not_wednesday' });
+  const settings = await loadSettings();
+
+  // Admin-configurable day/hour gate (Wave J Round 6 batch 4 follow-up).
+  // Was hardcoded to "any Wednesday ping" (et.getDay() !== 3 → not_wednesday)
+  // with no hour gate; now mirrors the waivers + results pattern with
+  // settings-driven day + hour + minute.
+  //
+  // Default: Wednesday 9am ET. Backward-compatible — older Firestore docs
+  // without these keys fall through to the defaults.
+  const targetDay    = settings?.lineupReminderDay    ?? 3;  // Wed
+  const targetHour   = settings?.lineupReminderHour   ?? 9;  // 9am ET
+  const targetMinute = settings?.lineupReminderMinute ?? 0;
+
+  if (et.getDay() !== targetDay) {
+    return res.json({ status: 'not_target_day', targetDay });
+  }
+  // Hour/minute gate — same pattern as waivers (handleWaivers L433-434).
+  // If we're not past the configured time yet today, wait for a later ping.
+  if (et.getHours() < targetHour || (et.getHours() === targetHour && et.getMinutes() < targetMinute)) {
+    return res.json({ status: 'not_yet', targetHour, targetMinute });
+  }
 
   const today = et.toLocaleDateString('en-US');
   const metaSnap = await db.collection('sfgl_data').doc('last_lineup_reminder').get();
   if (metaSnap.exists && metaSnap.data().value === today) return res.json({ status: 'already_sent' });
 
-  const settings = await loadSettings();
   const sfglSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
   const tournaments = sfglSnap.exists ? sfglSnap.data().value : [];
   const activeTourney = tournaments?.find(t => t.playing && !t.completed);
@@ -970,12 +1012,40 @@ async function handleProcessResults(res) {
     } catch (err) { emailResults.push({ team: teamName, error: err.message }); }
   }
 
+  // ── Push notifications (Wave J Round 6 batch 4) ───────────────────────────
+  // Broadcast tournament results to every team. Body is personalized per
+  // team with their final earnings. Best-effort: failures here don't block
+  // the response.
+  const resultsPushes = [];
+  for (const team of teams) {
+    if (!team?.id) continue;
+    // Personalize body with this team's result for the tournament
+    const teamResult = teamResultsForEmail.find(r => r.team === team.name);
+    const earnings = teamResult ? teamResult.totalEarnings : 0;
+    const body = teamResult
+      ? `${tournament.name}: you earned $${earnings.toLocaleString()}`
+      : `Results are in for ${tournament.name}`;
+    try {
+      const result = await sendPushToTeam({
+        teamId: team.id,
+        event: 'results',
+        title: '🏆 Results processed',
+        body,
+        deepLink: '#standings',
+      });
+      resultsPushes.push({ team: team.name, ...result });
+    } catch (err) {
+      console.warn(`[push] results failed for ${team.name}:`, err.message);
+    }
+  }
+
   return res.json({
     status: 'processed',
     tournament: tournament.name,
     teamsScored: Object.keys(resultsData.teams).length,
     playersLoaded: players.length,
     emailsSent: emailResults.filter(r => r.success).length,
+    pushesSent: resultsPushes.reduce((sum, p) => sum + (p.sent || 0), 0),
     swingAutoAwarded: autoAward ? `${swingSegment} → ${autoAward.winnerTeamName} ($${autoAward.pot.toLocaleString()})` : null,
   });
 }
