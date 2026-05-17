@@ -553,64 +553,48 @@ async function handleWaivers(res) {
   batch.set(db.collection('sfgl_data').doc('last_auto_waiver'), { key: 'last_auto_waiver', value: today });
   await batch.commit();
 
-  // ── Push notifications (Wave J Round 6 batch 4) ───────────────────────────
-  // ONE push per team summarizing their personal waiver results. Replaces
-  // batch 3's per-claim model (which fired N pushes per Tuesday night for N
-  // claims, creating noise). Now: each manager gets a single notification
-  // titled "Waiver results" with a body describing their wins and losses.
+  // ── Push notifications ───────────────────────────────────────────────────
+  // One uniform "Waiver results" push goes to every team after the round is
+  // processed. Originally personalized per-team ("Won 1: K. Reitan · Lost
+  // 1: A. Smith"), but switched to a single league-wide announcement so
+  // every manager sees the same headline regardless of whether they had
+  // claims of their own — and tapping through lands them in the
+  // Transactions tab where the full league picture is visible.
   //
-  // Teams with no claims this round don't get a push at all — silence is
-  // correct when there's nothing to report. Server-side prefs check via
-  // sendPushToTeam means managers can opt out of the entire 'waivers' event
-  // if they want.
+  // The body is the league-wide count of SUCCESSFUL claims this round
+  // (e.g. "3 claims this week"). Send is gated on count > 0 — if no
+  // claims actually landed (everyone lost tiebreakers, or no claims
+  // filed), no pushes go out. Server-side prefs check via sendPushToTeam
+  // means managers can still opt out of the 'waivers' event if they want.
   //
   // Best-effort: push failures don't roll back the waiver batch.
   const pushResults = [];
 
-  // Group results by team for the per-team summary
-  const resultsByTeam = {};
-  processedResults.forEach(r => {
-    if (!resultsByTeam[r.team]) resultsByTeam[r.team] = { won: [], lostTiebreaker: [] };
-    if (r.status === 'processed') {
-      resultsByTeam[r.team].won.push(r);
-    } else if (r.status === 'failed' && r.failReason?.startsWith('Lost tiebreaker')) {
-      resultsByTeam[r.team].lostTiebreaker.push(r);
-    }
-    // Other failure modes (already rostered, already dropped) don't show
-    // up in the push — those are state-drift edge cases.
-  });
+  // Count successful claims league-wide (players actually added this round).
+  // Lost-tiebreaker claims aren't counted — they didn't result in a roster
+  // move, so they wouldn't be visible on the Transactions tab the user
+  // taps through to. If no claims succeeded, skip the push entirely
+  // ("0 claims this week" reads awkwardly and there's nothing new to see).
+  const claimsWonCount = processedResults.filter(r => r.status === 'processed').length;
 
-  for (const [teamName, summary] of Object.entries(resultsByTeam)) {
-    const team = teams.find(t => t.name === teamName);
-    if (!team?.id) continue;
-    if (summary.won.length === 0 && summary.lostTiebreaker.length === 0) continue;
-
-    // Build a personalized one-line body. Examples:
-    //   "Won 1: K. Reitan"
-    //   "Won 1: K. Reitan · Lost 1: A. Smith"
-    //   "Lost 2: A. Smith, J. Day"
-    const parts = [];
-    if (summary.won.length > 0) {
-      const names = summary.won.map(r => r.player).join(', ');
-      parts.push(`Won ${summary.won.length}: ${names}`);
-    }
-    if (summary.lostTiebreaker.length > 0) {
-      const names = summary.lostTiebreaker.map(r => r.player).join(', ');
-      parts.push(`Lost ${summary.lostTiebreaker.length}: ${names}`);
-    }
-    const body = parts.join(' · ');
-
-    try {
-      const result = await sendPushToTeam({
-        teamId: team.id,
-        event: 'waivers',
-        title: '⏰ Waiver results',
-        body,
-        deepLink: '#transactions',
-      });
-      pushResults.push({ team: teamName, event: 'waivers', ...result });
-    } catch (err) {
-      console.warn(`[push] waivers failed for ${teamName}:`, err.message);
+  if (claimsWonCount > 0) {
+    const body = claimsWonCount === 1
+      ? '1 claim this week'
+      : `${claimsWonCount} claims this week`;
+    for (const team of teams) {
+      if (!team?.id) continue;
+      try {
+        const result = await sendPushToTeam({
+          teamId: team.id,
+          event: 'waivers',
+          title: '⏰ Waiver results',
+          body,
+          deepLink: '#transactions',
+        });
+        pushResults.push({ team: team.name, event: 'waivers', ...result });
+      } catch (err) {
+        console.warn(`[push] waivers failed for ${team.name}:`, err.message);
+      }
     }
   }
 
