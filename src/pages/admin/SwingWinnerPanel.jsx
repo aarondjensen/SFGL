@@ -14,13 +14,13 @@ import { useDialog } from '../DialogContext';
 import { theme, colors } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { SWINGS } from '../../theme.js';
-import { STORAGE_KEYS } from '../../constants';
 import { S, disabledBtn } from './adminStyles';
 import { getSwingLeader, getSwingPot } from '../../utils/sharedHelpers';
 import { computeSwingAward } from '../../utils/swingAward';
 
 export const SwingWinnerPanel = ({
-  tournaments, teams, transactions, setTransactions,
+  tournaments, teams, transactions, setTransactions, updateTeams,
+  STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
   const [swingAwardSeg, setSwingAwardSeg] = React.useState('');
@@ -60,11 +60,7 @@ export const SwingWinnerPanel = ({
     // Debug logging — useful when results look unexpected
     console.log('[SwingWinner] Manual award:', award.segment, '→', award.winnerTeam.name, '$' + award.pot.toLocaleString());
 
-    // Note: we intentionally do NOT call updateTeams here. The swing pot is
-    // real money tracked exclusively in transactions; team.earnings is the
-    // fantasy-golf total derived from tournament.results. computeSwingAward
-    // returns `updatedTeams: teams` (unchanged) for backward-compat with the
-    // tournament-processing auto-award path that destructures it.
+    updateTeams(award.updatedTeams);
     setTransactions(prev => [...prev, award.newTx]);
     await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, [...transactions, award.newTx]).catch(e => console.error('sfgl tx:', e));
 
@@ -83,7 +79,16 @@ export const SwingWinnerPanel = ({
       <select value={swingAwardSeg} onChange={e => setSwingAwardSeg(e.target.value)} style={S.select}>
         <option value="">Select swing...</option>
         {SWINGS.map(s => {
-          const pot = transactions.filter(tx => tx.segment === s && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+          // Use getSwingPot (the authoritative pot calc) instead of an inline
+          // filter. The inline version matched only by tx.segment, which
+          // missed transactions that had tournamentIndex set but lacked the
+          // segment field (or had a mismatched segment string). getSwingPot
+          // matches by tournamentIndex first, falling back to segment — the
+          // same logic the Transaction Fees panel uses and the auto-award
+          // depends on. Without this consistency, the dropdown could show a
+          // different pot total than the Transaction Fees panel for the same
+          // swing.
+          const pot = getSwingPot(transactions, tournaments, s);
           const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
           return (
             <option key={s} value={s} disabled={alreadyAwarded}>
@@ -94,7 +99,7 @@ export const SwingWinnerPanel = ({
       </select>
 
       {swingAwardSeg && (() => {
-        const pot = transactions.filter(tx => tx.segment === swingAwardSeg && (tx.fee || 0) > 0).reduce((sum, tx) => sum + tx.fee, 0);
+        const pot = getSwingPot(transactions, tournaments, swingAwardSeg);
         const leader = getSwingLeader(tournaments, swingAwardSeg);
         const leaderTeam = leader ? teams.find(t => t.id === leader.teamId) : null;
         return (
