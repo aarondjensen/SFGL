@@ -24,6 +24,45 @@ import { sendCommishPush } from '../api/pushNotifications';
 import { getCurrentTournamentIndex } from '../utils/index.js';
 import { colors, fonts } from '../theme.js';
 import { M, disabledBtn } from './admin/adminStyles';
+import { LIV_GOLF_ROSTER } from '../constants';
+
+// LIV-ineligible filter — mirrors AddDropPlayerModal. Players are LIV when
+// either:
+//   • p.isLiv is true (set by data sync / LivIneligiblePanel admin tool)
+//   • their name appears in the static LIV_GOLF_ROSTER fallback list
+// Both paths matter because the per-player flag isn't always populated for
+// new free agents that haven't been synced yet.
+const LIV_PLAYERS = new Set(LIV_GOLF_ROSTER);
+
+// Search-result sorter. Given a query and a filtered list of player records,
+// returns them sorted by:
+//   1. Prefix match priority — any word in the name starts with the query
+//      (so "c" prioritizes "Cantlay" and "Cameron Smith" over "DeChambeau",
+//      where the visual C is mid-word and not a prefix)
+//   2. World rank ascending — better players float to the top within each
+//      group
+//   3. Alphabetical name as final tiebreaker
+//
+// Splits on whitespace AND hyphens so "Anirban Lahiri" → ["anirban","lahiri"]
+// and "Byeong-Hun An" → ["byeong","hun","an"]. We deliberately do NOT split
+// on camelCase ("DeChambeau" stays as one word) — players are typically
+// recognized by their natural surname, not a CamelCase fragment.
+const rankSearchResults = (results, query) => {
+  const q = query.toLowerCase().trim();
+  return results
+    .map(p => {
+      const name  = (p.name || p).toLowerCase();
+      const words = name.split(/[\s-]+/).filter(Boolean);
+      const score = words.some(w => w.startsWith(q)) ? 0 : 1;
+      return { p, score, rank: p.worldRank ?? 9999, name };
+    })
+    .sort((a, b) => {
+      if (a.score !== b.score) return a.score - b.score;
+      if (a.rank  !== b.rank)  return a.rank  - b.rank;
+      return a.name.localeCompare(b.name);
+    })
+    .map(x => x.p);
+};
 
 export const AddTransactionModal = ({
   isOpen,
@@ -498,14 +537,19 @@ export const AddTransactionModal = ({
           <div style={M.group}>
             <div style={M.eyebrow}>Type</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {['waiver', 'waiver blocked', 'fa', 'mulligan'].map(t => {
-                const isActive = type === t;
+              {[
+                { value: 'waiver',         label: 'Waiver' },
+                { value: 'waiver blocked', label: 'Waiver blocked' },
+                { value: 'fa',             label: 'Free agent' },
+                { value: 'mulligan',       label: 'Mulligan' },
+              ].map(({ value, label }) => {
+                const isActive = type === value;
                 return (
                   <button
-                    key={t}
+                    key={value}
                     onClick={() => {
-                      if (t === type) return;
-                      setType(t);
+                      if (value === type) return;
+                      setType(value);
                       setPlayerIn(null); setSearchIn('');
                       setPlayerOut(null); setSearchOut('');
                     }}
@@ -521,11 +565,10 @@ export const AddTransactionModal = ({
                       background: isActive ? 'rgba(245,197,24,0.08)' : 'rgba(255,255,255,0.02)',
                       border: `1px solid ${isActive ? 'rgba(245,197,24,0.35)' : colors.borderSubtle}`,
                       color: isActive ? colors.textGold : colors.textSecondary,
-                      textTransform: 'capitalize',
                       transition: 'background 0.15s, border-color 0.15s',
                     }}
                   >
-                    {t}
+                    {label}
                   </button>
                 );
               })}
@@ -572,16 +615,24 @@ export const AddTransactionModal = ({
             }
 
             // Non-mulligan: search free agents (or all players for blocked).
+            // Always exclude LIV-ineligible players — they can't be claimed
+            // or rostered, so they shouldn't appear in the picker. Same
+            // policy applies to waiver-blocked entries (you can't log a
+            // blocked claim for a player who couldn't have been claimed).
+            const isLivIneligible = (p) => p.isLiv || LIV_PLAYERS.has(p.name);
             const pool = type === 'waiver blocked'
-              ? allPlayers.filter(validPlayer)
+              ? allPlayers.filter(p => validPlayer(p) && !isLivIneligible(p))
               : allPlayers.filter(p => {
                   if (!validPlayer(p)) return false;
+                  if (isLivIneligible(p)) return false;
                   const allRostered = new Set(teams.flatMap(t => t.roster.map(r => r.name)));
                   return !allRostered.has(p.name);
                 });
-            const filtered = pool.filter(p =>
+            // Substring filter, then rank by relevance + world rank.
+            const matches = pool.filter(p =>
               (p.name || p).toLowerCase().includes(searchIn.toLowerCase())
             );
+            const filtered = rankSearchResults(matches, searchIn);
             const label = type === 'waiver blocked' ? 'Player Claimed (blocked)' : 'Player Added';
             return (
               <div style={M.group}>
@@ -737,11 +788,14 @@ export const AddTransactionModal = ({
               );
             }
 
-            // FA / Waiver: search this team's roster.
+            // FA / Waiver: search this team's roster. Substring filter,
+            // then alphabetical — the roster is small (≤13) so we don't
+            // need the prefix+rank weighting used for the free-agent pool;
+            // a stable name order is enough.
             const pool = teamObj?.roster || [];
-            const filtered = pool.filter(p =>
-              (p.name || p).toLowerCase().includes(searchOut.toLowerCase())
-            );
+            const filtered = pool
+              .filter(p => (p.name || p).toLowerCase().includes(searchOut.toLowerCase()))
+              .sort((a, b) => (a.name || a).localeCompare(b.name || b));
             return (
               <div style={M.group}>
                 <div style={M.eyebrow}>Player Dropped</div>
