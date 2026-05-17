@@ -2,15 +2,17 @@
 // ============================================================================
 // LIV-flagged player management. Search for non-LIV players to flag, and
 // display existing flags as removable chips.
-// Wave I extraction from AdminView.
+//
+// Wave J Round 6 follow-up: restyled to modal-feel — flat container, eyebrow
+// headings, lifted rows, lighter chrome. Functional behavior unchanged.
 // ============================================================================
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { theme, colors, fonts } from '../../theme.js';
+import { colors, fonts } from '../../theme.js';
 import { playersApi } from '../../api/firebase';
 import { LIV_GOLF_ROSTER } from '../../constants';
-import { S } from './adminStyles';
+import { M } from './adminStyles';
 
 export const LivIneligiblePanel = ({ allPlayers, setAllPlayers }) => {
   const dialog = useDialog();
@@ -66,43 +68,67 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers }) => {
   };
 
   return (
-    <div style={S.section}>
-      <div style={S.title}>🚫 LIV Golf — Ineligible Players</div>
-      <div style={{ ...theme.smallText, marginBottom: 10, color: colors.textSecondary }}>
+    <div style={M.page}>
+      <div style={M.descText}>
         Players flagged as LIV are hidden from the add/drop modal and waiver system.
       </div>
 
-      <input
-        type="text"
-        placeholder="Search players to add/remove LIV flag…"
-        value={livSearch}
-        onChange={e => setLivSearch(e.target.value)}
-        style={{ ...theme.input, marginBottom: 10, fontSize: 12 }}
-      />
+      {/* Search field */}
+      <div style={M.group}>
+        <div style={M.eyebrow}>Add to LIV list</div>
+        <input
+          type="text"
+          placeholder="Search players…"
+          value={livSearch}
+          onChange={e => setLivSearch(e.target.value)}
+          style={M.input}
+        />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {/* Search results — appear as light rows beneath the input. Only
+            render when there's something to show; the empty state would be
+            visual noise. */}
         {searchResults.length > 0 && (
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
-              Add to LIV list
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
             {searchResults.map(p => (
-              <div key={p.name} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '6px 10px', marginBottom: 2, borderRadius: 3,
-                background: 'rgba(80,180,120,0.06)', border: '1px solid rgba(80,180,120,0.2)',
-              }}>
-                <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+              <div
+                key={p.name}
+                style={{
+                  ...M.statusRow,
+                  background: 'rgba(80,180,120,0.04)',
+                  borderColor: 'rgba(80,180,120,0.2)',
+                  gap: 8,
+                }}
+              >
+                <span style={{
+                  flex: 1,
+                  fontFamily: fonts.sans,
+                  fontSize: 12,
+                  color: colors.textPrimary,
+                }}>
                   {p.name}
-                  {p.worldRank && <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>#{p.worldRank}</span>}
+                  {p.worldRank && (
+                    <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>
+                      #{p.worldRank}
+                    </span>
+                  )}
                 </span>
                 <button
                   disabled={livSaving[p.name]}
                   onClick={() => flagAsLiv(p)}
+                  className="modal-feel-lift modal-feel-danger"
                   style={{
-                    fontFamily: fonts.sans, fontSize: 10, padding: '3px 8px',
-                    background: 'rgba(220,60,60,0.15)', border: '1px solid rgba(220,60,60,0.35)',
-                    color: colors.danger, borderRadius: 2, cursor: 'pointer',
+                    fontFamily: fonts.sans,
+                    fontSize: 11,
+                    padding: '5px 10px',
+                    background: 'rgba(220,80,80,0.08)',
+                    border: '1px solid rgba(220,80,80,0.35)',
+                    color: colors.danger,
+                    borderRadius: 6,
+                    cursor: livSaving[p.name] ? 'wait' : 'pointer',
+                    fontWeight: 600,
+                    transition: 'background 0.15s, border-color 0.15s, transform 0.1s',
+                    width: 'auto',
+                    flexShrink: 0,
                   }}
                 >
                   {livSaving[p.name] ? '…' : '+ Flag LIV'}
@@ -111,28 +137,54 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers }) => {
             ))}
           </div>
         )}
+      </div>
 
-        <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
-          {livPlayers.length} flagged player{livPlayers.length !== 1 ? 's' : ''}
+      {/* Existing flagged players */}
+      <div style={M.group}>
+        <div style={M.eyebrow}>
+          {livPlayers.length} Flagged Player{livPlayers.length !== 1 ? 's' : ''}
         </div>
         {livPlayers.length === 0 ? (
-          <div style={{ ...theme.smallText, textAlign: 'center', padding: '8px 0', color: colors.textMuted }}>
+          <div style={{
+            ...M.descText,
+            textAlign: 'center',
+            padding: '14px 0',
+            color: colors.textMuted,
+            fontStyle: 'italic',
+          }}>
             No LIV players flagged
           </div>
         ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {livPlayers.map(p => (
-              <div key={p.name} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '4px 8px', borderRadius: 3,
-                background: 'rgba(220,60,60,0.08)', border: '1px solid rgba(220,60,60,0.2)',
-                fontSize: 11, fontFamily: fonts.sans, color: colors.textSecondary,
-              }}>
+              <div
+                key={p.name}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  background: 'rgba(220,80,80,0.06)',
+                  border: '1px solid rgba(220,80,80,0.25)',
+                  fontSize: 12,
+                  fontFamily: fonts.sans,
+                  color: colors.textSecondary,
+                }}
+              >
                 {p.name}
                 <button
                   disabled={livSaving[p.name]}
                   onClick={() => unflagLiv(p)}
-                  style={{ background: 'none', border: 'none', color: 'rgba(220,100,80,0.7)', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(220,100,80,0.7)',
+                    cursor: livSaving[p.name] ? 'wait' : 'pointer',
+                    fontSize: 13,
+                    padding: 0,
+                    lineHeight: 1,
+                  }}
                   title={'Remove LIV flag from ' + p.name}
                   aria-label={'Remove LIV flag from ' + p.name}
                 >
