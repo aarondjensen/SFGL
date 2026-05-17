@@ -41,7 +41,7 @@ const playerNameColor = (p, showEarnings) => {
 // ── Player slot grid — 5-column layout under each team's row in expansions ──
 // Three modes (controlled by props):
 //   • showEarnings        — completed tournament: name + $ + round-leader badges
-//   • showLive            — active tournament: name + position + score · thru
+//   • showLive            — active tournament: name + position only
 //   • neither             — upcoming: name + "—" placeholder
 //
 // In `showLive` mode, each player record should have `live` populated with
@@ -78,8 +78,10 @@ const PlayerSlotGrid = ({ players, showEarnings, showLive }) => {
                   </span>
                 </div>
               ) : showLive ? (
-                // Live mode: show position + score, or CUT/WD, or "—" if not yet
-                // matched. Keeps the same vertical rhythm as the $ row above.
+                // Live mode: show position only, or CUT/WD, or "—" if not yet
+                // matched. Score-to-par and thru-N intentionally omitted —
+                // the team total at the top is the headline number; per-player
+                // detail belongs in the Rosters view.
                 (() => {
                   const live = p.live;
                   if (!live) {
@@ -92,26 +94,11 @@ const PlayerSlotGrid = ({ players, showEarnings, showLive }) => {
                     return <div style={{ color: colors.textMuted, fontSize: fontSize.xs, fontWeight: 700 }}>WD</div>;
                   }
                   const pos = live.position || '—';
-                  const score = live.score || '';
-                  // Golf-traditional: under par is RED (the "good" highlight,
-                  // matches broadcast convention), over par is muted (de-
-                  // emphasized, not punitive), even par is primary text.
-                  // Same convention as RostersView's live score column.
-                  const scoreColor = score.startsWith('-')
-                    ? colors.danger
-                    : score.startsWith('+')
-                      ? colors.textMuted
-                      : colors.textPrimary;
                   return (
-                    <div style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                    <div style={{ whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: fonts.mono, fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: 600 }}>
                         {pos}
                       </span>
-                      {score && (
-                        <span style={{ fontFamily: fonts.mono, fontSize: fontSize.xs, color: scoreColor }}>
-                          {score}
-                        </span>
-                      )}
                     </div>
                   );
                 })()
@@ -131,25 +118,6 @@ const PlayerSlotGrid = ({ players, showEarnings, showLive }) => {
                   ))}
                 </div>
               )}
-              {/* Line 3b: thru indicator (active only). Shows "F" for finished
-                  or "thru N" mid-round. Omitted entirely when the player
-                  hasn't started (no useful indicator to show — the position
-                  column already says "—" in that case). */}
-              {showLive && p.live && !p.live.isCut && !p.live.isWD && (() => {
-                const thru = p.live.thru;
-                const thruNum = thru ? parseInt(thru, 10) : NaN;
-                const isFinished = thru === 'F' || thru === 'F*';
-                const isMidRound = !isNaN(thruNum) && thruNum > 0 && thruNum < 18;
-                let label = null;
-                if (isFinished) label = 'F';
-                else if (isMidRound) label = `thru ${thru}`;
-                if (!label) return null;
-                return (
-                  <div style={{ fontSize: 9, color: colors.textMuted, marginTop: 1 }}>
-                    {label}
-                  </div>
-                );
-              })()}
             </>
           ) : (
             <span style={{ color: 'rgba(255,255,255,0.1)' }}>—</span>

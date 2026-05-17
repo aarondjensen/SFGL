@@ -69,14 +69,41 @@ export const shape = {
 };
 
 // ── Font size scale ───────────────────────────────────────────────────────────
+// Semantic scale, fixed-pixel (mobile-first). Six sizes, each with a clear
+// role. Use these tokens app-wide; only escape to inline pixels for true
+// special cases (icon-as-glyph sizing, tier-letter badges).
+//
+//   xs   10px  — eyebrow labels, tiny metadata, rank badges
+//   sm   12px  — helper text, descriptions, captions
+//   base 13px  — body, list items, button labels, player names, table cells
+//   md   14px  — section titles, slightly emphasized content
+//   lg   16px  — form inputs, selects, modal titles, prominent values
+//   xl   20px  — page headers, major totals
+//
+// (Previously these were responsive `clamp()` values. They've been migrated to
+// fixed pixels because the responsive ranges overlapped, making roles ambiguous;
+// and because in practice the codebase was authoring most copy at the high-end
+// pixel values anyway. If the app ever needs to scale up on huge screens, this
+// is the single place to reintroduce a media query or container-query rule.)
 export const fontSize = {
-  xs:   'clamp(9px, 0.7vw, 10px)',
-  sm:   'clamp(10px, 0.85vw, 12px)',
-  base: 'clamp(11px, 0.95vw, 13px)',
-  md:   'clamp(13px, 1.1vw, 15px)',
-  lg:   'clamp(15px, 1.3vw, 18px)',
-  xl:   'clamp(17px, 1.5vw, 22px)',
-  xxl:  'clamp(24px, 2.2vw, 30px)',
+  xs:   10,
+  sm:   12,
+  base: 13,
+  md:   14,
+  lg:   16,
+  xl:   20,
+  // xxl kept for back-compat with any straggler import; rarely used in
+  // practice. Major totals should use xl instead.
+  xxl:  24,
+
+  // Sub-text / icon sizes. These are NOT for readable body content —
+  // they're for tiny pip badges (star counts, "Backup" labels, mulligan
+  // chips) and large emoji used as visual markers (admin tile icons).
+  // Splitting them off from the regular scale keeps the body-text scale
+  // semantic and prevents anyone from reaching for `badge` when they
+  // really wanted `xs`.
+  badge:    8,    // overlay pips, tier-letter labels, micro-captions
+  tileIcon: 22,   // emoji icons on the admin tile grid
 };
 
 // ── Reusable style objects ────────────────────────────────────────────────────
