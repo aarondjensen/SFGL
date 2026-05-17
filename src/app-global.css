@@ -222,3 +222,37 @@ html { scrollbar-gutter: stable; }
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ============================================================================
+ * MODAL-FEEL — Wave J Round 6 follow-up
+ * Hover lift for buttons and interactive rows styled via adminStyles.jsx M.*
+ * tokens. Apply the .modal-feel-lift class alongside the inline style:
+ *
+ *   <button className="modal-feel-lift" style={M.btnPrimary}>...</button>
+ *
+ * Touch devices don't have hover, so the :hover rule is wrapped in a media
+ * query that skips touch-primary devices (avoids stuck-hover states on iOS).
+ * ============================================================================ */
+@media (hover: hover) and (pointer: fine) {
+  .modal-feel-lift:hover:not(:disabled) {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.05);
+  }
+  /* Override the generic background lift when the button has its own
+     colored variant — preserves the green/orange/red tint while still
+     adding subtle lift. */
+  button.modal-feel-lift.modal-feel-primary:hover:not(:disabled) {
+    background: rgba(80, 195, 120, 0.18);
+  }
+  button.modal-feel-lift.modal-feel-warning:hover:not(:disabled) {
+    background: rgba(220, 150, 50, 0.18);
+  }
+  button.modal-feel-lift.modal-feel-danger:hover:not(:disabled) {
+    background: rgba(220, 80, 80, 0.14);
+  }
+}
+
+/* Active (press) state — applies on all input types including touch */
+.modal-feel-lift:active:not(:disabled) {
+  transform: translateY(0);
+}
