@@ -230,19 +230,22 @@ export const getTokensForTeam = async (teamId) => {
 
 // Event definitions — single source of truth for label, description, and
 // default. Server-side cron.js + push.js mirror this DEFAULTS_ON set, so
-// keep the two in sync when adding new events.
+// keep the three in sync when adding new events.
+//
+// All current events default ON. The `batch` field is historical (which
+// release the event was wired in) and isn't used at runtime — kept for
+// readability.
 export const NOTIFICATION_EVENTS = [
-  // Batch 3 (default ON) — wired now
-  { key: 'waiverWon',       label: 'Waiver claim won',     desc: 'Your waiver claim was successful',     batch: 3, default: true  },
-  { key: 'waiverLost',      label: 'Waiver claim lost',    desc: 'Your waiver lost the tiebreaker',      batch: 3, default: true  },
-  { key: 'lineupLock',      label: 'Lineup lock reminder', desc: "You haven't set a lineup yet",         batch: 3, default: true  },
-  { key: 'commishModified', label: 'Commish edited roster', desc: 'A commissioner modified your team',   batch: 3, default: true  },
-  // Batch 4 (default OFF) — placeholder, not yet wired
-  // { key: 'faProcessed',     label: 'Free agent processed', desc: 'Your free agent claim was processed', batch: 4, default: false },
-  // { key: 'resultsProcessed', label: 'Results processed',  desc: 'Tournament results are in',           batch: 4, default: false },
-  // { key: 'otherTeamWaiver', label: 'Other team\'s waiver', desc: 'Another team won a waiver claim',    batch: 4, default: false },
-  // { key: 'otherTeamFa',     label: 'Other team\'s FA',     desc: 'Another team picked up a free agent', batch: 4, default: false },
-  // { key: 'swingWinner',     label: 'Swing winner announced', desc: 'A swing pot was awarded',          batch: 4, default: false },
+  { key: 'waivers',         label: 'Waiver results',       desc: 'Weekly waiver round summary',              batch: 4, default: true },
+  { key: 'lineupLock',      label: 'Lineup lock reminder', desc: "You haven't set a lineup yet",             batch: 3, default: true },
+  { key: 'freeAgent',       label: 'Free agent activity',  desc: 'Any team adds or drops a free agent',      batch: 4, default: true },
+  { key: 'results',         label: 'Tournament results',   desc: 'Tournament results are processed',         batch: 4, default: true },
+  { key: 'commishModified', label: 'Commish edited roster', desc: 'A commissioner modified your team',       batch: 3, default: true },
+  // leadChange — fires when one of your starting lineup players takes the
+  // outright lead OR joins a tied-for-1st group during round 2 or later.
+  // Server-side cron (?action=lead-watch) polls every 10 minutes during a
+  // live tournament. Rate-limited to one ping per team+player per 30 min.
+  { key: 'leadChange',      label: 'Player takes the lead', desc: 'A starting lineup player takes the lead (round 2+)', batch: 5, default: true },
 ];
 
 /**
@@ -294,6 +297,45 @@ export const sendCommishPush = async ({ event, commishTeamId, recipients, title,
       deepLink,
       recipients,
       asCommishOfTeamId: commishTeamId,
+    }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    throw new Error(data.error || `HTTP ${resp.status}`);
+  }
+  return data;
+};
+
+/**
+ * Trigger a manager-authorized push. Used for events any manager can
+ * dispatch — currently 'freeAgent' (FA add/drop broadcast) and 'results'
+ * (tournament results broadcast).
+ *
+ * Auth: just verifies the asTeamId is a real team in the league (no
+ * commissioner check). Suitable for a small trusted league. The event
+ * type whitelist on the server (MANAGER_ALLOWED_EVENTS) bounds what
+ * events this path can trigger, so a spoofed team ID still can't send
+ * arbitrary push types.
+ *
+ * @param {Object} opts
+ * @param {string} opts.event       — 'freeAgent' or 'results'
+ * @param {string} opts.teamId      — the manager's own teamId (auth check)
+ * @param {string|string[]} opts.recipients — 'all' or array of teamIds
+ * @param {string} opts.title
+ * @param {string} opts.body
+ * @param {string} [opts.deepLink]
+ */
+export const sendManagerPush = async ({ event, teamId, recipients, title, body, deepLink = '#standings' }) => {
+  const resp = await fetch('/api/push', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event,
+      title,
+      body,
+      deepLink,
+      recipients,
+      asTeamId: teamId,
     }),
   });
   const data = await resp.json();
