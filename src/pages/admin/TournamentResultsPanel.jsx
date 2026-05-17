@@ -2,48 +2,24 @@
 // ============================================================================
 // Tournament results processing — covers all three flows:
 //   1. Fetch live results from PGA Tour and pre-fill earnings textarea
-//   2. Manual entry → process tournament, mark complete, advance "playing"
-//      pointer, auto-award the swing pot if this completes the swing
-//   3. Reprocess a completed tournament with corrected earnings, with full
-//      "swing cascade": if a swing_winner tx already exists for this segment
-//      and the recalculation shifts the winner, the cascade reverses the old
-//      tx and emits a new one — keeping the swing winner tx consistent with
-//      the freshly-reprocessed tournament results.
-//   4. Resend Results Email — fires the notify-results endpoint again
-//      without touching any data. Useful after correcting a wrong email
-//      template render.
+//   2. Manual entry → process tournament, mark complete, advance "playing" pointer
+//   3. Reprocess a completed tournament with corrected earnings
 //
 // Wave I.2: after process/reprocess, automatically check whether the just-
 // processed tournament completes a swing. If so, award the pot to the leader
 // in the same write — keeps the manual SwingWinnerPanel as a safety-net only.
-//
-// Batch 3g (fix-only pass): absorbs the production logic that was in the
-// inline AdminView handlers and never made it into this file at extraction
-// time. AdminView is NOT yet swapped to use this panel — see the audit
-// trail comment in AdminView. The features below should now match the
-// deployed behavior 1:1 so a future swap is a clean drop-in.
 // ============================================================================
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
 import { theme, colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
-import { STORAGE_KEYS } from '../../constants';
+import { sendCommishPush } from '../../api/pushNotifications';
 import { processTournamentData } from './processTournamentData';
-import {
-  computeSwingAward,
-  maybeAwardForCompletedTournament,
-} from '../../utils/swingAward';
-import { getSegmentForTournament } from '../../utils';
-import { getSwingPot } from '../../utils/sharedHelpers';
+import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { S, disabledBtn } from './adminStyles';
-import { TeamLineupsEditor } from './TeamLineupsEditor';
 
-// ── Round-leader dropdown ───────────────────────────────────────────────────
-// Uses stored tournament lineups (manualEntry.teamLineups) + R3 mulligan
-// additions so the dropdown reflects who was actually playing for each team
-// during the tournament — not the team's current live lineup (which can have
-// been edited since).
+// ── Round-leader dropdown (uses stored tournament lineups + R3 mulligan additions) ──
 const RoundLeaderSelect = ({
   label, leaders, onChange, round,
   selectedTourney, tournaments, transactions, teams, manualEntry,
@@ -101,7 +77,6 @@ const RoundLeaderSelect = ({
 
 const EMPTY_ENTRY = { round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} };
 
-// Parse "Player Name, 123456" or "Player Name, 1,234,567" lines → Map
 const parseEarningsLines = (text) => {
   const map = new Map();
   text.split('\n').forEach(line => {
@@ -121,24 +96,19 @@ export const TournamentResultsPanel = ({
   teams, updateTeams,
   transactions, setTransactions,
   globalPlayerStats, setGlobalPlayerStats,
-  settings,
-  rostersByTeamId,        // { teamId: [{name, limited, ...}] } — transactions-aware roster snapshot
+  loggedInUser,
+  STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
   const [selectedTourney, setSelectedTourney] = React.useState('');
   const [manualEntry, setManualEntry] = React.useState(EMPTY_ENTRY);
   const [pgaFetching, setPgaFetching] = React.useState(false);
 
-  // Default the dropdown to the currently-playing tournament on mount.
   React.useEffect(() => {
     const active = tournaments.find(t => t.playing);
     if (active && !selectedTourney) setSelectedTourney(active.name);
   }, [tournaments, selectedTourney]);
 
-  // ── Tournament select handler ────────────────────────────────────────────
-  // Pre-fills the manual entry form with the existing earnings/lineups if
-  // this tournament has already been processed. Lets the commish reprocess
-  // without re-typing everything.
   const onTourneyChange = (name) => {
     setSelectedTourney(name);
     const t = tournaments.find(t => t.name === name);
@@ -160,16 +130,11 @@ export const TournamentResultsPanel = ({
     }
   };
 
-  // ── Fetch from PGA Tour endpoint ─────────────────────────────────────────
-  // Pre-fills earnings + round leaders from the live API. Round leaders are
-  // filtered to actual SFGL starters (live + saved lineups), so a leader who
-  // wasn't started by any team doesn't pollute the dropdown.
   const handleFetchPGAResults = async () => {
     if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
     const t = tournaments.find(t => t.name === selectedTourney);
-    if (!t) { dialog.showToast('Tournament not found', 'error'); return; }
-
     const params = new URLSearchParams({ name: t.name, year: '2026' });
+
     setPgaFetching(true);
     try {
       dialog.showToast('Fetching results…', 'info');
@@ -183,21 +148,7 @@ export const TournamentResultsPanel = ({
         .map(p => `${p.name}, ${p.earnings}`)
         .join('\n');
 
-      // Only keep leaders who were actually in an SFGL starting lineup.
-      // For active tournaments, that's team.lineup. For already-completed
-      // ones, team.lineup is cleared by processing — so fall back to the
-      // lineups the commish has set in the Team Lineups editor, then to the
-      // saved tournament fullLineups, so refreshing PGA data on an old
-      // tournament doesn't strip all the round leaders.
-      const tCurrent = tournaments.find(tt => tt.name === selectedTourney);
-      const lineupNamesFromManualEntry = new Set(Object.values(manualEntry.teamLineups || {}).flat());
-      const lineupNamesFromHistory = new Set(Object.values(tCurrent?.results?.fullLineups || {}).flat());
-      const lineupNamesFromLive = new Set(teams.flatMap(t => t.lineup || []));
-      const startedPlayers = new Set([
-        ...lineupNamesFromLive,
-        ...lineupNamesFromManualEntry,
-        ...lineupNamesFromHistory,
-      ]);
+      const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
       const filterToStarted = (names) => {
         if (!names?.length) return [''];
         const filtered = names.filter(n => startedPlayers.has(n));
@@ -221,7 +172,6 @@ export const TournamentResultsPanel = ({
     }
   };
 
-  // ── Process Results (first time) ──────────────────────────────────────────
   const handleManualEntry = async () => {
     try {
       if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
@@ -232,10 +182,7 @@ export const TournamentResultsPanel = ({
         if (!ok) return;
       }
       const earningsMap = parseEarningsLines(manualEntry.playerEarnings);
-      if (!earningsMap.size) {
-        dialog.showToast('No valid earnings lines found. Format: "Player Name, 123456"', 'error');
-        return;
-      }
+      if (!earningsMap.size) { dialog.showToast('No valid earnings lines found. Format: "Player Name, 123456"', 'error'); return; }
 
       const ti = tournaments.findIndex(t => t.name === selectedTourney);
       const manualData = {
@@ -250,25 +197,20 @@ export const TournamentResultsPanel = ({
       const names = teams.flatMap(t => t.roster.map(p => p.name));
       const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names, transactions);
 
-      // Mark tournament completed, advance playing to next non-alternate
+      // Mark tournament completed, advance playing to next non-alternate.
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
       const nx = newT.findIndex((nt, i) => i > ti && !nt.completed && !nt.isAlternate);
       if (nx !== -1) { newT.forEach(nt => { nt.playing = false; }); newT[nx].playing = true; }
 
-      // ── Auto-award swing winner if this was the final event in its swing ──
-      // After marking the tournament complete, see if every other tournament
-      // in this swing is also complete. If so, the swing is over — award
-      // the pot now instead of requiring a separate manual click. The
-      // manual button in SwingWinnerPanel still exists as a backup for
-      // re-awarding after corrections.
+      // ── Wave I.2: auto-award if this completes a swing ──
+      // Computed BEFORE we call updateTeams/setTransactions so the award
+      // updates can be merged into a single write.
       const award = maybeAwardForCompletedTournament({
         justProcessedTournament: newT[ti],
         allTournaments: newT,
         transactions,
         teams: newTeams,
       });
-      // Pot does NOT add to team.earnings — award.updatedTeams is unchanged
-      // from newTeams (see swingAward.js design note).
       const finalTeams = award ? award.updatedTeams : newTeams;
       const finalTransactions = award ? [...transactions, award.newTx] : transactions;
 
@@ -276,51 +218,73 @@ export const TournamentResultsPanel = ({
       setGlobalPlayerStats(newStats);
       setTournaments(newT);
       if (award) {
-        setTransactions(prev => [...prev, award.newTx]);
-        sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, finalTransactions).catch(() => {});
+        setTransactions(finalTransactions);  // array form — useLeague.updateTransactions expects an array, not a callback
+        await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, finalTransactions).catch(() => {});
       }
-      // Persistence (Firestore) is handled by the updaters above. The
-      // sfglDataApi writes below are belt-and-suspenders backups to the
-      // key-value fallback path that useLeague's cascade loader checks.
       sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
       sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
 
       dialog.showToast('Results processed! ' + earningsMap.size + ' players · ' + Object.keys(resultsData.teams).length + ' teams scored', 'success');
+
       if (award) {
-        dialog.showToast('🏆 ' + award.summary, 'success');
+        dialog.showToast(
+          `🏆 ${award.segment} complete! ${award.winnerTeam.name} (${award.winnerTeam.owner}) wins the $${award.pot.toLocaleString()} pot`,
+          'success'
+        );
       }
 
-      // Send results email to all managers — include swing-award banner if
-      // one fired so the email leads with the celebration. Without this,
-      // the swing win would only appear in the next month's standings
-      // refresh.
+      // Notify managers via email — include swing-award banner if one fired
       try {
         const teamResultsForEmail = finalTeams.filter(t => resultsData.teams[t.id]).map(t => ({
           team: t.name,
           totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
-          players: (resultsData.teams[t.id].players || []).map(p => ({
-            name: p.name,
-            earnings: p.earnings || 0,
-            bonus: p.bonus || 0,
-            limited: !!p.limited,
-            unlimited: !!p.unlimited,
-            roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
-          })),
         }));
-        const swingWinnerInfo = award ? {
-          segment: award.segment,
-          team: award.winnerTeam.name,
-          pot: award.pot,
-        } : undefined;
-        await fetch('/api/cron?action=notify-results', {
+        const body = { tournamentName: selectedTourney, teamResults: teamResultsForEmail };
+        if (award) {
+          body.swingAward = {
+            segment: award.segment,
+            winnerTeamName: award.winnerTeam.name,
+            pot: award.pot,
+          };
+        }
+        await fetch('/api/notify-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo }),
+          body: JSON.stringify(body),
         });
         dialog.showToast('📧 Results emails sent', 'success');
       } catch (emailErr) {
         console.warn('Results email failed:', emailErr);
       }
+
+      // ── Push notification (Wave J Round 6 batch 4) ──────────────────────
+      // Manual results processing path — broadcast a 'results' push to all
+      // managers with each team's personalized earnings line. The cron auto-
+      // process path also pushes (in api/cron.js handleProcessResults), but
+      // these two paths are mutually exclusive (cron skips tournaments
+      // already marked completed). No double-push risk.
+      //
+      // Best-effort: failures here don't roll back the results commit.
+      const commishTeam = finalTeams.find(t => t.owner === loggedInUser);
+      if (commishTeam?.id) {
+        for (const t of finalTeams) {
+          if (!t.id) continue;
+          const teamResult = resultsData.teams[t.id];
+          const earnings = teamResult ? (teamResult.totalEarnings || 0) : 0;
+          const pushBody = teamResult
+            ? `${selectedTourney}: you earned $${earnings.toLocaleString()}`
+            : `Results are in for ${selectedTourney}`;
+          sendCommishPush({
+            event: 'results',
+            commishTeamId: commishTeam.id,
+            recipients: [t.id],
+            title: '🏆 Results processed',
+            body: pushBody,
+            deepLink: '#standings',
+          }).catch(err => console.warn(`[push] results send failed for ${t.name}:`, err.message));
+        }
+      }
+
       setManualEntry(EMPTY_ENTRY);
     } catch (err) {
       console.error('handleManualEntry error:', err);
@@ -328,52 +292,16 @@ export const TournamentResultsPanel = ({
     }
   };
 
-  // ── Reprocess Tournament (correction of an already-processed tournament) ──
-  // Reverses the prior results from each team's earnings + roster, then
-  // re-runs processTournamentData with the corrected earnings. Includes a
-  // "swing cascade": when a swing_winner tx exists for this segment and
-  // the recalc shifts the winner, drops the old tx and emits a new one.
   const handleReprocess = async () => {
     if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
     const tournament = tournaments.find(t => t.name === selectedTourney);
     if (!tournament?.completed) { dialog.showToast('Tournament is not yet completed', 'error'); return; }
     const ti = tournaments.findIndex(t => t.name === selectedTourney);
 
-    // Count teams without a usable lineup. Teams either need an entry in
-    // manualEntry.teamLineups (set via the Team Lineups editor) or in
-    // oldResults.fullLineups (carried over from the original processing).
-    // Without one of these, the team will score $0 for this tournament.
-    const oldResultsForCheck = tournament.results;
-    const teamsMissingLineups = teams.filter(team => {
-      const fromEditor = manualEntry.teamLineups?.[team.id];
-      const fromOldResults = oldResultsForCheck?.fullLineups?.[team.id];
-      const lineup = (fromEditor && fromEditor.length > 0)
-        ? fromEditor
-        : (fromOldResults && fromOldResults.length > 0)
-          ? fromOldResults
-          : [];
-      return lineup.length === 0;
-    });
-
-    // Will reprocessing this tournament cascade into a swing-winner change?
-    const tSegment = getSegmentForTournament(tournament);
-    const existingSwingTx = transactions.find(tx => tx.type === 'swing_winner' && tx.segment === tSegment);
-    const swingCascade = !!existingSwingTx;
-
-    // Build confirm message — lead with the lineup warning if any teams
-    // are missing entries, so the commish sees it before committing.
-    const lineupWarning = teamsMissingLineups.length > 0
-      ? `⚠ ${teamsMissingLineups.length} team${teamsMissingLineups.length === 1 ? '' : 's'} ${teamsMissingLineups.length === 1 ? 'has' : 'have'} no lineup set (${teamsMissingLineups.map(t => t.name).join(', ')}) — ${teamsMissingLineups.length === 1 ? 'it' : 'they'} will score $0 for this tournament.\n\n`
-      : '';
-
-    const confirmMsg = lineupWarning + (swingCascade
-      ? 'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.\n\nThe ' + tSegment + ' swing winner ($' + (existingSwingTx.amount || 0).toLocaleString() + ' to ' + existingSwingTx.team + ') will be automatically recalculated and re-awarded based on the new totals.'
-      : 'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.');
-
     const ok = await dialog.showConfirm(
       'Reprocess Tournament',
-      confirmMsg,
-      { confirmText: 'Reprocess', type: teamsMissingLineups.length > 0 ? 'warning' : undefined }
+      'This will reverse the existing results for ' + selectedTourney + ' and apply the corrected earnings below. Team scores, player stats, and standings will all update.',
+      { confirmText: 'Reprocess' }
     );
     if (!ok) return;
 
@@ -381,35 +309,17 @@ export const TournamentResultsPanel = ({
       const earningsMap = parseEarningsLines(manualEntry.playerEarnings);
       if (!earningsMap.size) { dialog.showToast('No valid earnings lines found', 'error'); return; }
 
-      // Step 1: Reverse old results from all teams AND attach the new lineup
-      // that will be scored in Step 2. Important: every team needs the
-      // lineup attached, including teams that had no prior result — without
-      // this, processTournamentData skips them (no lineup → no score) and
-      // resultsData.teams comes back empty.
+      // Step 1: Reverse old results
       const oldResults = tournament.results;
       let reversedTeams = teams.map(team => {
-        // New lineup precedence: explicit edit > carried-over from prior
-        // processing > empty.
-        const newLineup = manualEntry.teamLineups[team.id]
-          || oldResults?.fullLineups?.[team.id]
-          || [];
-
         const oldTeamResult = oldResults?.teams?.[team.id];
-        if (!oldTeamResult) {
-          // No prior result to reverse — just attach the new lineup so this
-          // team gets scored when processTournamentData runs.
-          return { ...team, lineup: newLineup };
-        }
-
-        // Has a prior result — reverse earnings, decrement starts, etc.
+        if (!oldTeamResult) return team;
         const earningsDelta = -(oldTeamResult.totalEarnings || 0);
-        // Use fullLineups for start reversal (all starters), players list for earnings
         const oldLineup = new Set(oldResults.fullLineups?.[team.id] || (oldTeamResult.players || []).map(p => p.name || p));
         const oldEarningsByPlayer = {};
         (oldTeamResult.players || []).forEach(p => { oldEarningsByPlayer[p.name || p] = p.earnings || 0; });
         const newRoster = team.roster.map(p => {
-          const wasInLineup = oldLineup.has(p.name);
-          if (!wasInLineup) return p;
+          if (!oldLineup.has(p.name)) return p;
           return {
             ...p,
             sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - (oldEarningsByPlayer[p.name] || 0)),
@@ -421,11 +331,10 @@ export const TournamentResultsPanel = ({
           roster: newRoster,
           earnings: Math.max(0, (team.earnings || 0) + earningsDelta),
           segmentEarnings: Math.max(0, (team.segmentEarnings || 0) + earningsDelta),
-          lineup: newLineup,
+          lineup: (manualEntry.teamLineups[team.id] || oldResults.fullLineups?.[team.id] || []),
         };
       });
 
-      // Reverse global stats from old earningsMap
       const oldEarningsMap = oldResults?.earningsMap || {};
       const reversedStats = { ...globalPlayerStats };
       Object.entries(oldEarningsMap).forEach(([playerName, earnings]) => {
@@ -451,165 +360,35 @@ export const TournamentResultsPanel = ({
       const names = teams.flatMap(t => t.roster.map(p => p.name));
       const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions);
 
-      // ── Diagnostic logging ──
-      // If a reprocess produces unexpected results (empty team standings,
-      // missing detail rows), the console output here is the fastest path
-      // to seeing what actually happened. Each line corresponds to one
-      // logical step of the pipeline.
-      console.log('[handleReprocess] selectedTourney:', selectedTourney);
-      console.log('[handleReprocess] manualEntry.teamLineups:',
-        Object.fromEntries(Object.entries(manualEntry.teamLineups || {}).map(([k, v]) => {
-          const t = teams.find(tt => tt.id === k);
-          return [t?.name || k, v];
-        }))
-      );
-      console.log('[handleReprocess] reversedTeams lineups:',
-        reversedTeams.map(t => ({ name: t.name, lineup: t.lineup || [] }))
-      );
-      console.log('[handleReprocess] earningsMap entries:', earningsMap.size);
-      console.log('[handleReprocess] resultsData.teams keys:',
-        Object.keys(resultsData.teams || {}).map(id => {
-          const t = teams.find(tt => tt.id === id);
-          return t?.name || id;
-        })
-      );
-      console.log('[handleReprocess] resultsData.fullLineups keys:',
-        Object.keys(resultsData.fullLineups || {}).map(id => {
-          const t = teams.find(tt => tt.id === id);
-          return t?.name || id;
-        })
-      );
-
-      // Mark tournament with new results (keep completed, don't change playing)
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
 
-      // ── Swing winner cascade ──
-      // When the segment already had its swing_winner awarded, the recalculated
-      // tournament earnings may shift the winner. Same workflow the commish
-      // would otherwise do manually: reverse old credit, recompute, re-award.
-      // All wrapped into this single Reprocess action so it's never out of sync.
-      //
-      // The cascade is its own try/catch — if anything in here fails we log a
-      // warning, skip the swing recalc, and let the base reprocess still
-      // persist. Better to have correct tournament results + a stale swing
-      // award than a half-applied write that corrupts state.
-      let finalTeams = newTeams;
-      let finalTransactions = transactions;
-      let swingRecalcSummary = null;
+      // ── Wave I.2: auto-award if reprocess somehow completes a swing ──
+      // Almost always a no-op for reprocess (already-awarded swings are
+      // idempotently skipped) but covers the edge case of correcting a
+      // tournament that had been incompletely processed.
+      const award = maybeAwardForCompletedTournament({
+        justProcessedTournament: newT[ti],
+        allTournaments: newT,
+        transactions,
+        teams: newTeams,
+      });
+      const finalTeams = award ? award.updatedTeams : newTeams;
+      const finalTransactions = award ? [...transactions, award.newTx] : transactions;
 
-      if (swingCascade) {
-        try {
-          // Swing pot is a side-prize that does NOT affect team.earnings,
-          // so the cascade only needs to swap the swing_winner tx — no
-          // reversal of credits, no new credit. Determine the new winner
-          // by ranking against the freshly-reprocessed tournament results.
-          const rankedSegmentTournaments = newT.filter(tt => tt.completed && getSegmentForTournament(tt) === tSegment && tt.results?.teams);
-          const byTeam = {};
-          rankedSegmentTournaments.forEach(tt => {
-            Object.entries(tt.results.teams).forEach(([id, tr]) => {
-              byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
-            });
-          });
-          const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
-
-          if (winnerEntry) {
-            const [winnerId] = winnerEntry;
-            const newWinnerTeam = finalTeams.find(t => t.id === winnerId);
-
-            // Recompute pot via the canonical helper — matches what the
-            // dropdown, leader panel, and TransactionsView all display.
-            const newPot = getSwingPot(transactions, newT, tSegment);
-
-            // Drop the old swing_winner tx, append the new one. Tag
-            // tournamentIndex to the last ranked tournament so the tx
-            // sorts naturally with other transactions in TransactionsView.
-            const lastSegTourney = rankedSegmentTournaments.reduce((last, tt) => {
-              const idx = newT.indexOf(tt);
-              return idx > (last?.idx ?? -1) ? { t: tt, idx } : last;
-            }, null);
-
-            const newSwingTx = {
-              txId: `swing-${tSegment}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              team: newWinnerTeam?.name || existingSwingTx.team,
-              type: 'swing_winner',
-              player: newWinnerTeam?.owner || existingSwingTx.player,
-              fee: 0,
-              amount: newPot,
-              segment: tSegment,
-              date: new Date().toLocaleDateString(),
-              timestamp: Date.now(),
-              status: 'completed',
-              tournamentIndex: lastSegTourney?.idx ?? existingSwingTx.tournamentIndex,
-              note: tSegment + ' winner pot (auto-recalculated)',
-            };
-            finalTransactions = transactions
-              .filter(tx => !(tx.type === 'swing_winner' && tx.segment === tSegment))
-              .concat(newSwingTx);
-
-            // For the toast — surface whether the winner actually changed
-            const sameWinner = newWinnerTeam?.name === existingSwingTx.team;
-            swingRecalcSummary = sameWinner
-              ? `${tSegment}: ${newWinnerTeam.name} retains $${newPot.toLocaleString()}`
-              : `${tSegment}: ${existingSwingTx.team} → ${newWinnerTeam?.name} ($${newPot.toLocaleString()})`;
-          }
-        } catch (cascadeErr) {
-          // Cascade failed — log, but keep going so the base reprocess
-          // still applies. Reverts finalTeams/finalTransactions to the
-          // pre-cascade state so we don't persist half-applied changes.
-          console.error('[handleReprocess] Swing cascade failed:', cascadeErr);
-          finalTeams = newTeams;
-          finalTransactions = transactions;
-          swingRecalcSummary = '(swing recalc skipped — see console)';
-        }
-      } else {
-        // No prior swing_winner tx — but the reprocess may have just made
-        // this the FINAL completed event in its swing (or fixed up the
-        // results that were missing the last time the swing tried to
-        // auto-award). Run the same conditions check that handleManualEntry
-        // does and award if applicable.
-        try {
-          const award = computeSwingAward({
-            segment: tSegment,
-            allTournaments: newT,
-            transactions: finalTransactions,
-            teams: finalTeams,
-          });
-          if (award) {
-            finalTeams = award.updatedTeams;
-            finalTransactions = [...finalTransactions, award.newTx];
-            swingRecalcSummary = award.summary;
-          }
-        } catch (awardErr) {
-          console.error('[handleReprocess] Auto-award failed:', awardErr);
-          swingRecalcSummary = '(swing auto-award skipped — see console)';
-        }
+      updateTeams(finalTeams);
+      setGlobalPlayerStats(newStats);
+      setTournaments(newT);
+      if (award) {
+        setTransactions(finalTransactions);  // array form — useLeague.updateTransactions expects an array, not a callback
+        await sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, finalTransactions).catch(() => {});
       }
+      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(() => {});
+      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(() => {});
 
-      // Persist — sequenced and individually try/caught so a single failure
-      // in one writer doesn't leave us in a half-applied state where some
-      // state is updated and the rest isn't. Each writer is fired and we
-      // continue even if one fails, surfacing the error in the toast.
-      const writerErrors = [];
-      try { updateTeams(finalTeams); }       catch (e) { writerErrors.push('teams: ' + e.message); }
-      try { setGlobalPlayerStats(newStats); } catch (e) { writerErrors.push('stats: ' + e.message); }
-      try { setTournaments(newT); }          catch (e) { writerErrors.push('tournaments: ' + e.message); }
-      if (finalTransactions !== transactions) {
-        try {
-          setTransactions(finalTransactions);
-          sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, finalTransactions).catch(e => console.warn('tx backup failed:', e));
-        } catch (e) { writerErrors.push('transactions: ' + e.message); }
-      }
-      sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, newT).catch(e => console.warn('tournaments backup failed:', e));
-      sfglDataApi.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, newStats).catch(e => console.warn('stats backup failed:', e));
-
-      if (writerErrors.length > 0) {
-        console.error('[handleReprocess] Persistence errors:', writerErrors);
-        dialog.showToast('Reprocessed with warnings — see console for details', 'warning');
-      } else {
+      dialog.showToast('✓ Reprocessed ' + selectedTourney + ' with corrected earnings', 'success');
+      if (award) {
         dialog.showToast(
-          swingRecalcSummary
-            ? '✓ Reprocessed ' + selectedTourney + ' · ' + swingRecalcSummary
-            : '✓ Reprocessed ' + selectedTourney + ' with corrected earnings',
+          `🏆 ${award.segment} complete! ${award.winnerTeam.name} wins the $${award.pot.toLocaleString()} pot`,
           'success'
         );
       }
@@ -617,71 +396,6 @@ export const TournamentResultsPanel = ({
     } catch (err) {
       console.error('handleReprocess error:', err);
       dialog.showToast('Error reprocessing: ' + err.message, 'error');
-    }
-  };
-
-  // ── Resend Results Email ──────────────────────────────────────────────────
-  // Re-fires the notify-results endpoint without modifying any data.
-  // Useful after correcting a broken email template render, or for testing
-  // template changes without waiting for next Monday. Doesn't touch any
-  // data — only re-sends the email via the notify-results endpoint, which
-  // has no same-day lockout.
-  const handleResendResultsEmail = async () => {
-    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
-    const t = tournaments.find(tt => tt.name === selectedTourney);
-    if (!t?.completed || !t?.results?.teams) {
-      dialog.showToast('Tournament must be completed and have results', 'error');
-      return;
-    }
-    const ok = await dialog.showConfirm(
-      'Resend Results Email',
-      `Send the ${selectedTourney} results email to all managers? This does not modify any data — only re-sends the email.`,
-      { confirmText: 'Send Email', type: 'warning' }
-    );
-    if (!ok) return;
-    try {
-      const teamResultsForEmail = teams
-        .filter(team => t.results.teams[team.id])
-        .map(team => ({
-          team: team.name,
-          totalEarnings: t.results.teams[team.id].totalEarnings || 0,
-          // Include the full player breakdown so the email template can
-          // render player names with the right color, round-leader badges,
-          // and bonus-inclusive earnings totals.
-          players: (t.results.teams[team.id].players || []).map(p => ({
-            name: p.name,
-            earnings: p.earnings || 0,
-            bonus: p.bonus || 0,
-            limited: !!p.limited,
-            unlimited: !!p.unlimited,
-            roundsLed: Array.isArray(p.roundsLed) ? p.roundsLed : [],
-          })),
-        }));
-      // If this tournament was the final event of its swing AND a
-      // swing_winner tx exists for that segment, include the celebration
-      // banner in the resend too — keeps the email faithful to what would
-      // have been sent at the original processing time.
-      const tSegment = getSegmentForTournament(t);
-      const swingTx = transactions.find(tx => tx.type === 'swing_winner' && tx.segment === tSegment);
-      const swingTournaments = tournaments.filter(tt => getSegmentForTournament(tt) === tSegment);
-      const isFinalEventOfSwing = swingTournaments.every(tt => tt.completed)
-        && swingTournaments[swingTournaments.length - 1]?.name === selectedTourney;
-      const swingWinnerInfo = (swingTx && isFinalEventOfSwing) ? {
-        segment: tSegment,
-        team: swingTx.team,
-        pot: swingTx.amount || 0,
-      } : undefined;
-      const resp = await fetch('/api/cron?action=notify-results', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tournamentName: selectedTourney, teamResults: teamResultsForEmail, swingWinnerInfo }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || 'Resend failed');
-      dialog.showToast(`📧 Sent to ${data.emailsSent || 0} manager${data.emailsSent === 1 ? '' : 's'}`, 'success');
-    } catch (err) {
-      console.error('handleResendResultsEmail error:', err);
-      dialog.showToast('Error: ' + err.message, 'error');
     }
   };
 
@@ -726,22 +440,6 @@ export const TournamentResultsPanel = ({
             ))}
           </div>
 
-          {/* Team Lineups editor — sets the lineup that will be scored for
-              each team. Saved into manualEntry.teamLineups which both the
-              process and reprocess handlers consume. Especially important
-              for old tournaments whose live lineups have since been edited;
-              this lets the commish enter the historical lineup. Collapsed
-              by default to keep the panel compact; expand to edit. */}
-          <TeamLineupsEditor
-            teams={teams}
-            manualEntry={manualEntry}
-            setManualEntry={setManualEntry}
-            lineupSize={settings?.lineupSize ?? 5}
-            rostersByTeamId={rostersByTeamId}
-            tournament={tournaments.find(t => t.name === selectedTourney)}
-          />
-
-          {/* Process / Reprocess */}
           {!isCompleted ? (
             <button
               onClick={handleManualEntry}
@@ -751,38 +449,19 @@ export const TournamentResultsPanel = ({
               ✅ Process Results
             </button>
           ) : (
-            <>
-              <button
-                onClick={handleReprocess}
-                disabled={!selectedTourney}
-                style={{
-                  ...S.btn,
-                  background: 'rgba(220,150,50,0.12)',
-                  border: '1px solid rgba(220,150,50,0.4)',
-                  color: 'rgba(220,180,80,0.9)',
-                  ...disabledBtn(!selectedTourney),
-                }}
-              >
-                ✏️ Reprocess Tournament
-              </button>
-              {/* Resend the email without touching any data — useful for
-                  re-sending after a broken template render, or testing
-                  template changes without waiting for next Monday. */}
-              <button
-                onClick={handleResendResultsEmail}
-                disabled={!selectedTourney}
-                style={{
-                  ...S.btn,
-                  marginTop: 6,
-                  background: 'rgba(80,140,200,0.10)',
-                  border: '1px solid rgba(80,140,200,0.35)',
-                  color: 'rgba(150,200,255,0.9)',
-                  ...disabledBtn(!selectedTourney),
-                }}
-              >
-                📧 Resend Results Email
-              </button>
-            </>
+            <button
+              onClick={handleReprocess}
+              disabled={!selectedTourney}
+              style={{
+                ...S.btn,
+                background: 'rgba(220,150,50,0.12)',
+                border: '1px solid rgba(220,150,50,0.4)',
+                color: 'rgba(220,180,80,0.9)',
+                ...disabledBtn(!selectedTourney),
+              }}
+            >
+              ✏️ Reprocess Tournament
+            </button>
           )}
         </>
       )}
