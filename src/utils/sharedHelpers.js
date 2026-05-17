@@ -102,9 +102,33 @@ export const getSwingLeader = (tournaments, segment) => {
 //   • Skip swing_winner records themselves
 //   • Skip failed waivers (no fee charged)
 //   • Match by tournamentIndex when available, otherwise fall back to tx.segment
+//
+// IMPORTANT: counts fees from ALL non-alternate tournaments in the segment,
+// not just completed ones. The pot is the running tally of all fees collected
+// during the swing — when a manager paid a $2 waiver fee for a Spring event,
+// that $2 is in the pot the moment the transaction completes, regardless of
+// whether that specific tournament has played out yet.
+//
+// Wave J Round 6 follow-up: previously this filtered tournaments by
+// `t.completed && t.results?.teams` (via getSwingTournaments), which caused
+// a discrepancy with the TransactionsView "Transaction Fees" panel — that
+// panel correctly counts ALL segment-matched fees, but getSwingPot was
+// dropping fees tied to in-progress tournaments. The two displays showed
+// different totals for the same swing. The completion gate is enforced
+// independently inside computeSwingAward (at lines 38-42), so dropping it
+// here doesn't break the award eligibility logic.
 export const getSwingPot = (transactions, tournaments, segment) => {
-  const swingTourneys = getSwingTournaments(tournaments, segment);
-  const swingIndexes = new Set(swingTourneys.map(t => tournaments.indexOf(t)));
+  if (!segment) return 0;
+  // Build the set of swing tournament indexes — all in-segment events,
+  // regardless of completion. Exclude alternates to match the
+  // computeSwingAward gate (alternate-tournament fees are tracked
+  // separately in the season-level totals but not in the swing pot).
+  const swingIndexes = new Set(
+    (tournaments || [])
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => getSegmentForTournament(t) === segment && !t.isAlternate)
+      .map(({ i }) => i)
+  );
   return (transactions || [])
     .filter(tx => {
       if ((tx.fee || 0) <= 0) return false;

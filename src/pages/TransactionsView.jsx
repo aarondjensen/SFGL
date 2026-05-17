@@ -327,11 +327,16 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const fees = {};
     teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, swingIsComplete, teamId: t.id, teamName: t.name }; });
 
-    // Build the set of tournamentIndexes that belong to the current swing
+    // Build the set of tournamentIndexes that belong to the current swing.
+    // Excludes alternates — per league rule, alternates are ignored from all
+    // swing math (earnings, completion gates, AND fee pots). This keeps the
+    // panel total aligned with getSwingPot() in sharedHelpers, which is the
+    // authoritative pot calculation used by SwingWinnerPanel + the auto-award
+    // logic in computeSwingAward.
     const currentSwingIndexes = new Set(
       (tournaments || [])
         .map((t, i) => ({ t, i }))
-        .filter(({ t }) => getSegForTourney(t) === currentSwing)
+        .filter(({ t }) => getSegForTourney(t) === currentSwing && !t.isAlternate)
         .map(({ i }) => i)
     );
 
