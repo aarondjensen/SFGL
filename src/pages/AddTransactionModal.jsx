@@ -459,7 +459,7 @@ export const AddTransactionModal = ({
             </div>
             <div style={{
               fontFamily: fonts.sans,
-              fontSize: 13,
+              fontSize: 16,
               fontWeight: 600,
               color: colors.textPrimary,
               marginTop: 2,
@@ -558,7 +558,7 @@ export const AddTransactionModal = ({
                       minWidth: 0,
                       padding: '8px 4px',
                       borderRadius: 6,
-                      fontSize: 11,
+                      fontSize: 13,
                       fontFamily: fonts.sans,
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -683,7 +683,7 @@ export const AddTransactionModal = ({
                       placeholder="Search free agents…"
                       value={searchIn}
                       onChange={e => setSearchIn(e.target.value)}
-                      style={{ ...M.input, fontSize: 16 }}
+                      style={M.input}
                     />
                     {searchIn.length > 0 && (
                       <div style={{
@@ -845,7 +845,7 @@ export const AddTransactionModal = ({
                       placeholder="Search roster…"
                       value={searchOut}
                       onChange={e => setSearchOut(e.target.value)}
-                      style={{ ...M.input, fontSize: 16 }}
+                      style={M.input}
                     />
                     {searchOut.length > 0 && (
                       <div style={{
