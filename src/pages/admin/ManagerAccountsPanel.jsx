@@ -2,14 +2,16 @@
 // ============================================================================
 // Manager login credentials + email addresses. Two related sections kept
 // together because they're conceptually one "manager accounts" subject.
-// Wave I extraction from AdminView.
+//
+// Wave J Round 6 follow-up: restyled to modal-feel — flat layout, eyebrow
+// headings, lighter inputs and buttons. Functional behavior unchanged.
 // ============================================================================
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { theme, colors, fonts } from '../../theme.js';
+import { colors, fonts } from '../../theme.js';
 import { managerAuthApi } from '../../api/firebase';
-import { S, disabledBtn } from './adminStyles';
+import { M, disabledBtn } from './adminStyles';
 
 export const ManagerAccountsPanel = ({ teams, settings, setSettings }) => {
   const dialog = useDialog();
@@ -49,46 +51,73 @@ export const ManagerAccountsPanel = ({ teams, settings, setSettings }) => {
     }
   };
 
+  const credentialsReady = mgCredTeam && mgCredName && mgCredPass;
+
   return (
-    <>
+    <div style={M.page}>
       {/* ── Credentials ── */}
-      <div style={S.section}>
-        <div style={S.title}>🔑 Manager Login Credentials</div>
-        <label style={S.lbl}>Team</label>
+      <div style={M.group}>
+        <div style={M.eyebrow}>🔑 Login Credentials</div>
+        <div style={M.descText}>
+          Set the login name and password for a manager. They use these to sign in.
+        </div>
+
         <select
           value={mgCredTeam}
           onChange={e => {
             setMgCredTeam(e.target.value);
             setMgCredName(teams.find(x => x.id === e.target.value)?.owner || '');
           }}
-          style={S.select}
+          style={M.select}
         >
           <option value="">Select team...</option>
           {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
         </select>
-        <input value={mgCredName} onChange={e => setMgCredName(e.target.value)} placeholder="Login name" style={S.input} />
-        <input type="password" value={mgCredPass} onChange={e => setMgCredPass(e.target.value)} placeholder="Password" style={S.input} />
+
+        <input
+          value={mgCredName}
+          onChange={e => setMgCredName(e.target.value)}
+          placeholder="Login name"
+          style={M.input}
+        />
+        <input
+          type="password"
+          value={mgCredPass}
+          onChange={e => setMgCredPass(e.target.value)}
+          placeholder="Password"
+          style={M.input}
+        />
+
         <button
           onClick={handleSetLogin}
-          disabled={mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass}
-          style={{ ...S.btn, ...disabledBtn(mgCredSaving || !mgCredTeam || !mgCredName || !mgCredPass) }}
+          disabled={mgCredSaving || !credentialsReady}
+          className="modal-feel-lift modal-feel-primary"
+          style={{ ...M.btnPrimary, ...disabledBtn(mgCredSaving || !credentialsReady) }}
         >
-          {mgCredSaving ? 'Saving...' : 'Set Login'}
+          {mgCredSaving ? 'Saving…' : 'Set Login'}
         </button>
       </div>
 
       {/* ── Emails ── */}
-      <div style={S.section}>
-        <div style={S.title}>📧 Manager Emails</div>
-        <div style={{ ...theme.smallText, color: colors.textSecondary, marginBottom: 12 }}>
-          Set email addresses for each manager. Used for waiver results, tournament results, and lineup reminders.
+      <div style={M.group}>
+        <div style={M.eyebrow}>📧 Manager Emails</div>
+        <div style={M.descText}>
+          Used for waiver results, tournament results, and lineup reminders.
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {teams.map(t => {
             const currentEmail = (settings.managerEmails || {})[t.id] || '';
             return (
               <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary, width: 120, flexShrink: 0 }}>
+                <span style={{
+                  fontFamily: fonts.sans,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: colors.textPrimary,
+                  width: 120,
+                  flexShrink: 0,
+                }}>
                   {t.name}
                 </span>
                 <input
@@ -96,20 +125,22 @@ export const ManagerAccountsPanel = ({ teams, settings, setSettings }) => {
                   placeholder="email@example.com"
                   value={emailDraft?.[t.id] ?? currentEmail}
                   onChange={e => setEmailDraft(prev => ({ ...(prev || {}), [t.id]: e.target.value }))}
-                  style={{ ...theme.input, flex: 1, fontSize: 12, padding: '7px 10px' }}
+                  style={{ ...M.input, flex: 1, fontSize: 12, padding: '8px 10px' }}
                 />
               </div>
             );
           })}
         </div>
+
         <button
           onClick={handleSaveEmails}
           disabled={!emailDraft}
-          style={{ ...S.btn, ...disabledBtn(!emailDraft) }}
+          className="modal-feel-lift modal-feel-primary"
+          style={{ ...M.btnPrimary, ...disabledBtn(!emailDraft), marginTop: 4 }}
         >
           💾 Save Emails
         </button>
       </div>
-    </>
+    </div>
   );
 };
