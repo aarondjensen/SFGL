@@ -340,6 +340,13 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       // swing_winner uses tx.amount not tx.fee — don't count it in season/swing fees
       if (tx.type === 'swing_winner') return;
       if (tx.status === 'failed') return; // blocked waivers have no fee
+      // Pending waivers haven't been charged yet — they may still fail at
+      // process time (player already rostered, lost tiebreaker, etc), in
+      // which case no fee is ever applied to team.transactionFees. Excluding
+      // pending here keeps the displayed total consistent with the actual
+      // amount charged, which is what AdminView and team.transactionFees
+      // both reflect.
+      if (tx.status === 'pending') return;
       if (fees[tx.team] && typeof tx.fee === 'number' && tx.fee > 0) {
         fees[tx.team].seasonTotal += tx.fee;
         // Count toward current swing if the transaction's tournament is in this swing
@@ -397,7 +404,22 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     return '';
   };
 
+  // Identify the viewer's team so we can show them their own pending claims
+  // while hiding everyone else's. Pending waiver claims are strategic info —
+  // if every manager could see who's claiming whom before the round resolves,
+  // they could front-run with competing claims. Commish sees everything (the
+  // panel needs the full picture to confirm processing went correctly).
+  const viewerTeam = (teams || []).find(t =>
+    t.owner === loggedInUser || t.name === loggedInUser || t.id === loggedInUser
+  );
+  const viewerTeamName = viewerTeam?.name;
+
   const filteredTransactions = sortedTransactions
+    .filter(tx => {
+      if (tx.status !== 'pending') return true;       // processed/failed visible to all
+      if (isCommissioner) return true;                 // commish sees every pending
+      return tx.team === viewerTeamName;               // managers only see their own pending
+    })
     .filter(tx => filterTeam === 'all' || tx.team === filterTeam)
     .filter(tx => {
       if (filterSwing === 'all') return true;
@@ -677,8 +699,21 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       {tx.status === 'failed' && tx.type === 'waiver' && (
                         <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
                       )}
+                      {tx.status === 'pending' && (
+                        // PENDING badge mirrors the BLOCKED badge pattern. Without
+                        // this, pending waivers visually read as "processed" since
+                        // the player-name and fee colors below default to success
+                        // for any non-failed status — fooling the eye into thinking
+                        // a claim was actually granted when it's still in the
+                        // queue waiting for the next cron fire.
+                        <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: 'rgba(220,200,80,0.95)', marginLeft: 5, letterSpacing: '0.4px' }}>PENDING</span>
+                      )}
                       {': '}
-                      <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>
+                      <span style={{ color:
+                        tx.status === 'failed'  ? colors.danger :
+                        tx.status === 'pending' ? 'rgba(220,200,80,0.85)' :
+                        colors.success
+                      }}>
                         {tx.type === 'swing_winner'
                           ? (tx.player ? shortName(tx.player) : tx.team)
                           : shortName(tx.player)
@@ -687,7 +722,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       {tx.droppedPlayer && !(tx.status === 'failed' && tx.type === 'waiver') && (
                         <>
                           <span style={{ color: colors.textMuted, margin: '0 3px' }}>→ {tx.type === 'mulligan' ? 'out' : 'drop'}</span>
-                          <span style={{ color: colors.danger }}>{shortName(tx.droppedPlayer)}</span>
+                          <span style={{ color:
+                            tx.status === 'pending' ? 'rgba(220,200,80,0.65)' :
+                            colors.danger
+                          }}>{shortName(tx.droppedPlayer)}</span>
                         </>
                       )}
                     </div>
@@ -709,9 +747,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     ) : (
                       <span style={{
                         ...theme.statNum, fontSize: 13, fontWeight: 600,
-                        color: tx.status === 'failed' ? colors.textMuted : (tx.fee > 0 ? colors.earningsGreen : colors.textMuted),
+                        color:
+                          tx.status === 'failed'  ? colors.textMuted :
+                          tx.status === 'pending' ? 'rgba(220,200,80,0.65)' :
+                          (tx.fee > 0 ? colors.earningsGreen : colors.textMuted),
                       }}>
-                        {tx.status === 'failed' ? '—' : `$${tx.fee}`}
+                        {tx.status === 'failed'  ? '—' :
+                         tx.status === 'pending' ? `$${tx.fee}` :
+                         `$${tx.fee}`}
                       </span>
                     )}
 
