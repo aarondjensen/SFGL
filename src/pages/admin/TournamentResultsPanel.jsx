@@ -121,6 +121,7 @@ export const TournamentResultsPanel = ({
   const [selectedTourney, setSelectedTourney] = React.useState('');
   const [manualEntry, setManualEntry] = React.useState(EMPTY_ENTRY);
   const [pgaFetching, setPgaFetching] = React.useState(false);
+  const [resending, setResending] = React.useState(false);
 
   React.useEffect(() => {
     const active = tournaments.find(t => t.playing);
@@ -417,6 +418,90 @@ export const TournamentResultsPanel = ({
     }
   };
 
+  // Resend notifications for an already-processed tournament.
+  // Used when the original processing succeeded but the email/push step
+  // failed (e.g. the STORAGE_KEYS crash on May 18 that left PGA Championship
+  // processed but un-notified). Pulls earnings from the stored tournament
+  // results — no recompute, no risk of double-applying earnings.
+  const handleResendNotifications = async () => {
+    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const t = tournaments.find(t => t.name === selectedTourney);
+    if (!t?.completed || !t?.results) {
+      dialog.showToast('Tournament has no stored results to notify on', 'error');
+      return;
+    }
+    const ok = await dialog.showConfirm(
+      'Resend notifications?',
+      `Resend results email + broadcast push for ${selectedTourney} to all managers. Use this only if the original notifications failed.`,
+      { type: 'warning', confirmText: 'Send', cancelText: 'Cancel' }
+    );
+    if (!ok) return;
+
+    setResending(true);
+    try {
+      const resultsData = t.results || {};
+      const resultsTeams = resultsData.teams || {};
+
+      // Email — uses the stored per-team totalEarnings
+      try {
+        const teamResultsForEmail = teams
+          .filter(team => resultsTeams[team.id])
+          .map(team => ({
+            team: team.name,
+            totalEarnings: resultsTeams[team.id].totalEarnings || 0,
+          }));
+        if (teamResultsForEmail.length === 0) {
+          dialog.showToast('No team results in this tournament — nothing to email', 'error');
+        } else {
+          const resp = await fetch('/api/notify-results', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tournamentName: selectedTourney,
+              teamResults: teamResultsForEmail,
+            }),
+          });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          dialog.showToast('📧 Results emails sent', 'success');
+        }
+      } catch (emailErr) {
+        console.warn('Resend email failed:', emailErr);
+        dialog.showToast('Email send failed: ' + emailErr.message, 'error');
+      }
+
+      // Push — per-team personalized body, mirrors the manual-process path
+      const commishTeam = teams.find(team => team.owner === loggedInUser);
+      if (!commishTeam?.id) {
+        dialog.showToast('Could not send push — commish team not found', 'error');
+        return;
+      }
+      let pushesQueued = 0;
+      for (const team of teams) {
+        if (!team.id) continue;
+        const teamResult = resultsTeams[team.id];
+        const earnings = teamResult ? (teamResult.totalEarnings || 0) : 0;
+        const pushBody = teamResult
+          ? `${selectedTourney}: you earned $${earnings.toLocaleString()}`
+          : `Results are in for ${selectedTourney}`;
+        sendCommishPush({
+          event: 'results',
+          commishTeamId: commishTeam.id,
+          recipients: [team.id],
+          title: '🏆 Results processed',
+          body: pushBody,
+          deepLink: '#standings',
+        }).catch(err => console.warn(`[push] resend failed for ${team.name}:`, err.message));
+        pushesQueued++;
+      }
+      dialog.showToast(`📲 Push notifications queued for ${pushesQueued} teams`, 'success');
+    } catch (err) {
+      console.error('handleResendNotifications error:', err);
+      dialog.showToast('Error resending: ' + err.message, 'error');
+    } finally {
+      setResending(false);
+    }
+  };
+
   const selectedTourneyObj = tournaments.find(t => t.name === selectedTourney);
   const isCompleted = !!selectedTourneyObj?.completed;
   const isPlaying   = !!selectedTourneyObj?.playing && !isCompleted;
@@ -464,6 +549,21 @@ export const TournamentResultsPanel = ({
           </div>
         )}
       </div>
+
+      {/* Resend notifications — only meaningful for completed tournaments.
+          Placed before the fetch button so it's the natural first action when
+          a completed tournament is selected (e.g. for a tournament whose
+          original notifications failed). */}
+      {isCompleted && (
+        <button
+          onClick={handleResendNotifications}
+          disabled={!selectedTourney || resending}
+          className="modal-feel-lift"
+          style={{ ...M.btnSecondary, ...disabledBtn(!selectedTourney || resending) }}
+        >
+          {resending ? '⏳ Sending…' : '📲 Resend Results Notifications'}
+        </button>
+      )}
 
       {/* Fetch results button */}
       <button
