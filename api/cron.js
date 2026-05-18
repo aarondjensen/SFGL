@@ -90,18 +90,21 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
   const invalidTokens = [];
 
   await Promise.all(tokenDocs.map(async (tokDoc) => {
+    // DATA-ONLY payload. Mirrors /api/push.js. A combined notification+data
+    // payload on webpush causes FCM to auto-display the notification AND
+    // the SW's onBackgroundMessage to fire (because data is present) and
+    // also call showNotification — two visible notifications per push.
+    // With data-only, FCM does not auto-display; the SW/foreground handler
+    // reads title/body from `data` and renders once.
     const message = {
       token: tokDoc.token || tokDoc.id,
-      notification: { title, body },
       data: {
+        title:     String(title || 'SFGL'),
+        body:      String(body  || ''),
         eventType: String(event),
         deepLink:  String(deepLink || '#standings'),
       },
       webpush: {
-        notification: {
-          icon: '/web-app-manifest-192x192.png',
-          badge: '/web-app-manifest-192x192.png',
-        },
         fcmOptions: {
           link: deepLink
             ? `https://sfglgolf.com/${deepLink.startsWith('#') ? deepLink : '#' + deepLink}`
