@@ -161,6 +161,7 @@ export const buildEffectiveRoster = (team, transactions, opts = {}) => {
     .filter(tx =>
       tx.team === team.name &&
       tx.type !== 'mulligan' &&
+      tx.type !== 'swing_winner' &&
       (tx.status === 'processed' || tx.status === 'completed')
     )
     .forEach(tx => {

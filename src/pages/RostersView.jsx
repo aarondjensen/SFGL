@@ -1292,8 +1292,17 @@ export const RostersView = ({
             <tbody>
               {sortedRoster.map(player => {
                 const isInLineup     = (team.lineup || []).includes(player.name);
+                const isBackup       = team?.backup === player.name;
                 const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
                 const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
+                // When the commish/manager has tapped the empty backup slot,
+                // pickingBackup mode is on and the NEXT tap selects a backup.
+                // All non-lineup, non-current-backup players should appear
+                // "pickable" (brightened headshot + plus indicator) — same
+                // affordance as when picking the starting 5.
+                const allowBackup    = !!activeTournament?.isMajor;
+                const isPickableForBackup = pickingBackup && allowBackup && !isInLineup && !isBackup;
+                const isPickable     = canAddToLineup || isPickableForBackup;
                 const hasLineup      = (team.lineup || []).length > 0;
                 const isEditing      = canEditLineup && lineupMode;
                 // Only dim benched players once the tournament week has actually begun —
@@ -1345,7 +1354,7 @@ export const RostersView = ({
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
-                              opacity: isBenched ? 0.5 : isEditing && !isInLineup && !canAddToLineup ? 0.25 : isEditing && !isInLineup ? 0.55 : 1,
+                              opacity: isBenched ? 0.5 : isEditing && !isInLineup && !isPickable ? 0.25 : isEditing && !isInLineup ? 0.55 : 1,
                               border: isEditing
                                 ? isInLineup
                                   ? `3px solid ${playerBorderColor(player)}`
@@ -1366,7 +1375,7 @@ export const RostersView = ({
                               <span style={{ color: '#fff', fontSize: fontSize.xs, fontWeight: 900 }}>✕</span>
                             </div>
                           )}
-                          {isEditing && !isInLineup && canAddToLineup && (
+                          {isEditing && !isInLineup && isPickable && (
                             <div style={{
                               position: 'absolute', top: -3, right: -3,
                               width: 14, height: 14, borderRadius: '50%',
@@ -1474,13 +1483,14 @@ export const RostersView = ({
                         } else if (live?.isWD) {
                           col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: fontSize.xs, color: colors.textMuted }}>WD</td>;
                         } else if (hasStarted) {
-                          // Golf scoring: under par (-) is GOOD → green; over par (+) is BAD → red.
-                          // Old code had this reversed (-3 rendered as red/danger).
+                          // Golf scoring color convention per league preference:
+                          // under par (-) → red, over par (+) or even → light gray.
+                          // This inverts the conventional "green = good" mapping;
+                          // commissioner preference is to highlight the under-par
+                          // scores as the standout (red), with everything else
+                          // visually subdued.
                           const isUnder = live.score?.startsWith('-');
-                          const isOver  = live.score?.startsWith('+');
-                          const scoreColor = isUnder ? colors.earningsGreen
-                                          : isOver  ? colors.danger
-                                          : colors.textPrimary;
+                          const scoreColor = isUnder ? colors.danger : colors.textMuted;
                           col1 = (
                             <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 13 : 15, color: isBenched ? dimColor : scoreColor, fontWeight: 600 }}>
                               {live.score || 'E'}

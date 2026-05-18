@@ -20,10 +20,24 @@ export const matchPlayerName = (a, b) => {
 // Replay transactions to reconstruct a team's roster as it existed at the time
 // of a given tournament. Used during result processing where we need each
 // team's effective roster at that point in the season (post earlier add/drops).
+//
+// Skips:
+//   • mulligan — restores a previously-dropped player; the original add/drop
+//     pair already accounts for the roster movement.
+//   • swing_winner — `tx.player` on these is the manager's owner name (used
+//     for "Jensen won the West Coast Swing pot" display), NOT an actual
+//     golfer. Replaying it would pollute the roster with the manager's name.
 export const getRosterForTournament = (team, tournamentIndex, allTransactions) => {
   let roster = [...team.roster];
   allTransactions
-    .filter(tx => tx.team === team.name && tx.tournamentIndex !== undefined && tx.tournamentIndex <= tournamentIndex && tx.status !== 'pending')
+    .filter(tx =>
+      tx.team === team.name &&
+      tx.type !== 'mulligan' &&
+      tx.type !== 'swing_winner' &&
+      tx.tournamentIndex !== undefined &&
+      tx.tournamentIndex <= tournamentIndex &&
+      tx.status !== 'pending'
+    )
     .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
     .forEach(tx => {
       if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);

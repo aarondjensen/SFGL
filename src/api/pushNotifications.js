@@ -384,8 +384,11 @@ const bindForegroundHandler = async () => {
     // this if the app were closed, but in foreground we need to render
     // the notification ourselves.
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    const title = payload.notification?.title || 'SFGL';
-    const body  = payload.notification?.body  || '';
+    // Payloads are data-only (see /api/push.js comment for why). Read
+    // title/body from data; fall back to notification field for backward
+    // compat with messages from the old payload shape still in flight.
+    const title = payload.data?.title || payload.notification?.title || 'SFGL';
+    const body  = payload.data?.body  || payload.notification?.body  || '';
     try {
       new Notification(title, {
         body,

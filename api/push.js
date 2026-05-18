@@ -202,24 +202,27 @@ export default async function handler(req, res) {
   }
 
   // ── Build the FCM message payload ────────────────────────────────────────
+  // DATA-ONLY payload. We intentionally do NOT include a `notification`
+  // field — that combination (notification + data) on webpush causes a
+  // duplicate notification: FCM auto-displays the notification, AND the
+  // SW's onBackgroundMessage handler fires (because data is present) and
+  // calls showNotification too, producing two visible notifications per
+  // push.
+  //
+  // With data-only, FCM does not auto-display in either foreground or
+  // background. The SW's onBackgroundMessage and the foreground
+  // onMessage handler read title/body from data and render once each.
+  //
+  // FCM requires all data values to be strings — we coerce here.
   const buildMessage = (token) => ({
     token,
-    notification: {
-      title,
-      body,
-    },
-    // `data` carries extra structured payload available to the service worker.
-    // FCM requires all data values to be strings — we coerce here.
     data: {
+      title:     String(title || 'SFGL'),
+      body:      String(body  || ''),
       eventType: String(event),
       deepLink:  String(deepLink || '#standings'),
     },
-    // Web-specific options: icon path, click action handled by SW.
     webpush: {
-      notification: {
-        icon: '/web-app-manifest-192x192.png',
-        badge: '/web-app-manifest-192x192.png',
-      },
       fcmOptions: {
         // The link FCM will open when the notification is clicked. This is a
         // fallback for browsers that don't have a service worker handler.
