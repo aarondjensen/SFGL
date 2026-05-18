@@ -58,8 +58,11 @@ messaging.onBackgroundMessage((payload) => {
   // → click the SW → Console output. Helps debug iOS quirks.
   console.log('[SW] Background push received:', payload);
 
-  const title = payload.notification?.title || 'SFGL';
-  const body  = payload.notification?.body  || '';
+  // Payloads are now data-only (see /api/push.js comment for why). Read
+  // title/body from the data field. Fall back to notification field for
+  // backward compat with any messages still in flight from the old shape.
+  const title = payload.data?.title || payload.notification?.title || 'SFGL';
+  const body  = payload.data?.body  || payload.notification?.body  || '';
 
   // Build the notification options. Icon path matches site.webmanifest.
   // Badge falls back to the same icon if a dedicated smaller asset isn't
