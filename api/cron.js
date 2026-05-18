@@ -53,23 +53,43 @@ const DEFAULTS_ON = new Set([
 ]);
 
 async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
-  if (!teamId || !event) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+  // ── Structured logging tag for grep'ability in Vercel logs ─────────────
+  // Every line starts with [push] and includes teamId+event so we can trace
+  // a single push attempt end-to-end. Useful even with Hobby's 1-hour
+  // retention since each line is greppable in the visible window.
+  const tag = `[push] team=${teamId} event=${event}`;
+  console.log(`${tag} START title=${JSON.stringify(title)} body=${JSON.stringify(body)}`);
+
+  if (!teamId || !event) {
+    console.log(`${tag} SKIP: missing teamId or event`);
+    return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+  }
 
   // Check this team's per-event prefs. Missing prefs map → defaults apply.
   // Missing event key inside prefs → defaults apply.
   try {
     const teamSnap = await db.collection('teams').doc(teamId).get();
-    if (!teamSnap.exists) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+    if (!teamSnap.exists) {
+      console.log(`${tag} SKIP: team doc does not exist`);
+      return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+    }
     const prefs = teamSnap.data()?.notificationPrefs;
     if (prefs && typeof prefs[event] === 'boolean') {
-      if (prefs[event] === false) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+      console.log(`${tag} prefs: explicit ${event}=${prefs[event]}`);
+      if (prefs[event] === false) {
+        console.log(`${tag} SKIP: prefs explicitly disabled`);
+        return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+      }
     } else {
+      console.log(`${tag} prefs: no explicit value, default=${DEFAULTS_ON.has(event)}`);
       // No explicit pref — fall through to default
-      if (!DEFAULTS_ON.has(event)) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+      if (!DEFAULTS_ON.has(event)) {
+        console.log(`${tag} SKIP: event not in defaults`);
+        return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+      }
     }
   } catch (err) {
-    console.warn(`[push] prefs check failed for team ${teamId}:`, err.message);
-    // Fail safe: don't send if we couldn't verify prefs
+    console.warn(`${tag} prefs check ERROR: ${err.message}`);
     return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
   }
 
@@ -78,26 +98,32 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
   try {
     const tokSnap = await db.collection('pushTokens').where('teamId', '==', teamId).get();
     tokenDocs = tokSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    console.log(`${tag} tokens: found ${tokenDocs.length}`);
   } catch (err) {
-    console.warn(`[push] token fetch failed for team ${teamId}:`, err.message);
+    console.warn(`${tag} token fetch ERROR: ${err.message}`);
     return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
   }
-  if (tokenDocs.length === 0) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+  if (tokenDocs.length === 0) {
+    console.log(`${tag} SKIP: no tokens for team`);
+    return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+  }
 
   // Send to each token in parallel
   let sent = 0;
   let failed = 0;
   const invalidTokens = [];
 
-  await Promise.all(tokenDocs.map(async (tokDoc) => {
+  await Promise.all(tokenDocs.map(async (tokDoc, idx) => {
     // DATA-ONLY payload. Mirrors /api/push.js. A combined notification+data
     // payload on webpush causes FCM to auto-display the notification AND
     // the SW's onBackgroundMessage to fire (because data is present) and
     // also call showNotification — two visible notifications per push.
     // With data-only, FCM does not auto-display; the SW/foreground handler
     // reads title/body from `data` and renders once.
+    const tokenStr = tokDoc.token || tokDoc.id;
+    const tokenPreview = tokenStr ? tokenStr.slice(0, 12) + '...' : 'EMPTY';
     const message = {
-      token: tokDoc.token || tokDoc.id,
+      token: tokenStr,
       data: {
         title:     String(title || 'SFGL'),
         body:      String(body  || ''),
@@ -113,15 +139,15 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
       },
     };
     try {
-      await messaging.send(message);
+      const messageId = await messaging.send(message);
       sent++;
+      console.log(`${tag} SENT idx=${idx} token=${tokenPreview} messageId=${messageId}`);
     } catch (err) {
       failed++;
-      const code = err.errorInfo?.code || err.code || '';
+      const code = err.errorInfo?.code || err.code || 'unknown';
+      console.warn(`${tag} FAILED idx=${idx} token=${tokenPreview} code=${code} msg=${err.message}`);
       if (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token')) {
         invalidTokens.push(tokDoc.id);
-      } else {
-        console.warn(`[push] send failed (${code}):`, err.message);
       }
     }
   }));
@@ -134,11 +160,13 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
       invalidTokens.forEach(id => batch.delete(db.collection('pushTokens').doc(id)));
       await batch.commit();
       cleanedUp = invalidTokens.length;
+      console.log(`${tag} cleaned up ${cleanedUp} dead tokens`);
     } catch (err) {
-      console.warn('[push] dead-token cleanup failed:', err.message);
+      console.warn(`${tag} dead-token cleanup ERROR: ${err.message}`);
     }
   }
 
+  console.log(`${tag} DONE sent=${sent} failed=${failed} cleanedUp=${cleanedUp}`);
   return { sent, failed, skipped: 0, cleanedUp };
 }
 
@@ -641,13 +669,18 @@ async function handleWaivers(res) {
   // taps through to. If no claims succeeded, skip the push entirely
   // ("0 claims this week" reads awkwardly and there's nothing new to see).
   const claimsWonCount = processedResults.filter(r => r.status === 'processed').length;
+  console.log(`[cron-waivers] processed ${processedResults.length} results, ${claimsWonCount} won`);
 
   if (claimsWonCount > 0) {
     const body = claimsWonCount === 1
       ? '1 claim this week'
       : `${claimsWonCount} claims this week`;
+    console.log(`[cron-waivers] entering push loop for ${teams.length} teams, body=${JSON.stringify(body)}`);
     for (const team of teams) {
-      if (!team?.id) continue;
+      if (!team?.id) {
+        console.log(`[cron-waivers] skipping team without id: ${team?.name}`);
+        continue;
+      }
       try {
         const result = await sendPushToTeam({
           teamId: team.id,
@@ -658,9 +691,12 @@ async function handleWaivers(res) {
         });
         pushResults.push({ team: team.name, event: 'waivers', ...result });
       } catch (err) {
-        console.warn(`[push] waivers failed for ${team.name}:`, err.message);
+        console.warn(`[cron-waivers] sendPushToTeam threw for ${team.name}: ${err.message}`);
       }
     }
+    console.log(`[cron-waivers] push loop complete: ${JSON.stringify(pushResults)}`);
+  } else {
+    console.log(`[cron-waivers] no claims won, skipping push loop entirely`);
   }
 
   // Send emails
