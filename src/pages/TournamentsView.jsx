@@ -489,10 +489,16 @@ export const TournamentsView = ({
   // from a static date label — fantasy managers should be able to spot the
   // live event the moment they open the tab.
   //
-  // Visual urgency comes from a tiny pulsing red dot next to the "Live" label.
-  // The badge background is still tinted by swing color (so it visually
-  // belongs to that swing) but the LIVE dot punches through with the
-  // universal "active right now" signal.
+  // Two states:
+  //   • Pre-tournament (liveData state !== 'in') → "This week", calm, no dot.
+  //     The active tournament has been set but no player has teed off yet.
+  //   • Live (liveData state === 'in') → "Live", pulsing red dot.
+  //     /api/live flips state to 'in' as soon as any player has a thru value
+  //     ('F', a number, CUT, or WD), so this updates within the live-fetch
+  //     interval (5 min) of the first tee-off.
+  //
+  // Visual urgency comes from the pulsing red dot — by reserving it for the
+  // "Live" state only, the affordance carries real meaning.
   const StatusBadge = ({ tournament }) => {
     const isActive = tournament.playing && !tournament.completed;
     if (!isActive) return null;
@@ -502,6 +508,10 @@ export const TournamentsView = ({
     // default green-tinted look when the segment can't be resolved
     // (getSwingColorAt returns a neutral white rgba for unknown swings).
     const segment = getSegmentForTournament(tournament);
+    // Default to pre-tournament when liveData is null (initial load, fetch
+    // failure, or genuinely no players started). The badge reads as "This
+    // week" until /api/live confirms play has begun.
+    const hasStarted = liveData?.state === 'in';
 
     return (
       <span style={{
@@ -519,20 +529,22 @@ export const TournamentsView = ({
         display: 'inline-flex',
         alignItems: 'center',
       }}>
-        {/* Pulsing red dot — universal "live now" indicator. The pulse uses
-            the shared sfgl-pulse keyframes already defined in app-global.css
-            (originally used by the loading-screen logo). Faster pulse cycle
-            for active broadcast-style urgency. */}
-        <span style={{
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: 'rgb(220, 60, 60)',
-          boxShadow: '0 0 4px rgba(220,60,60,0.7)',
-          animation: 'sfgl-pulse 1.4s ease-in-out infinite',
-          flexShrink: 0,
-        }} />
-        Live
+        {hasStarted && (
+          // Pulsing red dot — universal "live now" indicator. The pulse uses
+          // the shared sfgl-pulse keyframes already defined in app-global.css
+          // (originally used by the loading-screen logo). Faster pulse cycle
+          // for active broadcast-style urgency.
+          <span style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: 'rgb(220, 60, 60)',
+            boxShadow: '0 0 4px rgba(220,60,60,0.7)',
+            animation: 'sfgl-pulse 1.4s ease-in-out infinite',
+            flexShrink: 0,
+          }} />
+        )}
+        {hasStarted ? 'Live' : 'This week'}
       </span>
     );
   };
