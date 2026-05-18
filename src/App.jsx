@@ -234,9 +234,19 @@ const FantasyGolfLeague = () => {
   }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
+  // This effect needs `resolvedTeams` as a dependency so it waits for teams
+  // to load before matching the stored team_id. But teams update on every
+  // subscription tick (e.g. when commish edits a manager's lineup, which
+  // calls updateTeams), which would re-run this effect and reset
+  // isCommissioner to false — kicking the commish out of commish mode after
+  // every single edit. The sessionRestoredRef latches once we've done the
+  // one-time restore so subsequent team updates don't trigger the reset.
+  const sessionRestoredRef = useRef(false);
   useEffect(() => {
+    if (sessionRestoredRef.current) return;
+    if (!resolvedTeams || resolvedTeams.length === 0) return; // wait for teams
     managerAuthApi.getCurrentSession().then(session => {
-      if (!session) return;
+      if (!session) { sessionRestoredRef.current = true; return; }
       const teamId = localStorage.getItem('manager_team_id');
       if (teamId) {
         const team = resolvedTeams.find(t => t.id === teamId);
@@ -249,7 +259,8 @@ const FantasyGolfLeague = () => {
           setIsCommissioner(false);
         }
       }
-    }).catch(() => {});
+      sessionRestoredRef.current = true;
+    }).catch(() => { sessionRestoredRef.current = true; });
   }, [resolvedTeams]);
 
   // ── Hydrate tournament results from Firebase ──────────────────────────────
