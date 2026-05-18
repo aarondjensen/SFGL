@@ -239,28 +239,45 @@ const FantasyGolfLeague = () => {
   // subscription tick (e.g. when commish edits a manager's lineup, which
   // calls updateTeams), which would re-run this effect and reset
   // isCommissioner to false — kicking the commish out of commish mode after
-  // every single edit. The sessionRestoredRef latches once we've done the
-  // one-time restore so subsequent team updates don't trigger the reset.
+  // every single edit.
+  //
+  // The sessionRestoredRef latches once we've SUCCESSFULLY completed the
+  // restoration (or confirmed there's nothing to restore). Crucially we
+  // don't latch when the team isn't yet found — on first mount,
+  // `resolvedTeams` is the INITIAL_TEAMS placeholder (fake IDs) and the
+  // find() returns nothing; we must keep retrying until real teams arrive.
   const sessionRestoredRef = useRef(false);
   useEffect(() => {
     if (sessionRestoredRef.current) return;
-    if (!resolvedTeams || resolvedTeams.length === 0) return; // wait for teams
     managerAuthApi.getCurrentSession().then(session => {
-      if (!session) { sessionRestoredRef.current = true; return; }
-      const teamId = localStorage.getItem('manager_team_id');
-      if (teamId) {
-        const team = resolvedTeams.find(t => t.id === teamId);
-        if (team) {
-          setLoggedInUser(team.owner || team.name);
-          // Tagged commissioners are *allowed* to enter commish mode but
-          // start the session in normal-manager view. They opt in by tapping
-          // their name in the header.
-          setTaggedCommissioner(!!team.isCommissioner);
-          setIsCommissioner(false);
-        }
+      if (!session) {
+        // No session → nothing to restore. Latch.
+        sessionRestoredRef.current = true;
+        return;
       }
+      const teamId = localStorage.getItem('manager_team_id');
+      if (!teamId) {
+        // Session but no team ID stored → nothing further to do. Latch.
+        sessionRestoredRef.current = true;
+        return;
+      }
+      const team = resolvedTeams.find(t => t.id === teamId);
+      if (!team) {
+        // Team not found yet (placeholder INITIAL_TEAMS still in resolvedTeams).
+        // Do NOT latch — let the effect retry when real teams arrive.
+        return;
+      }
+      setLoggedInUser(team.owner || team.name);
+      // Tagged commissioners are *allowed* to enter commish mode but
+      // start the session in normal-manager view. They opt in by tapping
+      // their name in the header.
+      setTaggedCommissioner(!!team.isCommissioner);
+      setIsCommissioner(false);
       sessionRestoredRef.current = true;
-    }).catch(() => { sessionRestoredRef.current = true; });
+    }).catch(() => {
+      // Auth fetch error → latch to avoid infinite retries.
+      sessionRestoredRef.current = true;
+    });
   }, [resolvedTeams]);
 
   // ── Hydrate tournament results from Firebase ──────────────────────────────
