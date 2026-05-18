@@ -135,6 +135,12 @@ export const AddDropPlayerModal = ({
   // Build the effective roster for EVERY team by replaying processed transactions,
   // matching the same logic as useRoster. This prevents players added via FA/waiver
   // (who live in transactions but not in team.roster) from appearing as available.
+  //
+  // Skips:
+  //   • mulligan — restores a previously-dropped player; the original add/drop
+  //     pair already accounts for the roster movement.
+  //   • swing_winner — tx.player on these is the manager's owner name (used
+  //     for "Jensen won the pot" display copy), NOT an actual golfer.
   const rosteredPlayers = new Set(
     teams.flatMap(t => {
       let roster = (t.roster || []).map(p => p.name);
@@ -143,12 +149,16 @@ export const AddDropPlayerModal = ({
         .filter(tx =>
           tx.team === t.name &&
           tx.type !== 'mulligan' &&
+          tx.type !== 'swing_winner' &&
           (tx.status === 'processed' || tx.status === 'completed')
         )
         .forEach(tx => {
           if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
           if (tx.player) rosterSet.add(tx.player);
         });
+      // Defensive: drop any phantom entry matching the team's own owner
+      // (historic swing_winner pollution before the type filter was added).
+      if (t.owner) rosterSet.delete(t.owner);
       return [...rosterSet];
     })
   );

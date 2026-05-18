@@ -407,8 +407,13 @@ export const useLeague = (STORAGE_KEYS) => {
 // useRoster
 // Computes a team's effective current roster by replaying approved transactions
 // on top of the base roster. Returns a stable memoised array.
-// Mulligans are intentionally excluded — they affect a single tournament's
-// lineup, not the long-term roster.
+//
+// Skips:
+//   • mulligan — affects a single tournament's lineup, not the long-term
+//     roster.
+//   • swing_winner — tx.player on these is the manager's owner name (used
+//     for "Jensen won the West Coast Swing pot" display), NOT an actual
+//     golfer. Replaying it would pollute the roster with the manager's name.
 // ============================================================================
 export const useRoster = (team, transactions, activeTournamentIndex) => {
   if (!team) return [];
@@ -418,6 +423,7 @@ export const useRoster = (team, transactions, activeTournamentIndex) => {
       .filter(tx =>
         tx.team === team.name &&
         tx.type !== 'mulligan' &&
+        tx.type !== 'swing_winner' &&
         tx.tournamentIndex !== undefined &&
         tx.tournamentIndex <= activeTournamentIndex &&
         (tx.status === 'processed' || tx.status === 'completed'),
@@ -426,7 +432,10 @@ export const useRoster = (team, transactions, activeTournamentIndex) => {
 
     teamTx.forEach(tx => {
       if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
-      if (!roster.some(p => p.name === tx.player)) {
+      // Guard: only push when tx.player is defined. Without this, any tx
+      // missing a player field (e.g., a future tx shape) would inject a
+      // {name: undefined} ghost into the roster.
+      if (tx.player && !roster.some(p => p.name === tx.player)) {
         roster.push({ name: tx.player, limited: false, stars: 0, unlimited: false, yearsOfService: 1, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' });
       }
     });
