@@ -18,6 +18,7 @@ import { sendCommishPush } from '../../api/pushNotifications';
 import { processTournamentData } from './processTournamentData';
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { S, M, disabledBtn } from './adminStyles';
+import { STORAGE_KEYS } from '../../constants';
 
 // ── Round-leader dropdown (uses stored tournament lineups + R3 mulligan additions) ──
 const RoundLeaderSelect = ({
@@ -115,7 +116,6 @@ export const TournamentResultsPanel = ({
   transactions, setTransactions,
   globalPlayerStats, setGlobalPlayerStats,
   loggedInUser,
-  STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
   const [selectedTourney, setSelectedTourney] = React.useState('');
