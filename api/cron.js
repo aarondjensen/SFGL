@@ -421,28 +421,90 @@ function getEmailMap(settings, teams) {
   return result;
 }
 
+// ── Schedule gate helper ────────────────────────────────────────────────────
+// Used by handleWaivers, handleLineupReminder, and handleProcessResults to
+// decide whether the current cron ping should fire the action.
+//
+// Semantics: "the most recent scheduled slot (in the past 7 days) has passed,
+// AND we haven't fired since that slot." This intentionally drops the older
+// `day === targetDay` strict check so a late-running cron (e.g. Sunday 9pm
+// slot but ESPN data not ready until Monday morning) still fires on the next
+// ping, rather than waiting a full week.
+//
+// Returns:
+//   { fire: boolean, et: Date, fireStamp: string, slotIso: string }
+//
+// On a successful fire, callers should write `fireStamp` to their meta doc
+// (e.g. `sfgl_data/last_auto_waiver`) so future pings see this run.
+//
+// Legacy compat: existing meta docs store a "M/D/YYYY" date string. We parse
+// those as end-of-day local time so already-completed weekly runs don't
+// re-fire after deploying this change.
+async function checkScheduleGate({ targetDay, targetHour, targetMinute, lastRunDocId }) {
+  const et = getETNow();
+
+  // Most recent scheduled slot at-or-before `now`, computed in ET-naive time.
+  // `et` is a Date whose .getHours()/.getDay() reflect ET wall clock (see
+  // getETNow). We do all slot math in that same naive frame.
+  const slot = new Date(et);
+  const daysBack = (et.getDay() - targetDay + 7) % 7;
+  slot.setDate(et.getDate() - daysBack);
+  slot.setHours(targetHour, targetMinute, 0, 0);
+  // If we're on the target day but before the configured time, the "most
+  // recent slot" is actually last week's, not today's.
+  if (slot.getTime() > et.getTime()) {
+    slot.setDate(slot.getDate() - 7);
+  }
+
+  // Read last successful fire timestamp.
+  const metaSnap = await db.collection('sfgl_data').doc(lastRunDocId).get();
+  let lastFireMs = 0;
+  if (metaSnap.exists) {
+    const val = metaSnap.data().value;
+    if (typeof val === 'string') {
+      if (/^\d+\/\d+\/\d+$/.test(val)) {
+        // Legacy "M/D/YYYY" — treat as end-of-day to suppress spurious refire
+        // for runs that completed under the old gate logic.
+        const [m, d, y] = val.split('/').map(Number);
+        lastFireMs = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+      } else if (/^\d+$/.test(val)) {
+        // Legacy numeric ms timestamp string
+        lastFireMs = parseInt(val, 10);
+      } else {
+        // ISO timestamp (new format produced by this helper's callers)
+        const parsed = new Date(val);
+        if (!isNaN(parsed.getTime())) lastFireMs = parsed.getTime();
+      }
+    }
+  }
+
+  return {
+    fire: slot.getTime() > lastFireMs,
+    et,
+    fireStamp: et.toISOString(),
+    slotIso: slot.toISOString(),
+  };
+}
+
 // ── Action: process waivers ─────────────────────────────────────────────────
 
 async function handleWaivers(res) {
   const settings = await loadSettings();
 
-  // Check if past cutoff
-  const et = getETNow();
-  const day = et.getDay();
-  const timeVal = et.getHours() * 60 + et.getMinutes();
-  const wDay = settings?.waiverDay ?? 2;
-  const wHour = settings?.waiverHour ?? 20;
-  const wMin = settings?.waiverMinute ?? 0;
-  if (!(day === wDay && timeVal >= (wHour * 60 + wMin))) {
-    return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time' });
+  // Schedule gate — see checkScheduleGate doc comment for semantics.
+  // Drops the older strict `day === wDay` check so a late ping (e.g. ET cron
+  // imprecision pushes us past midnight) still fires this week's run rather
+  // than waiting until next week.
+  const gate = await checkScheduleGate({
+    targetDay:    settings?.waiverDay    ?? 2,
+    targetHour:   settings?.waiverHour   ?? 20,
+    targetMinute: settings?.waiverMinute ?? 0,
+    lastRunDocId: 'last_auto_waiver',
+  });
+  if (!gate.fire) {
+    return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time, or already processed this week' });
   }
-
-  // Already run today?
-  const metaSnap = await db.collection('sfgl_data').doc('last_auto_waiver').get();
-  const today = getETNow().toLocaleDateString('en-US');
-  if (metaSnap.exists && metaSnap.data().value === today) {
-    return res.json({ status: 'already_run', message: 'Waivers already processed today' });
-  }
+  const fireStamp = gate.fireStamp;
 
   // Load transactions
   const txSnap = await db.collection('transactions').get();
@@ -450,7 +512,7 @@ async function handleWaivers(res) {
   const pending = allTx.filter(tx => tx.status === 'pending' && tx.type === 'waiver');
 
   if (pending.length === 0) {
-    await db.collection('sfgl_data').doc('last_auto_waiver').set({ key: 'last_auto_waiver', value: today });
+    await db.collection('sfgl_data').doc('last_auto_waiver').set({ key: 'last_auto_waiver', value: fireStamp });
     return res.json({ status: 'no_pending', message: 'No pending waiver claims' });
   }
 
@@ -550,7 +612,7 @@ async function handleWaivers(res) {
     batch.update(db.collection('teams').doc(team.id), { roster, transactionFees: (team.transactionFees || 0) + (w.fee || 0) });
   }
 
-  batch.set(db.collection('sfgl_data').doc('last_auto_waiver'), { key: 'last_auto_waiver', value: today });
+  batch.set(db.collection('sfgl_data').doc('last_auto_waiver'), { key: 'last_auto_waiver', value: fireStamp });
   await batch.commit();
 
   // ── Push notifications ───────────────────────────────────────────────────
@@ -621,32 +683,23 @@ async function handleWaivers(res) {
 // ── Action: lineup reminder ─────────────────────────────────────────────────
 
 async function handleLineupReminder(res) {
-  const et = getETNow();
   const settings = await loadSettings();
 
-  // Admin-configurable day/hour gate (Wave J Round 6 batch 4 follow-up).
-  // Was hardcoded to "any Wednesday ping" (et.getDay() !== 3 → not_wednesday)
-  // with no hour gate; now mirrors the waivers + results pattern with
-  // settings-driven day + hour + minute.
-  //
-  // Default: Wednesday 9am ET. Backward-compatible — older Firestore docs
-  // without these keys fall through to the defaults.
-  const targetDay    = settings?.lineupReminderDay    ?? 3;  // Wed
-  const targetHour   = settings?.lineupReminderHour   ?? 9;  // 9am ET
-  const targetMinute = settings?.lineupReminderMinute ?? 0;
-
-  if (et.getDay() !== targetDay) {
-    return res.json({ status: 'not_target_day', targetDay });
+  // Schedule gate — see checkScheduleGate doc comment. Replaces the older
+  // strict-day-match + hour-gate + "already sent today" stack with a single
+  // "scheduled slot has passed and we haven't fired since" check. Resilient
+  // to off-day pings (Vercel Cron's hourly imprecision can push pings past
+  // midnight).
+  const gate = await checkScheduleGate({
+    targetDay:    settings?.lineupReminderDay    ?? 3,  // Wed
+    targetHour:   settings?.lineupReminderHour   ?? 9,  // 9am ET
+    targetMinute: settings?.lineupReminderMinute ?? 0,
+    lastRunDocId: 'last_lineup_reminder',
+  });
+  if (!gate.fire) {
+    return res.json({ status: 'not_yet', message: 'Not past reminder time, or already sent this week' });
   }
-  // Hour/minute gate — same pattern as waivers (handleWaivers L433-434).
-  // If we're not past the configured time yet today, wait for a later ping.
-  if (et.getHours() < targetHour || (et.getHours() === targetHour && et.getMinutes() < targetMinute)) {
-    return res.json({ status: 'not_yet', targetHour, targetMinute });
-  }
-
-  const today = et.toLocaleDateString('en-US');
-  const metaSnap = await db.collection('sfgl_data').doc('last_lineup_reminder').get();
-  if (metaSnap.exists && metaSnap.data().value === today) return res.json({ status: 'already_sent' });
+  const fireStamp = gate.fireStamp;
 
   const sfglSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
   const tournaments = sfglSnap.exists ? sfglSnap.data().value : [];
@@ -687,7 +740,7 @@ async function handleLineupReminder(res) {
     } catch (err) { results.push({ team: team.name, error: err.message }); }
   }
 
-  await db.collection('sfgl_data').doc('last_lineup_reminder').set({ key: 'last_lineup_reminder', value: today });
+  await db.collection('sfgl_data').doc('last_lineup_reminder').set({ key: 'last_lineup_reminder', value: fireStamp });
   return res.json({ status: 'sent', tournament: activeTourney.name, results });
 }
 
@@ -729,25 +782,22 @@ function matchName(a, b) {
 
 async function handleProcessResults(res) {
   const settings = await loadSettings();
-  const et = getETNow();
 
-  // Time gate — mirrors the waiver-schedule pattern. Settings are configured
-  // from the AdminView; defaults to Monday 9:00 AM ET so PGA tournaments that
-  // finish Sunday have a buffer for late-Sunday Monday-finishes.
-  const rDay  = settings?.resultsDay    ?? 1; // 0=Sun…6=Sat, default Mon=1
-  const rHour = settings?.resultsHour   ?? 9; // 24h ET
-  const rMin  = settings?.resultsMinute ?? 0;
-  const day = et.getDay();
-  const timeVal = et.getHours() * 60 + et.getMinutes();
-  if (!(day === rDay && timeVal >= (rHour * 60 + rMin))) {
-    return res.json({ status: 'not_yet', message: 'Not past results processing time' });
+  // Schedule gate — see checkScheduleGate doc comment. Defaults to Monday
+  // 9:00 AM ET. Dropping the strict day-match check means a Sunday-evening
+  // ping that gets `no_results` (ESPN hasn't published final results yet)
+  // is automatically retried on Monday morning's ping — the previous version
+  // would have given up until next Sunday.
+  const gate = await checkScheduleGate({
+    targetDay:    settings?.resultsDay    ?? 1, // 0=Sun…6=Sat, default Mon=1
+    targetHour:   settings?.resultsHour   ?? 9, // 24h ET
+    targetMinute: settings?.resultsMinute ?? 0,
+    lastRunDocId: 'last_auto_results',
+  });
+  if (!gate.fire) {
+    return res.json({ status: 'not_yet', message: 'Not past results processing time, or already processed this week' });
   }
-
-  const today = et.toLocaleDateString('en-US');
-  const metaSnap = await db.collection('sfgl_data').doc('last_auto_results').get();
-  if (metaSnap.exists && metaSnap.data().value === today) {
-    return res.json({ status: 'already_run', message: 'Results already processed today' });
-  }
+  const fireStamp = gate.fireStamp;
 
   // Load remaining data (settings already loaded above)
   const teams = await loadTeams();
@@ -759,7 +809,7 @@ async function handleProcessResults(res) {
   // Find active tournament
   const ti = tournaments.findIndex(t => t.playing && !t.completed);
   if (ti === -1) {
-    await db.collection('sfgl_data').doc('last_auto_results').set({ key: 'last_auto_results', value: today });
+    await db.collection('sfgl_data').doc('last_auto_results').set({ key: 'last_auto_results', value: fireStamp });
     return res.json({ status: 'no_active_tournament' });
   }
   const tournament = tournaments[ti];
@@ -926,7 +976,7 @@ async function handleProcessResults(res) {
   // Update tournaments and stats in sfgl_data
   batch.set(db.collection('sfgl_data').doc('fantasy-golf-tournaments'), { key: 'fantasy-golf-tournaments', value: newTournaments });
   batch.set(db.collection('sfgl_data').doc('fantasy-golf-global-stats'), { key: 'fantasy-golf-global-stats', value: newStats });
-  batch.set(db.collection('sfgl_data').doc('last_auto_results'), { key: 'last_auto_results', value: today });
+  batch.set(db.collection('sfgl_data').doc('last_auto_results'), { key: 'last_auto_results', value: fireStamp });
 
   // Append swing winner transaction if auto-awarded. New doc; let Firestore
   // generate the doc id and use our txId as the dedup key.
