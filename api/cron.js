@@ -514,24 +514,32 @@ async function checkScheduleGate({ targetDay, targetHour, targetMinute, lastRunD
     et,
     fireStamp: et.toISOString(),
     slotIso: slot.toISOString(),
+    lastFireMs,
+    lastFireIso: lastFireMs > 0 ? new Date(lastFireMs).toISOString() : 'never',
   };
 }
 
 // ── Action: process waivers ─────────────────────────────────────────────────
 
 async function handleWaivers(res) {
+  console.log('[cron-waivers] handler invoked');
   const settings = await loadSettings();
+  const targetDay    = settings?.waiverDay    ?? 2;
+  const targetHour   = settings?.waiverHour   ?? 20;
+  const targetMinute = settings?.waiverMinute ?? 0;
+  console.log(`[cron-waivers] target: day=${targetDay} hour=${targetHour} minute=${targetMinute}`);
 
   // Schedule gate — see checkScheduleGate doc comment for semantics.
   // Drops the older strict `day === wDay` check so a late ping (e.g. ET cron
   // imprecision pushes us past midnight) still fires this week's run rather
   // than waiting until next week.
   const gate = await checkScheduleGate({
-    targetDay:    settings?.waiverDay    ?? 2,
-    targetHour:   settings?.waiverHour   ?? 20,
-    targetMinute: settings?.waiverMinute ?? 0,
+    targetDay,
+    targetHour,
+    targetMinute,
     lastRunDocId: 'last_auto_waiver',
   });
+  console.log(`[cron-waivers] gate: fire=${gate.fire} now=${gate.fireStamp} slot=${gate.slotIso} lastFire=${gate.lastFireIso}`);
   if (!gate.fire) {
     return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time, or already processed this week' });
   }
@@ -541,9 +549,11 @@ async function handleWaivers(res) {
   const txSnap = await db.collection('transactions').get();
   const allTx = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const pending = allTx.filter(tx => tx.status === 'pending' && tx.type === 'waiver');
+  console.log(`[cron-waivers] found ${pending.length} pending waiver claims`);
 
   if (pending.length === 0) {
     await db.collection('sfgl_data').doc('last_auto_waiver').set({ key: 'last_auto_waiver', value: fireStamp });
+    console.log('[cron-waivers] no pending, marking lastFire and exiting');
     return res.json({ status: 'no_pending', message: 'No pending waiver claims' });
   }
 
@@ -722,7 +732,12 @@ async function handleWaivers(res) {
 // ── Action: lineup reminder ─────────────────────────────────────────────────
 
 async function handleLineupReminder(res) {
+  console.log('[cron-lineup] handler invoked');
   const settings = await loadSettings();
+  const targetDay    = settings?.lineupReminderDay    ?? 3;
+  const targetHour   = settings?.lineupReminderHour   ?? 9;
+  const targetMinute = settings?.lineupReminderMinute ?? 0;
+  console.log(`[cron-lineup] target: day=${targetDay} hour=${targetHour} minute=${targetMinute}`);
 
   // Schedule gate — see checkScheduleGate doc comment. Replaces the older
   // strict-day-match + hour-gate + "already sent today" stack with a single
@@ -730,11 +745,12 @@ async function handleLineupReminder(res) {
   // to off-day pings (Vercel Cron's hourly imprecision can push pings past
   // midnight).
   const gate = await checkScheduleGate({
-    targetDay:    settings?.lineupReminderDay    ?? 3,  // Wed
-    targetHour:   settings?.lineupReminderHour   ?? 9,  // 9am ET
-    targetMinute: settings?.lineupReminderMinute ?? 0,
+    targetDay,
+    targetHour,
+    targetMinute,
     lastRunDocId: 'last_lineup_reminder',
   });
+  console.log(`[cron-lineup] gate: fire=${gate.fire} now=${gate.fireStamp} slot=${gate.slotIso} lastFire=${gate.lastFireIso}`);
   if (!gate.fire) {
     return res.json({ status: 'not_yet', message: 'Not past reminder time, or already sent this week' });
   }
@@ -820,7 +836,12 @@ function matchName(a, b) {
 }
 
 async function handleProcessResults(res) {
+  console.log('[cron-results] handler invoked');
   const settings = await loadSettings();
+  const targetDay    = settings?.resultsDay    ?? 1;
+  const targetHour   = settings?.resultsHour   ?? 9;
+  const targetMinute = settings?.resultsMinute ?? 0;
+  console.log(`[cron-results] target: day=${targetDay} hour=${targetHour} minute=${targetMinute}`);
 
   // Schedule gate — see checkScheduleGate doc comment. Defaults to Monday
   // 9:00 AM ET. Dropping the strict day-match check means a Sunday-evening
@@ -828,11 +849,12 @@ async function handleProcessResults(res) {
   // is automatically retried on Monday morning's ping — the previous version
   // would have given up until next Sunday.
   const gate = await checkScheduleGate({
-    targetDay:    settings?.resultsDay    ?? 1, // 0=Sun…6=Sat, default Mon=1
-    targetHour:   settings?.resultsHour   ?? 9, // 24h ET
-    targetMinute: settings?.resultsMinute ?? 0,
+    targetDay,
+    targetHour,
+    targetMinute,
     lastRunDocId: 'last_auto_results',
   });
+  console.log(`[cron-results] gate: fire=${gate.fire} now=${gate.fireStamp} slot=${gate.slotIso} lastFire=${gate.lastFireIso}`);
   if (!gate.fire) {
     return res.json({ status: 'not_yet', message: 'Not past results processing time, or already processed this week' });
   }
