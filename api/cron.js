@@ -1855,6 +1855,88 @@ async function handleSyncCronSchedule(req, res) {
 }
 
 
+// ── Action: resync-legacy-tournaments ───────────────────────────────────────
+//
+// Repairs the divergence between `/tournaments/{name}` (canonical, read by
+// the app via useLeague) and `/sfgl_data/fantasy-golf-tournaments` (legacy
+// doc, read by cron and various other code paths).
+//
+// The divergence arises because the result-processing cron writes ONLY to
+// the legacy doc, while client-side updates (e.g., schedule edits, Undo)
+// write to the canonical collection. So after a bad cron fire — or after
+// an Undo — the two stores can disagree about which tournament is playing
+// vs. completed.
+//
+// What this action does:
+//   1. Read the legacy doc's array (preserves array order, which is
+//      semantically meaningful — `tournamentIndex` references position).
+//   2. Read all docs from the canonical `/tournaments` collection.
+//   3. For each legacy entry, replace its mutable fields (completed,
+//      playing, results, plus any other fields the canonical has) with the
+//      canonical version. Legacy-only fields (none expected, but defensive)
+//      survive.
+//   4. Write the merged array back to the legacy doc.
+//
+// Idempotent: safe to call any number of times. Called automatically by
+// Undo and the result-processing handler going forward to keep the stores
+// in sync; also exposed as a standalone action so the commish can fix the
+// current bad state.
+async function handleResyncLegacyTournaments(res) {
+  console.log('[resync-legacy] handler invoked');
+
+  // Read current legacy doc to preserve array order
+  const legacySnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
+  if (!legacySnap.exists) {
+    console.warn('[resync-legacy] legacy doc does not exist; nothing to resync');
+    return res.status(404).json({ error: 'Legacy tournament doc not found' });
+  }
+  const legacyArray = Array.isArray(legacySnap.data().value) ? legacySnap.data().value : [];
+  console.log(`[resync-legacy] legacy array has ${legacyArray.length} tournaments`);
+
+  // Read all canonical /tournaments docs into a name-keyed map
+  const canonicalSnap = await db.collection('tournaments').get();
+  const canonicalMap = {};
+  canonicalSnap.docs.forEach(d => {
+    const data = d.data();
+    const name = data.name || d.id;
+    canonicalMap[name] = { ...data, name };
+  });
+  console.log(`[resync-legacy] canonical map has ${Object.keys(canonicalMap).length} tournaments`);
+
+  // Merge: each legacy entry replaced with canonical version (same array
+  // position). Legacy entries without a canonical match are left as-is —
+  // shouldn't happen in normal operation but defensive against drift.
+  let updated = 0;
+  let missing = 0;
+  const merged = legacyArray.map(t => {
+    const canonical = canonicalMap[t.name];
+    if (!canonical) {
+      missing++;
+      console.warn(`[resync-legacy] no canonical doc for "${t.name}" — leaving as-is`);
+      return t;
+    }
+    updated++;
+    // Canonical fields take precedence. Spread legacy first, then canonical
+    // overrides — this preserves any legacy-only fields if they exist.
+    return { ...t, ...canonical };
+  });
+
+  // Write back
+  await db.collection('sfgl_data').doc('fantasy-golf-tournaments').set({
+    key: 'fantasy-golf-tournaments',
+    value: merged,
+  });
+
+  console.log(`[resync-legacy] complete: ${updated} updated, ${missing} missing canonical`);
+  return res.json({
+    success: true,
+    updated,
+    missingCanonical: missing,
+    total: merged.length,
+  });
+}
+
+
 export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
@@ -1868,22 +1950,23 @@ export default async function handler(req, res) {
   //                          is exposed by no-auth; worst case is a stranger
   //                          who guesses the endpoint changes when waivers
   //                          process — visible immediately to the commish.
-  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule']);
+  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule', 'resync-legacy-tournaments']);
   if (!NO_AUTH_ACTIONS.has(action) && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {
     switch (action) {
-      case 'waivers':              return await handleWaivers(res);
-      case 'lineup-reminder':      return await handleLineupReminder(res);
-      case 'process-results':      return await handleProcessResults(res);
-      case 'notify-results':       return await handleNotifyResults(req, res);
-      case 'pgat-stats':           return await handlePgatStats(res);
-      case 'lead-watch':           return await handleLeadWatch(res);
-      case 'owgr-rankings':        return await handleOwgrRankings(res);
-      case 'sync-cron-schedule':   return await handleSyncCronSchedule(req, res);
-      default:                     return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings|sync-cron-schedule' });
+      case 'waivers':                     return await handleWaivers(res);
+      case 'lineup-reminder':             return await handleLineupReminder(res);
+      case 'process-results':             return await handleProcessResults(res);
+      case 'notify-results':              return await handleNotifyResults(req, res);
+      case 'pgat-stats':                  return await handlePgatStats(res);
+      case 'lead-watch':                  return await handleLeadWatch(res);
+      case 'owgr-rankings':               return await handleOwgrRankings(res);
+      case 'sync-cron-schedule':          return await handleSyncCronSchedule(req, res);
+      case 'resync-legacy-tournaments':   return await handleResyncLegacyTournaments(res);
+      default:                            return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings|sync-cron-schedule|resync-legacy-tournaments' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);
