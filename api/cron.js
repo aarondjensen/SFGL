@@ -1036,7 +1036,7 @@ async function handleProcessResults(res) {
     : { round1: settings.bonusR1Regular ?? BONUSES_REG.round1, round2: settings.bonusR2Regular ?? BONUSES_REG.round2, round3: settings.bonusR3Regular ?? BONUSES_REG.round3 };
 
   // Process each team — mirrors processTournamentData exactly
-  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders, fullLineups: {} };
+  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders, fullLineups: {}, fullBackups: {} };
   const newStats = { ...globalStats };
 
   // Update global player stats
@@ -1054,6 +1054,7 @@ async function handleProcessResults(res) {
     if (!team.lineup || team.lineup.length === 0) return team;
 
     resultsData.fullLineups[team.id] = [...team.lineup];
+    if (team.backup) resultsData.fullBackups[team.id] = team.backup;
 
     const starterResults = team.lineup.map(playerName => {
       let earnings = earningsMap[playerName];

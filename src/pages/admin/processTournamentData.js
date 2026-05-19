@@ -89,12 +89,19 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     earningsMap: { ...earningsMap },
     roundLeaders: tournamentData.roundLeaders || {},
     fullLineups: {},
+    // Snapshot pre-process backups too, so undo can restore them. Without
+    // this, undoing a processed tournament leaves backup=null on every team
+    // because handleManualEntry / process-results cron both set backup=null
+    // unconditionally after processing. Empty/missing here is fine — undo
+    // tolerates missing entries by leaving backup=null.
+    fullBackups: {},
   };
 
   const newTeams = teams.map(team => {
     if (!team.lineup || team.lineup.length === 0) return team;
 
     resultsData.fullLineups[team.id] = [...team.lineup];
+    if (team.backup) resultsData.fullBackups[team.id] = team.backup;
 
     const starterResults = team.lineup.map(playerName => {
       let earnings = earningsMap[playerName];
