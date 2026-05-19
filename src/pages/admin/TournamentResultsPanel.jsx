@@ -502,6 +502,155 @@ export const TournamentResultsPanel = ({
     }
   };
 
+  // ── Undo Tournament Results ──────────────────────────────────────────────
+  // TEMPORARY testing tool. Reverts a processed tournament back to
+  // "playing/not-completed" and reverses every state change the processing
+  // applied:
+  //   • Per-team:
+  //       lineup        ← results.fullLineups[id]   (was [] after process)
+  //       backup        ← results.fullBackups[id]   (was null after process)
+  //       earnings      −= results.teams[id].totalEarnings
+  //       segmentEarnings −= results.teams[id].totalEarnings
+  //       roster[player].starts     −= 1 for each lineup player
+  //       roster[player].sfglEarnings −= per-player earnings
+  //   • Global stats: eventsPlayed, cutsMade, pgaTourEarnings reversed for
+  //     every player in results.earningsMap
+  //   • Tournament: completed=false, playing=true, results=null
+  //   • The next tournament that was advanced to playing=true gets reset
+  //   • Any auto-awarded swing_winner transaction created at this tournament
+  //     index is deleted
+  //
+  // Designed to be SAFE to run on the most recent completed tournament. If a
+  // later tournament has already been processed on top, that's flagged and
+  // refused (rolling back would invalidate the subsequent results).
+  //
+  // Once we're confident processing works correctly, this button can be
+  // removed — see the Aaron-only "remove when stable" tag in the JSX below.
+  const handleUndoResults = async () => {
+    if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
+    const ti = tournaments.findIndex(t => t.name === selectedTourney);
+    if (ti === -1) { dialog.showToast('Tournament not found', 'error'); return; }
+    const t = tournaments[ti];
+    if (!t.completed) { dialog.showToast('Tournament is not completed — nothing to undo', 'error'); return; }
+    if (!t.results) { dialog.showToast('Tournament has no stored results — cannot undo cleanly', 'error'); return; }
+
+    // Refuse to undo if a LATER tournament has already been processed on
+    // top. Rolling back would silently invalidate that one's earnings
+    // baseline. Commish would have to undo from latest-back-to-earliest.
+    const laterCompleted = tournaments.find((tt, i) => i > ti && tt.completed);
+    if (laterCompleted) {
+      dialog.showToast(`Cannot undo — "${laterCompleted.name}" has already been processed after this one. Undo that first.`, 'error');
+      return;
+    }
+
+    const ok = await dialog.showConfirm(
+      'Undo Tournament Results?',
+      `This will REVERT "${selectedTourney}" back to playing state and reverse all earnings, stats, and roster updates from this processing. Lineups will be restored. Any auto-awarded swing winner will be removed. This is for testing — use with care.`,
+      { type: 'danger', confirmText: 'Undo Results', cancelText: 'Cancel' }
+    );
+    if (!ok) return;
+
+    try {
+      const resultsData = t.results || {};
+      const resultsTeams = resultsData.teams || {};
+      const fullLineups  = resultsData.fullLineups || {};
+      const fullBackups  = resultsData.fullBackups || {};
+      const earningsMap  = resultsData.earningsMap || {};
+
+      // ── Reverse team-level changes ──
+      const newTeams = teams.map(team => {
+        const stored = resultsTeams[team.id];
+        if (!stored) return team; // team wasn't scored — nothing to reverse
+
+        const totalEarnings = stored.totalEarnings || 0;
+        const restoreLineup = fullLineups[team.id] ? [...fullLineups[team.id]] : [];
+        const restoreBackup = fullBackups[team.id] || null;
+
+        // Reverse per-player roster updates (starts -1, sfglEarnings -= earnings).
+        // Use the same earningsMap-lookup logic as processTournamentData so the
+        // numbers match exactly.
+        const restoredRoster = (team.roster || []).map(player => {
+          if (!restoreLineup.includes(player.name)) return player;
+          let pe = earningsMap[player.name];
+          if (pe === undefined) {
+            // Fuzzy match — same approach as processTournamentData's matchPlayerName
+            const mk = Object.keys(earningsMap).find(k =>
+              k.toLowerCase().trim() === player.name.toLowerCase().trim()
+            );
+            pe = mk !== undefined ? earningsMap[mk] : 0;
+          }
+          return {
+            ...player,
+            starts: Math.max(0, (player.starts || 0) - 1),
+            sfglEarnings: Math.max(0, (player.sfglEarnings || 0) - (pe || 0)),
+          };
+        });
+
+        return {
+          ...team,
+          roster: restoredRoster,
+          earnings: Math.max(0, (team.earnings || 0) - totalEarnings),
+          segmentEarnings: Math.max(0, (team.segmentEarnings || 0) - totalEarnings),
+          lineup: restoreLineup,
+          backup: restoreBackup,
+        };
+      });
+
+      // ── Reverse global player stats ──
+      const restoredStats = { ...(globalPlayerStats || {}) };
+      Object.entries(earningsMap).forEach(([playerName, earnings]) => {
+        const cur = restoredStats[playerName];
+        if (!cur) return; // never tracked — nothing to reverse
+        restoredStats[playerName] = {
+          ...cur,
+          eventsPlayed:    Math.max(0, (cur.eventsPlayed || 0) - 1),
+          cutsMade:        Math.max(0, (cur.cutsMade || 0) - ((earnings || 0) > 0 ? 1 : 0)),
+          pgaTourEarnings: Math.max(0, (cur.pgaTourEarnings || 0) - (earnings || 0)),
+        };
+      });
+
+      // ── Reverse tournament state ──
+      // The processed tournament: completed→false, playing→true, results→null.
+      // Any tournament that was advanced to playing=true after this one's
+      // completion: revert to playing=false.
+      const newTournaments = tournaments.map((tt, i) => {
+        if (i === ti) {
+          const { results: _omit, ...rest } = tt;
+          return { ...rest, completed: false, playing: true };
+        }
+        // The processing path advances the next non-alternate uncompleted
+        // tournament to playing=true. Reverse that.
+        if (i > ti && tt.playing && !tt.completed) {
+          return { ...tt, playing: false };
+        }
+        return tt;
+      });
+
+      // ── Remove auto-awarded swing_winner transaction for this tournament ──
+      // The processing path appends a swing_winner tx when the tournament is
+      // the final event of its swing. Identify by tournamentIndex match. If
+      // the swing-winner was already there before this processing (manually
+      // awarded), the tournamentIndex won't match and we leave it alone.
+      const newTransactions = (transactions || []).filter(tx => {
+        if (tx.type !== 'swing_winner') return true;
+        return tx.tournamentIndex !== ti;
+      });
+
+      // Persist everything
+      updateTeams(newTeams);
+      setTournaments(newTournaments);
+      if (setGlobalPlayerStats) setGlobalPlayerStats(restoredStats);
+      if (newTransactions.length !== (transactions || []).length) {
+        setTransactions(newTransactions);
+      }
+
+      dialog.showToast(`✓ Undid results for ${selectedTourney}. Tournament is back to playing state.`, 'success');
+    } catch (err) {
+      console.error('handleUndoResults error:', err);
+      dialog.showToast('Error undoing: ' + err.message, 'error');
+    }
+  };
+
   const selectedTourneyObj = tournaments.find(t => t.name === selectedTourney);
   const isCompleted = !!selectedTourneyObj?.completed;
   const isPlaying   = !!selectedTourneyObj?.playing && !isCompleted;
@@ -562,6 +711,23 @@ export const TournamentResultsPanel = ({
           style={{ ...M.btnSecondary, ...disabledBtn(!selectedTourney || resending) }}
         >
           {resending ? '⏳ Sending…' : '📲 Resend Results Notifications'}
+        </button>
+      )}
+
+      {/* Undo Tournament Results — TESTING-ONLY destructive action. Reverts
+          a processed tournament back to playing state and reverses every
+          earnings/stat/roster change from this processing. Only renders for
+          completed tournaments. Remove this button once tournament
+          processing is stable enough that we're confident bad fires won't
+          happen (e.g., once we've gone several weeks without needing it). */}
+      {isCompleted && (
+        <button
+          onClick={handleUndoResults}
+          disabled={!selectedTourney}
+          className="modal-feel-lift"
+          style={{ ...M.btnDanger, ...disabledBtn(!selectedTourney) }}
+        >
+          ↩️ Undo Tournament Results (testing)
         </button>
       )}
 
