@@ -585,6 +585,37 @@ async function handleWaivers(res) {
   const allRostered = new Set();
   teams.forEach(t => (t.roster || []).forEach(p => allRostered.add(p.name)));
 
+  // ── Limbo (recently-dropped) players ───────────────────────────────────
+  // Mirrors the client-side `limboPlayers` set in AddDropPlayerModal so the
+  // UI and server enforce the same rule: a player who was dropped in a
+  // processed transaction is unavailable to be added to any roster until
+  // the next waiver period (i.e., until the tournament that owned the drop
+  // is completed).
+  //
+  // Why this also has to live server-side: without it, two waivers in the
+  // same run can defeat the lock entirely. Team A's waiver drops Y; Team
+  // B's waiver wants to add Y. Because Y was just removed from allRostered
+  // by Team A's drop, B's existing "already rostered" check passes and B
+  // successfully claims a player who's supposed to be locked.
+  //
+  // The set is seeded from PRIOR processed transactions whose tournament
+  // hasn't completed yet, then extended in-place as drops happen during
+  // this run.
+  const limboPlayers = new Set();
+  allTx.forEach(tx => {
+    if (!tx.droppedPlayer) return;
+    if (tx.type === 'mulligan') return;
+    if (tx.status !== 'processed' && tx.status !== 'completed') return;
+    if (tx.tournamentIndex !== undefined) {
+      const t = tournamentsForWaivers[tx.tournamentIndex];
+      if (t && !t.completed) limboPlayers.add(tx.droppedPlayer);
+    } else {
+      // No tournamentIndex (older data) — treat as in limbo, conservative
+      limboPlayers.add(tx.droppedPlayer);
+    }
+  });
+  console.log(`[cron-waivers] seeded ${limboPlayers.size} players in limbo from prior txs`);
+
   const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
   const processedResults = [];
   let more = true;
@@ -609,12 +640,29 @@ async function handleWaivers(res) {
         cs.forEach(c => { failed.add(c.claim.id); processedResults.push({ ...c.claim, status: 'failed', failReason: 'Player already rostered' }); });
         more = true; return;
       }
+      // Limbo gate — refuse any claim adding a recently-dropped player.
+      // Either dropped via a prior tx (seeded into limboPlayers above) or
+      // dropped earlier in this same run (added below after a successful
+      // drop). Failing all claims for the player in this round prevents
+      // tiebreaker thrash on a player who's unavailable to anyone.
+      if (limboPlayers.has(player)) {
+        cs.forEach(c => { failed.add(c.claim.id); processedResults.push({ ...c.claim, status: 'failed', failReason: 'Player was recently dropped — unavailable until next waiver period' }); });
+        more = true; return;
+      }
       if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allRostered.has(w.claim.droppedPlayer))) {
         failed.add(w.claim.id); processedResults.push({ ...w.claim, status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped' });
         more = true; return;
       }
 
-      if (w.claim.droppedPlayer) { allRostered.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
+      if (w.claim.droppedPlayer) {
+        allRostered.delete(w.claim.droppedPlayer);
+        dropped.add(w.claim.droppedPlayer);
+        // Lock the dropped player from being added by ANY subsequent claim
+        // in this same run. Without this, the moment we remove them from
+        // allRostered another team's claim for that player would sail
+        // through the "already rostered" check above.
+        limboPlayers.add(w.claim.droppedPlayer);
+      }
       allRostered.add(player); done.add(w.claim.id);
       applied.push(w.claim); processedResults.push({ ...w.claim, status: 'processed' });
       pm[w.tn] = nextLastPlace++;
