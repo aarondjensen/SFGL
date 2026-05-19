@@ -1724,29 +1724,166 @@ async function handleLeadWatch(res) {
   });
 }
 
+// ── Action: sync-cron-schedule ──────────────────────────────────────────────
+//
+// Updates the cron-job.org job schedule for one of our recurring tasks to
+// match what the commish set in AdminView. Called from the client every
+// time the commish saves a schedule, so AdminView is the single source of
+// truth for when each automation fires.
+//
+// This is what lets us escape Vercel Hobby's "fires within an hour-window"
+// imprecision — cron-job.org fires within seconds of the configured time,
+// and its REST API lets us reschedule from code.
+//
+// Request body (POST):
+//   {
+//     jobType: 'waivers' | 'results' | 'lineup-reminder',
+//     day:     0-6 (0=Sun, 6=Sat),
+//     hour:    0-23 (ET),
+//     minute:  0-59
+//   }
+//
+// Required env vars (server-side only — API key never reaches the client):
+//   CRONJOB_API_KEY              — Personal API key from cron-job.org
+//   CRONJOB_WAIVERS_JOB_ID       — Numeric job ID for the Waivers job
+//   CRONJOB_RESULTS_JOB_ID       — Numeric job ID for the Process Results job
+//   CRONJOB_LINEUP_REMINDER_JOB_ID — Numeric job ID for the Lineup Reminders job
+//
+// Schedule semantics: cron-job.org natively supports timezones, so we send
+// the day/hour/minute exactly as configured and set timezone=America/New_York.
+// No UTC conversion in the client, no DST headaches.
+async function handleSyncCronSchedule(req, res) {
+  const { jobType, day, hour, minute } = req.body || {};
+
+  // Validate
+  const validJobTypes = ['waivers', 'results', 'lineup-reminder'];
+  if (!validJobTypes.includes(jobType)) {
+    return res.status(400).json({ error: `Invalid jobType. Must be one of: ${validJobTypes.join(', ')}` });
+  }
+  if (typeof day !== 'number' || day < 0 || day > 6) {
+    return res.status(400).json({ error: 'Invalid day (must be 0-6)' });
+  }
+  if (typeof hour !== 'number' || hour < 0 || hour > 23) {
+    return res.status(400).json({ error: 'Invalid hour (must be 0-23)' });
+  }
+  if (typeof minute !== 'number' || minute < 0 || minute > 59) {
+    return res.status(400).json({ error: 'Invalid minute (must be 0-59)' });
+  }
+
+  // Map jobType to its env-var-held job ID
+  const jobIdEnvMap = {
+    'waivers':         'CRONJOB_WAIVERS_JOB_ID',
+    'results':         'CRONJOB_RESULTS_JOB_ID',
+    'lineup-reminder': 'CRONJOB_LINEUP_REMINDER_JOB_ID',
+  };
+  const jobIdEnvVar = jobIdEnvMap[jobType];
+  const jobId = process.env[jobIdEnvVar];
+  const apiKey = process.env.CRONJOB_API_KEY;
+
+  if (!jobId) {
+    console.warn(`[sync-cron-schedule] ${jobIdEnvVar} not set`);
+    return res.status(500).json({
+      error: `Server config error: ${jobIdEnvVar} not set`,
+      hint: 'Add the cron-job.org job ID to Vercel environment variables',
+    });
+  }
+  if (!apiKey) {
+    console.warn('[sync-cron-schedule] CRONJOB_API_KEY not set');
+    return res.status(500).json({
+      error: 'Server config error: CRONJOB_API_KEY not set',
+      hint: 'Add your cron-job.org API key to Vercel environment variables',
+    });
+  }
+
+  // Build the cron-job.org schedule payload.
+  // Reference: https://docs.cron-job.org/rest-api.html#updating-a-job
+  // The schedule object uses arrays for hours/minutes/wdays etc. with
+  // -1 meaning "wildcard" (every value). Setting mdays=[-1], months=[-1]
+  // means "any day of month, any month" — weekly schedule controlled by
+  // wdays alone.
+  const payload = {
+    job: {
+      schedule: {
+        timezone: 'America/New_York',
+        hours:   [hour],
+        minutes: [minute],
+        wdays:   [day],
+        mdays:   [-1],
+        months:  [-1],
+      },
+    },
+  };
+
+  console.log(`[sync-cron-schedule] updating ${jobType} (jobId=${jobId}) to ${day}/${hour}:${String(minute).padStart(2, '0')} ET`);
+
+  try {
+    const resp = await fetch(`https://api.cron-job.org/jobs/${encodeURIComponent(jobId)}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const respText = await resp.text();
+    let respData;
+    try { respData = JSON.parse(respText); } catch { respData = { raw: respText }; }
+
+    if (!resp.ok) {
+      console.warn(`[sync-cron-schedule] cron-job.org returned ${resp.status}: ${respText.slice(0, 500)}`);
+      return res.status(502).json({
+        error: `cron-job.org returned HTTP ${resp.status}`,
+        details: respData,
+        hint: resp.status === 401 ? 'Check CRONJOB_API_KEY' :
+              resp.status === 404 ? `Check ${jobIdEnvVar} — job may not exist` : undefined,
+      });
+    }
+
+    console.log(`[sync-cron-schedule] success for ${jobType}`);
+    return res.json({
+      success: true,
+      jobType,
+      schedule: { day, hour, minute, timezone: 'America/New_York' },
+    });
+  } catch (err) {
+    console.error(`[sync-cron-schedule] fetch error: ${err.message}`);
+    return res.status(500).json({
+      error: `Failed to reach cron-job.org: ${err.message}`,
+    });
+  }
+}
+
+
 export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
   const action = req.query.action || '';
 
   // Cron actions require auth. Client-callable actions are exempted:
-  //   - notify-results: triggered from AdminView after processing
-  //   - pgat-stats:     triggered from AdminView's Sync button
-  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats']);
+  //   - notify-results:      triggered from AdminView after processing
+  //   - pgat-stats:          triggered from AdminView's Sync button
+  //   - sync-cron-schedule:  triggered from AdminView's schedule save buttons.
+  //                          API key stays server-side (env var) so no secret
+  //                          is exposed by no-auth; worst case is a stranger
+  //                          who guesses the endpoint changes when waivers
+  //                          process — visible immediately to the commish.
+  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule']);
   if (!NO_AUTH_ACTIONS.has(action) && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {
     switch (action) {
-      case 'waivers':           return await handleWaivers(res);
-      case 'lineup-reminder':   return await handleLineupReminder(res);
-      case 'process-results':   return await handleProcessResults(res);
-      case 'notify-results':    return await handleNotifyResults(req, res);
-      case 'pgat-stats':        return await handlePgatStats(res);
-      case 'lead-watch':        return await handleLeadWatch(res);
-      case 'owgr-rankings':     return await handleOwgrRankings(res);
-      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings' });
+      case 'waivers':              return await handleWaivers(res);
+      case 'lineup-reminder':      return await handleLineupReminder(res);
+      case 'process-results':      return await handleProcessResults(res);
+      case 'notify-results':       return await handleNotifyResults(req, res);
+      case 'pgat-stats':           return await handlePgatStats(res);
+      case 'lead-watch':           return await handleLeadWatch(res);
+      case 'owgr-rankings':        return await handleOwgrRankings(res);
+      case 'sync-cron-schedule':   return await handleSyncCronSchedule(req, res);
+      default:                     return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings|sync-cron-schedule' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);

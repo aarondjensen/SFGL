@@ -18,6 +18,45 @@ import { colors, fonts } from '../../theme.js';
 import { M, disabledBtn } from './adminStyles';
 import { DAY_NAMES, fmtETTime } from '../../utils/sharedHelpers';
 
+// ── Cron-job.org schedule sync ──────────────────────────────────────────────
+// After each schedule save (waiver / results / lineup-reminder), call this
+// helper to push the new schedule to cron-job.org via our server endpoint.
+// AdminView is the single source of truth for when each cron fires — saving
+// here updates BOTH the Firestore settings (read by the cron handler's gate
+// as a soft guard) AND the actual cron-job.org schedule (which controls when
+// our endpoint gets pinged).
+//
+// Failure handling: non-fatal. The Firestore save already succeeded, so the
+// commish sees the schedule reflected in the UI. The toast surfaces what
+// went wrong so the commish can act — e.g., add missing env vars to Vercel,
+// re-check the API key in cron-job.org, or simply retry later.
+async function syncCronJobSchedule({ jobType, day, hour, minute }, dialog) {
+  try {
+    const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ jobType, day, hour, minute }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      // Common case the commish should know about: server isn't configured
+      // with API key + job IDs yet. Show the hint from the server response.
+      const hint = data?.hint ? ` — ${data.hint}` : '';
+      dialog.showToast(
+        `Schedule saved, but cron-job.org sync failed: ${data?.error || `HTTP ${resp.status}`}${hint}`,
+        'error',
+      );
+      console.warn('[syncCronJobSchedule] failed:', data);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    dialog.showToast(`Schedule saved, but cron-job.org sync failed: ${err.message}`, 'error');
+    console.warn('[syncCronJobSchedule] network error:', err);
+    return false;
+  }
+}
+
 // ── ScheduleEditor — shared helper used by all three schedule sub-sections ──
 // Each schedule (waivers, results, lineup reminder) has identical UI: day +
 // hour + minute selectors, a "Current: X day at H:MM ET" footer, and a save
@@ -130,7 +169,15 @@ export const SeasonSettingsPanel = ({
     setWaiverSaving(true);
     try {
       await setSettings({ ...settings, waiverDay, waiverHour, waiverMinute });
-      dialog.showToast(`✓ Waivers process ${DAY_NAMES[waiverDay]} at ${fmtETTime(waiverHour, waiverMinute)} ET`, 'success');
+      // Push the schedule to cron-job.org. Helper handles its own toast on
+      // failure; we only show success here when both saves landed cleanly.
+      const synced = await syncCronJobSchedule(
+        { jobType: 'waivers', day: waiverDay, hour: waiverHour, minute: waiverMinute },
+        dialog,
+      );
+      if (synced) {
+        dialog.showToast(`✓ Waivers process ${DAY_NAMES[waiverDay]} at ${fmtETTime(waiverHour, waiverMinute)} ET`, 'success');
+      }
     } catch (err) {
       dialog.showToast('Error: ' + err.message, 'error');
     } finally {
@@ -154,7 +201,13 @@ export const SeasonSettingsPanel = ({
     setResultsSaving(true);
     try {
       await setSettings({ ...settings, resultsDay, resultsHour, resultsMinute });
-      dialog.showToast(`✓ Results process ${DAY_NAMES[resultsDay]} at ${fmtETTime(resultsHour, resultsMinute)} ET`, 'success');
+      const synced = await syncCronJobSchedule(
+        { jobType: 'results', day: resultsDay, hour: resultsHour, minute: resultsMinute },
+        dialog,
+      );
+      if (synced) {
+        dialog.showToast(`✓ Results process ${DAY_NAMES[resultsDay]} at ${fmtETTime(resultsHour, resultsMinute)} ET`, 'success');
+      }
     } catch (err) {
       dialog.showToast('Error: ' + err.message, 'error');
     } finally {
@@ -178,7 +231,13 @@ export const SeasonSettingsPanel = ({
     setReminderSaving(true);
     try {
       await setSettings({ ...settings, lineupReminderDay: reminderDay, lineupReminderHour: reminderHour, lineupReminderMinute: reminderMinute });
-      dialog.showToast(`✓ Lineup reminders send ${DAY_NAMES[reminderDay]} at ${fmtETTime(reminderHour, reminderMinute)} ET`, 'success');
+      const synced = await syncCronJobSchedule(
+        { jobType: 'lineup-reminder', day: reminderDay, hour: reminderHour, minute: reminderMinute },
+        dialog,
+      );
+      if (synced) {
+        dialog.showToast(`✓ Lineup reminders send ${DAY_NAMES[reminderDay]} at ${fmtETTime(reminderHour, reminderMinute)} ET`, 'success');
+      }
     } catch (err) {
       dialog.showToast('Error: ' + err.message, 'error');
     } finally {
