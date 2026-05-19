@@ -46,6 +46,11 @@ export const AddDropPlayerModal = ({
   // in the FA list. When this is non-null, prefer it over the `teams` prop
   // for ownership computation. Falls back to `teams` prop while loading.
   const [freshTeams,           setFreshTeams]           = useState(null);
+  // Separate flag so we can distinguish "fetch not yet completed" from
+  // "fetch completed and returned null/error" (in which case we fall back to
+  // the teams prop). Used to gate the player-list render so rostered players
+  // never appear in the list — not even briefly during the fetch.
+  const [freshTeamsLoaded,     setFreshTeamsLoaded]     = useState(false);
   const bodyRef  = useRef(null);
   const [localHeadshots, setLocalHeadshots] = useState({});
   const searchTimerRef = useRef(null);
@@ -63,12 +68,19 @@ export const AddDropPlayerModal = ({
 
   // Fetch fresh /teams on modal open — gives us a snapshot at-or-after the
   // moment the modal opened, immune to Firestore subscription propagation
-  // lag for the `teams` prop. One read per modal open.
+  // lag for the `teams` prop. One read per modal open. Together with the
+  // `freshTeamsLoaded` flag, this ensures the player list never renders
+  // until we have accurate ownership data.
   useEffect(() => {
-    if (!isOpen) { setFreshTeams(null); return; }
+    if (!isOpen) {
+      setFreshTeams(null);
+      setFreshTeamsLoaded(false);
+      return;
+    }
     teamsApi.getAll()
       .then(latest => setFreshTeams(Array.isArray(latest) ? latest : null))
-      .catch(() => setFreshTeams(null));
+      .catch(() => setFreshTeams(null))
+      .finally(() => setFreshTeamsLoaded(true));
   }, [isOpen]);
 
   // ── Escape key + body scroll lock (shared) ─────────────────────────────────
@@ -683,7 +695,7 @@ export const AddDropPlayerModal = ({
             onBlur={e => { e.target.style.borderColor = colors.borderSubtle; e.target.style.background = 'rgba(255,255,255,0.02)'; }}
           />
 
-          {loadingPlayers ? (
+          {(loadingPlayers || !freshTeamsLoaded) ? (
             <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0', color: colors.textMuted }}>Loading players…</p>
           ) : searching ? (
             <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0', color: colors.textMuted }}>Searching…</p>
