@@ -234,12 +234,29 @@ const FantasyGolfLeague = () => {
   }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
-  // This effect needs `resolvedTeams` as a dependency so it waits for teams
-  // to load before matching the stored team_id. But teams update on every
-  // subscription tick (e.g. when commish edits a manager's lineup, which
-  // calls updateTeams), which would re-run this effect and reset
-  // isCommissioner to false — kicking the commish out of commish mode after
-  // every single edit.
+  // Originally this effect re-ran on every resolvedTeams update (because
+  // resolvedTeams was a dependency). That caused two problems:
+  //
+  //   1. Every updateTeams call (e.g. saving a lineup) triggered a
+  //      subscription update → effect re-ran → setIsCommissioner(false) →
+  //      kicked the commish out of commish mode mid-session.
+  //
+  //   2. If the initial run latched against stale localStorage data where
+  //      team.isCommissioner was false, taggedCommissioner stayed false for
+  //      the rest of the session even after fresh Firebase data arrived
+  //      with isCommissioner=true. The "commish toggle disappears" bug —
+  //      only fixable by clearing site data and re-logging in.
+  //
+  // Fix is two effects:
+  //
+  //   • This one (sessionRestoredRef-latched): runs ONCE, sets loggedInUser
+  //     and resets isCommissioner. Latches so updateTeams calls can't reset
+  //     the commish-mode toggle.
+  //
+  //   • The follow-up effect (below): runs continuously, keeps
+  //     taggedCommissioner in sync with the CURRENT team document. Self-
+  //     heals stale-data races and propagates real-time changes (e.g.
+  //     another commish promoting/demoting via ManagerAccountsPanel).
   //
   // The sessionRestoredRef latches once we've SUCCESSFULLY completed the
   // restoration (or confirmed there's nothing to restore). Crucially we
@@ -268,10 +285,10 @@ const FantasyGolfLeague = () => {
         return;
       }
       setLoggedInUser(team.owner || team.name);
-      // Tagged commissioners are *allowed* to enter commish mode but
-      // start the session in normal-manager view. They opt in by tapping
-      // their name in the header.
-      setTaggedCommissioner(!!team.isCommissioner);
+      // taggedCommissioner is intentionally NOT set here — the sync effect
+      // below owns that and keeps it accurate as data arrives/changes.
+      // Active commish mode (isCommissioner) starts off; tagged commissioners
+      // opt in by tapping their name in the header.
       setIsCommissioner(false);
       sessionRestoredRef.current = true;
     }).catch(() => {
@@ -279,6 +296,51 @@ const FantasyGolfLeague = () => {
       sessionRestoredRef.current = true;
     });
   }, [resolvedTeams]);
+
+  // ── Keep taggedCommissioner in sync with the live team document ──────────
+  // Runs every time resolvedTeams updates (Firebase subscription pushes a
+  // new value, useLeague's initial load resolves, etc) or the user logs in
+  // / out. Reads team.isCommissioner from the CURRENT team document and
+  // mirrors it into local React state.
+  //
+  // THREE-STATE SEMANTICS (critical — this is the "commish toggle disappears
+  // every time anything writes" bug fix):
+  //
+  //   • team.isCommissioner === true  → promote (set taggedCommissioner true)
+  //   • team.isCommissioner === false → demote  (set taggedCommissioner false)
+  //   • team.isCommissioner is undefined → NO-OP (preserve current state)
+  //
+  // The previous implementation used `!!team.isCommissioner`, which collapsed
+  // undefined and false into the same downgrade path. Any momentary state
+  // where the field was missing — an optimistic update with partial team
+  // data, a stale Firestore snapshot before reconciliation, the 90s lineup
+  // poll returning a team without the field — would silently downgrade
+  // taggedCommissioner to false. Once Firebase eventually delivered the
+  // canonical doc, the effect would re-run and restore it, but if the
+  // subscription didn't re-fire (no actual DB change), local state stayed
+  // wrong indefinitely. Clearing site data and re-logging in was the only
+  // recovery because the login handler reads team.isCommissioner directly
+  // from a fresh Firestore .get().
+  //
+  // Three-state handling preserves the real-time-update benefits (explicit
+  // promotion/demotion via ManagerAccountsPanel still propagates live) while
+  // never accidentally demoting a user from "undefined" data.
+  //
+  // Doesn't touch isCommissioner (current commish-mode toggle, separate
+  // from being eligible). The session-restore latch above protects that.
+  useEffect(() => {
+    if (!loggedInUser) return;
+    const teamId = localStorage.getItem('manager_team_id');
+    if (!teamId) return;
+    const team = resolvedTeams.find(t => t.id === teamId);
+    if (!team) return;
+    if (team.isCommissioner === true) {
+      setTaggedCommissioner(true);
+    } else if (team.isCommissioner === false) {
+      setTaggedCommissioner(false);
+    }
+    // else: undefined → no-op, preserve current taggedCommissioner state
+  }, [resolvedTeams, loggedInUser]);
 
   // ── Hydrate tournament results from Firebase ──────────────────────────────
   // Hydrate tournament results from Firebase once after load.
