@@ -673,6 +673,19 @@ export const AddDropPlayerModal = ({
                         Unavailable
                       </span>
                     )}
+                    {isLimbo && !isRostered && (
+                      // Mirror the rostered "Unavailable" inline indicator so
+                      // limbo players (recently-dropped, on-waivers state)
+                      // are visually unmistakable in search results. The
+                      // right-side "On Waivers" badge already exists, but the
+                      // inline tag matches the rostered treatment for
+                      // visual rhythm — a glance at the row is enough to
+                      // know the player can't be selected without having to
+                      // notice the right-side badge.
+                      <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: colors.textGold, textTransform: 'uppercase' }}>
+                        Unavailable
+                      </span>
+                    )}
                   </div>
                   {isRostered ? (
                     <span style={{
