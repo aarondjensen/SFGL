@@ -3,7 +3,7 @@ import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../utils/index.js';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
-import { playersApi } from '../api/firebase';
+import { playersApi, teamsApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
 import { theme, colors, fonts } from '../theme.js';
 import { LIV_GOLF_ROSTER } from '../constants';
@@ -39,6 +39,13 @@ export const AddDropPlayerModal = ({
   const [searchResults,        setSearchResults]        = useState([]); // results from name search
   const [loadingPlayers,       setLoadingPlayers]       = useState(false);
   const [searching,            setSearching]            = useState(false);
+  // Fresh-teams snapshot fetched on modal open. Guards against stale React
+  // state when the modal is opened seconds after a waiver/FA write — the
+  // Firestore subscription that feeds the `teams` prop may not have
+  // propagated yet, which previously caused just-rostered players to appear
+  // in the FA list. When this is non-null, prefer it over the `teams` prop
+  // for ownership computation. Falls back to `teams` prop while loading.
+  const [freshTeams,           setFreshTeams]           = useState(null);
   const bodyRef  = useRef(null);
   const [localHeadshots, setLocalHeadshots] = useState({});
   const searchTimerRef = useRef(null);
@@ -52,6 +59,16 @@ export const AddDropPlayerModal = ({
       .then(players => setTopPlayers(players))
       .catch(() => setTopPlayers([]))
       .finally(() => setLoadingPlayers(false));
+  }, [isOpen]);
+
+  // Fetch fresh /teams on modal open — gives us a snapshot at-or-after the
+  // moment the modal opened, immune to Firestore subscription propagation
+  // lag for the `teams` prop. One read per modal open.
+  useEffect(() => {
+    if (!isOpen) { setFreshTeams(null); return; }
+    teamsApi.getAll()
+      .then(latest => setFreshTeams(Array.isArray(latest) ? latest : null))
+      .catch(() => setFreshTeams(null));
   }, [isOpen]);
 
   // ── Escape key + body scroll lock (shared) ─────────────────────────────────
@@ -141,8 +158,13 @@ export const AddDropPlayerModal = ({
   //     pair already accounts for the roster movement.
   //   • swing_winner — tx.player on these is the manager's owner name (used
   //     for "Jensen won the pot" display copy), NOT an actual golfer.
+  // Prefer the fresh snapshot fetched at modal open over the props (which
+  // can lag behind Firestore for a beat after a waiver/FA write). Falls back
+  // to props if the fresh fetch hasn't returned yet or errored.
+  const effectiveTeams = freshTeams || teams;
+
   const rosteredPlayers = new Set(
-    teams.flatMap(t => {
+    effectiveTeams.flatMap(t => {
       let roster = (t.roster || []).map(p => p.name);
       const rosterSet = new Set(roster);
       transactions
@@ -202,7 +224,7 @@ export const AddDropPlayerModal = ({
 
   // Build ownership map: playerName → teamName
   const ownerMap = new Map();
-  teams.forEach(t => {
+  effectiveTeams.forEach(t => {
     const rosterSet = new Set((t.roster || []).map(p => p.name));
     transactions
       .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && (tx.status === 'processed' || tx.status === 'completed'))
@@ -242,6 +264,47 @@ export const AddDropPlayerModal = ({
   const handleConfirm = async () => {
     if (!canConfirm) return;
     setSaving(true);
+
+    // Final freshness check: refetch /teams immediately before committing so
+    // we don't add a player who was just rostered by another team's
+    // waiver/FA submission seconds ago. This is the bullet-proof safety net
+    // for the modal — even if our cached list shows them as available, the
+    // submit will refuse if the most recent Firestore state says otherwise.
+    // Only enforced for FA mode; waivers are pending claims that get
+    // re-resolved at processing time and have their own conflict logic.
+    if (!isWaiverMode) {
+      try {
+        const latestTeams = await teamsApi.getAll();
+        if (Array.isArray(latestTeams)) {
+          const allRostered = new Set();
+          const ownerByName = new Map();
+          latestTeams.forEach(t => {
+            (t.roster || []).forEach(p => {
+              allRostered.add(p.name);
+              ownerByName.set(p.name, t.name);
+            });
+          });
+          if (allRostered.has(selectedPlayerToAdd.name)) {
+            const owner = ownerByName.get(selectedPlayerToAdd.name);
+            const ownerLabel = owner && owner !== team.name ? ` (now on ${owner})` : '';
+            dialog.showToast(
+              `${selectedPlayerToAdd.name} was just claimed${ownerLabel}. Please pick someone else.`,
+              'error',
+            );
+            setSaving(false);
+            // Also refresh the in-modal snapshot so the list updates immediately.
+            setFreshTeams(latestTeams);
+            setSelectedPlayerToAdd(null);
+            return;
+          }
+        }
+      } catch (err) {
+        // Refetch failure is non-fatal — we'll proceed using whatever data
+        // we have. Better to risk a rare race than to block all submits
+        // when Firestore reads are temporarily failing.
+        console.warn('[AddDrop] fresh teams refetch before submit failed:', err);
+      }
+    }
 
     const newTx = {
       team:            team.name,
