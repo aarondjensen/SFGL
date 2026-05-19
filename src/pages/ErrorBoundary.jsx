@@ -32,8 +32,75 @@ let _reportCount = 0;
 const _dedupe = new Map();
 const DEDUPE_WINDOW_MS = 60 * 1000;
 
+// ── Stale-chunk auto-reload ─────────────────────────────────────────────────
+// After a deploy, Vite renames its content-hashed chunk files. Users with
+// the previous build's index.html still loaded will fail to lazy-load any
+// route that references the renamed chunks — Vite throws:
+//   "Failed to fetch dynamically imported module: .../<Component>-<hash>.js"
+//
+// This is a transient, expected error during deploys. The right response is
+// to silently reload the page (which fetches the new index.html with the
+// new chunk references), not show an error UI or email the commish.
+//
+// Detection: match the error message pattern. Vite + Webpack both produce
+// recognizable phrasing. Also matches asset-load failures for static .js
+// chunks (chunkLoadError) and a sibling "Importing a module script failed"
+// message Safari emits for the same root cause.
+//
+// Reload-loop protection: if a reload happens and the SAME error appears
+// again immediately, that means the issue isn't actually a stale chunk
+// (could be a network outage, CDN edge issue, or a real Vite build
+// problem). Don't reload-loop the user — surface the error normally.
+// sessionStorage marker tracks this within the current tab session.
+const STALE_CHUNK_RELOAD_KEY = 'sfgl_stale_chunk_reload_at';
+const RELOAD_COOLDOWN_MS = 30 * 1000;
+
+function isStaleChunkError(err) {
+  if (!err) return false;
+  const msg = String(err.message || err || '');
+  return (
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('Importing a module script failed') ||
+    msg.includes('error loading dynamically imported module') ||
+    // Webpack/legacy bundlers — covered for completeness even though we use Vite
+    msg.includes('ChunkLoadError') ||
+    msg.includes('Loading chunk') ||
+    msg.includes('Loading CSS chunk')
+  );
+}
+
+function maybeReloadForStaleChunk(err) {
+  if (!isStaleChunkError(err)) return false;
+  if (typeof window === 'undefined') return false;
+  try {
+    const lastReloadStr = sessionStorage.getItem(STALE_CHUNK_RELOAD_KEY);
+    const lastReload = lastReloadStr ? parseInt(lastReloadStr, 10) : 0;
+    const now = Date.now();
+    // If we reloaded for the same reason within the cooldown, the reload
+    // didn't fix it. Don't loop — fall through to normal error handling.
+    if (lastReload && (now - lastReload) < RELOAD_COOLDOWN_MS) {
+      console.warn('[stale-chunk] reload already attempted recently, surfacing error');
+      return false;
+    }
+    sessionStorage.setItem(STALE_CHUNK_RELOAD_KEY, String(now));
+  } catch (_) {
+    // sessionStorage might be unavailable (private browsing, etc) — proceed
+    // with reload anyway; worst case is a loop the user can break by closing the tab
+  }
+  console.warn('[stale-chunk] detected stale chunk reference, reloading');
+  window.location.reload();
+  return true;
+}
+
 export function reportClientError(payload) {
   try {
+    // Stale-chunk errors during a deploy are expected; auto-reload silently
+    // instead of emailing the commish. Check both the message and the stack
+    // since unhandledrejection wrapper may have the original error nested.
+    if (isStaleChunkError({ message: payload?.message }) || isStaleChunkError({ message: payload?.stack })) {
+      if (maybeReloadForStaleChunk({ message: payload?.message || payload?.stack })) return;
+    }
+
     if (_reportCount >= MAX_REPORTS) return;
 
     // Dedupe by error message + first stack frame
@@ -109,10 +176,20 @@ export class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(error) {
+    // Stale-chunk errors (after a deploy) → silent reload instead of
+    // rendering the fallback UI. The reload is fired imperatively from
+    // componentDidCatch below; getDerivedStateFromError still flips
+    // hasError so we get a one-frame placeholder rather than React
+    // continuing to try (and re-fail) the render.
     return { hasError: true, error };
   }
 
   componentDidCatch(error, info) {
+    // Intercept stale-chunk errors before the normal logging path. Silent
+    // reload (no email, no fallback UI) — see maybeReloadForStaleChunk
+    // for the loop-protection rationale.
+    if (maybeReloadForStaleChunk(error)) return;
+
     console.error(`[ErrorBoundary${this.props.tabName ? ` — ${this.props.tabName}` : ''}]`, error, info);
     reportClientError({
       message: error?.message || 'React boundary error',
