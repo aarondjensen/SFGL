@@ -122,6 +122,7 @@ export const TournamentResultsPanel = ({
   const [manualEntry, setManualEntry] = React.useState(EMPTY_ENTRY);
   const [pgaFetching, setPgaFetching] = React.useState(false);
   const [resending, setResending] = React.useState(false);
+  const [resyncing, setResyncing] = React.useState(false);
 
   React.useEffect(() => {
     const active = tournaments.find(t => t.playing);
@@ -502,6 +503,38 @@ export const TournamentResultsPanel = ({
     }
   };
 
+  // ── Resync Legacy Tournament Store ───────────────────────────────────────
+  // Standalone repair tool: forces /sfgl_data/fantasy-golf-tournaments to
+  // match the canonical /tournaments collection. Useful when the two stores
+  // have drifted — e.g., after a bad cron fire that wrote only to legacy,
+  // or after an Undo from before the auto-resync was added.
+  //
+  // Idempotent. Safe to run any time. Doesn't modify the canonical state,
+  // only copies it down to the legacy doc.
+  const handleResyncLegacy = async () => {
+    const ok = await dialog.showConfirm(
+      'Resync Legacy Tournament Store?',
+      'Forces /sfgl_data/fantasy-golf-tournaments to match the canonical /tournaments collection. Safe to run any time; only fixes divergence (does not change canonical state). Use this if tournament state in the UI looks wrong (e.g., a tournament shows as completed but Undo said it was restored).',
+      { type: 'warning', confirmText: 'Resync', cancelText: 'Cancel' }
+    );
+    if (!ok) return;
+    setResyncing(true);
+    try {
+      const resp = await fetch('/api/cron?action=resync-legacy-tournaments');
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        dialog.showToast(`Resync failed: ${data?.error || resp.status}`, 'error');
+        return;
+      }
+      dialog.showToast(`✓ Resynced ${data.updated} tournaments from canonical to legacy`, 'success');
+    } catch (err) {
+      console.error('handleResyncLegacy error:', err);
+      dialog.showToast('Error: ' + err.message, 'error');
+    } finally {
+      setResyncing(false);
+    }
+  };
+
   // ── Undo Tournament Results ──────────────────────────────────────────────
   // TEMPORARY testing tool. Reverts a processed tournament back to
   // "playing/not-completed" and reverses every state change the processing
@@ -644,6 +677,27 @@ export const TournamentResultsPanel = ({
         setTransactions(newTransactions);
       }
 
+      // Resync the legacy /sfgl_data/fantasy-golf-tournaments doc so it
+      // reflects the canonical state we just wrote. Without this, the legacy
+      // doc still holds the bad-fire's "completed: true" state — and most
+      // app views read tournament state from the legacy doc, not canonical.
+      // Fire-and-forget; if resync fails, the toast surfaces it but doesn't
+      // roll back the React state updates above.
+      try {
+        const resyncResp = await fetch('/api/cron?action=resync-legacy-tournaments');
+        const resyncData = await resyncResp.json().catch(() => ({}));
+        if (!resyncResp.ok) {
+          console.warn('[handleUndoResults] resync-legacy failed:', resyncData);
+          dialog.showToast(`Undid in canonical, but legacy resync failed: ${resyncData?.error || resyncResp.status}`, 'error');
+          return;
+        }
+        console.log('[handleUndoResults] legacy resync done:', resyncData);
+      } catch (resyncErr) {
+        console.warn('[handleUndoResults] resync-legacy threw:', resyncErr);
+        dialog.showToast(`Undid in canonical, but legacy resync threw: ${resyncErr.message}`, 'error');
+        return;
+      }
+
       dialog.showToast(`✓ Undid results for ${selectedTourney}. Tournament is back to playing state.`, 'success');
     } catch (err) {
       console.error('handleUndoResults error:', err);
@@ -730,6 +784,20 @@ export const TournamentResultsPanel = ({
           ↩️ Undo Tournament Results (testing)
         </button>
       )}
+
+      {/* Resync Legacy Tournament Store — repair tool. Forces the legacy
+          /sfgl_data/fantasy-golf-tournaments doc to match the canonical
+          /tournaments collection. Shown for ANY selected tournament (not
+          just completed) so the commish can repair drift without picking
+          a specific tournament's state. Idempotent. */}
+      <button
+        onClick={handleResyncLegacy}
+        disabled={resyncing}
+        className="modal-feel-lift"
+        style={{ ...M.btnSecondary, ...disabledBtn(resyncing) }}
+      >
+        {resyncing ? '⏳ Resyncing…' : '🔄 Resync Legacy Tournament Store'}
+      </button>
 
       {/* Fetch results button */}
       <button
