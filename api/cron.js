@@ -875,6 +875,55 @@ async function handleProcessResults(res) {
   }
   const tournament = tournaments[ti];
 
+  // ── Safety gate: tournament must be plausibly complete ───────────────────
+  // Defense-in-depth against the catastrophic-but-silent failure mode where
+  // /api/pga-results returns a "past results" page for an event that hasn't
+  // happened yet (PGA Tour publishes the page with the field listed days in
+  // advance). Without this guard the cron would mark a future event
+  // "completed" with $0 earnings for everyone — wiping lineups, advancing
+  // the active-tournament pointer, and corrupting state in ways that are
+  // painful to unwind.
+  //
+  // Two independent checks. Either alone would catch the bug; both together
+  // means a single source of data weirdness can't trigger a false-positive
+  // process. Both log loudly before bailing so future failures are easy
+  // to diagnose.
+  //
+  // CHECK A — Calendar gate. Tournament must have started 4+ days ago in ET.
+  // PGA Tour rounds are Thu-Sun (4 days). A tournament that started today
+  // can't possibly have final results; an event whose start_date is in the
+  // future definitely can't. The 4-day grace covers Monday-morning
+  // processing of Sunday-finished events. Rain delays / Monday finishes
+  // extend this naturally because the second guard (CHECK B) will block
+  // until earnings actually exist.
+  const startDateStr = tournament.start_date || tournament.startDate;
+  if (startDateStr) {
+    const startDate = new Date(startDateStr + 'T12:00:00Z');
+    if (!isNaN(startDate.getTime())) {
+      // Compare in ET-naive frame to match getETNow() semantics elsewhere.
+      const nowEt = getETNow();
+      const daysSinceStart = (nowEt.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+      console.log(`[cron-results] calendar check: start=${startDateStr} now=${nowEt.toISOString()} daysSinceStart=${daysSinceStart.toFixed(2)}`);
+      if (daysSinceStart < 4) {
+        console.warn(`[cron-results] REFUSING to process "${tournament.name}" — only ${daysSinceStart.toFixed(2)} days since start (need 4+)`);
+        // Don't mark lastFire — we want the cron to keep retrying once the
+        // tournament actually finishes. Marking it would suppress next
+        // week's legit fire.
+        return res.json({
+          status: 'too_early',
+          tournament: tournament.name,
+          startDate: startDateStr,
+          daysSinceStart: daysSinceStart.toFixed(2),
+          message: `Tournament hasn't been underway long enough to have final results`,
+        });
+      }
+    } else {
+      console.warn(`[cron-results] start_date "${startDateStr}" failed to parse for "${tournament.name}" — relying on earnings check`);
+    }
+  } else {
+    console.warn(`[cron-results] no start_date on "${tournament.name}" — relying on earnings check`);
+  }
+
   // Fetch results from ESPN via the existing pga-results API
   // Since we're server-side, call our own API endpoint
   const baseUrl = process.env.VERCEL_URL
@@ -887,10 +936,30 @@ async function handleProcessResults(res) {
     const pgaResp = await fetch(`${baseUrl}/api/pga-results?${params.toString()}`);
     pgaData = await pgaResp.json();
     if (!pgaResp.ok || !pgaData.players?.length) {
+      console.log(`[cron-results] pga-results returned no players (status ${pgaResp.status})`);
       return res.json({ status: 'no_results', message: pgaData.error || 'No results available yet for ' + tournament.name });
     }
   } catch (err) {
+    console.warn(`[cron-results] pga-results fetch error: ${err.message}`);
     return res.json({ status: 'fetch_error', message: 'Failed to fetch results: ' + err.message });
+  }
+
+  // CHECK B — Earnings sanity. A real completed tournament always has at
+  // least one player with non-zero earnings (the winner gets paid). If
+  // every returned player shows $0, ESPN/PGA Tour gave us a pre-event
+  // scaffolded page rather than final results. This catches cases where
+  // start_date is missing/malformed but the data itself is the
+  // tell-tale: a winner hasn't been paid yet.
+  const playersWithEarnings = pgaData.players.filter(p => (p.earnings || 0) > 0).length;
+  console.log(`[cron-results] earnings check: ${pgaData.players.length} players, ${playersWithEarnings} with earnings`);
+  if (playersWithEarnings === 0) {
+    console.warn(`[cron-results] REFUSING to process "${tournament.name}" — pga-results returned ${pgaData.players.length} players but ZERO have earnings`);
+    return res.json({
+      status: 'no_earnings',
+      tournament: tournament.name,
+      playersReturned: pgaData.players.length,
+      message: 'Tournament results page found but no player has earnings yet — likely a pre-event scaffolded page',
+    });
   }
 
   const { players, roundLeaders: rl } = pgaData;
