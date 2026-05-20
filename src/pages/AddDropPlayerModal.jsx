@@ -375,12 +375,17 @@ export const AddDropPlayerModal = ({
       const playerSummary = selectedPlayerToDrop
         ? `+${selectedPlayerToAdd.name} / -${selectedPlayerToDrop.name}`
         : `+${selectedPlayerToAdd.name}`;
+      // Title is the SFGL identifier; team name and player change go in the
+      // body. This puts the SFGL brand at the top of the notification
+      // (rather than the team name) and aligns with the iOS-auto-added
+      // "from SFGL" subtitle below the title. The team-specific info stays
+      // prominent on its own body line.
       sendManagerPush({
         event: 'freeAgent',
         teamId: team.id,
         recipients: recipientIds,
-        title: `🔄 ${team.name}`,
-        body: playerSummary,
+        title: `🔄 Add/Drop`,
+        body: `${team.name}: ${playerSummary}`,
         deepLink: '#transactions',
       }).catch(err => console.warn('[push] freeAgent send failed:', err.message));
     }
