@@ -95,7 +95,7 @@ export default async function handler(req, res) {
     }
 
     // ── Parse ──────────────────────────────────────────────────────────────
-    const { players, roundLeaders } = parseResults(html);
+    const { players, roundLeaders, status } = parseResults(html);
 
     if (!players.length) {
       return res.status(404).json({
@@ -104,7 +104,7 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(200).json({ players, roundLeaders, resolvedUrl: pastResultsUrl });
+    return res.status(200).json({ players, roundLeaders, status, resolvedUrl: pastResultsUrl });
 
   } catch (err) {
     return res.status(500).json({ error: err.message, url: pastResultsUrl });
@@ -176,6 +176,16 @@ function parseResults(html) {
 
     const playerMap = new Map(); // name -> earnings (keep highest seen)
     const roundLeaders = { round1: [], round2: [], round3: [] };
+    // Tournament completion status. PGA Tour's __NEXT_DATA__ exposes the
+    // tournament/round state under various keys depending on the page
+    // version. We collect any we find; the result-processing guard uses
+    // this to refuse processing until the event is officially complete.
+    // Values we treat as "final": OFFICIAL, COMPLETE, COMPLETED, FINAL,
+    // PLAYOFF_COMPLETE. Anything else (IN_PROGRESS, SUSPENDED, GROUPS_*,
+    // null) is treated as "not final".
+    const statusSignals = { raw: [], isFinal: false, sawAnyStatus: false };
+    const STATUS_KEYS = ['tournamentStatus', 'roundStatus', 'tournamentState', 'roundState', 'playState', 'eventStatus', 'status'];
+    const FINAL_VALUES = new Set(['official', 'complete', 'completed', 'final', 'playoff_complete', 'post']);
 
     const MONEY_KEYS = ['earnings', 'officialMoney', 'prize', 'purse', 'moneyAmount', 'winnings', 'money', 'totalMoney'];
     const NAME_KEYS  = ['displayName', 'name', 'fullName', 'playerName'];
@@ -183,6 +193,36 @@ function parseResults(html) {
     const walk = (obj) => {
       if (!obj || typeof obj !== 'object') return;
       if (Array.isArray(obj)) { obj.forEach(walk); return; }
+
+      // Capture any tournament/round status field present on this object.
+      // Only consider STRING values to avoid misreading a nested status
+      // object as a value. ESPN-style `status.type.state` is handled by the
+      // explicit STATUS_KEYS scan ('state') plus the string-value check.
+      for (const sk of STATUS_KEYS) {
+        const v = obj[sk];
+        if (typeof v === 'string' && v.trim()) {
+          const norm = v.trim().toLowerCase();
+          statusSignals.raw.push(`${sk}=${norm}`);
+          statusSignals.sawAnyStatus = true;
+          if (FINAL_VALUES.has(norm)) statusSignals.isFinal = true;
+        } else if (sk === 'status' && v && typeof v === 'object') {
+          // ESPN-shaped status: { type: { state, completed, description } }
+          const t = v.type || v;
+          if (t && typeof t === 'object') {
+            if (typeof t.state === 'string') {
+              const norm = t.state.trim().toLowerCase();
+              statusSignals.raw.push(`status.type.state=${norm}`);
+              statusSignals.sawAnyStatus = true;
+              if (FINAL_VALUES.has(norm)) statusSignals.isFinal = true;
+            }
+            if (t.completed === true) {
+              statusSignals.raw.push('status.type.completed=true');
+              statusSignals.sawAnyStatus = true;
+              statusSignals.isFinal = true;
+            }
+          }
+        }
+      }
 
       // Resolve player name from this object or its nested `player` sub-object
       let playerName = null;
@@ -257,17 +297,22 @@ function parseResults(html) {
       if (!hasLeaders) {
         const { roundLeaders: htmlLeaders } = parseHtmlTable(html);
         console.log(`[pga-results] No round leaders in JSON — computed from HTML: R1=${htmlLeaders.round1.join(',')} R2=${htmlLeaders.round2.join(',')} R3=${htmlLeaders.round3.join(',')}`);
-        return { players, roundLeaders: htmlLeaders };
+        return { players, roundLeaders: htmlLeaders, status: statusSignals };
       }
 
-      return { players, roundLeaders };
+      console.log(`[pga-results] status signals: ${statusSignals.raw.join(', ') || '(none found)'} → isFinal=${statusSignals.isFinal}`);
+      return { players, roundLeaders, status: statusSignals };
     }
 
     console.log('[pga-results] __NEXT_DATA__ found no players, falling back to HTML table');
   }
 
   // ── HTML table fallback ───────────────────────────────────────────────────
-  return parseHtmlTable(html);
+  // No status signal available from the HTML path; return a status object
+  // that indicates "unknown" so the guard can apply its earnings-based
+  // heuristics instead.
+  const htmlResult = parseHtmlTable(html);
+  return { ...htmlResult, status: { raw: [], isFinal: false, sawAnyStatus: false } };
 }
 
 // ── HTML table parser (fallback) ──────────────────────────────────────────────
