@@ -200,7 +200,7 @@ export const AddTransactionModal = ({
     let txFee = 0;
     if (!isBlocked) {
       if (type === 'waiver')        txFee = FEE_WAIVER;
-      else if (type === 'free agent') txFee = FEE_FA;
+      else if (type === 'fa')       txFee = FEE_FA;
       // drop / mulligan / other types remain $0
     }
 
@@ -363,7 +363,7 @@ export const AddTransactionModal = ({
       && affectedTeam.id !== commishTeam.id;
 
     if (shouldPush) {
-      const typeLabel = type === 'free agent' ? 'free agent claim'
+      const typeLabel = type === 'fa'          ? 'free agent claim'
                      : type === 'drop'        ? 'player drop'
                      : type === 'mulligan'    ? 'mulligan'
                      : type === 'waiver'      ? 'waiver claim'
