@@ -97,13 +97,64 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     fullBackups: {},
   };
 
+  // Resolve this tournament's index so we can find mulligan transactions
+  // that target it. tournament.name is the stable identity here.
+  const thisTournamentIndex = tournament.tournamentIndex !== undefined
+    ? tournament.tournamentIndex
+    : null;
+
   const newTeams = teams.map(team => {
     if (!team.lineup || team.lineup.length === 0) return team;
 
-    resultsData.fullLineups[team.id] = [...team.lineup];
+    // ── Apply mulligans to the lineup (re-process-safe) ──────────────────
+    // A mulligan swaps one lineup player (OUT) for another (IN) for a single
+    // tournament. When the mulligan is created, AddTransactionModal performs
+    // the swap imperatively on stored results. But a re-process recomputes
+    // everything from team.lineup — which still holds the ORIGINAL player —
+    // so without this step the mulligan is silently undone on re-process
+    // (the exact "Scheffler shows $0" bug).
+    //
+    // Here we replay this team's mulligan transactions for THIS tournament
+    // against the lineup so the recompute honors them. We match the tournament
+    // by index when available, else fall back to name match. The swap mirrors
+    // AddTransactionModal: replace OUT with IN in the lineup array.
+    //
+    // Idempotent: if the lineup already contains IN (not OUT), the swap is a
+    // no-op. Safe to run on every process/re-process.
+    let effectiveLineup = [...team.lineup];
+    const teamMulligans = (transactions || []).filter(tx =>
+      tx.type === 'mulligan' &&
+      tx.team === team.name &&
+      tx.status !== 'pending' &&
+      tx.status !== 'failed' &&
+      tx.player &&            // IN player
+      tx.droppedPlayer &&     // OUT player
+      (
+        // Prefer index match; fall back to name match if index unavailable
+        (thisTournamentIndex !== null && tx.tournamentIndex === thisTournamentIndex) ||
+        (tx.tournamentName && tx.tournamentName === tournament.name)
+      )
+    );
+    teamMulligans.forEach(mull => {
+      const outName = mull.droppedPlayer;
+      const inName  = mull.player;
+      const idx = effectiveLineup.findIndex(p => p === outName);
+      if (idx !== -1) {
+        console.log(`[processTournament] mulligan swap for ${team.name}: ${outName} → ${inName}`);
+        effectiveLineup[idx] = inName;
+      } else if (!effectiveLineup.includes(inName)) {
+        // OUT player not in lineup but IN player also absent — unusual, but
+        // honor the mulligan by adding IN (avoids dropping the swap entirely).
+        console.warn(`[processTournament] mulligan for ${team.name}: OUT player "${outName}" not in lineup; adding IN "${inName}"`);
+        effectiveLineup.push(inName);
+      }
+      // else: IN already present (idempotent re-process) — no-op
+    });
+
+    resultsData.fullLineups[team.id] = [...effectiveLineup];
     if (team.backup) resultsData.fullBackups[team.id] = team.backup;
 
-    const starterResults = team.lineup.map(playerName => {
+    const starterResults = effectiveLineup.map(playerName => {
       let earnings = earningsMap[playerName];
       if (earnings === undefined) {
         const mk = Object.keys(earningsMap).find(k => matchPlayerName(k, playerName));
@@ -124,7 +175,7 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
           : (tournamentData.roundLeaders[round] ? [tournamentData.roundLeaders[round]] : []);
         leaders.forEach(leaderName => {
           if (!leaderName) return;
-          const actual = team.lineup.find(pn => normalizePlayerName(pn) === normalizePlayerName(leaderName));
+          const actual = effectiveLineup.find(pn => normalizePlayerName(pn) === normalizePlayerName(leaderName));
           if (actual) {
             bonusEarnings[round] = bonuses[round];
             totalEarnings += bonuses[round];
@@ -164,7 +215,7 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     });
 
     const updatedRoster = team.roster.map(player => {
-      if (!team.lineup.includes(player.name)) return player;
+      if (!effectiveLineup.includes(player.name)) return player;
       const pe = earningsByLineupName[player.name] || 0;
       return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + pe };
     });
