@@ -215,7 +215,10 @@ export const TournamentResultsPanel = ({
         earningsMap, isManualEntry: true,
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));
-      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, teams, globalPlayerStats, names, transactions);
+      // Pass the array index on the tournament object so processTournamentData
+      // can match mulligan transactions (which reference tournaments by
+      // tournamentIndex) to this event.
+      const { newTeams, newStats, resultsData } = processTournamentData({ ...tournament, tournamentIndex: ti }, manualData, teams, globalPlayerStats, names, transactions);
 
       // Mark tournament completed, advance playing to next non-alternate.
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, completed: true, playing: false, results: resultsData } : nt);
@@ -378,7 +381,7 @@ export const TournamentResultsPanel = ({
         earningsMap, isManualEntry: true,
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));
-      const { newTeams, newStats, resultsData } = processTournamentData(tournament, manualData, reversedTeams, reversedStats, names, transactions);
+      const { newTeams, newStats, resultsData } = processTournamentData({ ...tournament, tournamentIndex: ti }, manualData, reversedTeams, reversedStats, names, transactions);
 
       const newT = tournaments.map((nt, i) => i === ti ? { ...nt, results: resultsData } : nt);
 
