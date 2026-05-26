@@ -1010,6 +1010,68 @@ async function handleProcessResults(res) {
     });
   }
 
+  // CHECK C — Official status gate. The most reliable signal: the PGA Tour
+  // page itself reports whether the tournament is OFFICIAL/COMPLETE. This is
+  // what catches the failure mode where ESPN/PGA Tour shows PARTIAL final-
+  // round data — some players finished (have earnings), others still on the
+  // course ($0). CHECK B passes in that case (someone has earnings) but the
+  // results aren't final. This check refuses unless the page explicitly says
+  // the event is complete.
+  //
+  // Important nuance: if NO status signal was found at all (sawAnyStatus =
+  // false), we DON'T hard-fail on this check — older page structures or the
+  // HTML fallback may not expose status. In that case we fall through to
+  // CHECK D (winner-purse sanity) which catches partial data via the money
+  // distribution. Only an EXPLICIT non-final status causes a refusal here.
+  const statusInfo = pgaData.status || {};
+  console.log(`[cron-results] status check: sawAnyStatus=${statusInfo.sawAnyStatus} isFinal=${statusInfo.isFinal} raw=[${(statusInfo.raw || []).join(', ')}]`);
+  if (statusInfo.sawAnyStatus && !statusInfo.isFinal) {
+    console.warn(`[cron-results] REFUSING to process "${tournament.name}" — page status is not final (${(statusInfo.raw || []).join(', ')})`);
+    return res.json({
+      status: 'not_final',
+      tournament: tournament.name,
+      statusSignals: statusInfo.raw || [],
+      message: 'Tournament page found but its status is not OFFICIAL/COMPLETE yet — results are still in progress',
+    });
+  }
+
+  // CHECK D — Winner-purse sanity. Independent of status (and the safety net
+  // when status isn't exposed). A completed PGA Tour event's winner takes a
+  // purse-sized payout — typically $1M+ on a full-field event, and well over
+  // $500K even on smaller purses. During a final round, ESPN often shows the
+  // current leader with a much smaller number (a projected/partial value) or
+  // shows several players tied at an identical mid-size figure with everyone
+  // else at $0 — exactly the pattern in the bad email (top teams all at
+  // $305,971, most players $0).
+  //
+  // Heuristic: the top earner must clear a floor that no mid-round partial
+  // would plausibly hit. $450K is conservative — lower than any real PGA
+  // Tour winner's share, higher than the partial/projected figures we've
+  // seen leak through. If the max earnings is below the floor, refuse.
+  //
+  // Also flag the suspicious "everyone tied at the same number" pattern: if
+  // the top 2+ players have IDENTICAL earnings AND that number is below a
+  // full winner's share, it's almost certainly partial data, not a real
+  // multi-way tie (real ties split the combined purse into DIFFERENT amounts
+  // only when positions differ; an exact tie for the win is rare and would
+  // still be a large number).
+  const WINNER_PURSE_FLOOR = 450000;
+  const sortedEarnings = pgaData.players
+    .map(p => p.earnings || 0)
+    .sort((a, b) => b - a);
+  const maxEarnings = sortedEarnings[0] || 0;
+  console.log(`[cron-results] winner-purse check: max=$${maxEarnings.toLocaleString()} floor=$${WINNER_PURSE_FLOOR.toLocaleString()}`);
+  if (maxEarnings < WINNER_PURSE_FLOOR) {
+    console.warn(`[cron-results] REFUSING to process "${tournament.name}" — top earner $${maxEarnings.toLocaleString()} is below winner-purse floor $${WINNER_PURSE_FLOOR.toLocaleString()} (likely partial/mid-round data)`);
+    return res.json({
+      status: 'suspect_partial',
+      tournament: tournament.name,
+      maxEarnings,
+      floor: WINNER_PURSE_FLOOR,
+      message: `Top earner ($${maxEarnings.toLocaleString()}) is below the winner-purse floor — results look partial, not final`,
+    });
+  }
+
   const { players, roundLeaders: rl } = pgaData;
 
   // Build earnings map
