@@ -519,12 +519,12 @@ export const TournamentsView = ({
         background: getSwingColorAt(segment, 0.18),
         border:    `1px solid ${getSwingColorAt(segment, 0.50)}`,
         color:      getSwingColorAt(segment, 0.95),
-        padding: '3px 8px',
+        padding: '3px 6px',
         fontSize: fontSize.xs,
         fontWeight: 700,
-        letterSpacing: 0.5,
+        letterSpacing: 0.3,
         textTransform: 'uppercase',
-        gap: 5,
+        gap: 4,
         whiteSpace: 'nowrap',
         display: 'inline-flex',
         alignItems: 'center',
@@ -617,14 +617,23 @@ export const TournamentsView = ({
       return { total, cuts, livePlayers: liveStarters.length };
     };
 
-    // Rank teams: best (lowest) sum first; teams with no live data sort last.
+    // Whether play has actually begun. Mirrors StatusBadge: `liveData.state`
+    // flips to 'in' as soon as any player has teed off. Used to gate the
+    // rank-number display — before the tournament starts, "rank" is just
+    // "whoever submitted a lineup with non-zero placeholder," which isn't
+    // meaningful. Once play begins, rank reflects actual cumulative score.
+    const hasStarted = liveData?.state === 'in';
+
+    // Rank teams: best (lowest) sum first; teams with no live data or no
+    // lineup sort last. Pre-tournament, all teams sort together at the
+    // bottom (no summary), and we render them in their original league order
+    // so the list is stable.
     const rankedTeams = teams
       .map(team => {
         const lineup = Array.isArray(team.lineup) ? team.lineup : [];
         const summary = teamScoreSummary(lineup);
         return { ...team, lineup, summary };
       })
-      .filter(team => team.lineup.length > 0)  // only teams that submitted
       .sort((a, b) => {
         // Teams with no live summary sort last (push nulls down)
         if (a.summary === null && b.summary === null) return 0;
@@ -633,20 +642,13 @@ export const TournamentsView = ({
         return a.summary.total - b.summary.total;
       });
 
-    if (rankedTeams.length === 0) {
-      return (
-        <div style={{ ...theme.emptyState, padding: '14px 14px' }}>
-          No teams have submitted lineups for this tournament yet.
-        </div>
-      );
-    }
-
     return (
       <div>
         {rankedTeams.map((team, rank) => {
           const lineup = team.lineup;
           const players = lineup.map(enrichForActive);
           const summary = team.summary;
+          const hasLineup = lineup.length > 0;
           // Display team-aggregate score: "+5" / "-3" / "E", or "—" if nothing live.
           let totalLabel = '—';
           let totalColor = colors.textMuted;
@@ -656,41 +658,64 @@ export const TournamentsView = ({
             // Golf-traditional: under par is red, over is muted, even is primary
             totalColor = t < 0 ? colors.danger : t > 0 ? colors.textMuted : colors.textPrimary;
           }
+          // Highlight the leader only once play has actually begun.
+          const isLeader = hasStarted && rank === 0 && summary;
           return (
             <div key={team.id}
               style={{
                 padding: '6px 14px',
                 borderBottom: `1px solid ${colors.borderSubtle}`,
-                background: rank === 0 && summary ? 'rgba(180,160,100,0.04)' : 'transparent',
+                background: isLeader ? 'rgba(180,160,100,0.04)' : 'transparent',
                 transition: 'background 0.15s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = rank === 0 && summary ? 'rgba(180,160,100,0.07)' : 'rgba(255,255,255,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = rank === 0 && summary ? 'rgba(180,160,100,0.04)' : 'transparent'; }}
+              onMouseEnter={e => { e.currentTarget.style.background = isLeader ? 'rgba(180,160,100,0.07)' : 'rgba(255,255,255,0.04)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = isLeader ? 'rgba(180,160,100,0.04)' : 'transparent'; }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <span style={{
-                  fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center',
-                  fontFamily: fonts.serif,
-                  color: rank === 0 && summary ? colors.textGold : colors.textMuted,
-                }}>
-                  {rank + 1}
-                </span>
+                {/* Rank number only renders once the tournament has started.
+                    Before play begins, "rank" is meaningless (all teams tied
+                    at zero or have no live data), so showing #1–#5 would be
+                    misleading. */}
+                {hasStarted && (
+                  <span style={{
+                    fontSize: fontSize.base, fontWeight: 700, width: 18, textAlign: 'center',
+                    fontFamily: fonts.serif,
+                    color: isLeader ? colors.textGold : colors.textMuted,
+                  }}>
+                    {rank + 1}
+                  </span>
+                )}
                 <span style={{ ...theme.bodyText, color: colors.textPrimary }}>{team.name}</span>
-                <span style={{
-                  ...theme.statNum, fontSize: fontSize.base, fontWeight: 600,
-                  color: totalColor,
-                  marginLeft: 2,
-                  fontFamily: fonts.mono,
-                }}>
-                  {totalLabel}
-                </span>
-                {summary && summary.cuts > 0 && (
+                {hasStarted && (
+                  <span style={{
+                    ...theme.statNum, fontSize: fontSize.base, fontWeight: 600,
+                    color: totalColor,
+                    marginLeft: 2,
+                    fontFamily: fonts.mono,
+                  }}>
+                    {totalLabel}
+                  </span>
+                )}
+                {hasStarted && summary && summary.cuts > 0 && (
                   <span style={{ fontSize: fontSize.xs, color: colors.textMuted, marginLeft: 4 }}>
                     ({summary.cuts} CUT)
                   </span>
                 )}
               </div>
-              <PlayerSlotGrid players={players} showLive />
+              {hasLineup ? (
+                <PlayerSlotGrid players={players} showLive />
+              ) : (
+                // No lineup yet — show a quiet status line instead of an
+                // empty grid. This makes the "5 teams visible" goal useful:
+                // the commish can see at a glance who hasn't set a lineup.
+                <div style={{
+                  fontFamily: fonts.sans, fontSize: fontSize.sm,
+                  color: colors.textMuted, fontStyle: 'italic',
+                  padding: '4px 0 2px',
+                }}>
+                  No lineup submitted yet
+                </div>
+              )}
             </div>
           );
         })}
@@ -1045,8 +1070,10 @@ export const TournamentsView = ({
                 </span>
               </td>
 
-              {/* Dates — or "In Progress" badge for active tournament */}
-              <td style={{ padding: '8px 6px', whiteSpace: 'nowrap' }}>
+              {/* Dates — or status badge for active tournament. Cell is
+                  width-constrained so the "This week" badge doesn't push
+                  into the Location column on narrow viewports. */}
+              <td style={{ padding: '8px 6px', whiteSpace: 'nowrap', maxWidth: 88, width: 88 }}>
                 {t.playing && !t.completed ? (
                   <StatusBadge tournament={t} />
                 ) : (
