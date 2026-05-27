@@ -222,6 +222,28 @@ export const getTokensForTeam = async (teamId) => {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 };
 
+/**
+ * Admin: read the entire pushTokens collection once and group by teamId.
+ * Returns a Map<teamId, Array<tokenDoc>>. Used by the commish console's
+ * "Manager Notification Status" view to show who's subscribed and on how
+ * many devices. Single collection read — cheap for a 5-team league.
+ *
+ * Each tokenDoc carries { id (=token), teamId, userAgent, createdAt,
+ * updatedAt }, so the UI can show device counts and (optionally) the
+ * device type parsed from the userAgent.
+ */
+export const getAllTokensByTeam = async () => {
+  const snap = await getDocs(collection(db, 'pushTokens'));
+  const byTeam = new Map();
+  snap.docs.forEach(d => {
+    const data = { id: d.id, ...d.data() };
+    const tid = data.teamId || '(unknown)';
+    if (!byTeam.has(tid)) byTeam.set(tid, []);
+    byTeam.get(tid).push(data);
+  });
+  return byTeam;
+};
+
 // ── Notification preferences (Wave J Round 6 batch 3) ──────────────────────
 // Per-team, per-event toggles stored at team.notificationPrefs. Missing keys
 // fall through to defaults (most are ON; batch 4 events are OFF).
@@ -384,11 +406,8 @@ const bindForegroundHandler = async () => {
     // this if the app were closed, but in foreground we need to render
     // the notification ourselves.
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    // Payloads are data-only (see /api/push.js comment for why). Read
-    // title/body from data; fall back to notification field for backward
-    // compat with messages from the old payload shape still in flight.
-    const title = payload.data?.title || payload.notification?.title || 'SFGL';
-    const body  = payload.data?.body  || payload.notification?.body  || '';
+    const title = payload.notification?.title || 'SFGL';
+    const body  = payload.notification?.body  || '';
     try {
       new Notification(title, {
         body,
