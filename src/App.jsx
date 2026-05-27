@@ -853,17 +853,17 @@ const FantasyGolfLeague = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 3,
-                  // Active state is colour-only — icon + label both turn
-                  // gold (#f5c518). No border, no background fill, no
-                  // layout shift. Matches Option 5 from the design preview.
+                  // Active state is colour-only — icon + label brighten to
+                  // pure white. Inactive tabs sit at ~45% white (light gray).
+                  // No border, no background fill, no layout shift.
                   border: 'none',
                   padding: '6px 4px 8px',
                   minHeight: 48,
                   background: 'transparent',
                   borderRadius: 6,
                   color: isActive
-                    ? '#f5c518'
-                    : 'rgba(255,255,255,0.55)',
+                    ? '#ffffff'
+                    : 'rgba(255,255,255,0.45)',
                   cursor: 'pointer',
                   transition: 'color 0.18s',
                   outline: 'none',

@@ -85,7 +85,7 @@ select option:hover {
 
 /* ── Tab focus-visible for keyboard accessibility ── */
 .sfgl-tab:focus-visible {
-  outline: 2px solid rgba(180,160,100,0.6);
+  outline: 2px solid rgba(255,255,255,0.55);
   outline-offset: -2px;
 }
 
