@@ -544,7 +544,7 @@ export const AdminView = ({
           desc: `${teams.length} team${teams.length === 1 ? '' : 's'}`,
         },
         {
-          id: 'commish', icon: '🔔', label: 'Push Notifications',
+          id: 'commish', icon: '📊', label: 'Manager Activity',
           desc: 'Test pushes to managers',
         },
       ],
@@ -659,10 +659,10 @@ export const AdminView = ({
       case 'commish':
         return (
           <>
-            <BackBar label="Push Notifications" onBack={back} />
+            <BackBar label="Manager Activity" onBack={back} />
             <div style={M.page}>
               <div style={M.descText}>
-                Subscribe this device, send a test push to yourself, or broadcast a test to all subscribed managers. Per-manager subscription preferences are managed in each manager's own user settings modal.
+                See manager engagement and notification status below. You can also subscribe this device, send a test push to yourself, or broadcast a test to all subscribed managers. Per-manager subscription preferences are managed in each manager's own user settings.
               </div>
 
               {/* ── Push Notifications group ── */}

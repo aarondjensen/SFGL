@@ -55,7 +55,7 @@ import { useLeague }       from './hooks';
 import { getSegmentByDate } from './utils';
 import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi } from './api/firebase';
+import { managerAuthApi, tournamentResultsApi, teamsApi } from './api/firebase';
 
 
 // ── Lazy-load fallback spinner ─────────────────────────────────────────────
@@ -297,7 +297,40 @@ const FantasyGolfLeague = () => {
     });
   }, [resolvedTeams]);
 
-  // ── Keep taggedCommissioner in sync with the live team document ──────────
+  // ── Last-active heartbeat ───────────────────────────────────────────────
+  // Records when each manager last used the app, so the commish console can
+  // show real engagement ("Hip Happens — active 2h ago") rather than just
+  // explicit logins (which are rare, since managers stay logged in via
+  // localStorage for weeks).
+  //
+  // Writes lastActiveAt to the manager's OWN team doc, throttled to at most
+  // once per hour per device via a localStorage timestamp. The write is a
+  // targeted single-field updateDoc (teamsApi.update) — non-destructive, so
+  // it won't cause the subscribed-collection flicker a setAll would, and the
+  // three-state taggedCommissioner sync below ignores it (it only reacts to
+  // explicit isCommissioner changes). Fire-and-forget; failures are silent.
+  //
+  // Keyed on loggedInUser so it runs once when a session becomes active, with
+  // the localStorage throttle as the real gate.
+  useEffect(() => {
+    if (!loggedInUser) return;
+    const teamId = localStorage.getItem('manager_team_id');
+    if (!teamId) return;
+
+    const HEARTBEAT_THROTTLE_MS = 60 * 60 * 1000; // 1 hour
+    const KEY = 'sfgl.lastHeartbeat';
+    let lastBeat = 0;
+    try { lastBeat = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch {}
+    const now = Date.now();
+    if (now - lastBeat < HEARTBEAT_THROTTLE_MS) return; // throttled
+
+    // Record the attempt time first so a slow/failed write doesn't cause a
+    // tight retry loop on rapid re-renders.
+    try { localStorage.setItem(KEY, String(now)); } catch {}
+
+    teamsApi.update(teamId, { lastActiveAt: new Date().toISOString() })
+      .catch(err => console.warn('[heartbeat] lastActiveAt write failed:', err?.message));
+  }, [loggedInUser]);
   // Runs every time resolvedTeams updates (Firebase subscription pushes a
   // new value, useLeague's initial load resolves, etc) or the user logs in
   // / out. Reads team.isCommissioner from the CURRENT team document and
