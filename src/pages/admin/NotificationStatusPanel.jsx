@@ -1,20 +1,19 @@
 // src/pages/admin/NotificationStatusPanel.jsx
 // ============================================================================
-// Commish console — "Manager Notification Status" view.
+// Commish console — "Manager Activity" view.
 //
-// Shows, per team, whether anyone on that team has push notifications
-// enabled and on how many devices. Data source: the pushTokens Firestore
-// collection (one doc per device-token, carrying teamId + userAgent). A
-// team with >=1 token is "on"; zero tokens is "off".
+// Per team, shows:
+//   • Last active — when the manager last opened the app (lastActiveAt on the
+//     team doc, written by a throttled heartbeat in App.jsx). Reflects real
+//     engagement, not just explicit logins.
+//   • Notification status — whether anyone on the team has push enabled and
+//     on how many devices (pushTokens collection, keyed by teamId).
 //
-// This is read-only visibility for the commish — it does NOT let the commish
-// toggle anyone's notifications (that's each manager's own choice in their
-// user settings). It answers the practical question "who will actually
-// receive the pushes I send?"
+// Read-only. Managers control their own subscriptions in their user settings;
+// this view answers "who's engaged, and who will actually receive pushes."
 //
-// One collection read on mount (and on manual refresh). Cheap for a 5-team
-// league. Device type is parsed best-effort from the userAgent string for a
-// friendlier display (iPhone / Android / Mac / Windows / etc.).
+// One pushTokens collection read on mount/refresh. lastActiveAt rides along
+// on the teams prop (no extra read).
 // ============================================================================
 
 import React from 'react';
@@ -33,6 +32,37 @@ function deviceLabel(ua) {
   if (s.includes('windows')) return 'Windows';
   if (s.includes('linux')) return 'Linux';
   return 'Other device';
+}
+
+// Relative-time formatter: ISO string → "2h ago", "3d ago", "just now", or
+// "Never". Coarse by design — exact minutes don't matter for engagement.
+function relativeTime(iso) {
+  if (!iso) return 'Never';
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return 'Never';
+  const diffMs = Date.now() - then;
+  if (diffMs < 0) return 'just now';
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1)  return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
+
+// Staleness color for the last-active text. Recent = bright, older = dimmer,
+// never = muted. Helps the commish spot disengaged managers at a glance.
+function activeColor(iso) {
+  if (!iso) return colors.textMuted;
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return colors.textMuted;
+  const days = (Date.now() - then) / (1000 * 60 * 60 * 24);
+  if (days < 3)  return colors.earningsGreen;
+  if (days < 10) return colors.textSecondary;
+  return colors.textMuted;
 }
 
 export const NotificationStatusPanel = ({ teams = [] }) => {
@@ -62,6 +92,7 @@ export const NotificationStatusPanel = ({ teams = [] }) => {
     return {
       teamId: team.id,
       teamName: team.name,
+      lastActiveAt: team.lastActiveAt || null,
       count: tokens.length,
       devices: tokens.map(t => deviceLabel(t.userAgent)),
     };
@@ -71,12 +102,12 @@ export const NotificationStatusPanel = ({ teams = [] }) => {
 
   return (
     <div style={M.group}>
-      <div style={M.eyebrow}>🔔 Manager Notification Status</div>
+      <div style={M.eyebrow}>📊 Manager Activity</div>
       <div style={M.descText}>
-        Who currently has push notifications enabled, and on how many devices.
-        A team must have at least one subscribed device to receive any pushes
-        you send. Managers control their own subscriptions in their user
-        settings — this view is read-only.
+        When each manager last opened the app, and whether they have push
+        notifications enabled (and on how many devices). A team needs at least
+        one subscribed device to receive any pushes you send. Read-only —
+        managers control their own subscriptions.
       </div>
 
       {loading ? (
@@ -118,37 +149,44 @@ export const NotificationStatusPanel = ({ teams = [] }) => {
                     background: isOn ? colors.earningsGreen : colors.textMuted,
                   }} />
 
-                  {/* Team name */}
-                  <div style={{
-                    flex: 1,
-                    fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 600,
-                    color: colors.textPrimary,
-                  }}>
-                    {row.teamName}
-                  </div>
+                  {/* Status dot reflects notification on/off */}
 
-                  {/* Status text */}
-                  <div style={{
-                    fontFamily: fonts.sans, fontSize: fontSize.sm,
-                    color: isOn ? colors.earningsGreen : colors.textMuted,
-                    textAlign: 'right',
-                  }}>
-                    {isOn ? (
-                      <>
-                        On
-                        <span style={{ color: colors.textMuted }}>
-                          {' · '}{row.count} {row.count === 1 ? 'device' : 'devices'}
-                        </span>
-                        {row.devices.length > 0 && (
-                          <div style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 }}>
-                            {/* De-dupe identical device labels with a count, e.g. "iPhone ×2" */}
-                            {Object.entries(
-                              row.devices.reduce((acc, d) => { acc[d] = (acc[d] || 0) + 1; return acc; }, {})
-                            ).map(([label, n]) => n > 1 ? `${label} ×${n}` : label).join(', ')}
-                          </div>
-                        )}
-                      </>
-                    ) : 'Off'}
+                  {/* Main content: two lines — name + last-active, then notif status */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{
+                        fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 600,
+                        color: colors.textPrimary,
+                      }}>
+                        {row.teamName}
+                      </span>
+                      <span style={{
+                        fontFamily: fonts.sans, fontSize: fontSize.sm,
+                        color: activeColor(row.lastActiveAt), whiteSpace: 'nowrap',
+                      }}>
+                        {relativeTime(row.lastActiveAt)}
+                      </span>
+                    </div>
+                    <div style={{
+                      fontFamily: fonts.sans, fontSize: fontSize.xs,
+                      color: isOn ? colors.earningsGreen : colors.textMuted,
+                      marginTop: 2,
+                    }}>
+                      {isOn ? (
+                        <>
+                          🔔 On · {row.count} {row.count === 1 ? 'device' : 'devices'}
+                          {row.devices.length > 0 && (
+                            <span style={{ color: colors.textMuted }}>
+                              {' ('}
+                              {Object.entries(
+                                row.devices.reduce((acc, d) => { acc[d] = (acc[d] || 0) + 1; return acc; }, {})
+                              ).map(([label, n]) => n > 1 ? `${label} ×${n}` : label).join(', ')}
+                              {')'}
+                            </span>
+                          )}
+                        </>
+                      ) : '🔕 Notifications off'}
+                    </div>
                   </div>
                 </div>
               );
