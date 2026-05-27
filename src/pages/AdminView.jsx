@@ -16,6 +16,7 @@ import { S, M, disabledBtn } from './admin/adminStyles';
 import { DataSyncPanel } from './admin/DataSyncPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
 import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
+import { NotificationStatusPanel } from './admin/NotificationStatusPanel';
 import { MergePlayersPanel } from './admin/MergePlayersPanel';
 import { ScheduleImportPanel } from './admin/ScheduleImportPanel';
 import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
@@ -757,6 +758,10 @@ export const AdminView = ({
                   </div>
                 )}
               </div>
+
+              {/* Manager notification status — read-only view of who's
+                  subscribed and on how many devices. */}
+              <NotificationStatusPanel teams={teams} />
             </div>
           </>
         );

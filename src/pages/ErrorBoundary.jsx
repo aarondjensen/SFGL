@@ -92,6 +92,45 @@ function maybeReloadForStaleChunk(err) {
   return true;
 }
 
+// ── Ignorable noise filter ──────────────────────────────────────────────────
+// Errors that carry no actionable information and should never generate an
+// email report. The canonical case is the bare "Script error." string that
+// browsers emit for uncaught errors thrown by CROSS-ORIGIN scripts — the
+// real message and stack are redacted for security, so there's nothing to
+// debug. These commonly fire from:
+//   • Firebase / FCM SDK (loaded cross-origin from gstatic.com)
+//   • ESPN headshot/leaderboard CDN scripts
+//   • Safari's Web Push / notification-permission flow on iOS PWAs
+//   • Browser extensions injecting scripts
+// We also filter a few other well-known no-signal messages browsers produce.
+const IGNORABLE_MESSAGES = [
+  'script error.',
+  'script error',
+  // ResizeObserver benign warnings — fire constantly on some layouts, never
+  // represent a real bug.
+  'resizeobserver loop limit exceeded',
+  'resizeobserver loop completed with undelivered notifications',
+  // Safari/iOS network blips during fetch that aren't actionable
+  'load failed',
+  // Generic "null is not an object" with no stack from cross-origin contexts
+  // is left OUT here intentionally — those can be real bugs in our code.
+];
+function isIgnorableNoise(payload) {
+  if (!payload) return true;
+  const msg = String(payload.message || '').trim().toLowerCase();
+  if (!msg) return true; // empty message = no signal
+  // Exact-match the known-noise strings. Use exact/startsWith rather than
+  // includes() so we don't accidentally suppress a real error that merely
+  // contains the word "script".
+  for (const noise of IGNORABLE_MESSAGES) {
+    if (msg === noise || msg === noise + '.') return true;
+  }
+  // A "Script error." with no stack is the cross-origin redaction case —
+  // belt-and-suspenders in case punctuation/whitespace varies.
+  if (msg.startsWith('script error') && !payload.stack) return true;
+  return false;
+}
+
 export function reportClientError(payload) {
   try {
     // Stale-chunk errors during a deploy are expected; auto-reload silently
@@ -99,6 +138,19 @@ export function reportClientError(payload) {
     // since unhandledrejection wrapper may have the original error nested.
     if (isStaleChunkError({ message: payload?.message }) || isStaleChunkError({ message: payload?.stack })) {
       if (maybeReloadForStaleChunk({ message: payload?.message || payload?.stack })) return;
+    }
+
+    // Ignore uninformative cross-origin / browser-noise errors. These carry
+    // no actionable detail (no stack, no line) — the browser deliberately
+    // redacts them for security when the error originates from a script
+    // served cross-origin (Firebase/FCM SDK from gstatic, ESPN CDN, Safari's
+    // notification-permission flow, browser extensions, etc.). Reporting
+    // them just spams the commish's inbox with "Script error." emails that
+    // can't be debugged. Drop them before they count toward the rate limit
+    // or get sent.
+    if (isIgnorableNoise(payload)) {
+      console.warn('[error-report] ignoring uninformative error:', payload?.message);
+      return;
     }
 
     if (_reportCount >= MAX_REPORTS) return;
