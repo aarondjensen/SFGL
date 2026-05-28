@@ -405,7 +405,6 @@ export const UserSettingsModal = ({
                 background: 'transparent',
                 border: 'none',
                 padding: '4px 0',
-                marginBottom: notifsExpanded ? 8 : 0,
                 cursor: 'pointer',
                 textAlign: 'left',
               }}
@@ -446,8 +445,19 @@ export const UserSettingsModal = ({
               }}>▼</span>
             </button>
 
-            {notifsExpanded && (
-              <>
+            {/* Animated collapse: grid-rows 0fr↔1fr slides the body open and
+                closed smoothly, in sync with the chevron rotation, instead of
+                popping in/out. The body stays MOUNTED (content visibility
+                toggled via the grid) so inner state — like an expanded
+                per-event matrix — isn't reset when the section collapses.
+                overflow:hidden clips during the transition. */}
+            <div style={{
+              display: 'grid',
+              gridTemplateRows: notifsExpanded ? '1fr' : '0fr',
+              transition: 'grid-template-rows 0.22s ease',
+            }}>
+              <div style={{ overflow: 'hidden', minHeight: 0 }}>
+                <div style={{ paddingTop: 8 }}>
                 {/* Master device toggle — iOS Settings pattern. One row owns
                     everything: status dot, label, and the toggle pill. The
                     pill drives subscribe/unsubscribe; status detail surfaces
@@ -673,8 +683,9 @@ export const UserSettingsModal = ({
                     </div>
                   </div>
                 )}
-              </>
-            )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -269,46 +269,56 @@ export const NotificationStatusPanel = ({ teams = [], updateTeams }) => {
                     )}
                   </div>
 
-                  {/* Expanded per-event channel matrix */}
-                  {isExpanded && canEdit && (
+                  {/* Expanded per-event channel matrix — animated grid-rows
+                      collapse so it slides open/closed smoothly in sync with
+                      the chevron, rather than popping the row's height. */}
+                  {canEdit && (
                     <div style={{
-                      borderTop: `1px solid ${colors.borderSubtle}`,
-                      padding: '8px 12px 10px',
+                      display: 'grid',
+                      gridTemplateRows: isExpanded ? '1fr' : '0fr',
+                      transition: 'grid-template-rows 0.22s ease',
                     }}>
-                      {/* Column header */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0 6px' }}>
-                        <div style={{ flex: 1 }} />
-                        <div style={{ width: 40, textAlign: 'center', fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: colors.textMuted }}>Push</div>
-                        <div style={{ width: 40, textAlign: 'center', fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: colors.textMuted }}>Email</div>
-                      </div>
-                      {NOTIFICATION_EVENTS.map(evt => {
-                        const ch = chPrefs[evt.key] || { push: true, email: true };
-                        return (
-                          <div key={evt.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 600, color: colors.textPrimary }}>
-                                {evt.label}
-                              </div>
-                            </div>
-                            <div style={{ width: 40, display: 'flex', justifyContent: 'center' }}>
-                              <TogglePill
-                                on={ch.push}
-                                saving={!!prefSaving[`${row.teamId}:${evt.key}:push`]}
-                                onToggle={() => handleToggleChannel(row.team, evt.key, 'push')}
-                                ariaLabel={`${row.teamName} ${evt.label} push`}
-                              />
-                            </div>
-                            <div style={{ width: 40, display: 'flex', justifyContent: 'center' }}>
-                              <TogglePill
-                                on={ch.email}
-                                saving={!!prefSaving[`${row.teamId}:${evt.key}:email`]}
-                                onToggle={() => handleToggleChannel(row.team, evt.key, 'email')}
-                                ariaLabel={`${row.teamName} ${evt.label} email`}
-                              />
-                            </div>
+                      <div style={{ overflow: 'hidden', minHeight: 0 }}>
+                        <div style={{
+                          borderTop: `1px solid ${colors.borderSubtle}`,
+                          padding: '8px 12px 10px',
+                        }}>
+                          {/* Column header */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0 6px' }}>
+                            <div style={{ flex: 1 }} />
+                            <div style={{ width: 40, textAlign: 'center', fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: colors.textMuted }}>Push</div>
+                            <div style={{ width: 40, textAlign: 'center', fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: colors.textMuted }}>Email</div>
                           </div>
-                        );
-                      })}
+                          {NOTIFICATION_EVENTS.map(evt => {
+                            const ch = chPrefs[evt.key] || { push: true, email: true };
+                            return (
+                              <div key={evt.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 600, color: colors.textPrimary }}>
+                                    {evt.label}
+                                  </div>
+                                </div>
+                                <div style={{ width: 40, display: 'flex', justifyContent: 'center' }}>
+                                  <TogglePill
+                                    on={ch.push}
+                                    saving={!!prefSaving[`${row.teamId}:${evt.key}:push`]}
+                                    onToggle={() => handleToggleChannel(row.team, evt.key, 'push')}
+                                    ariaLabel={`${row.teamName} ${evt.label} push`}
+                                  />
+                                </div>
+                                <div style={{ width: 40, display: 'flex', justifyContent: 'center' }}>
+                                  <TogglePill
+                                    on={ch.email}
+                                    saving={!!prefSaving[`${row.teamId}:${evt.key}:email`]}
+                                    onToggle={() => handleToggleChannel(row.team, evt.key, 'email')}
+                                    ariaLabel={`${row.teamName} ${evt.label} email`}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
