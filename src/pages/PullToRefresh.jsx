@@ -6,10 +6,11 @@
 // entire bundle and felt slow. Refetch is much faster and matches what
 // users expect from native pull-to-refresh.
 //
-// Visual: a golf ball that rotates as the user pulls (one full rotation by
-// the time it's at threshold). On release it spins continuously while the
-// refetch is in flight. Text rendered in Raleway with uppercase tracking to
-// match the rest of the app's chrome — text colour shifts to gold past the
+// Visual: a simple circular spinner — a 270° arc stroke that rotates with
+// pull progress, then spins continuously while the refetch is in flight.
+// Matches the universal pull-to-refresh idiom users already recognize from
+// iOS/Android. Text rendered in Raleway with uppercase tracking to match
+// the rest of the app's chrome; text colour shifts to white past the
 // threshold to signal "ready to release".
 
 import React from 'react';
@@ -30,40 +31,38 @@ const KEYFRAMES = `
 }
 `;
 
-// Golf-ball SVG — white sphere with subtle dimples. When `spinning`, a CSS
-// keyframe rotates it indefinitely; otherwise rotation is driven by the
-// `rotation` prop (mapped to pull progress). The ball stays white throughout
-// — the text colour change handles the "ready to release" signal.
-const GolfBall = ({ size = 30, spinning = false, rotation = 0 }) => (
-  <div style={{
-    width: size, height: size,
-    display: 'inline-block',
-    transform: spinning ? undefined : `rotate(${rotation}deg)`,
-    transition: spinning ? 'none' : 'transform 0.05s linear',
-    animation: spinning ? 'sfgl-ptr-spin 0.7s linear infinite' : undefined,
-    willChange: 'transform',
-  }}>
-    <svg viewBox="0 0 32 32" width={size} height={size}>
-      <defs>
-        <radialGradient id="sfgl-ptr-ball" cx="0.38" cy="0.32" r="0.75">
-          <stop offset="0%"   stopColor="#ffffff" />
-          <stop offset="65%"  stopColor="#dadce0" />
-          <stop offset="100%" stopColor="#888888" />
-        </radialGradient>
-      </defs>
-      <circle cx="16" cy="16" r="15" fill="url(#sfgl-ptr-ball)" />
-      {/* Dimples — rotate with the ball, giving the spin a tactile feel */}
-      {[
-        [11, 9],   [16, 7.5], [21, 9],
-        [8, 14],   [13, 13],  [19, 13],  [24, 14],
-        [9, 19],   [16, 19.5],[23, 19],
-        [11, 24],  [16, 25],  [21, 24],
-      ].map(([cx, cy], i) => (
-        <circle key={i} cx={cx} cy={cy} r="1" fill="rgba(0,0,0,0.18)" />
-      ))}
-    </svg>
-  </div>
-);
+// Generic circular spinner — a thin 270° arc stroke. When `spinning`, a CSS
+// keyframe rotates it indefinitely; otherwise rotation tracks the `rotation`
+// prop (mapped to pull progress). Stroke color brightens once past the
+// threshold to signal "ready to release."
+const Spinner = ({ size = 24, spinning = false, rotation = 0, active = false }) => {
+  // viewBox 32x32, stroke ~3px gives a clean medium-weight ring on retina
+  // displays. The arc spans 270° (gap = 90°), so partial rotation reads
+  // as a chase rather than a static circle.
+  const stroke = active || spinning ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.55)';
+  return (
+    <div style={{
+      width: size, height: size,
+      display: 'inline-block',
+      transform: spinning ? undefined : `rotate(${rotation}deg)`,
+      transition: spinning ? 'none' : 'transform 0.05s linear',
+      animation: spinning ? 'sfgl-ptr-spin 0.8s linear infinite' : undefined,
+      willChange: 'transform',
+    }}>
+      <svg viewBox="0 0 32 32" width={size} height={size} fill="none">
+        {/* 270° arc starting at 12 o'clock, sweeping clockwise. The path
+            ends 90° short of a full circle, which is the canonical
+            spinner-ring look. */}
+        <path
+          d="M 16 3 A 13 13 0 1 1 3 16"
+          stroke={stroke}
+          strokeWidth="2.75"
+          strokeLinecap="round"
+        />
+      </svg>
+    </div>
+  );
+};
 
 export const PullToRefresh = ({ children, onRefresh }) => {
   const [pulling,    setPulling]    = React.useState(false);
@@ -157,14 +156,15 @@ export const PullToRefresh = ({ children, onRefresh }) => {
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
           borderBottom: past || refreshing
-            ? '1px solid rgba(245,197,24,0.3)'
+            ? '1px solid rgba(255,255,255,0.3)'
             : '1px solid transparent',
           transitionProperty: pulling ? 'border-color' : 'height, border-color',
         }}>
-          <GolfBall
-            size={30}
+          <Spinner
+            size={24}
             spinning={refreshing}
             rotation={rotation}
+            active={past}
           />
           <div style={{
             fontFamily: "'Raleway', system-ui, sans-serif",
@@ -173,7 +173,7 @@ export const PullToRefresh = ({ children, onRefresh }) => {
             letterSpacing: 2.5,
             textTransform: 'uppercase',
             color: past || refreshing
-              ? 'rgba(245,197,24,0.95)'
+              ? 'rgba(255,255,255,0.95)'
               : 'rgba(255,255,255,0.5)',
             transition: 'color 0.15s',
             // Soft pulse on the refreshing label so the static text doesn't
