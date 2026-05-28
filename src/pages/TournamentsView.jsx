@@ -38,6 +38,26 @@ const playerNameColor = (p, showEarnings) => {
     : colors.textSecondary;
 };
 
+// Tier dot color for the 2-column lineup layout: gold = Limited, blue =
+// Unlimited, muted = regular. Mirrors playerNameColor but as a solid swatch.
+const playerTierColor = (p) => {
+  if (p.limited)   return GOLD_BRIGHT;
+  if (p.unlimited) return BLUE_BRIGHT;
+  return 'rgba(255,255,255,0.28)';
+};
+
+// Canonical lineup ordering: Limited first, then Unlimited, then regular;
+// alphabetical (by short/last name) within each tier. Applied wherever a
+// lineup is rendered so tiers always group consistently across all teams.
+// Returns a NEW sorted array — does not mutate the input.
+const TIER_RANK = (p) => (p.limited ? 0 : p.unlimited ? 1 : 2);
+const sortLineupByTier = (players) =>
+  [...players].sort((a, b) => {
+    const tr = TIER_RANK(a) - TIER_RANK(b);
+    if (tr !== 0) return tr;
+    return shortName(a.name).localeCompare(shortName(b.name));
+  });
+
 // ── Player slot grid — 5-column layout under each team's row in expansions ──
 // Three modes (controlled by props):
 //   • showEarnings        — completed tournament: name + $ + round-leader badges
@@ -48,79 +68,93 @@ const playerNameColor = (p, showEarnings) => {
 // the matched leaderboard entry (or be missing it if the player isn't in
 // the field or no live data is available yet — handled gracefully below).
 const PlayerSlotGrid = ({ players, showEarnings, showLive }) => {
-  // Always 5 columns — pad with nulls for empty slots
-  const slots = Array.from({ length: 5 }, (_, i) => players[i] || null);
+  // Option B layout: a 2-column grid (instead of 5-across), so a full lineup
+  // is ~3 rows tall instead of one cramped row. Each cell is a single line:
+  //   [tier dot] [player name ...........] [score]
+  // The tier dot encodes Limited (gold) / Unlimited (blue) / regular (muted).
+  // Players are pre-sorted Limited → Unlimited → regular by the callers, so
+  // no re-sort here.
+  //
+  // Score column behavior:
+  //   • showEarnings (completed) → "$1,234,567"
+  //   • showLive (active)        → live position (T3 / CUT / WD), or blank if
+  //                                no live data yet (pre-tee-off)
+  //   • neither (upcoming)       → nothing (name only — no clutter)
+  const renderScore = (p) => {
+    if (showEarnings) {
+      const amt = (p.earnings || 0) + (p.bonus || 0);
+      return (
+        <span style={{
+          ...theme.statNum, fontSize: fontSize.sm,
+          color: amt > 0 ? colors.earningsGreen : colors.textMuted,
+          flexShrink: 0, fontFamily: fonts.mono,
+        }}>
+          ${amt.toLocaleString()}
+        </span>
+      );
+    }
+    if (showLive) {
+      const live = p.live;
+      if (!live) return <span style={{ color: colors.textMuted, fontSize: fontSize.xs, flexShrink: 0 }}>—</span>;
+      if (live.isCut) return <span style={{ color: colors.textMuted, fontSize: fontSize.xs, fontWeight: 700, flexShrink: 0 }}>CUT</span>;
+      if (live.isWD)  return <span style={{ color: colors.textMuted, fontSize: fontSize.xs, fontWeight: 700, flexShrink: 0 }}>WD</span>;
+      return (
+        <span style={{ fontFamily: fonts.mono, fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: 600, flexShrink: 0 }}>
+          {live.position || '—'}
+        </span>
+      );
+    }
+    return null; // upcoming: no placeholder
+  };
+
   return (
-    <div style={{ marginLeft: 24, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 3 }}>
-      {slots.map((p, idx) => (
-        <div key={idx} style={{ fontSize: fontSize.sm, minWidth: 0, overflow: 'hidden' }}>
-          {p ? (
-            <>
-              {/* Line 1: name + mulligan */}
-              <div style={{
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                color: playerNameColor(p, showEarnings),
-              }}>
-                {shortName(p.name)}
-                {p.mulliganIn && (
-                  <span title={`Mulligan · replaced ${p.replacedPlayer || '?'}`} style={{
-                    marginLeft: 3, fontSize: fontSize.base, lineHeight: 1, verticalAlign: 'middle',
-                    display: 'inline-block',
-                    filter: 'drop-shadow(0 0 2px rgba(255,80,80,0.6))',
-                  }}>🚨</span>
-                )}
-              </div>
-              {/* Line 2: earnings ($) / live position / placeholder */}
-              {showEarnings ? (
-                <div style={{ whiteSpace: 'nowrap' }}>
-                  <span style={{ ...theme.statNum, fontSize: fontSize.sm, color: (p.earnings || 0) > 0 ? colors.earningsGreen : colors.textMuted }}>
-                    ${((p.earnings || 0) + (p.bonus || 0)).toLocaleString()}
-                  </span>
-                </div>
-              ) : showLive ? (
-                // Live mode: show position only, or CUT/WD, or "—" if not yet
-                // matched. Score-to-par and thru-N intentionally omitted —
-                // the team total at the top is the headline number; per-player
-                // detail belongs in the Rosters view.
-                (() => {
-                  const live = p.live;
-                  if (!live) {
-                    return <div style={{ color: colors.textMuted, fontSize: fontSize.xs }}>—</div>;
-                  }
-                  if (live.isCut) {
-                    return <div style={{ color: colors.textMuted, fontSize: fontSize.xs, fontWeight: 700 }}>CUT</div>;
-                  }
-                  if (live.isWD) {
-                    return <div style={{ color: colors.textMuted, fontSize: fontSize.xs, fontWeight: 700 }}>WD</div>;
-                  }
-                  const pos = live.position || '—';
-                  return (
-                    <div style={{ whiteSpace: 'nowrap' }}>
-                      <span style={{ fontFamily: fonts.mono, fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: 600 }}>
-                        {pos}
-                      </span>
-                    </div>
-                  );
-                })()
-              ) : (
-                <div style={{ color: colors.textMuted }}>—</div>
-              )}
-              {/* Line 3a: round leader badges (completed only) */}
-              {showEarnings && p.roundsLed?.length > 0 && (
-                <div style={{ display: 'flex', gap: 2, marginTop: 1 }}>
-                  {p.roundsLed.map((rl, ri) => (
-                    <span key={ri} style={{
-                      padding: '1px 3px',
-                      background: 'rgba(220,110,30,0.35)',
-                      color: 'rgba(255,165,80,0.95)',
-                      borderRadius: 2, fontSize: fontSize.xs, lineHeight: 1.2,
-                    }}>R{rl.round}</span>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            <span style={{ color: 'rgba(255,255,255,0.1)' }}>—</span>
+    <div style={{
+      marginLeft: 22,
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      columnGap: 14,
+      rowGap: 2,
+    }}>
+      {players.map((p, idx) => (
+        <div key={idx} style={{
+          display: 'flex', alignItems: 'center', gap: 7,
+          padding: '2px 0', minWidth: 0,
+        }}>
+          {/* Tier dot */}
+          <span style={{
+            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+            background: playerTierColor(p),
+          }} />
+          {/* Name (+ mulligan flag) */}
+          <span style={{
+            flex: 1, minWidth: 0,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            fontSize: fontSize.sm,
+            color: playerNameColor(p, showEarnings),
+          }}>
+            {shortName(p.name)}
+            {p.mulliganIn && (
+              <span title={`Mulligan · replaced ${p.replacedPlayer || '?'}`} style={{
+                marginLeft: 3, fontSize: fontSize.sm, lineHeight: 1, verticalAlign: 'middle',
+                display: 'inline-block',
+                filter: 'drop-shadow(0 0 2px rgba(255,80,80,0.6))',
+              }}>🚨</span>
+            )}
+          </span>
+          {/* Score / position / earnings */}
+          {renderScore(p)}
+          {/* Round-leader badges (completed only) — appended after score */}
+          {showEarnings && p.roundsLed?.length > 0 && (
+            <span style={{ display: 'inline-flex', gap: 2, flexShrink: 0 }}>
+              {p.roundsLed.map((rl, ri) => (
+                <span key={ri} style={{
+                  padding: '1px 3px',
+                  background: 'rgba(220,110,30,0.35)',
+                  color: 'rgba(255,165,80,0.95)',
+                  borderRadius: 2, fontSize: fontSize.xs, lineHeight: 1.2,
+                }}>R{rl.round}</span>
+              ))}
+            </span>
           )}
         </div>
       ))}
@@ -646,7 +680,7 @@ export const TournamentsView = ({
       <div>
         {rankedTeams.map((team, rank) => {
           const lineup = team.lineup;
-          const players = lineup.map(enrichForActive);
+          const players = sortLineupByTier(lineup.map(enrichForActive));
           const summary = team.summary;
           const hasLineup = lineup.length > 0;
           // Display team-aggregate score: "+5" / "-3" / "E", or "—" if nothing live.
@@ -777,9 +811,7 @@ export const TournamentsView = ({
           // team for having no lineup). Still render the team row so totals
           // are visible — just skip the per-player grid in that case.
           const players = Array.isArray(tr.players) && tr.players.length > 0
-            ? tr.players
-                .map(p => enrich(p, tIdx))
-                .sort((a, b) => (b.earnings || 0) - (a.earnings || 0))
+            ? sortLineupByTier(tr.players.map(p => enrich(p, tIdx)))
             : [];
           return (
             <div key={team.id}
