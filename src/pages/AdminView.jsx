@@ -761,7 +761,7 @@ export const AdminView = ({
 
               {/* Manager notification status — read-only view of who's
                   subscribed and on how many devices. */}
-              <NotificationStatusPanel teams={teams} />
+              <NotificationStatusPanel teams={teams} updateTeams={updateTeams} />
             </div>
           </>
         );
