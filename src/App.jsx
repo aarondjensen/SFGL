@@ -303,33 +303,62 @@ const FantasyGolfLeague = () => {
   // explicit logins (which are rare, since managers stay logged in via
   // localStorage for weeks).
   //
-  // Writes lastActiveAt to the manager's OWN team doc, throttled to at most
-  // once per hour per device via a localStorage timestamp. The write is a
-  // targeted single-field updateDoc (teamsApi.update) — non-destructive, so
-  // it won't cause the subscribed-collection flicker a setAll would, and the
-  // three-state taggedCommissioner sync below ignores it (it only reacts to
-  // explicit isCommissioner changes). Fire-and-forget; failures are silent.
+  // Writes lastActiveAt to the manager's OWN team doc via teamsApi.update
+  // (single-field updateDoc — non-destructive, no subscription flicker, and
+  // the three-state taggedCommissioner sync below ignores it). Fire-and-
+  // forget; failures are logged but don't disrupt the user.
   //
-  // Keyed on loggedInUser so it runs once when a session becomes active, with
-  // the localStorage throttle as the real gate.
+  // Throttled to at most once per hour per device via localStorage. Fires on:
+  //   • loggedInUser change (login / session restore)
+  //   • document visibility flip to "visible" (PWA-reopen, tab-foreground)
+  //
+  // The visibility trigger is critical for PWAs: when iOS resumes the app
+  // from background, no useEffect re-runs (loggedInUser is unchanged), but
+  // a `visibilitychange` event fires. Without this, "active 2h ago" never
+  // updates for someone who reopens the app every day.
   useEffect(() => {
-    if (!loggedInUser) return;
-    const teamId = localStorage.getItem('manager_team_id');
-    if (!teamId) return;
+    const sendHeartbeat = (trigger) => {
+      if (!loggedInUser) {
+        console.log('[heartbeat] skip — not logged in');
+        return;
+      }
+      const teamId = localStorage.getItem('manager_team_id');
+      if (!teamId) {
+        console.log('[heartbeat] skip — no team id in localStorage');
+        return;
+      }
 
-    const HEARTBEAT_THROTTLE_MS = 60 * 60 * 1000; // 1 hour
-    const KEY = 'sfgl.lastHeartbeat';
-    let lastBeat = 0;
-    try { lastBeat = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch {}
-    const now = Date.now();
-    if (now - lastBeat < HEARTBEAT_THROTTLE_MS) return; // throttled
+      const HEARTBEAT_THROTTLE_MS = 60 * 60 * 1000; // 1 hour
+      const KEY = 'sfgl.lastHeartbeat';
+      let lastBeat = 0;
+      try { lastBeat = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch {}
+      const now = Date.now();
+      const elapsed = now - lastBeat;
+      if (elapsed < HEARTBEAT_THROTTLE_MS) {
+        console.log(`[heartbeat] throttled (${Math.round(elapsed / 60000)} min since last beat, need ≥60)`);
+        return;
+      }
 
-    // Record the attempt time first so a slow/failed write doesn't cause a
-    // tight retry loop on rapid re-renders.
-    try { localStorage.setItem(KEY, String(now)); } catch {}
+      // Record the attempt time first so a slow/failed write doesn't cause a
+      // tight retry loop on rapid re-renders.
+      try { localStorage.setItem(KEY, String(now)); } catch {}
 
-    teamsApi.update(teamId, { lastActiveAt: new Date().toISOString() })
-      .catch(err => console.warn('[heartbeat] lastActiveAt write failed:', err?.message));
+      const iso = new Date().toISOString();
+      console.log(`[heartbeat] writing lastActiveAt=${iso} for team=${teamId} (trigger=${trigger})`);
+      teamsApi.update(teamId, { lastActiveAt: iso })
+        .then(() => console.log('[heartbeat] write OK'))
+        .catch(err => console.warn('[heartbeat] write failed:', err?.message));
+    };
+
+    // Immediate fire on login / mount
+    sendHeartbeat('mount');
+
+    // Also fire when the tab becomes visible (PWA-resume, tab-foreground).
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sendHeartbeat('visibility');
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [loggedInUser]);
   // Runs every time resolvedTeams updates (Firebase subscription pushes a
   // new value, useLeague's initial load resolves, etc) or the user logs in
