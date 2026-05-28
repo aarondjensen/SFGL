@@ -32,6 +32,7 @@ import { DialogProvider } from './pages/DialogContext';
 import { ErrorBoundary, addGlobalErrorReporters }  from './pages/ErrorBoundary';
 import { PullToRefresh }  from './pages/PullToRefresh';
 import { UserSettingsModal } from './components/UserSettingsModal';
+import { NotificationNudge } from './components/NotificationNudge';
 
 // ── Eagerly loaded views (shown on first visit / lightweight) ──────────────
 import { StandingsView }  from './pages/StandingsView';
@@ -757,6 +758,15 @@ const FantasyGolfLeague = () => {
 
         {/* Nav moved to fixed bottom bar (see below the <main> element). */}
       </div>{/* end sticky shell */}
+
+      {/* Smart "turn on notifications" nudge — self-gating (only shows to
+          logged-in users on push-capable devices who haven't subscribed and
+          haven't dismissed within the 1-day cooldown). Tapping opens settings
+          where the subscribe toggle lives. */}
+      <NotificationNudge
+        loggedInUser={loggedInUser}
+        onOpenSettings={() => setShowUserSettings(true)}
+      />
 
       {/* ── Main content ── */}
       <main className="sfgl-main-content" style={{ maxWidth: 1100, margin: "0 auto", paddingTop: 16, paddingLeft: 16, paddingRight: 16 }}>
