@@ -1806,39 +1806,86 @@ async function handleLeadWatch(res) {
 //   }
 //
 // Required env vars (server-side only — API key never reaches the client):
-//   CRONJOB_API_KEY              — Personal API key from cron-job.org
-//   CRONJOB_WAIVERS_JOB_ID       — Numeric job ID for the Waivers job
-//   CRONJOB_RESULTS_JOB_ID       — Numeric job ID for the Process Results job
+//   CRONJOB_API_KEY                — Personal API key from cron-job.org
+//   CRONJOB_WAIVERS_JOB_ID         — Numeric job ID for the Waivers job
+//   CRONJOB_RESULTS_JOB_ID         — Numeric job ID for the Process Results job
 //   CRONJOB_LINEUP_REMINDER_JOB_ID — Numeric job ID for the Lineup Reminders job
+//   CRONJOB_LEAD_WATCH_JOB_ID      — Numeric job ID for the Lead Watch job
 //
-// Schedule semantics: cron-job.org natively supports timezones, so we send
-// the day/hour/minute exactly as configured and set timezone=America/New_York.
-// No UTC conversion in the client, no DST headaches.
+// Schedule semantics:
+//   • Weekly jobs (waivers / results / lineup-reminder): client sends
+//     day/hour/minute in ET; we set timezone=America/New_York and pin the
+//     schedule to that single weekday slot.
+//   • Interval jobs (lead-watch): client sends a `minuteInterval` (e.g. 10).
+//     We expand it into an explicit minutes-of-the-hour list (0, 10, 20, 30,
+//     40, 50 for minuteInterval=10) and set hours/wdays/mdays/months to
+//     wildcards so the job fires at those minutes around the clock. The
+//     handler itself self-gates on round/tournament state, so 24/7 polling
+//     is cheap when there's no live event.
 async function handleSyncCronSchedule(req, res) {
-  const { jobType, day, hour, minute } = req.body || {};
+  const { jobType, day, hour, minute, minuteInterval } = req.body || {};
 
-  // Validate
-  const validJobTypes = ['waivers', 'results', 'lineup-reminder'];
-  if (!validJobTypes.includes(jobType)) {
-    return res.status(400).json({ error: `Invalid jobType. Must be one of: ${validJobTypes.join(', ')}` });
-  }
-  if (typeof day !== 'number' || day < 0 || day > 6) {
-    return res.status(400).json({ error: 'Invalid day (must be 0-6)' });
-  }
-  if (typeof hour !== 'number' || hour < 0 || hour > 23) {
-    return res.status(400).json({ error: 'Invalid hour (must be 0-23)' });
-  }
-  if (typeof minute !== 'number' || minute < 0 || minute > 59) {
-    return res.status(400).json({ error: 'Invalid minute (must be 0-59)' });
-  }
-
-  // Map jobType to its env-var-held job ID
+  // Map jobType → env var for the cron-job.org numeric job ID, and the
+  // schedule shape that job uses (weekly slot vs. minute-interval).
   const jobIdEnvMap = {
-    'waivers':         'CRONJOB_WAIVERS_JOB_ID',
-    'results':         'CRONJOB_RESULTS_JOB_ID',
-    'lineup-reminder': 'CRONJOB_LINEUP_REMINDER_JOB_ID',
+    'waivers':         { env: 'CRONJOB_WAIVERS_JOB_ID',         shape: 'weekly'   },
+    'results':         { env: 'CRONJOB_RESULTS_JOB_ID',         shape: 'weekly'   },
+    'lineup-reminder': { env: 'CRONJOB_LINEUP_REMINDER_JOB_ID', shape: 'weekly'   },
+    'lead-watch':      { env: 'CRONJOB_LEAD_WATCH_JOB_ID',      shape: 'interval' },
   };
-  const jobIdEnvVar = jobIdEnvMap[jobType];
+  if (!jobIdEnvMap[jobType]) {
+    return res.status(400).json({
+      error: `Invalid jobType. Must be one of: ${Object.keys(jobIdEnvMap).join(', ')}`,
+    });
+  }
+  const { env: jobIdEnvVar, shape: scheduleShape } = jobIdEnvMap[jobType];
+
+  // Shape-specific validation + payload assembly. Done before any network
+  // call so a bad request doesn't waste a cron-job.org API hit.
+  let schedulePayload;
+  if (scheduleShape === 'weekly') {
+    if (typeof day !== 'number' || day < 0 || day > 6) {
+      return res.status(400).json({ error: 'Invalid day (must be 0-6)' });
+    }
+    if (typeof hour !== 'number' || hour < 0 || hour > 23) {
+      return res.status(400).json({ error: 'Invalid hour (must be 0-23)' });
+    }
+    if (typeof minute !== 'number' || minute < 0 || minute > 59) {
+      return res.status(400).json({ error: 'Invalid minute (must be 0-59)' });
+    }
+    schedulePayload = {
+      timezone: 'America/New_York',
+      hours:   [hour],
+      minutes: [minute],
+      wdays:   [day],
+      mdays:   [-1],
+      months:  [-1],
+    };
+  } else {
+    // interval shape: minuteInterval ∈ {5, 10, 15, 20, 30}. Expand to an
+    // explicit minutes list (cron-job.org doesn't support a step expression
+    // directly through this API — it takes literal minute values). Hours
+    // and weekdays wildcard so the job fires every interval around the
+    // clock; the handler's internal gates (no live tournament / round < 2)
+    // make the off-hour pings cheap.
+    const allowedIntervals = [5, 10, 15, 20, 30];
+    if (!allowedIntervals.includes(minuteInterval)) {
+      return res.status(400).json({
+        error: `Invalid minuteInterval. Must be one of: ${allowedIntervals.join(', ')}`,
+      });
+    }
+    const minutes = [];
+    for (let m = 0; m < 60; m += minuteInterval) minutes.push(m);
+    schedulePayload = {
+      timezone: 'America/New_York',
+      hours:   [-1],
+      minutes,
+      wdays:   [-1],
+      mdays:   [-1],
+      months:  [-1],
+    };
+  }
+
   const jobId = process.env[jobIdEnvVar];
   const apiKey = process.env.CRONJOB_API_KEY;
 
@@ -1857,26 +1904,18 @@ async function handleSyncCronSchedule(req, res) {
     });
   }
 
-  // Build the cron-job.org schedule payload.
-  // Reference: https://docs.cron-job.org/rest-api.html#updating-a-job
-  // The schedule object uses arrays for hours/minutes/wdays etc. with
-  // -1 meaning "wildcard" (every value). Setting mdays=[-1], months=[-1]
-  // means "any day of month, any month" — weekly schedule controlled by
-  // wdays alone.
-  const payload = {
-    job: {
-      schedule: {
-        timezone: 'America/New_York',
-        hours:   [hour],
-        minutes: [minute],
-        wdays:   [day],
-        mdays:   [-1],
-        months:  [-1],
-      },
-    },
-  };
+  // Build the cron-job.org PATCH payload using the schedule we assembled
+  // above (shape-aware). Reference:
+  //   https://docs.cron-job.org/rest-api.html#updating-a-job
+  // The schedule object uses arrays for hours/minutes/wdays etc. with -1
+  // meaning "wildcard". Weekly schedules use a single hours+minutes+wdays
+  // slot; interval schedules use a minutes list + wildcards.
+  const payload = { job: { schedule: schedulePayload } };
 
-  console.log(`[sync-cron-schedule] updating ${jobType} (jobId=${jobId}) to ${day}/${hour}:${String(minute).padStart(2, '0')} ET`);
+  const logDesc = scheduleShape === 'weekly'
+    ? `${day}/${hour}:${String(minute).padStart(2, '0')} ET`
+    : `every ${minuteInterval} min`;
+  console.log(`[sync-cron-schedule] updating ${jobType} (jobId=${jobId}) → ${logDesc}`);
 
   try {
     const resp = await fetch(`https://api.cron-job.org/jobs/${encodeURIComponent(jobId)}`, {
@@ -1906,7 +1945,9 @@ async function handleSyncCronSchedule(req, res) {
     return res.json({
       success: true,
       jobType,
-      schedule: { day, hour, minute, timezone: 'America/New_York' },
+      schedule: scheduleShape === 'weekly'
+        ? { day, hour, minute, timezone: 'America/New_York' }
+        : { minuteInterval, timezone: 'America/New_York' },
     });
   } catch (err) {
     console.error(`[sync-cron-schedule] fetch error: ${err.message}`);

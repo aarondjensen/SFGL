@@ -19,23 +19,27 @@ import { M, disabledBtn } from './adminStyles';
 import { DAY_NAMES, fmtETTime } from '../../utils/sharedHelpers';
 
 // ── Cron-job.org schedule sync ──────────────────────────────────────────────
-// After each schedule save (waiver / results / lineup-reminder), call this
-// helper to push the new schedule to cron-job.org via our server endpoint.
-// AdminView is the single source of truth for when each cron fires — saving
-// here updates BOTH the Firestore settings (read by the cron handler's gate
-// as a soft guard) AND the actual cron-job.org schedule (which controls when
-// our endpoint gets pinged).
+// After each schedule save (waiver / results / lineup-reminder / lead-watch),
+// call this helper to push the new schedule to cron-job.org via our server
+// endpoint. AdminView is the single source of truth for when each cron
+// fires — saving here updates BOTH the Firestore settings (read by the cron
+// handler's gate as a soft guard) AND the actual cron-job.org schedule
+// (which controls when our endpoint gets pinged).
+//
+// Accepts either a weekly slot (day/hour/minute) or an interval
+// (minuteInterval). Unused fields are simply not forwarded — the server
+// validates based on jobType.
 //
 // Failure handling: non-fatal. The Firestore save already succeeded, so the
 // commish sees the schedule reflected in the UI. The toast surfaces what
 // went wrong so the commish can act — e.g., add missing env vars to Vercel,
 // re-check the API key in cron-job.org, or simply retry later.
-async function syncCronJobSchedule({ jobType, day, hour, minute }, dialog) {
+async function syncCronJobSchedule(payload, dialog) {
   try {
     const resp = await fetch('/api/cron?action=sync-cron-schedule', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ jobType, day, hour, minute }),
+      body:    JSON.stringify(payload),
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
@@ -249,6 +253,37 @@ export const SeasonSettingsPanel = ({
     settings.lineupReminderDay !== reminderDay ||
     settings.lineupReminderHour !== reminderHour ||
     (settings.lineupReminderMinute ?? 0) !== reminderMinute
+  );
+
+  // ── Lead-watch interval ──
+  // How often the lead-watch cron polls live leaderboard for lead changes.
+  // Interval-based (minutes), not weekly slot. The handler itself self-gates
+  // on round/tournament state, so off-hour pings are essentially free.
+  const [leadInterval,       setLeadInterval]       = React.useState(() => settings?.leadWatchInterval ?? 10);
+  const [leadWatchEnabled,   setLeadWatchEnabled]   = React.useState(() => settings?.leadWatchEnabled !== false);
+  const [leadSaving,         setLeadSaving]         = React.useState(false);
+
+  const handleSaveLeadWatch = async () => {
+    setLeadSaving(true);
+    try {
+      await setSettings({ ...settings, leadWatchInterval: leadInterval, leadWatchEnabled });
+      const synced = await syncCronJobSchedule(
+        { jobType: 'lead-watch', minuteInterval: leadInterval },
+        dialog,
+      );
+      if (synced) {
+        dialog.showToast(`✓ Lead-change pushes will poll every ${leadInterval} min`, 'success');
+      }
+    } catch (err) {
+      dialog.showToast('Error: ' + err.message, 'error');
+    } finally {
+      setLeadSaving(false);
+    }
+  };
+
+  const leadHasUnsavedChanges = (
+    (settings?.leadWatchInterval ?? 10) !== leadInterval ||
+    (settings?.leadWatchEnabled !== false) !== leadWatchEnabled
   );
 
   // Numeric input helper used in the collapsible Season Settings section.
@@ -485,8 +520,59 @@ export const SeasonSettingsPanel = ({
         currentLabel="reminders send"
       />
 
-      {/* Cron-schedule explainer note. Reframed as a subtle info row instead
-          of a tinted card with bold strong tag. */}
+      {/* ── Lead-Watch Polling ─────────────────────────────────────────────
+          Interval-based schedule (not weekly). The lead-watch cron polls
+          live leaderboard every N minutes and sends a push to any team
+          whose lineup contains a player newly at T1. The handler self-
+          gates on round/tournament state, so polling 24/7 is cheap when
+          there's no live event. */}
+      <div style={M.group}>
+        <div style={M.eyebrow}>🏌 Lead-Change Pushes</div>
+        <div style={M.descText}>
+          How often the lead-watch poller checks the live leaderboard during a
+          tournament. When a player takes (or ties for) the lead in round 2 or
+          later, any manager whose lineup contains that player gets an instant
+          push. Polling outside live tournaments is essentially free — the
+          handler exits early when nothing's active.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 2 }}>
+          <div style={{
+            fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted,
+            letterSpacing: '0.5px', textTransform: 'uppercase',
+          }}>Poll interval</div>
+          <select
+            value={leadInterval}
+            onChange={e => setLeadInterval(Number(e.target.value))}
+            style={M.select}
+          >
+            <option value={5}>Every 5 minutes</option>
+            <option value={10}>Every 10 minutes (default)</option>
+            <option value={15}>Every 15 minutes</option>
+            <option value={20}>Every 20 minutes</option>
+            <option value={30}>Every 30 minutes</option>
+          </select>
+        </div>
+        <div style={{
+          fontFamily: fonts.sans, fontSize: 11, color: colors.textGoldDim, marginTop: 2,
+        }}>
+          Current: polling every {settings?.leadWatchInterval ?? 10} min
+          {leadHasUnsavedChanges && (
+            <span style={{ color: colors.warning }}> · unsaved changes</span>
+          )}
+        </div>
+        <button
+          onClick={handleSaveLeadWatch}
+          disabled={leadSaving}
+          className="modal-feel-lift modal-feel-primary"
+          style={{ ...M.btnPrimary, ...disabledBtn(leadSaving) }}
+        >
+          {leadSaving ? '⏳ Saving…' : '💾 Save Lead-Watch Schedule'}
+        </button>
+      </div>
+
+      {/* Cron-schedule explainer note. Updated to reflect the cron-job.org
+          architecture: cron-job.org fires at the EXACT configured time
+          (within seconds), not on Vercel's hour-window cadence. */}
       <div style={{
         padding: '10px 12px',
         background: 'rgba(100,160,255,0.04)',
@@ -497,7 +583,7 @@ export const SeasonSettingsPanel = ({
         color: colors.textSecondary,
         lineHeight: 1.55,
       }}>
-        <strong style={{ color: 'rgba(100,160,255,0.95)' }}>How timing works:</strong> the times above act as gates inside the scheduled cron job — cron-job.org must be pinging the SFGL URL at-or-before your configured time for the action to fire then. If the ping schedule is sparser, the action runs at the next ping after your configured time rather than exactly at it.
+        <strong style={{ color: 'rgba(100,160,255,0.95)' }}>How timing works:</strong> saving a schedule above updates the corresponding cron-job.org job in real time. Jobs fire at the configured time in America/New_York within seconds — daylight saving is handled automatically.
       </div>
     </div>
   );
