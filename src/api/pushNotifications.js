@@ -271,15 +271,53 @@ export const NOTIFICATION_EVENTS = [
 ];
 
 /**
- * Effective preference for a single event on a team. Honors stored value;
- * falls through to the event's default if unset.
+ * Channel-aware preference for a single event on a team. Returns
+ * { push: boolean, email: boolean }.
+ *
+ * BACKWARD COMPATIBILITY: notificationPrefs values were historically a bare
+ * boolean (one switch gating both channels). We now store a per-channel
+ * object { push, email }. The read layer interprets both shapes:
+ *   • object  → use as-is, filling missing channel from the event default
+ *   • boolean → legacy: both channels inherit that boolean
+ *   • missing → both channels use the event default
+ * This means NO data migration is required — old records self-interpret, and
+ * new writes use the object shape.
+ */
+export const getEventChannelPrefs = (team, eventKey) => {
+  const event = NOTIFICATION_EVENTS.find(e => e.key === eventKey);
+  if (!event) return { push: false, email: false };
+  const stored = team?.notificationPrefs?.[eventKey];
+  if (stored && typeof stored === 'object') {
+    return {
+      push:  typeof stored.push  === 'boolean' ? stored.push  : event.default,
+      email: typeof stored.email === 'boolean' ? stored.email : event.default,
+    };
+  }
+  if (typeof stored === 'boolean') {
+    // Legacy single-switch value — both channels inherit it.
+    return { push: stored, email: stored };
+  }
+  return { push: event.default, email: event.default };
+};
+
+/**
+ * Effective preference for a single event on a team (LEGACY boolean form).
+ * Kept for any caller that still wants a single yes/no — returns true if
+ * EITHER channel is enabled. New code should use getEventChannelPrefs.
  */
 export const getEventPref = (team, eventKey) => {
-  const event = NOTIFICATION_EVENTS.find(e => e.key === eventKey);
-  if (!event) return false;
-  const stored = team?.notificationPrefs?.[eventKey];
-  if (typeof stored === 'boolean') return stored;
-  return event.default;
+  const ch = getEventChannelPrefs(team, eventKey);
+  return ch.push || ch.email;
+};
+
+/**
+ * Channel-aware effective prefs map: every event key → { push, email }.
+ * Used by the matrix UI in UserSettingsModal and the commish panel.
+ */
+export const getEffectiveChannelPrefs = (team) => {
+  const map = {};
+  NOTIFICATION_EVENTS.forEach(e => { map[e.key] = getEventChannelPrefs(team, e.key); });
+  return map;
 };
 
 /**
@@ -291,6 +329,24 @@ export const getEffectivePrefs = (team) => {
   const map = {};
   NOTIFICATION_EVENTS.forEach(e => { map[e.key] = getEventPref(team, e.key); });
   return map;
+};
+
+/**
+ * Pure helper: given a team's existing notificationPrefs, produce a new prefs
+ * map with one event's one channel flipped to `value`. Normalizes any legacy
+ * boolean entry into the { push, email } object shape in the process, so the
+ * write always lands in the new format. Does not mutate the input.
+ *
+ * @param {Object} team       — the team whose prefs are being edited
+ * @param {string} eventKey   — which event
+ * @param {'push'|'email'} channel
+ * @param {boolean} value     — new value for that channel
+ * @returns {Object} the new notificationPrefs map to persist
+ */
+export const buildChannelPrefUpdate = (team, eventKey, channel, value) => {
+  const current = getEventChannelPrefs(team, eventKey); // normalized { push, email }
+  const updatedEvent = { ...current, [channel]: value };
+  return { ...(team?.notificationPrefs || {}), [eventKey]: updatedEvent };
 };
 
 /**

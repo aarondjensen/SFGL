@@ -19,7 +19,12 @@
 import React from 'react';
 import { colors, fonts, fontSize } from '../../theme.js';
 import { M, disabledBtn } from './adminStyles';
-import { getAllTokensByTeam } from '../../api/pushNotifications';
+import {
+  getAllTokensByTeam,
+  NOTIFICATION_EVENTS,
+  getEffectiveChannelPrefs,
+  buildChannelPrefUpdate,
+} from '../../api/pushNotifications';
 
 // Best-effort device label from a userAgent string. Purely cosmetic.
 function deviceLabel(ua) {
@@ -65,10 +70,39 @@ function activeColor(iso) {
   return colors.textMuted;
 }
 
-export const NotificationStatusPanel = ({ teams = [] }) => {
+// Compact iOS-style toggle pill (mirrors the one in UserSettingsModal).
+const TogglePill = ({ on, saving, onToggle, ariaLabel }) => (
+  <button
+    type="button" role="switch" aria-checked={on} aria-label={ariaLabel}
+    disabled={saving} onClick={onToggle}
+    style={{
+      position: 'relative', width: 34, height: 19, borderRadius: 10,
+      padding: 0, flexShrink: 0,
+      background: on ? 'rgba(80,195,120,0.7)' : 'rgba(255,255,255,0.12)',
+      border: `1px solid ${on ? 'rgba(80,195,120,0.85)' : 'rgba(255,255,255,0.18)'}`,
+      cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.5 : 1,
+      transition: 'background 0.18s, border-color 0.18s, opacity 0.18s',
+    }}
+  >
+    <span aria-hidden="true" style={{
+      position: 'absolute', top: 2, left: 2, width: 13, height: 13, borderRadius: '50%',
+      background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+      transform: on ? 'translateX(15px)' : 'translateX(0)',
+      transition: 'transform 0.18s ease',
+    }} />
+  </button>
+);
+
+export const NotificationStatusPanel = ({ teams = [], updateTeams }) => {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
   const [tokensByTeam, setTokensByTeam] = React.useState(new Map());
+  // Which team's per-event matrix is expanded (teamId or null). Only one open
+  // at a time keeps the panel compact.
+  const [expandedTeam, setExpandedTeam] = React.useState(null);
+  // Pending writes keyed "teamId:eventKey:channel" so we can disable just the
+  // toggle being saved.
+  const [prefSaving, setPrefSaving] = React.useState({});
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -86,10 +120,36 @@ export const NotificationStatusPanel = ({ teams = [] }) => {
 
   React.useEffect(() => { load(); }, [load]);
 
+  // Commish edits another team's prefs. Same write path as the user's own
+  // settings (buildChannelPrefUpdate → updateTeams), just targeting an
+  // arbitrary team rather than the logged-in one.
+  const handleToggleChannel = async (team, eventKey, channel) => {
+    if (!updateTeams) return;
+    const savingKey = `${team.id}:${eventKey}:${channel}`;
+    if (prefSaving[savingKey]) return;
+
+    const current = getEffectiveChannelPrefs(team)[eventKey] || { push: true, email: true };
+    const newValue = !current[channel];
+    const newPrefs = buildChannelPrefUpdate(team, eventKey, channel, newValue);
+    const newTeams = teams.map(t =>
+      t.id === team.id ? { ...t, notificationPrefs: newPrefs } : t
+    );
+
+    setPrefSaving(p => ({ ...p, [savingKey]: true }));
+    try {
+      await updateTeams(newTeams);
+    } catch (err) {
+      console.warn('[NotificationStatusPanel] pref write failed:', err?.message);
+    } finally {
+      setPrefSaving(p => ({ ...p, [savingKey]: false }));
+    }
+  };
+
   // Build a display row per team. Teams with no tokens still show (as "off").
   const rows = (teams || []).map(team => {
     const tokens = tokensByTeam.get(team.id) || [];
     return {
+      team,                       // full team object (for pref editing)
       teamId: team.id,
       teamName: team.name,
       lastActiveAt: team.lastActiveAt || null,
@@ -99,6 +159,7 @@ export const NotificationStatusPanel = ({ teams = [] }) => {
   });
 
   const onCount = rows.filter(r => r.count > 0).length;
+  const canEdit = typeof updateTeams === 'function';
 
   return (
     <div style={M.group}>
@@ -106,8 +167,8 @@ export const NotificationStatusPanel = ({ teams = [] }) => {
       <div style={M.descText}>
         When each manager last opened the app, and whether they have push
         notifications enabled (and on how many devices). A team needs at least
-        one subscribed device to receive any pushes you send. Read-only —
-        managers control their own subscriptions.
+        one subscribed device to receive any pushes you send.
+        {canEdit && ' Tap a team to view and adjust their per-event push/email preferences.'}
       </div>
 
       {loading ? (
@@ -130,64 +191,126 @@ export const NotificationStatusPanel = ({ teams = [] }) => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {rows.map(row => {
               const isOn = row.count > 0;
+              const isExpanded = expandedTeam === row.teamId;
+              const chPrefs = getEffectiveChannelPrefs(row.team);
               return (
                 <div
                   key={row.teamId}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '10px 12px',
                     background: 'rgba(255,255,255,0.02)',
-                    border: `1px solid ${colors.borderSubtle}`,
+                    border: `1px solid ${isExpanded ? 'rgba(255,255,255,0.16)' : colors.borderSubtle}`,
                     borderRadius: 6,
+                    overflow: 'hidden',
+                    transition: 'border-color 0.15s',
                   }}
                 >
-                  {/* Status dot */}
-                  <div style={{
-                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                    background: isOn ? colors.earningsGreen : colors.textMuted,
-                  }} />
-
-                  {/* Status dot reflects notification on/off */}
-
-                  {/* Main content: two lines — name + last-active, then notif status */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                      <span style={{
-                        fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 600,
-                        color: colors.textPrimary,
-                      }}>
-                        {row.teamName}
-                      </span>
-                      <span style={{
-                        fontFamily: fonts.sans, fontSize: fontSize.sm,
-                        color: activeColor(row.lastActiveAt), whiteSpace: 'nowrap',
-                      }}>
-                        {relativeTime(row.lastActiveAt)}
-                      </span>
-                    </div>
+                  {/* Summary row — clickable to expand when editing is enabled */}
+                  <div
+                    onClick={canEdit ? () => setExpandedTeam(isExpanded ? null : row.teamId) : undefined}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 12px',
+                      cursor: canEdit ? 'pointer' : 'default',
+                    }}
+                  >
+                    {/* Status dot */}
                     <div style={{
-                      fontFamily: fonts.sans, fontSize: fontSize.xs,
-                      color: isOn ? colors.earningsGreen : colors.textMuted,
-                      marginTop: 2,
-                    }}>
-                      {isOn ? (
-                        <>
-                          🔔 On · {row.count} {row.count === 1 ? 'device' : 'devices'}
-                          {row.devices.length > 0 && (
-                            <span style={{ color: colors.textMuted }}>
-                              {' ('}
-                              {Object.entries(
-                                row.devices.reduce((acc, d) => { acc[d] = (acc[d] || 0) + 1; return acc; }, {})
-                              ).map(([label, n]) => n > 1 ? `${label} ×${n}` : label).join(', ')}
-                              {')'}
-                            </span>
-                          )}
-                        </>
-                      ) : '🔕 Notifications off'}
+                      width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                      background: isOn ? colors.earningsGreen : colors.textMuted,
+                    }} />
+
+                    {/* Main content: two lines — name + last-active, then notif status */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{
+                          fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 600,
+                          color: colors.textPrimary,
+                        }}>
+                          {row.teamName}
+                        </span>
+                        <span style={{
+                          fontFamily: fonts.sans, fontSize: fontSize.sm,
+                          color: activeColor(row.lastActiveAt), whiteSpace: 'nowrap',
+                        }}>
+                          {relativeTime(row.lastActiveAt)}
+                        </span>
+                      </div>
+                      <div style={{
+                        fontFamily: fonts.sans, fontSize: fontSize.xs,
+                        color: isOn ? colors.earningsGreen : colors.textMuted,
+                        marginTop: 2,
+                      }}>
+                        {isOn ? (
+                          <>
+                            🔔 On · {row.count} {row.count === 1 ? 'device' : 'devices'}
+                            {row.devices.length > 0 && (
+                              <span style={{ color: colors.textMuted }}>
+                                {' ('}
+                                {Object.entries(
+                                  row.devices.reduce((acc, d) => { acc[d] = (acc[d] || 0) + 1; return acc; }, {})
+                                ).map(([label, n]) => n > 1 ? `${label} ×${n}` : label).join(', ')}
+                                {')'}
+                              </span>
+                            )}
+                          </>
+                        ) : '🔕 Notifications off'}
+                      </div>
                     </div>
+
+                    {/* Chevron when editable */}
+                    {canEdit && (
+                      <span style={{
+                        color: colors.textMuted, fontSize: fontSize.sm, flexShrink: 0,
+                        transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.15s',
+                      }}>›</span>
+                    )}
                   </div>
+
+                  {/* Expanded per-event channel matrix */}
+                  {isExpanded && canEdit && (
+                    <div style={{
+                      borderTop: `1px solid ${colors.borderSubtle}`,
+                      padding: '8px 12px 10px',
+                    }}>
+                      {/* Column header */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0 6px' }}>
+                        <div style={{ flex: 1 }} />
+                        <div style={{ width: 40, textAlign: 'center', fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: colors.textMuted }}>Push</div>
+                        <div style={{ width: 40, textAlign: 'center', fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: colors.textMuted }}>Email</div>
+                      </div>
+                      {NOTIFICATION_EVENTS.map(evt => {
+                        const ch = chPrefs[evt.key] || { push: true, email: true };
+                        return (
+                          <div key={evt.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 600, color: colors.textPrimary }}>
+                                {evt.label}
+                              </div>
+                            </div>
+                            <div style={{ width: 40, display: 'flex', justifyContent: 'center' }}>
+                              <TogglePill
+                                on={ch.push}
+                                saving={!!prefSaving[`${row.teamId}:${evt.key}:push`]}
+                                onToggle={() => handleToggleChannel(row.team, evt.key, 'push')}
+                                ariaLabel={`${row.teamName} ${evt.label} push`}
+                              />
+                            </div>
+                            <div style={{ width: 40, display: 'flex', justifyContent: 'center' }}>
+                              <TogglePill
+                                on={ch.email}
+                                saving={!!prefSaving[`${row.teamId}:${evt.key}:email`]}
+                                onToggle={() => handleToggleChannel(row.team, evt.key, 'email')}
+                                ariaLabel={`${row.teamName} ${evt.label} email`}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}

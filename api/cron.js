@@ -52,6 +52,22 @@ const DEFAULTS_ON = new Set([
   'waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified', 'leadChange',
 ]);
 
+// Channel-aware preference reader (server-side mirror of
+// getEventChannelPrefs in src/api/pushNotifications.js). Returns whether the
+// given channel ('push' | 'email') should fire for an event, given a team's
+// notificationPrefs map. Backward-compatible with three stored shapes:
+//   • { push, email } object → consult the channel (missing → event default)
+//   • bare boolean (legacy)  → gates both channels identically
+//   • missing                → event default (DEFAULTS_ON)
+function channelAllowed(prefs, event, channel) {
+  const stored = prefs?.[event];
+  if (stored && typeof stored === 'object') {
+    return typeof stored[channel] === 'boolean' ? stored[channel] : DEFAULTS_ON.has(event);
+  }
+  if (typeof stored === 'boolean') return stored;
+  return DEFAULTS_ON.has(event);
+}
+
 async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
   // ── Structured logging tag for grep'ability in Vercel logs ─────────────
   // Every line starts with [push] and includes teamId+event so we can trace
@@ -74,20 +90,11 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
       return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
     }
     const prefs = teamSnap.data()?.notificationPrefs;
-    if (prefs && typeof prefs[event] === 'boolean') {
-      console.log(`${tag} prefs: explicit ${event}=${prefs[event]}`);
-      if (prefs[event] === false) {
-        console.log(`${tag} SKIP: prefs explicitly disabled`);
-        return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
-      }
-    } else {
-      console.log(`${tag} prefs: no explicit value, default=${DEFAULTS_ON.has(event)}`);
-      // No explicit pref — fall through to default
-      if (!DEFAULTS_ON.has(event)) {
-        console.log(`${tag} SKIP: event not in defaults`);
-        return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
-      }
+    if (!channelAllowed(prefs, event, 'push')) {
+      console.log(`${tag} SKIP: push channel disabled for this event`);
+      return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
     }
+    console.log(`${tag} prefs: push channel allowed`);
   } catch (err) {
     console.warn(`${tag} prefs check ERROR: ${err.message}`);
     return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
@@ -452,6 +459,29 @@ function getEmailMap(settings, teams) {
   return result;
 }
 
+// Channel-aware email map: like getEmailMap but ALSO filters out teams whose
+// EMAIL channel is disabled for the given event. Returns teamName → email for
+// teams that should receive an email for this event. Use this instead of
+// getEmailMap anywhere a send is gated by a specific notification event.
+//
+// `event` must be one of the NOTIFICATION_EVENTS keys (waivers, results,
+// lineupLock, freeAgent, commishModified, leadChange). Teams with no prefs
+// or legacy boolean prefs fall through to the channelAllowed defaults.
+function getEmailMapForEvent(settings, teams, event) {
+  const emailMap = settings.managerEmails || {};
+  const result = {};
+  teams.forEach(t => {
+    const email = emailMap[t.id] || emailMap[t.name];
+    if (!email) return;
+    if (!channelAllowed(t.notificationPrefs, event, 'email')) {
+      console.log(`[email-gate] SKIP ${t.name} — email channel off for event=${event}`);
+      return;
+    }
+    result[t.name] = email;
+  });
+  return result;
+}
+
 // ── Schedule gate helper ────────────────────────────────────────────────────
 // Used by handleWaivers, handleLineupReminder, and handleProcessResults to
 // decide whether the current cron ping should fire the action.
@@ -757,8 +787,8 @@ async function handleWaivers(res) {
     console.log(`[cron-waivers] no claims won, skipping push loop entirely`);
   }
 
-  // Send emails
-  const managerEmails = getEmailMap(settings, teams);
+  // Send emails — only to teams whose EMAIL channel is on for 'waivers'.
+  const managerEmails = getEmailMapForEvent(settings, teams, 'waivers');
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
@@ -835,8 +865,12 @@ async function handleLineupReminder(res) {
     } catch (err) {
       console.warn(`[push] lineupLock failed for ${team.name}:`, err.message);
     }
-    // Email — only if an email is on file
+    // Email — only if an email is on file AND the email channel is on.
     if (!email) continue;
+    if (!channelAllowed(team.notificationPrefs, 'lineupLock', 'email')) {
+      console.log(`[cron-reminder] SKIP email for ${team.name} — email channel off`);
+      continue;
+    }
     try {
       await sendEmail(email, `⛳ Lineups lock today — ${activeTourney.name}`, buildLineupReminderEmail(activeTourney.name, lockTime, team.name));
       results.push({ team: team.name, success: true });
@@ -855,7 +889,7 @@ async function handleNotifyResults(req, res) {
 
   const settings = await loadSettings();
   const teams = await loadTeams();
-  const managerEmails = getEmailMap(settings, teams);
+  const managerEmails = getEmailMapForEvent(settings, teams, 'results');
   const results = [];
 
   for (const [teamName, email] of Object.entries(managerEmails)) {
@@ -1228,8 +1262,8 @@ async function handleProcessResults(res) {
 
   await batch.commit();
 
-  // Email results to all managers
-  const managerEmails = getEmailMap(settings, teams);
+  // Email results to all managers whose EMAIL channel is on for 'results'
+  const managerEmails = getEmailMapForEvent(settings, teams, 'results');
   // Full player breakdown so the template can render the color-coded names,
   // round-leader badges, and bonus-inclusive earnings totals — matches the
   // shape sent from AdminView's handleManualEntry.
