@@ -58,11 +58,8 @@ messaging.onBackgroundMessage((payload) => {
   // → click the SW → Console output. Helps debug iOS quirks.
   console.log('[SW] Background push received:', payload);
 
-  // Payloads are now data-only (see /api/push.js comment for why). Read
-  // title/body from the data field. Fall back to notification field for
-  // backward compat with any messages still in flight from the old shape.
-  const title = payload.data?.title || payload.notification?.title || 'SFGL';
-  const body  = payload.data?.body  || payload.notification?.body  || '';
+  const title = payload.notification?.title || 'SFGL';
+  const body  = payload.notification?.body  || '';
 
   // Build the notification options. Icon path matches site.webmanifest.
   // Badge falls back to the same icon if a dedicated smaller asset isn't
@@ -127,4 +124,134 @@ self.addEventListener('notificationclick', (event) => {
     // No existing tab — open a new window
     return self.clients.openWindow(targetUrl);
   })());
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PWA shell cache — speeds up cold-start ("close app → reopen") dramatically.
+//
+// Without this, every iOS PWA reopen re-downloads the entire SPA bundle
+// (~1-2 MB across the main chunk, vendor chunks, CSS, fonts) because iOS
+// evicts memory aggressively when an app backgrounds. On a slow connection
+// or after a long break that's 3-5 seconds of blank screen.
+//
+// Strategy:
+//   • App shell (navigations, JS, CSS, fonts):
+//       stale-while-revalidate — serve from cache instantly, then refetch in
+//       the background. Reopens feel instant; if a new build is deployed the
+//       updated bundle appears on the NEXT open. Acceptable tradeoff because
+//       version bumps already require a manual hard refresh today.
+//   • API endpoints (/api/*), Firebase / Firestore / ESPN / FCM traffic:
+//       NEVER cached. These must be live, and Firebase's auth tokens rotate.
+//   • Cross-origin assets (Google Fonts woff2, etc.):
+//       cache-first with a long TTL — they rarely change.
+//
+// Cache versioning: bumping CACHE_VERSION forces all old caches to be purged
+// in the activate handler. The version is intentionally an opaque string
+// embedded at build time — change it to bust caches manually if needed.
+// On a Vercel deploy, the chunk filenames change (Vite hashes them) so the
+// SW will fetch new chunks naturally; this cache version mainly protects
+// against bad cached app-shell snapshots.
+
+const CACHE_VERSION = 'sfgl-shell-v1';
+const RUNTIME_CACHE = 'sfgl-runtime-v1';
+
+// On install, take over immediately so old SW instances don't linger.
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+
+// On activate, purge any cache that isn't on the current version list.
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keep = new Set([CACHE_VERSION, RUNTIME_CACHE]);
+    const names = await caches.keys();
+    await Promise.all(names.filter(n => !keep.has(n)).map(n => caches.delete(n)));
+    await self.clients.claim();
+  })());
+});
+
+// Helpers — keep the fetch handler readable.
+function isApiRequest(url) {
+  return url.pathname.startsWith('/api/');
+}
+function isFirebaseOrTracking(url) {
+  // Firestore, Firebase Auth, FCM, Google Analytics, error reporting — all
+  // must hit the network every time.
+  const h = url.hostname;
+  return (
+    h.endsWith('firebaseio.com') ||
+    h.endsWith('googleapis.com') ||
+    h.endsWith('firebase.com') ||
+    h.endsWith('google-analytics.com') ||
+    h.endsWith('googletagmanager.com')
+  );
+}
+function isCacheableShell(req, url) {
+  // Same-origin navigations and static assets.
+  if (url.origin !== self.location.origin) return false;
+  if (req.method !== 'GET') return false;
+  if (req.mode === 'navigate') return true;
+  // Vite chunk filenames are content-hashed (e.g. index-AbCd1234.js) so they
+  // never change content for a given URL — safe to cache aggressively.
+  return /\.(js|css|woff2?|ttf|svg|png|jpg|jpeg|webp|ico)$/.test(url.pathname);
+}
+function isCacheableCrossOrigin(url) {
+  return (
+    url.hostname.endsWith('gstatic.com') ||
+    url.hostname.endsWith('googleapis.com') && url.hostname.startsWith('fonts.') ||
+    url.hostname === 'fonts.gstatic.com' ||
+    url.hostname === 'fonts.googleapis.com'
+  );
+}
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  let url;
+  try { url = new URL(req.url); } catch { return; }
+
+  // Never intercept API calls, Firebase, analytics, or non-GET requests.
+  if (isApiRequest(url) || isFirebaseOrTracking(url) || req.method !== 'GET') return;
+
+  // App shell — stale-while-revalidate.
+  if (isCacheableShell(req, url)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_VERSION);
+      const cached = await cache.match(req);
+      const networkFetch = fetch(req).then(res => {
+        // Only cache successful, basic (same-origin) responses
+        if (res && res.ok && res.type === 'basic') cache.put(req, res.clone());
+        return res;
+      }).catch(() => null);
+
+      // For navigations, prefer network if cache is missing so the user gets
+      // the latest index.html on a true fresh open. For static assets, cache
+      // first (faster).
+      if (req.mode === 'navigate') {
+        // Network-first with cache fallback — gives latest index.html when
+        // online, but works offline / on slow networks via the cache.
+        return (await networkFetch) || cached || new Response('Offline', { status: 503 });
+      }
+      return cached || (await networkFetch) || new Response('', { status: 504 });
+    })());
+    return;
+  }
+
+  // Cross-origin cacheable (Google Fonts) — cache-first.
+  if (isCacheableCrossOrigin(url)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(RUNTIME_CACHE);
+      const cached = await cache.match(req);
+      if (cached) return cached;
+      try {
+        const res = await fetch(req);
+        if (res && res.ok) cache.put(req, res.clone());
+        return res;
+      } catch {
+        return cached || new Response('', { status: 504 });
+      }
+    })());
+    return;
+  }
+
+  // Everything else — let the network handle it normally (no SW intervention).
 });
