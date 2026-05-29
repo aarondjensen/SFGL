@@ -157,10 +157,16 @@ export const UserSettingsModal = ({
     let cancelled = false;
     (async () => {
       const supported = await isPushSupported();
+      const permission = getNotificationPermission();
+      const token = getCurrentToken();
+      // Verbose diagnostic — when users report "the toggle won't turn on",
+      // these three values plus the UA pinpoint why. Look in DevTools console.
+      console.log('[push] modal open — state:',
+        { supported, permission, subscribed: !!token, ua: navigator.userAgent });
       if (cancelled) return;
       setPushSupported(supported);
-      setPushPermission(getNotificationPermission());
-      setPushSubscribed(!!getCurrentToken());
+      setPushPermission(permission);
+      setPushSubscribed(!!token);
     })();
     return () => { cancelled = true; };
   }, [isOpen]);
@@ -593,7 +599,13 @@ export const UserSettingsModal = ({
                     fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
                     marginTop: 8, lineHeight: 1.5,
                   }}>
-                    Notifications are blocked. Open your browser settings for sfglgolf.com and allow notifications, then return here.
+                    Notifications are blocked for sfglgolf.com. To unblock:
+                    <br />
+                    <strong>Chrome (Android/desktop):</strong> tap the lock icon (or 🛡️/ⓘ) in the address bar → Permissions → Notifications → Allow. Then reload this page.
+                    <br />
+                    <strong>iPhone PWA:</strong> iOS Settings → Notifications → SFGL → Allow Notifications.
+                    <br />
+                    <strong>Other browsers:</strong> open Site Settings for sfglgolf.com and allow notifications.
                   </div>
                 )}
 

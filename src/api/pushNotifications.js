@@ -93,65 +93,121 @@ export const getNotificationPermission = () => {
  *   'token_failed' — FCM rejected the token request
  *   'save_failed'  — Firestore write failed
  */
+// Helper: race a promise against a timeout. Resolves to a sentinel
+// { __timeout: true } if the timeout fires first. Used to keep the subscribe
+// flow from hanging silently on Android when SW activation or getToken
+// never resolves.
+const withTimeout = (promise, ms, label) => {
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => {
+      console.warn(`[push] step "${label}" timed out after ${ms}ms`);
+      resolve({ __timeout: true });
+    }, ms)),
+  ]);
+};
+
 export const requestPermissionAndSubscribe = async (teamId) => {
-  if (!teamId) return { ok: false, reason: 'no_team' };
+  console.log('[push] subscribe START — teamId:', teamId, 'ua:', navigator.userAgent);
+  if (!teamId) { console.warn('[push] no teamId'); return { ok: false, reason: 'no_team' }; }
   if (!VAPID_KEY) {
     console.error('[push] VITE_FIREBASE_VAPID_KEY not set — set it in Vercel env vars');
     return { ok: false, reason: 'no_vapid' };
   }
 
+  console.log('[push] step 1: getMessagingInstance');
   const messaging = await getMessagingInstance();
-  if (!messaging) return { ok: false, reason: 'unsupported' };
+  if (!messaging) {
+    console.warn('[push] getMessagingInstance returned null — push unsupported');
+    return { ok: false, reason: 'unsupported' };
+  }
+  console.log('[push] step 1 OK');
 
   // Ask the browser for permission. On iOS PWA this only works if added to
   // home screen — Safari in regular browsing mode won't prompt.
+  console.log('[push] step 2: Notification.requestPermission()');
   let permission;
   try {
     permission = await Notification.requestPermission();
+    console.log('[push] step 2 result:', permission);
   } catch (err) {
     console.error('[push] permission request failed:', err);
     return { ok: false, reason: 'denied' };
   }
   if (permission !== 'granted') {
+    console.warn('[push] permission not granted:', permission);
     return { ok: false, reason: 'denied' };
   }
 
   // Register the service worker if not already. Firebase Messaging looks for
   // /firebase-messaging-sw.js at the site root by default. We pass an explicit
   // registration so the SW is available before getToken runs.
+  console.log('[push] step 3: register service worker');
   let swRegistration;
   try {
     swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    console.log('[push] step 3 register OK; states — installing:', !!swRegistration.installing,
+      'waiting:', !!swRegistration.waiting, 'active:', !!swRegistration.active);
     // Wait until the SW is fully active. getToken can race the registration.
+    // 10-second timeout so we don't hang silently if activation never fires
+    // (an observed Android failure mode).
     if (swRegistration.installing || swRegistration.waiting) {
-      await new Promise(resolve => {
-        const sw = swRegistration.installing || swRegistration.waiting;
-        sw.addEventListener('statechange', () => {
-          if (sw.state === 'activated') resolve();
-        });
-      });
+      const activationResult = await withTimeout(
+        new Promise(resolve => {
+          const sw = swRegistration.installing || swRegistration.waiting;
+          sw.addEventListener('statechange', () => {
+            console.log('[push] sw statechange:', sw.state);
+            if (sw.state === 'activated') resolve('activated');
+          });
+        }),
+        10000,
+        'sw-activation',
+      );
+      if (activationResult?.__timeout) {
+        console.error('[push] SW activation timed out — proceeding anyway, getToken may still work');
+        // Don't abort — sometimes getToken can succeed even without seeing
+        // the activated state event. The next step's own timeout will catch
+        // a true hang.
+      }
     }
+    console.log('[push] step 3 OK; active SW:', !!swRegistration.active);
   } catch (err) {
     console.error('[push] service worker registration failed:', err);
     return { ok: false, reason: 'sw_failed' };
   }
 
   // Request the FCM token. This is a long opaque string that uniquely
-  // identifies this device for this Firebase project.
+  // identifies this device for this Firebase project. 15-second timeout
+  // because FCM can hang indefinitely on flaky networks or VAPID misconfigs.
+  console.log('[push] step 4: getToken');
   let token;
   try {
-    token = await getToken(messaging, {
-      vapidKey: VAPID_KEY,
-      serviceWorkerRegistration: swRegistration,
-    });
+    const tokenResult = await withTimeout(
+      getToken(messaging, {
+        vapidKey: VAPID_KEY,
+        serviceWorkerRegistration: swRegistration,
+      }),
+      15000,
+      'getToken',
+    );
+    if (tokenResult?.__timeout) {
+      console.error('[push] getToken timed out — likely FCM connectivity or VAPID issue');
+      return { ok: false, reason: 'token_failed' };
+    }
+    token = tokenResult;
+    console.log('[push] step 4 OK; token length:', token?.length);
   } catch (err) {
     console.error('[push] getToken failed:', err);
     return { ok: false, reason: 'token_failed' };
   }
-  if (!token) return { ok: false, reason: 'token_failed' };
+  if (!token) {
+    console.warn('[push] getToken returned empty token');
+    return { ok: false, reason: 'token_failed' };
+  }
 
   // Store in Firestore. Doc ID = token (so re-subscribing from the same
   // device naturally overwrites, no duplicate-prevention logic needed).
+  console.log('[push] step 5: Firestore write');
   try {
     await setDoc(doc(db, 'pushTokens', token), {
       token,
@@ -160,6 +216,7 @@ export const requestPermissionAndSubscribe = async (teamId) => {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     }, { merge: true });
+    console.log('[push] step 5 OK');
   } catch (err) {
     console.error('[push] failed to save token:', err);
     return { ok: false, reason: 'save_failed' };
@@ -168,6 +225,7 @@ export const requestPermissionAndSubscribe = async (teamId) => {
   // Cache locally so we know we're subscribed without another Firestore read.
   try { localStorage.setItem('sfgl.pushToken', token); } catch {}
 
+  console.log('[push] subscribe COMPLETE');
   return { ok: true, token };
 };
 
