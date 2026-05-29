@@ -99,7 +99,7 @@ const PlayerSlotGrid = ({ players, showEarnings, showLive }) => {
       if (live.isCut) return <span style={{ color: colors.textMuted, fontSize: fontSize.xs, fontWeight: 700, flexShrink: 0 }}>CUT</span>;
       if (live.isWD)  return <span style={{ color: colors.textMuted, fontSize: fontSize.xs, fontWeight: 700, flexShrink: 0 }}>WD</span>;
       return (
-        <span style={{ fontFamily: fonts.mono, fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: 600, flexShrink: 0 }}>
+        <span style={{ fontFamily: fonts.mono, fontSize: fontSize.sm, color: colors.textSecondary, fontWeight: 400, flexShrink: 0 }}>
           {live.position || '—'}
         </span>
       );
