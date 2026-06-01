@@ -793,7 +793,7 @@ async function handleWaivers(res) {
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
       const html = buildWaiverResultsEmail(processedResults, teamName);
-      await sendEmail(email, '⏰ SFGL Waiver Results', html);
+      await sendEmail(email, '⏰ Waiver results', html);
       emailResults.push({ team: teamName, success: true });
     } catch (err) { emailResults.push({ team: teamName, error: err.message }); }
   }
@@ -857,7 +857,7 @@ async function handleLineupReminder(res) {
       const pushResult = await sendPushToTeam({
         teamId: team.id,
         event: 'lineupLock',
-        title: '⛳ Lineup lock today',
+        title: '⛳ Missing lineup',
         body: `Set your lineup for ${activeTourney.name} — locks at ${lockTime} ET.`,
         deepLink: '#rosters',
       });
@@ -872,7 +872,7 @@ async function handleLineupReminder(res) {
       continue;
     }
     try {
-      await sendEmail(email, `⛳ Lineups lock today — ${activeTourney.name}`, buildLineupReminderEmail(activeTourney.name, lockTime, team.name));
+      await sendEmail(email, '⛳ Missing lineup', buildLineupReminderEmail(activeTourney.name, lockTime, team.name));
       results.push({ team: team.name, success: true });
     } catch (err) { results.push({ team: team.name, error: err.message }); }
   }
@@ -894,7 +894,7 @@ async function handleNotifyResults(req, res) {
 
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo, seasonStandings));
+      await sendEmail(email, '🏆 Weekly Results Complete', buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo, seasonStandings));
       results.push({ team: teamName, success: true });
     } catch (err) { results.push({ team: teamName, error: err.message }); }
   }
@@ -1316,7 +1316,7 @@ async function handleProcessResults(res) {
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournament.name} — SFGL Results`, buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName, swingWinnerInfoForEmail, seasonStandingsForEmail));
+      await sendEmail(email, '🏆 Weekly Results Complete', buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName, swingWinnerInfoForEmail, seasonStandingsForEmail));
       emailResults.push({ team: teamName, success: true });
     } catch (err) { emailResults.push({ team: teamName, error: err.message }); }
   }
