@@ -1338,7 +1338,7 @@ async function handleProcessResults(res) {
       const result = await sendPushToTeam({
         teamId: team.id,
         event: 'results',
-        title: '🏆 Results processed',
+        title: '🏆 Weekly Results Complete',
         body,
         deepLink: '#standings',
       });
