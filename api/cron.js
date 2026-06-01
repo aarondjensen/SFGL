@@ -1007,10 +1007,13 @@ async function handleProcessResults(res) {
   }
 
   // Fetch results from ESPN via the existing pga-results API
-  // Since we're server-side, call our own API endpoint
+  // Since we're server-side, call our own API endpoint. Use the www. variant
+  // explicitly — the bare sfglgolf.com domain 307-redirects, which causes
+  // the internal fetch to fail or stall the function. See the lead-watch
+  // handler for the full backstory on the 307 issue.
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
-    : 'https://sfglgolf.com';
+    : 'https://www.sfglgolf.com';
   const params = new URLSearchParams({ name: tournament.name, year: '2026' });
 
   let pgaData;
@@ -1561,10 +1564,11 @@ async function handleOwgrRankings(res) {
   }
 
   // Fetch /api/owgr internally. Reuses the existing endpoint so the OWGR
-  // scraping logic stays in one place.
+  // scraping logic stays in one place. Use the www. variant explicitly —
+  // bare sfglgolf.com 307-redirects (see lead-watch handler comment).
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
-    : 'https://sfglgolf.com';
+    : 'https://www.sfglgolf.com';
 
   let owgrData;
   try {
@@ -1671,10 +1675,22 @@ async function handleOwgrRankings(res) {
 // Reset behavior: when tournamentName changes, the doc is fully overwritten
 // with the new state. The lastFired map is per-tournament — no carryover.
 async function handleLeadWatch(res) {
-  // 1. Fetch live leaderboard via the existing /api/live endpoint
+  // 1. Fetch live leaderboard via the existing /api/live endpoint.
+  //
+  // The base URL MUST be the www. variant — sfglgolf.com without www
+  // redirects (307), and the internal fetch either fails or stalls the
+  // function waiting on the redirect, which causes the outer cron-job.org
+  // call to time out and counts as a failed execution. cron-job.org auto-
+  // disables jobs after enough consecutive fails, which is exactly what
+  // happened on 5/27 when both this URL AND the cron-job.org job URL used
+  // the bare domain.
+  //
+  // VERCEL_URL is unset for normal production runtime (only set for preview
+  // deployments), so the fallback path is what actually runs in production.
+  // Hardcode www. here so prod always works.
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
-    : 'https://sfglgolf.com';
+    : 'https://www.sfglgolf.com';
 
   let liveData;
   try {
