@@ -301,7 +301,7 @@ export const TournamentResultsPanel = ({
             event: 'results',
             commishTeamId: commishTeam.id,
             recipients: [t.id],
-            title: '🏆 Results processed',
+            title: '🏆 Weekly Results Complete',
             body: pushBody,
             deepLink: '#standings',
           }).catch(err => console.warn(`[push] results send failed for ${t.name}:`, err.message));
@@ -491,7 +491,7 @@ export const TournamentResultsPanel = ({
           event: 'results',
           commishTeamId: commishTeam.id,
           recipients: [team.id],
-          title: '🏆 Results processed',
+          title: '🏆 Weekly Results Complete',
           body: pushBody,
           deepLink: '#standings',
         }).catch(err => console.warn(`[push] resend failed for ${team.name}:`, err.message));
