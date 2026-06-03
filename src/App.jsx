@@ -32,7 +32,6 @@ import { DialogProvider } from './pages/DialogContext';
 import { ErrorBoundary, addGlobalErrorReporters }  from './pages/ErrorBoundary';
 import { PullToRefresh }  from './pages/PullToRefresh';
 import { UserSettingsModal } from './components/UserSettingsModal';
-import { NotificationNudge } from './components/NotificationNudge';
 
 // ── Eagerly loaded views (shown on first visit / lightweight) ──────────────
 import { StandingsView }  from './pages/StandingsView';
@@ -56,7 +55,7 @@ import { useLeague }       from './hooks';
 import { getSegmentByDate } from './utils';
 import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi, teamsApi } from './api/firebase';
+import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
 
 // ── Lazy-load fallback spinner ─────────────────────────────────────────────
@@ -162,6 +161,11 @@ const FantasyGolfLeague = () => {
   // by tapping the user's name in the header.
   const [taggedCommissioner,    setTaggedCommissioner]    = useState(false);
   const [loggedInUser,          setLoggedInUser]          = useState(null);
+  // Immutable identity of the team the manager authenticated into. Edit
+  // permissions key off THIS (team id), never the editable owner string —
+  // renaming a manager's login/owner name must never lock them out of their
+  // own lineup. Sourced from the session (localStorage 'manager_team_id').
+  const [loggedInTeamId,        setLoggedInTeamId]        = useState(null);
   const [showLoginModal,        setShowLoginModal]        = useState(false);
   const [showUserSettings,      setShowUserSettings]      = useState(false);
   // (Password popover state removed — commish access is granted by team tag,
@@ -235,175 +239,24 @@ const FantasyGolfLeague = () => {
   }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
-  // Originally this effect re-ran on every resolvedTeams update (because
-  // resolvedTeams was a dependency). That caused two problems:
-  //
-  //   1. Every updateTeams call (e.g. saving a lineup) triggered a
-  //      subscription update → effect re-ran → setIsCommissioner(false) →
-  //      kicked the commish out of commish mode mid-session.
-  //
-  //   2. If the initial run latched against stale localStorage data where
-  //      team.isCommissioner was false, taggedCommissioner stayed false for
-  //      the rest of the session even after fresh Firebase data arrived
-  //      with isCommissioner=true. The "commish toggle disappears" bug —
-  //      only fixable by clearing site data and re-logging in.
-  //
-  // Fix is two effects:
-  //
-  //   • This one (sessionRestoredRef-latched): runs ONCE, sets loggedInUser
-  //     and resets isCommissioner. Latches so updateTeams calls can't reset
-  //     the commish-mode toggle.
-  //
-  //   • The follow-up effect (below): runs continuously, keeps
-  //     taggedCommissioner in sync with the CURRENT team document. Self-
-  //     heals stale-data races and propagates real-time changes (e.g.
-  //     another commish promoting/demoting via ManagerAccountsPanel).
-  //
-  // The sessionRestoredRef latches once we've SUCCESSFULLY completed the
-  // restoration (or confirmed there's nothing to restore). Crucially we
-  // don't latch when the team isn't yet found — on first mount,
-  // `resolvedTeams` is the INITIAL_TEAMS placeholder (fake IDs) and the
-  // find() returns nothing; we must keep retrying until real teams arrive.
-  const sessionRestoredRef = useRef(false);
   useEffect(() => {
-    if (sessionRestoredRef.current) return;
     managerAuthApi.getCurrentSession().then(session => {
-      if (!session) {
-        // No session → nothing to restore. Latch.
-        sessionRestoredRef.current = true;
-        return;
-      }
+      if (!session) return;
       const teamId = localStorage.getItem('manager_team_id');
-      if (!teamId) {
-        // Session but no team ID stored → nothing further to do. Latch.
-        sessionRestoredRef.current = true;
-        return;
+      if (teamId) {
+        setLoggedInTeamId(teamId);
+        const team = resolvedTeams.find(t => t.id === teamId);
+        if (team) {
+          setLoggedInUser(team.owner || team.name);
+          // Tagged commissioners are *allowed* to enter commish mode but
+          // start the session in normal-manager view. They opt in by tapping
+          // their name in the header.
+          setTaggedCommissioner(!!team.isCommissioner);
+          setIsCommissioner(false);
+        }
       }
-      const team = resolvedTeams.find(t => t.id === teamId);
-      if (!team) {
-        // Team not found yet (placeholder INITIAL_TEAMS still in resolvedTeams).
-        // Do NOT latch — let the effect retry when real teams arrive.
-        return;
-      }
-      setLoggedInUser(team.owner || team.name);
-      // taggedCommissioner is intentionally NOT set here — the sync effect
-      // below owns that and keeps it accurate as data arrives/changes.
-      // Active commish mode (isCommissioner) starts off; tagged commissioners
-      // opt in by tapping their name in the header.
-      setIsCommissioner(false);
-      sessionRestoredRef.current = true;
-    }).catch(() => {
-      // Auth fetch error → latch to avoid infinite retries.
-      sessionRestoredRef.current = true;
-    });
+    }).catch(() => {});
   }, [resolvedTeams]);
-
-  // ── Last-active heartbeat ───────────────────────────────────────────────
-  // Records when each manager last used the app, so the commish console can
-  // show real engagement ("Hip Happens — active 2h ago") rather than just
-  // explicit logins (which are rare, since managers stay logged in via
-  // localStorage for weeks).
-  //
-  // Writes lastActiveAt to the manager's OWN team doc via teamsApi.update
-  // (single-field updateDoc — non-destructive, no subscription flicker, and
-  // the three-state taggedCommissioner sync below ignores it). Fire-and-
-  // forget; failures are logged but don't disrupt the user.
-  //
-  // Throttled to at most once per hour per device via localStorage. Fires on:
-  //   • loggedInUser change (login / session restore)
-  //   • document visibility flip to "visible" (PWA-reopen, tab-foreground)
-  //
-  // The visibility trigger is critical for PWAs: when iOS resumes the app
-  // from background, no useEffect re-runs (loggedInUser is unchanged), but
-  // a `visibilitychange` event fires. Without this, "active 2h ago" never
-  // updates for someone who reopens the app every day.
-  useEffect(() => {
-    const sendHeartbeat = (trigger) => {
-      if (!loggedInUser) {
-        console.log('[heartbeat] skip — not logged in');
-        return;
-      }
-      const teamId = localStorage.getItem('manager_team_id');
-      if (!teamId) {
-        console.log('[heartbeat] skip — no team id in localStorage');
-        return;
-      }
-
-      const HEARTBEAT_THROTTLE_MS = 60 * 60 * 1000; // 1 hour
-      const KEY = 'sfgl.lastHeartbeat';
-      let lastBeat = 0;
-      try { lastBeat = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch {}
-      const now = Date.now();
-      const elapsed = now - lastBeat;
-      if (elapsed < HEARTBEAT_THROTTLE_MS) {
-        console.log(`[heartbeat] throttled (${Math.round(elapsed / 60000)} min since last beat, need ≥60)`);
-        return;
-      }
-
-      // Record the attempt time first so a slow/failed write doesn't cause a
-      // tight retry loop on rapid re-renders.
-      try { localStorage.setItem(KEY, String(now)); } catch {}
-
-      const iso = new Date().toISOString();
-      console.log(`[heartbeat] writing lastActiveAt=${iso} for team=${teamId} (trigger=${trigger})`);
-      teamsApi.update(teamId, { lastActiveAt: iso })
-        .then(() => console.log('[heartbeat] write OK'))
-        .catch(err => console.warn('[heartbeat] write failed:', err?.message));
-    };
-
-    // Immediate fire on login / mount
-    sendHeartbeat('mount');
-
-    // Also fire when the tab becomes visible (PWA-resume, tab-foreground).
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') sendHeartbeat('visibility');
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [loggedInUser]);
-  // Runs every time resolvedTeams updates (Firebase subscription pushes a
-  // new value, useLeague's initial load resolves, etc) or the user logs in
-  // / out. Reads team.isCommissioner from the CURRENT team document and
-  // mirrors it into local React state.
-  //
-  // THREE-STATE SEMANTICS (critical — this is the "commish toggle disappears
-  // every time anything writes" bug fix):
-  //
-  //   • team.isCommissioner === true  → promote (set taggedCommissioner true)
-  //   • team.isCommissioner === false → demote  (set taggedCommissioner false)
-  //   • team.isCommissioner is undefined → NO-OP (preserve current state)
-  //
-  // The previous implementation used `!!team.isCommissioner`, which collapsed
-  // undefined and false into the same downgrade path. Any momentary state
-  // where the field was missing — an optimistic update with partial team
-  // data, a stale Firestore snapshot before reconciliation, the 90s lineup
-  // poll returning a team without the field — would silently downgrade
-  // taggedCommissioner to false. Once Firebase eventually delivered the
-  // canonical doc, the effect would re-run and restore it, but if the
-  // subscription didn't re-fire (no actual DB change), local state stayed
-  // wrong indefinitely. Clearing site data and re-logging in was the only
-  // recovery because the login handler reads team.isCommissioner directly
-  // from a fresh Firestore .get().
-  //
-  // Three-state handling preserves the real-time-update benefits (explicit
-  // promotion/demotion via ManagerAccountsPanel still propagates live) while
-  // never accidentally demoting a user from "undefined" data.
-  //
-  // Doesn't touch isCommissioner (current commish-mode toggle, separate
-  // from being eligible). The session-restore latch above protects that.
-  useEffect(() => {
-    if (!loggedInUser) return;
-    const teamId = localStorage.getItem('manager_team_id');
-    if (!teamId) return;
-    const team = resolvedTeams.find(t => t.id === teamId);
-    if (!team) return;
-    if (team.isCommissioner === true) {
-      setTaggedCommissioner(true);
-    } else if (team.isCommissioner === false) {
-      setTaggedCommissioner(false);
-    }
-    // else: undefined → no-op, preserve current taggedCommissioner state
-  }, [resolvedTeams, loggedInUser]);
 
   // ── Hydrate tournament results from Firebase ──────────────────────────────
   // Hydrate tournament results from Firebase once after load.
@@ -583,6 +436,7 @@ const FantasyGolfLeague = () => {
       setTimeout(() => mv.setAttribute('content', 'width=device-width, initial-scale=1'), 300);
     }
     setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
+    setLoggedInTeamId(result.teamId);
     // Tagged commissioners can opt into commish mode by tapping their name
     // in the header. Login itself doesn't activate commish mode.
     setTaggedCommissioner(team ? !!team.isCommissioner : false);
@@ -594,8 +448,13 @@ const FantasyGolfLeague = () => {
   const handleLogout = async () => {
     await managerAuthApi.logout();
     setLoggedInUser(null);
+    setLoggedInTeamId(null);
     setIsCommissioner(false);
     setTaggedCommissioner(false);
+    setShowUserSettings(false);
+    // The Commish tab renders nothing once commish mode is gone, so send the
+    // now-signed-out user back to a safe public tab.
+    setActiveTab(prev => (prev === 'admin' ? 'standings' : prev));
   };
 
   if (loading) {
@@ -614,6 +473,7 @@ const FantasyGolfLeague = () => {
   }
 
   return (
+    <>
     <PullToRefresh onRefresh={refetch}>
     <div style={{ minHeight: '100vh', color: '#fff', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif", fontVariantNumeric: 'tabular-nums lining-nums' }}>
 
@@ -759,15 +619,6 @@ const FantasyGolfLeague = () => {
         {/* Nav moved to fixed bottom bar (see below the <main> element). */}
       </div>{/* end sticky shell */}
 
-      {/* Smart "turn on notifications" nudge — self-gating (only shows to
-          logged-in users on push-capable devices who haven't subscribed and
-          haven't dismissed within the 1-day cooldown). Tapping opens settings
-          where the subscribe toggle lives. */}
-      <NotificationNudge
-        loggedInUser={loggedInUser}
-        onOpenSettings={() => setShowUserSettings(true)}
-      />
-
       {/* ── Main content ── */}
       <main className="sfgl-main-content" style={{ maxWidth: 1100, margin: "0 auto", paddingTop: 16, paddingLeft: 16, paddingRight: 16 }}>
 
@@ -787,6 +638,7 @@ const FantasyGolfLeague = () => {
               setTransactions={updateTransactions}
               settings={settings}
               loggedInUser={loggedInUser}
+              loggedInTeamId={loggedInTeamId}
               isCommissioner={isCommissioner}
               globalPlayerStats={globalPlayerStats}
               headshots={resolvedHeadshots}
@@ -846,12 +698,23 @@ const FantasyGolfLeague = () => {
           )}
         </ErrorBoundary>
       </main>
+    </div>{/* end scrollable app shell */}
+    </PullToRefresh>
 
       {/* ── Bottom Navigation (fixed) ──
           Mobile-first: nav lives at the bottom of the viewport. Generous
           paddingBottom (24px base + safe-area-inset) keeps tap targets well
           clear of the iOS home indicator / Siri activation zone, which on
-          iPhone X+ extends ~34px up from the screen edge. */}
+          iPhone X+ extends ~34px up from the screen edge.
+
+          NOTE: this <nav> (and the modals below) MUST stay OUTSIDE
+          <PullToRefresh>. PullToRefresh wraps its children in a div that
+          carries a `transform` (and transform transition) for the pull
+          gesture. On iOS Safari that wrapper becomes the containing block
+          for any descendant `position: fixed`, which re-anchors the nav to
+          the scrolling content instead of the viewport — making it "float"
+          mid-page. Keeping it a sibling of PullToRefresh guarantees it stays
+          pinned to the true viewport bottom. */}
       <nav
         style={{
           position: 'fixed',
@@ -892,17 +755,17 @@ const FantasyGolfLeague = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 3,
-                  // Active state is colour-only — icon + label brighten to
-                  // pure white. Inactive tabs sit at ~45% white (light gray).
-                  // No border, no background fill, no layout shift.
+                  // Active state is colour-only — icon + label both turn
+                  // gold (#f5c518). No border, no background fill, no
+                  // layout shift. Matches Option 5 from the design preview.
                   border: 'none',
                   padding: '6px 4px 8px',
                   minHeight: 48,
                   background: 'transparent',
                   borderRadius: 6,
                   color: isActive
-                    ? '#ffffff'
-                    : 'rgba(255,255,255,0.45)',
+                    ? '#f5c518'
+                    : 'rgba(255,255,255,0.55)',
                   cursor: 'pointer',
                   transition: 'color 0.18s',
                   outline: 'none',
@@ -965,7 +828,9 @@ const FantasyGolfLeague = () => {
       <UserSettingsModal
         isOpen={showUserSettings}
         onClose={() => setShowUserSettings(false)}
+        onLogout={handleLogout}
         loggedInUser={loggedInUser}
+        loggedInTeamId={loggedInTeamId}
         teams={resolvedTeams}
         updateTeams={updateTeams}
         isCommissioner={isCommissioner}
@@ -974,8 +839,7 @@ const FantasyGolfLeague = () => {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
       />
-    </div>
-    </PullToRefresh>
+    </>
   );
 };
 
