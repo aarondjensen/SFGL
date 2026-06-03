@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X } from 'lucide-react';
+import { X, LogOut } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
 import { colors, fonts } from '../theme.js';
 import { useModalBehavior } from '../utils/modalUtils';
@@ -23,49 +23,15 @@ import {
   unsubscribe as unsubscribePush,
   getCurrentToken,
   NOTIFICATION_EVENTS,
-  getEffectiveChannelPrefs,
-  buildChannelPrefUpdate,
+  getEffectivePrefs,
 } from '../api/pushNotifications';
-
-// Compact iOS-style toggle pill used in the notification channel matrix.
-// 36×20 track, 14px thumb. Green when on, muted when off. Disabled (wait
-// cursor) while its write is in flight.
-const TogglePill = ({ on, saving, onToggle, ariaLabel }) => (
-  <button
-    type="button"
-    role="switch"
-    aria-checked={on}
-    aria-label={ariaLabel}
-    disabled={saving}
-    onClick={onToggle}
-    style={{
-      position: 'relative',
-      width: 36, height: 20, borderRadius: 10,
-      padding: 0, flexShrink: 0,
-      background: on ? 'rgba(80,195,120,0.7)' : 'rgba(255,255,255,0.12)',
-      border: `1px solid ${on ? 'rgba(80,195,120,0.85)' : 'rgba(255,255,255,0.18)'}`,
-      cursor: saving ? 'wait' : 'pointer',
-      opacity: saving ? 0.5 : 1,
-      transition: 'background 0.18s, border-color 0.18s, opacity 0.18s',
-    }}
-  >
-    <span
-      aria-hidden="true"
-      style={{
-        position: 'absolute', top: 2, left: 2,
-        width: 14, height: 14, borderRadius: '50%',
-        background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-        transform: on ? 'translateX(16px)' : 'translateX(0)',
-        transition: 'transform 0.18s ease',
-      }}
-    />
-  </button>
-);
 
 export const UserSettingsModal = ({
   isOpen,
   onClose,
+  onLogout,
   loggedInUser,
+  loggedInTeamId,
   teams,
   updateTeams,
   isCommissioner,
@@ -81,41 +47,45 @@ export const UserSettingsModal = ({
   // a string — the team identity is required to subscribe pushes to the
   // correct teamId in Firestore.
   const userTeam = useMemo(
-    () => teams.find(t => t.owner === loggedInUser) || null,
-    [teams, loggedInUser]
+    () =>
+      (loggedInTeamId && teams.find(t => t.id === loggedInTeamId)) ||
+      teams.find(t => t.owner === loggedInUser) ||
+      null,
+    [teams, loggedInTeamId, loggedInUser]
   );
 
-  // Channel-aware prefs: every event → { push, email }. Drives the matrix.
-  const channelPrefs = useMemo(
-    () => userTeam ? getEffectiveChannelPrefs(userTeam) : {},
+  // Effective per-event prefs for this team (stored values + defaults).
+  // Recomputed when the team list or loggedInUser changes.
+  const effectivePrefs = useMemo(
+    () => userTeam ? getEffectivePrefs(userTeam) : {},
     [userTeam]
   );
 
-  // Tracks pending writes per "eventKey:channel" so we can disable the
-  // specific toggle while its Firestore write is in flight.
+  // Tracks pending writes per event key so we can disable toggles while
+  // their Firestore write is in flight (prevents rapid double-toggle bugs).
   const [prefSaving, setPrefSaving] = useState({});
 
-  const handleToggleChannel = async (eventKey, channel) => {
+  const handleToggleEventPref = async (eventKey) => {
     if (!userTeam) return;
-    const savingKey = `${eventKey}:${channel}`;
-    if (prefSaving[savingKey]) return;  // ignore while in-flight
+    if (prefSaving[eventKey]) return;  // ignore while in-flight
 
-    const current = channelPrefs[eventKey] || { push: true, email: true };
-    const newValue = !current[channel];
+    const currentValue = effectivePrefs[eventKey];
+    const newValue = !currentValue;
 
-    // Build the new prefs map (normalizes legacy boolean → { push, email }).
-    const newPrefs = buildChannelPrefUpdate(userTeam, eventKey, channel, newValue);
+    // Optimistic update: write new prefs map to local state immediately
+    // via updateTeams. Realtime subscription will reconcile if needed.
+    const newPrefs = { ...(userTeam.notificationPrefs || {}), [eventKey]: newValue };
     const newTeams = teams.map(t =>
       t.id === userTeam.id ? { ...t, notificationPrefs: newPrefs } : t
     );
 
-    setPrefSaving(p => ({ ...p, [savingKey]: true }));
+    setPrefSaving(p => ({ ...p, [eventKey]: true }));
     try {
       await updateTeams(newTeams);
     } catch (err) {
       dialog.showToast('Could not save preference: ' + err.message, 'error');
     } finally {
-      setPrefSaving(p => ({ ...p, [savingKey]: false }));
+      setPrefSaving(p => ({ ...p, [eventKey]: false }));
     }
   };
 
@@ -157,16 +127,10 @@ export const UserSettingsModal = ({
     let cancelled = false;
     (async () => {
       const supported = await isPushSupported();
-      const permission = getNotificationPermission();
-      const token = getCurrentToken();
-      // Verbose diagnostic — when users report "the toggle won't turn on",
-      // these three values plus the UA pinpoint why. Look in DevTools console.
-      console.log('[push] modal open — state:',
-        { supported, permission, subscribed: !!token, ua: navigator.userAgent });
       if (cancelled) return;
       setPushSupported(supported);
-      setPushPermission(permission);
-      setPushSubscribed(!!token);
+      setPushPermission(getNotificationPermission());
+      setPushSubscribed(!!getCurrentToken());
     })();
     return () => { cancelled = true; };
   }, [isOpen]);
@@ -411,6 +375,7 @@ export const UserSettingsModal = ({
                 background: 'transparent',
                 border: 'none',
                 padding: '4px 0',
+                marginBottom: notifsExpanded ? 8 : 0,
                 cursor: 'pointer',
                 textAlign: 'left',
               }}
@@ -451,19 +416,8 @@ export const UserSettingsModal = ({
               }}>▼</span>
             </button>
 
-            {/* Animated collapse: grid-rows 0fr↔1fr slides the body open and
-                closed smoothly, in sync with the chevron rotation, instead of
-                popping in/out. The body stays MOUNTED (content visibility
-                toggled via the grid) so inner state — like an expanded
-                per-event matrix — isn't reset when the section collapses.
-                overflow:hidden clips during the transition. */}
-            <div style={{
-              display: 'grid',
-              gridTemplateRows: notifsExpanded ? '1fr' : '0fr',
-              transition: 'grid-template-rows 0.22s ease',
-            }}>
-              <div style={{ overflow: 'hidden', minHeight: 0 }}>
-                <div style={{ paddingTop: 8 }}>
+            {notifsExpanded && (
+              <>
                 {/* Master device toggle — iOS Settings pattern. One row owns
                     everything: status dot, label, and the toggle pill. The
                     pill drives subscribe/unsubscribe; status detail surfaces
@@ -599,68 +553,54 @@ export const UserSettingsModal = ({
                     fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
                     marginTop: 8, lineHeight: 1.5,
                   }}>
-                    Notifications are blocked for sfglgolf.com. To unblock:
-                    <br />
-                    <strong>Chrome (Android/desktop):</strong> tap the lock icon (or 🛡️/ⓘ) in the address bar → Permissions → Notifications → Allow. Then reload this page.
-                    <br />
-                    <strong>iPhone PWA:</strong> iOS Settings → Notifications → SFGL → Allow Notifications.
-                    <br />
-                    <strong>Other browsers:</strong> open Site Settings for sfglgolf.com and allow notifications.
+                    Notifications are blocked. Open your browser settings for sfglgolf.com and allow notifications, then return here.
                   </div>
                 )}
 
-                {/* Per-event channel matrix (push + email per event).
-                    Each event row shows its label/description on the left and
-                    two compact toggles (Push / Email) on the right. Writes
-                    land in team.notificationPrefs[event] = { push, email },
-                    honored by the server-side push (api/push.js, cron.js) and
-                    email (cron.js) senders. Note: the matrix shows even when
-                    push isn't subscribed — email prefs are independent of
-                    push subscription. Push toggles still work; they just have
-                    no effect until the user subscribes a device above. */}
-                {userTeam && (
+                {/* Per-event toggles (Wave J Round 6 batch 3) ─────
+                    Only batch 3 events are wired today; batch 4 will
+                    extend NOTIFICATION_EVENTS with more rows. Each toggle
+                    writes to team.notificationPrefs in Firestore so the
+                    server-side push triggers can honor the preference. */}
+                {pushSubscribed && userTeam && (
                   <div style={{ marginTop: 14 }}>
                     <div style={{
                       fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
-                      marginBottom: 8, lineHeight: 1.5,
+                      marginBottom: 6, lineHeight: 1.5,
                     }}>
-                      Choose how each event notifies you. <strong style={{ color: colors.textSecondary }}>Push</strong> goes to your subscribed devices; <strong style={{ color: colors.textSecondary }}>Email</strong> goes to your email on file.
+                      Choose which events trigger pushes on your subscribed devices.
                     </div>
-
-                    {/* Column header row */}
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '0 12px 6px', 
-                    }}>
-                      <div style={{ flex: 1 }} />
-                      <div style={{
-                        width: 44, textAlign: 'center',
-                        fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
-                        letterSpacing: '0.5px', textTransform: 'uppercase',
-                        color: colors.textMuted,
-                      }}>Push</div>
-                      <div style={{
-                        width: 44, textAlign: 'center',
-                        fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
-                        letterSpacing: '0.5px', textTransform: 'uppercase',
-                        color: colors.textMuted,
-                      }}>Email</div>
-                    </div>
-
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {NOTIFICATION_EVENTS.map(evt => {
-                        const ch = channelPrefs[evt.key] || { push: true, email: true };
+                        const enabled = effectivePrefs[evt.key];
+                        const saving = !!prefSaving[evt.key];
                         return (
-                          <div
+                          <button
                             key={evt.key}
+                            type="button"
+                            role="switch"
+                            aria-checked={enabled}
+                            aria-label={`${evt.label}: ${enabled ? 'enabled' : 'disabled'}`}
+                            disabled={saving}
+                            onClick={() => handleToggleEventPref(evt.key)}
                             style={{
                               display: 'flex',
                               alignItems: 'center',
                               gap: 10,
                               padding: '10px 12px',
-                              background: 'rgba(255,255,255,0.02)',
-                              border: `1px solid ${colors.borderSubtle}`,
+                              background: enabled
+                                ? 'rgba(80,195,120,0.04)'
+                                : 'rgba(255,255,255,0.02)',
+                              border: `1px solid ${enabled
+                                ? 'rgba(80,195,120,0.2)'
+                                : colors.borderSubtle}`,
                               borderRadius: 6,
+                              cursor: saving ? 'wait' : 'pointer',
+                              opacity: saving ? 0.5 : 1,
+                              transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
+                              textAlign: 'left',
+                              width: '100%',
+                              fontFamily: fonts.sans,
                             }}
                           >
                             <div style={{ flex: 1, minWidth: 0 }}>
@@ -677,28 +617,84 @@ export const UserSettingsModal = ({
                                 {evt.desc}
                               </div>
                             </div>
-                            <TogglePill
-                              on={ch.push}
-                              saving={!!prefSaving[`${evt.key}:push`]}
-                              onToggle={() => handleToggleChannel(evt.key, 'push')}
-                              ariaLabel={`${evt.label} push: ${ch.push ? 'on' : 'off'}`}
-                            />
-                            <TogglePill
-                              on={ch.email}
-                              saving={!!prefSaving[`${evt.key}:email`]}
-                              onToggle={() => handleToggleChannel(evt.key, 'email')}
-                              ariaLabel={`${evt.label} email: ${ch.email ? 'on' : 'off'}`}
-                            />
-                          </div>
+                            {/* Toggle pill — iOS-style track + thumb. The button
+                                wrapping the whole row handles the click; this
+                                element is purely visual.
+                                  Track: 36×20 rounded pill with green-tinted bg when on
+                                  Thumb: 14×14 circle that slides left↔right via transform */}
+                            <div
+                              aria-hidden="true"
+                              style={{
+                                position: 'relative',
+                                width: 36,
+                                height: 20,
+                                borderRadius: 10,
+                                background: enabled
+                                  ? 'rgba(80,195,120,0.7)'
+                                  : 'rgba(255,255,255,0.12)',
+                                border: `1px solid ${enabled
+                                  ? 'rgba(80,195,120,0.85)'
+                                  : 'rgba(255,255,255,0.18)'}`,
+                                transition: 'background 0.18s, border-color 0.18s',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <div style={{
+                                position: 'absolute',
+                                top: 2,
+                                left: 2,
+                                width: 14,
+                                height: 14,
+                                borderRadius: '50%',
+                                background: '#fff',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                                transform: enabled ? 'translateX(16px)' : 'translateX(0)',
+                                transition: 'transform 0.18s ease',
+                              }} />
+                            </div>
+                          </button>
                         );
                       })}
                     </div>
                   </div>
                 )}
-                </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
+
+          {/* ── Sign out ───────────────────────────────────────────────
+              Gives every manager a clean way to end their session. Calls
+              the app-level handler (clears manager_team_id + auth state and
+              closes this modal). Lives at the bottom of the body so it never
+              competes with the primary toggles above. Red-tinted to read as
+              a terminal/destructive action without shouting. */}
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              aria-label="Sign out"
+              style={{
+                marginTop: 18,
+                width: '100%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                gap: 8,
+                padding: '12px 14px',
+                minHeight: 44,
+                background: 'rgba(200,70,70,0.10)',
+                border: '1px solid rgba(220,90,90,0.30)',
+                borderRadius: 8,
+                color: 'rgba(240,140,140,0.95)',
+                fontFamily: fonts.sans, fontSize: 13, fontWeight: 600,
+                letterSpacing: '0.3px',
+                cursor: 'pointer',
+                transition: 'background 0.18s, border-color 0.18s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(200,70,70,0.18)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(200,70,70,0.10)'; }}
+            >
+              <LogOut style={{ width: 16, height: 16 }} />
+              Sign out
+            </button>
+          )}
         </div>
       </div>
     </div>
