@@ -295,13 +295,13 @@ export const TournamentResultsPanel = ({
           const teamResult = resultsData.teams[t.id];
           const earnings = teamResult ? (teamResult.totalEarnings || 0) : 0;
           const pushBody = teamResult
-            ? `${selectedTourney}: you earned $${earnings.toLocaleString()}`
-            : `Results are in for ${selectedTourney}`;
+            ? `You earned $${earnings.toLocaleString()}`
+            : 'Results are in';
           sendCommishPush({
             event: 'results',
             commishTeamId: commishTeam.id,
             recipients: [t.id],
-            title: '🏆 Weekly Results Complete',
+            title: `🏆 ${selectedTourney} Results`,
             body: pushBody,
             deepLink: '#standings',
           }).catch(err => console.warn(`[push] results send failed for ${t.name}:`, err.message));
@@ -485,13 +485,13 @@ export const TournamentResultsPanel = ({
         const teamResult = resultsTeams[team.id];
         const earnings = teamResult ? (teamResult.totalEarnings || 0) : 0;
         const pushBody = teamResult
-          ? `${selectedTourney}: you earned $${earnings.toLocaleString()}`
-          : `Results are in for ${selectedTourney}`;
+          ? `You earned $${earnings.toLocaleString()}`
+          : 'Results are in';
         sendCommishPush({
           event: 'results',
           commishTeamId: commishTeam.id,
           recipients: [team.id],
-          title: '🏆 Weekly Results Complete',
+          title: `🏆 ${selectedTourney} Results`,
           body: pushBody,
           deepLink: '#standings',
         }).catch(err => console.warn(`[push] resend failed for ${team.name}:`, err.message));

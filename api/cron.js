@@ -894,7 +894,7 @@ async function handleNotifyResults(req, res) {
 
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, '🏆 Weekly Results Complete', buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo, seasonStandings));
+      await sendEmail(email, `🏆 ${tournamentName} Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo, seasonStandings));
       results.push({ team: teamName, success: true });
     } catch (err) { results.push({ team: teamName, error: err.message }); }
   }
@@ -1319,7 +1319,7 @@ async function handleProcessResults(res) {
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, '🏆 Weekly Results Complete', buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName, swingWinnerInfoForEmail, seasonStandingsForEmail));
+      await sendEmail(email, `🏆 ${tournament.name} Results`, buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName, swingWinnerInfoForEmail, seasonStandingsForEmail));
       emailResults.push({ team: teamName, success: true });
     } catch (err) { emailResults.push({ team: teamName, error: err.message }); }
   }
@@ -1335,13 +1335,13 @@ async function handleProcessResults(res) {
     const teamResult = teamResultsForEmail.find(r => r.team === team.name);
     const earnings = teamResult ? teamResult.totalEarnings : 0;
     const body = teamResult
-      ? `${tournament.name}: you earned $${earnings.toLocaleString()}`
-      : `Results are in for ${tournament.name}`;
+      ? `You earned $${earnings.toLocaleString()}`
+      : 'Results are in';
     try {
       const result = await sendPushToTeam({
         teamId: team.id,
         event: 'results',
-        title: '🏆 Weekly Results Complete',
+        title: `🏆 ${tournament.name} Results`,
         body,
         deepLink: '#standings',
       });
