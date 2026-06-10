@@ -3,7 +3,7 @@ import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../utils/index.js';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
-import { playersApi, teamsApi } from '../api/firebase';
+import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
 import { theme, colors, fonts } from '../theme.js';
 import { LIV_GOLF_ROSTER } from '../constants';
@@ -39,18 +39,6 @@ export const AddDropPlayerModal = ({
   const [searchResults,        setSearchResults]        = useState([]); // results from name search
   const [loadingPlayers,       setLoadingPlayers]       = useState(false);
   const [searching,            setSearching]            = useState(false);
-  // Fresh-teams snapshot fetched on modal open. Guards against stale React
-  // state when the modal is opened seconds after a waiver/FA write — the
-  // Firestore subscription that feeds the `teams` prop may not have
-  // propagated yet, which previously caused just-rostered players to appear
-  // in the FA list. When this is non-null, prefer it over the `teams` prop
-  // for ownership computation. Falls back to `teams` prop while loading.
-  const [freshTeams,           setFreshTeams]           = useState(null);
-  // Separate flag so we can distinguish "fetch not yet completed" from
-  // "fetch completed and returned null/error" (in which case we fall back to
-  // the teams prop). Used to gate the player-list render so rostered players
-  // never appear in the list — not even briefly during the fetch.
-  const [freshTeamsLoaded,     setFreshTeamsLoaded]     = useState(false);
   const bodyRef  = useRef(null);
   const [localHeadshots, setLocalHeadshots] = useState({});
   const searchTimerRef = useRef(null);
@@ -64,23 +52,6 @@ export const AddDropPlayerModal = ({
       .then(players => setTopPlayers(players))
       .catch(() => setTopPlayers([]))
       .finally(() => setLoadingPlayers(false));
-  }, [isOpen]);
-
-  // Fetch fresh /teams on modal open — gives us a snapshot at-or-after the
-  // moment the modal opened, immune to Firestore subscription propagation
-  // lag for the `teams` prop. One read per modal open. Together with the
-  // `freshTeamsLoaded` flag, this ensures the player list never renders
-  // until we have accurate ownership data.
-  useEffect(() => {
-    if (!isOpen) {
-      setFreshTeams(null);
-      setFreshTeamsLoaded(false);
-      return;
-    }
-    teamsApi.getAll()
-      .then(latest => setFreshTeams(Array.isArray(latest) ? latest : null))
-      .catch(() => setFreshTeams(null))
-      .finally(() => setFreshTeamsLoaded(true));
   }, [isOpen]);
 
   // ── Escape key + body scroll lock (shared) ─────────────────────────────────
@@ -161,40 +132,40 @@ export const AddDropPlayerModal = ({
   const mergedHeadshots = { ...localHeadshots, ...headshots };
 
   // ── Available players ──────────────────────────────────────────────────────
-  // Build the effective roster for EVERY team by replaying processed transactions,
-  // matching the same logic as useRoster. This prevents players added via FA/waiver
-  // (who live in transactions but not in team.roster) from appearing as available.
-  //
-  // Skips:
-  //   • mulligan — restores a previously-dropped player; the original add/drop
-  //     pair already accounts for the roster movement.
-  //   • swing_winner — tx.player on these is the manager's owner name (used
-  //     for "Jensen won the pot" display copy), NOT an actual golfer.
-  // Prefer the fresh snapshot fetched at modal open over the props (which
-  // can lag behind Firestore for a beat after a waiver/FA write). Falls back
-  // to props if the fresh fetch hasn't returned yet or errored.
-  const effectiveTeams = freshTeams || teams;
-
-  const rosteredPlayers = new Set(
-    effectiveTeams.flatMap(t => {
-      let roster = (t.roster || []).map(p => p.name);
-      const rosterSet = new Set(roster);
+  // Build the effective roster name-set for a team by replaying transactions in
+  // EXACTLY the same way as the canonical `useRoster` hook that RostersView uses,
+  // so the modal's ownership/availability view never diverges from the Rosters
+  // screen. The previous local copy diverged in three ways that could wrongly
+  // mark a dropped player as still-owned:
+  //   • it replayed in raw array order (no sort) — an add stored after a later
+  //     drop would re-add a player who was actually netted out;
+  //   • it accepted `status === 'completed'` and transactions with no
+  //     `tournamentIndex`, which useRoster excludes;
+  //   • it ignored the `tournamentIndex <= activeTournamentIndex` upper bound.
+  // Mirroring useRoster fixes the "shows on my team but not on my roster" bug.
+  const effectiveRosterNames = (t) => {
+    const names = new Set((t.roster || []).map(p => p.name));
+    if (activeTournamentIndex >= 0) {
       transactions
         .filter(tx =>
           tx.team === t.name &&
           tx.type !== 'mulligan' &&
           tx.type !== 'swing_winner' &&
-          (tx.status === 'processed' || tx.status === 'completed')
+          tx.tournamentIndex !== undefined &&
+          tx.tournamentIndex <= activeTournamentIndex &&
+          tx.status === 'processed'
         )
+        .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
         .forEach(tx => {
-          if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
-          if (tx.player) rosterSet.add(tx.player);
+          if (tx.droppedPlayer) names.delete(tx.droppedPlayer);
+          if (tx.player) names.add(tx.player);
         });
-      // Defensive: drop any phantom entry matching the team's own owner
-      // (historic swing_winner pollution before the type filter was added).
-      if (t.owner) rosterSet.delete(t.owner);
-      return [...rosterSet];
-    })
+    }
+    return names;
+  };
+
+  const rosteredPlayers = new Set(
+    teams.flatMap(t => [...effectiveRosterNames(t)])
   );
 
   // Players dropped via a processed FA/waiver whose tournament hasn't been completed yet
@@ -234,17 +205,11 @@ export const AddDropPlayerModal = ({
     return true;
   });
 
-  // Build ownership map: playerName → teamName
+  // Build ownership map: playerName → teamName (same effective-roster logic as
+  // RostersView, via effectiveRosterNames, so the owner badge matches the roster).
   const ownerMap = new Map();
-  effectiveTeams.forEach(t => {
-    const rosterSet = new Set((t.roster || []).map(p => p.name));
-    transactions
-      .filter(tx => tx.team === t.name && tx.type !== 'mulligan' && (tx.status === 'processed' || tx.status === 'completed'))
-      .forEach(tx => {
-        if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
-        if (tx.player) rosterSet.add(tx.player);
-      });
-    rosterSet.forEach(name => ownerMap.set(name, t.name));
+  teams.forEach(t => {
+    effectiveRosterNames(t).forEach(name => ownerMap.set(name, t.name));
   });
 
   // Is the active tournament currently locked (Thu–Sun)?
@@ -276,47 +241,6 @@ export const AddDropPlayerModal = ({
   const handleConfirm = async () => {
     if (!canConfirm) return;
     setSaving(true);
-
-    // Final freshness check: refetch /teams immediately before committing so
-    // we don't add a player who was just rostered by another team's
-    // waiver/FA submission seconds ago. This is the bullet-proof safety net
-    // for the modal — even if our cached list shows them as available, the
-    // submit will refuse if the most recent Firestore state says otherwise.
-    // Only enforced for FA mode; waivers are pending claims that get
-    // re-resolved at processing time and have their own conflict logic.
-    if (!isWaiverMode) {
-      try {
-        const latestTeams = await teamsApi.getAll();
-        if (Array.isArray(latestTeams)) {
-          const allRostered = new Set();
-          const ownerByName = new Map();
-          latestTeams.forEach(t => {
-            (t.roster || []).forEach(p => {
-              allRostered.add(p.name);
-              ownerByName.set(p.name, t.name);
-            });
-          });
-          if (allRostered.has(selectedPlayerToAdd.name)) {
-            const owner = ownerByName.get(selectedPlayerToAdd.name);
-            const ownerLabel = owner && owner !== team.name ? ` (now on ${owner})` : '';
-            dialog.showToast(
-              `${selectedPlayerToAdd.name} was just claimed${ownerLabel}. Please pick someone else.`,
-              'error',
-            );
-            setSaving(false);
-            // Also refresh the in-modal snapshot so the list updates immediately.
-            setFreshTeams(latestTeams);
-            setSelectedPlayerToAdd(null);
-            return;
-          }
-        }
-      } catch (err) {
-        // Refetch failure is non-fatal — we'll proceed using whatever data
-        // we have. Better to risk a rare race than to block all submits
-        // when Firestore reads are temporarily failing.
-        console.warn('[AddDrop] fresh teams refetch before submit failed:', err);
-      }
-    }
 
     const newTx = {
       team:            team.name,
@@ -375,17 +299,12 @@ export const AddDropPlayerModal = ({
       const playerSummary = selectedPlayerToDrop
         ? `+${selectedPlayerToAdd.name} / -${selectedPlayerToDrop.name}`
         : `+${selectedPlayerToAdd.name}`;
-      // Title is the SFGL identifier; team name and player change go in the
-      // body. This puts the SFGL brand at the top of the notification
-      // (rather than the team name) and aligns with the iOS-auto-added
-      // "from SFGL" subtitle below the title. The team-specific info stays
-      // prominent on its own body line.
       sendManagerPush({
         event: 'freeAgent',
         teamId: team.id,
         recipients: recipientIds,
-        title: `🔄 Add/Drop`,
-        body: `${team.name}: ${playerSummary}`,
+        title: `🔄 ${team.name}`,
+        body: playerSummary,
         deepLink: '#transactions',
       }).catch(err => console.warn('[push] freeAgent send failed:', err.message));
     }
@@ -700,7 +619,7 @@ export const AddDropPlayerModal = ({
             onBlur={e => { e.target.style.borderColor = colors.borderSubtle; e.target.style.background = 'rgba(255,255,255,0.02)'; }}
           />
 
-          {(loadingPlayers || !freshTeamsLoaded) ? (
+          {loadingPlayers ? (
             <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0', color: colors.textMuted }}>Loading players…</p>
           ) : searching ? (
             <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0', color: colors.textMuted }}>Searching…</p>
@@ -750,19 +669,6 @@ export const AddDropPlayerModal = ({
                     )}
                     {isRostered && (
                       <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: colors.danger, textTransform: 'uppercase' }}>
-                        Unavailable
-                      </span>
-                    )}
-                    {isLimbo && !isRostered && (
-                      // Mirror the rostered "Unavailable" inline indicator so
-                      // limbo players (recently-dropped, on-waivers state)
-                      // are visually unmistakable in search results. The
-                      // right-side "On Waivers" badge already exists, but the
-                      // inline tag matches the rostered treatment for
-                      // visual rhythm — a glance at the row is enough to
-                      // know the player can't be selected without having to
-                      // notice the right-side badge.
-                      <span style={{ fontFamily: fonts.sans, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: colors.textGold, textTransform: 'uppercase' }}>
                         Unavailable
                       </span>
                     )}
