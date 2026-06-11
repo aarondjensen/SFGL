@@ -55,7 +55,7 @@ import { useLeague }       from './hooks';
 import { getSegmentByDate } from './utils';
 import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi } from './api/firebase';
+import { managerAuthApi, tournamentResultsApi, teamsApi } from './api/firebase';
 
 
 // ── Lazy-load fallback spinner ─────────────────────────────────────────────
@@ -93,6 +93,42 @@ const getTabFromHash = () => {
   if (typeof window === 'undefined') return null;
   const raw = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
   return VALID_TAB_IDS.has(raw) ? raw : null;
+};
+
+// ── Manager activity heartbeat ──────────────────────────────────────────────
+// Writes `lastActiveAt` (ISO string) onto the logged-in manager's team doc so
+// the commish's Manager Activity panel reflects real engagement — not just the
+// last explicit password login. Managers stay signed in via the persisted
+// `manager_team_id`, so they almost never hit the login path again; without a
+// heartbeat, "last active" froze at their last sign-in (e.g. showing 8 days
+// stale even after they opened the app to set a lineup yesterday).
+//
+// Throttled per-team via localStorage so ordinary app-opens and tab-returns
+// don't hammer Firestore: at most one write per HEARTBEAT_THROTTLE_MS. The
+// throttle marker is advanced ONLY after the write succeeds, so a failed write
+// (offline / transient) is retried on the next opportunity rather than being
+// suppressed for the full window.
+//
+// Uses a single-field updateDoc (teamsApi.update) — deliberately NOT
+// updateTeams/teamsApi.setAll, which rewrites the entire teams collection and
+// would churn the realtime subscription. The subscription reconciles the new
+// lastActiveAt back into local team state on its own.
+const HEARTBEAT_THROTTLE_MS = 30 * 60 * 1000; // 30 minutes
+const heartbeatKey = (teamId) => `sfgl.lastHeartbeat:${teamId}`;
+
+const recordHeartbeat = async (teamId) => {
+  if (!teamId || typeof window === 'undefined') return;
+  try {
+    const key  = heartbeatKey(teamId);
+    const last = Number(localStorage.getItem(key) || 0);
+    if (Number.isFinite(last) && Date.now() - last < HEARTBEAT_THROTTLE_MS) return;
+    await teamsApi.update(teamId, { lastActiveAt: new Date().toISOString() });
+    // Advance the throttle marker only after a successful write.
+    try { localStorage.setItem(key, String(Date.now())); } catch {}
+  } catch (err) {
+    // Best-effort — a heartbeat failure must never disrupt the app.
+    console.warn('[heartbeat] write failed:', err?.message);
+  }
 };
 
 // ── App shell ───────────────────────────────────────────────────────────────
@@ -257,6 +293,27 @@ const FantasyGolfLeague = () => {
       }
     }).catch(() => {});
   }, [resolvedTeams]);
+
+  // ── Manager activity heartbeat ──────────────────────────────────────────────
+  // Fires whenever a manager session is active: once immediately when the team
+  // id resolves (cold open / session restore / fresh login), and again when the
+  // app returns to the foreground (PWA reopened, tab re-focused after being
+  // hidden). recordHeartbeat() throttles the actual Firestore write internally,
+  // so these triggers can fire freely without piling up writes. See
+  // recordHeartbeat (module scope above) for the throttle + write details.
+  //
+  // This is the fix for the Manager Activity panel showing stale "last active"
+  // times: previously nothing wrote lastActiveAt, so it never advanced past a
+  // manager's last explicit login.
+  useEffect(() => {
+    if (!loggedInTeamId) return;
+    recordHeartbeat(loggedInTeamId); // immediate on login / session restore
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') recordHeartbeat(loggedInTeamId);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loggedInTeamId]);
 
   // ── Hydrate tournament results from Firebase ──────────────────────────────
   // Hydrate tournament results from Firebase once after load.
