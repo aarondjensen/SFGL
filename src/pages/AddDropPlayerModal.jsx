@@ -252,6 +252,8 @@ export const AddDropPlayerModal = ({
       date:            new Date().toLocaleDateString(),
       // fa/waiver tag the NEXT upcoming event (the one players will play in)
       tournamentIndex: nextTournamentIndex ?? activeTournamentIndex,
+      // Stable tournament identity alongside the positional index (reorder-safe).
+      tournament: tournaments?.[nextTournamentIndex ?? activeTournamentIndex]?.name || undefined,
       status:          isWaiverMode ? 'pending' : 'processed',
       priority: isWaiverMode
         ? (transactions.filter(tx => tx.team === team.name && tx.type === 'waiver' && tx.status === 'pending').length + 1)

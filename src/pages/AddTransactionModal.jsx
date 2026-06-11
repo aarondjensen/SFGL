@@ -200,7 +200,7 @@ export const AddTransactionModal = ({
     let txFee = 0;
     if (!isBlocked) {
       if (type === 'waiver')        txFee = FEE_WAIVER;
-      else if (type === 'fa')       txFee = FEE_FA;
+      else if (type === 'free agent') txFee = FEE_FA;
       // drop / mulligan / other types remain $0
     }
 
@@ -217,6 +217,10 @@ export const AddTransactionModal = ({
       date: new Date().toLocaleDateString(),
       timestamp: Date.now(),
       tournamentIndex,
+      // Stable tournament identity (the doc-id name) alongside the positional
+      // index, so this transaction stays correctly attributed even if the
+      // schedule is later reordered. Reads can prefer this over tournamentIndex.
+      tournament: tournaments[tournamentIndex]?.name || undefined,
       status: isBlocked ? 'failed' : 'completed',
       ...(isBlocked ? { failReason: 'Manually voided by commissioner' } : {}),
       manualEntry: true,
@@ -363,7 +367,7 @@ export const AddTransactionModal = ({
       && affectedTeam.id !== commishTeam.id;
 
     if (shouldPush) {
-      const typeLabel = type === 'fa'          ? 'free agent claim'
+      const typeLabel = type === 'free agent' ? 'free agent claim'
                      : type === 'drop'        ? 'player drop'
                      : type === 'mulligan'    ? 'mulligan'
                      : type === 'waiver'      ? 'waiver claim'
