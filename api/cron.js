@@ -277,6 +277,7 @@ function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transaction
     timestamp: Date.now(),
     status: 'completed',
     tournamentIndex: lastSegTourney?.idx ?? undefined,
+    tournament: lastSegTourney?.t?.name ?? undefined,
     note: swingSegment + ' winner pot (auto-awarded by cron)',
   };
 
@@ -423,19 +424,6 @@ async function loadTeams() {
 async function loadTournaments() {
   const snap = await db.collection('tournaments').orderBy('start_date').get();
   return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-}
-
-// Write an array of tournament objects back to the `tournaments` collection,
-// one doc per tournament keyed by name — mirroring the client's
-// tournamentsApi.setAll(). Strips the synthetic _id field (the doc id is the
-// source of truth; the client re-derives _id from doc.id on every read).
-function writeTournaments(batch, tournaments) {
-  (tournaments || []).forEach(t => {
-    const id = t.name || t._id;
-    if (!id) return;
-    const { _id, ...data } = t;
-    batch.set(db.collection('tournaments').doc(id), data);
-  });
 }
 
 function getEmailMap(settings, teams) {
@@ -947,9 +935,18 @@ async function handleProcessResults(res) {
     });
   }
 
-  // Update tournaments (one doc per tournament in the `tournaments`
-  // collection — same source the client reads) and stats.
-  writeTournaments(batch, newTournaments);
+  // Update only the two tournament docs that actually change — the completed
+  // event and the next event we advance to "playing" — via field-level updates,
+  // so we don't rewrite (or risk clobbering a concurrent write to) the rest of
+  // the collection.
+  batch.update(db.collection('tournaments').doc(tournament.name), {
+    completed: true,
+    playing: false,
+    results: resultsData,
+  });
+  if (nx !== -1) {
+    batch.update(db.collection('tournaments').doc(newTournaments[nx].name), { playing: true });
+  }
   batch.set(db.collection('sfgl_data').doc('fantasy-golf-global-stats'), { key: 'fantasy-golf-global-stats', value: newStats });
   batch.set(db.collection('sfgl_data').doc('last_auto_results'), { key: 'last_auto_results', value: today });
 

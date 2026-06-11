@@ -67,7 +67,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
     const newTourneyIdx = editTourneyIdx !== '' ? parseInt(editTourneyIdx) : tx.tournamentIndex;
     const updatedTx = transactions.map((t, i) =>
       i === txIndex
-        ? { ...t, team: newTeam, player: newAdd, droppedPlayer: newDrop || undefined, tournamentIndex: newTourneyIdx, segment: tournaments[newTourneyIdx]?.segment || t.segment }
+        ? { ...t, team: newTeam, player: newAdd, droppedPlayer: newDrop || undefined, tournamentIndex: newTourneyIdx, tournament: tournaments[newTourneyIdx]?.name ?? t.tournament, segment: tournaments[newTourneyIdx]?.segment || t.segment }
         : t
     );
 
@@ -302,19 +302,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   // which is more robust. Aliased here to avoid touching every call site.
   const getSegForTourney = getSegmentForTournament;
 
-  // League fee amounts (used by both the fee summary and the effectiveFee
-  // self-healing helper below). Defined here so the teamFees useMemo can use
-  // them without a temporal-dead-zone issue.
-  const FEE_WAIVER = settings.feeWaiver ?? 2;
-  const FEE_FA     = settings.feeFA     ?? 1;
-  const deriveFee = (tx) => {
-    if (!tx || tx.status === 'failed' || tx.type === 'swing_winner') return 0;
-    if (typeof tx.fee === 'number' && tx.fee > 0) return tx.fee;
-    if (tx.type === 'waiver') return FEE_WAIVER;
-    if (tx.type === 'fa' || tx.type === 'free agent') return FEE_FA;
-    return 0;
-  };
-
   const teamFees = useMemo(() => {
     // Determine current swing for the fee counter:
     // 1. Find the swing of the last completed tournament
@@ -353,28 +340,19 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       // swing_winner uses tx.amount not tx.fee — don't count it in season/swing fees
       if (tx.type === 'swing_winner') return;
       if (tx.status === 'failed') return; // blocked waivers have no fee
-      const fee = deriveFee(tx);
-      if (fees[tx.team] && fee > 0) {
-        fees[tx.team].seasonTotal += fee;
+      if (fees[tx.team] && typeof tx.fee === 'number' && tx.fee > 0) {
+        fees[tx.team].seasonTotal += tx.fee;
         // Count toward current swing if the transaction's tournament is in this swing
         const inCurrentSwing = tx.tournamentIndex !== undefined
           ? currentSwingIndexes.has(tx.tournamentIndex)
           : tx.segment === currentSwing; // fallback for old transactions without tournamentIndex
-        if (inCurrentSwing) fees[tx.team].swingTotal += fee;
+        if (inCurrentSwing) fees[tx.team].swingTotal += tx.fee;
       }
     });
     return Object.values(fees).sort((a, b) => b.seasonTotal - a.seasonTotal);
-  }, [teams, transactions, tournaments, settings]);
+  }, [teams, transactions, tournaments]);
 
-  // Type sort order within a single tournament. LOWER sorts first (shown
-  // higher = more recent). Mulligans happen AFTER the tournament starts,
-  // while waivers, blocked waivers, FAs, and drops all happen BEFORE it —
-  // so mulligans must sort above (more recent than) those. swing_winner
-  // stays last (it's an end-of-swing award shown at the bottom of the group).
-  const TYPE_ORDER = { 'mulligan': 0, 'fa': 1, 'free agent': 1, 'waiver': 2, 'drop': 3, 'swing_winner': 99 };
-  // Per-row display fee — same derivation as the summary (deriveFee).
-  const effectiveFee = (tx) => deriveFee(tx);
-
+  const TYPE_ORDER = { 'fa': 0, 'free agent': 0, 'waiver': 1, 'mulligan': 2, 'drop': 3, 'swing_winner': 99 };
   // Build a map of segment → last tournamentIndex for sorting swing_winner records.
   const swingLastIndex = {};
   tournaments.forEach((t, i) => {
@@ -394,8 +372,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const bk = resolveKey(b);
     if (bk !== ak) return bk - ak;
     // Same tournament: sort by type order (waiver → FA → mulligan)
-    const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 50;
-    const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 50;
+    const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
+    const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
     if (ta !== tb) return ta - tb;
     // Within waivers: blocked before successful (blocked is the consequence)
     if (a.type === 'waiver' && b.type === 'waiver') {
@@ -731,9 +709,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     ) : (
                       <span style={{
                         ...theme.statNum, fontSize: 13, fontWeight: 600,
-                        color: tx.status === 'failed' ? colors.textMuted : (effectiveFee(tx) > 0 ? colors.earningsGreen : colors.textMuted),
+                        color: tx.status === 'failed' ? colors.textMuted : (tx.fee > 0 ? colors.earningsGreen : colors.textMuted),
                       }}>
-                        {tx.status === 'failed' ? '—' : `$${effectiveFee(tx)}`}
+                        {tx.status === 'failed' ? '—' : `$${tx.fee}`}
                       </span>
                     )}
 

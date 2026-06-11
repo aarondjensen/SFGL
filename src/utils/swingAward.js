@@ -76,6 +76,7 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
     timestamp: Date.now(),
     status: 'completed',
     tournamentIndex: tournamentIndex >= 0 ? tournamentIndex : undefined,
+    tournament: tournamentIndex >= 0 ? (allTournaments[tournamentIndex]?.name || undefined) : undefined,
     note: `${segment} winner pot`,
   };
 

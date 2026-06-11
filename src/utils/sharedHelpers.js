@@ -90,6 +90,25 @@ export const getSwingEarningsByTeam = (tournaments, segment) => {
   return byTeam;
 };
 
+// Returns { teamId: totalSeasonEarnings } derived from completed tournament
+// results — the SAME summation StandingsView uses to render the season table
+// and that cron uses for the waiver tie-breaker. This is the authoritative
+// season-earnings figure; prefer it over the denormalized team.earnings field,
+// which is a running tally that can drift (mulligan reprocessing, manual edits,
+// swing-winner adjustments). Keeping every earnings consumer on this one
+// derivation is what keeps standings, manual waivers, and cron waivers in
+// agreement.
+export const getSeasonEarningsByTeam = (tournaments) => {
+  const byTeam = {};
+  (tournaments || []).forEach(t => {
+    if (!t.completed || !t.results?.teams) return;
+    Object.entries(t.results.teams).forEach(([teamId, tr]) => {
+      byTeam[teamId] = (byTeam[teamId] || 0) + (tr.totalEarnings || 0);
+    });
+  });
+  return byTeam;
+};
+
 // Returns the leader of a swing as { teamId, earnings } | null
 export const getSwingLeader = (tournaments, segment) => {
   const byTeam = getSwingEarningsByTeam(tournaments, segment);
@@ -161,7 +180,6 @@ export const buildEffectiveRoster = (team, transactions, opts = {}) => {
     .filter(tx =>
       tx.team === team.name &&
       tx.type !== 'mulligan' &&
-      tx.type !== 'swing_winner' &&
       (tx.status === 'processed' || tx.status === 'completed')
     )
     .forEach(tx => {
