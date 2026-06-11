@@ -55,7 +55,7 @@ import { useLeague }       from './hooks';
 import { getSegmentByDate } from './utils';
 import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi, teamsApi } from './api/firebase';
+import { managerAuthApi, tournamentResultsApi } from './api/firebase';
 
 
 // ── Lazy-load fallback spinner ─────────────────────────────────────────────
@@ -93,42 +93,6 @@ const getTabFromHash = () => {
   if (typeof window === 'undefined') return null;
   const raw = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
   return VALID_TAB_IDS.has(raw) ? raw : null;
-};
-
-// ── Manager activity heartbeat ──────────────────────────────────────────────
-// Writes `lastActiveAt` (ISO string) onto the logged-in manager's team doc so
-// the commish's Manager Activity panel reflects real engagement — not just the
-// last explicit password login. Managers stay signed in via the persisted
-// `manager_team_id`, so they almost never hit the login path again; without a
-// heartbeat, "last active" froze at their last sign-in (e.g. showing 8 days
-// stale even after they opened the app to set a lineup yesterday).
-//
-// Throttled per-team via localStorage so ordinary app-opens and tab-returns
-// don't hammer Firestore: at most one write per HEARTBEAT_THROTTLE_MS. The
-// throttle marker is advanced ONLY after the write succeeds, so a failed write
-// (offline / transient) is retried on the next opportunity rather than being
-// suppressed for the full window.
-//
-// Uses a single-field updateDoc (teamsApi.update) — deliberately NOT
-// updateTeams/teamsApi.setAll, which rewrites the entire teams collection and
-// would churn the realtime subscription. The subscription reconciles the new
-// lastActiveAt back into local team state on its own.
-const HEARTBEAT_THROTTLE_MS = 30 * 60 * 1000; // 30 minutes
-const heartbeatKey = (teamId) => `sfgl.lastHeartbeat:${teamId}`;
-
-const recordHeartbeat = async (teamId) => {
-  if (!teamId || typeof window === 'undefined') return;
-  try {
-    const key  = heartbeatKey(teamId);
-    const last = Number(localStorage.getItem(key) || 0);
-    if (Number.isFinite(last) && Date.now() - last < HEARTBEAT_THROTTLE_MS) return;
-    await teamsApi.update(teamId, { lastActiveAt: new Date().toISOString() });
-    // Advance the throttle marker only after a successful write.
-    try { localStorage.setItem(key, String(Date.now())); } catch {}
-  } catch (err) {
-    // Best-effort — a heartbeat failure must never disrupt the app.
-    console.warn('[heartbeat] write failed:', err?.message);
-  }
 };
 
 // ── App shell ───────────────────────────────────────────────────────────────
@@ -275,45 +239,48 @@ const FantasyGolfLeague = () => {
   }, []);
 
   // ── Restore session on page load ──────────────────────────────────────────
+  // ONE-SHOT. This effect lists `resolvedTeams` as a dependency because it
+  // needs the team list loaded before it can resolve the logged-in team. But
+  // `resolvedTeams` changes every time teams data updates — including when a
+  // commissioner edits a manager's lineup. Without a guard, the effect re-ran
+  // on every such edit and called setIsCommissioner(false), kicking the
+  // commish out of commish mode mid-edit (one player pick = one logout).
+  //
+  // The ref latches as soon as we've resolved the logged-in team (or
+  // confirmed there's no session), so the restore runs exactly once on load
+  // and never resets commish mode again. Explicit login/logout still set
+  // commish state directly via their own handlers — they don't go through here.
+  const sessionRestoredRef = useRef(false);
   useEffect(() => {
+    if (sessionRestoredRef.current) return;            // already restored — never re-run
+    if (!resolvedTeams || resolvedTeams.length === 0) return; // wait for teams to load
+
     managerAuthApi.getCurrentSession().then(session => {
-      if (!session) return;
-      const teamId = localStorage.getItem('manager_team_id');
-      if (teamId) {
-        setLoggedInTeamId(teamId);
-        const team = resolvedTeams.find(t => t.id === teamId);
-        if (team) {
-          setLoggedInUser(team.owner || team.name);
-          // Tagged commissioners are *allowed* to enter commish mode but
-          // start the session in normal-manager view. They opt in by tapping
-          // their name in the header.
-          setTaggedCommissioner(!!team.isCommissioner);
-          setIsCommissioner(false);
-        }
+      if (!session) {
+        sessionRestoredRef.current = true;             // no session — nothing to restore, latch
+        return;
       }
+      const teamId = localStorage.getItem('manager_team_id');
+      if (!teamId) {
+        sessionRestoredRef.current = true;             // session but no team id — latch
+        return;
+      }
+      setLoggedInTeamId(teamId);
+      const team = resolvedTeams.find(t => t.id === teamId);
+      if (team) {
+        setLoggedInUser(team.owner || team.name);
+        // Tagged commissioners are *allowed* to enter commish mode but
+        // start the session in normal-manager view. They opt in by tapping
+        // their name in the header.
+        setTaggedCommissioner(!!team.isCommissioner);
+        setIsCommissioner(false);
+        sessionRestoredRef.current = true;             // resolved — latch, never reset again
+      }
+      // If the team wasn't found yet (teams still loading incrementally),
+      // we intentionally do NOT latch — the effect re-runs on the next
+      // resolvedTeams change and tries again until the team resolves.
     }).catch(() => {});
   }, [resolvedTeams]);
-
-  // ── Manager activity heartbeat ──────────────────────────────────────────────
-  // Fires whenever a manager session is active: once immediately when the team
-  // id resolves (cold open / session restore / fresh login), and again when the
-  // app returns to the foreground (PWA reopened, tab re-focused after being
-  // hidden). recordHeartbeat() throttles the actual Firestore write internally,
-  // so these triggers can fire freely without piling up writes. See
-  // recordHeartbeat (module scope above) for the throttle + write details.
-  //
-  // This is the fix for the Manager Activity panel showing stale "last active"
-  // times: previously nothing wrote lastActiveAt, so it never advanced past a
-  // manager's last explicit login.
-  useEffect(() => {
-    if (!loggedInTeamId) return;
-    recordHeartbeat(loggedInTeamId); // immediate on login / session restore
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') recordHeartbeat(loggedInTeamId);
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [loggedInTeamId]);
 
   // ── Hydrate tournament results from Firebase ──────────────────────────────
   // Hydrate tournament results from Firebase once after load.
