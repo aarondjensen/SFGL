@@ -329,12 +329,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     // panel total aligned with getSwingPot() in sharedHelpers, which is the
     // authoritative pot calculation used by SwingWinnerPanel + the auto-award
     // logic in computeSwingAward.
-    const currentSwingIndexes = new Set(
-      (tournaments || [])
-        .map((t, i) => ({ t, i }))
-        .filter(({ t }) => getSegForTourney(t) === currentSwing && !t.isAlternate)
-        .map(({ i }) => i)
-    );
+    const currentSwingNames = new Set();
+    const currentSwingIndexes = new Set();
+    (tournaments || []).forEach((t, i) => {
+      if (getSegForTourney(t) === currentSwing && !t.isAlternate) {
+        if (t?.name) currentSwingNames.add(t.name);
+        currentSwingIndexes.add(i);
+      }
+    });
 
     transactions.forEach(tx => {
       // swing_winner uses tx.amount not tx.fee — don't count it in season/swing fees
@@ -342,10 +344,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       if (tx.status === 'failed') return; // blocked waivers have no fee
       if (fees[tx.team] && typeof tx.fee === 'number' && tx.fee > 0) {
         fees[tx.team].seasonTotal += tx.fee;
-        // Count toward current swing if the transaction's tournament is in this swing
-        const inCurrentSwing = tx.tournamentIndex !== undefined
-          ? currentSwingIndexes.has(tx.tournamentIndex)
-          : tx.segment === currentSwing; // fallback for old transactions without tournamentIndex
+        // Count toward current swing if the transaction's tournament is in this
+        // swing — prefer the stable name (reorder-proof), fall back to the
+        // legacy positional index, then to the segment tag for old records.
+        const inCurrentSwing = tx.tournament
+          ? currentSwingNames.has(tx.tournament)
+          : tx.tournamentIndex !== undefined
+            ? currentSwingIndexes.has(tx.tournamentIndex)
+            : tx.segment === currentSwing;
         if (inCurrentSwing) fees[tx.team].swingTotal += tx.fee;
       }
     });

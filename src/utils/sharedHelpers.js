@@ -142,20 +142,29 @@ export const getSwingPot = (transactions, tournaments, segment) => {
   // regardless of completion. Exclude alternates to match the
   // computeSwingAward gate (alternate-tournament fees are tracked
   // separately in the season-level totals but not in the swing pot).
-  const swingIndexes = new Set(
-    (tournaments || [])
-      .map((t, i) => ({ t, i }))
-      .filter(({ t }) => getSegmentForTournament(t) === segment && !t.isAlternate)
-      .map(({ i }) => i)
-  );
+  // Build BOTH a name set and an index set for in-segment, non-alternate
+  // events. New transactions carry a stable `tournament` name (reorder-proof);
+  // legacy ones only have a positional `tournamentIndex`, so match by name when
+  // present and fall back to the index otherwise.
+  const swingNames = new Set();
+  const swingIndexes = new Set();
+  (tournaments || []).forEach((t, i) => {
+    if (getSegmentForTournament(t) === segment && !t.isAlternate) {
+      if (t?.name) swingNames.add(t.name);
+      swingIndexes.add(i);
+    }
+  });
+  const inSwing = (tx) => {
+    if (tx.tournament) return swingNames.has(tx.tournament);
+    if (tx.tournamentIndex !== undefined) return swingIndexes.has(tx.tournamentIndex);
+    return tx.segment === segment;
+  };
   return (transactions || [])
     .filter(tx => {
       if ((tx.fee || 0) <= 0) return false;
       if (tx.status === 'failed') return false;
       if (tx.type === 'swing_winner') return false;
-      return tx.tournamentIndex !== undefined
-        ? swingIndexes.has(tx.tournamentIndex)
-        : tx.segment === segment;
+      return inSwing(tx);
     })
     .reduce((sum, tx) => sum + tx.fee, 0);
 };

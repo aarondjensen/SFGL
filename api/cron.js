@@ -213,20 +213,25 @@ function getSegmentForTournamentServer(t) {
 // Used by the auto-award path below.
 function computeSwingPotServer(transactions, tournaments, swingSegment) {
   if (!swingSegment) return 0;
-  const swingIndexes = new Set(
-    (tournaments || [])
-      .map((t, i) => ({ t, i }))
-      .filter(({ t }) => getSegmentForTournamentServer(t) === swingSegment)
-      .map(({ i }) => i)
-  );
+  const swingNames = new Set();
+  const swingIndexes = new Set();
+  (tournaments || []).forEach((t, i) => {
+    if (getSegmentForTournamentServer(t) === swingSegment) {
+      if (t?.name) swingNames.add(t.name);
+      swingIndexes.add(i);
+    }
+  });
+  const inSwing = (tx) => {
+    if (tx.tournament) return swingNames.has(tx.tournament);
+    if (tx.tournamentIndex !== undefined) return swingIndexes.has(tx.tournamentIndex);
+    return tx.segment === swingSegment;
+  };
   return (transactions || [])
     .filter(tx => {
       if ((tx.fee || 0) <= 0) return false;
       if (tx.status === 'failed') return false;
       if (tx.type === 'swing_winner') return false;
-      return tx.tournamentIndex !== undefined
-        ? swingIndexes.has(tx.tournamentIndex)
-        : tx.segment === swingSegment;
+      return inSwing(tx);
     })
     .reduce((sum, tx) => sum + (tx.fee || 0), 0);
 }
