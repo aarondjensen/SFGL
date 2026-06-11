@@ -10,6 +10,7 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { DEFAULTS_ON } from './_constants.js';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
 
@@ -48,55 +49,27 @@ const messaging = getMessaging(getApp());
 //
 // Returns { sent, failed, skipped, cleanedUp } per push attempt.
 
-const DEFAULTS_ON = new Set([
-  'waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified', 'leadChange',
-]);
-
-// Channel-aware preference reader (server-side mirror of
-// getEventChannelPrefs in src/api/pushNotifications.js). Returns whether the
-// given channel ('push' | 'email') should fire for an event, given a team's
-// notificationPrefs map. Backward-compatible with three stored shapes:
-//   • { push, email } object → consult the channel (missing → event default)
-//   • bare boolean (legacy)  → gates both channels identically
-//   • missing                → event default (DEFAULTS_ON)
-function channelAllowed(prefs, event, channel) {
-  const stored = prefs?.[event];
-  if (stored && typeof stored === 'object') {
-    return typeof stored[channel] === 'boolean' ? stored[channel] : DEFAULTS_ON.has(event);
-  }
-  if (typeof stored === 'boolean') return stored;
-  return DEFAULTS_ON.has(event);
-}
+// DEFAULTS_ON is imported from ./_constants.js (shared with api/push.js) so the
+// default-on notification set lives in exactly one place.
 
 async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
-  // ── Structured logging tag for grep'ability in Vercel logs ─────────────
-  // Every line starts with [push] and includes teamId+event so we can trace
-  // a single push attempt end-to-end. Useful even with Hobby's 1-hour
-  // retention since each line is greppable in the visible window.
-  const tag = `[push] team=${teamId} event=${event}`;
-  console.log(`${tag} START title=${JSON.stringify(title)} body=${JSON.stringify(body)}`);
-
-  if (!teamId || !event) {
-    console.log(`${tag} SKIP: missing teamId or event`);
-    return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
-  }
+  if (!teamId || !event) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
 
   // Check this team's per-event prefs. Missing prefs map → defaults apply.
   // Missing event key inside prefs → defaults apply.
   try {
     const teamSnap = await db.collection('teams').doc(teamId).get();
-    if (!teamSnap.exists) {
-      console.log(`${tag} SKIP: team doc does not exist`);
-      return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
-    }
+    if (!teamSnap.exists) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
     const prefs = teamSnap.data()?.notificationPrefs;
-    if (!channelAllowed(prefs, event, 'push')) {
-      console.log(`${tag} SKIP: push channel disabled for this event`);
-      return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+    if (prefs && typeof prefs[event] === 'boolean') {
+      if (prefs[event] === false) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+    } else {
+      // No explicit pref — fall through to default
+      if (!DEFAULTS_ON.has(event)) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
     }
-    console.log(`${tag} prefs: push channel allowed`);
   } catch (err) {
-    console.warn(`${tag} prefs check ERROR: ${err.message}`);
+    console.warn(`[push] prefs check failed for team ${teamId}:`, err.message);
+    // Fail safe: don't send if we couldn't verify prefs
     return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
   }
 
@@ -105,39 +78,30 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
   try {
     const tokSnap = await db.collection('pushTokens').where('teamId', '==', teamId).get();
     tokenDocs = tokSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    console.log(`${tag} tokens: found ${tokenDocs.length}`);
   } catch (err) {
-    console.warn(`${tag} token fetch ERROR: ${err.message}`);
+    console.warn(`[push] token fetch failed for team ${teamId}:`, err.message);
     return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
   }
-  if (tokenDocs.length === 0) {
-    console.log(`${tag} SKIP: no tokens for team`);
-    return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
-  }
+  if (tokenDocs.length === 0) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
 
   // Send to each token in parallel
   let sent = 0;
   let failed = 0;
   const invalidTokens = [];
 
-  await Promise.all(tokenDocs.map(async (tokDoc, idx) => {
-    // DATA-ONLY payload. Mirrors /api/push.js. A combined notification+data
-    // payload on webpush causes FCM to auto-display the notification AND
-    // the SW's onBackgroundMessage to fire (because data is present) and
-    // also call showNotification — two visible notifications per push.
-    // With data-only, FCM does not auto-display; the SW/foreground handler
-    // reads title/body from `data` and renders once.
-    const tokenStr = tokDoc.token || tokDoc.id;
-    const tokenPreview = tokenStr ? tokenStr.slice(0, 12) + '...' : 'EMPTY';
+  await Promise.all(tokenDocs.map(async (tokDoc) => {
     const message = {
-      token: tokenStr,
+      token: tokDoc.token || tokDoc.id,
+      notification: { title, body },
       data: {
-        title:     String(title || 'SFGL'),
-        body:      String(body  || ''),
         eventType: String(event),
         deepLink:  String(deepLink || '#standings'),
       },
       webpush: {
+        notification: {
+          icon: '/web-app-manifest-192x192.png',
+          badge: '/web-app-manifest-192x192.png',
+        },
         fcmOptions: {
           link: deepLink
             ? `https://sfglgolf.com/${deepLink.startsWith('#') ? deepLink : '#' + deepLink}`
@@ -146,15 +110,15 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
       },
     };
     try {
-      const messageId = await messaging.send(message);
+      await messaging.send(message);
       sent++;
-      console.log(`${tag} SENT idx=${idx} token=${tokenPreview} messageId=${messageId}`);
     } catch (err) {
       failed++;
-      const code = err.errorInfo?.code || err.code || 'unknown';
-      console.warn(`${tag} FAILED idx=${idx} token=${tokenPreview} code=${code} msg=${err.message}`);
+      const code = err.errorInfo?.code || err.code || '';
       if (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token')) {
         invalidTokens.push(tokDoc.id);
+      } else {
+        console.warn(`[push] send failed (${code}):`, err.message);
       }
     }
   }));
@@ -167,13 +131,11 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
       invalidTokens.forEach(id => batch.delete(db.collection('pushTokens').doc(id)));
       await batch.commit();
       cleanedUp = invalidTokens.length;
-      console.log(`${tag} cleaned up ${cleanedUp} dead tokens`);
     } catch (err) {
-      console.warn(`${tag} dead-token cleanup ERROR: ${err.message}`);
+      console.warn('[push] dead-token cleanup failed:', err.message);
     }
   }
 
-  console.log(`${tag} DONE sent=${sent} failed=${failed} cleanedUp=${cleanedUp}`);
   return { sent, failed, skipped: 0, cleanedUp };
 }
 
@@ -449,6 +411,33 @@ async function loadTeams() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// Single source of truth for tournaments: the same `tournaments` collection the
+// client reads via tournamentsApi.getAll() → _getAllOrdered('tournaments',
+// 'start_date'). Previously cron read/wrote a separate sfgl_data/
+// fantasy-golf-tournaments array doc that the client had already migrated off
+// of, so cron-processed results were invisible to the app and cron's reads saw
+// stale/empty data. Reading the collection here (ordered by start_date, exactly
+// like the client) keeps both sides on one source. Ordering matters: array
+// position is used for next-event progression in handleProcessResults, so it
+// must match the client's ordering.
+async function loadTournaments() {
+  const snap = await db.collection('tournaments').orderBy('start_date').get();
+  return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+}
+
+// Write an array of tournament objects back to the `tournaments` collection,
+// one doc per tournament keyed by name — mirroring the client's
+// tournamentsApi.setAll(). Strips the synthetic _id field (the doc id is the
+// source of truth; the client re-derives _id from doc.id on every read).
+function writeTournaments(batch, tournaments) {
+  (tournaments || []).forEach(t => {
+    const id = t.name || t._id;
+    if (!id) return;
+    const { _id, ...data } = t;
+    batch.set(db.collection('tournaments').doc(id), data);
+  });
+}
+
 function getEmailMap(settings, teams) {
   const emailMap = settings.managerEmails || {};
   const result = {};
@@ -459,139 +448,43 @@ function getEmailMap(settings, teams) {
   return result;
 }
 
-// Channel-aware email map: like getEmailMap but ALSO filters out teams whose
-// EMAIL channel is disabled for the given event. Returns teamName → email for
-// teams that should receive an email for this event. Use this instead of
-// getEmailMap anywhere a send is gated by a specific notification event.
-//
-// `event` must be one of the NOTIFICATION_EVENTS keys (waivers, results,
-// lineupLock, freeAgent, commishModified, leadChange). Teams with no prefs
-// or legacy boolean prefs fall through to the channelAllowed defaults.
-function getEmailMapForEvent(settings, teams, event) {
-  const emailMap = settings.managerEmails || {};
-  const result = {};
-  teams.forEach(t => {
-    const email = emailMap[t.id] || emailMap[t.name];
-    if (!email) return;
-    if (!channelAllowed(t.notificationPrefs, event, 'email')) {
-      console.log(`[email-gate] SKIP ${t.name} — email channel off for event=${event}`);
-      return;
-    }
-    result[t.name] = email;
-  });
-  return result;
-}
-
-// ── Schedule gate helper ────────────────────────────────────────────────────
-// Used by handleWaivers, handleLineupReminder, and handleProcessResults to
-// decide whether the current cron ping should fire the action.
-//
-// Semantics: "the most recent scheduled slot (in the past 7 days) has passed,
-// AND we haven't fired since that slot." This intentionally drops the older
-// `day === targetDay` strict check so a late-running cron (e.g. Sunday 9pm
-// slot but ESPN data not ready until Monday morning) still fires on the next
-// ping, rather than waiting a full week.
-//
-// Returns:
-//   { fire: boolean, et: Date, fireStamp: string, slotIso: string }
-//
-// On a successful fire, callers should write `fireStamp` to their meta doc
-// (e.g. `sfgl_data/last_auto_waiver`) so future pings see this run.
-//
-// Legacy compat: existing meta docs store a "M/D/YYYY" date string. We parse
-// those as end-of-day local time so already-completed weekly runs don't
-// re-fire after deploying this change.
-async function checkScheduleGate({ targetDay, targetHour, targetMinute, lastRunDocId }) {
-  const et = getETNow();
-
-  // Most recent scheduled slot at-or-before `now`, computed in ET-naive time.
-  // `et` is a Date whose .getHours()/.getDay() reflect ET wall clock (see
-  // getETNow). We do all slot math in that same naive frame.
-  const slot = new Date(et);
-  const daysBack = (et.getDay() - targetDay + 7) % 7;
-  slot.setDate(et.getDate() - daysBack);
-  slot.setHours(targetHour, targetMinute, 0, 0);
-  // If we're on the target day but before the configured time, the "most
-  // recent slot" is actually last week's, not today's.
-  if (slot.getTime() > et.getTime()) {
-    slot.setDate(slot.getDate() - 7);
-  }
-
-  // Read last successful fire timestamp.
-  const metaSnap = await db.collection('sfgl_data').doc(lastRunDocId).get();
-  let lastFireMs = 0;
-  if (metaSnap.exists) {
-    const val = metaSnap.data().value;
-    if (typeof val === 'string') {
-      if (/^\d+\/\d+\/\d+$/.test(val)) {
-        // Legacy "M/D/YYYY" — treat as end-of-day to suppress spurious refire
-        // for runs that completed under the old gate logic.
-        const [m, d, y] = val.split('/').map(Number);
-        lastFireMs = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
-      } else if (/^\d+$/.test(val)) {
-        // Legacy numeric ms timestamp string
-        lastFireMs = parseInt(val, 10);
-      } else {
-        // ISO timestamp (new format produced by this helper's callers)
-        const parsed = new Date(val);
-        if (!isNaN(parsed.getTime())) lastFireMs = parsed.getTime();
-      }
-    }
-  }
-
-  return {
-    fire: slot.getTime() > lastFireMs,
-    et,
-    fireStamp: et.toISOString(),
-    slotIso: slot.toISOString(),
-    lastFireMs,
-    lastFireIso: lastFireMs > 0 ? new Date(lastFireMs).toISOString() : 'never',
-  };
-}
-
 // ── Action: process waivers ─────────────────────────────────────────────────
 
 async function handleWaivers(res) {
-  console.log('[cron-waivers] handler invoked');
   const settings = await loadSettings();
-  const targetDay    = settings?.waiverDay    ?? 2;
-  const targetHour   = settings?.waiverHour   ?? 20;
-  const targetMinute = settings?.waiverMinute ?? 0;
-  console.log(`[cron-waivers] target: day=${targetDay} hour=${targetHour} minute=${targetMinute}`);
 
-  // Schedule gate — see checkScheduleGate doc comment for semantics.
-  // Drops the older strict `day === wDay` check so a late ping (e.g. ET cron
-  // imprecision pushes us past midnight) still fires this week's run rather
-  // than waiting until next week.
-  const gate = await checkScheduleGate({
-    targetDay,
-    targetHour,
-    targetMinute,
-    lastRunDocId: 'last_auto_waiver',
-  });
-  console.log(`[cron-waivers] gate: fire=${gate.fire} now=${gate.fireStamp} slot=${gate.slotIso} lastFire=${gate.lastFireIso}`);
-  if (!gate.fire) {
-    return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time, or already processed this week' });
+  // Check if past cutoff
+  const et = getETNow();
+  const day = et.getDay();
+  const timeVal = et.getHours() * 60 + et.getMinutes();
+  const wDay = settings?.waiverDay ?? 2;
+  const wHour = settings?.waiverHour ?? 20;
+  const wMin = settings?.waiverMinute ?? 0;
+  if (!(day === wDay && timeVal >= (wHour * 60 + wMin))) {
+    return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time' });
   }
-  const fireStamp = gate.fireStamp;
+
+  // Already run today?
+  const metaSnap = await db.collection('sfgl_data').doc('last_auto_waiver').get();
+  const today = getETNow().toLocaleDateString('en-US');
+  if (metaSnap.exists && metaSnap.data().value === today) {
+    return res.json({ status: 'already_run', message: 'Waivers already processed today' });
+  }
 
   // Load transactions
   const txSnap = await db.collection('transactions').get();
   const allTx = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const pending = allTx.filter(tx => tx.status === 'pending' && tx.type === 'waiver');
-  console.log(`[cron-waivers] found ${pending.length} pending waiver claims`);
 
   if (pending.length === 0) {
-    await db.collection('sfgl_data').doc('last_auto_waiver').set({ key: 'last_auto_waiver', value: fireStamp });
-    console.log('[cron-waivers] no pending, marking lastFire and exiting');
+    await db.collection('sfgl_data').doc('last_auto_waiver').set({ key: 'last_auto_waiver', value: today });
     return res.json({ status: 'no_pending', message: 'No pending waiver claims' });
   }
 
   // Load teams + tournaments (tournaments needed to derive current
   // earnings for the waiver tie-breaker).
   let teams = await loadTeams();
-  const sfglTournamentsSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
-  const tournamentsForWaivers = sfglTournamentsSnap.exists ? sfglTournamentsSnap.data().value : [];
+  const tournamentsForWaivers = await loadTournaments();
 
   // Derive each team's current season earnings from tournament.results so
   // waiver priority isn't affected by drift in the stored team.earnings
@@ -614,37 +507,6 @@ async function handleWaivers(res) {
 
   const allRostered = new Set();
   teams.forEach(t => (t.roster || []).forEach(p => allRostered.add(p.name)));
-
-  // ── Limbo (recently-dropped) players ───────────────────────────────────
-  // Mirrors the client-side `limboPlayers` set in AddDropPlayerModal so the
-  // UI and server enforce the same rule: a player who was dropped in a
-  // processed transaction is unavailable to be added to any roster until
-  // the next waiver period (i.e., until the tournament that owned the drop
-  // is completed).
-  //
-  // Why this also has to live server-side: without it, two waivers in the
-  // same run can defeat the lock entirely. Team A's waiver drops Y; Team
-  // B's waiver wants to add Y. Because Y was just removed from allRostered
-  // by Team A's drop, B's existing "already rostered" check passes and B
-  // successfully claims a player who's supposed to be locked.
-  //
-  // The set is seeded from PRIOR processed transactions whose tournament
-  // hasn't completed yet, then extended in-place as drops happen during
-  // this run.
-  const limboPlayers = new Set();
-  allTx.forEach(tx => {
-    if (!tx.droppedPlayer) return;
-    if (tx.type === 'mulligan') return;
-    if (tx.status !== 'processed' && tx.status !== 'completed') return;
-    if (tx.tournamentIndex !== undefined) {
-      const t = tournamentsForWaivers[tx.tournamentIndex];
-      if (t && !t.completed) limboPlayers.add(tx.droppedPlayer);
-    } else {
-      // No tournamentIndex (older data) — treat as in limbo, conservative
-      limboPlayers.add(tx.droppedPlayer);
-    }
-  });
-  console.log(`[cron-waivers] seeded ${limboPlayers.size} players in limbo from prior txs`);
 
   const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
   const processedResults = [];
@@ -670,29 +532,12 @@ async function handleWaivers(res) {
         cs.forEach(c => { failed.add(c.claim.id); processedResults.push({ ...c.claim, status: 'failed', failReason: 'Player already rostered' }); });
         more = true; return;
       }
-      // Limbo gate — refuse any claim adding a recently-dropped player.
-      // Either dropped via a prior tx (seeded into limboPlayers above) or
-      // dropped earlier in this same run (added below after a successful
-      // drop). Failing all claims for the player in this round prevents
-      // tiebreaker thrash on a player who's unavailable to anyone.
-      if (limboPlayers.has(player)) {
-        cs.forEach(c => { failed.add(c.claim.id); processedResults.push({ ...c.claim, status: 'failed', failReason: 'Player was recently dropped — unavailable until next waiver period' }); });
-        more = true; return;
-      }
       if (w.claim.droppedPlayer && (dropped.has(w.claim.droppedPlayer) || !allRostered.has(w.claim.droppedPlayer))) {
         failed.add(w.claim.id); processedResults.push({ ...w.claim, status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped' });
         more = true; return;
       }
 
-      if (w.claim.droppedPlayer) {
-        allRostered.delete(w.claim.droppedPlayer);
-        dropped.add(w.claim.droppedPlayer);
-        // Lock the dropped player from being added by ANY subsequent claim
-        // in this same run. Without this, the moment we remove them from
-        // allRostered another team's claim for that player would sail
-        // through the "already rostered" check above.
-        limboPlayers.add(w.claim.droppedPlayer);
-      }
+      if (w.claim.droppedPlayer) { allRostered.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
       allRostered.add(player); done.add(w.claim.id);
       applied.push(w.claim); processedResults.push({ ...w.claim, status: 'processed' });
       pm[w.tn] = nextLastPlace++;
@@ -731,7 +576,7 @@ async function handleWaivers(res) {
     batch.update(db.collection('teams').doc(team.id), { roster, transactionFees: (team.transactionFees || 0) + (w.fee || 0) });
   }
 
-  batch.set(db.collection('sfgl_data').doc('last_auto_waiver'), { key: 'last_auto_waiver', value: fireStamp });
+  batch.set(db.collection('sfgl_data').doc('last_auto_waiver'), { key: 'last_auto_waiver', value: today });
   await batch.commit();
 
   // ── Push notifications ───────────────────────────────────────────────────
@@ -757,18 +602,13 @@ async function handleWaivers(res) {
   // taps through to. If no claims succeeded, skip the push entirely
   // ("0 claims this week" reads awkwardly and there's nothing new to see).
   const claimsWonCount = processedResults.filter(r => r.status === 'processed').length;
-  console.log(`[cron-waivers] processed ${processedResults.length} results, ${claimsWonCount} won`);
 
   if (claimsWonCount > 0) {
     const body = claimsWonCount === 1
       ? '1 claim this week'
       : `${claimsWonCount} claims this week`;
-    console.log(`[cron-waivers] entering push loop for ${teams.length} teams, body=${JSON.stringify(body)}`);
     for (const team of teams) {
-      if (!team?.id) {
-        console.log(`[cron-waivers] skipping team without id: ${team?.name}`);
-        continue;
-      }
+      if (!team?.id) continue;
       try {
         const result = await sendPushToTeam({
           teamId: team.id,
@@ -779,21 +619,18 @@ async function handleWaivers(res) {
         });
         pushResults.push({ team: team.name, event: 'waivers', ...result });
       } catch (err) {
-        console.warn(`[cron-waivers] sendPushToTeam threw for ${team.name}: ${err.message}`);
+        console.warn(`[push] waivers failed for ${team.name}:`, err.message);
       }
     }
-    console.log(`[cron-waivers] push loop complete: ${JSON.stringify(pushResults)}`);
-  } else {
-    console.log(`[cron-waivers] no claims won, skipping push loop entirely`);
   }
 
-  // Send emails — only to teams whose EMAIL channel is on for 'waivers'.
-  const managerEmails = getEmailMapForEvent(settings, teams, 'waivers');
+  // Send emails
+  const managerEmails = getEmailMap(settings, teams);
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
       const html = buildWaiverResultsEmail(processedResults, teamName);
-      await sendEmail(email, '⏰ Waiver results', html);
+      await sendEmail(email, '⏰ SFGL Waiver Results', html);
       emailResults.push({ team: teamName, success: true });
     } catch (err) { emailResults.push({ team: teamName, error: err.message }); }
   }
@@ -810,32 +647,34 @@ async function handleWaivers(res) {
 // ── Action: lineup reminder ─────────────────────────────────────────────────
 
 async function handleLineupReminder(res) {
-  console.log('[cron-lineup] handler invoked');
+  const et = getETNow();
   const settings = await loadSettings();
-  const targetDay    = settings?.lineupReminderDay    ?? 3;
-  const targetHour   = settings?.lineupReminderHour   ?? 9;
+
+  // Admin-configurable day/hour gate (Wave J Round 6 batch 4 follow-up).
+  // Was hardcoded to "any Wednesday ping" (et.getDay() !== 3 → not_wednesday)
+  // with no hour gate; now mirrors the waivers + results pattern with
+  // settings-driven day + hour + minute.
+  //
+  // Default: Wednesday 9am ET. Backward-compatible — older Firestore docs
+  // without these keys fall through to the defaults.
+  const targetDay    = settings?.lineupReminderDay    ?? 3;  // Wed
+  const targetHour   = settings?.lineupReminderHour   ?? 9;  // 9am ET
   const targetMinute = settings?.lineupReminderMinute ?? 0;
-  console.log(`[cron-lineup] target: day=${targetDay} hour=${targetHour} minute=${targetMinute}`);
 
-  // Schedule gate — see checkScheduleGate doc comment. Replaces the older
-  // strict-day-match + hour-gate + "already sent today" stack with a single
-  // "scheduled slot has passed and we haven't fired since" check. Resilient
-  // to off-day pings (Vercel Cron's hourly imprecision can push pings past
-  // midnight).
-  const gate = await checkScheduleGate({
-    targetDay,
-    targetHour,
-    targetMinute,
-    lastRunDocId: 'last_lineup_reminder',
-  });
-  console.log(`[cron-lineup] gate: fire=${gate.fire} now=${gate.fireStamp} slot=${gate.slotIso} lastFire=${gate.lastFireIso}`);
-  if (!gate.fire) {
-    return res.json({ status: 'not_yet', message: 'Not past reminder time, or already sent this week' });
+  if (et.getDay() !== targetDay) {
+    return res.json({ status: 'not_target_day', targetDay });
   }
-  const fireStamp = gate.fireStamp;
+  // Hour/minute gate — same pattern as waivers (handleWaivers L433-434).
+  // If we're not past the configured time yet today, wait for a later ping.
+  if (et.getHours() < targetHour || (et.getHours() === targetHour && et.getMinutes() < targetMinute)) {
+    return res.json({ status: 'not_yet', targetHour, targetMinute });
+  }
 
-  const sfglSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
-  const tournaments = sfglSnap.exists ? sfglSnap.data().value : [];
+  const today = et.toLocaleDateString('en-US');
+  const metaSnap = await db.collection('sfgl_data').doc('last_lineup_reminder').get();
+  if (metaSnap.exists && metaSnap.data().value === today) return res.json({ status: 'already_sent' });
+
+  const tournaments = await loadTournaments();
   const activeTourney = tournaments?.find(t => t.playing && !t.completed);
   if (!activeTourney) return res.json({ status: 'no_tournament' });
 
@@ -857,7 +696,7 @@ async function handleLineupReminder(res) {
       const pushResult = await sendPushToTeam({
         teamId: team.id,
         event: 'lineupLock',
-        title: '⛳ Missing lineup',
+        title: '⛳ Lineup lock today',
         body: `Set your lineup for ${activeTourney.name} — locks at ${lockTime} ET.`,
         deepLink: '#rosters',
       });
@@ -865,19 +704,15 @@ async function handleLineupReminder(res) {
     } catch (err) {
       console.warn(`[push] lineupLock failed for ${team.name}:`, err.message);
     }
-    // Email — only if an email is on file AND the email channel is on.
+    // Email — only if an email is on file
     if (!email) continue;
-    if (!channelAllowed(team.notificationPrefs, 'lineupLock', 'email')) {
-      console.log(`[cron-reminder] SKIP email for ${team.name} — email channel off`);
-      continue;
-    }
     try {
-      await sendEmail(email, '⛳ Missing lineup', buildLineupReminderEmail(activeTourney.name, lockTime, team.name));
+      await sendEmail(email, `⛳ Lineups lock today — ${activeTourney.name}`, buildLineupReminderEmail(activeTourney.name, lockTime, team.name));
       results.push({ team: team.name, success: true });
     } catch (err) { results.push({ team: team.name, error: err.message }); }
   }
 
-  await db.collection('sfgl_data').doc('last_lineup_reminder').set({ key: 'last_lineup_reminder', value: fireStamp });
+  await db.collection('sfgl_data').doc('last_lineup_reminder').set({ key: 'last_lineup_reminder', value: today });
   return res.json({ status: 'sent', tournament: activeTourney.name, results });
 }
 
@@ -889,12 +724,12 @@ async function handleNotifyResults(req, res) {
 
   const settings = await loadSettings();
   const teams = await loadTeams();
-  const managerEmails = getEmailMapForEvent(settings, teams, 'results');
+  const managerEmails = getEmailMap(settings, teams);
   const results = [];
 
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournamentName} Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo, seasonStandings));
+      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo, seasonStandings));
       results.push({ team: teamName, success: true });
     } catch (err) { results.push({ team: teamName, error: err.message }); }
   }
@@ -918,99 +753,43 @@ function matchName(a, b) {
 }
 
 async function handleProcessResults(res) {
-  console.log('[cron-results] handler invoked');
   const settings = await loadSettings();
-  const targetDay    = settings?.resultsDay    ?? 1;
-  const targetHour   = settings?.resultsHour   ?? 9;
-  const targetMinute = settings?.resultsMinute ?? 0;
-  console.log(`[cron-results] target: day=${targetDay} hour=${targetHour} minute=${targetMinute}`);
+  const et = getETNow();
 
-  // Schedule gate — see checkScheduleGate doc comment. Defaults to Monday
-  // 9:00 AM ET. Dropping the strict day-match check means a Sunday-evening
-  // ping that gets `no_results` (ESPN hasn't published final results yet)
-  // is automatically retried on Monday morning's ping — the previous version
-  // would have given up until next Sunday.
-  const gate = await checkScheduleGate({
-    targetDay,
-    targetHour,
-    targetMinute,
-    lastRunDocId: 'last_auto_results',
-  });
-  console.log(`[cron-results] gate: fire=${gate.fire} now=${gate.fireStamp} slot=${gate.slotIso} lastFire=${gate.lastFireIso}`);
-  if (!gate.fire) {
-    return res.json({ status: 'not_yet', message: 'Not past results processing time, or already processed this week' });
+  // Time gate — mirrors the waiver-schedule pattern. Settings are configured
+  // from the AdminView; defaults to Monday 9:00 AM ET so PGA tournaments that
+  // finish Sunday have a buffer for late-Sunday Monday-finishes.
+  const rDay  = settings?.resultsDay    ?? 1; // 0=Sun…6=Sat, default Mon=1
+  const rHour = settings?.resultsHour   ?? 9; // 24h ET
+  const rMin  = settings?.resultsMinute ?? 0;
+  const day = et.getDay();
+  const timeVal = et.getHours() * 60 + et.getMinutes();
+  if (!(day === rDay && timeVal >= (rHour * 60 + rMin))) {
+    return res.json({ status: 'not_yet', message: 'Not past results processing time' });
   }
-  const fireStamp = gate.fireStamp;
+
+  const today = et.toLocaleDateString('en-US');
+  const metaSnap = await db.collection('sfgl_data').doc('last_auto_results').get();
+  if (metaSnap.exists && metaSnap.data().value === today) {
+    return res.json({ status: 'already_run', message: 'Results already processed today' });
+  }
 
   // Load remaining data (settings already loaded above)
   const teams = await loadTeams();
-  const tournamentsSnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
-  const tournaments = tournamentsSnap.exists ? tournamentsSnap.data().value : [];
+  const tournaments = await loadTournaments();
   const statsSnap = await db.collection('sfgl_data').doc('fantasy-golf-global-stats').get();
   const globalStats = statsSnap.exists ? statsSnap.data().value : {};
 
   // Find active tournament
   const ti = tournaments.findIndex(t => t.playing && !t.completed);
   if (ti === -1) {
-    await db.collection('sfgl_data').doc('last_auto_results').set({ key: 'last_auto_results', value: fireStamp });
+    await db.collection('sfgl_data').doc('last_auto_results').set({ key: 'last_auto_results', value: today });
     return res.json({ status: 'no_active_tournament' });
   }
   const tournament = tournaments[ti];
 
-  // ── Safety gate: tournament must be plausibly complete ───────────────────
-  // Defense-in-depth against the catastrophic-but-silent failure mode where
-  // /api/pga-results returns a "past results" page for an event that hasn't
-  // happened yet (PGA Tour publishes the page with the field listed days in
-  // advance). Without this guard the cron would mark a future event
-  // "completed" with $0 earnings for everyone — wiping lineups, advancing
-  // the active-tournament pointer, and corrupting state in ways that are
-  // painful to unwind.
-  //
-  // Two independent checks. Either alone would catch the bug; both together
-  // means a single source of data weirdness can't trigger a false-positive
-  // process. Both log loudly before bailing so future failures are easy
-  // to diagnose.
-  //
-  // CHECK A — Calendar gate. Tournament must have started 4+ days ago in ET.
-  // PGA Tour rounds are Thu-Sun (4 days). A tournament that started today
-  // can't possibly have final results; an event whose start_date is in the
-  // future definitely can't. The 4-day grace covers Monday-morning
-  // processing of Sunday-finished events. Rain delays / Monday finishes
-  // extend this naturally because the second guard (CHECK B) will block
-  // until earnings actually exist.
-  const startDateStr = tournament.start_date || tournament.startDate;
-  if (startDateStr) {
-    const startDate = new Date(startDateStr + 'T12:00:00Z');
-    if (!isNaN(startDate.getTime())) {
-      // Compare in ET-naive frame to match getETNow() semantics elsewhere.
-      const nowEt = getETNow();
-      const daysSinceStart = (nowEt.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
-      console.log(`[cron-results] calendar check: start=${startDateStr} now=${nowEt.toISOString()} daysSinceStart=${daysSinceStart.toFixed(2)}`);
-      if (daysSinceStart < 4) {
-        console.warn(`[cron-results] REFUSING to process "${tournament.name}" — only ${daysSinceStart.toFixed(2)} days since start (need 4+)`);
-        // Don't mark lastFire — we want the cron to keep retrying once the
-        // tournament actually finishes. Marking it would suppress next
-        // week's legit fire.
-        return res.json({
-          status: 'too_early',
-          tournament: tournament.name,
-          startDate: startDateStr,
-          daysSinceStart: daysSinceStart.toFixed(2),
-          message: `Tournament hasn't been underway long enough to have final results`,
-        });
-      }
-    } else {
-      console.warn(`[cron-results] start_date "${startDateStr}" failed to parse for "${tournament.name}" — relying on earnings check`);
-    }
-  } else {
-    console.warn(`[cron-results] no start_date on "${tournament.name}" — relying on earnings check`);
-  }
-
   // Fetch results from ESPN via the existing pga-results API
-  // Since we're server-side, call our own API endpoint. Use the www. variant
-  // explicitly — the bare sfglgolf.com domain 307-redirects, which causes
-  // the internal fetch to fail or stall the function. See the lead-watch
-  // handler for the full backstory on the 307 issue.
+  // Since we're server-side, call our own API endpoint
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : 'https://www.sfglgolf.com';
@@ -1021,92 +800,10 @@ async function handleProcessResults(res) {
     const pgaResp = await fetch(`${baseUrl}/api/pga-results?${params.toString()}`);
     pgaData = await pgaResp.json();
     if (!pgaResp.ok || !pgaData.players?.length) {
-      console.log(`[cron-results] pga-results returned no players (status ${pgaResp.status})`);
       return res.json({ status: 'no_results', message: pgaData.error || 'No results available yet for ' + tournament.name });
     }
   } catch (err) {
-    console.warn(`[cron-results] pga-results fetch error: ${err.message}`);
     return res.json({ status: 'fetch_error', message: 'Failed to fetch results: ' + err.message });
-  }
-
-  // CHECK B — Earnings sanity. A real completed tournament always has at
-  // least one player with non-zero earnings (the winner gets paid). If
-  // every returned player shows $0, ESPN/PGA Tour gave us a pre-event
-  // scaffolded page rather than final results. This catches cases where
-  // start_date is missing/malformed but the data itself is the
-  // tell-tale: a winner hasn't been paid yet.
-  const playersWithEarnings = pgaData.players.filter(p => (p.earnings || 0) > 0).length;
-  console.log(`[cron-results] earnings check: ${pgaData.players.length} players, ${playersWithEarnings} with earnings`);
-  if (playersWithEarnings === 0) {
-    console.warn(`[cron-results] REFUSING to process "${tournament.name}" — pga-results returned ${pgaData.players.length} players but ZERO have earnings`);
-    return res.json({
-      status: 'no_earnings',
-      tournament: tournament.name,
-      playersReturned: pgaData.players.length,
-      message: 'Tournament results page found but no player has earnings yet — likely a pre-event scaffolded page',
-    });
-  }
-
-  // CHECK C — Official status gate. The most reliable signal: the PGA Tour
-  // page itself reports whether the tournament is OFFICIAL/COMPLETE. This is
-  // what catches the failure mode where ESPN/PGA Tour shows PARTIAL final-
-  // round data — some players finished (have earnings), others still on the
-  // course ($0). CHECK B passes in that case (someone has earnings) but the
-  // results aren't final. This check refuses unless the page explicitly says
-  // the event is complete.
-  //
-  // Important nuance: if NO status signal was found at all (sawAnyStatus =
-  // false), we DON'T hard-fail on this check — older page structures or the
-  // HTML fallback may not expose status. In that case we fall through to
-  // CHECK D (winner-purse sanity) which catches partial data via the money
-  // distribution. Only an EXPLICIT non-final status causes a refusal here.
-  const statusInfo = pgaData.status || {};
-  console.log(`[cron-results] status check: sawAnyStatus=${statusInfo.sawAnyStatus} isFinal=${statusInfo.isFinal} raw=[${(statusInfo.raw || []).join(', ')}]`);
-  if (statusInfo.sawAnyStatus && !statusInfo.isFinal) {
-    console.warn(`[cron-results] REFUSING to process "${tournament.name}" — page status is not final (${(statusInfo.raw || []).join(', ')})`);
-    return res.json({
-      status: 'not_final',
-      tournament: tournament.name,
-      statusSignals: statusInfo.raw || [],
-      message: 'Tournament page found but its status is not OFFICIAL/COMPLETE yet — results are still in progress',
-    });
-  }
-
-  // CHECK D — Winner-purse sanity. Independent of status (and the safety net
-  // when status isn't exposed). A completed PGA Tour event's winner takes a
-  // purse-sized payout — typically $1M+ on a full-field event, and well over
-  // $500K even on smaller purses. During a final round, ESPN often shows the
-  // current leader with a much smaller number (a projected/partial value) or
-  // shows several players tied at an identical mid-size figure with everyone
-  // else at $0 — exactly the pattern in the bad email (top teams all at
-  // $305,971, most players $0).
-  //
-  // Heuristic: the top earner must clear a floor that no mid-round partial
-  // would plausibly hit. $450K is conservative — lower than any real PGA
-  // Tour winner's share, higher than the partial/projected figures we've
-  // seen leak through. If the max earnings is below the floor, refuse.
-  //
-  // Also flag the suspicious "everyone tied at the same number" pattern: if
-  // the top 2+ players have IDENTICAL earnings AND that number is below a
-  // full winner's share, it's almost certainly partial data, not a real
-  // multi-way tie (real ties split the combined purse into DIFFERENT amounts
-  // only when positions differ; an exact tie for the win is rare and would
-  // still be a large number).
-  const WINNER_PURSE_FLOOR = 450000;
-  const sortedEarnings = pgaData.players
-    .map(p => p.earnings || 0)
-    .sort((a, b) => b - a);
-  const maxEarnings = sortedEarnings[0] || 0;
-  console.log(`[cron-results] winner-purse check: max=$${maxEarnings.toLocaleString()} floor=$${WINNER_PURSE_FLOOR.toLocaleString()}`);
-  if (maxEarnings < WINNER_PURSE_FLOOR) {
-    console.warn(`[cron-results] REFUSING to process "${tournament.name}" — top earner $${maxEarnings.toLocaleString()} is below winner-purse floor $${WINNER_PURSE_FLOOR.toLocaleString()} (likely partial/mid-round data)`);
-    return res.json({
-      status: 'suspect_partial',
-      tournament: tournament.name,
-      maxEarnings,
-      floor: WINNER_PURSE_FLOOR,
-      message: `Top earner ($${maxEarnings.toLocaleString()}) is below the winner-purse floor — results look partial, not final`,
-    });
   }
 
   const { players, roundLeaders: rl } = pgaData;
@@ -1135,7 +832,7 @@ async function handleProcessResults(res) {
     : { round1: settings.bonusR1Regular ?? BONUSES_REG.round1, round2: settings.bonusR2Regular ?? BONUSES_REG.round2, round3: settings.bonusR3Regular ?? BONUSES_REG.round3 };
 
   // Process each team — mirrors processTournamentData exactly
-  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders, fullLineups: {}, fullBackups: {} };
+  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders, fullLineups: {} };
   const newStats = { ...globalStats };
 
   // Update global player stats
@@ -1153,7 +850,6 @@ async function handleProcessResults(res) {
     if (!team.lineup || team.lineup.length === 0) return team;
 
     resultsData.fullLineups[team.id] = [...team.lineup];
-    if (team.backup) resultsData.fullBackups[team.id] = team.backup;
 
     const starterResults = team.lineup.map(playerName => {
       let earnings = earningsMap[playerName];
@@ -1251,10 +947,11 @@ async function handleProcessResults(res) {
     });
   }
 
-  // Update tournaments and stats in sfgl_data
-  batch.set(db.collection('sfgl_data').doc('fantasy-golf-tournaments'), { key: 'fantasy-golf-tournaments', value: newTournaments });
+  // Update tournaments (one doc per tournament in the `tournaments`
+  // collection — same source the client reads) and stats.
+  writeTournaments(batch, newTournaments);
   batch.set(db.collection('sfgl_data').doc('fantasy-golf-global-stats'), { key: 'fantasy-golf-global-stats', value: newStats });
-  batch.set(db.collection('sfgl_data').doc('last_auto_results'), { key: 'last_auto_results', value: fireStamp });
+  batch.set(db.collection('sfgl_data').doc('last_auto_results'), { key: 'last_auto_results', value: today });
 
   // Append swing winner transaction if auto-awarded. New doc; let Firestore
   // generate the doc id and use our txId as the dedup key.
@@ -1265,8 +962,8 @@ async function handleProcessResults(res) {
 
   await batch.commit();
 
-  // Email results to all managers whose EMAIL channel is on for 'results'
-  const managerEmails = getEmailMapForEvent(settings, teams, 'results');
+  // Email results to all managers
+  const managerEmails = getEmailMap(settings, teams);
   // Full player breakdown so the template can render the color-coded names,
   // round-leader badges, and bonus-inclusive earnings totals — matches the
   // shape sent from AdminView's handleManualEntry.
@@ -1319,7 +1016,7 @@ async function handleProcessResults(res) {
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournament.name} Results`, buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName, swingWinnerInfoForEmail, seasonStandingsForEmail));
+      await sendEmail(email, `🏆 ${tournament.name} — SFGL Results`, buildTournamentResultsEmail(tournament.name, teamResultsForEmail, teamName, swingWinnerInfoForEmail, seasonStandingsForEmail));
       emailResults.push({ team: teamName, success: true });
     } catch (err) { emailResults.push({ team: teamName, error: err.message }); }
   }
@@ -1335,13 +1032,13 @@ async function handleProcessResults(res) {
     const teamResult = teamResultsForEmail.find(r => r.team === team.name);
     const earnings = teamResult ? teamResult.totalEarnings : 0;
     const body = teamResult
-      ? `You earned $${earnings.toLocaleString()}`
-      : 'Results are in';
+      ? `${tournament.name}: you earned $${earnings.toLocaleString()}`
+      : `Results are in for ${tournament.name}`;
     try {
       const result = await sendPushToTeam({
         teamId: team.id,
         event: 'results',
-        title: `🏆 ${tournament.name} Results`,
+        title: '🏆 Results processed',
         body,
         deepLink: '#standings',
       });
@@ -1564,8 +1261,7 @@ async function handleOwgrRankings(res) {
   }
 
   // Fetch /api/owgr internally. Reuses the existing endpoint so the OWGR
-  // scraping logic stays in one place. Use the www. variant explicitly —
-  // bare sfglgolf.com 307-redirects (see lead-watch handler comment).
+  // scraping logic stays in one place.
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : 'https://www.sfglgolf.com';
@@ -1675,19 +1371,7 @@ async function handleOwgrRankings(res) {
 // Reset behavior: when tournamentName changes, the doc is fully overwritten
 // with the new state. The lastFired map is per-tournament — no carryover.
 async function handleLeadWatch(res) {
-  // 1. Fetch live leaderboard via the existing /api/live endpoint.
-  //
-  // The base URL MUST be the www. variant — sfglgolf.com without www
-  // redirects (307), and the internal fetch either fails or stalls the
-  // function waiting on the redirect, which causes the outer cron-job.org
-  // call to time out and counts as a failed execution. cron-job.org auto-
-  // disables jobs after enough consecutive fails, which is exactly what
-  // happened on 5/27 when both this URL AND the cron-job.org job URL used
-  // the bare domain.
-  //
-  // VERCEL_URL is unset for normal production runtime (only set for preview
-  // deployments), so the fallback path is what actually runs in production.
-  // Hardcode www. here so prod always works.
+  // 1. Fetch live leaderboard via the existing /api/live endpoint
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : 'https://www.sfglgolf.com';
@@ -1836,290 +1520,29 @@ async function handleLeadWatch(res) {
   });
 }
 
-// ── Action: sync-cron-schedule ──────────────────────────────────────────────
-//
-// Updates the cron-job.org job schedule for one of our recurring tasks to
-// match what the commish set in AdminView. Called from the client every
-// time the commish saves a schedule, so AdminView is the single source of
-// truth for when each automation fires.
-//
-// This is what lets us escape Vercel Hobby's "fires within an hour-window"
-// imprecision — cron-job.org fires within seconds of the configured time,
-// and its REST API lets us reschedule from code.
-//
-// Request body (POST):
-//   {
-//     jobType: 'waivers' | 'results' | 'lineup-reminder',
-//     day:     0-6 (0=Sun, 6=Sat),
-//     hour:    0-23 (ET),
-//     minute:  0-59
-//   }
-//
-// Required env vars (server-side only — API key never reaches the client):
-//   CRONJOB_API_KEY                — Personal API key from cron-job.org
-//   CRONJOB_WAIVERS_JOB_ID         — Numeric job ID for the Waivers job
-//   CRONJOB_RESULTS_JOB_ID         — Numeric job ID for the Process Results job
-//   CRONJOB_LINEUP_REMINDER_JOB_ID — Numeric job ID for the Lineup Reminders job
-//   CRONJOB_LEAD_WATCH_JOB_ID      — Numeric job ID for the Lead Watch job
-//
-// Schedule semantics:
-//   • Weekly jobs (waivers / results / lineup-reminder): client sends
-//     day/hour/minute in ET; we set timezone=America/New_York and pin the
-//     schedule to that single weekday slot.
-//   • Interval jobs (lead-watch): client sends a `minuteInterval` (e.g. 10).
-//     We expand it into an explicit minutes-of-the-hour list (0, 10, 20, 30,
-//     40, 50 for minuteInterval=10) and set hours/wdays/mdays/months to
-//     wildcards so the job fires at those minutes around the clock. The
-//     handler itself self-gates on round/tournament state, so 24/7 polling
-//     is cheap when there's no live event.
-async function handleSyncCronSchedule(req, res) {
-  const { jobType, day, hour, minute, minuteInterval } = req.body || {};
-
-  // Map jobType → env var for the cron-job.org numeric job ID, and the
-  // schedule shape that job uses (weekly slot vs. minute-interval).
-  const jobIdEnvMap = {
-    'waivers':         { env: 'CRONJOB_WAIVERS_JOB_ID',         shape: 'weekly'   },
-    'results':         { env: 'CRONJOB_RESULTS_JOB_ID',         shape: 'weekly'   },
-    'lineup-reminder': { env: 'CRONJOB_LINEUP_REMINDER_JOB_ID', shape: 'weekly'   },
-    'lead-watch':      { env: 'CRONJOB_LEAD_WATCH_JOB_ID',      shape: 'interval' },
-  };
-  if (!jobIdEnvMap[jobType]) {
-    return res.status(400).json({
-      error: `Invalid jobType. Must be one of: ${Object.keys(jobIdEnvMap).join(', ')}`,
-    });
-  }
-  const { env: jobIdEnvVar, shape: scheduleShape } = jobIdEnvMap[jobType];
-
-  // Shape-specific validation + payload assembly. Done before any network
-  // call so a bad request doesn't waste a cron-job.org API hit.
-  let schedulePayload;
-  if (scheduleShape === 'weekly') {
-    if (typeof day !== 'number' || day < 0 || day > 6) {
-      return res.status(400).json({ error: 'Invalid day (must be 0-6)' });
-    }
-    if (typeof hour !== 'number' || hour < 0 || hour > 23) {
-      return res.status(400).json({ error: 'Invalid hour (must be 0-23)' });
-    }
-    if (typeof minute !== 'number' || minute < 0 || minute > 59) {
-      return res.status(400).json({ error: 'Invalid minute (must be 0-59)' });
-    }
-    schedulePayload = {
-      timezone: 'America/New_York',
-      hours:   [hour],
-      minutes: [minute],
-      wdays:   [day],
-      mdays:   [-1],
-      months:  [-1],
-    };
-  } else {
-    // interval shape: minuteInterval ∈ {5, 10, 15, 20, 30}. Expand to an
-    // explicit minutes list (cron-job.org doesn't support a step expression
-    // directly through this API — it takes literal minute values). Hours
-    // and weekdays wildcard so the job fires every interval around the
-    // clock; the handler's internal gates (no live tournament / round < 2)
-    // make the off-hour pings cheap.
-    const allowedIntervals = [5, 10, 15, 20, 30];
-    if (!allowedIntervals.includes(minuteInterval)) {
-      return res.status(400).json({
-        error: `Invalid minuteInterval. Must be one of: ${allowedIntervals.join(', ')}`,
-      });
-    }
-    const minutes = [];
-    for (let m = 0; m < 60; m += minuteInterval) minutes.push(m);
-    schedulePayload = {
-      timezone: 'America/New_York',
-      hours:   [-1],
-      minutes,
-      wdays:   [-1],
-      mdays:   [-1],
-      months:  [-1],
-    };
-  }
-
-  const jobId = process.env[jobIdEnvVar];
-  const apiKey = process.env.CRONJOB_API_KEY;
-
-  if (!jobId) {
-    console.warn(`[sync-cron-schedule] ${jobIdEnvVar} not set`);
-    return res.status(500).json({
-      error: `Server config error: ${jobIdEnvVar} not set`,
-      hint: 'Add the cron-job.org job ID to Vercel environment variables',
-    });
-  }
-  if (!apiKey) {
-    console.warn('[sync-cron-schedule] CRONJOB_API_KEY not set');
-    return res.status(500).json({
-      error: 'Server config error: CRONJOB_API_KEY not set',
-      hint: 'Add your cron-job.org API key to Vercel environment variables',
-    });
-  }
-
-  // Build the cron-job.org PATCH payload using the schedule we assembled
-  // above (shape-aware). Reference:
-  //   https://docs.cron-job.org/rest-api.html#updating-a-job
-  // The schedule object uses arrays for hours/minutes/wdays etc. with -1
-  // meaning "wildcard". Weekly schedules use a single hours+minutes+wdays
-  // slot; interval schedules use a minutes list + wildcards.
-  const payload = { job: { schedule: schedulePayload } };
-
-  const logDesc = scheduleShape === 'weekly'
-    ? `${day}/${hour}:${String(minute).padStart(2, '0')} ET`
-    : `every ${minuteInterval} min`;
-  console.log(`[sync-cron-schedule] updating ${jobType} (jobId=${jobId}) → ${logDesc}`);
-
-  try {
-    const resp = await fetch(`https://api.cron-job.org/jobs/${encodeURIComponent(jobId)}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const respText = await resp.text();
-    let respData;
-    try { respData = JSON.parse(respText); } catch { respData = { raw: respText }; }
-
-    if (!resp.ok) {
-      console.warn(`[sync-cron-schedule] cron-job.org returned ${resp.status}: ${respText.slice(0, 500)}`);
-      return res.status(502).json({
-        error: `cron-job.org returned HTTP ${resp.status}`,
-        details: respData,
-        hint: resp.status === 401 ? 'Check CRONJOB_API_KEY' :
-              resp.status === 404 ? `Check ${jobIdEnvVar} — job may not exist` : undefined,
-      });
-    }
-
-    console.log(`[sync-cron-schedule] success for ${jobType}`);
-    return res.json({
-      success: true,
-      jobType,
-      schedule: scheduleShape === 'weekly'
-        ? { day, hour, minute, timezone: 'America/New_York' }
-        : { minuteInterval, timezone: 'America/New_York' },
-    });
-  } catch (err) {
-    console.error(`[sync-cron-schedule] fetch error: ${err.message}`);
-    return res.status(500).json({
-      error: `Failed to reach cron-job.org: ${err.message}`,
-    });
-  }
-}
-
-
-// ── Action: resync-legacy-tournaments ───────────────────────────────────────
-//
-// Repairs the divergence between `/tournaments/{name}` (canonical, read by
-// the app via useLeague) and `/sfgl_data/fantasy-golf-tournaments` (legacy
-// doc, read by cron and various other code paths).
-//
-// The divergence arises because the result-processing cron writes ONLY to
-// the legacy doc, while client-side updates (e.g., schedule edits, Undo)
-// write to the canonical collection. So after a bad cron fire — or after
-// an Undo — the two stores can disagree about which tournament is playing
-// vs. completed.
-//
-// What this action does:
-//   1. Read the legacy doc's array (preserves array order, which is
-//      semantically meaningful — `tournamentIndex` references position).
-//   2. Read all docs from the canonical `/tournaments` collection.
-//   3. For each legacy entry, replace its mutable fields (completed,
-//      playing, results, plus any other fields the canonical has) with the
-//      canonical version. Legacy-only fields (none expected, but defensive)
-//      survive.
-//   4. Write the merged array back to the legacy doc.
-//
-// Idempotent: safe to call any number of times. Called automatically by
-// Undo and the result-processing handler going forward to keep the stores
-// in sync; also exposed as a standalone action so the commish can fix the
-// current bad state.
-async function handleResyncLegacyTournaments(res) {
-  console.log('[resync-legacy] handler invoked');
-
-  // Read current legacy doc to preserve array order
-  const legacySnap = await db.collection('sfgl_data').doc('fantasy-golf-tournaments').get();
-  if (!legacySnap.exists) {
-    console.warn('[resync-legacy] legacy doc does not exist; nothing to resync');
-    return res.status(404).json({ error: 'Legacy tournament doc not found' });
-  }
-  const legacyArray = Array.isArray(legacySnap.data().value) ? legacySnap.data().value : [];
-  console.log(`[resync-legacy] legacy array has ${legacyArray.length} tournaments`);
-
-  // Read all canonical /tournaments docs into a name-keyed map
-  const canonicalSnap = await db.collection('tournaments').get();
-  const canonicalMap = {};
-  canonicalSnap.docs.forEach(d => {
-    const data = d.data();
-    const name = data.name || d.id;
-    canonicalMap[name] = { ...data, name };
-  });
-  console.log(`[resync-legacy] canonical map has ${Object.keys(canonicalMap).length} tournaments`);
-
-  // Merge: each legacy entry replaced with canonical version (same array
-  // position). Legacy entries without a canonical match are left as-is —
-  // shouldn't happen in normal operation but defensive against drift.
-  let updated = 0;
-  let missing = 0;
-  const merged = legacyArray.map(t => {
-    const canonical = canonicalMap[t.name];
-    if (!canonical) {
-      missing++;
-      console.warn(`[resync-legacy] no canonical doc for "${t.name}" — leaving as-is`);
-      return t;
-    }
-    updated++;
-    // Canonical fields take precedence. Spread legacy first, then canonical
-    // overrides — this preserves any legacy-only fields if they exist.
-    return { ...t, ...canonical };
-  });
-
-  // Write back
-  await db.collection('sfgl_data').doc('fantasy-golf-tournaments').set({
-    key: 'fantasy-golf-tournaments',
-    value: merged,
-  });
-
-  console.log(`[resync-legacy] complete: ${updated} updated, ${missing} missing canonical`);
-  return res.json({
-    success: true,
-    updated,
-    missingCanonical: missing,
-    total: merged.length,
-  });
-}
-
-
 export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
   const action = req.query.action || '';
 
   // Cron actions require auth. Client-callable actions are exempted:
-  //   - notify-results:      triggered from AdminView after processing
-  //   - pgat-stats:          triggered from AdminView's Sync button
-  //   - sync-cron-schedule:  triggered from AdminView's schedule save buttons.
-  //                          API key stays server-side (env var) so no secret
-  //                          is exposed by no-auth; worst case is a stranger
-  //                          who guesses the endpoint changes when waivers
-  //                          process — visible immediately to the commish.
-  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule', 'resync-legacy-tournaments']);
+  //   - notify-results: triggered from AdminView after processing
+  //   - pgat-stats:     triggered from AdminView's Sync button
+  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats']);
   if (!NO_AUTH_ACTIONS.has(action) && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {
     switch (action) {
-      case 'waivers':                     return await handleWaivers(res);
-      case 'lineup-reminder':             return await handleLineupReminder(res);
-      case 'process-results':             return await handleProcessResults(res);
-      case 'notify-results':              return await handleNotifyResults(req, res);
-      case 'pgat-stats':                  return await handlePgatStats(res);
-      case 'lead-watch':                  return await handleLeadWatch(res);
-      case 'owgr-rankings':               return await handleOwgrRankings(res);
-      case 'sync-cron-schedule':          return await handleSyncCronSchedule(req, res);
-      case 'resync-legacy-tournaments':   return await handleResyncLegacyTournaments(res);
-      default:                            return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings|sync-cron-schedule|resync-legacy-tournaments' });
+      case 'waivers':           return await handleWaivers(res);
+      case 'lineup-reminder':   return await handleLineupReminder(res);
+      case 'process-results':   return await handleProcessResults(res);
+      case 'notify-results':    return await handleNotifyResults(req, res);
+      case 'pgat-stats':        return await handlePgatStats(res);
+      case 'lead-watch':        return await handleLeadWatch(res);
+      case 'owgr-rankings':     return await handleOwgrRankings(res);
+      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);
