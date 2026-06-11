@@ -33,6 +33,7 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { DEFAULTS_ON } from './_constants.js';
 
 // ── Firebase Admin init (mirrors api/cron.js pattern) ───────────────────────
 function getApp() {
@@ -168,9 +169,9 @@ export default async function handler(req, res) {
   // per token, since multiple tokens from the same team would otherwise
   // duplicate the lookup.
   //
-  // Keep this set in sync with cron.js DEFAULTS_ON and
-  // src/api/pushNotifications.js NOTIFICATION_EVENTS.
-  const DEFAULTS_ON = new Set(['waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified', 'leadChange']);
+  // DEFAULTS_ON is imported from ./_constants.js (shared with api/cron.js).
+  // The client mirror is src/api/pushNotifications.js NOTIFICATION_EVENTS;
+  // keep that one in sync when adding a new default-on event.
   let skipped = 0;
   if (event !== 'test' && tokenDocs.length > 0) {
     const teamIds = [...new Set(tokenDocs.map(t => t.teamId).filter(Boolean))];
@@ -191,14 +192,7 @@ export default async function handler(req, res) {
     tokenDocs = tokenDocs.filter(t => {
       const prefs = teamPrefs[t.teamId];
       if (!prefs) return DEFAULTS_ON.has(event);  // no prefs map → defaults
-      const stored = prefs[event];
-      // Channel-aware: this endpoint only sends PUSH, so consult the push
-      // channel. Backward-compatible with the legacy boolean shape (where a
-      // bare boolean gated both channels).
-      if (stored && typeof stored === 'object') {
-        return typeof stored.push === 'boolean' ? stored.push : DEFAULTS_ON.has(event);
-      }
-      if (typeof stored === 'boolean') return stored;   // legacy single-switch
+      if (typeof prefs[event] === 'boolean') return prefs[event];
       return DEFAULTS_ON.has(event);  // unset key → defaults
     });
     skipped = before - tokenDocs.length;
