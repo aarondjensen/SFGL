@@ -56,6 +56,7 @@ import { getSegmentByDate } from './utils';
 import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
 import { managerAuthApi, tournamentResultsApi } from './api/firebase';
+import { managerActivityApi } from './api/managerActivity';
 
 
 // ── Lazy-load fallback spinner ─────────────────────────────────────────────
@@ -269,6 +270,11 @@ const FantasyGolfLeague = () => {
       const team = resolvedTeams.find(t => t.id === teamId);
       if (team) {
         setLoggedInUser(team.owner || team.name);
+        // Record this session as a "login" for the Manager Activity panel.
+        // Managers stay signed in via localStorage, so this session-restore
+        // heartbeat — not managerAuthApi.login() — is what keeps last-login
+        // accurate for daily-active users. Best-effort; never blocks restore.
+        managerActivityApi.recordLogin(teamId);
         // Tagged commissioners are *allowed* to enter commish mode but
         // start the session in normal-manager view. They opt in by tapping
         // their name in the header.
@@ -461,6 +467,8 @@ const FantasyGolfLeague = () => {
     }
     setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
     setLoggedInTeamId(result.teamId);
+    // Record the login for the Manager Activity panel.
+    managerActivityApi.recordLogin(result.teamId);
     // Tagged commissioners can opt into commish mode by tapping their name
     // in the header. Login itself doesn't activate commish mode.
     setTaggedCommissioner(team ? !!team.isCommissioner : false);
