@@ -16,6 +16,7 @@ import { S, M, disabledBtn } from './admin/adminStyles';
 import { DataSyncPanel } from './admin/DataSyncPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
 import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
+import { ManagerActivityPanel } from './admin/ManagerActivityPanel';
 import { MergePlayersPanel } from './admin/MergePlayersPanel';
 import { ScheduleImportPanel } from './admin/ScheduleImportPanel';
 import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
@@ -543,6 +544,10 @@ export const AdminView = ({
           desc: `${teams.length} team${teams.length === 1 ? '' : 's'}`,
         },
         {
+          id: 'manager_activity', icon: '📊', label: 'Manager Activity',
+          desc: 'Recent logins & notification status',
+        },
+        {
           id: 'commish', icon: '🔔', label: 'Push Notifications',
           desc: 'Test pushes to managers',
         },
@@ -655,6 +660,13 @@ export const AdminView = ({
           <>
             <BackBar label="Manager Accounts" onBack={back} />
             <ManagerAccountsPanel teams={teams} settings={settings} setSettings={setSettings} updateTeams={updateTeams} />
+          </>
+        );
+      case 'manager_activity':
+        return (
+          <>
+            <BackBar label="Manager Activity" onBack={back} />
+            <ManagerActivityPanel teams={teams} />
           </>
         );
       case 'commish':
