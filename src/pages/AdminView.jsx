@@ -16,7 +16,6 @@ import { S, M, disabledBtn } from './admin/adminStyles';
 import { DataSyncPanel } from './admin/DataSyncPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
 import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
-import { NotificationStatusPanel } from './admin/NotificationStatusPanel';
 import { MergePlayersPanel } from './admin/MergePlayersPanel';
 import { ScheduleImportPanel } from './admin/ScheduleImportPanel';
 import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
@@ -544,7 +543,7 @@ export const AdminView = ({
           desc: `${teams.length} team${teams.length === 1 ? '' : 's'}`,
         },
         {
-          id: 'commish', icon: '📊', label: 'Manager Activity',
+          id: 'commish', icon: '🔔', label: 'Push Notifications',
           desc: 'Test pushes to managers',
         },
       ],
@@ -626,6 +625,8 @@ export const AdminView = ({
               settings={settings}
               setSettings={setSettings}
               setHeadshots={setHeadshots}
+              transactions={transactions}
+              setTransactions={setTransactions}
             />
           </>
         );
@@ -659,10 +660,10 @@ export const AdminView = ({
       case 'commish':
         return (
           <>
-            <BackBar label="Manager Activity" onBack={back} />
+            <BackBar label="Push Notifications" onBack={back} />
             <div style={M.page}>
               <div style={M.descText}>
-                See manager engagement and notification status below. You can also subscribe this device, send a test push to yourself, or broadcast a test to all subscribed managers. Per-manager subscription preferences are managed in each manager's own user settings.
+                Subscribe this device, send a test push to yourself, or broadcast a test to all subscribed managers. Per-manager subscription preferences are managed in each manager's own user settings modal.
               </div>
 
               {/* ── Push Notifications group ── */}
@@ -758,10 +759,6 @@ export const AdminView = ({
                   </div>
                 )}
               </div>
-
-              {/* Manager notification status — read-only view of who's
-                  subscribed and on how many devices. */}
-              <NotificationStatusPanel teams={teams} updateTeams={updateTeams} />
             </div>
           </>
         );
