@@ -1452,7 +1452,14 @@ export const RostersView = ({
                         };
                         const rosterLast = normName.split(' ').slice(-1)[0];
                         const rosterInitialsKey = buildInitialsKey(player.name);
-                        const live = liveData.players.find(p => normalize(p.name) === normName)
+                        // Only match roster players who are actually in this week's
+                        // field (i.e. those that earn the ⛳ flag). A non-field
+                        // player must never pick up a leaderboard entry via the
+                        // fuzzy last-name / substring fallbacks below — that caused
+                        // a benched "B. Brown" who isn't playing to inherit another
+                        // Brown's CUT status from the live leaderboard.
+                        const live = !inField ? null : (
+                          liveData.players.find(p => normalize(p.name) === normName)
                           || liveData.players.find(p => {
                             const ln = normalize(p.name).split(' ').slice(-1)[0];
                             return ln === rosterLast && rosterLast.length > 3;
@@ -1461,7 +1468,8 @@ export const RostersView = ({
                             const ln = normalize(p.name);
                             return ln.includes(normName) || normName.includes(ln);
                           })
-                          || (rosterInitialsKey ? liveData.players.find(p => buildInitialsKey(p.name) === rosterInitialsKey) : null);
+                          || (rosterInitialsKey ? liveData.players.find(p => buildInitialsKey(p.name) === rosterInitialsKey) : null)
+                        );
 
                         // Determine display mode from thru field (golfUtils pattern):
                         // "F" or numeric → player has started, show score
@@ -1513,13 +1521,15 @@ export const RostersView = ({
                       // live data, it stays empty so the layout doesn't shift.
                       let col3 = <td />;
                       if (liveData?.players?.length) {
-                        // Re-find live entry (same multi-strategy match logic as col1)
+                        // Re-find live entry (same field-gated match logic as col1)
                         const rosterLast = normName.split(' ').slice(-1)[0];
-                        const live = liveData.players.find(p => normalize(p.name) === normName)
+                        const live = !inField ? null : (
+                          liveData.players.find(p => normalize(p.name) === normName)
                           || liveData.players.find(p => {
                             const ln = normalize(p.name).split(' ').slice(-1)[0];
                             return ln === rosterLast && rosterLast.length > 3;
-                          });
+                          })
+                        );
                         if (live && !live.isCut && !live.isWD) {
                           const thruNum = live.thru ? parseInt(live.thru, 10) : NaN;
                           const isFinished = live.thru === 'F';
