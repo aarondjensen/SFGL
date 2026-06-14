@@ -392,7 +392,6 @@ export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
   loggedInUser, isCommissioner, globalPlayerStats, headshots,
-  loggedInTeamId,
   updateHeadshots,
   leagueSettings = {}, settings, firstTeeTime,
 }) => {
@@ -452,18 +451,7 @@ export const RostersView = ({
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
   const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
-  // Ownership gate — drives lineup edit permission. Keyed off the immutable
-  // team id the manager authenticated into (loggedInTeamId from the session),
-  // NOT the editable owner string. Renaming a manager's login/owner name used
-  // to lock them out of their own lineup because team.owner !== loggedInUser
-  // after the rename. The normalized owner-string check remains as a
-  // belt-and-suspenders fallback (handles case/whitespace drift) for any
-  // session that predates loggedInTeamId being populated.
-  const _norm = (s) => String(s || '').trim().toLowerCase();
-  const isOwnTeam =
-    isCommissioner ||
-    (!!loggedInTeamId && team?.id === loggedInTeamId) ||
-    (!!loggedInUser && _norm(team?.owner) === _norm(loggedInUser));
+  const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
@@ -1486,13 +1474,11 @@ export const RostersView = ({
                         } else if (live?.isWD) {
                           col1 = <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.sans, fontSize: fontSize.xs, color: colors.textMuted }}>WD</td>;
                         } else if (hasStarted) {
-                          // Golf scoring: under par (-) is GOOD → green; over par (+) is BAD → red.
-                          // Old code had this reversed (-3 rendered as red/danger).
+                          // Live score coloring: under par (-) is highlighted in
+                          // RED; even par ("E") and over par (+) render in muted
+                          // light gray. No green is used for live tournament scores.
                           const isUnder = live.score?.startsWith('-');
-                          const isOver  = live.score?.startsWith('+');
-                          const scoreColor = isUnder ? colors.earningsGreen
-                                          : isOver  ? colors.danger
-                                          : colors.textPrimary;
+                          const scoreColor = isUnder ? colors.danger : colors.textMuted;
                           col1 = (
                             <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 13 : 15, color: isBenched ? dimColor : scoreColor, fontWeight: 600 }}>
                               {live.score || 'E'}
