@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { Trophy, Users, DollarSign, Calendar, Settings } from 'lucide-react';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
@@ -160,7 +160,9 @@ const FantasyGolfLeague = () => {
   // Tagged via team.isCommissioner. Determines whether the user is *allowed*
   // to enter commish mode. Active commish mode (isCommissioner) is toggled
   // by tapping the user's name in the header.
-  const [taggedCommissioner,    setTaggedCommissioner]    = useState(false);
+  // taggedCommissioner is DERIVED below from the logged-in team (see useMemo
+  // after resolvedTeams) so it can never be left stale or spuriously reset by
+  // an effect re-run. Do not reintroduce it as imperative state.
   const [loggedInUser,          setLoggedInUser]          = useState(null);
   // Immutable identity of the team the manager authenticated into. Edit
   // permissions key off THIS (team id), never the editable owner string —
@@ -193,6 +195,17 @@ const FantasyGolfLeague = () => {
   const safeHeadshots    = headshots && typeof headshots === 'object' ? headshots : {};
 
   const resolvedTeams     = safeTeams.length > 0 ? safeTeams : INITIAL_TEAMS;
+
+  // Whether the logged-in manager is *allowed* to enter commish mode. Derived
+  // from the current team list + loggedInTeamId so it's always accurate: it
+  // recomputes when teams finish loading (fixing the "team not found on first
+  // paint" race) and can't be wiped by a stale session-restore re-run. Active
+  // commish MODE (isCommissioner) remains separate, user-toggled state.
+  const taggedCommissioner = useMemo(() => {
+    if (!loggedInTeamId) return false;
+    const team = resolvedTeams.find(t => t.id === loggedInTeamId);
+    return !!team?.isCommissioner;
+  }, [loggedInTeamId, resolvedTeams]);
   const resolvedHeadshots = Object.keys(safeHeadshots).length > 0 ? safeHeadshots : PGA_TOUR_IDS;
   const currentTournament = safeTournaments.find(t => t.playing);
 
@@ -275,10 +288,9 @@ const FantasyGolfLeague = () => {
         // heartbeat — not managerAuthApi.login() — is what keeps last-login
         // accurate for daily-active users. Best-effort; never blocks restore.
         managerActivityApi.recordLogin(teamId);
-        // Tagged commissioners are *allowed* to enter commish mode but
-        // start the session in normal-manager view. They opt in by tapping
-        // their name in the header.
-        setTaggedCommissioner(!!team.isCommissioner);
+        // taggedCommissioner is derived from loggedInTeamId — no need to set it
+        // here. Start the session in normal-manager view; commissioners opt into
+        // commish mode by tapping their name in the header.
         setIsCommissioner(false);
         sessionRestoredRef.current = true;             // resolved — latch, never reset again
       }
@@ -469,9 +481,8 @@ const FantasyGolfLeague = () => {
     setLoggedInTeamId(result.teamId);
     // Record the login for the Manager Activity panel.
     managerActivityApi.recordLogin(result.teamId);
-    // Tagged commissioners can opt into commish mode by tapping their name
-    // in the header. Login itself doesn't activate commish mode.
-    setTaggedCommissioner(team ? !!team.isCommissioner : false);
+    // taggedCommissioner derives from loggedInTeamId (set above). Login itself
+    // doesn't activate commish mode — managers opt in via the header toggle.
     setIsCommissioner(false);
     setShowLoginModal(false);
   };
@@ -482,7 +493,7 @@ const FantasyGolfLeague = () => {
     setLoggedInUser(null);
     setLoggedInTeamId(null);
     setIsCommissioner(false);
-    setTaggedCommissioner(false);
+    // taggedCommissioner derives to false automatically once loggedInTeamId is null.
     setShowUserSettings(false);
     // The Commish tab renders nothing once commish mode is gone, so send the
     // now-signed-out user back to a safe public tab.
