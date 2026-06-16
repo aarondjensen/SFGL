@@ -14,7 +14,7 @@ import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { M, disabledBtn } from './adminStyles';
-import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam } from '../../utils/sharedHelpers';
+import { getETClock, fmtETTime, DAY_NAMES } from '../../utils/sharedHelpers';
 
 const buildRoster = (team, transactions) => {
   let r = team.roster.map(p => p.name);
@@ -40,24 +40,11 @@ const applyWaiver = (t, w) => {
 export const WaiverProcessingPanel = ({
   transactions, setTransactions,
   teams, updateTeams,
-  tournaments,
   settings,
   STORAGE_KEYS,
 }) => {
   const dialog = useDialog();
   const [waiverRevealed, setWaiverRevealed] = React.useState(false);
-
-  // Single source of truth for the waiver tie-breaker. Earnings are derived
-  // from completed tournament results (same as StandingsView and the cron
-  // waiver handler) rather than the stored team.earnings field, so a manually
-  // processed waiver breaks ties identically to an auto-processed one. Keyed by
-  // team NAME to match how the claim/earnings maps below are indexed.
-  const seasonEarningsByName = React.useMemo(() => {
-    const byId = getSeasonEarningsByTeam(tournaments);
-    const byName = {};
-    (teams || []).forEach(t => { byName[t.name] = byId[t.id] || 0; });
-    return byName;
-  }, [tournaments, teams]);
 
   const pending = transactions
     .map((tx, i) => ({ ...tx, _idx: i }))
@@ -71,6 +58,18 @@ export const WaiverProcessingPanel = ({
   const ready = etDay === wd && totalMinutes >= (wh * 60 + wm);
 
   const handleProcessSingle = async (w) => {
+    // Off-schedule guard: outside the configured auto-process window, require an
+    // explicit "process early" confirmation so a stray click can't apply a claim
+    // off the weekly cadence. The normal Tuesday-8pm flow is left untouched.
+    if (!ready) {
+      const okEarly = await dialog.showConfirm(
+        '⚠️ Process this claim early?',
+        `It's not yet ${DAY_NAMES[wd]} ${fmtETTime(wh, wm)} ET, the scheduled auto-process time. Processing "${w.player}" now applies this claim immediately, off the normal weekly cadence.\n\nProcess early anyway?`,
+        { confirmText: 'Process now' }
+      );
+      if (!okEarly) return;
+    }
+
     const allRostered = new Set();
     teams.forEach(t => t.roster.forEach(p => allRostered.add(p.name)));
     if (allRostered.has(w.player)) {
@@ -91,7 +90,7 @@ export const WaiverProcessingPanel = ({
     const competing = transactions
       .map((tx, i) => ({ ...tx, _idx: i }))
       .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.player === w.player && tx.team !== w.team);
-    const earningsMap = seasonEarningsByName;
+    const earningsMap = {}; teams.forEach(t => { earningsMap[t.name] = t.earnings || 0; });
     const allClaims = [w, ...competing].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
     const winner = allClaims[0];
     const losers = allClaims.slice(1);
@@ -116,16 +115,22 @@ export const WaiverProcessingPanel = ({
 
   const handleProcessAll = async () => {
     if (!pending.length) return;
+    // Off-schedule guard: prepend an explicit early-processing warning when
+    // we're outside the configured auto-process window, so accidental
+    // off-cadence runs require a deliberate confirmation.
+    const earlyWarn = !ready
+      ? `⚠️ It's not yet ${DAY_NAMES[wd]} ${fmtETTime(wh, wm)} ET, the scheduled auto-process time. Processing now applies these claims early, off the normal weekly cadence.\n\n`
+      : '';
     const ok = await dialog.showConfirm(
       'Process All Waivers',
-      'Process ' + pending.length + ' pending claim' + (pending.length !== 1 ? 's' : '') + '?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims.',
-      { confirmText: 'Process All' }
+      earlyWarn + 'Process ' + pending.length + ' pending claim' + (pending.length !== 1 ? 's' : '') + '?\n\nTie-breaker: reverse standings (lowest earnings = highest priority). Winners move to back of the line for subsequent claims.',
+      { confirmText: ready ? 'Process All' : 'Process early' }
     );
     if (!ok) return;
 
-    const em = seasonEarningsByName;
+    const em = {}; teams.forEach(t => { em[t.name] = t.earnings || 0; });
     const pm = {};
-    [...teams].sort((a, b) => (seasonEarningsByName[a.name] || 0) - (seasonEarningsByName[b.name] || 0)).forEach((t, i) => { pm[t.name] = i; });
+    [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
     let nextLastPlace = teams.length;
 
     const byTeam = {};
@@ -320,7 +325,7 @@ export const WaiverProcessingPanel = ({
           </>
         ) : (
           <>
-            <ConflictSummary pending={pending} teams={teams} seasonEarnings={seasonEarningsByName} />
+            <ConflictSummary pending={pending} teams={teams} />
 
             <button
               onClick={handleProcessAll}
@@ -401,7 +406,7 @@ export const WaiverProcessingPanel = ({
 };
 
 // ── Conflict summary component ────────────────────────────────────────────────
-const ConflictSummary = ({ pending, teams, seasonEarnings }) => {
+const ConflictSummary = ({ pending, teams }) => {
   const byPlayer = {};
   pending.forEach(w => {
     if (!byPlayer[w.player]) byPlayer[w.player] = [];
@@ -410,9 +415,8 @@ const ConflictSummary = ({ pending, teams, seasonEarnings }) => {
   const conflicts = Object.entries(byPlayer).filter(([, claims]) => claims.length > 1);
   if (conflicts.length === 0) return null;
 
-  // Derived season earnings (keyed by team name), passed from the parent so the
-  // conflict preview shows the same tie-break order the processor will apply.
-  const earningsMap = seasonEarnings || {};
+  const earningsMap = {};
+  teams.forEach(t => { earningsMap[t.name] = t.earnings || 0; });
   const fmt = n => '$' + (n || 0).toLocaleString();
 
   return (
