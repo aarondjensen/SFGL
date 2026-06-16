@@ -25,16 +25,20 @@ import React, { useState } from 'react';
 import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
 import { S } from './adminStyles';
+import { isBackupSpotEnabled } from '../../utils/sharedHelpers';
 
 export const TeamLineupsEditor = ({
-  teams, manualEntry, setManualEntry, lineupSize, rostersByTeamId, tournament,
+  teams, manualEntry, setManualEntry, lineupSize, rostersByTeamId, tournament, settings,
 }) => {
   const dialog = useDialog();
   const [expanded, setExpanded] = useState(false);
   // Per-team UI state for the promotion picker — when set, shows the
   // "which starter is being replaced?" selector inline within that team's row.
   const [promotingTeamId, setPromotingTeamId] = useState(null);
-  const isMajor = !!tournament?.isMajor;
+  // Whether the optional 6th "backup" slot applies to this event. Driven by the
+  // commish's per-event-type toggles in Season Settings. Falls back to
+  // Majors-only when settings isn't passed in (backward-compatible).
+  const allowBackup = isBackupSpotEnabled(tournament, settings);
 
   const updateTeamLineup = (teamId, slotIndex, playerName) => {
     setManualEntry(prev => {
@@ -198,12 +202,12 @@ export const TeamLineupsEditor = ({
                   })}
                 </div>
 
-                {/* ── Backup section (Major weeks only) ─────────────────────
+                {/* ── Backup section (when enabled for this event type) ──────
                     Shows the manager's backup designation. The commish can
                     "Promote" — pick which starter is being replaced and the
                     backup tags into that slot. After promotion, the backup
                     appears as a regular starter in the 5-slot dropdowns above. */}
-                {isMajor && team.backup && (() => {
+                {allowBackup && team.backup && (() => {
                   const isAlreadyPromoted = lineup.includes(team.backup);
                   return (
                     <div style={{

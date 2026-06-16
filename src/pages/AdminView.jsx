@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useDialog } from './DialogContext';
 import { theme, colors, fonts, SWINGS, fontSize } from '../theme.js';
 import { computeSwingAward } from '../utils/swingAward';
@@ -85,50 +85,88 @@ const ChevronRight = ({ size = 14, color }) => (
 );
 
 // ── Back-bar at the top of each drilled-in panel view ──
-const BackBar = ({ label, onBack }) => (
-  <div style={{
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '4px 0 16px 0',
-    marginBottom: 12,
-    borderBottom: `1px solid ${colors.borderSubtle}`,
-  }}>
-    <button
-      onClick={onBack}
+// Sticky so the commish can always tap "Dashboard" without scrolling back to
+// the top of a long admin panel. It pins directly beneath the app's sticky
+// header — whose height is dynamic (logo row + swing/tournament row, and a
+// little taller in commish mode) — so we measure that header at runtime rather
+// than hardcoding an offset. The app has exactly one <header>; its parent div
+// is the sticky shell we tuck under.
+const BackBar = ({ label, onBack }) => {
+  const [topOffset, setTopOffset] = useState(0);
+  const selfRef = useRef(null);
+
+  useEffect(() => {
+    const shell = document.querySelector('header')?.parentElement;
+    if (!shell) return;
+    const measure = () => setTopOffset(shell.getBoundingClientRect().height);
+    measure();
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(measure);
+      ro.observe(shell);
+    }
+    window.addEventListener('resize', measure);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={selfRef}
       style={{
-        background: 'rgba(255,255,255,0.05)',
-        border: `1px solid ${colors.borderSubtle}`,
-        borderRadius: 4,
-        color: colors.textPrimary,
-        cursor: 'pointer',
-        padding: '6px 12px 6px 8px',
-        fontFamily: fonts.sans,
-        fontSize: fontSize.sm,
-        fontWeight: 600,
-        display: 'inline-flex',
+        position: 'sticky',
+        top: topOffset,
+        // Below the app shell (z-index 50) so it never covers the main header,
+        // but above panel content so scrolled rows tuck underneath it.
+        zIndex: 40,
+        // Opaque page-background fill so content scrolling beneath stays hidden.
+        background: '#111d2e',
+        display: 'flex',
         alignItems: 'center',
-        gap: 4,
-        flexShrink: 0,
+        gap: 8,
+        padding: '10px 0 12px 0',
+        marginBottom: 12,
+        borderBottom: `1px solid ${colors.borderSubtle}`,
       }}
-      aria-label="Back to dashboard"
     >
-      <span style={{ fontSize: fontSize.lg, lineHeight: 1, marginTop: -1 }}>‹</span>
-      Dashboard
-    </button>
-    <span style={{
-      fontFamily: fonts.sans,
-      fontSize: fontSize.xs,
-      fontWeight: 700,
-      letterSpacing: '1.8px',
-      textTransform: 'uppercase',
-      color: colors.textSecondary,
-      marginLeft: 8,
-    }}>
-      {label}
-    </span>
-  </div>
-);
+      <button
+        onClick={onBack}
+        style={{
+          background: 'rgba(255,255,255,0.05)',
+          border: `1px solid ${colors.borderSubtle}`,
+          borderRadius: 4,
+          color: colors.textPrimary,
+          cursor: 'pointer',
+          padding: '6px 12px 6px 8px',
+          fontFamily: fonts.sans,
+          fontSize: fontSize.sm,
+          fontWeight: 600,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          flexShrink: 0,
+        }}
+        aria-label="Back to dashboard"
+      >
+        <span style={{ fontSize: fontSize.lg, lineHeight: 1, marginTop: -1 }}>‹</span>
+        Dashboard
+      </button>
+      <span style={{
+        fontFamily: fonts.sans,
+        fontSize: fontSize.xs,
+        fontWeight: 700,
+        letterSpacing: '1.8px',
+        textTransform: 'uppercase',
+        color: colors.textSecondary,
+        marginLeft: 8,
+      }}>
+        {label}
+      </span>
+    </div>
+  );
+};
 
 export const AdminView = ({
   isCommissioner, setIsCommissioner, setActiveTab,

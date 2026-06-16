@@ -14,6 +14,7 @@ import {
 import { theme, colors, fonts, fontSize } from '../theme.js';
 import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
+import { isBackupSpotEnabled } from '../utils/sharedHelpers';
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
 // Thin wrappers preserve the (name, isLimited, headshotMap) call signature
@@ -426,6 +427,9 @@ export const RostersView = ({
 
   const activeTournament      = tournaments.find(t => t.playing);
   const activeTournamentIndex = activeTournament ? tournaments.findIndex(t => t.name === activeTournament.name) : -1;
+  // Whether the optional 6th "backup" lineup slot is offered this week. Driven
+  // by the commish's per-event-type toggles in Season Settings.
+  const backupAllowed = isBackupSpotEnabled(activeTournament, resolvedSettings);
   // ── Date-based tournament week resolution ────────────────────────────────
   // Wave C.5: was a 36-line local implementation (`getAddDropTournamentIndex`)
   // duplicating logic in TransactionsView. Now uses the canonical
@@ -458,7 +462,7 @@ export const RostersView = ({
     const isInLineup = (team.lineup || []).includes(player.name);
     const isBackup = team.backup === player.name;
     const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
-    const allowBackup = !!activeTournament?.isMajor;
+    const allowBackup = backupAllowed;
     const lastName = player.name.split(' ').pop();
 
     // ── EXPLICIT "picking backup" mode ──────────────────────────────────────
@@ -561,7 +565,7 @@ export const RostersView = ({
     );
     updateTeams(newTeams);
     dialog.showToast(`${lastName} added to lineup`, 'success', { position: 'top' });
-  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE, pickingBackup]);
+  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE, pickingBackup, backupAllowed]);
 
 
   const pendingWaivers = useMemo(() => {
@@ -988,9 +992,10 @@ export const RostersView = ({
           })()}
           </div>
 
-        {/* Major-week backup banner — appears above the lineup slots so the
-            UX is self-explanatory the first time a manager sees it. */}
-        {activeTournament?.isMajor && canEditLineup && (
+        {/* Backup banner — appears above the lineup slots so the UX is
+            self-explanatory the first time a manager sees it. Shown whenever
+            the commish has enabled the backup spot for this event type. */}
+        {backupAllowed && canEditLineup && (
           <div style={{
             padding: '6px 12px',
             background: pickingBackup ? 'rgba(245,197,24,0.14)' : 'rgba(245,197,24,0.06)',
@@ -1008,7 +1013,7 @@ export const RostersView = ({
               {pickingBackup ? (
                 <>Pick a backup — <strong>tap any player below</strong> to designate them</>
               ) : (
-                <><strong>Major week</strong> — pick a 6th player as backup in case a starter withdraws</>
+                <><strong>{activeTournament?.isMajor ? 'Major week' : activeTournament?.isSignature ? 'Signature event' : 'Backup spot'}</strong> — pick a 6th player as backup in case a starter withdraws</>
               )}
             </span>
             {pickingBackup && (
@@ -1034,7 +1039,8 @@ export const RostersView = ({
         )}
 
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders.
-            On Major weeks, render a 6th "Backup" slot afterward, visually
+            When the backup spot is enabled for this event, render a 6th "Backup"
+            slot afterward, visually
             subordinate (smaller, dotted border, labeled). */}
         <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: 10, paddingBottom: 6, minHeight: 72 }}>
           <div style={{ display: 'flex', justifyContent: 'center', gap: isMobile ? 10 : 16, flexWrap: 'nowrap', overflow: 'visible' }}>
@@ -1044,7 +1050,7 @@ export const RostersView = ({
               const backupPlayer = team.backup
                 ? currentRoster.find(p => p.name === team.backup)
                 : null;
-              const showBackupSlot = !!activeTournament?.isMajor;
+              const showBackupSlot = backupAllowed;
               return (
                 <>
                   {lineupPlayers.map(player => {
@@ -1092,7 +1098,7 @@ export const RostersView = ({
                     </div>
                   ))}
 
-                  {/* ── Backup slot (Major weeks only) ──
+                  {/* ── Backup slot (when enabled for this event type) ──
                       Visually subordinate: divider on the left to separate it
                       from starters, smaller circle (38 vs 44), dotted gold
                       border, "Backup" label. Either renders the backup player
