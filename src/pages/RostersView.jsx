@@ -1274,7 +1274,7 @@ export const RostersView = ({
                     Odds{sortArrow('odds')}
                   </th>
                   <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', color: 'rgba(255,255,255,0.85)' }}>
-                    {liveData?.players?.length ? 'Pos' : ''}
+                    {liveData?.state === 'in' ? 'Pos' : ''}
                   </th>
                 </>) : (<>
                   <th scope="col" onClick={() => toggleSort('owgr')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('owgr', 'rgba(100,180,255,0.9)') }}>
@@ -1520,7 +1520,7 @@ export const RostersView = ({
                       // (e.g. "thru 12" or "F" for finished). When there's no
                       // live data, it stays empty so the layout doesn't shift.
                       let col3 = <td />;
-                      if (liveData?.players?.length) {
+                      if (liveData?.state === 'in') {
                         // Re-find live entry (same field-gated match logic as col1)
                         const rosterLast = normName.split(' ').slice(-1)[0];
                         const live = !inField ? null : (
