@@ -68,6 +68,25 @@ export const fmtETTime = (hour, minute = 0) => {
 export const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 export const DAY_ABBRS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
+// ── Backup lineup spot (optional 6th player) eligibility ─────────────────────
+// The commish can enable the optional 6th "backup" lineup slot per event type
+// via Season Settings. A backup is a player a manager designates in case one of
+// their starters withdraws; the commish can promote them into the lineup.
+//
+// Defaults preserve the feature's launch behavior: Majors ON, Signature and
+// Regular OFF. When `settings` is missing entirely, this still falls back to
+// "Majors only" so any caller that hasn't been wired with settings yet does not
+// regress.
+//
+// isMajor is checked first so a major that is also flagged signature is always
+// treated as a major.
+export const isBackupSpotEnabled = (tournament, settings) => {
+  if (!tournament) return false;
+  if (tournament.isMajor)     return settings?.backupSpotMajor     ?? true;
+  if (tournament.isSignature) return settings?.backupSpotSignature ?? false;
+  return settings?.backupSpotRegular ?? false;
+};
+
 // ── Swing helpers ────────────────────────────────────────────────────────────
 // Returns all completed tournaments belonging to a given swing.
 export const getSwingTournaments = (tournaments, segment) => {
