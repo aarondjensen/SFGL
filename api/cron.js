@@ -1389,12 +1389,36 @@ async function handleLeadWatch(res) {
 
   if (!liveData?.players?.length) return res.json({ status: 'no_players' });
 
-  // 2. Gate: round 2 or later. The /api/live `round` field can be a number
-  //    or string depending on PGA Tour's payload; coerce defensively.
-  const round = parseInt(liveData.round, 10);
-  if (!Number.isFinite(round) || round < 2) {
-    return res.json({ status: 'round_too_early', round: liveData.round });
+  // 2. Gates. /api/live does NOT report a round number, so the old
+  //    "round >= 2" check was always NaN and silently suppressed every
+  //    notification. Gate instead on:
+  //    (a) the leadWatchEnabled toggle;
+  //    (b) day-of-week — Fri/Sat/Sun (rounds 2-4) plus Mon, to catch a
+  //        weather-delayed final round. Round 1 (Thursday) stays excluded;
+  //    (c) live play — at least one player has a numeric `thru` (actively on
+  //        the course). Skips completed events (everyone 'F') and pre-tee-off
+  //        lulls where the "leader" is just the previous round's standing.
+  const settings = await loadSettings();
+  if (settings?.leadWatchEnabled === false) {
+    return res.json({ status: 'disabled' });
   }
+
+  const etDay = getETNow().getDay();      // 0=Sun … 6=Sat
+  const WATCH_DAYS = new Set([5, 6, 0, 1]); // Fri, Sat, Sun + Mon (weather-delayed finish)
+  if (!WATCH_DAYS.has(etDay)) {
+    return res.json({ status: 'off_day', etDay });
+  }
+
+  const inProgress = liveData.players.some(
+    p => !p.isCut && !p.isWD && /^\d+$/.test(String(p.thru || ''))
+  );
+  if (!inProgress) {
+    return res.json({ status: 'not_in_progress' });
+  }
+
+  // Round is informational only (state shape / debug); /api/live doesn't
+  // expose it, so infer from the day: Fri=2, Sat=3, Sun/Mon=4.
+  const round = etDay === 5 ? 2 : etDay === 6 ? 3 : 4;
 
   const tournamentName = liveData.tournamentName || liveData.eventName || '';
   if (!tournamentName) return res.json({ status: 'no_tournament_name' });
@@ -1531,6 +1555,8 @@ async function handleLeadWatch(res) {
 // Payload shapes (from the panel):
 //   weekly:   { jobType: 'waivers' | 'results' | 'lineup-reminder', day, hour, minute }
 //   interval: { jobType: 'lead-watch', minuteInterval }
+// The 'results' job expands to a same-day RETRY WINDOW (every 30 min from
+// the set time to 10pm ET) so a weather-delayed finish still auto-processes.
 //
 // `day` uses JS getDay() convention (0=Sunday .. 6=Saturday) — identical to the
 // cron handler's gate (et.getDay()) AND to cron-job.org's wdays convention, so
@@ -1596,10 +1622,26 @@ async function handleSyncCronSchedule(req, res) {
     if (!valid) {
       return res.status(400).json({ error: 'Invalid day/hour/minute' });
     }
-    schedule = {
-      timezone: CRON_SYNC_TZ, expiresAt: 0,
-      hours: [hour], mdays: [-1], minutes: [minute], months: [-1], wdays: [day],
-    };
+    if (jobType === 'results') {
+      // Results may not be final at the scheduled time (e.g. a weather-delayed
+      // Monday finish), so fire on a RETRY WINDOW: every 30 min from the
+      // configured time through 10pm ET on the same weekday. The handler's
+      // idempotency guard (last_auto_results) still ensures it processes
+      // exactly once — on the first ping where results have actually posted.
+      const endHour = 22;
+      const hours = [];
+      for (let h = hour; h <= Math.max(hour, endHour); h++) hours.push(h);
+      const minutes = [...new Set([minute, (minute + 30) % 60])].sort((a, b) => a - b);
+      schedule = {
+        timezone: CRON_SYNC_TZ, expiresAt: 0,
+        hours, mdays: [-1], minutes, months: [-1], wdays: [day],
+      };
+    } else {
+      schedule = {
+        timezone: CRON_SYNC_TZ, expiresAt: 0,
+        hours: [hour], mdays: [-1], minutes: [minute], months: [-1], wdays: [day],
+      };
+    }
   }
 
   // PATCH the job on cron-job.org. Body is a delta — only the schedule changes.
