@@ -763,8 +763,13 @@ export const RostersView = ({
       const sig = s => s.split(/\s+/).filter(w => w.length > 2);
       const aw = sig(a);
       const bw = sig(b);
-      const overlap = bw.filter(w => aw.includes(w)).length;
-      return overlap >= Math.min(2, bw.length);
+      // A single shared GENERIC word ("open", "championship"...) is not
+      // enough to call it a match — otherwise "U.S. Open" matches "RBC
+      // Canadian Open". Require a shared DISTINCTIVE word, or 2+ shared words.
+      const GENERIC = new Set(['the','presented','open','championship','classic','invitational','challenge','tournament','cup','golf','am','proam']);
+      const shared = bw.filter(w => aw.includes(w));
+      const distinctiveShared = shared.filter(w => !GENERIC.has(w));
+      return distinctiveShared.length >= 1 || shared.length >= 2;
     };
 
     const fetchLive = () => {
