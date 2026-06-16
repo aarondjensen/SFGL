@@ -64,6 +64,7 @@ export default async function handler(req, res) {
     // Charity Classic, a Korn Ferry event).
     let tournamentName = '';
     let tournamentId = '';
+    let currentStatus = '';
     const tournamentsQuery = queries.find(q =>
       Array.isArray(q.queryKey) && q.queryKey[0] === 'tournaments'
     );
@@ -78,6 +79,7 @@ export default async function handler(req, res) {
         || pgaTourns[0];
       tournamentName = current?.tournamentName || '';
       tournamentId = current?.id || current?.tournamentId || '';
+      currentStatus = current?.tournamentStatus || '';
     }
     // Fallback: check the single "tournament" query
     if (!tournamentName) {
@@ -167,6 +169,17 @@ export default async function handler(req, res) {
       p.thru === 'F' || /^\d+$/.test(p.thru) || p.isCut || p.isWD
     );
     const state = anyStarted ? 'in' : 'pre';
+
+    // Stale-leaderboard guard: between events (e.g. Mon-Wed of a tournament
+    // week) pgatour.com still serves the just-completed event's board while
+    // the "tournaments" query already lists the upcoming NOT_STARTED event —
+    // which is the name we resolved above. If the named event hasn't started
+    // but the board shows finished/in-progress play, the players and the name
+    // describe DIFFERENT events. Report pre + no players so clients never pin
+    // last week's positions onto this week's field.
+    if (currentStatus === 'NOT_STARTED' && anyStarted) {
+      return res.status(200).json({ state: 'pre', players: [], tournamentName });
+    }
 
     return res.status(200).json({ state, players, tournamentName });
 

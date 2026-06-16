@@ -264,20 +264,25 @@ export const TournamentResultsPanel = ({
         }));
         const body = { tournamentName: selectedTourney, teamResults: teamResultsForEmail };
         if (award) {
-          body.swingAward = {
+          body.swingWinnerInfo = {
             segment: award.segment,
-            winnerTeamName: award.winnerTeam.name,
+            team: award.winnerTeam.name,
             pot: award.pot,
           };
         }
-        await fetch('/api/notify-results', {
+        const emailResp = await fetch('/api/cron?action=notify-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
+        if (!emailResp.ok) {
+          const ed = await emailResp.json().catch(() => ({}));
+          throw new Error(ed.error || `HTTP ${emailResp.status}`);
+        }
         dialog.showToast('📧 Results emails sent', 'success');
       } catch (emailErr) {
         console.warn('Results email failed:', emailErr);
+        dialog.showToast('Results processed, but email send failed: ' + emailErr.message, 'error');
       }
 
       // ── Push notification (Wave J Round 6 batch 4) ──────────────────────
@@ -457,7 +462,7 @@ export const TournamentResultsPanel = ({
         if (teamResultsForEmail.length === 0) {
           dialog.showToast('No team results in this tournament — nothing to email', 'error');
         } else {
-          const resp = await fetch('/api/notify-results', {
+          const resp = await fetch('/api/cron?action=notify-results', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

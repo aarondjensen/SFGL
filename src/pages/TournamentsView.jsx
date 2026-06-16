@@ -578,7 +578,7 @@ export const TournamentsView = ({
             flexShrink: 0,
           }} />
         )}
-        {hasStarted ? 'Live' : 'This week'}
+        {hasStarted ? 'Live' : 'Next'}
       </span>
     );
   };
