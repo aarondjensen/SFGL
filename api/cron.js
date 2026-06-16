@@ -1522,6 +1522,114 @@ async function handleLeadWatch(res) {
   });
 }
 
+// ── Cron-job.org schedule sync ─────────────────────────────────────────
+// Pushes a schedule change from the commish panel (SeasonSettingsPanel) to the
+// matching cron-job.org job, so the actual ping time tracks the in-app gate.
+// Browser-initiated with no CRON_SECRET, so 'sync-cron-schedule' is exempted in
+// NO_AUTH_ACTIONS (same posture as notify-results / pgat-stats).
+//
+// Payload shapes (from the panel):
+//   weekly:   { jobType: 'waivers' | 'results' | 'lineup-reminder', day, hour, minute }
+//   interval: { jobType: 'lead-watch', minuteInterval }
+//
+// `day` uses JS getDay() convention (0=Sunday .. 6=Saturday) — identical to the
+// cron handler's gate (et.getDay()) AND to cron-job.org's wdays convention, so
+// it maps straight through with no remapping.
+const CRONJOB_API_BASE = 'https://api.cron-job.org';
+const CRON_SYNC_TZ     = 'America/New_York';
+const CRON_JOB_ID_ENV  = {
+  'waivers':         'CRONJOB_WAIVERS_JOB_ID',
+  'results':         'CRONJOB_RESULTS_JOB_ID',
+  'lineup-reminder': 'CRONJOB_LINEUP_REMINDER_JOB_ID',
+  'lead-watch':      'CRONJOB_LEAD_WATCH_JOB_ID',
+};
+
+async function handleSyncCronSchedule(req, res) {
+  const body    = req.body || {};
+  const jobType = body.jobType;
+  const apiKey  = process.env.CRONJOB_API_KEY;
+
+  if (!apiKey) {
+    return res.status(500).json({
+      error: 'Sync not configured',
+      hint:  'Set CRONJOB_API_KEY in Vercel → Settings → Environment Variables',
+    });
+  }
+
+  const envName = CRON_JOB_ID_ENV[jobType];
+  if (!envName) {
+    return res.status(400).json({
+      error: `Unknown jobType "${jobType}"`,
+      hint:  'Expected waivers, results, lineup-reminder, or lead-watch',
+    });
+  }
+
+  const jobId = process.env[envName];
+  if (!jobId) {
+    return res.status(500).json({
+      error: `Missing job ID for "${jobType}"`,
+      hint:  `Set ${envName} in Vercel env vars`,
+    });
+  }
+
+  // Build the cron-job.org schedule object.
+  let schedule;
+  if (jobType === 'lead-watch') {
+    const n = Number(body.minuteInterval);
+    if (!Number.isInteger(n) || n < 1 || n > 60) {
+      return res.status(400).json({ error: 'Invalid minuteInterval (expected 1-60)' });
+    }
+    const minutes = [];
+    for (let m = 0; m < 60; m += n) minutes.push(m);
+    schedule = {
+      timezone: CRON_SYNC_TZ, expiresAt: 0,
+      hours: [-1], mdays: [-1], minutes, months: [-1], wdays: [-1],
+    };
+  } else {
+    const day    = Number(body.day);
+    const hour   = Number(body.hour);
+    const minute = Number(body.minute);
+    const valid =
+      Number.isInteger(day)    && day    >= 0 && day    <= 6 &&
+      Number.isInteger(hour)   && hour   >= 0 && hour   <= 23 &&
+      Number.isInteger(minute) && minute >= 0 && minute <= 59;
+    if (!valid) {
+      return res.status(400).json({ error: 'Invalid day/hour/minute' });
+    }
+    schedule = {
+      timezone: CRON_SYNC_TZ, expiresAt: 0,
+      hours: [hour], mdays: [-1], minutes: [minute], months: [-1], wdays: [day],
+    };
+  }
+
+  // PATCH the job on cron-job.org. Body is a delta — only the schedule changes.
+  let resp;
+  try {
+    resp = await fetch(`${CRONJOB_API_BASE}/jobs/${jobId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ job: { schedule } }),
+    });
+  } catch (err) {
+    return res.status(502).json({ error: `Could not reach cron-job.org: ${err.message}` });
+  }
+
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => '');
+    let hint = '';
+    if      (resp.status === 401) hint = 'cron-job.org rejected the API key — regenerate it in cron-job.org → Settings and update CRONJOB_API_KEY';
+    else if (resp.status === 403) hint = 'API key is IP-restricted in cron-job.org — remove the restriction or allowlist Vercel egress';
+    else if (resp.status === 404) hint = `cron-job.org has no job #${jobId} — check ${envName}`;
+    else if (resp.status === 429) hint = 'cron-job.org daily/rate limit hit — try again shortly';
+    return res.status(502).json({ error: `cron-job.org returned ${resp.status}`, detail: detail.slice(0, 200), hint });
+  }
+
+  return res.json({ status: 'synced', jobType, jobId: String(jobId) });
+}
+
 export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
@@ -1530,7 +1638,7 @@ export default async function handler(req, res) {
   // Cron actions require auth. Client-callable actions are exempted:
   //   - notify-results: triggered from AdminView after processing
   //   - pgat-stats:     triggered from AdminView's Sync button
-  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats']);
+  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule']);
   if (!NO_AUTH_ACTIONS.has(action) && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -1544,7 +1652,8 @@ export default async function handler(req, res) {
       case 'pgat-stats':        return await handlePgatStats(res);
       case 'lead-watch':        return await handleLeadWatch(res);
       case 'owgr-rankings':     return await handleOwgrRankings(res);
-      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings' });
+      case 'sync-cron-schedule': return await handleSyncCronSchedule(req, res);
+      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings|sync-cron-schedule' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);
