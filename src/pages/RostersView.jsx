@@ -1013,7 +1013,7 @@ export const RostersView = ({
               {pickingBackup ? (
                 <>Pick a backup — <strong>tap any player below</strong> to designate them</>
               ) : (
-                <><strong>{activeTournament?.isMajor ? 'Major week' : activeTournament?.isSignature ? 'Signature event' : 'Backup spot'}</strong> — pick a 6th player as backup in case a starter withdraws</>
+                <strong>{activeTournament?.isMajor ? 'Major Week' : activeTournament?.isSignature ? 'Signature Event' : 'Backup Spot'}</strong>
               )}
             </span>
             {pickingBackup && (
