@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
-import { Trophy, Users, DollarSign, Calendar, Settings } from 'lucide-react';
+import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, LogOut } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
@@ -87,6 +87,26 @@ const TABS = [
 // leave it in a no-tab-rendered limbo). Defined at module level so the
 // Set isn't recreated on every render.
 const VALID_TAB_IDS = new Set(TABS.map(t => t.id));
+
+// Shared style for rows in the bottom "More" (...) popup menu.
+const MORE_MENU_ITEM_STYLE = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  width: '100%',
+  padding: '11px 14px',
+  background: 'transparent',
+  border: 'none',
+  borderRadius: 7,
+  color: 'rgba(255,255,255,0.88)',
+  fontFamily: "'Raleway', system-ui, sans-serif",
+  fontSize: 15,
+  fontWeight: 500,
+  letterSpacing: 0.3,
+  textAlign: 'left',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
 
 // Read the current URL hash and return the corresponding valid tab ID, or
 // null if the hash is empty / invalid. Browser hashes include the leading
@@ -182,6 +202,7 @@ const FantasyGolfLeague = () => {
   const [loggedInTeamId,        setLoggedInTeamId]        = useState(null);
   const [showLoginModal,        setShowLoginModal]        = useState(false);
   const [showUserSettings,      setShowUserSettings]      = useState(false);
+  const [showMoreMenu,          setShowMoreMenu]          = useState(false);
   // (Password popover state removed — commish access is granted by team tag,
   // not by password. See handleManagerLogin and the AdminView Manager Accounts
   // panel for how the tag is set.)
@@ -613,23 +634,16 @@ const FantasyGolfLeague = () => {
                   // Commissioners in active commish mode keep the gold
                   // tint as a visual indicator that mode is engaged.
                   return (
-                    <button
-                      onClick={() => setShowUserSettings(true)}
-                      title="Open account settings"
-                      aria-label="Open account settings"
+                    <span
                       style={{
                         ...baseNameStyle,
                         fontWeight: isCommissioner ? 700 : 400,
                         color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.7)',
-                        background: 'transparent',
-                        border: 'none',
-                        padding: 0,
-                        cursor: 'pointer',
                         transition: 'color 0.2s, font-weight 0.2s',
                       }}
                     >
                       {lastName}
-                    </button>
+                    </span>
                   );
                 })()}
                 {!loggedInUser && !isCommissioner && (
@@ -852,8 +866,107 @@ const FantasyGolfLeague = () => {
               </button>
             );
           })}
+          {loggedInUser && (
+            <button
+              className="sfgl-tab"
+              onClick={() => setShowMoreMenu(v => !v)}
+              aria-haspopup="menu"
+              aria-expanded={showMoreMenu}
+              aria-label="More options"
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 3,
+                border: 'none',
+                padding: '6px 4px 8px',
+                minHeight: 48,
+                background: 'transparent',
+                borderRadius: 6,
+                color: showMoreMenu ? '#f5c518' : 'rgba(255,255,255,0.55)',
+                cursor: 'pointer',
+                transition: 'color 0.18s',
+                outline: 'none',
+              }}
+            >
+              <MoreHorizontal style={{ width: 20, height: 20 }} />
+              <span style={{
+                fontFamily: "'Raleway', system-ui, sans-serif",
+                fontSize: fontSize.xs,
+                fontWeight: 500,
+                letterSpacing: 0.5,
+                whiteSpace: 'nowrap',
+              }}>More</span>
+            </button>
+          )}
         </div>
       </nav>
+
+      {/* More / overflow menu (opened from the "..." nav tab) */}
+      {showMoreMenu && (
+        <>
+          <div
+            onClick={() => setShowMoreMenu(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 55, background: 'transparent' }}
+            aria-hidden="true"
+          />
+          <div
+            role="menu"
+            style={{
+              position: 'fixed',
+              bottom: 'calc(76px + env(safe-area-inset-bottom))',
+              right: 8,
+              zIndex: 60,
+              minWidth: 210,
+              background: 'rgba(12, 24, 48, 0.98)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              border: '1px solid rgba(180,160,100,0.22)',
+              borderRadius: 10,
+              boxShadow: '0 8px 28px rgba(0,0,0,0.45)',
+              overflow: 'hidden',
+              padding: 4,
+            }}
+          >
+            <button
+              role="menuitem"
+              onClick={() => { setShowMoreMenu(false); setShowUserSettings(true); }}
+              style={MORE_MENU_ITEM_STYLE}
+            >
+              <Bell style={{ width: 18, height: 18, opacity: 0.85 }} />
+              <span>Notifications</span>
+            </button>
+
+            {taggedCommissioner && (
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  const next = !isCommissioner;
+                  setIsCommissioner(next);
+                  if (next) setActiveTab('admin');
+                  else setActiveTab(t => (t === 'admin' ? 'standings' : t));
+                }}
+                style={{ ...MORE_MENU_ITEM_STYLE, color: isCommissioner ? '#f5c518' : MORE_MENU_ITEM_STYLE.color }}
+              >
+                <Shield style={{ width: 18, height: 18, opacity: 0.85 }} />
+                <span>Admin</span>
+              </button>
+            )}
+
+            <button
+              role="menuitem"
+              onClick={() => { setShowMoreMenu(false); handleLogout(); }}
+              style={{ ...MORE_MENU_ITEM_STYLE, color: 'rgba(235,130,130,0.95)' }}
+            >
+              <LogOut style={{ width: 18, height: 18, opacity: 0.85 }} />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </>
+      )}
 
       {/* ── Manager Login Modal ── */}
       {showLoginModal && (
