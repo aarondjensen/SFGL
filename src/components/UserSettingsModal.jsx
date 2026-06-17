@@ -70,7 +70,7 @@ const ROW_BASE = {
   alignItems: 'center',
   gap: 12,
   width: '100%',
-  padding: '14px 16px',
+  padding: '10px 14px',
   background: 'transparent',
   border: 'none',
   textAlign: 'left',
@@ -232,17 +232,6 @@ export const UserSettingsModal = ({
     }
   };
 
-  const handleCommishToggle = () => {
-    setIsCommissioner(prev => {
-      const next = !prev;
-      // Same bounce-out as the old name-tap behavior: leaving commish mode
-      // while on the Commish tab would render nothing.
-      if (!next && activeTab === 'admin') setActiveTab('standings');
-      return next;
-    });
-    onClose();
-  };
-
   if (!isOpen) return null;
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -270,7 +259,7 @@ export const UserSettingsModal = ({
           border: '1px solid rgba(255,255,255,0.07)',
           borderRadius: isMobile ? '22px 22px 0 0' : 18,
           width: '100%', maxWidth: isMobile ? '100%' : 440,
-          maxHeight: isMobile ? '90vh' : '84vh',
+          maxHeight: isMobile ? '92vh' : '84vh',
           display: 'flex', flexDirection: 'column',
           overflow: 'hidden',
           boxShadow: '0 -8px 40px rgba(0,0,0,0.5)',
@@ -279,19 +268,19 @@ export const UserSettingsModal = ({
         }}
       >
         {isMobile && (
-          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8, flexShrink: 0 }}>
             <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.18)' }} />
           </div>
         )}
 
         <div style={{
-          padding: isMobile ? '12px 20px 14px' : '18px 20px 14px',
+          padding: isMobile ? '10px 20px 10px' : '16px 20px 12px',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           gap: 12, flexShrink: 0,
         }}>
           <div style={{ minWidth: 0 }}>
             <div style={{
-              fontFamily: fonts.sans, fontSize: 19, fontWeight: 600,
+              fontFamily: fonts.sans, fontSize: 18, fontWeight: 600,
               color: colors.textPrimary, letterSpacing: '0.2px',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>
@@ -319,32 +308,7 @@ export const UserSettingsModal = ({
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '4px 20px 20px', WebkitOverflowScrolling: 'touch' }}>
 
-          {taggedCommissioner && (
-            <div style={{ marginBottom: 22 }}>
-              <div style={{ ...GROUP_LABEL, marginBottom: 10 }}>Commissioner</div>
-              <div style={GROUP_CARD}>
-                <button
-                  type="button" role="switch" aria-checked={isCommissioner}
-                  aria-label={`Commissioner mode: ${isCommissioner ? 'on' : 'off'}`}
-                  onClick={handleCommishToggle}
-                  style={ROW_BASE}
-                >
-                  <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>👑</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: isCommissioner ? 'rgba(245,197,24,0.95)' : colors.textPrimary }}>
-                      Commissioner Mode
-                    </div>
-                    <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}>
-                      {isCommissioner ? 'Admin tools and Commish tab visible' : 'Access admin tools and Commish tab'}
-                    </div>
-                  </div>
-                  <Toggle on={isCommissioner} accent="rgba(255,215,0,0.95)" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div style={{ marginBottom: 22 }}>
+          <div style={{ marginBottom: 14 }}>
             <button
               onClick={toggleNotifsExpanded}
               aria-expanded={notifsExpanded}
@@ -375,6 +339,7 @@ export const UserSettingsModal = ({
                   const canToggle = pushSupported && pushPermission !== 'denied' && !pushBusy && !!userTeam;
                   const dotColor = !pushSupported ? colors.textMuted : pushSubscribed ? colors.earningsGreen : pushPermission === 'denied' ? colors.danger : colors.textMuted;
                   const detail = !pushSupported ? 'Not supported in this browser' : pushPermission === 'denied' ? 'Blocked — enable in browser settings' : pushBusy ? (pushSubscribed ? 'Turning off…' : 'Turning on…') : pushSubscribed ? 'On' : 'Off';
+                  const showDetail = !pushSupported || pushPermission === 'denied' || pushBusy;
                   return (
                     <div style={GROUP_CARD}>
                       <button
@@ -386,12 +351,14 @@ export const UserSettingsModal = ({
                       >
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 15, fontWeight: 600, color: colors.textPrimary }}>
+                          <div style={{ fontSize: 14.5, fontWeight: 600, color: colors.textPrimary }}>
                             Notifications on this device
                           </div>
-                          <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}>{detail}</div>
+                          {showDetail && (
+                            <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 2 }}>{detail}</div>
+                          )}
                         </div>
-                        <Toggle on={isOn} disabled={!canToggle} />
+                        <Toggle on={isOn} accent="rgba(255,215,0,0.95)" disabled={!canToggle} />
                       </button>
                     </div>
                   );
@@ -411,10 +378,7 @@ export const UserSettingsModal = ({
                 )}
 
                 {pushSubscribed && userTeam && (
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 12.5, color: colors.textMuted, marginBottom: 8, lineHeight: 1.5 }}>
-                      Choose which events trigger pushes on your subscribed devices.
-                    </div>
+                  <div style={{ marginTop: 12 }}>
                     <div style={GROUP_CARD}>
                       {NOTIFICATION_EVENTS.map((evt, idx) => {
                         const enabled = effectivePrefs[evt.key];
@@ -433,10 +397,7 @@ export const UserSettingsModal = ({
                               opacity: saving ? 0.5 : 1,
                             }}
                           >
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 14.5, fontWeight: 600, color: colors.textPrimary }}>{evt.label}</div>
-                              <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>{evt.desc}</div>
-                            </div>
+                            <div style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 600, color: colors.textPrimary }}>{evt.label}</div>
                             <Toggle on={enabled} />
                           </button>
                         );
