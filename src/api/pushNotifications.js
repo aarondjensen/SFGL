@@ -26,6 +26,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getMessaging, getToken, onMessage, isSupported, deleteToken } from 'firebase/messaging';
 import { doc, setDoc, deleteDoc, getDocs, query, where, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
+import { Capacitor } from '@capacitor/core';
 
 // Reuse the same Firebase app instance the rest of the app uses. We can't
 // import `app` directly from firebase.js (it's not exported), but we can
@@ -64,6 +65,7 @@ const getMessagingInstance = async () => {
  * Returns false in Safari without home-screen install, very old Chrome, etc.
  */
 export const isPushSupported = async () => {
+  if (Capacitor.isNativePlatform()) return true;
   try {
     return await isSupported();
   } catch {
@@ -76,6 +78,9 @@ export const isPushSupported = async () => {
  * Returns 'unsupported' when the browser doesn't expose Notification API.
  */
 export const getNotificationPermission = () => {
+  if (Capacitor.isNativePlatform()) {
+    try { return localStorage.getItem('sfgl.pushToken') ? 'granted' : 'default'; } catch { return 'default'; }
+  }
   if (typeof Notification === 'undefined') return 'unsupported';
   return Notification.permission;
 };
@@ -107,7 +112,103 @@ const withTimeout = (promise, ms, label) => {
   ]);
 };
 
+// ── Native (Capacitor) push path ────────────
+// Inside the iOS/Android app there is no service worker or web-push/VAPID; we
+// use the native @capacitor/push-notifications plugin instead. On Android the
+// registration token IS the FCM token, so it drops into the same
+// `pushTokens/{token}` collection and your existing push.js backend delivers
+// to it with no server changes. (iOS will additionally need an APNs key +
+// Firebase messaging so its token is also an FCM token — handled later.)
+const nativeSubscribe = async (teamId) => {
+  console.log('[push] native subscribe START — teamId:', teamId, 'platform:', Capacitor.getPlatform());
+  if (!teamId) { console.warn('[push] no teamId'); return { ok: false, reason: 'no_team' }; }
+
+  let PushNotifications;
+  try {
+    ({ PushNotifications } = await import('@capacitor/push-notifications'));
+  } catch (err) {
+    console.error('[push] native plugin import failed:', err);
+    return { ok: false, reason: 'unsupported' };
+  }
+
+  // Permission (Android 13+ and iOS both prompt here).
+  let perm;
+  try {
+    perm = await PushNotifications.checkPermissions();
+    if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') {
+      perm = await PushNotifications.requestPermissions();
+    }
+  } catch (err) {
+    console.error('[push] native permission error:', err);
+    return { ok: false, reason: 'denied' };
+  }
+  if (perm.receive !== 'granted') {
+    console.warn('[push] native permission not granted:', perm.receive);
+    return { ok: false, reason: 'denied' };
+  }
+
+  // register() resolves immediately; the token arrives via the 'registration'
+  // listener. Wait for it (or fail on registrationError / 15s timeout).
+  let regHandle, errHandle, resolveToken;
+  const tokenPromise = new Promise((resolve) => { resolveToken = resolve; });
+  try {
+    regHandle = await PushNotifications.addListener('registration', (t) => {
+      console.log('[push] native token received, len:', t && t.value && t.value.length);
+      resolveToken(t.value);
+    });
+    errHandle = await PushNotifications.addListener('registrationError', (e) => {
+      console.error('[push] native registrationError:', e);
+      resolveToken(null);
+    });
+    await PushNotifications.register();
+  } catch (err) {
+    console.error('[push] native register failed:', err);
+    resolveToken(null);
+  }
+  const token = await Promise.race([
+    tokenPromise,
+    new Promise((r) => setTimeout(() => { console.warn('[push] native token wait timed out'); r(null); }, 15000)),
+  ]);
+  try { regHandle && regHandle.remove(); } catch {}
+  try { errHandle && errHandle.remove(); } catch {}
+
+  if (!token) { console.warn('[push] native: no token'); return { ok: false, reason: 'token_failed' }; }
+
+  // Same collection your server already reads — no backend change needed.
+  try {
+    await setDoc(doc(db, 'pushTokens', token), {
+      token,
+      teamId,
+      userAgent: 'capacitor-' + Capacitor.getPlatform(),
+      platform: Capacitor.getPlatform(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    console.error('[push] native save token failed:', err);
+    return { ok: false, reason: 'save_failed' };
+  }
+
+  try { localStorage.setItem('sfgl.pushToken', token); } catch {}
+  console.log('[push] native subscribe COMPLETE');
+  return { ok: true, token };
+};
+
+const nativeUnsubscribe = async () => {
+  let token = null;
+  try { token = localStorage.getItem('sfgl.pushToken'); } catch {}
+  // No 'revoke token' call exists; deleting the Firestore doc stops the server
+  // from targeting this device, which is the goal.
+  if (token) {
+    try { await deleteDoc(doc(db, 'pushTokens', token)); }
+    catch (err) { console.warn('[push] native delete token doc failed:', err); }
+  }
+  try { localStorage.removeItem('sfgl.pushToken'); } catch {}
+  return { ok: true };
+};
+
 export const requestPermissionAndSubscribe = async (teamId) => {
+  if (Capacitor.isNativePlatform()) return nativeSubscribe(teamId);
   console.log('[push] subscribe START — teamId:', teamId, 'ua:', navigator.userAgent);
   if (!teamId) { console.warn('[push] no teamId'); return { ok: false, reason: 'no_team' }; }
   if (!VAPID_KEY) {
@@ -235,6 +336,7 @@ export const requestPermissionAndSubscribe = async (teamId) => {
  * server-side sender doesn't try to target a dead token).
  */
 export const unsubscribe = async () => {
+  if (Capacitor.isNativePlatform()) return nativeUnsubscribe();
   const messaging = await getMessagingInstance();
   if (!messaging) return { ok: false, reason: 'unsupported' };
 

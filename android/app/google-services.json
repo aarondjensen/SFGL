@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "737106270109",
+    "project_id": "sfgl-ad892",
+    "storage_bucket": "sfgl-ad892.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:737106270109:android:99af384a223a397ad04174",
+        "android_client_info": {
+          "package_name": "com.sfglgolf.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEPQNvYKCbVZ1ZFXUioH46FWvxtPsmNRg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
