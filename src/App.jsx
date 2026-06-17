@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { Trophy, Users, DollarSign, Calendar, Settings } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
 // Mobile devices can get stuck on stale localStorage data while desktop has
@@ -138,6 +139,16 @@ const FantasyGolfLeague = () => {
       window.location.hash = activeTab;
     }
   }, [activeTab]);
+
+  // ── Native (Capacitor) status bar ──
+  // On the iOS/Android app, use light status-bar icons so the clock and
+  // battery stay readable on the navy header. No-op in the browser.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    import('@capacitor/status-bar')
+      .then(({ StatusBar, Style }) => StatusBar.setStyle({ style: Style.Dark }))
+      .catch(() => {});
+  }, []);
 
   // Listen for browser back/forward navigation. The hashchange event fires
   // when the URL's hash changes — either from our setActiveTab effect above
@@ -525,6 +536,7 @@ const FantasyGolfLeague = () => {
           signal that complements the gold name button on the right side. */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 50,
+        paddingTop: 'env(safe-area-inset-top)',
         background: isCommissioner
           ? 'rgba(58, 47, 12, 0.97)'
           : 'rgba(8, 18, 40, 0.97)',
