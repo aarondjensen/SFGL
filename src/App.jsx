@@ -568,33 +568,20 @@ const FantasyGolfLeague = () => {
         transition: 'background 0.25s, border-color 0.25s',
       }}>
 
-        {/* ── Header: two columns (brand + manager name | swing + tournament) ── */}
+        {/* ── Header: year + name (left) · SFGL (center) · swing + tournament (right) ── */}
         <header>
           <div style={{ maxWidth: 1100, margin: "0 auto", padding: "10px 16px 12px" }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)", alignItems: "center", gap: 12 }}>
 
-              {/* Left column: SFGL | 2026  ->  manager name */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{
-                    fontFamily: "'Raleway', system-ui, sans-serif",
-                    fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5,
-                    color: 'rgba(255,255,255,0.93)',
-                    whiteSpace: 'nowrap', userSelect: 'none',
-                  }}>SFGL</span>
-                  <div style={{ width: 1, height: 22, background: 'rgba(180,160,100,0.25)' }} />
-                  <span style={{
-                    fontFamily: "'Raleway', system-ui, sans-serif",
-                    fontSize: fontSize.lg, fontWeight: 400,
-                    color: 'rgba(255,255,255,0.7)', letterSpacing: 4,
-                  }}>2026</span>
-                </div>
+              {/* Left column: year (small) -> manager name */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, justifySelf: 'start', minWidth: 0 }}>
+                <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, fontWeight: 400, letterSpacing: 2, color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap' }}>2026</span>
                 {loggedInUser && (() => {
                   const liveTeam = loggedInTeamId ? resolvedTeams.find(t => t.id === loggedInTeamId) : null;
                   const displayName = (liveTeam && (liveTeam.owner || liveTeam.name)) || loggedInUser;
                   const lastName = String(displayName).trim().split(/\s+/).pop();
                   return (
-                    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.lg, letterSpacing: 4, fontWeight: isCommissioner ? 700 : 400, color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap', transition: 'color 0.2s, font-weight 0.2s' }}>{lastName}</span>
+                    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, fontWeight: isCommissioner ? 700 : 500, letterSpacing: 1, color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.75)', whiteSpace: 'nowrap', transition: 'color 0.2s, font-weight 0.2s' }}>{lastName}</span>
                   );
                 })()}
                 {!loggedInUser && !isCommissioner && (
@@ -614,17 +601,20 @@ const FantasyGolfLeague = () => {
                 )}
               </div>
 
-              {/* Right column: current swing  ->  current tournament */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flex: 1, minWidth: 0, textAlign: 'right' }}>
+              {/* Center: SFGL wordmark (the anchor) */}
+              <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 2, color: 'rgba(255,255,255,0.95)', whiteSpace: 'nowrap', userSelect: 'none', justifySelf: 'center' }}>SFGL</span>
+
+              {/* Right column: current swing -> current tournament */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, justifySelf: 'end', minWidth: 0, textAlign: 'right' }}>
                 {(() => {
                   const active = safeTournaments.find(t => t.playing);
                   const seg = active?.segment || safeTournaments.find(t => !t.completed && !t.playing)?.segment || [...safeTournaments].reverse().find(t => t.completed)?.segment || getSegmentByDate();
                   return (
-                    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap', color: getSwingColor(seg) }}>{seg}</span>
+                    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, fontWeight: 500, letterSpacing: 1, whiteSpace: 'nowrap', color: getSwingColor(seg) }}>{seg}</span>
                   );
                 })()}
                 {currentTournament && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5, maxWidth: '100%', minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, fontWeight: 400, letterSpacing: 1, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", maxWidth: '100%', minWidth: 0 }}>
                     <span>⛳</span>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{currentTournament.name}</span>
                   </div>
