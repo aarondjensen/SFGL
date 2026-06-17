@@ -593,57 +593,11 @@ const FantasyGolfLeague = () => {
 
               {/* Right side: user + login/logout */}
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                {loggedInUser && (() => {
-                  // Resolve the display name LIVE from the logged-in team id
-                  // (loggedInTeamId) instead of the loggedInUser string that
-                  // was captured at login / session-restore. loggedInTeamId is
-                  // the immutable identity; the owner string can differ across
-                  // data sources (the Firebase `teams` collection, the
-                  // `sfgl_data/fantasy-golf-teams` mirror, or a stale cached
-                  // bundle), and a value frozen at restore could therefore show
-                  // a DIFFERENT manager's name. Reading owner by id on every
-                  // render makes the name self-correct and can never freeze a
-                  // stale value. Falls back to loggedInUser when the team isn't
-                  // resolvable yet, so it never renders worse than before.
-                  const liveTeam = loggedInTeamId
-                    ? resolvedTeams.find(t => t.id === loggedInTeamId)
-                    : null;
-                  const displayName = (liveTeam && (liveTeam.owner || liveTeam.name)) || loggedInUser;
-                  // Last name only — matches the visual weight of "2026" on
-                  // the left side of the header. Splits on whitespace and
-                  // takes the final token; works for "Aaron Jensen" →
-                  // "Jensen" and for single-word usernames.
-                  const lastName = String(displayName).trim().split(/\s+/).pop();
-                  // 2026 styling — used for the button so the layout doesn't
-                  // shift when commish mode flips on/off.
-                  const baseNameStyle = {
-                    fontFamily: "'Raleway', system-ui, sans-serif",
-                    fontSize: fontSize.lg,
-                    letterSpacing: 4,
-                    whiteSpace: 'nowrap',
-                  };
-
-                  // Wave J Round 6 batch 2: name-tap now opens the user
-                  // settings modal for ALL logged-in users (not just
-                  // commissioners). The modal contains commish-mode toggle
-                  // (for tagged users), push notification subscription
-                  // controls, and logout. Previously this button only
-                  // existed for tagged commissioners and only toggled
-                  // commish mode — now it's a proper user menu.
-                  //
-                  // Commissioners in active commish mode keep the gold
-                  // tint as a visual indicator that mode is engaged.
+                {(() => {
+                  const active = safeTournaments.find(t => t.playing);
+                  const seg = active?.segment || safeTournaments.find(t => !t.completed && !t.playing)?.segment || [...safeTournaments].reverse().find(t => t.completed)?.segment || getSegmentByDate();
                   return (
-                    <span
-                      style={{
-                        ...baseNameStyle,
-                        fontWeight: isCommissioner ? 700 : 400,
-                        color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.7)',
-                        transition: 'color 0.2s, font-weight 0.2s',
-                      }}
-                    >
-                      {lastName}
-                    </span>
+                    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap', color: getSwingColor(seg) }}>{seg}</span>
                   );
                 })()}
                 {!loggedInUser && !isCommissioner && (
@@ -673,13 +627,14 @@ const FantasyGolfLeague = () => {
             ~30px of vertical real-estate on every commish screen.) */}
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
-            <div style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap' }}>
-              {(() => {
-                const active = safeTournaments.find(t => t.playing);
-                const seg = active?.segment || safeTournaments.find(t => !t.completed && !t.playing)?.segment || [...safeTournaments].reverse().find(t => t.completed)?.segment || getSegmentByDate();
-                return <span style={{ color: getSwingColor(seg) }}>{seg}</span>;
-              })()}
-            </div>
+            {loggedInUser && (() => {
+              const liveTeam = loggedInTeamId ? resolvedTeams.find(t => t.id === loggedInTeamId) : null;
+              const displayName = (liveTeam && (liveTeam.owner || liveTeam.name)) || loggedInUser;
+              const lastName = String(displayName).trim().split(/\s+/).pop();
+              return (
+                <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.lg, letterSpacing: 4, fontWeight: isCommissioner ? 700 : 400, color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap', transition: 'color 0.2s, font-weight 0.2s' }}>{lastName}</span>
+              );
+            })()}
             {currentTournament && (
               <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
                 <span>⛳</span> {currentTournament.name}
