@@ -568,31 +568,54 @@ const FantasyGolfLeague = () => {
         transition: 'background 0.25s, border-color 0.25s',
       }}>
 
-        {/* ── Header ── */}
+        {/* ── Header: two columns (brand + manager name | swing + tournament) ── */}
         <header>
-          <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto", padding: "10px 16px 12px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
 
-              {/* Logo */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{
-                  fontFamily: "'Raleway', system-ui, sans-serif",
-                  fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5,
-                  color: 'rgba(255,255,255,0.93)',
-                  whiteSpace: 'nowrap', userSelect: 'none',
-                }}>SFGL</span>
-                <div style={{ width: 1, height: 22, background: 'rgba(180,160,100,0.25)' }} />
-                <span style={{
-                  fontFamily: "'Raleway', system-ui, sans-serif",
-                  fontSize: fontSize.lg,
-                  fontWeight: 400,
-                  color: 'rgba(255,255,255,0.7)',
-                  letterSpacing: 4,
-                }}>2026</span>
+              {/* Left column: SFGL | 2026  ->  manager name */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{
+                    fontFamily: "'Raleway', system-ui, sans-serif",
+                    fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5,
+                    color: 'rgba(255,255,255,0.93)',
+                    whiteSpace: 'nowrap', userSelect: 'none',
+                  }}>SFGL</span>
+                  <div style={{ width: 1, height: 22, background: 'rgba(180,160,100,0.25)' }} />
+                  <span style={{
+                    fontFamily: "'Raleway', system-ui, sans-serif",
+                    fontSize: fontSize.lg, fontWeight: 400,
+                    color: 'rgba(255,255,255,0.7)', letterSpacing: 4,
+                  }}>2026</span>
+                </div>
+                {loggedInUser && (() => {
+                  const liveTeam = loggedInTeamId ? resolvedTeams.find(t => t.id === loggedInTeamId) : null;
+                  const displayName = (liveTeam && (liveTeam.owner || liveTeam.name)) || loggedInUser;
+                  const lastName = String(displayName).trim().split(/\s+/).pop();
+                  return (
+                    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.lg, letterSpacing: 4, fontWeight: isCommissioner ? 700 : 400, color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap', transition: 'color 0.2s, font-weight 0.2s' }}>{lastName}</span>
+                  );
+                })()}
+                {!loggedInUser && !isCommissioner && (
+                  <button onClick={() => setShowLoginModal(true)} aria-label="Open sign-in dialog" style={{
+                    fontFamily: "'Raleway', system-ui, sans-serif",
+                    fontSize: fontSize.sm, letterSpacing: 1.5, textTransform: 'uppercase',
+                    padding: '6px 14px',
+                    background: 'rgba(40,120,80,0.15)',
+                    border: '1px solid rgba(80,195,120,0.35)',
+                    borderRadius: 1,
+                    color: 'rgba(80,195,120,0.9)',
+                    cursor: 'pointer', transition: 'all 0.2s',
+                    alignSelf: 'flex-start',
+                  }}>
+                    Sign In
+                  </button>
+                )}
               </div>
 
-              {/* Right side: user + login/logout */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {/* Right column: current swing  ->  current tournament */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flex: 1, minWidth: 0, textAlign: 'right' }}>
                 {(() => {
                   const active = safeTournaments.find(t => t.playing);
                   const seg = active?.segment || safeTournaments.find(t => !t.completed && !t.playing)?.segment || [...safeTournaments].reverse().find(t => t.completed)?.segment || getSegmentByDate();
@@ -600,60 +623,22 @@ const FantasyGolfLeague = () => {
                     <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, letterSpacing: 1, fontWeight: 400, whiteSpace: 'nowrap', color: getSwingColor(seg) }}>{seg}</span>
                   );
                 })()}
-                {!loggedInUser && !isCommissioner && (
-                    <button onClick={() => setShowLoginModal(true)} aria-label="Open sign-in dialog" style={{
-                      fontFamily: "'Raleway', system-ui, sans-serif",
-                      fontSize: fontSize.sm,
-                      letterSpacing: 1.5,
-                      textTransform: 'uppercase',
-                      padding: '8px 14px',
-                      background: 'rgba(40,120,80,0.15)',
-                      border: '1px solid rgba(80,195,120,0.35)',
-                      borderRadius: 1,
-                      color: 'rgba(80,195,120,0.9)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}>
-                      Sign In
-                    </button>
+                {currentTournament && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5, maxWidth: '100%', minWidth: 0 }}>
+                    <span>⛳</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{currentTournament.name}</span>
+                  </div>
+                )}
+                {isSyncing && (
+                  <span style={{ fontSize: fontSize.sm, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="sfgl-text-pulse">
+                    Saving…
+                  </span>
                 )}
               </div>
+
             </div>
           </div>
         </header>
-
-        {/* (Old full-width yellow Commissioner banner removed in Wave 3 — replaced
-            by the gold "⚙ Commish" pill in the header right side above. Saves
-            ~30px of vertical real-estate on every commish screen.) */}
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "4px 16px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
-            {loggedInUser && (() => {
-              const liveTeam = loggedInTeamId ? resolvedTeams.find(t => t.id === loggedInTeamId) : null;
-              const displayName = (liveTeam && (liveTeam.owner || liveTeam.name)) || loggedInUser;
-              const lastName = String(displayName).trim().split(/\s+/).pop();
-              return (
-                <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.lg, letterSpacing: 4, fontWeight: isCommissioner ? 700 : 400, color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap', transition: 'color 0.2s, font-weight 0.2s' }}>{lastName}</span>
-              );
-            })()}
-            {currentTournament && (
-              <div className="sfgl-tournament-desktop" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
-                <span>⛳</span> {currentTournament.name}
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {currentTournament && (
-              <div className="sfgl-tournament-mobile" style={{ display: "none", alignItems: "center", gap: 6, fontSize: fontSize.md, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", fontWeight: 400, letterSpacing: 0.5 }}>
-                <span>⛳</span> {currentTournament.name}
-              </div>
-            )}
-            {isSyncing && (
-              <span style={{ fontSize: fontSize.sm, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="sfgl-text-pulse">
-                Saving…
-              </span>
-            )}
-          </div>
-        </div>
 
         {/* Nav moved to fixed bottom bar (see below the <main> element). */}
       </div>{/* end sticky shell */}
