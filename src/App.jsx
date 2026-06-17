@@ -561,11 +561,26 @@ const FantasyGolfLeague = () => {
               {/* Right side: user + login/logout */}
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {loggedInUser && (() => {
+                  // Resolve the display name LIVE from the logged-in team id
+                  // (loggedInTeamId) instead of the loggedInUser string that
+                  // was captured at login / session-restore. loggedInTeamId is
+                  // the immutable identity; the owner string can differ across
+                  // data sources (the Firebase `teams` collection, the
+                  // `sfgl_data/fantasy-golf-teams` mirror, or a stale cached
+                  // bundle), and a value frozen at restore could therefore show
+                  // a DIFFERENT manager's name. Reading owner by id on every
+                  // render makes the name self-correct and can never freeze a
+                  // stale value. Falls back to loggedInUser when the team isn't
+                  // resolvable yet, so it never renders worse than before.
+                  const liveTeam = loggedInTeamId
+                    ? resolvedTeams.find(t => t.id === loggedInTeamId)
+                    : null;
+                  const displayName = (liveTeam && (liveTeam.owner || liveTeam.name)) || loggedInUser;
                   // Last name only — matches the visual weight of "2026" on
                   // the left side of the header. Splits on whitespace and
                   // takes the final token; works for "Aaron Jensen" →
                   // "Jensen" and for single-word usernames.
-                  const lastName = String(loggedInUser).trim().split(/\s+/).pop();
+                  const lastName = String(displayName).trim().split(/\s+/).pop();
                   // 2026 styling — used for the button so the layout doesn't
                   // shift when commish mode flips on/off.
                   const baseNameStyle = {
