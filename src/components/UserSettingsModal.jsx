@@ -26,6 +26,58 @@ import {
   getEffectivePrefs,
 } from '../api/pushNotifications';
 
+// Reusable iOS-style toggle pill (visual only — the row button handles clicks).
+const Toggle = ({ on, accent = 'rgba(80,195,120,0.95)', disabled = false }) => (
+  <div
+    aria-hidden="true"
+    style={{
+      position: 'relative',
+      width: 46, height: 28, borderRadius: 14,
+      background: on ? accent : 'rgba(255,255,255,0.13)',
+      boxShadow: on ? ('inset 0 0 0 1px ' + accent) : 'inset 0 0 0 1px rgba(255,255,255,0.16)',
+      opacity: disabled ? 0.45 : 1,
+      transition: 'background 0.22s, box-shadow 0.22s, opacity 0.2s',
+      flexShrink: 0,
+    }}
+  >
+    <div style={{
+      position: 'absolute', top: 2, left: 2,
+      width: 24, height: 24, borderRadius: '50%',
+      background: '#fff',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+      transform: on ? 'translateX(18px)' : 'translateX(0)',
+      transition: 'transform 0.22s cubic-bezier(0.32,0.72,0,1)',
+    }} />
+  </div>
+);
+
+const GROUP_CARD = {
+  background: 'rgba(255,255,255,0.035)',
+  border: '1px solid rgba(255,255,255,0.06)',
+  borderRadius: 14,
+  overflow: 'hidden',
+};
+const GROUP_LABEL = {
+  fontFamily: fonts.sans,
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '1.5px',
+  textTransform: 'uppercase',
+  color: colors.textMuted,
+};
+const ROW_BASE = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  width: '100%',
+  padding: '14px 16px',
+  background: 'transparent',
+  border: 'none',
+  textAlign: 'left',
+  fontFamily: fonts.sans,
+  cursor: 'pointer',
+};
+
 export const UserSettingsModal = ({
   isOpen,
   onClose,
@@ -200,55 +252,64 @@ export const UserSettingsModal = ({
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0,
-        background: 'rgba(5,10,25,0.85)', backdropFilter: 'blur(4px)',
+        background: 'rgba(4,9,22,0.86)',
+        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
         display: 'flex',
         alignItems: isMobile ? 'flex-end' : 'center',
         justifyContent: 'center',
         padding: isMobile ? 0 : 16,
         zIndex: 60,
+        animation: 'sfglSheetFade 0.2s ease',
       }}
     >
+      <style>{`@keyframes sfglSheetFade{from{opacity:0}to{opacity:1}}@keyframes sfglSheetUp{from{transform:translateY(26px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          background: '#0f1d35',
-          border: `1px solid ${colors.borderSubtle}`,
-          borderRadius: isMobile ? '12px 12px 0 0' : 8,
-          width: '100%', maxWidth: isMobile ? '100%' : 420,
-          maxHeight: isMobile ? '85vh' : '82vh',
+          background: 'linear-gradient(180deg, #14233f 0%, #0f1b31 100%)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderRadius: isMobile ? '22px 22px 0 0' : 18,
+          width: '100%', maxWidth: isMobile ? '100%' : 440,
+          maxHeight: isMobile ? '90vh' : '84vh',
           display: 'flex', flexDirection: 'column',
           overflow: 'hidden',
+          boxShadow: '0 -8px 40px rgba(0,0,0,0.5)',
+          paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0,
+          animation: 'sfglSheetUp 0.3s cubic-bezier(0.32,0.72,0,1)',
         }}
       >
-        {/* ── Header ── */}
+        {isMobile && (
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, flexShrink: 0 }}>
+            <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.18)' }} />
+          </div>
+        )}
+
         <div style={{
-          padding: '14px 18px',
-          borderBottom: `1px solid ${colors.borderSubtle}`,
+          padding: isMobile ? '12px 20px 14px' : '18px 20px 14px',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          flexShrink: 0, gap: 10,
+          gap: 12, flexShrink: 0,
         }}>
           <div style={{ minWidth: 0 }}>
-            <h2 style={{
-              fontFamily: fonts.sans, fontSize: 14, fontWeight: 600,
-              color: colors.textPrimary, margin: 0, letterSpacing: '0.5px',
+            <div style={{
+              fontFamily: fonts.sans, fontSize: 19, fontWeight: 600,
+              color: colors.textPrimary, letterSpacing: '0.2px',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>
               {loggedInUser || 'Account'}
-            </h2>
+            </div>
             {userTeam && (
-              <p style={{
-                fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
-                margin: '2px 0 0', letterSpacing: '0.3px',
-              }}>
+              <div style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textMuted, marginTop: 2 }}>
                 {userTeam.name}
-              </p>
+              </div>
             )}
           </div>
           <button
             onClick={onClose}
             aria-label="Close"
             style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: colors.textSecondary, padding: 4,
+              flexShrink: 0, width: 34, height: 34, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer',
+              color: colors.textSecondary,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >
@@ -256,402 +317,127 @@ export const UserSettingsModal = ({
           </button>
         </div>
 
-        {/* ── Body ── */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '4px 20px 20px', WebkitOverflowScrolling: 'touch' }}>
 
-          {/* Commish mode toggle — only for tagged commissioners. Same
-              pill-toggle shape as the "Notifications on this device" row
-              below; yellow accent (commish color) instead of green. */}
           {taggedCommissioner && (
-            <div style={{ marginBottom: 18 }}>
-              <div style={{
-                fontFamily: fonts.sans,
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '1.8px',
-                textTransform: 'uppercase',
-                color: colors.textMuted,
-                marginBottom: 8,
-              }}>
-                Commissioner
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isCommissioner}
-                aria-label={`Commissioner mode: ${isCommissioner ? 'on' : 'off'}`}
-                onClick={handleCommishToggle}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '10px 12px',
-                  background: isCommissioner
-                    ? 'rgba(245,197,24,0.08)'
-                    : 'rgba(255,255,255,0.02)',
-                  border: `1px solid ${isCommissioner
-                    ? 'rgba(245,197,24,0.4)'
-                    : colors.borderSubtle}`,
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  transition: 'background 0.15s, border-color 0.15s',
-                  textAlign: 'left',
-                  width: '100%',
-                  fontFamily: fonts.sans,
-                }}
-              >
-                <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>👑</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontFamily: fonts.sans,
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: isCommissioner ? 'rgba(245,197,24,0.95)' : colors.textPrimary,
-                  }}>
-                    Commissioner Mode
-                  </div>
-                  <div style={{
-                    fontFamily: fonts.sans,
-                    fontSize: 11,
-                    color: colors.textMuted,
-                    marginTop: 1,
-                  }}>
-                    {isCommissioner
-                      ? 'Admin tools and Commish tab visible'
-                      : 'Access admin tools and Commish tab'}
-                  </div>
-                </div>
-                {/* Bright yellow toggle pill */}
-                <div
-                  aria-hidden="true"
-                  style={{
-                    position: 'relative',
-                    width: 36,
-                    height: 20,
-                    borderRadius: 10,
-                    background: isCommissioner
-                      ? 'rgba(255,215,0,0.95)'
-                      : 'rgba(255,255,255,0.12)',
-                    border: `1px solid ${isCommissioner
-                      ? 'rgba(255,215,0,1)'
-                      : 'rgba(255,255,255,0.18)'}`,
-                    boxShadow: isCommissioner
-                      ? '0 0 8px rgba(255,215,0,0.4)'
-                      : 'none',
-                    transition: 'background 0.18s, border-color 0.18s, box-shadow 0.18s',
-                    flexShrink: 0,
-                  }}
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ ...GROUP_LABEL, marginBottom: 10 }}>Commissioner</div>
+              <div style={GROUP_CARD}>
+                <button
+                  type="button" role="switch" aria-checked={isCommissioner}
+                  aria-label={`Commissioner mode: ${isCommissioner ? 'on' : 'off'}`}
+                  onClick={handleCommishToggle}
+                  style={ROW_BASE}
                 >
-                  <div style={{
-                    position: 'absolute',
-                    top: 2,
-                    left: 2,
-                    width: 14,
-                    height: 14,
-                    borderRadius: '50%',
-                    background: '#fff',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                    transform: isCommissioner ? 'translateX(16px)' : 'translateX(0)',
-                    transition: 'transform 0.18s ease',
-                  }} />
-                </div>
-              </button>
+                  <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>👑</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: isCommissioner ? 'rgba(245,197,24,0.95)' : colors.textPrimary }}>
+                      Commissioner Mode
+                    </div>
+                    <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}>
+                      {isCommissioner ? 'Admin tools and Commish tab visible' : 'Access admin tools and Commish tab'}
+                    </div>
+                  </div>
+                  <Toggle on={isCommissioner} accent="rgba(255,215,0,0.95)" />
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Push notifications — collapsible section. Header acts as the
-              toggle. Status pill on the right shows current state at a
-              glance even when collapsed (green dot = subscribed, etc) so
-              users don't need to expand just to check their state. */}
-          <div style={{ marginBottom: 18 }}>
+          <div style={{ marginBottom: 22 }}>
             <button
               onClick={toggleNotifsExpanded}
               aria-expanded={notifsExpanded}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                width: '100%',
-                background: 'transparent',
-                border: 'none',
-                padding: '4px 0',
-                marginBottom: notifsExpanded ? 8 : 0,
-                cursor: 'pointer',
-                textAlign: 'left',
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                background: 'transparent', border: 'none', padding: '2px 0 10px',
+                cursor: 'pointer', textAlign: 'left',
               }}
             >
+              <span style={GROUP_LABEL}>Notifications</span>
               <span style={{
-                fontFamily: fonts.sans,
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '1.8px',
-                textTransform: 'uppercase',
-                color: colors.textMuted,
-              }}>
-                Notifications
-              </span>
-              {/* Compact status dot — visible even when section is collapsed
-                  so users can see their subscription state at a glance */}
-              <span style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: !pushSupported
-                  ? colors.textMuted
-                  : pushSubscribed
-                    ? colors.earningsGreen
-                    : pushPermission === 'denied'
-                      ? colors.danger
-                      : colors.textMuted,
-                opacity: 0.85,
+                width: 7, height: 7, borderRadius: '50%',
+                background: !pushSupported ? colors.textMuted : pushSubscribed ? colors.earningsGreen : pushPermission === 'denied' ? colors.danger : colors.textMuted,
                 flexShrink: 0,
               }} />
               <span style={{ flex: 1 }} />
               <span style={{
-                fontFamily: fonts.sans,
-                fontSize: 11,
-                color: colors.textMuted,
+                fontSize: 12, color: colors.textMuted,
                 transform: notifsExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-                transition: 'transform 0.15s',
-                display: 'inline-block',
-                lineHeight: 1,
+                transition: 'transform 0.18s', display: 'inline-block', lineHeight: 1,
               }}>▼</span>
             </button>
 
             {notifsExpanded && (
               <>
-                {/* Master device toggle — iOS Settings pattern. One row owns
-                    everything: status dot, label, and the toggle pill. The
-                    pill drives subscribe/unsubscribe; status detail surfaces
-                    in the secondary label below when relevant.
-                      • not subscribed + supported + not denied → toggle off, tappable
-                      • subscribed → toggle on, tappable (turns it off)
-                      • not supported OR permission denied → toggle off, disabled
-                      • mid-subscribe/unsubscribe → toggle stays in current
-                        position, disabled, "…" suffix on the label */}
                 {(() => {
                   const isOn = pushSubscribed;
-                  const canToggle = pushSupported
-                    && pushPermission !== 'denied'
-                    && !pushBusy
-                    && !!userTeam;
-                  const dotColor = !pushSupported
-                    ? colors.textMuted
-                    : pushSubscribed
-                      ? colors.earningsGreen
-                      : pushPermission === 'denied'
-                        ? colors.danger
-                        : colors.textMuted;
-                  // Secondary label gives the state-specific detail under
-                  // the primary "Notifications on this device" line.
-                  const detail = !pushSupported
-                    ? 'Not supported in this browser'
-                    : pushPermission === 'denied'
-                      ? 'Blocked — enable in browser settings'
-                      : pushBusy
-                        ? (pushSubscribed ? 'Turning off…' : 'Turning on…')
-                        : pushSubscribed
-                          ? 'On'
-                          : 'Off';
+                  const canToggle = pushSupported && pushPermission !== 'denied' && !pushBusy && !!userTeam;
+                  const dotColor = !pushSupported ? colors.textMuted : pushSubscribed ? colors.earningsGreen : pushPermission === 'denied' ? colors.danger : colors.textMuted;
+                  const detail = !pushSupported ? 'Not supported in this browser' : pushPermission === 'denied' ? 'Blocked — enable in browser settings' : pushBusy ? (pushSubscribed ? 'Turning off…' : 'Turning on…') : pushSubscribed ? 'On' : 'Off';
                   return (
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={isOn}
-                      aria-label={`Notifications on this device: ${isOn ? 'on' : 'off'}`}
-                      disabled={!canToggle}
-                      onClick={isOn ? handleUnsubscribe : handleSubscribe}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '10px 12px',
-                        background: 'rgba(255,255,255,0.02)',
-                        border: `1px solid ${colors.borderSubtle}`,
-                        borderRadius: 6,
-                        cursor: canToggle ? 'pointer' : 'not-allowed',
-                        opacity: canToggle ? 1 : 0.7,
-                        transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
-                        textAlign: 'left',
-                        width: '100%',
-                        fontFamily: fonts.sans,
-                      }}
-                    >
-                      <div style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        background: dotColor,
-                        flexShrink: 0,
-                      }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{
-                          fontFamily: fonts.sans,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: colors.textPrimary,
-                        }}>
-                          Notifications on this device
-                        </div>
-                        <div style={{
-                          fontFamily: fonts.sans,
-                          fontSize: 10.5,
-                          color: colors.textMuted,
-                          marginTop: 1,
-                        }}>
-                          {detail}
-                        </div>
-                      </div>
-                      {/* Toggle pill — same shape as per-event pills below */}
-                      <div
-                        aria-hidden="true"
-                        style={{
-                          position: 'relative',
-                          width: 36,
-                          height: 20,
-                          borderRadius: 10,
-                          background: isOn
-                            ? 'rgba(80,195,120,0.7)'
-                            : 'rgba(255,255,255,0.12)',
-                          border: `1px solid ${isOn
-                            ? 'rgba(80,195,120,0.85)'
-                            : 'rgba(255,255,255,0.18)'}`,
-                          transition: 'background 0.18s, border-color 0.18s',
-                          flexShrink: 0,
-                        }}
+                    <div style={GROUP_CARD}>
+                      <button
+                        type="button" role="switch" aria-checked={isOn}
+                        aria-label={`Notifications on this device: ${isOn ? 'on' : 'off'}`}
+                        disabled={!canToggle}
+                        onClick={isOn ? handleUnsubscribe : handleSubscribe}
+                        style={{ ...ROW_BASE, cursor: canToggle ? 'pointer' : 'not-allowed', opacity: canToggle ? 1 : 0.65 }}
                       >
-                        <div style={{
-                          position: 'absolute',
-                          top: 2,
-                          left: 2,
-                          width: 14,
-                          height: 14,
-                          borderRadius: '50%',
-                          background: '#fff',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                          transform: isOn ? 'translateX(16px)' : 'translateX(0)',
-                          transition: 'transform 0.18s ease',
-                        }} />
-                      </div>
-                    </button>
+                        <span style={{ width: 9, height: 9, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: colors.textPrimary }}>
+                            Notifications on this device
+                          </div>
+                          <div style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}>{detail}</div>
+                        </div>
+                        <Toggle on={isOn} disabled={!canToggle} />
+                      </button>
+                    </div>
                   );
                 })()}
 
-                {/* Help text for unsupported / denied states. Stays because
-                    a user hitting these edge cases needs the explanation —
-                    the master toggle alone won't tell them how to recover. */}
                 {!pushSupported && (
-                  <div style={{
-                    fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
-                    marginTop: 8, lineHeight: 1.5,
-                  }}>
-                    <strong>iPhone:</strong> add SFGL to your home screen (Safari → Share → Add to Home Screen), then open the app from the icon and revisit this screen.
+                  <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, marginTop: 10, lineHeight: 1.55 }}>
+                    <strong>iPhone:</strong> add SFGL to your home screen (Safari → Share → Add to Home Screen), then open from the icon and revisit this screen.
                     <br />
-                    <strong>Other browsers:</strong> notifications require a recent version of Chrome, Edge, or Firefox.
+                    <strong>Other browsers:</strong> notifications require a recent Chrome, Edge, or Firefox.
                   </div>
                 )}
                 {pushPermission === 'denied' && (
-                  <div style={{
-                    fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
-                    marginTop: 8, lineHeight: 1.5,
-                  }}>
-                    Notifications are blocked. Open your browser settings for sfglgolf.com and allow notifications, then return here.
+                  <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, marginTop: 10, lineHeight: 1.55 }}>
+                    Notifications are blocked. Open your browser settings for sfglgolf.com, allow notifications, then return here.
                   </div>
                 )}
 
-                {/* Per-event toggles (Wave J Round 6 batch 3) ─────
-                    Only batch 3 events are wired today; batch 4 will
-                    extend NOTIFICATION_EVENTS with more rows. Each toggle
-                    writes to team.notificationPrefs in Firestore so the
-                    server-side push triggers can honor the preference. */}
                 {pushSubscribed && userTeam && (
-                  <div style={{ marginTop: 14 }}>
-                    <div style={{
-                      fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
-                      marginBottom: 6, lineHeight: 1.5,
-                    }}>
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: 12.5, color: colors.textMuted, marginBottom: 8, lineHeight: 1.5 }}>
                       Choose which events trigger pushes on your subscribed devices.
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {NOTIFICATION_EVENTS.map(evt => {
+                    <div style={GROUP_CARD}>
+                      {NOTIFICATION_EVENTS.map((evt, idx) => {
                         const enabled = effectivePrefs[evt.key];
                         const saving = !!prefSaving[evt.key];
                         return (
                           <button
                             key={evt.key}
-                            type="button"
-                            role="switch"
-                            aria-checked={enabled}
+                            type="button" role="switch" aria-checked={enabled}
                             aria-label={`${evt.label}: ${enabled ? 'enabled' : 'disabled'}`}
                             disabled={saving}
                             onClick={() => handleToggleEventPref(evt.key)}
                             style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 10,
-                              padding: '10px 12px',
-                              background: enabled
-                                ? 'rgba(80,195,120,0.04)'
-                                : 'rgba(255,255,255,0.02)',
-                              border: `1px solid ${enabled
-                                ? 'rgba(80,195,120,0.2)'
-                                : colors.borderSubtle}`,
-                              borderRadius: 6,
+                              ...ROW_BASE,
+                              borderTop: idx === 0 ? 'none' : '1px solid rgba(255,255,255,0.06)',
                               cursor: saving ? 'wait' : 'pointer',
                               opacity: saving ? 0.5 : 1,
-                              transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
-                              textAlign: 'left',
-                              width: '100%',
-                              fontFamily: fonts.sans,
                             }}
                           >
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{
-                                fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
-                                color: colors.textPrimary,
-                              }}>
-                                {evt.label}
-                              </div>
-                              <div style={{
-                                fontFamily: fonts.sans, fontSize: 10.5, color: colors.textMuted,
-                                marginTop: 1,
-                              }}>
-                                {evt.desc}
-                              </div>
+                              <div style={{ fontSize: 14.5, fontWeight: 600, color: colors.textPrimary }}>{evt.label}</div>
+                              <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>{evt.desc}</div>
                             </div>
-                            {/* Toggle pill — iOS-style track + thumb. The button
-                                wrapping the whole row handles the click; this
-                                element is purely visual.
-                                  Track: 36×20 rounded pill with green-tinted bg when on
-                                  Thumb: 14×14 circle that slides left↔right via transform */}
-                            <div
-                              aria-hidden="true"
-                              style={{
-                                position: 'relative',
-                                width: 36,
-                                height: 20,
-                                borderRadius: 10,
-                                background: enabled
-                                  ? 'rgba(80,195,120,0.7)'
-                                  : 'rgba(255,255,255,0.12)',
-                                border: `1px solid ${enabled
-                                  ? 'rgba(80,195,120,0.85)'
-                                  : 'rgba(255,255,255,0.18)'}`,
-                                transition: 'background 0.18s, border-color 0.18s',
-                                flexShrink: 0,
-                              }}
-                            >
-                              <div style={{
-                                position: 'absolute',
-                                top: 2,
-                                left: 2,
-                                width: 14,
-                                height: 14,
-                                borderRadius: '50%',
-                                background: '#fff',
-                                boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                                transform: enabled ? 'translateX(16px)' : 'translateX(0)',
-                                transition: 'transform 0.18s ease',
-                              }} />
-                            </div>
+                            <Toggle on={enabled} />
                           </button>
                         );
                       })}
@@ -662,36 +448,24 @@ export const UserSettingsModal = ({
             )}
           </div>
 
-          {/* ── Sign out ───────────────────────────────────────────────
-              Gives every manager a clean way to end their session. Calls
-              the app-level handler (clears manager_team_id + auth state and
-              closes this modal). Lives at the bottom of the body so it never
-              competes with the primary toggles above. Red-tinted to read as
-              a terminal/destructive action without shouting. */}
           {onLogout && (
             <button
               onClick={onLogout}
               aria-label="Sign out"
               style={{
-                marginTop: 18,
-                width: '100%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                gap: 8,
-                padding: '12px 14px',
-                minHeight: 44,
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '14px', minHeight: 50,
                 background: 'rgba(200,70,70,0.10)',
-                border: '1px solid rgba(220,90,90,0.30)',
-                borderRadius: 8,
+                border: '1px solid rgba(220,90,90,0.28)',
+                borderRadius: 14,
                 color: 'rgba(240,140,140,0.95)',
-                fontFamily: fonts.sans, fontSize: 13, fontWeight: 600,
-                letterSpacing: '0.3px',
-                cursor: 'pointer',
-                transition: 'background 0.18s, border-color 0.18s',
+                fontFamily: fonts.sans, fontSize: 14.5, fontWeight: 600, letterSpacing: '0.2px',
+                cursor: 'pointer', transition: 'background 0.18s',
               }}
               onMouseEnter={e => { e.currentTarget.style.background = 'rgba(200,70,70,0.18)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'rgba(200,70,70,0.10)'; }}
             >
-              <LogOut style={{ width: 16, height: 16 }} />
+              <LogOut style={{ width: 17, height: 17 }} />
               Sign out
             </button>
           )}
