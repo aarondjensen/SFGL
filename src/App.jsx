@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
-import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, LogOut } from 'lucide-react';
+import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, LogOut, LogIn } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
@@ -568,43 +568,25 @@ const FantasyGolfLeague = () => {
         transition: 'background 0.25s, border-color 0.25s',
       }}>
 
-        {/* ── Header: year + name (left) · SFGL (center) · swing + tournament (right) ── */}
+        {/* ── Header: current tournament (left) · SFGL (center) · current swing (right) ── */}
         <header>
           <div style={{ maxWidth: 1100, margin: "0 auto", padding: "10px 16px 12px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)", alignItems: "center", gap: 12 }}>
 
-              {/* Left column: year (small) -> manager name */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, justifySelf: 'start', minWidth: 0 }}>
-                <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, fontWeight: 400, letterSpacing: 2, color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap' }}>2026</span>
-                {loggedInUser && (() => {
-                  const liveTeam = loggedInTeamId ? resolvedTeams.find(t => t.id === loggedInTeamId) : null;
-                  const displayName = (liveTeam && (liveTeam.owner || liveTeam.name)) || loggedInUser;
-                  const lastName = String(displayName).trim().split(/\s+/).pop();
-                  return (
-                    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, fontWeight: isCommissioner ? 700 : 500, letterSpacing: 1, color: isCommissioner ? 'rgba(245,197,24,0.95)' : 'rgba(255,255,255,0.75)', whiteSpace: 'nowrap', transition: 'color 0.2s, font-weight 0.2s' }}>{lastName}</span>
-                  );
-                })()}
-                {!loggedInUser && !isCommissioner && (
-                  <button onClick={() => setShowLoginModal(true)} aria-label="Open sign-in dialog" style={{
-                    fontFamily: "'Raleway', system-ui, sans-serif",
-                    fontSize: fontSize.sm, letterSpacing: 1.5, textTransform: 'uppercase',
-                    padding: '6px 14px',
-                    background: 'rgba(40,120,80,0.15)',
-                    border: '1px solid rgba(80,195,120,0.35)',
-                    borderRadius: 1,
-                    color: 'rgba(80,195,120,0.9)',
-                    cursor: 'pointer', transition: 'all 0.2s',
-                    alignSelf: 'flex-start',
-                  }}>
-                    Sign In
-                  </button>
+              {/* Left: current tournament (cell always rendered to hold the grid column) */}
+              <div style={{ justifySelf: 'start', minWidth: 0, maxWidth: '100%' }}>
+                {currentTournament && (
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: fontSize.md, fontWeight: 400, letterSpacing: 1, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", minWidth: 0, lineHeight: 1.3 }}>
+                    <span style={{ flexShrink: 0 }}>⛳</span>
+                    <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{currentTournament.name}</span>
+                  </div>
                 )}
               </div>
 
               {/* Center: SFGL wordmark (the anchor) */}
               <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 2, color: 'rgba(255,255,255,0.95)', whiteSpace: 'nowrap', userSelect: 'none', justifySelf: 'center' }}>SFGL</span>
 
-              {/* Right column: current swing -> current tournament */}
+              {/* Right: current swing */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, justifySelf: 'end', minWidth: 0, textAlign: 'right' }}>
                 {(() => {
                   const active = safeTournaments.find(t => t.playing);
@@ -613,12 +595,6 @@ const FantasyGolfLeague = () => {
                     <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, fontWeight: 500, letterSpacing: 1, whiteSpace: 'nowrap', color: getSwingColor(seg) }}>{seg}</span>
                   );
                 })()}
-                {currentTournament && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, fontWeight: 400, letterSpacing: 1, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", maxWidth: '100%', minWidth: 0 }}>
-                    <span>⛳</span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{currentTournament.name}</span>
-                  </div>
-                )}
                 {isSyncing && (
                   <span style={{ fontSize: fontSize.sm, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="sfgl-text-pulse">
                     Saving…
@@ -796,7 +772,6 @@ const FantasyGolfLeague = () => {
               </button>
             );
           })}
-          {loggedInUser && (
             <button
               className="sfgl-tab"
               onClick={() => setShowMoreMenu(v => !v)}
@@ -830,7 +805,6 @@ const FantasyGolfLeague = () => {
                 whiteSpace: 'nowrap',
               }}>More</span>
             </button>
-          )}
         </div>
       </nav>
 
@@ -860,6 +834,7 @@ const FantasyGolfLeague = () => {
               padding: 4,
             }}
           >
+            {loggedInUser && (
             <button
               role="menuitem"
               onClick={() => { setShowMoreMenu(false); setShowUserSettings(true); }}
@@ -868,6 +843,7 @@ const FantasyGolfLeague = () => {
               <Bell style={{ width: 18, height: 18, opacity: 0.85 }} />
               <span>Notifications</span>
             </button>
+            )}
 
             {taggedCommissioner && (
               <button
@@ -886,6 +862,7 @@ const FantasyGolfLeague = () => {
               </button>
             )}
 
+            {loggedInUser ? (
             <button
               role="menuitem"
               onClick={() => { setShowMoreMenu(false); handleLogout(); }}
@@ -894,6 +871,16 @@ const FantasyGolfLeague = () => {
               <LogOut style={{ width: 18, height: 18, opacity: 0.85 }} />
               <span>Sign Out</span>
             </button>
+            ) : (
+            <button
+              role="menuitem"
+              onClick={() => { setShowMoreMenu(false); setShowLoginModal(true); }}
+              style={{ ...MORE_MENU_ITEM_STYLE, color: 'rgba(80,195,120,0.95)' }}
+            >
+              <LogIn style={{ width: 18, height: 18, opacity: 0.85 }} />
+              <span>Sign In</span>
+            </button>
+            )}
           </div>
         </>
       )}
