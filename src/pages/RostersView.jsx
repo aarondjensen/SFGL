@@ -1013,7 +1013,7 @@ export const RostersView = ({
               {pickingBackup ? (
                 <>Pick a backup — <strong>tap any player below</strong> to designate them</>
               ) : (
-                <strong>{activeTournament?.isMajor ? 'Major Week' : activeTournament?.isSignature ? 'Signature Event' : 'Backup Spot'}</strong>
+                <><strong>{activeTournament?.isMajor ? 'Major week' : activeTournament?.isSignature ? 'Signature event' : 'Backup spot'}</strong> — pick a 6th player as backup in case a starter withdraws</>
               )}
             </span>
             {pickingBackup && (
@@ -1281,7 +1281,7 @@ export const RostersView = ({
                       ? (liveData.players.some(p => p.thru === 'F' || (!isNaN(parseInt(p.thru, 10)) && parseInt(p.thru, 10) >= 0)) ? 'Score' : 'Tee Time')
                       : Object.keys(teeTimeMap).length > 0 ? <>Tee Time{sortArrow('teeTime')}</> : 'Field'}
                   </th>
-                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap', ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
+                  <th scope="col" onClick={() => toggleSort('odds')} style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'right', whiteSpace: 'nowrap', paddingRight: isMobile ? 6 : 8, ...sortHeaderStyle('odds', 'rgba(255,255,255,0.85)') }}>
                     Odds{sortArrow('odds')}
                   </th>
                   <th scope="col" style={{ ...theme.tableHeaderCell, fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center', color: 'rgba(255,255,255,0.85)' }}>
@@ -1519,7 +1519,7 @@ export const RostersView = ({
 
                       // Col 2: Odds
                       const col2 = (
-                        <td style={{ padding: '7px 4px', textAlign: 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (playerOdds ? colors.textPrimary : colors.textMuted) }}>
+                        <td style={{ padding: '7px 4px', textAlign: 'right', paddingRight: isMobile ? 6 : 8, fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (playerOdds ? colors.textPrimary : colors.textMuted) }}>
                           {playerOdds || <span style={{ opacity: 0.25 }}>—</span>}
                         </td>
                       );

@@ -692,8 +692,8 @@ const FantasyGolfLeague = () => {
     </PullToRefresh>
 
       {/* ── Bottom Navigation (fixed) ──
-          Mobile-first: nav lives at the bottom of the viewport. Generous
-          paddingBottom (24px base + safe-area-inset) keeps tap targets well
+          Mobile-first: nav lives at the bottom of the viewport. A small
+          paddingBottom (8px base + safe-area-inset) keeps tap targets well
           clear of the iOS home indicator / Siri activation zone, which on
           iPhone X+ extends ~34px up from the screen edge.
 
@@ -717,7 +717,7 @@ const FantasyGolfLeague = () => {
           WebkitBackdropFilter: 'blur(12px)',
           borderTop: '1px solid rgba(180,160,100,0.15)',
           paddingTop: 6,
-          paddingBottom: 'calc(24px + env(safe-area-inset-bottom))',
+          paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
         }}
       >
         <div
