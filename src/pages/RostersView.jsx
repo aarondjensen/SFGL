@@ -914,7 +914,7 @@ export const RostersView = ({
         boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
       }}>
         {/* Row 1: Team selector + Add/Search button */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, overflow: 'visible' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, overflow: 'visible', background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)', margin: '-12px -12px 10px', padding: '8px 14px', borderTopLeftRadius: 3, borderTopRightRadius: 3, borderBottom: theme.cardHeader.borderBottom }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
             <TeamDropdown
               teams={teams}
