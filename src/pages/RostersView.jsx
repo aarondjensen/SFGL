@@ -992,52 +992,6 @@ export const RostersView = ({
           })()}
           </div>
 
-        {/* Backup banner — appears above the lineup slots so the UX is
-            self-explanatory the first time a manager sees it. Shown whenever
-            the commish has enabled the backup spot for this event type. */}
-        {backupAllowed && canEditLineup && (
-          <div style={{
-            padding: '6px 12px',
-            background: pickingBackup ? 'rgba(245,197,24,0.14)' : 'rgba(245,197,24,0.06)',
-            borderTop: `1px solid rgba(245,197,24,${pickingBackup ? 0.5 : 0.2})`,
-            display: 'flex', alignItems: 'center', gap: 8,
-            transition: 'all 0.18s',
-          }}>
-            <span style={{ fontSize: fontSize.sm }}>🏆</span>
-            <span style={{
-              fontFamily: fonts.sans, fontSize: fontSize.xs, letterSpacing: 0.5,
-              color: pickingBackup ? 'rgba(245,197,24,1)' : 'rgba(245,197,24,0.85)',
-              flex: 1,
-              fontWeight: pickingBackup ? 700 : 400,
-            }}>
-              {pickingBackup ? (
-                <>Pick a backup — <strong>tap any player below</strong> to designate them</>
-              ) : (
-                <strong>{activeTournament?.isMajor ? 'Major Week' : activeTournament?.isSignature ? 'Signature Event' : 'Backup Spot'}</strong>
-              )}
-            </span>
-            {pickingBackup && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setPickingBackup(false); }}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid rgba(245,197,24,0.5)',
-                  borderRadius: 2,
-                  color: 'rgba(245,197,24,0.95)',
-                  fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 600,
-                  letterSpacing: 0.5, textTransform: 'uppercase',
-                  padding: '3px 8px',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
-                aria-label="Cancel backup selection"
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        )}
-
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders.
             When the backup spot is enabled for this event, render a 6th "Backup"
             slot afterward, visually
@@ -1317,7 +1271,7 @@ export const RostersView = ({
 
                 return (
                   <tr key={player.name}
-                    style={{ borderBottom: `1px solid ${colors.borderSubtle}`, background: 'transparent', transition: 'background 0.15s' }}
+                    style={{ borderBottom: `1px solid ${colors.borderSubtle}`, background: 'transparent', transition: 'background 0.15s, opacity 0.18s', opacity: pickingBackup && isInLineup ? 0.3 : 1 }}
                     onMouseEnter={e => { if (!isBenched) e.currentTarget.style.background = colors.rowHover; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                   >
@@ -1356,7 +1310,7 @@ export const RostersView = ({
                             alt=""
                             style={{
                               width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
-                              opacity: isBenched ? 0.5 : isEditing && !isInLineup && !canAddToLineup ? 0.25 : isEditing && !isInLineup ? 0.55 : 1,
+                              opacity: pickingBackup ? 1 : isBenched ? 0.5 : isEditing && !isInLineup && !canAddToLineup ? 0.25 : isEditing && !isInLineup ? 0.55 : 1,
                               border: isEditing
                                 ? isInLineup
                                   ? `3px solid ${playerBorderColor(player)}`
