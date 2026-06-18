@@ -309,31 +309,6 @@ export const UserSettingsModal = ({
         <div style={{ flex: 1, overflowY: 'auto', padding: '4px 20px 20px', WebkitOverflowScrolling: 'touch' }}>
 
           <div style={{ marginBottom: 14 }}>
-            <button
-              onClick={toggleNotifsExpanded}
-              aria-expanded={notifsExpanded}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                background: 'transparent', border: 'none', padding: '2px 0 10px',
-                cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              <span style={GROUP_LABEL}>Notifications</span>
-              <span style={{
-                width: 7, height: 7, borderRadius: '50%',
-                background: !pushSupported ? colors.textMuted : pushSubscribed ? colors.earningsGreen : pushPermission === 'denied' ? colors.danger : colors.textMuted,
-                flexShrink: 0,
-              }} />
-              <span style={{ flex: 1 }} />
-              <span style={{
-                fontSize: 12, color: colors.textMuted,
-                transform: notifsExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-                transition: 'transform 0.18s', display: 'inline-block', lineHeight: 1,
-              }}>▼</span>
-            </button>
-
-            {notifsExpanded && (
-              <>
                 {(() => {
                   const isOn = pushSubscribed;
                   const canToggle = pushSupported && pushPermission !== 'denied' && !pushBusy && !!userTeam;
@@ -405,8 +380,6 @@ export const UserSettingsModal = ({
                     </div>
                   </div>
                 )}
-              </>
-            )}
           </div>
 
           {onLogout && (

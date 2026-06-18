@@ -570,7 +570,7 @@ const FantasyGolfLeague = () => {
 
         {/* ── Header: current tournament (left) · SFGL (center) · current swing (right) ── */}
         <header>
-          <div style={{ maxWidth: 1100, margin: "0 auto", padding: "10px 16px 12px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 16px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)", alignItems: "center", gap: 12 }}>
 
               {/* Left: current tournament (cell always rendered to hold the grid column) */}
@@ -745,16 +745,16 @@ const FantasyGolfLeague = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 3,
-                  // Active state is colour-only — icon + label both turn
-                  // gold (#f5c518). No border, no background fill, no
-                  // layout shift. Matches Option 5 from the design preview.
+                  // Active state is colour-only — the active tab turns bright
+                  // bold white; the commish (admin) tab turns gold when active.
+                  // No border, no background fill, no layout shift.
                   border: 'none',
                   padding: '6px 4px 8px',
                   minHeight: 48,
                   background: 'transparent',
                   borderRadius: 6,
                   color: isActive
-                    ? '#f5c518'
+                    ? (tab.id === 'admin' ? '#f5c518' : 'rgba(255,255,255,0.98)')
                     : 'rgba(255,255,255,0.55)',
                   cursor: 'pointer',
                   transition: 'color 0.18s',
@@ -765,7 +765,7 @@ const FantasyGolfLeague = () => {
                 <span style={{
                   fontFamily: "'Raleway', system-ui, sans-serif",
                   fontSize: fontSize.xs,
-                  fontWeight: 500,
+                  fontWeight: isActive ? 700 : 500,
                   letterSpacing: 0.5,
                   whiteSpace: 'nowrap',
                 }}>{tab.label}</span>
@@ -790,7 +790,7 @@ const FantasyGolfLeague = () => {
                 minHeight: 48,
                 background: 'transparent',
                 borderRadius: 6,
-                color: showMoreMenu ? '#f5c518' : 'rgba(255,255,255,0.55)',
+                color: showMoreMenu ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.55)',
                 cursor: 'pointer',
                 transition: 'color 0.18s',
                 outline: 'none',
