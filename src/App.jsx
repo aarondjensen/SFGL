@@ -584,7 +584,7 @@ const FantasyGolfLeague = () => {
               </div>
 
               {/* Center: SFGL wordmark (the anchor) */}
-              <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 2, color: 'rgba(255,255,255,0.95)', whiteSpace: 'nowrap', userSelect: 'none', justifySelf: 'center' }}>SFGL</span>
+              <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: 'rgba(255,255,255,0.93)', whiteSpace: 'nowrap', userSelect: 'none', justifySelf: 'center' }}>SFGL</span>
 
               {/* Right: current swing */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, justifySelf: 'end', minWidth: 0, textAlign: 'right' }}>
