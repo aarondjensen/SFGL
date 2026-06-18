@@ -71,7 +71,7 @@ export const DialogProvider = ({ children }) => {
         const containerStyle = stackPos === 'top'
           ? {
               position: 'fixed',
-              top: 'calc(80px + env(safe-area-inset-top))',  // clear sticky header
+              top: 'calc(8px + env(safe-area-inset-top))',  // overlay the header (toast zIndex 100 > header 50)
               left: '50%', transform: 'translateX(-50%)',
               zIndex: 100, display: 'flex', flexDirection: 'column', gap: 8,
               pointerEvents: 'none',
