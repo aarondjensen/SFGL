@@ -898,14 +898,20 @@ export const RostersView = ({
 
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'hidden' }}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'clip' }}
       onClick={() => { if (lineupMode) { setLineupMode(false); setPickingBackup(false); } }}
     >      {/* ── Team selector + lineup headshots ── */}
       <div style={{
         ...theme.card,
         padding: 12,
-        background: 'linear-gradient(135deg, rgba(18,46,82,0.4) 0%, rgba(255,255,255,0.02) 100%)',
+        // opaque base (#111d2e page bg) layered under the translucent gradient so
+        // the roster table scrolls UNDER this card, not THROUGH it, when sticky
+        background: 'linear-gradient(135deg, rgba(18,46,82,0.4) 0%, rgba(255,255,255,0.02) 100%), #111d2e',
         overflow: 'visible',
+        position: 'sticky',
+        top: 'var(--sfgl-header-h, 88px)',  // pin flush beneath the sticky app header
+        zIndex: 40,                          // below header (50), above scrolling table
+        boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
       }}>
         {/* Row 1: Team selector + Add/Search button */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, overflow: 'visible' }}>
@@ -1193,10 +1199,10 @@ export const RostersView = ({
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }} role="table">
             <colgroup>
-              <col style={{ width: isMobile ? '52%' : '56%' }} />
-              <col style={{ width: isMobile ? '14%' : '11%' }} />
-              <col style={{ width: isMobile ? '14%' : '11%' }} />
-              <col style={{ width: isMobile ? '20%' : '22%' }} />
+              <col style={{ width: isMobile ? '49%' : '54%' }} />{/* Player */}
+              <col style={{ width: isMobile ? '12%' : '11%' }} />{/* Tee Time / OWGR */}
+              <col style={{ width: isMobile ? '19%' : '15%' }} />{/* Odds / Cuts — widened to push Tee Time left, opening a gap before Odds */}
+              <col style={{ width: isMobile ? '20%' : '20%' }} />{/* Pos / Earnings */}
             </colgroup>
             <thead>
               {/* Row 1: desktop only — toggles in thead */}
