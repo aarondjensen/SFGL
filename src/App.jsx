@@ -422,6 +422,22 @@ const FantasyGolfLeague = () => {
   // re-fetched (they're hard-coded fallbacks).
   const fetchAttemptsRef = useRef(new Map()); // name → timestamp of last attempt
   const HEADSHOT_RETRY_MS = 60 * 1000;
+
+  // ── Publish sticky-header height as --sfgl-header-h ──────────────────
+  // Lets sticky descendants (e.g. the RostersView lineup card) pin flush
+  // beneath the header even as it grows/shrinks (long tournament names wrap).
+  const headerRef = useRef(null);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const publish = () => {
+      document.documentElement.style.setProperty('--sfgl-header-h', `${el.offsetHeight}px`);
+    };
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   useEffect(() => {
     if (loading) return;
     const allRostered = [...new Set(
@@ -555,7 +571,7 @@ const FantasyGolfLeague = () => {
       {/* ── Sticky shell: header + banner + nav ──
           Background tints gold when commish mode is active — a full-header
           signal that complements the gold name button on the right side. */}
-      <div style={{
+      <div ref={headerRef} style={{
         position: 'sticky', top: 0, zIndex: 50,
         paddingTop: 'env(safe-area-inset-top)',
         background: isCommissioner
