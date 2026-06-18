@@ -181,6 +181,9 @@ const sectionTitleStyle = {
   letterSpacing: '2px',
   textTransform: 'uppercase',
   color: colors.textPrimary,
+  minHeight: 28,            // match StandingsView 'Season' header row height
+  display: 'inline-flex',
+  alignItems: 'center',
 };
 
 // Wave 8: local swingColor() removed. We now use getSegmentForTournament(t)
