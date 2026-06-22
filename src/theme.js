@@ -144,6 +144,34 @@ export const theme = {
     gap: 10,
   },
 
+  // ── Section header bar + title — single source of truth ───────────────
+  // The white-gradient "SEASON"-style header shared by Standings, Rosters,
+  // Transactions, and Tournaments. Bar + title both live here so one edit
+  // (e.g. font size) cascades to every tab. Views spread these and override
+  // only what's local (swing-accent tint, full-bleed margins, natural-case
+  // team name). No justifyContent here — Tournaments puts an icon beside its
+  // title; the space-between tabs add it themselves.
+  sectionHeaderBar: {
+    padding: '8px 14px',
+    background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
+    borderBottom: `1px solid ${colors.borderSubtle}`,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  sectionTitle: {
+    fontFamily: fonts.sans,
+    fontSize: fontSize.lg,
+    fontWeight: 700,
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+    color: colors.textPrimary,
+    minHeight: 28,
+    display: 'inline-flex',
+    alignItems: 'center',
+  },
+
   cardBody: {
     padding: '16px 20px',
   },

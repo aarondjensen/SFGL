@@ -93,10 +93,10 @@ const TeamDropdown = ({ teams, value, onChange }) => {
       <button
         onClick={() => setOpen(o => !o)}
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
-          fontFamily: fonts.sans, fontSize: fontSize.lg, fontWeight: 700, letterSpacing: '0.4px',
-          color: '#fff', textAlign: 'left', whiteSpace: 'nowrap', maxWidth: '100%',
+          ...theme.sectionTitle,
+          textTransform: 'none', letterSpacing: '0.4px',
+          gap: 6, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+          textAlign: 'left', whiteSpace: 'nowrap', maxWidth: '100%',
         }}
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -912,7 +912,7 @@ export const RostersView = ({
         boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
       }}>
         {/* Row 1: Team selector + Add/Search button */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, overflow: 'visible', background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)', margin: '-12px -12px 10px', padding: '8px 14px', borderTopLeftRadius: 3, borderTopRightRadius: 3, borderBottom: theme.cardHeader.borderBottom }}>
+        <div style={{ ...theme.sectionHeaderBar, justifyContent: 'space-between', overflow: 'visible', margin: '-12px -12px 10px', borderTopLeftRadius: 3, borderTopRightRadius: 3 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
             <TeamDropdown
               teams={teams}
