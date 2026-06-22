@@ -437,7 +437,7 @@ const FantasyGolfLeague = () => {
     const ro = new ResizeObserver(publish);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [loading]);
   useEffect(() => {
     if (loading) return;
     const allRostered = [...new Set(
