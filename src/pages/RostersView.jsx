@@ -749,6 +749,15 @@ export const RostersView = ({
     setLiveData(null);
 
     if (!activeTournament) return;
+
+    // Once results are processed, the event is finished for display purposes.
+    // pgatour.com keeps serving the completed leaderboard until the NEXT event
+    // begins, so without this gate the just-processed event's Score/Pos would
+    // linger in the table. Suppress live data the moment processedAt is set so
+    // the table falls back to Tee Time + Odds only — the correct state between
+    // results processing and the next tournament's start.
+    if (activeTournament.processedAt) { setLiveData(null); return; }
+
     let cancelled = false;
     let interval = null;
 
