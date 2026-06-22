@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../utils/index.js';
+import { getTransactionFee } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
@@ -235,7 +236,7 @@ export const AddDropPlayerModal = ({
   );
   const needsDrop    = rosterFull && selectedPlayerToAdd;
   const canConfirm   = selectedPlayerToAdd && (!rosterFull || selectedPlayerToDrop);
-  const fee          = isWaiverMode ? TRANSACTION_FEE_WAIVER : TRANSACTION_FEE_FREE_AGENT;
+  const fee          = getTransactionFee(isWaiverMode ? 'waiver' : 'fa', leagueSettings);
 
   // ── Confirm & persist ──────────────────────────────────────────────────────
   const handleConfirm = async () => {

@@ -306,6 +306,21 @@ export const requestPermissionAndSubscribe = async (teamId) => {
     return { ok: false, reason: 'token_failed' };
   }
 
+  // Collapse STALE tokens this same device previously registered for this
+  // team. FCM rotates tokens over time; the old doc (id = old token) lingers
+  // and stays briefly deliverable, firing a DUPLICATE push to the one device.
+  // Match "same device" via the stored userAgent. Single-field teamId query
+  // (no composite index needed) + client-side UA filter. Best-effort.
+  try {
+    const ua = navigator.userAgent || 'unknown';
+    const existing = await getDocs(query(collection(db, 'pushTokens'), where('teamId', '==', teamId)));
+    await Promise.all(existing.docs
+      .filter(d => d.id !== token && (d.data()?.userAgent || 'unknown') === ua)
+      .map(d => deleteDoc(d.ref).catch(() => {})));
+  } catch (err) {
+    console.warn('[push] stale-token cleanup skipped:', err.message);
+  }
+
   // Store in Firestore. Doc ID = token (so re-subscribing from the same
   // device naturally overwrites, no duplicate-prevention logic needed).
   console.log('[push] step 5: Firestore write');

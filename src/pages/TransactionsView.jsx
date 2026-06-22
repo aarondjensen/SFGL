@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
+import { getTransactionFee } from '../utils/sharedHelpers';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
@@ -342,8 +343,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       // swing_winner uses tx.amount not tx.fee — don't count it in season/swing fees
       if (tx.type === 'swing_winner') return;
       if (tx.status === 'failed') return; // blocked waivers have no fee
-      if (fees[tx.team] && typeof tx.fee === 'number' && tx.fee > 0) {
-        fees[tx.team].seasonTotal += tx.fee;
+      // Effective fee: stored when present, else derived from type — so legacy
+      // rows saved $0 by the old FA type-string bug count correctly. Matches
+      // getSwingPot() so the panel total and swing pot agree.
+      const fee = (tx.fee || 0) > 0 ? tx.fee : getTransactionFee(tx.type, settings, tx.status);
+      if (fees[tx.team] && fee > 0) {
+        fees[tx.team].seasonTotal += fee;
         // Count toward current swing if the transaction's tournament is in this
         // swing — prefer the stable name (reorder-proof), fall back to the
         // legacy positional index, then to the segment tag for old records.
@@ -352,7 +357,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           : tx.tournamentIndex !== undefined
             ? currentSwingIndexes.has(tx.tournamentIndex)
             : tx.segment === currentSwing;
-        if (inCurrentSwing) fees[tx.team].swingTotal += tx.fee;
+        if (inCurrentSwing) fees[tx.team].swingTotal += fee;
       }
     });
     return Object.values(fees).sort((a, b) => b.seasonTotal - a.seasonTotal);
@@ -715,9 +720,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     ) : (
                       <span style={{
                         ...theme.statNum, fontSize: 13, fontWeight: 600,
-                        color: tx.status === 'failed' ? colors.textMuted : (tx.fee > 0 ? colors.earningsGreen : colors.textMuted),
+                        color: tx.status === 'failed' ? colors.textMuted : (((tx.fee || 0) > 0 ? tx.fee : getTransactionFee(tx.type, settings, tx.status)) > 0 ? colors.earningsGreen : colors.textMuted),
                       }}>
-                        {tx.status === 'failed' ? '—' : `$${tx.fee}`}
+                        {tx.status === 'failed' ? '—' : `$${(tx.fee || 0) > 0 ? tx.fee : getTransactionFee(tx.type, settings, tx.status)}`}
                       </span>
                     )}
 

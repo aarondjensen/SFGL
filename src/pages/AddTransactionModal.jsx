@@ -22,6 +22,7 @@ import { useDialog } from './DialogContext';
 import { useModalBehavior } from '../utils/modalUtils';
 import { sendCommishPush } from '../api/pushNotifications';
 import { getCurrentTournamentIndex } from '../utils/index.js';
+import { getTransactionFee } from '../utils/sharedHelpers';
 import { colors, fonts } from '../theme.js';
 import { M, disabledBtn } from './admin/adminStyles';
 import { LIV_GOLF_ROSTER } from '../constants';
@@ -194,15 +195,10 @@ export const AddTransactionModal = ({
     const tournamentIndex = parseInt(tourney);
     const isBlocked = type === 'waiver blocked';
 
-    // Wave J fix preserved: per-type fee logic mirroring AddDropPlayerModal.
-    const FEE_WAIVER = settings.feeWaiver ?? 2;
-    const FEE_FA     = settings.feeFA     ?? 1;
-    let txFee = 0;
-    if (!isBlocked) {
-      if (type === 'waiver')        txFee = FEE_WAIVER;
-      else if (type === 'free agent') txFee = FEE_FA;
-      // drop / mulligan / other types remain $0
-    }
+    // Fee via the shared resolver (sharedHelpers.getTransactionFee) — normalizes
+    // 'fa'/'free agent' in ONE place. This modal stores type 'fa', which the old
+    // 'free agent'-only check never matched, saving $0. Blocked claims owe $0.
+    const txFee = isBlocked ? 0 : getTransactionFee(type, settings);
 
     const newTx = {
       txId: `manual-${team}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -367,7 +363,7 @@ export const AddTransactionModal = ({
       && affectedTeam.id !== commishTeam.id;
 
     if (shouldPush) {
-      const typeLabel = type === 'free agent' ? 'free agent claim'
+      const typeLabel = (type === 'fa' || type === 'free agent') ? 'free agent claim'
                      : type === 'drop'        ? 'player drop'
                      : type === 'mulligan'    ? 'mulligan'
                      : type === 'waiver'      ? 'waiver claim'

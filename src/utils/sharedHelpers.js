@@ -135,6 +135,23 @@ export const getSwingLeader = (tournaments, segment) => {
   return top ? { teamId: top[0], earnings: top[1] } : null;
 };
 
+// ── Transaction fee — single source of truth ────────────────────────────
+// Resolves the fee a transaction OWES from its type (+ league settings) so no
+// caller hand-rolls per-type string checks. Those drifted: the free-agent type
+// is stored as BOTH 'fa' (AddTransactionModal) and 'free agent'
+// (AddDropPlayerModal), and a stale 'free agent'-only check in the former saved
+// $0 fees. Normalizing both spellings here kills that whole class of bug.
+// Failed/blocked claims and non-fee types (drop, mulligan, swing_winner) owe 0.
+//   feeWaiver default 2  ('waiver')
+//   feeFA     default 1  ('fa' | 'free agent')
+export const getTransactionFee = (type, settings, status) => {
+  if (status === 'failed') return 0;
+  const t = String(type || '').trim().toLowerCase();
+  if (t === 'waiver') return settings?.feeWaiver ?? 2;
+  if (t === 'fa' || t === 'free agent') return settings?.feeFA ?? 1;
+  return 0;
+};
+
 // Returns the swing-fee pot for a given segment from the transactions array.
 // Uses the same rules as the swing-winner award:
 //   • Skip swing_winner records themselves
@@ -155,7 +172,7 @@ export const getSwingLeader = (tournaments, segment) => {
 // different totals for the same swing. The completion gate is enforced
 // independently inside computeSwingAward (at lines 38-42), so dropping it
 // here doesn't break the award eligibility logic.
-export const getSwingPot = (transactions, tournaments, segment) => {
+export const getSwingPot = (transactions, tournaments, segment, settings) => {
   if (!segment) return 0;
   // Build the set of swing tournament indexes — all in-segment events,
   // regardless of completion. Exclude alternates to match the
@@ -178,14 +195,21 @@ export const getSwingPot = (transactions, tournaments, segment) => {
     if (tx.tournamentIndex !== undefined) return swingIndexes.has(tx.tournamentIndex);
     return tx.segment === segment;
   };
+  // Effective fee: trust a stored fee when present (preserves any custom
+  // amount), else derive from type — recovers legacy rows saved with fee 0 by
+  // the old FA type-string mismatch so they count toward the pot.
+  const effFee = (tx) => {
+    const stored = tx.fee || 0;
+    return stored > 0 ? stored : getTransactionFee(tx.type, settings, tx.status);
+  };
   return (transactions || [])
     .filter(tx => {
-      if ((tx.fee || 0) <= 0) return false;
       if (tx.status === 'failed') return false;
       if (tx.type === 'swing_winner') return false;
+      if (effFee(tx) <= 0) return false;
       return inSwing(tx);
     })
-    .reduce((sum, tx) => sum + tx.fee, 0);
+    .reduce((sum, tx) => sum + effFee(tx), 0);
 };
 
 // ── Effective roster ─────────────────────────────────────────────────────────
