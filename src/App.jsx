@@ -586,7 +586,7 @@ const FantasyGolfLeague = () => {
 
         {/* ── Header: current tournament (left) · SFGL (center) · current swing (right) ── */}
         <header>
-          <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 16px" }}>
+          <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 16px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)", alignItems: "center", gap: 12 }}>
 
               {/* Left: current tournament (cell always rendered to hold the grid column) */}
@@ -837,7 +837,7 @@ const FantasyGolfLeague = () => {
             style={{
               position: 'fixed',
               bottom: 'calc(76px + env(safe-area-inset-bottom))',
-              right: 8,
+              right: 'max(8px, calc((100vw - 600px) / 2 + 8px))',
               zIndex: 60,
               minWidth: 210,
               background: 'rgba(12, 24, 48, 0.98)',
