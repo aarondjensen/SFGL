@@ -153,9 +153,7 @@ const StandingsCard = ({
 
   // Primary cards get a slightly stronger gold border to read as "featured"
   // relative to the secondary swing card below.
-  const cardStyle = emphasis === 'primary'
-    ? { ...theme.card, border: '1px solid rgba(245,197,24,0.35)' }
-    : theme.card;
+  const cardStyle = theme.card;
 
   return (
     <div style={cardStyle}>

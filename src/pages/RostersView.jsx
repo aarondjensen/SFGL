@@ -102,7 +102,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {selected?.name ?? '—'}
         </span>
-        <span style={{ fontSize: 11, color: '#f5c518', opacity: 0.9, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 11, color: colors.textSecondary, opacity: 0.9, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
         <div style={{
@@ -946,7 +946,7 @@ export const RostersView = ({
               return (
                 <div style={{
                   display: 'flex', flexDirection: 'column', justifyContent: 'center',
-                  gap: 3, flexShrink: 0, height: 36,
+                  gap: 3, flexShrink: 0, height: 32,
                 }}>
                   {[
                     { label: 'Reg', used: regUsed },

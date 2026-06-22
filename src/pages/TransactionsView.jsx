@@ -590,7 +590,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         <div style={theme.card}>
           <div style={{ ...theme.sectionHeaderBar, justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <h2 style={{ ...theme.sectionTitle, margin: 0 }}>Transaction History</h2>
               {isCommissioner && (
                 <button
                   onClick={() => setShowAddTx(true)}

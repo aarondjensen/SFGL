@@ -153,6 +153,10 @@ export const theme = {
   // title; the space-between tabs add it themselves.
   sectionHeaderBar: {
     padding: '8px 14px',
+    // Standardized header-bar height across all views. 8px top/bottom padding
+    // (16px total) + a 32px min content area = a uniform 48px-tall gradient bar
+    // everywhere. RostersView's mulligan cluster is trimmed to 32 to fit.
+    minHeight: 32,
     // Standardized header-bar height across all views. With 8px top/bottom
     // padding (16px total), a 36px min content area yields a uniform 52px-tall
     // gradient bar everywhere — sized to RostersView's selector bar (its
