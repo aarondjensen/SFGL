@@ -142,16 +142,12 @@ const StandingsCard = ({
   // 8px/14px so the card header takes about 16px less vertical space, freeing
   // room for the rows below on small screens.
   const compactHeader = {
-    padding: '8px 14px',
+    ...theme.sectionHeaderBar,
     background: emphasis === 'primary'
-      ? 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)'
+      ? theme.sectionHeaderBar.background
       : accentColor
         ? `linear-gradient(90deg, ${getSwingColorAt(accentColor, 0.12)} 0%, ${getSwingColorAt(accentColor, 0.04)} 60%, transparent 100%)`
         : theme.cardHeader.background,
-    borderBottom: theme.cardHeader.borderBottom,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
     justifyContent: 'space-between',
   };
 
@@ -439,13 +435,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   // swing name read as the same visual tier. SEASON is set in caps with
   // tracked letter-spacing (sans rather than serif because all-caps serif
   // can feel heavy in small sizes).
-  const HEADER_FONT = {
-    fontFamily: fonts.sans,
-    fontSize: fontSize.lg,
-    fontWeight: 700,
-    letterSpacing: '2px',
-    textTransform: 'uppercase',
-  };
+  const HEADER_FONT = theme.sectionTitle;
 
   const overallSubtitle = (
     <span style={{ ...HEADER_FONT, color: colors.textPrimary }}>

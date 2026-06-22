@@ -128,6 +128,16 @@ function isIgnorableNoise(payload) {
   // A "Script error." with no stack is the cross-origin redaction case —
   // belt-and-suspenders in case punctuation/whitespace varies.
   if (msg.startsWith('script error') && !payload.stack) return true;
+
+  // Browser-extension noise — MetaMask & other wallet injectors, ad blockers,
+  // password managers. They inject scripts into every page and surface errors
+  // on window via 'error'/'unhandledrejection', but the stack points at an
+  // extension URL (or the message is a known wallet string). SFGL has no
+  // wallet/extension integration, so these are never actionable.
+  const stack = String(payload.stack || '');
+  if (/(?:chrome|moz|safari(?:-web)?|edge)-extension:\/\//i.test(stack)) return true;
+  if (/metamask|ethereum|web3|solana|phantom|could not establish connection\. receiving end does not exist|the message port closed before a response/i.test(msg)) return true;
+
   return false;
 }
 

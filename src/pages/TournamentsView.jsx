@@ -165,26 +165,9 @@ const PlayerSlotGrid = ({ players, showEarnings, showLive }) => {
 // Reusable styles for the "UPCOMING EVENTS" / "COMPLETED EVENTS" section
 // headers — matches the white-gradient template used on Standings, Transactions
 // fees/history, etc.
-const sectionHeaderStyle = {
-  padding: '8px 14px',
-  background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
-  borderBottom: theme.cardHeader.borderBottom,
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-};
+const sectionHeaderStyle = theme.sectionHeaderBar;
 
-const sectionTitleStyle = {
-  fontFamily: fonts.sans,
-  fontSize: fontSize.lg,
-  fontWeight: 700,
-  letterSpacing: '2px',
-  textTransform: 'uppercase',
-  color: colors.textPrimary,
-  minHeight: 28,            // match StandingsView 'Season' header row height
-  display: 'inline-flex',
-  alignItems: 'center',
-};
+const sectionTitleStyle = theme.sectionTitle;
 
 // Wave 8: local swingColor() removed. We now use getSegmentForTournament(t)
 // from utils + getSwingColor(seg) from theme — same source of truth as
