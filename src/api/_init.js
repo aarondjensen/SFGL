@@ -22,6 +22,7 @@
 
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
 // ── Firebase config — values come from environment variables ─────────────────
@@ -62,3 +63,8 @@ if (typeof window !== 'undefined' && import.meta.env.VITE_FIREBASE_APPCHECK_SITE
 }
 
 export const db = getFirestore(app);
+
+// ── Firebase Authentication ──────────────────────────────────────────────────
+// Single auth instance for the app. Identity is the immutable Firebase UID;
+// the auth/team-claim logic lives in api/authApi.js.
+export const auth = getAuth(app);
