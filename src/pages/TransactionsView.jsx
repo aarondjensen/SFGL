@@ -614,11 +614,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 </button>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <div style={{ display: 'flex', gap: 8, flex: 1 }}>
               <select
                 value={filterSwing}
                 onChange={e => setFilterSwing(e.target.value)}
-                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
+                style={{ ...theme.select, flex: 1, minWidth: 0, fontSize: 11, padding: '5px 10px' }}
                 onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
@@ -631,7 +631,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               <select
                 value={filterTeam}
                 onChange={e => setFilterTeam(e.target.value)}
-                style={{ ...theme.select, width: 'auto', fontSize: 11, padding: '5px 10px' }}
+                style={{ ...theme.select, flex: 1, minWidth: 0, fontSize: 11, padding: '5px 10px' }}
                 onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
