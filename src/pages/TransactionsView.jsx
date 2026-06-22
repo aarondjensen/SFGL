@@ -531,7 +531,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         {/* ── Fee summary ── */}
         <div style={theme.card}>
           <div style={{ padding: '8px 14px', background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)', borderBottom: theme.cardHeader.borderBottom, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
-            <h2 style={{ ...theme.h2, margin: 0, minHeight: 28, display: 'flex', alignItems: 'center' }}>Transaction Fees</h2>
+            <h2 style={{ fontFamily: fonts.sans, fontSize: 16, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: colors.textPrimary, margin: 0, minHeight: 28, display: 'flex', alignItems: 'center' }}>Transaction Fees</h2>
             {teamFees[0]?.currentSwing && (() => {
               const swingColor = getSwingColor(teamFees[0].currentSwing);
               const swingPot = teamFees.reduce((sum, t) => sum + (t.swingTotal || 0), 0);
@@ -585,7 +585,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         <div style={theme.card}>
           <div style={{ padding: '8px 14px', background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)', borderBottom: theme.cardHeader.borderBottom, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <h2 style={{ ...theme.h2, margin: 0, minHeight: 28, display: 'flex', alignItems: 'center' }}>Transaction History</h2>
+              <h2 style={{ fontFamily: fonts.sans, fontSize: 16, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: colors.textPrimary, margin: 0, minHeight: 28, display: 'flex', alignItems: 'center' }}>Transaction History</h2>
               {isCommissioner && (
                 <button
                   onClick={() => setShowAddTx(true)}
