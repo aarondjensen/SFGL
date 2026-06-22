@@ -1702,8 +1702,16 @@ export default async function handler(req, res) {
   //   - notify-results: triggered from AdminView after processing
   //   - pgat-stats:     triggered from AdminView's Sync button
   const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule']);
-  if (!NO_AUTH_ACTIONS.has(action) && cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  // Fail CLOSED: a protected action with no configured CRON_SECRET must be
+  // rejected, not allowed. (Previously the `&& cronSecret` short-circuit meant
+  // an unset secret silently disabled auth entirely.)
+  if (!NO_AUTH_ACTIONS.has(action)) {
+    if (!cronSecret) {
+      return res.status(503).json({ error: 'CRON_SECRET not configured' });
+    }
+    if (req.headers.authorization !== `Bearer ${cronSecret}`) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
   }
 
   try {

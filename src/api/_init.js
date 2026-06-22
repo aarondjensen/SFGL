@@ -22,6 +22,7 @@
 
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
 // ── Firebase config — values come from environment variables ─────────────────
 // Vite exposes env vars prefixed with VITE_
@@ -36,4 +37,28 @@ const firebaseConfig = {
 
 // Avoid re-initialising on hot reload
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+
+// ── Firebase App Check (reCAPTCHA v3) ────────────────────────────────────────
+// Attests that Firestore requests come from THIS app, so the public web config
+// can't be used to read or write the database directly from a script. Fully
+// inert until VITE_FIREBASE_APPCHECK_SITE_KEY is set — deploying this changes
+// nothing until that key is configured — and failures never block app boot.
+if (typeof window !== 'undefined' && import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY) {
+  // Dev: emit a debug token to the console; register it under
+  // App Check → (your web app) → Manage debug tokens so localhost is allowed.
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-undef
+    self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+  }
+  try {
+    initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY),
+      isTokenAutoRefreshEnabled: true,
+    });
+  } catch (err) {
+    // Never let App Check init break the app — log and continue.
+    console.warn('[appcheck] initialization skipped:', err?.message || err);
+  }
+}
+
 export const db = getFirestore(app);
