@@ -55,13 +55,66 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
+// ── Abuse guards ─────────────────────────────────────────────────────────────
+// This endpoint is intentionally unauthenticated (the client must report errors
+// freely) and the To/From addresses are fixed by env vars, so it can't be used
+// as an open relay. The remaining risk is bulk POSTs spamming the inbox / burning
+// the Brevo 300/day quota. Two cheap defenses:
+//   1. Origin allowlist — reject reports from a foreign origin.
+//   2. Coarse in-memory burst cap — best-effort only (serverless instances are
+//      ephemeral + per-instance, so this resets on cold start). For a hard
+//      guarantee, move to Vercel KV / Upstash, as the original TODO noted.
+const ALLOWED_ORIGINS = new Set([
+  'https://www.sfglgolf.com',
+  'https://sfglgolf.com',
+]);
+
+function originAllowed(origin) {
+  if (!origin) return null; // header absent — let the burst cap handle it
+  if (ALLOWED_ORIGINS.has(origin)) return true;
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true; // local dev
+  return false;
+}
+
+function resolveOrigin(req) {
+  if (req.headers.origin) return req.headers.origin;
+  const ref = req.headers.referer;
+  if (ref) { try { return new URL(ref).origin; } catch { /* ignore */ } }
+  return null;
+}
+
+const RL_WINDOW_MS = 60 * 1000;
+const RL_MAX = 15; // reports per instance per minute (coarse burst guard)
+let _rlHits = [];
+function rateLimited() {
+  const now = Date.now();
+  _rlHits = _rlHits.filter((t) => now - t < RL_WINDOW_MS);
+  if (_rlHits.length >= RL_MAX) return true;
+  _rlHits.push(now);
+  return false;
+}
+
 export default async function handler(req, res) {
-  // CORS — only POST is valid; preflight allowed
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS + abuse guards. Reflect the origin only when it's on the allowlist;
+  // default to the production host otherwise.
+  const origin = resolveOrigin(req);
+  const allowed = originAllowed(origin);
+  res.setHeader('Access-Control-Allow-Origin', allowed && origin ? origin : 'https://www.sfglgolf.com');
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ error: 'POST only' });
+
+  // Reject reports from a known foreign origin (absent origin falls through to
+  // the burst cap below). Stay consistent with this handler's philosophy of
+  // never surfacing a hard error to an already-erroring client.
+  if (allowed === false) {
+    return res.status(403).json({ ok: true, delivered: false, reason: 'forbidden origin' });
+  }
+  if (rateLimited()) {
+    return res.status(200).json({ ok: true, delivered: false, reason: 'rate limited' });
+  }
 
   try {
     // Vercel parses JSON bodies automatically when Content-Type is application/json
