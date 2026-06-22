@@ -25,3 +25,12 @@ dist-ssr
 .env
 .env.local
 .env*.local
+# Firebase Admin SDK / service-account keys — NEVER commit.
+# These are server secrets and belong only in Vercel env vars
+# (FIREBASE_SERVICE_ACCOUNT). This pattern would have caught the
+# sfgl-ad892-firebase-adminsdk-fbsvc-*.json leak.
+*-adminsdk-*.json
+firebase-adminsdk*.json
+serviceAccount*.json
+service-account*.json
+*-service-account*.json

@@ -94,7 +94,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
         onClick={() => setOpen(o => !o)}
         style={{
           ...theme.sectionTitle,
-          textTransform: 'none', letterSpacing: '0.4px',
+          textTransform: 'uppercase', letterSpacing: '0.4px',
           gap: 6, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
           textAlign: 'left', whiteSpace: 'nowrap', maxWidth: '100%',
         }}
@@ -928,6 +928,11 @@ export const RostersView = ({
               value={selectedTeam || ''}
               onChange={id => { setSelectedTeam(id); setLineupMode(false); setPickingBackup(false); setRosterView('full'); }}
             />
+          </div>
+
+          {/* Right cluster: mulligan badges grouped with the Add button so the
+              team name has breathing room from the badges. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             {/* Mulligan status — stacked Reg + Sig/Maj indicators.
                 Used count is derived from the transaction history (see
                 `mulligansUsed` memo above). Each team gets 1 of each per
@@ -967,7 +972,6 @@ export const RostersView = ({
                 </div>
               );
             })()}
-          </div>
 
           {/* Search/Add Player button — search always available, add gated by tournament state */}
           {isOwnTeam && (() => {
@@ -1003,6 +1007,7 @@ export const RostersView = ({
               </button>
             );
           })()}
+          </div>
           </div>
 
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders.
