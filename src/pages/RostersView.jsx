@@ -89,22 +89,20 @@ const TeamDropdown = ({ teams, value, onChange }) => {
   }, []);
 
   return (
-    <div ref={ref} style={{ position: 'relative', minWidth: 160 }}>
+    <div ref={ref} style={{ position: 'relative', minWidth: 0 }}>
       <button
         onClick={() => setOpen(o => !o)}
         style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-          padding: '6px 10px', borderRadius: 2, cursor: 'pointer', width: '100%',
-          background: '#0f1d35', border: `1px solid ${open ? colors.border : 'rgba(255,255,255,0.12)'}`,
-          fontFamily: fonts.serif, fontSize: fontSize.md, fontWeight: 700,
-          color: 'rgba(255,255,255,0.9)', textAlign: 'left',
-          transition: 'border-color 0.15s', whiteSpace: 'nowrap',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+          fontFamily: fonts.sans, fontSize: fontSize.lg, fontWeight: 700, letterSpacing: '0.4px',
+          color: '#fff', textAlign: 'left', whiteSpace: 'nowrap', maxWidth: '100%',
         }}
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {selected?.name ?? '—'}
         </span>
-        <span style={{ fontSize: fontSize.xs, opacity: 0.6, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 11, color: '#f5c518', opacity: 0.9, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
         <div style={{
