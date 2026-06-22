@@ -718,11 +718,32 @@ async function handleNotifyResults(req, res) {
   const settings = await loadSettings();
   const teams = await loadTeams();
   const managerEmails = getEmailMap(settings, teams);
+
+  // Season standings: prefer client-supplied, else compute server-side so the
+  // manual-process AND resend paths always include the standings card. Sums
+  // each team's totalEarnings across completed tournaments — the same source
+  // StandingsView and the auto-process email use.
+  let standings = Array.isArray(seasonStandings) && seasonStandings.length ? seasonStandings : null;
+  if (!standings) {
+    const tournaments = await loadTournaments();
+    const totals = {};
+    teams.forEach(t => { totals[t.id] = 0; });
+    tournaments.forEach(tt => {
+      if (!tt.completed || !tt.results?.teams) return;
+      Object.entries(tt.results.teams).forEach(([tid, r]) => {
+        if (totals[tid] !== undefined) totals[tid] += (r.totalEarnings || 0);
+      });
+    });
+    standings = teams
+      .map(t => ({ team: t.name, totalEarnings: totals[t.id] || 0 }))
+      .sort((a, b) => b.totalEarnings - a.totalEarnings);
+  }
+
   const results = [];
 
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
-      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo, seasonStandings));
+      await sendEmail(email, `🏆 ${tournamentName} — SFGL Results`, buildTournamentResultsEmail(tournamentName, teamResults, teamName, swingWinnerInfo, standings));
       results.push({ team: teamName, success: true });
     } catch (err) { results.push({ team: teamName, error: err.message }); }
   }
