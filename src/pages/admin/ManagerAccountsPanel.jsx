@@ -1,132 +1,307 @@
 // src/pages/admin/ManagerAccountsPanel.jsx
 // ============================================================================
-// All things "manager accounts" in one panel:
-//   1. Login credentials — set a manager's login name + password
-//   2. Manager emails — for waiver/results/lineup notifications
-//   3. Commissioner status — tag managers as commissioners (admin access)
+// Managers — the single commish hub for everything account-related, post
+// Firebase-auth migration. Consolidates what used to be three separate things:
 //
-// The commissioner-tagging section was previously its own admin tile; merged
-// in here since it's just another per-manager attribute.
+//   • Team claims        — who has signed in and claimed each team (replaces the
+//                          old name/password "Login Credentials" section, which
+//                          is obsolete now that identity is a Firebase uid).
+//   • Manager Activity    — last login + push-notification status per team
+//                          (folded in from the standalone ManagerActivityPanel,
+//                          so it's no longer a separate tile).
+//   • Results email       — per-team override written to team_claims.notifyEmail,
+//                          which api/cron.js prefers over the legacy
+//                          settings.managerEmails map.
+//
+// Removed as dead post-migration: the password credential setter and the
+// team.isCommissioner toggle (commissioner is a Firebase custom claim now, not a
+// client-writable flag — granted via the stamp-commissioner action).
+//
+// Data sources: subscribeClaims() (realtime team_claims), managerActivityApi
+// (login heartbeat), getTokensForTeam() (push tokens). Writes via reassignTeam()
+// and setNotifyEmail(), both of which the commissioner is allowed to perform
+// under the locked Firestore rules.
 // ============================================================================
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
-import { managerAuthApi } from '../../api/firebase';
 import { M, disabledBtn } from './adminStyles';
+import { subscribeClaims, reassignTeam, setNotifyEmail } from '../../api/authApi';
+import { managerActivityApi } from '../../api/managerActivity';
+import { getTokensForTeam } from '../../api/pushNotifications';
 
-export const ManagerAccountsPanel = ({ teams, settings, setSettings, updateTeams }) => {
+// "Just now" / "12m ago" / "3h ago" / "2d ago" / "1mo ago" / "Never"
+const timeAgo = (ms) => {
+  if (!ms) return 'Never';
+  const diff = Date.now() - ms;
+  if (diff < 60000) return 'Just now';
+  const min = Math.floor(diff / 60000);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  const mo = Math.floor(day / 30);
+  return `${mo}mo ago`;
+};
+
+const fullDate = (ms) => (ms
+  ? new Date(ms).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    })
+  : 'No login recorded yet');
+
+// uid is long + opaque; show enough to identify/copy without dominating the row.
+const shortUid = (uid) => (uid && uid.length > 14 ? `${uid.slice(0, 8)}…${uid.slice(-4)}` : uid || '');
+
+export const ManagerAccountsPanel = ({ teams = [] }) => {
   const dialog = useDialog();
 
-  // ── Credentials state ──
-  const [mgCredTeam, setMgCredTeam] = React.useState('');
-  const [mgCredName, setMgCredName] = React.useState('');
-  const [mgCredPass, setMgCredPass] = React.useState('');
-  const [mgCredSaving, setMgCredSaving] = React.useState(false);
+  const [claims, setClaims]   = React.useState(null);   // teamId → claim doc
+  const [activity, setActivity] = React.useState({});   // teamId → { lastLogin }
+  const [notif, setNotif]     = React.useState({});     // teamId → bool
+  const [loading, setLoading] = React.useState(true);
 
-  // ── Emails state ──
-  const [emailDraft, setEmailDraft] = React.useState(null);
+  const [emailDraft, setEmailDraft] = React.useState({}); // teamId → string
+  const [savingEmails, setSavingEmails] = React.useState(false);
 
-  const handleSetLogin = async () => {
-    if (!mgCredTeam || !mgCredName || !mgCredPass) return;
-    setMgCredSaving(true);
+  const [assignTeam, setAssignTeam] = React.useState('');
+  const [assignUid, setAssignUid]   = React.useState('');
+  const [assigning, setAssigning]   = React.useState(false);
+
+  // Realtime claims.
+  React.useEffect(() => subscribeClaims(setClaims), []);
+
+  // One-shot activity + push status (mirrors the old ManagerActivityPanel load).
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const ids = teams.map((t) => t.id).filter(Boolean);
+      const [act, tokenFlags] = await Promise.all([
+        managerActivityApi.getActivity(ids),
+        Promise.all(ids.map((id) =>
+          getTokensForTeam(id)
+            .then((toks) => [id, (toks || []).length > 0])
+            .catch(() => [id, false])
+        )),
+      ]);
+      if (cancelled) return;
+      setActivity(act);
+      setNotif(Object.fromEntries(tokenFlags));
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [teams]);
+
+  const copyUid = async (uid) => {
     try {
-      await managerAuthApi.setCredentials(mgCredTeam, mgCredName, mgCredPass);
-      dialog.showToast('Login set for ' + mgCredName, 'success');
-      setMgCredTeam(''); setMgCredName(''); setMgCredPass('');
+      await navigator.clipboard.writeText(uid);
+      dialog.showToast('UID copied', 'success');
+    } catch {
+      dialog.showToast(uid, 'info');
+    }
+  };
+
+  const handleRelease = async (t) => {
+    const ok = await dialog.showConfirm(
+      `Release ${t.name}?`,
+      'This unclaims the team. The manager will need to sign in and claim it again. No roster or transaction data is affected.',
+      { confirmText: 'Release', type: 'danger' },
+    );
+    if (!ok) return;
+    try {
+      await reassignTeam(t.id, null);
+      dialog.showToast(`${t.name} released`, 'success');
+    } catch (e) {
+      dialog.showToast('Failed: ' + e.message, 'error');
+    }
+  };
+
+  const handleAssign = async () => {
+    const uid = assignUid.trim();
+    if (!assignTeam || !uid) return;
+    const team = teams.find((t) => t.id === assignTeam);
+    setAssigning(true);
+    try {
+      await reassignTeam(assignTeam, uid);
+      dialog.showToast(`${team?.name || 'Team'} assigned`, 'success');
+      setAssignTeam(''); setAssignUid('');
     } catch (e) {
       dialog.showToast('Failed: ' + e.message, 'error');
     } finally {
-      setMgCredSaving(false);
+      setAssigning(false);
     }
   };
 
   const handleSaveEmails = async () => {
-    if (!emailDraft) return;
-    const merged = { ...(settings.managerEmails || {}), ...emailDraft };
+    const entries = Object.entries(emailDraft);
+    if (!entries.length) return;
+    setSavingEmails(true);
     try {
-      await setSettings({ ...settings, managerEmails: merged });
-      dialog.showToast('✓ Manager emails saved', 'success');
-      setEmailDraft(null);
-    } catch (err) {
-      dialog.showToast('Error: ' + err.message, 'error');
+      for (const [teamId, val] of entries) {
+        await setNotifyEmail(teamId, val);
+      }
+      dialog.showToast('✓ Results emails saved', 'success');
+      setEmailDraft({});
+    } catch (e) {
+      dialog.showToast('Error: ' + e.message, 'error');
+    } finally {
+      setSavingEmails(false);
     }
   };
 
-  const credentialsReady = mgCredTeam && mgCredName && mgCredPass;
+  // Most recently active first; unclaimed / never-logged-in fall to the bottom.
+  const rows = [...teams].sort(
+    (a, b) => (activity[b.id]?.lastLogin || 0) - (activity[a.id]?.lastLogin || 0)
+  );
+
+  const claimsLoading = claims === null;
+  const claimedCount = claims ? rows.filter((t) => claims[t.id]?.uid).length : 0;
+  const hasEmailEdits = Object.keys(emailDraft).length > 0;
 
   return (
     <div style={M.page}>
-      {/* ── Credentials ── */}
+      {/* ── Claims + activity ── */}
       <div style={M.group}>
-        <div style={M.eyebrow}>🔑 Login Credentials</div>
+        <div style={M.eyebrow}>👥 Team Claims & Activity</div>
         <div style={M.descText}>
-          Set the login name and password for a manager. They use these to sign in.
+          Who has signed in and claimed each team, their most recent login, and
+          whether push is enabled on a device.{' '}
+          {!claimsLoading && (
+            <span style={{ color: colors.textSecondary }}>
+              {claimedCount}/{rows.length} teams claimed.
+            </span>
+          )}
         </div>
 
-        <select
-          value={mgCredTeam}
-          onChange={e => {
-            setMgCredTeam(e.target.value);
-            setMgCredName(teams.find(x => x.id === e.target.value)?.owner || '');
-          }}
-          style={M.select}
-        >
-          <option value="">Select team...</option>
-          {teams.map(t => <option key={t.id} value={t.id}>{t.name} — {t.owner}</option>)}
-        </select>
+        {(claimsLoading || loading) ? (
+          <div style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textMuted, padding: '10px 0' }}>
+            Loading…
+          </div>
+        ) : rows.map((t) => {
+          const c        = claims[t.id] || null;
+          const claimed  = !!c?.uid;
+          const last     = activity[t.id]?.lastLogin || null;
+          const on       = !!notif[t.id];
+          const ownerLabel = c?.displayName || c?.email || (claimed ? shortUid(c.uid) : null);
 
-        <input
-          value={mgCredName}
-          onChange={e => setMgCredName(e.target.value)}
-          placeholder="Login name"
-          style={M.input}
-        />
-        <input
-          type="password"
-          value={mgCredPass}
-          onChange={e => setMgCredPass(e.target.value)}
-          placeholder="Password"
-          style={M.input}
-        />
+          return (
+            <div
+              key={t.id}
+              style={{
+                padding: '12px 0',
+                borderBottom: `1px solid ${colors.borderSubtle}`,
+              }}
+            >
+              {/* Name + claim status */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ fontFamily: fonts.sans, fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>
+                  {t.name}
+                </div>
+                <span
+                  style={{
+                    flexShrink: 0,
+                    fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.4px',
+                    textTransform: 'uppercase',
+                    padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap',
+                    color: claimed ? colors.earningsGreen : colors.textMuted,
+                    background: claimed ? 'rgba(80,195,120,0.08)' : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${claimed ? 'rgba(80,195,120,0.3)' : colors.borderSubtle}`,
+                  }}
+                >
+                  {claimed ? 'Claimed' : 'Unclaimed'}
+                </span>
+              </div>
 
-        <button
-          onClick={handleSetLogin}
-          disabled={mgCredSaving || !credentialsReady}
-          className="modal-feel-lift modal-feel-primary"
-          style={{ ...M.btnPrimary, ...disabledBtn(mgCredSaving || !credentialsReady) }}
-        >
-          {mgCredSaving ? 'Saving…' : 'Set Login'}
-        </button>
+              {/* Owner */}
+              <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary, marginTop: 4 }}>
+                {claimed
+                  ? <>Claimed by <span style={{ color: colors.textPrimary, fontWeight: 600 }}>{ownerLabel}</span></>
+                  : <span style={{ color: colors.textMuted }}>No one has claimed this team yet.</span>}
+              </div>
+
+              {/* Meta: last login + push */}
+              <div
+                title={fullDate(last)}
+                style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, marginTop: 3 }}
+              >
+                Last login: {timeAgo(last)}
+                {'  ·  '}
+                {on ? '🔔 Notifications on' : '🔕 Notifications off'}
+              </div>
+
+              {/* uid + actions (claimed only) */}
+              {claimed && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                  <code style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 11, color: colors.textMuted,
+                    background: 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${colors.borderSubtle}`,
+                    borderRadius: 5, padding: '2px 7px',
+                  }}>
+                    {shortUid(c.uid)}
+                  </code>
+                  <button
+                    onClick={() => copyUid(c.uid)}
+                    style={{
+                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      color: colors.textSecondary, background: 'transparent',
+                      border: `1px solid ${colors.borderSubtle}`, borderRadius: 5,
+                      padding: '3px 9px', cursor: 'pointer',
+                    }}
+                  >
+                    Copy UID
+                  </button>
+                  <button
+                    onClick={() => handleRelease(t)}
+                    style={{
+                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      color: 'rgba(230,120,120,0.95)', background: 'transparent',
+                      border: '1px solid rgba(220,80,80,0.35)', borderRadius: 5,
+                      padding: '3px 9px', cursor: 'pointer',
+                    }}
+                  >
+                    Release
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div style={{ ...M.descText, marginTop: 10, marginBottom: 0 }}>
+          To make a manager a commissioner, copy their UID above and run the
+          <span style={{ color: colors.textSecondary }}> stamp-commissioner</span> action with it.
+        </div>
       </div>
 
-      {/* ── Emails ── */}
+      {/* ── Results emails ── */}
       <div style={M.group}>
-        <div style={M.eyebrow}>📧 Manager Emails</div>
+        <div style={M.eyebrow}>📧 Results Emails</div>
         <div style={M.descText}>
-          Used for waiver results, tournament results, and lineup reminders.
+          Override where each team's waiver/results/lineup emails go. Leaving a
+          field blank falls back to the manager's saved email.
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {teams.map(t => {
-            const currentEmail = (settings.managerEmails || {})[t.id] || '';
+          {teams.map((t) => {
+            const current = (claims && claims[t.id]?.notifyEmail) || '';
             return (
               <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{
-                  fontFamily: fonts.sans,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: colors.textPrimary,
-                  width: 120,
-                  flexShrink: 0,
+                  fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
+                  color: colors.textPrimary, width: 120, flexShrink: 0,
                 }}>
                   {t.name}
                 </span>
                 <input
                   type="email"
                   placeholder="email@example.com"
-                  value={emailDraft?.[t.id] ?? currentEmail}
-                  onChange={e => setEmailDraft(prev => ({ ...(prev || {}), [t.id]: e.target.value }))}
+                  value={emailDraft[t.id] ?? current}
+                  onChange={(e) => setEmailDraft((prev) => ({ ...prev, [t.id]: e.target.value }))}
                   style={{ ...M.input, flex: 1 }}
                 />
               </div>
@@ -136,119 +311,40 @@ export const ManagerAccountsPanel = ({ teams, settings, setSettings, updateTeams
 
         <button
           onClick={handleSaveEmails}
-          disabled={!emailDraft}
+          disabled={savingEmails || !hasEmailEdits}
           className="modal-feel-lift modal-feel-primary"
-          style={{ ...M.btnPrimary, ...disabledBtn(!emailDraft), marginTop: 4 }}
+          style={{ ...M.btnPrimary, ...disabledBtn(savingEmails || !hasEmailEdits), marginTop: 4 }}
         >
-          💾 Save Emails
+          {savingEmails ? 'Saving…' : '💾 Save Emails'}
         </button>
       </div>
 
-      {/* ── Commissioner Status ── */}
+      {/* ── Manual reassign (edge cases) ── */}
       <div style={M.group}>
-        <div style={M.eyebrow}>👑 Commissioner Status</div>
+        <div style={M.eyebrow}>🔁 Reassign Team</div>
         <div style={M.descText}>
-          Tag managers as commissioners. Tagged managers see the Commish tab automatically when logged in — no password required.
+          Force a team's owner to a specific Firebase UID — for fixing a
+          wrong-team claim. To simply unclaim, use Release above.
         </div>
 
-        {/* Toggle pills per team. Same shape as UserSettingsModal's per-event
-            toggle pattern — whole row is one button, pill on the right side,
-            gold-tinted when on, gray when off. */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {teams.map(t => {
-            const tagged = !!t.isCommissioner;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="switch"
-                aria-checked={tagged}
-                aria-label={`${t.name}: ${tagged ? 'is' : 'is not'} a commissioner`}
-                onClick={() => {
-                  const next = !tagged;
-                  const newTeams = teams.map(tt =>
-                    tt.id === t.id ? { ...tt, isCommissioner: next } : tt
-                  );
-                  updateTeams(newTeams);
-                  dialog.showToast(
-                    next
-                      ? `${t.name} is now a commissioner`
-                      : `${t.name} is no longer a commissioner`,
-                    'success'
-                  );
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '10px 12px',
-                  background: tagged
-                    ? 'rgba(245,197,24,0.06)'
-                    : 'rgba(255,255,255,0.02)',
-                  border: `1px solid ${tagged
-                    ? 'rgba(245,197,24,0.3)'
-                    : colors.borderSubtle}`,
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  transition: 'background 0.15s, border-color 0.15s',
-                  textAlign: 'left',
-                  width: '100%',
-                  fontFamily: fonts.sans,
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontFamily: fonts.sans,
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: colors.textPrimary,
-                  }}>
-                    {t.name}
-                  </div>
-                  <div style={{
-                    fontFamily: fonts.sans,
-                    fontSize: 11,
-                    color: colors.textMuted,
-                    marginTop: 1,
-                  }}>
-                    {t.owner}
-                  </div>
-                </div>
-                {/* Toggle pill */}
-                <div
-                  aria-hidden="true"
-                  style={{
-                    position: 'relative',
-                    width: 36,
-                    height: 20,
-                    borderRadius: 10,
-                    background: tagged
-                      ? 'rgba(245,197,24,0.65)'
-                      : 'rgba(255,255,255,0.12)',
-                    border: `1px solid ${tagged
-                      ? 'rgba(245,197,24,0.85)'
-                      : 'rgba(255,255,255,0.18)'}`,
-                    transition: 'background 0.18s, border-color 0.18s',
-                    flexShrink: 0,
-                  }}
-                >
-                  <div style={{
-                    position: 'absolute',
-                    top: 2,
-                    left: 2,
-                    width: 14,
-                    height: 14,
-                    borderRadius: '50%',
-                    background: '#fff',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                    transform: tagged ? 'translateX(16px)' : 'translateX(0)',
-                    transition: 'transform 0.18s ease',
-                  }} />
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        <select value={assignTeam} onChange={(e) => setAssignTeam(e.target.value)} style={M.select}>
+          <option value="">Select team…</option>
+          {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <input
+          value={assignUid}
+          onChange={(e) => setAssignUid(e.target.value)}
+          placeholder="Firebase UID"
+          style={M.input}
+        />
+        <button
+          onClick={handleAssign}
+          disabled={assigning || !assignTeam || !assignUid.trim()}
+          className="modal-feel-lift modal-feel-primary"
+          style={{ ...M.btnPrimary, ...disabledBtn(assigning || !assignTeam || !assignUid.trim()) }}
+        >
+          {assigning ? 'Assigning…' : 'Assign UID'}
+        </button>
       </div>
     </div>
   );

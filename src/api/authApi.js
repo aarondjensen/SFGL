@@ -110,14 +110,22 @@ export function teamIdForUid(uid, claims) {
 
 // Self-claim: bind my uid to an UNclaimed team. Refuses if the team is already
 // owned by someone else — in that case the commissioner must reassign it.
-export async function claimTeam(teamId, uid) {
+export async function claimTeam(teamId, uid, email = null, displayName = null) {
   const ref = doc(db, CLAIMS, teamId);
   const snap = await getDoc(ref);
   const existing = snap.exists() ? snap.data()?.uid : null;
   if (existing && existing !== uid) {
     throw new Error('That team is already claimed. Ask the commissioner to reassign it.');
   }
-  await setDoc(ref, { uid, claimedAt: serverTimestamp() }, { merge: true });
+  // Persist email/displayName alongside the uid so the commissioner's Managers
+  // panel can show a human-readable owner instead of an opaque uid. These are
+  // self-reported by the signing-in account and only written on self-claim.
+  await setDoc(ref, {
+    uid,
+    email: email || null,
+    displayName: displayName || null,
+    claimedAt: serverTimestamp(),
+  }, { merge: true });
 }
 
 // Commissioner reassign: force a team's owner uid. Pass uid = null to release
@@ -125,7 +133,7 @@ export async function claimTeam(teamId, uid) {
 export async function reassignTeam(teamId, uid) {
   await setDoc(
     doc(db, CLAIMS, teamId),
-    { uid: uid || null, claimedAt: serverTimestamp() },
+    { uid: uid || null, email: null, displayName: null, claimedAt: serverTimestamp() },
     { merge: true },
   );
 }
@@ -133,6 +141,17 @@ export async function reassignTeam(teamId, uid) {
 // Set the results-email for a team. Called by the owning manager for their own
 // team, or by the commissioner for any team. Empty string clears it (cron then
 // falls back to settings.managerEmails).
+// Read a team's current results-email (used by the manager-facing settings UI
+// to prefill the field). Returns '' when none is set.
+export async function getNotifyEmail(teamId) {
+  try {
+    const snap = await getDoc(doc(db, CLAIMS, teamId));
+    return (snap.exists() && snap.data()?.notifyEmail) || '';
+  } catch {
+    return '';
+  }
+}
+
 export async function setNotifyEmail(teamId, email) {
   await setDoc(
     doc(db, CLAIMS, teamId),
