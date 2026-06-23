@@ -10,6 +10,7 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { getAuth } from 'firebase-admin/auth';
 import { DEFAULTS_ON } from './_constants.js';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
@@ -431,11 +432,22 @@ async function loadTournaments() {
   return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
 }
 
-function getEmailMap(settings, teams) {
+async function loadClaims() {
+  const snap = await db.collection('team_claims').get();
+  const m = {};
+  snap.docs.forEach(d => { m[d.id] = d.data(); });
+  return m;
+}
+
+// Recipient resolution for league emails. A manager's self-set results-email
+// (team_claims/{teamId}.notifyEmail) takes precedence over the legacy
+// commish-entered settings.managerEmails map; both are keyed per team.
+async function getEmailMap(settings, teams) {
   const emailMap = settings.managerEmails || {};
+  const claims = await loadClaims();
   const result = {};
   teams.forEach(t => {
-    const email = emailMap[t.id] || emailMap[t.name];
+    const email = claims[t.id]?.notifyEmail || emailMap[t.id] || emailMap[t.name];
     if (email) result[t.name] = email;
   });
   return result;
@@ -618,7 +630,7 @@ async function handleWaivers(res) {
   }
 
   // Send emails
-  const managerEmails = getEmailMap(settings, teams);
+  const managerEmails = await getEmailMap(settings, teams);
   const emailResults = [];
   for (const [teamName, email] of Object.entries(managerEmails)) {
     try {
@@ -675,7 +687,7 @@ async function handleLineupReminder(res) {
   const lockTime = lockHour > 12 ? `${lockHour - 12}pm` : lockHour === 12 ? '12pm' : `${lockHour}am`;
 
   const teams = await loadTeams();
-  const managerEmails = getEmailMap(settings, teams);
+  const managerEmails = await getEmailMap(settings, teams);
   const results = [];
 
   for (const team of teams) {
@@ -717,7 +729,7 @@ async function handleNotifyResults(req, res) {
 
   const settings = await loadSettings();
   const teams = await loadTeams();
-  const managerEmails = getEmailMap(settings, teams);
+  const managerEmails = await getEmailMap(settings, teams);
 
   // Season standings: prefer client-supplied, else compute server-side so the
   // manual-process AND resend paths always include the standings card. Sums
@@ -986,7 +998,7 @@ async function handleProcessResults(res) {
   await batch.commit();
 
   // Email results to all managers
-  const managerEmails = getEmailMap(settings, teams);
+  const managerEmails = await getEmailMap(settings, teams);
   // Full player breakdown so the template can render the color-coded names,
   // round-leader badges, and bonus-inclusive earnings totals — matches the
   // shape sent from AdminView's handleManualEntry.
@@ -1693,6 +1705,24 @@ async function handleSyncCronSchedule(req, res) {
   return res.json({ status: 'synced', jobType, jobId: String(jobId) });
 }
 
+// ── Action: stamp the commissioner custom claim (one-time bootstrap) ─────────
+// Sets { commissioner: true } on a Firebase Auth user so the locked Firestore
+// rules and the app's commish gate recognize them. Auth-gated by CRON_SECRET
+// (it is NOT in NO_AUTH_ACTIONS). Run once, after you've signed in at least
+// once so your account exists (find your UID in Firebase console →
+// Authentication → Users):
+//   curl -X POST "https://www.sfglgolf.com/api/cron?action=stamp-commissioner&uid=YOUR_UID" \\
+//        -H "Authorization: Bearer YOUR_CRON_SECRET"
+// Pass &value=false to revoke. The user must sign out/in (or wait for token
+// refresh) for the new claim to take effect.
+async function handleStampCommissioner(req, res) {
+  const uid = req.query.uid || (req.body && req.body.uid);
+  if (!uid) return res.status(400).json({ error: 'uid query param required' });
+  const makeCommish = String(req.query.value ?? 'true') !== 'false';
+  await getAuth(getApp()).setCustomUserClaims(uid, { commissioner: makeCommish });
+  return res.json({ status: 'ok', uid, commissioner: makeCommish });
+}
+
 export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
@@ -1724,6 +1754,7 @@ export default async function handler(req, res) {
       case 'lead-watch':        return await handleLeadWatch(res);
       case 'owgr-rankings':     return await handleOwgrRankings(res);
       case 'sync-cron-schedule': return await handleSyncCronSchedule(req, res);
+      case 'stamp-commissioner': return await handleStampCommissioner(req, res);
       default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings|sync-cron-schedule' });
     }
   } catch (err) {
