@@ -52,8 +52,7 @@ const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 
 import { useLeague }       from './hooks';
-import { getSegmentByDate } from './utils';
-import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
+import { theme, colors, fonts, fontSize } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
 import { tournamentResultsApi } from './api/firebase';
 import { managerActivityApi } from './api/managerActivity';
@@ -554,50 +553,29 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
         transition: 'background 0.25s, border-color 0.25s',
       }}>
 
-        {/* ── Header: current tournament (left) · SFGL (center) · current swing (right) ── */}
+        {/* ── Header: SFGL wordmark over the current tournament, centered ── */}
         <header>
-          <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 16px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)", alignItems: "center", gap: 12 }}>
+          <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 16px", position: 'relative' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
 
-              {/* Left: current tournament (cell always rendered to hold the grid column) */}
-              <div style={{ justifySelf: 'start', minWidth: 0, maxWidth: '100%' }}>
-                {currentTournament && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, fontWeight: 400, letterSpacing: 1, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", minWidth: 0, lineHeight: 1.3 }}>
-                    <span style={{ flexShrink: 0 }}>⛳</span>
-                    <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{currentTournament.name}</span>
-                  </div>
-                )}
-              </div>
+              {/* SFGL wordmark — the centered anchor */}
+              <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: 'rgba(255,255,255,0.93)', whiteSpace: 'nowrap', userSelect: 'none' }}>SFGL</span>
 
-              {/* Center: SFGL wordmark (the anchor) */}
-              <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: 'rgba(255,255,255,0.93)', whiteSpace: 'nowrap', userSelect: 'none', justifySelf: 'center' }}>SFGL</span>
-
-              {/* Right: current swing */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, justifySelf: 'end', minWidth: 0, textAlign: 'right' }}>
-                {(() => {
-                  const active = safeTournaments.find(t => t.playing);
-                  const seg = active?.segment || safeTournaments.find(t => !t.completed && !t.playing)?.segment || [...safeTournaments].reverse().find(t => t.completed)?.segment || getSegmentByDate();
-                  // Always render as two stacked lines (e.g. "Summer" / "Swing",
-                  // "West Coast" / "Swing") to mirror the wrapped, ~2-line look of
-                  // the current-tournament name on the left.
-                  const parts = String(seg).split(' ');
-                  const last  = parts.pop();
-                  const first = parts.join(' ');
-                  return (
-                    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, fontWeight: 500, letterSpacing: 1, lineHeight: 1.3, color: getSwingColor(seg) }}>
-                      {first && <span style={{ display: 'block', whiteSpace: 'nowrap' }}>{first}</span>}
-                      <span style={{ display: 'block', whiteSpace: 'nowrap' }}>{last}</span>
-                    </span>
-                  );
-                })()}
-                {isSyncing && (
-                  <span style={{ fontSize: fontSize.sm, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="sfgl-text-pulse">
-                    Saving…
-                  </span>
-                )}
-              </div>
-
+              {/* Current tournament — centered beneath the wordmark; wraps centered for long names */}
+              {currentTournament && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: fontSize.md, fontWeight: 400, letterSpacing: 1, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", lineHeight: 1.3, textAlign: 'center', maxWidth: '100%', minWidth: 0 }}>
+                  <span style={{ flexShrink: 0 }}>⛳</span>
+                  <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{currentTournament.name}</span>
+                </div>
+              )}
             </div>
+
+            {/* Sync indicator — absolutely placed so it never nudges the centered stack */}
+            {isSyncing && (
+              <span style={{ position: 'absolute', top: 16, right: 16, fontSize: fontSize.sm, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="sfgl-text-pulse">
+                Saving…
+              </span>
+            )}
           </div>
         </header>
 
