@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
-import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, LogOut, LogIn } from 'lucide-react';
+import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, LogOut } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
@@ -50,14 +50,15 @@ import { TournamentsView }  from './pages/TournamentsView';
 // in the initial bundle.
 const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m => ({ default: m.AdminView })));
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
-const LazyLoginPage        = React.lazy(() => import('./pages/LoginPage'));
 
 import { useLeague }       from './hooks';
 import { getSegmentByDate } from './utils';
 import { theme, colors, fonts, fontSize, getSwingColor } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
-import { managerAuthApi, tournamentResultsApi } from './api/firebase';
+import { tournamentResultsApi } from './api/firebase';
 import { managerActivityApi } from './api/managerActivity';
+import AuthGate from './pages/AuthGate';
+import { watchAuth, subscribeClaims, teamIdForUid, claimTeam, signOutUser } from './api/authApi';
 
 
 // ── Lazy-load fallback spinner ─────────────────────────────────────────────
@@ -118,7 +119,7 @@ const getTabFromHash = () => {
 };
 
 // ── App shell ───────────────────────────────────────────────────────────────
-const FantasyGolfLeague = () => {
+const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   // Initial tab: read the URL hash (#rosters, #admin, etc) on first mount so
   // deep links / page refreshes land on the right tab. Falls back to
   // 'standings' for empty / invalid hashes. Lazy initializer ensures this
@@ -200,12 +201,11 @@ const FantasyGolfLeague = () => {
   // renaming a manager's login/owner name must never lock them out of their
   // own lineup. Sourced from the session (localStorage 'manager_team_id').
   const [loggedInTeamId,        setLoggedInTeamId]        = useState(null);
-  const [showLoginModal,        setShowLoginModal]        = useState(false);
+  const [claims,                setClaims]                = useState(null); // team_claims map; null = not yet loaded
   const [showUserSettings,      setShowUserSettings]      = useState(false);
   const [showMoreMenu,          setShowMoreMenu]          = useState(false);
-  // (Password popover state removed — commish access is granted by team tag,
-  // not by password. See handleManagerLogin and the AdminView Manager Accounts
-  // panel for how the tag is set.)
+  // Commish eligibility comes from the Firebase ID-token claim (see App root /
+  // taggedCommissioner). Active commish MODE is the user-toggled isCommissioner.
   const [resultsHydrated,       setResultsHydrated]       = useState(false);
 
   const league = useLeague(STORAGE_KEYS);
@@ -233,11 +233,9 @@ const FantasyGolfLeague = () => {
   // recomputes when teams finish loading (fixing the "team not found on first
   // paint" race) and can't be wiped by a stale session-restore re-run. Active
   // commish MODE (isCommissioner) remains separate, user-toggled state.
-  const taggedCommissioner = useMemo(() => {
-    if (!loggedInTeamId) return false;
-    const team = resolvedTeams.find(t => t.id === loggedInTeamId);
-    return !!team?.isCommissioner;
-  }, [loggedInTeamId, resolvedTeams]);
+  // Eligibility to enter commish mode comes from the Firebase ID-token custom
+  // claim (stamped once via the Admin SDK), not a client-writable team flag.
+  const taggedCommissioner = isCommissionerClaim;
   const resolvedHeadshots = Object.keys(safeHeadshots).length > 0 ? safeHeadshots : PGA_TOUR_IDS;
   const currentTournament = safeTournaments.find(t => t.playing);
 
@@ -284,53 +282,29 @@ const FantasyGolfLeague = () => {
     return () => document.removeEventListener('visibilitychange', onVisChange);
   }, []);
 
-  // ── Restore session on page load ──────────────────────────────────────────
-  // ONE-SHOT. This effect lists `resolvedTeams` as a dependency because it
-  // needs the team list loaded before it can resolve the logged-in team. But
-  // `resolvedTeams` changes every time teams data updates — including when a
-  // commissioner edits a manager's lineup. Without a guard, the effect re-ran
-  // on every such edit and called setIsCommissioner(false), kicking the
-  // commish out of commish mode mid-edit (one player pick = one logout).
-  //
-  // The ref latches as soon as we've resolved the logged-in team (or
-  // confirmed there's no session), so the restore runs exactly once on load
-  // and never resets commish mode again. Explicit login/logout still set
-  // commish state directly via their own handlers — they don't go through here.
-  const sessionRestoredRef = useRef(false);
-  useEffect(() => {
-    if (sessionRestoredRef.current) return;            // already restored — never re-run
-    if (!resolvedTeams || resolvedTeams.length === 0) return; // wait for teams to load
+  // ── Identity from Firebase Auth + team claims ──────────────────────────────
+  // The signed-in user's UID maps to a team via the team_claims collection.
+  // loggedInTeamId is the immutable edit-permission key (uid -> team); it is
+  // never derived from the editable owner string, so a rename can't lock anyone
+  // out of their own lineup.
+  useEffect(() => subscribeClaims(setClaims), []);
 
-    managerAuthApi.getCurrentSession().then(session => {
-      if (!session) {
-        sessionRestoredRef.current = true;             // no session — nothing to restore, latch
-        return;
-      }
-      const teamId = localStorage.getItem('manager_team_id');
-      if (!teamId) {
-        sessionRestoredRef.current = true;             // session but no team id — latch
-        return;
-      }
-      setLoggedInTeamId(teamId);
-      const team = resolvedTeams.find(t => t.id === teamId);
-      if (team) {
-        setLoggedInUser(team.owner || team.name);
-        // Record this session as a "login" for the Manager Activity panel.
-        // Managers stay signed in via localStorage, so this session-restore
-        // heartbeat — not managerAuthApi.login() — is what keeps last-login
-        // accurate for daily-active users. Best-effort; never blocks restore.
-        managerActivityApi.recordLogin(teamId);
-        // taggedCommissioner is derived from loggedInTeamId — no need to set it
-        // here. Start the session in normal-manager view; commissioners opt into
-        // commish mode by tapping their name in the header.
-        setIsCommissioner(false);
-        sessionRestoredRef.current = true;             // resolved — latch, never reset again
-      }
-      // If the team wasn't found yet (teams still loading incrementally),
-      // we intentionally do NOT latch — the effect re-runs on the next
-      // resolvedTeams change and tries again until the team resolves.
-    }).catch(() => {});
-  }, [resolvedTeams]);
+  useEffect(() => {
+    if (claims === null) return;                       // wait for first snapshot
+    const teamId = teamIdForUid(authUser?.uid, claims);
+    setLoggedInTeamId(teamId);
+    const team = teamId ? resolvedTeams.find(t => t.id === teamId) : null;
+    setLoggedInUser(team ? (team.owner || team.name) : null);
+  }, [authUser, claims, resolvedTeams]);
+
+  // Manager Activity heartbeat — record a login once, when the team resolves.
+  const loginRecordedRef = useRef(false);
+  useEffect(() => {
+    if (loggedInTeamId && !loginRecordedRef.current) {
+      loginRecordedRef.current = true;
+      managerActivityApi.recordLogin(loggedInTeamId);
+    }
+  }, [loggedInTeamId]);
 
   // ── Hydrate tournament results from Firebase ──────────────────────────────
   // Hydrate tournament results from Firebase once after load.
@@ -515,29 +489,11 @@ const FantasyGolfLeague = () => {
 
 
   // ── Manager login ──────────────────────────────────────────────────────────
-  const handleManagerLogin = (result) => {
-    // result = { teamId } — resolve display name from loaded teams
-    const team = resolvedTeams.find(t => t.id === result.teamId);
-    // Blur any focused input and reset iOS viewport zoom
-    if (document.activeElement) document.activeElement.blur();
-    const mv = document.querySelector('meta[name=viewport]');
-    if (mv) {
-      mv.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1');
-      setTimeout(() => mv.setAttribute('content', 'width=device-width, initial-scale=1'), 300);
-    }
-    setLoggedInUser(team ? (team.owner || team.name) : result.teamId);
-    setLoggedInTeamId(result.teamId);
-    // Record the login for the Manager Activity panel.
-    managerActivityApi.recordLogin(result.teamId);
-    // taggedCommissioner derives from loggedInTeamId (set above). Login itself
-    // doesn't activate commish mode — managers opt in via the header toggle.
-    setIsCommissioner(false);
-    setShowLoginModal(false);
-  };
+// (login modal removed — sign-in is the gate, handled at the App root)
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
-    await managerAuthApi.logout();
+    await signOutUser();
     setLoggedInUser(null);
     setLoggedInTeamId(null);
     setIsCommissioner(false);
@@ -548,7 +504,7 @@ const FantasyGolfLeague = () => {
     setActiveTab(prev => (prev === 'admin' ? 'standings' : prev));
   };
 
-  if (loading) {
+  if (loading || claims === null) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
         {/* Loading-screen animations are now in app-global.css (Wave 1 cleanup) */}
@@ -560,6 +516,20 @@ const FantasyGolfLeague = () => {
         </div>
         <div style={{ fontSize: fontSize.sm, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading 2026 League</div>
       </div>
+    );
+  }
+
+  // Signed in but no team yet (and not the commissioner): self-claim a team.
+  if (!loggedInTeamId && !isCommissionerClaim) {
+    return (
+      <AuthGate
+        mode="claim"
+        teams={resolvedTeams}
+        claims={claims}
+        userLabel={authUser?.email || authUser?.displayName || ''}
+        onClaim={(teamId) => claimTeam(teamId, authUser.uid)}
+        onSignOut={signOutUser}
+      />
     );
   }
 
@@ -878,7 +848,6 @@ const FantasyGolfLeague = () => {
               </button>
             )}
 
-            {loggedInUser ? (
             <button
               role="menuitem"
               onClick={() => { setShowMoreMenu(false); handleLogout(); }}
@@ -887,54 +856,8 @@ const FantasyGolfLeague = () => {
               <LogOut style={{ width: 18, height: 18, opacity: 0.85 }} />
               <span>Sign Out</span>
             </button>
-            ) : (
-            <button
-              role="menuitem"
-              onClick={() => { setShowMoreMenu(false); setShowLoginModal(true); }}
-              style={{ ...MORE_MENU_ITEM_STYLE, color: 'rgba(80,195,120,0.95)' }}
-            >
-              <LogIn style={{ width: 18, height: 18, opacity: 0.85 }} />
-              <span>Sign In</span>
-            </button>
-            )}
           </div>
         </>
-      )}
-
-      {/* ── Manager Login Modal ── */}
-      {showLoginModal && (
-        <div style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(5, 10, 25, 0.88)',
-          backdropFilter: 'blur(6px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 60, padding: 16,
-        }}>
-          <div style={{ position: 'relative' }}>
-            <Suspense fallback={<LazyFallback />}>
-              <LazyLoginPage onLogin={handleManagerLogin} />
-            </Suspense>
-            <button
-              onClick={() => setShowLoginModal(false)}
-              aria-label="Close"
-              style={{
-                position: 'absolute', top: 12, right: 12,
-                background: 'none', border: 'none',
-                color: 'rgba(255,255,255,0.55)',
-                fontSize: fontSize.xl, cursor: 'pointer',
-                lineHeight: 1, zIndex: 51,
-                transition: 'color 0.2s',
-                padding: 10,
-                minWidth: 44, minHeight: 44,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.85)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.55)'}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
       )}
 
       {/* ── User Settings Modal (Wave J Round 6 batch 2) ── */}
@@ -959,11 +882,38 @@ const FantasyGolfLeague = () => {
   );
 };
 
-// ── Root with providers ──────────────────────────────────────────────────────
-const App = () => (
-  <DialogProvider>
-    <FantasyGolfLeague />
-  </DialogProvider>
-);
+// ── Root with providers + auth gate ─────────────────────────────────────────
+// The auth check sits ABOVE the data app so useLeague never attaches Firestore
+// listeners while signed out (which would hit permission-denied once the rules
+// require auth). Signed out → login screen; signed in → the league.
+const App = () => {
+  const [auth, setAuth] = useState({ status: 'loading', user: null, isCommissioner: false });
+
+  useEffect(() => watchAuth(({ user, isCommissioner }) => {
+    setAuth({ status: 'ready', user, isCommissioner });
+  }), []);
+
+  if (auth.status === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
+        <div className="sfgl-logo-load" style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: 'rgba(255,255,255,0.93)', userSelect: 'none' }}>SFGL</div>
+      </div>
+    );
+  }
+
+  if (!auth.user) {
+    return (
+      <DialogProvider>
+        <AuthGate mode="login" />
+      </DialogProvider>
+    );
+  }
+
+  return (
+    <DialogProvider>
+      <FantasyGolfLeague authUser={auth.user} isCommissionerClaim={auth.isCommissioner} />
+    </DialogProvider>
+  );
+};
 
 export default App;
