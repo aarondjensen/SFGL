@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation } from '../utils/index.js';
+import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
 import { getTransactionFee } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
@@ -166,7 +166,7 @@ export const AddDropPlayerModal = ({
   };
 
   const rosteredPlayers = new Set(
-    teams.flatMap(t => [...effectiveRosterNames(t)])
+    teams.flatMap(t => [...effectiveRosterNames(t)].map(normalizePlayerName))
   );
 
   // Players dropped via a processed FA/waiver whose tournament hasn't been completed yet
@@ -187,14 +187,14 @@ export const AddDropPlayerModal = ({
         // No tournamentIndex: treat as current week (in limbo)
         return true;
       })
-      .map(tx => tx.droppedPlayer)
+      .map(tx => normalizePlayerName(tx.droppedPlayer))
   );
 
   // Hide players this team already has a pending waiver claim for
   const thisTeamPendingClaims = new Set(
     transactions
       .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.team === team.name && tx.player)
-      .map(tx => tx.player)
+      .map(tx => normalizePlayerName(tx.player))
   );
 
   // Use search results when searching, otherwise top 50 free agents
@@ -202,7 +202,7 @@ export const AddDropPlayerModal = ({
   const availablePlayers = playerPool.filter(p => {
     if (!p.name || typeof p.name !== 'string') return false;
     if (p.isLiv || LIV_PLAYERS.has(p.name)) return false;
-    if (thisTeamPendingClaims.has(p.name)) return false;
+    if (thisTeamPendingClaims.has(normalizePlayerName(p.name))) return false;
     return true;
   });
 
@@ -210,7 +210,7 @@ export const AddDropPlayerModal = ({
   // RostersView, via effectiveRosterNames, so the owner badge matches the roster).
   const ownerMap = new Map();
   teams.forEach(t => {
-    effectiveRosterNames(t).forEach(name => ownerMap.set(name, t.name));
+    effectiveRosterNames(t).forEach(name => ownerMap.set(normalizePlayerName(name), t.name));
   });
 
   // Is the active tournament currently locked (Thu–Sun)?
@@ -223,7 +223,7 @@ export const AddDropPlayerModal = ({
   const displayPlayers = searchTerm.trim().length >= 2
     ? availablePlayers
     : availablePlayers
-        .filter(p => !rosteredPlayers.has(p.name) && !limboPlayers.has(p.name))
+        .filter(p => !rosteredPlayers.has(normalizePlayerName(p.name)) && !limboPlayers.has(normalizePlayerName(p.name)))
         .sort((a, b) => (a.worldRank ?? 9999) - (b.worldRank ?? 9999));
 
   const rosterFull   = currentRoster.length >= ROSTER_LIMIT;
@@ -633,8 +633,8 @@ export const AddDropPlayerModal = ({
           ) : (
             displayPlayers.slice(0, 50).map(player => {
               const isCurrentlySelected = selectedPlayerToAdd?.name === player.name;
-              const isLimbo = limboPlayers.has(player.name);
-              const playerOwner = ownerMap.get(player.name);
+              const isLimbo = limboPlayers.has(normalizePlayerName(player.name));
+              const playerOwner = ownerMap.get(normalizePlayerName(player.name));
               const isRostered = !!playerOwner;
               return (
                 <div
