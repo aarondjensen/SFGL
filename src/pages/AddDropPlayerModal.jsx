@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
@@ -140,8 +141,9 @@ export const AddDropPlayerModal = ({
   // mark a dropped player as still-owned:
   //   • it replayed in raw array order (no sort) — an add stored after a later
   //     drop would re-add a player who was actually netted out;
-  //   • it accepted `status === 'completed'` and transactions with no
-  //     `tournamentIndex`, which useRoster excludes;
+  //   • it dropped transactions with no `tournamentIndex` (useRoster requires
+  //     one) — but it must count BOTH `status === 'processed'` and
+  //     `'completed'`, exactly like useRoster does;
   //   • it ignored the `tournamentIndex <= activeTournamentIndex` upper bound.
   // Mirroring useRoster fixes the "shows on my team but not on my roster" bug.
   const effectiveRosterNames = (t) => {
@@ -154,7 +156,10 @@ export const AddDropPlayerModal = ({
           tx.type !== 'swing_winner' &&
           tx.tournamentIndex !== undefined &&
           tx.tournamentIndex <= activeTournamentIndex &&
-          tx.status === 'processed'
+          // Match useRoster EXACTLY: count both 'processed' and 'completed'.
+          // Counting only 'processed' wrongly freed FA/waiver pickups that
+          // landed in 'completed' status, so they showed as available here.
+          (tx.status === 'processed' || tx.status === 'completed')
         )
         .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
         .forEach(tx => {
@@ -363,7 +368,10 @@ export const AddDropPlayerModal = ({
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
-  return (
+  // Portal to <body> so the fixed overlay escapes ancestor transforms (e.g.
+  // PullToRefresh's translateY wrapper), which otherwise rebase position:fixed
+  // onto the transformed ancestor and break the modal's scroll container.
+  return createPortal(
     <div style={{
       position: 'fixed', inset: 0,
       background: 'rgba(5,10,25,0.85)', backdropFilter: 'blur(4px)',
@@ -767,6 +775,7 @@ export const AddDropPlayerModal = ({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
