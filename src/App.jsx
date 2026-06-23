@@ -527,7 +527,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
         teams={resolvedTeams}
         claims={claims}
         userLabel={authUser?.email || authUser?.displayName || ''}
-        onClaim={(teamId) => claimTeam(teamId, authUser.uid)}
+        onClaim={(teamId) => claimTeam(teamId, authUser.uid, authUser.email, authUser.displayName)}
         onSignOut={signOutUser}
       />
     );

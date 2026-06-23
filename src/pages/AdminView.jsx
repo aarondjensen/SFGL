@@ -16,7 +16,6 @@ import { S, M, disabledBtn } from './admin/adminStyles';
 import { DataSyncPanel } from './admin/DataSyncPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
 import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
-import { ManagerActivityPanel } from './admin/ManagerActivityPanel';
 import { MergePlayersPanel } from './admin/MergePlayersPanel';
 import { ScheduleImportPanel } from './admin/ScheduleImportPanel';
 import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
@@ -578,12 +577,8 @@ export const AdminView = ({
       title: 'People',
       tiles: [
         {
-          id: 'managers', icon: '👥', label: 'Manager Accounts',
-          desc: `${teams.length} team${teams.length === 1 ? '' : 's'}`,
-        },
-        {
-          id: 'manager_activity', icon: '📊', label: 'Manager Activity',
-          desc: 'Recent logins & notification status',
+          id: 'managers', icon: '👥', label: 'Managers',
+          desc: 'Claims, logins, emails & access',
         },
         {
           id: 'commish', icon: '🔔', label: 'Push Notifications',
@@ -696,15 +691,8 @@ export const AdminView = ({
       case 'managers':
         return (
           <>
-            <BackBar label="Manager Accounts" onBack={back} />
-            <ManagerAccountsPanel teams={teams} settings={settings} setSettings={setSettings} updateTeams={updateTeams} />
-          </>
-        );
-      case 'manager_activity':
-        return (
-          <>
-            <BackBar label="Manager Activity" onBack={back} />
-            <ManagerActivityPanel teams={teams} />
+            <BackBar label="Managers" onBack={back} />
+            <ManagerAccountsPanel teams={teams} />
           </>
         );
       case 'commish':
