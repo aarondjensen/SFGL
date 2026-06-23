@@ -562,7 +562,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
               {/* Left: current tournament (cell always rendered to hold the grid column) */}
               <div style={{ justifySelf: 'start', minWidth: 0, maxWidth: '100%' }}>
                 {currentTournament && (
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: fontSize.md, fontWeight: 400, letterSpacing: 1, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", minWidth: 0, lineHeight: 1.3 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.md, fontWeight: 400, letterSpacing: 1, color: '#f5c518', fontFamily: "'Raleway', system-ui, sans-serif", minWidth: 0, lineHeight: 1.3 }}>
                     <span style={{ flexShrink: 0 }}>⛳</span>
                     <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{currentTournament.name}</span>
                   </div>
@@ -577,8 +577,17 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                 {(() => {
                   const active = safeTournaments.find(t => t.playing);
                   const seg = active?.segment || safeTournaments.find(t => !t.completed && !t.playing)?.segment || [...safeTournaments].reverse().find(t => t.completed)?.segment || getSegmentByDate();
+                  // Always render as two stacked lines (e.g. "Summer" / "Swing",
+                  // "West Coast" / "Swing") to mirror the wrapped, ~2-line look of
+                  // the current-tournament name on the left.
+                  const parts = String(seg).split(' ');
+                  const last  = parts.pop();
+                  const first = parts.join(' ');
                   return (
-                    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, fontWeight: 500, letterSpacing: 1, whiteSpace: 'nowrap', color: getSwingColor(seg) }}>{seg}</span>
+                    <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.md, fontWeight: 500, letterSpacing: 1, lineHeight: 1.3, color: getSwingColor(seg) }}>
+                      {first && <span style={{ display: 'block', whiteSpace: 'nowrap' }}>{first}</span>}
+                      <span style={{ display: 'block', whiteSpace: 'nowrap' }}>{last}</span>
+                    </span>
                   );
                 })()}
                 {isSyncing && (
