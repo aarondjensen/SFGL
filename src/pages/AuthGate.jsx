@@ -56,8 +56,6 @@ export default function AuthGate({
 
         {mode === 'login' ? (
           <>
-            <div style={S.tagline}>Sign in to your league</div>
-
             <button
               style={{ ...S.btn, ...(busy ? S.btnBusy : null) }}
               disabled={!!busy}
