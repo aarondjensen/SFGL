@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>737106270109-qua9pm51edc8fr7s7f0fnbsgjdau1cbf.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.737106270109-qua9pm51edc8fr7s7f0fnbsgjdau1cbf</string>
+	<key>API_KEY</key>
+	<string>AIzaSyCNwMa7I5FVO8JXz5Q0HUfryNzxQIoS67s</string>
+	<key>GCM_SENDER_ID</key>
+	<string>737106270109</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.sfglgolf.app</string>
+	<key>PROJECT_ID</key>
+	<string>sfgl-ad892</string>
+	<key>STORAGE_BUCKET</key>
+	<string>sfgl-ad892.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:737106270109:ios:f2e2fc05db50c9d5d04174</string>
+</dict>
+</plist>

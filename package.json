@@ -11,9 +11,11 @@
     "analyze": "vite build --mode analyze"
   },
   "dependencies": {
+    "@capacitor-firebase/authentication": "^8.3.0",
     "@capacitor/android": "^8.4.0",
     "@capacitor/cli": "^8.4.0",
     "@capacitor/core": "^8.4.0",
+    "@capacitor/ios": "^8.4.1",
     "@capacitor/push-notifications": "^8.1.1",
     "@capacitor/status-bar": "^8.0.2",
     "firebase": "^12.11.0",
