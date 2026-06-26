@@ -24,6 +24,7 @@ import {
   GoogleAuthProvider,
   OAuthProvider,
   signInWithPopup,
+  signInWithCredential,
   signOut,
   onIdTokenChanged,
 } from 'firebase/auth';
@@ -36,6 +37,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { auth, db } from './_init';
+import { Capacitor } from '@capacitor/core';
 
 const CLAIMS = 'team_claims';
 
@@ -49,14 +51,50 @@ appleProvider.addScope('email');
 appleProvider.addScope('name');
 
 export async function signInWithGoogle() {
+  if (Capacitor.isNativePlatform()) {
+    // Native iOS/Android: the web popup can't complete inside a WebView, so
+    // run the OS-native Google sheet via @capacitor-firebase/authentication,
+    // then finish in the JS SDK with the returned credential. Config has
+    // skipNativeAuth:true, so the plugin only fetches the credential and the
+    // JS SDK stays the single source of truth (watchAuth / onIdTokenChanged).
+    const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+    const result = await FirebaseAuthentication.signInWithGoogle();
+    const credential = GoogleAuthProvider.credential(result.credential?.idToken);
+    await signInWithCredential(auth, credential);
+    return;
+  }
   await signInWithPopup(auth, googleProvider);
 }
 
 export async function signInWithApple() {
+  if (Capacitor.isNativePlatform()) {
+    const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+    const result = await FirebaseAuthentication.signInWithApple();
+    // Apple rejects the token unless the raw nonce the plugin generated is
+    // passed back when building the JS-SDK credential.
+    const provider = new OAuthProvider('apple.com');
+    const credential = provider.credential({
+      idToken: result.credential?.idToken,
+      rawNonce: result.credential?.nonce,
+    });
+    await signInWithCredential(auth, credential);
+    return;
+  }
   await signInWithPopup(auth, appleProvider);
 }
 
 export async function signOutUser() {
+  // On native, also clear the plugin session so the next sign-in shows the
+  // account picker instead of silently reusing the last account. Swallowed
+  // so a native hiccup can never block the JS SDK sign-out.
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+      await FirebaseAuthentication.signOut();
+    } catch (e) {
+      console.warn('[authApi] native signOut failed:', e?.message || e);
+    }
+  }
   await signOut(auth);
 }
 
