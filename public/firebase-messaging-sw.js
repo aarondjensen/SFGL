@@ -152,8 +152,8 @@ self.addEventListener('notificationclick', (event) => {
 // SW will fetch new chunks naturally; this cache version mainly protects
 // against bad cached app-shell snapshots.
 
-const CACHE_VERSION = 'sfgl-shell-v1';
-const RUNTIME_CACHE = 'sfgl-runtime-v1';
+const CACHE_VERSION = 'sfgl-shell-v2';
+const RUNTIME_CACHE = 'sfgl-runtime-v2';
 
 // On install, take over immediately so old SW instances don't linger.
 self.addEventListener('install', (event) => {

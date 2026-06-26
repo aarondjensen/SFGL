@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
+import { TeamName } from '../components/TeamName';
 import { getTransactionFee } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
@@ -423,7 +424,7 @@ export const AddDropPlayerModal = ({
               color: colors.textPrimary,
               marginTop: 2,
             }}>
-              {team.name}
+              <TeamName name={team.name} />
               <span style={{ color: colors.textMuted, fontWeight: 400, marginLeft: 6 }}>
                 · ${isWaiverMode
                   ? TRANSACTION_FEE_WAIVER.toLocaleString()
