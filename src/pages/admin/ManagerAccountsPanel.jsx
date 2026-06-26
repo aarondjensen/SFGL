@@ -26,6 +26,8 @@
 import React from 'react';
 import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
+import { TeamName } from '../../components/TeamName';
+import { compactTeamName } from '../../utils/index.js';
 import { M, disabledBtn } from './adminStyles';
 import { subscribeClaims, reassignTeam, setNotifyEmail } from '../../api/authApi';
 import { managerActivityApi } from '../../api/managerActivity';
@@ -198,7 +200,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
               {/* Name + claim status */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <div style={{ fontFamily: fonts.sans, fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>
-                  {t.name}
+                  <TeamName name={t.name} />
                 </div>
                 <span
                   style={{
@@ -295,7 +297,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
                   fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
                   color: colors.textPrimary, width: 120, flexShrink: 0,
                 }}>
-                  {t.name}
+                  <TeamName name={t.name} />
                 </span>
                 <input
                   type="email"
@@ -329,7 +331,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
 
         <select value={assignTeam} onChange={(e) => setAssignTeam(e.target.value)} style={M.select}>
           <option value="">Select team…</option>
-          {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {teams.map((t) => <option key={t.id} value={t.id}>{compactTeamName(t.name)}</option>)}
         </select>
         <input
           value={assignUid}

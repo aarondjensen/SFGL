@@ -156,6 +156,15 @@ export const getTeamAbbreviation = (teamName) =>
   TEAM_ABBREVIATIONS[teamName] ||
   teamName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase();
 
+// JS counterpart to the .sfgl-team-full/.sfgl-team-abbr CSS swap, for places
+// CSS can't reach the text — native <select><option> labels. Non-reactive
+// (read at render); fine for the commissioner-only desktop surfaces that use
+// it. Keep the 360px breakpoint in sync with app-global.css.
+export const compactTeamName = (name) =>
+  (typeof window !== 'undefined' && window.matchMedia('(max-width: 360px)').matches)
+    ? getTeamAbbreviation(name)
+    : name;
+
 // ============================================================================
 // DATE / TIME (ET-aware)
 // ============================================================================

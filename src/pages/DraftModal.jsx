@@ -6,6 +6,7 @@ import { draftStateApi } from '../api/firebase';
 import { useDialog } from './DialogContext';
 import { theme, colors, fonts } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
+import { TeamName } from '../components/TeamName';
 
 // ── Shared modal shell ────────────────────────────────────────────────────────
 const Shell = ({ children, wide }) => (
@@ -483,7 +484,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
                   {idx + 1}
                 </div>
                 <span style={{ color: colors.textSecondary, fontSize: 16, letterSpacing: 2 }}>⋮⋮</span>
-                <span style={{ fontFamily: fonts.serif, fontSize: 14, color: colors.textPrimary }}>{team.name}</span>
+                <span style={{ fontFamily: fonts.serif, fontSize: 14, color: colors.textPrimary }}><TeamName name={team.name} /></span>
               </div>
               <div style={{ display: 'flex', gap: 4 }}>
                 {[[-1, '▲'], [1, '▼']].map(([dir, label]) => {
