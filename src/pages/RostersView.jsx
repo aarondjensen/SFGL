@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useDialog } from './DialogContext';
 import { AddDropPlayerModal } from './AddDropPlayerModal';
+import { TeamName } from '../components/TeamName';
 
 import { useRoster, useWindowStatus } from '../hooks';
 import {
@@ -100,7 +101,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
         }}
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {selected?.name ?? '—'}
+          {selected ? <TeamName name={selected.name} /> : '—'}
         </span>
         <span style={{ fontSize: 11, color: colors.textSecondary, opacity: 0.9, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
       </button>
@@ -126,7 +127,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
               onMouseEnter={e => { if (t.id !== value) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
               onMouseLeave={e => { if (t.id !== value) e.currentTarget.style.background = 'transparent'; }}
             >
-              {t.name}
+              <TeamName name={t.name} />
             </button>
           ))}
         </div>

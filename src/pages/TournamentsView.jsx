@@ -4,6 +4,7 @@ import { useDialog } from './DialogContext';
 
 import { theme, colors, fonts, fontSize, SWINGS, getSwingColor, getSwingColorAt } from '../theme.js';
 import { getSegmentForTournament, shortName } from '../utils';
+import { TeamName } from '../components/TeamName';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 import { TournamentBadges } from './TournamentBadges';
@@ -710,7 +711,7 @@ export const TournamentsView = ({
                     {rank + 1}
                   </span>
                 )}
-                <span style={{ ...theme.bodyText, color: colors.textPrimary }}>{team.name}</span>
+                <span style={{ ...theme.bodyText, color: colors.textPrimary }}><TeamName name={team.name} /></span>
                 {hasStarted && (
                   <span style={{
                     ...theme.statNum, fontSize: fontSize.base, fontWeight: 600,
@@ -823,7 +824,7 @@ export const TournamentsView = ({
                 }}>
                   {rank + 1}
                 </span>
-                <span style={{ ...theme.bodyText, color: colors.textPrimary }}>{team.name}</span>
+                <span style={{ ...theme.bodyText, color: colors.textPrimary }}><TeamName name={team.name} /></span>
                 <span style={{
                   ...theme.statNum, fontSize: fontSize.base, fontWeight: 600,
                   color: (tr.totalEarnings || 0) > 0 ? colors.earningsGreen : colors.textMuted,

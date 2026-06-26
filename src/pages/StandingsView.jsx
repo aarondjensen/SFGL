@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { theme, colors, fonts, fontSize, rowHoverHandlers, SWINGS, SWING_COLORS, getSwingColorAt } from '../theme.js';
 import { getSegmentForTournament } from '../utils';
+import { TeamName } from '../components/TeamName';
 
 // Row height enforced via the .sfgl-row-hero class defined in app-global.css.
 // (Hero tier = 56px desktop / 52px mobile, single-line content.)
@@ -210,18 +211,25 @@ const StandingsCard = ({
                     <PositionBadge position={position} isWinner={isWinner} swingAccent={accentColor} />
                   </td>
 
-                  {/* Team name */}
-                  <td style={{ ...theme.tableCell, overflow: 'hidden', paddingLeft: 4, paddingRight: 4 }}>
+                  {/* Team name — wraps to multiple lines instead of truncating.
+                      A manager with a large device font / display zoom shrinks the
+                      effective viewport, which starves this auto-width column; under
+                      the old `nowrap` + ellipsis the name collapsed to a single
+                      character. Wrapping keeps the full name visible at any width
+                      (the row simply grows taller), and also stops longer names
+                      from truncating for normal-font users. */}
+                  <td style={{ ...theme.tableCell, paddingLeft: 4, paddingRight: 4, verticalAlign: 'middle' }}>
                     <div style={{
                       ...theme.bodyText,
                       fontSize: fontSize.lg,
                       fontFamily: fonts.serif,
                       color: isWinner ? getSwingColorAt(accentColor, 1) : colors.textPrimary,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      whiteSpace: 'normal',
+                      overflowWrap: 'anywhere',
+                      wordBreak: 'break-word',
+                      lineHeight: 1.2,
                     }}>
-                      {team.name}
+                      <TeamName name={team.name} />
                     </div>
                   </td>
 

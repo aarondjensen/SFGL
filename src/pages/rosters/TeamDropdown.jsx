@@ -11,6 +11,7 @@
 
 import React from 'react';
 import { colors, fonts } from '../../theme.js';
+import { TeamName } from '../../components/TeamName';
 
 export const TeamDropdown = ({ teams, value, onChange }) => {
   const [open, setOpen] = React.useState(false);
@@ -37,7 +38,7 @@ export const TeamDropdown = ({ teams, value, onChange }) => {
         }}
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {selected?.name ?? '—'}
+          {selected ? <TeamName name={selected.name} /> : '—'}
         </span>
         <span style={{ fontSize: 9, opacity: 0.6, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
       </button>
@@ -63,7 +64,7 @@ export const TeamDropdown = ({ teams, value, onChange }) => {
               onMouseEnter={e => { if (t.id !== value) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
               onMouseLeave={e => { if (t.id !== value) e.currentTarget.style.background = 'transparent'; }}
             >
-              {t.name}
+              <TeamName name={t.name} />
             </button>
           ))}
         </div>
