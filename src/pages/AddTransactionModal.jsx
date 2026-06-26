@@ -22,6 +22,7 @@ import { useDialog } from './DialogContext';
 import { useModalBehavior } from '../utils/modalUtils';
 import { sendCommishPush } from '../api/pushNotifications';
 import { getCurrentTournamentIndex } from '../utils/index.js';
+import { compactTeamName } from '../utils/index.js';
 import { getTransactionFee } from '../utils/sharedHelpers';
 import { colors, fonts } from '../theme.js';
 import { M, disabledBtn } from './admin/adminStyles';
@@ -504,7 +505,7 @@ export const AddTransactionModal = ({
               style={M.select}
             >
               <option value="">Select team...</option>
-              {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+              {teams.map(t => <option key={t.id} value={t.name}>{compactTeamName(t.name)}</option>)}
             </select>
           </div>
 

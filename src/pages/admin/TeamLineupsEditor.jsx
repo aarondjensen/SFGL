@@ -24,6 +24,7 @@
 import React, { useState } from 'react';
 import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
+import { TeamName } from '../../components/TeamName';
 import { S } from './adminStyles';
 import { isBackupSpotEnabled } from '../../utils/sharedHelpers';
 
@@ -134,7 +135,7 @@ export const TeamLineupsEditor = ({
                 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
                   <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: colors.textPrimary }}>
-                    {team.name}
+                    <TeamName name={team.name} />
                   </span>
                   {/* Right cluster: status counter + clear button (when applicable),
                       kept together on a single row so the team card doesn't

@@ -13,6 +13,7 @@
 import React from 'react';
 import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
+import { compactTeamName } from '../../utils/index.js';
 import { sfglDataApi } from '../../api/firebase';
 import { sendCommishPush } from '../../api/pushNotifications';
 import { processTournamentData } from './processTournamentData';
@@ -53,7 +54,7 @@ const RoundLeaderSelect = ({
             style={{ ...M.select, flex: 1, fontSize: 12, padding: '7px 8px' }}
           >
             <option value="">(none)</option>
-            {players.map(p => <option key={p.name + p.team} value={p.name}>{p.name} — {p.team}</option>)}
+            {players.map(p => <option key={p.name + p.team} value={p.name}>{p.name} — {compactTeamName(p.team)}</option>)}
           </select>
           {idx > 0 && (
             <button

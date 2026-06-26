@@ -18,6 +18,7 @@
 
 import React from 'react';
 import { colors, fonts, fontSize } from '../../theme.js';
+import { TeamName } from '../../components/TeamName';
 import { M, disabledBtn } from './adminStyles';
 import {
   getAllTokensByTeam,
@@ -228,7 +229,7 @@ export const NotificationStatusPanel = ({ teams = [], updateTeams }) => {
                           fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 600,
                           color: colors.textPrimary,
                         }}>
-                          {row.teamName}
+                          <TeamName name={row.teamName} />
                         </span>
                         <span style={{
                           fontFamily: fonts.sans, fontSize: fontSize.sm,
