@@ -29,6 +29,17 @@ const config: CapacitorConfig = {
     url: 'https://www.sfglgolf.com',
     cleartext: false,
   },
+
+  plugins: {
+    // Native Google / Apple sign-in. skipNativeAuth keeps the plugin from
+    // signing into the native Firebase SDK — it only returns the credential,
+    // which authApi.js hands to the JS SDK via signInWithCredential so the
+    // web auth state (watchAuth) stays the single source of truth.
+    FirebaseAuthentication: {
+      skipNativeAuth: true,
+      providers: ['google.com', 'apple.com'],
+    },
+  },
 };
 
 export default config;
