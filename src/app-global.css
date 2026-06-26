@@ -53,6 +53,17 @@ body {
   .sfgl-tournament-mobile { display: none !important; }
 }
 
+/* ── Responsive team-name display (TeamName.jsx) ─────────────────────────────
+   Full team name normally; canonical abbreviation when the layout width is
+   tight (small phones, split-screen, iOS Display Zoom ~320pt). Same show/hide
+   mechanism as .sfgl-tab-label above: both labels render, one is revealed.
+   Breakpoint 360px clears a normal iPhone (375pt) but catches a zoomed one. */
+.sfgl-team-abbr { display: none; }
+@media (max-width: 360px) {
+  .sfgl-team-full { display: none; }
+  .sfgl-team-abbr { display: inline; white-space: nowrap; letter-spacing: 0.5px; }
+}
+
 /* ── Select dropdown dark theme (was: sfgl-select-styles in App.jsx) ── */
 select { color-scheme: dark; }
 select option {

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
+import { TeamName } from '../components/TeamName';
 import { getTransactionFee } from '../utils/sharedHelpers';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
@@ -661,7 +662,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     {/* Team name + tournament or swing name */}
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
                       <span style={{ fontFamily: fonts.serif, fontSize: 'clamp(13px, 1.1vw, 15px)', color: colors.textPrimary }}>
-                        {tx.team}
+                        <TeamName name={tx.team} />
                       </span>
                       {(() => {
                         // swing_winner: show swing name; others: show tournament name
