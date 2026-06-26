@@ -12,14 +12,14 @@ const SWING_ACCENT = SWING_COLORS;
 // ── Formatters ──────────────────────────────────────────────────────────────
 const formatEarnings = (n) => {
   n = n || 0;
-  if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(3) + 'M';
+  if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(2) + 'M';
   if (n >= 1_000)     return '$' + Math.round(n / 1_000) + 'k';
   return '$' + n;
 };
 
 const formatBehind = (n) => {
   if (!n || n <= 0) return '—';
-  if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000)     return '$' + Math.round(n / 1_000) + 'k';
   return '$' + n;
 };
@@ -29,7 +29,7 @@ const formatBehind = (n) => {
 // these are visually subordinate to the season number.
 const formatEventEarnings = (n) => {
   if (!n || n <= 0) return '—';
-  if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000)     return '$' + Math.round(n / 1_000) + 'k';
   return '$' + n;
 };
