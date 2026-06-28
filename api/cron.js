@@ -1406,31 +1406,16 @@ async function handleOwgrRankings(res) {
 // Reset behavior: when tournamentName changes, the doc is fully overwritten
 // with the new state. The lastFired map is per-tournament — no carryover.
 async function handleLeadWatch(res) {
-  // 1. Fetch live leaderboard via the existing /api/live endpoint
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : 'https://www.sfglgolf.com';
-
-  let liveData;
-  try {
-    const resp = await fetch(`${baseUrl}/api/live`);
-    if (!resp.ok) return res.json({ status: 'live_fetch_failed', http: resp.status });
-    liveData = await resp.json();
-  } catch (err) {
-    return res.json({ status: 'live_fetch_error', error: err.message });
-  }
-
-  if (!liveData?.players?.length) return res.json({ status: 'no_players' });
-
-  // 2. Gates. /api/live does NOT report a round number, so the old
-  //    "round >= 2" check was always NaN and silently suppressed every
-  //    notification. Gate instead on:
+  // 1. Cheap gates FIRST — no network. These run before fetching /api/live so
+  //    off-day / disabled pings cost ~nothing and, critically, do NOT trigger a
+  //    pgatour.com scrape. With the cron at 5-min intervals this keeps origin
+  //    scrapes to watch days only (Fri/Sat/Sun + Mon) instead of hammering
+  //    pgatour.com every 5 min, 24/7. /api/live does NOT report a round number,
+  //    so we gate on:
   //    (a) the leadWatchEnabled toggle;
   //    (b) day-of-week — Fri/Sat/Sun (rounds 2-4) plus Mon, to catch a
-  //        weather-delayed final round. Round 1 (Thursday) stays excluded;
-  //    (c) live play — at least one player has a numeric `thru` (actively on
-  //        the course). Skips completed events (everyone 'F') and pre-tee-off
-  //        lulls where the "leader" is just the previous round's standing.
+  //        weather-delayed final round. Round 1 (Thursday) stays excluded.
+  //    The live-play gate (c) needs leaderboard data, so it stays below the fetch.
   const settings = await loadSettings();
   if (settings?.leadWatchEnabled === false) {
     return res.json({ status: 'disabled' });
@@ -1442,16 +1427,42 @@ async function handleLeadWatch(res) {
     return res.json({ status: 'off_day', etDay });
   }
 
+  // Round is informational only (state shape / debug); /api/live doesn't
+  // expose it, so infer from the day: Fri=2, Sat=3, Sun/Mon=4.
+  const round = etDay === 5 ? 2 : etDay === 6 ? 3 : 4;
+
+  // 2. Fetch live leaderboard via the existing /api/live endpoint.
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : 'https://www.sfglgolf.com';
+
+  let liveData;
+  try {
+    // Cache-bust: /api/live sets a 5-min CDN cache (s-maxage=300, SWR 600) tuned
+    // for the 5-manager client poll. The lead-watch cron must NOT inherit that
+    // staleness — a unique query param forces a CDN miss → origin scrape every
+    // run, so the leader-set and the score/thru baked into the push reflect the
+    // live board, not a snapshot up to 5–10 min old.
+    const resp = await fetch(`${baseUrl}/api/live?fresh=${Date.now()}`, {
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (!resp.ok) return res.json({ status: 'live_fetch_failed', http: resp.status });
+    liveData = await resp.json();
+  } catch (err) {
+    return res.json({ status: 'live_fetch_error', error: err.message });
+  }
+
+  if (!liveData?.players?.length) return res.json({ status: 'no_players' });
+
+  // 3. Live-play gate — at least one player has a numeric `thru` (actively on
+  //    the course). Skips completed events (everyone 'F') and pre-tee-off lulls
+  //    where the "leader" is just the previous round's standing.
   const inProgress = liveData.players.some(
     p => !p.isCut && !p.isWD && /^\d+$/.test(String(p.thru || ''))
   );
   if (!inProgress) {
     return res.json({ status: 'not_in_progress' });
   }
-
-  // Round is informational only (state shape / debug); /api/live doesn't
-  // expose it, so infer from the day: Fri=2, Sat=3, Sun/Mon=4.
-  const round = etDay === 5 ? 2 : etDay === 6 ? 3 : 4;
 
   const tournamentName = liveData.tournamentName || liveData.eventName || '';
   if (!tournamentName) return res.json({ status: 'no_tournament_name' });
