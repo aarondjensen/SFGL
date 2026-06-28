@@ -770,6 +770,16 @@ function normalizeName(name) {
   return (name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
+// "First Last" → "F. Last". Mirrors abbreviateName() in src/utils/index.js —
+// keep the two in sync. Single-word names returned unchanged. Used by the
+// lead-watch push to match the leaderboard's "V. Hovland" rendering.
+function abbreviateName(name) {
+  if (!name) return '';
+  const parts = name.trim().split(' ');
+  if (parts.length < 2) return name;
+  return parts[0][0] + '. ' + parts[parts.length - 1];
+}
+
 function matchName(a, b) {
   const na = normalizeName(a), nb = normalizeName(b);
   if (na === nb) return true;
@@ -1540,15 +1550,16 @@ async function handleLeadWatch(res) {
         continue;
       }
 
-      // Build the push. Co-leader gets a slightly softer headline than sole
-      // leader to be honest about the state of play.
+      // Build the push. Name shown as "F. Last" to match the leaderboard.
+      // Co-leader gets "is T1!"; sole leader gets "is in the lead!".
+      const shortName = abbreviateName(leaderName);
       const title = isCoLeader
-        ? `🏌 ${leaderName} is tied for the lead`
-        : `🏌 ${leaderName} takes the lead`;
+        ? `🏌 ${shortName} is T1!`
+        : `🏌 ${shortName} is in the lead!`;
+      // Body keeps score + thru, tournament name removed.
       const bodyParts = [];
       if (scoreStr) bodyParts.push(`${scoreStr}`);
       if (thruStr)  bodyParts.push(`thru ${thruStr}`);
-      bodyParts.push(`at ${tournamentName}`);
       const body = bodyParts.join(' · ');
 
       try {
