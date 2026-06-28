@@ -40,6 +40,19 @@ const config: CapacitorConfig = {
       providers: ['google.com', 'apple.com'],
     },
   },
+
+  // SPM build workaround: @capacitor-firebase/messaging needs symlinked
+  // package options to resolve its Firebase iOS SDK dependency under Swift
+  // Package Manager (same fix used in the MNQ build).
+  experimental: {
+    ios: {
+      spm: {
+        packageOptions: {
+          '@capacitor-firebase/messaging': { symlink: true },
+        },
+      },
+    },
+  },
 };
 
 export default config;
