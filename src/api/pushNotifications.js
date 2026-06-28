@@ -113,30 +113,31 @@ const withTimeout = (promise, ms, label) => {
 };
 
 // ── Native (Capacitor) push path ────────────
-// Inside the iOS/Android app there is no service worker or web-push/VAPID; we
-// use the native @capacitor/push-notifications plugin instead. On Android the
-// registration token IS the FCM token, so it drops into the same
-// `pushTokens/{token}` collection and your existing push.js backend delivers
-// to it with no server changes. (iOS will additionally need an APNs key +
-// Firebase messaging so its token is also an FCM token — handled later.)
+// Inside the iOS/Android app there is no service worker or web-push/VAPID. We
+// use @capacitor-firebase/messaging, whose getToken() returns a real FCM token
+// on BOTH platforms — on iOS the plugin registers with APNs and exchanges the
+// APNs token for an FCM token, so it drops into the same pushTokens/{token}
+// collection your push.js backend already targets, with no server changes.
+// (Requires the iOS Push Notifications + Background Modes capabilities and an
+// APNs key uploaded to Firebase — same native setup as the MNQ build.)
 const nativeSubscribe = async (teamId) => {
   console.log('[push] native subscribe START — teamId:', teamId, 'platform:', Capacitor.getPlatform());
   if (!teamId) { console.warn('[push] no teamId'); return { ok: false, reason: 'no_team' }; }
 
-  let PushNotifications;
+  let FirebaseMessaging;
   try {
-    ({ PushNotifications } = await import('@capacitor/push-notifications'));
+    ({ FirebaseMessaging } = await import('@capacitor-firebase/messaging'));
   } catch (err) {
-    console.error('[push] native plugin import failed:', err);
+    console.error('[push] native messaging plugin import failed:', err);
     return { ok: false, reason: 'unsupported' };
   }
 
-  // Permission (Android 13+ and iOS both prompt here).
+  // Permission (iOS + Android 13+ both prompt here).
   let perm;
   try {
-    perm = await PushNotifications.checkPermissions();
+    perm = await FirebaseMessaging.checkPermissions();
     if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') {
-      perm = await PushNotifications.requestPermissions();
+      perm = await FirebaseMessaging.requestPermissions();
     }
   } catch (err) {
     console.error('[push] native permission error:', err);
@@ -147,31 +148,17 @@ const nativeSubscribe = async (teamId) => {
     return { ok: false, reason: 'denied' };
   }
 
-  // register() resolves immediately; the token arrives via the 'registration'
-  // listener. Wait for it (or fail on registrationError / 15s timeout).
-  let regHandle, errHandle, resolveToken;
-  const tokenPromise = new Promise((resolve) => { resolveToken = resolve; });
+  // getToken() returns an FCM token on both platforms (iOS does the APNs→FCM
+  // exchange internally). Timeout-guarded so a flaky network can't hang it.
+  let token;
   try {
-    regHandle = await PushNotifications.addListener('registration', (t) => {
-      console.log('[push] native token received, len:', t && t.value && t.value.length);
-      resolveToken(t.value);
-    });
-    errHandle = await PushNotifications.addListener('registrationError', (e) => {
-      console.error('[push] native registrationError:', e);
-      resolveToken(null);
-    });
-    await PushNotifications.register();
+    const res = await withTimeout(FirebaseMessaging.getToken(), 15000, 'native getToken');
+    if (res && res.__timeout) { console.warn('[push] native getToken timed out'); return { ok: false, reason: 'token_failed' }; }
+    token = res && res.token;
   } catch (err) {
-    console.error('[push] native register failed:', err);
-    resolveToken(null);
+    console.error('[push] native getToken failed:', err);
+    return { ok: false, reason: 'token_failed' };
   }
-  const token = await Promise.race([
-    tokenPromise,
-    new Promise((r) => setTimeout(() => { console.warn('[push] native token wait timed out'); r(null); }, 15000)),
-  ]);
-  try { regHandle && regHandle.remove(); } catch {}
-  try { errHandle && errHandle.remove(); } catch {}
-
   if (!token) { console.warn('[push] native: no token'); return { ok: false, reason: 'token_failed' }; }
 
   // Same collection your server already reads — no backend change needed.
@@ -197,11 +184,18 @@ const nativeSubscribe = async (teamId) => {
 const nativeUnsubscribe = async () => {
   let token = null;
   try { token = localStorage.getItem('sfgl.pushToken'); } catch {}
-  // No 'revoke token' call exists; deleting the Firestore doc stops the server
-  // from targeting this device, which is the goal.
+  // Deleting the Firestore doc stops the server from targeting this device.
   if (token) {
     try { await deleteDoc(doc(db, 'pushTokens', token)); }
     catch (err) { console.warn('[push] native delete token doc failed:', err); }
+  }
+  // Also revoke the FCM token natively so a future re-subscribe issues a fresh
+  // one. Swallowed — a failure here must not block the unsubscribe.
+  try {
+    const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
+    await FirebaseMessaging.deleteToken();
+  } catch (err) {
+    console.warn('[push] native deleteToken failed:', err?.message || err);
   }
   try { localStorage.removeItem('sfgl.pushToken'); } catch {}
   return { ok: true };
