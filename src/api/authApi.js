@@ -25,6 +25,8 @@ import {
   OAuthProvider,
   signInWithPopup,
   signInWithCredential,
+  linkWithCredential,
+  linkWithPopup,
   signOut,
   onIdTokenChanged,
 } from 'firebase/auth';
@@ -96,6 +98,67 @@ export async function signOutUser() {
     }
   }
   await signOut(auth);
+}
+
+// ── Account linking ──────────────────────────────────────────────────────
+// Attach a SECOND provider to the already-signed-in user so Google + Apple
+// resolve to ONE Firebase uid (and therefore one team). Apple's Hide-My-Email
+// means the two identities never auto-match by email, so linking is an explicit
+// action the signed-in user takes once. Mirrors the sign-in paths: native uses
+// the plugin to fetch a credential, then links it in the JS SDK.
+function friendlyLinkError(e, label) {
+  const code = e?.code;
+  if (code === 'auth/provider-already-linked') return new Error(`Your ${label} account is already linked.`);
+  if (code === 'auth/credential-already-in-use' || code === 'auth/email-already-in-use')
+    return new Error(`That ${label} account is already tied to a different SFGL login. The commissioner must remove that login first, then link.`);
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request')
+    return new Error('Linking cancelled.');
+  return new Error(e?.message || `Could not link your ${label} account.`);
+}
+
+export async function linkAppleAccount() {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Please sign in first, then link your Apple account.');
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+      const result = await FirebaseAuthentication.signInWithApple();
+      const provider = new OAuthProvider('apple.com');
+      const credential = provider.credential({
+        idToken: result.credential?.idToken,
+        rawNonce: result.credential?.nonce,
+      });
+      await linkWithCredential(user, credential);
+      return;
+    }
+    await linkWithPopup(user, appleProvider);
+  } catch (e) {
+    throw friendlyLinkError(e, 'Apple');
+  }
+}
+
+export async function linkGoogleAccount() {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Please sign in first, then link your Google account.');
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      const credential = GoogleAuthProvider.credential(result.credential?.idToken);
+      await linkWithCredential(user, credential);
+      return;
+    }
+    await linkWithPopup(user, googleProvider);
+  } catch (e) {
+    throw friendlyLinkError(e, 'Google');
+  }
+}
+
+// Which providers are attached to the current user. Drives the settings UI.
+export function getLinkedProviders() {
+  const u = auth.currentUser;
+  const ids = (u?.providerData || []).map((p) => p.providerId);
+  return { google: ids.includes('google.com'), apple: ids.includes('apple.com') };
 }
 
 // ── Auth state ───────────────────────────────────────────────────────────────
