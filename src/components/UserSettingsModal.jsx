@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, LogOut } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
 import { colors, fonts } from '../theme.js';
 import { useModalBehavior } from '../utils/modalUtils';
@@ -25,7 +25,6 @@ import {
   NOTIFICATION_EVENTS,
   getEffectivePrefs,
 } from '../api/pushNotifications';
-import { linkAppleAccount, linkGoogleAccount, getLinkedProviders } from '../api/authApi';
 
 // Reusable iOS-style toggle pill (visual only — the row button handles clicks).
 const Toggle = ({ on, accent = 'rgba(80,195,120,0.95)', disabled = false }) => (
@@ -117,30 +116,6 @@ export const UserSettingsModal = ({
   // Tracks pending writes per event key so we can disable toggles while
   // their Firestore write is in flight (prevents rapid double-toggle bugs).
   const [prefSaving, setPrefSaving] = useState({});
-
-  // Linked sign-in providers (Google / Apple) for the current user. Refreshed
-  // each time the modal opens so a just-completed link reflects immediately.
-  const [linked, setLinked] = useState(() => getLinkedProviders());
-  const [linkBusy, setLinkBusy] = useState(null);
-
-  useEffect(() => {
-    if (isOpen) setLinked(getLinkedProviders());
-  }, [isOpen]);
-
-  const handleLink = async (provider) => {
-    if (linkBusy) return;
-    setLinkBusy(provider);
-    try {
-      if (provider === 'apple') await linkAppleAccount();
-      else await linkGoogleAccount();
-      setLinked(getLinkedProviders());
-      dialog.showToast(`\u2713 ${provider === 'apple' ? 'Apple' : 'Google'} account linked`, 'success');
-    } catch (e) {
-      dialog.showToast(e?.message || 'Could not link account', 'error');
-    } finally {
-      setLinkBusy(null);
-    }
-  };
 
   const handleToggleEventPref = async (eventKey) => {
     if (!userTeam) return;
@@ -406,75 +381,6 @@ export const UserSettingsModal = ({
                   </div>
                 )}
           </div>
-
-          {/* Sign-in methods — link Google + Apple to one login (one team). */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: colors.textMuted, letterSpacing: '0.4px', marginBottom: 8, textTransform: 'uppercase' }}>
-              Sign-in methods
-            </div>
-            {[{ id: 'google', label: 'Google' }, { id: 'apple', label: 'Apple' }].map((p, idx) => {
-              const isLinked = linked[p.id];
-              const busy = linkBusy === p.id;
-              return (
-                <div
-                  key={p.id}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '12px 14px',
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 12,
-                    marginTop: idx === 0 ? 0 : 8,
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 600, color: colors.textPrimary }}>{p.label}</div>
-                  {isLinked ? (
-                    <span style={{ fontSize: 13, fontWeight: 600, color: colors.earningsGreen }}>Linked</span>
-                  ) : (
-                    <button
-                      onClick={() => handleLink(p.id)}
-                      disabled={!!linkBusy}
-                      style={{
-                        padding: '7px 14px', borderRadius: 9,
-                        background: 'rgba(255,255,255,0.10)',
-                        border: '1px solid rgba(255,255,255,0.16)',
-                        color: colors.textPrimary,
-                        fontFamily: fonts.sans, fontSize: 13, fontWeight: 600,
-                        cursor: linkBusy ? 'default' : 'pointer', opacity: linkBusy ? 0.6 : 1,
-                      }}
-                    >
-                      {busy ? 'Linking…' : 'Link'}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 8, lineHeight: 1.4 }}>
-              Link both so either button signs you into the same team.
-            </div>
-          </div>
-
-          {onLogout && (
-            <button
-              onClick={onLogout}
-              aria-label="Sign out"
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                padding: '14px', minHeight: 50,
-                background: 'rgba(200,70,70,0.10)',
-                border: '1px solid rgba(220,90,90,0.28)',
-                borderRadius: 14,
-                color: 'rgba(240,140,140,0.95)',
-                fontFamily: fonts.sans, fontSize: 14.5, fontWeight: 600, letterSpacing: '0.2px',
-                cursor: 'pointer', transition: 'background 0.18s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(200,70,70,0.18)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(200,70,70,0.10)'; }}
-            >
-              <LogOut style={{ width: 17, height: 17 }} />
-              Sign out
-            </button>
-          )}
         </div>
       </div>
     </div>

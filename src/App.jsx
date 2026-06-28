@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
-import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, LogOut } from 'lucide-react';
+import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, User } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
@@ -33,6 +33,7 @@ import { DialogProvider } from './pages/DialogContext';
 import { ErrorBoundary, addGlobalErrorReporters }  from './pages/ErrorBoundary';
 import { PullToRefresh }  from './pages/PullToRefresh';
 import { UserSettingsModal } from './components/UserSettingsModal';
+import { AccountModal } from './components/AccountModal';
 
 // ── Eagerly loaded views (shown on first visit / lightweight) ──────────────
 import { StandingsView }  from './pages/StandingsView';
@@ -202,6 +203,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   const [loggedInTeamId,        setLoggedInTeamId]        = useState(null);
   const [claims,                setClaims]                = useState(null); // team_claims map; null = not yet loaded
   const [showUserSettings,      setShowUserSettings]      = useState(false);
+  const [showAccount,           setShowAccount]           = useState(false);
   const [showMoreMenu,          setShowMoreMenu]          = useState(false);
   // Commish eligibility comes from the Firebase ID-token claim (see App root /
   // taggedCommissioner). Active commish MODE is the user-toggled isCommissioner.
@@ -498,6 +500,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
     setIsCommissioner(false);
     // taggedCommissioner derives to false automatically once loggedInTeamId is null.
     setShowUserSettings(false);
+    setShowAccount(false);
     // The Commish tab renders nothing once commish mode is gone, so send the
     // now-signed-out user back to a safe public tab.
     setActiveTab(prev => (prev === 'admin' ? 'standings' : prev));
@@ -810,6 +813,17 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
             {loggedInUser && (
             <button
               role="menuitem"
+              onClick={() => { setShowMoreMenu(false); setShowAccount(true); }}
+              style={MORE_MENU_ITEM_STYLE}
+            >
+              <User style={{ width: 18, height: 18, opacity: 0.85 }} />
+              <span>Account</span>
+            </button>
+            )}
+
+            {loggedInUser && (
+            <button
+              role="menuitem"
               onClick={() => { setShowMoreMenu(false); setShowUserSettings(true); }}
               style={MORE_MENU_ITEM_STYLE}
             >
@@ -834,15 +848,6 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                 <span>Admin</span>
               </button>
             )}
-
-            <button
-              role="menuitem"
-              onClick={() => { setShowMoreMenu(false); handleLogout(); }}
-              style={{ ...MORE_MENU_ITEM_STYLE, color: 'rgba(235,130,130,0.95)' }}
-            >
-              <LogOut style={{ width: 18, height: 18, opacity: 0.85 }} />
-              <span>Sign Out</span>
-            </button>
           </div>
         </>
       )}
@@ -851,6 +856,16 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
       {/* Opened by tapping the user's name in the header. Replaces the
           previous tap-to-toggle-commish behavior — that toggle is now an
           option inside the modal, alongside push notifications. */}
+      <AccountModal
+        isOpen={showAccount}
+        onClose={() => setShowAccount(false)}
+        onLogout={handleLogout}
+        loggedInUser={loggedInUser}
+        loggedInTeamId={loggedInTeamId}
+        teams={resolvedTeams}
+        updateTeams={updateTeams}
+      />
+
       <UserSettingsModal
         isOpen={showUserSettings}
         onClose={() => setShowUserSettings(false)}
