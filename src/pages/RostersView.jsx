@@ -140,23 +140,23 @@ const TeamDropdown = ({ teams, value, onChange }) => {
 // ── Waiver Priority Manager ───────────────────────────────────────────────────
 const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, setter, leftColor, rightColor, disabled = false, width = 88, colors, fonts }) => (
   <div style={{ opacity: disabled ? 0.3 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.18s' }}>
-    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: 2, width }}>
-      <button onClick={() => setter(leftVal)} style={{
-        flex: 1, padding: '6px 0', borderRadius: 2,
-        background: current === leftVal ? 'rgba(255,255,255,0.08)' : 'none',
-        border: current === leftVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
-        fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
-        color: current === leftVal ? leftColor : colors.textMuted,
-        cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
-      }}>{leftLabel}</button>
-      <button onClick={() => setter(rightVal)} style={{
-        flex: 1, padding: '6px 0', borderRadius: 2,
-        background: current === rightVal ? 'rgba(255,255,255,0.08)' : 'none',
-        border: current === rightVal ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
-        fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
-        color: current === rightVal ? rightColor : colors.textMuted,
-        cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
-      }}>{rightLabel}</button>
+    <div style={{ display: 'flex', gap: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 10, padding: 3, width }}>
+      {[[leftVal, leftLabel, leftColor], [rightVal, rightLabel, rightColor]].map(([val, label, color]) => {
+        const active = current === val;
+        return (
+          <button key={val} onClick={() => setter(val)} style={{
+            flex: 1, padding: '6px 0', borderRadius: 8,
+            background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+            border: active ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
+            fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+            color: active ? color : colors.textMuted,
+            cursor: 'pointer', transition: 'all 0.15s',
+          }}
+          onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+          onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+          >{label}</button>
+        );
+      })}
     </div>
   </div>
 );

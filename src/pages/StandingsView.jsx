@@ -81,7 +81,7 @@ const MetricToggle = ({ value, onChange, accentColor }) => (
     position: 'relative',
     background: 'rgba(255,255,255,0.04)',
     border: '1px solid rgba(180,160,100,0.2)',
-    borderRadius: 4,
+    borderRadius: 10,
     padding: 3,
     width: 150,
     boxSizing: 'border-box',
@@ -92,7 +92,7 @@ const MetricToggle = ({ value, onChange, accentColor }) => (
       top: 3, bottom: 3,
       left: value === 'behind' ? 'calc(50% + 1px)' : 3,
       width: 'calc(50% - 4px)',
-      borderRadius: 2,
+      borderRadius: 8,
       background: accentColor ? getSwingColorAt(accentColor, 0.18) : 'rgba(255,255,255,0.1)',
       border: `1px solid ${accentColor ? getSwingColorAt(accentColor, 0.45) : 'rgba(255,255,255,0.3)'}`,
       transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
@@ -114,7 +114,7 @@ const MetricToggle = ({ value, onChange, accentColor }) => (
           color: value === key ? colors.textPrimary : colors.textMuted,
           cursor: 'pointer',
           transition: 'color 0.18s',
-          borderRadius: 2,
+          borderRadius: 8,
         }}
       >
         {label}
