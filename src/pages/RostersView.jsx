@@ -906,7 +906,7 @@ export const RostersView = ({
 
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflow: 'clip' }}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, overflowX: 'clip' }}
       onClick={() => { if (lineupMode) { setLineupMode(false); setPickingBackup(false); } }}
     >      {/* ── Team selector + lineup headshots ── */}
       <div style={{
