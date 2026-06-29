@@ -11,7 +11,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
-import { DEFAULTS_ON } from './_constants.js';
+import { DEFAULTS_ON, dedupeTokenDocs } from './_constants.js';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
 
@@ -84,6 +84,11 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
     return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
   }
   if (tokenDocs.length === 0) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+
+  // Collapse to one delivery per physical device. Without this, a device with a
+  // lingering rotated-token doc receives this push twice (the round-leader
+  // double-fire). Dedup logic lives in _constants.js (shared with api/push.js).
+  tokenDocs = dedupeTokenDocs(tokenDocs);
 
   // Send to each token in parallel
   let sent = 0;

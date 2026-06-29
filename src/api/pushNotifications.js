@@ -39,6 +39,29 @@ const getApp = () => {
   return apps[0];
 };
 
+// Stable per-install device identifier. FCM tokens rotate over time; the
+// userAgent string drifts across browser/OS updates. Neither is a reliable
+// "same device" key, which is how the same phone accumulated multiple
+// deliverable token docs and received pushes twice. This UUID is minted once
+// per install, persisted in localStorage, and stamped on every token doc so
+// both the registration-side cleanup and the server-side send-time dedup can
+// collapse a device to a single delivery. Falls back gracefully if storage or
+// crypto is unavailable (dedup then degrades to userAgent, as before).
+const getDeviceId = () => {
+  try {
+    let id = localStorage.getItem('sfgl.deviceId');
+    if (!id) {
+      id = (crypto && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem('sfgl.deviceId', id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+};
+
 // VAPID public key — generated in Firebase Console → Project Settings →
 // Cloud Messaging → Web Push certificates → Generate key pair.
 // Stored in Vercel env vars as VITE_FIREBASE_VAPID_KEY so it's bundled into
@@ -163,9 +186,11 @@ const nativeSubscribe = async (teamId) => {
 
   // Same collection your server already reads — no backend change needed.
   try {
+    const _did = getDeviceId();
     await setDoc(doc(db, 'pushTokens', token), {
       token,
       teamId,
+      ...(_did ? { deviceId: _did } : {}),
       userAgent: 'capacitor-' + Capacitor.getPlatform(),
       platform: Capacitor.getPlatform(),
       createdAt: serverTimestamp(),
@@ -306,10 +331,19 @@ export const requestPermissionAndSubscribe = async (teamId) => {
   // Match "same device" via the stored userAgent. Single-field teamId query
   // (no composite index needed) + client-side UA filter. Best-effort.
   try {
+    const deviceId = getDeviceId();
     const ua = navigator.userAgent || 'unknown';
     const existing = await getDocs(query(collection(db, 'pushTokens'), where('teamId', '==', teamId)));
+    // Match "same device" by stable deviceId when both docs carry one; fall
+    // back to userAgent for legacy docs that predate deviceId. Either way, drop
+    // every doc for this device except the one we're about to (re)write.
     await Promise.all(existing.docs
-      .filter(d => d.id !== token && (d.data()?.userAgent || 'unknown') === ua)
+      .filter(d => {
+        if (d.id === token) return false;
+        const data = d.data() || {};
+        if (deviceId && data.deviceId) return data.deviceId === deviceId;
+        return (data.userAgent || 'unknown') === ua;
+      })
       .map(d => deleteDoc(d.ref).catch(() => {})));
   } catch (err) {
     console.warn('[push] stale-token cleanup skipped:', err.message);
@@ -319,9 +353,11 @@ export const requestPermissionAndSubscribe = async (teamId) => {
   // device naturally overwrites, no duplicate-prevention logic needed).
   console.log('[push] step 5: Firestore write');
   try {
+    const _did = getDeviceId();
     await setDoc(doc(db, 'pushTokens', token), {
       token,
       teamId,
+      ...(_did ? { deviceId: _did } : {}),
       userAgent: navigator.userAgent || 'unknown',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),

@@ -33,7 +33,7 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
-import { DEFAULTS_ON } from './_constants.js';
+import { DEFAULTS_ON, dedupeTokenDocs } from './_constants.js';
 
 // ── Firebase Admin init (mirrors api/cron.js pattern) ───────────────────────
 function getApp() {
@@ -153,6 +153,11 @@ export default async function handler(req, res) {
     console.error('[push] failed to fetch tokens:', err);
     return res.status(500).json({ error: 'failed to fetch recipient tokens', details: err.message });
   }
+
+  // Collapse to one delivery per physical device before sending, so a device
+  // with a lingering rotated-token doc isn't notified twice. Shared logic in
+  // _constants.js (same collapse cron.js uses).
+  tokenDocs = dedupeTokenDocs(tokenDocs);
 
   // ── Apply per-event preferences (Wave J Round 6 batch 3-4) ─────────────
   // Each team can disable specific event types via team.notificationPrefs.
