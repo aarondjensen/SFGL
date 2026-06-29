@@ -263,7 +263,22 @@ export const TournamentResultsPanel = ({
           team: t.name,
           totalEarnings: resultsData.teams[t.id].totalEarnings || 0,
         }));
-        const body = { tournamentName: selectedTourney, teamResults: teamResultsForEmail };
+        // Season standings from the in-memory just-updated tournaments (newT
+        // already includes this event's results) so the email's season total
+        // reflects this week regardless of Firestore write timing. Mirrors
+        // StandingsView.seasonTotals and the auto-process email path.
+        const seasonTotals = {};
+        finalTeams.forEach(t => { seasonTotals[t.id] = 0; });
+        newT.forEach(tt => {
+          if (!tt.completed || !tt.results?.teams) return;
+          Object.entries(tt.results.teams).forEach(([tid, r]) => {
+            if (seasonTotals[tid] !== undefined) seasonTotals[tid] += (r.totalEarnings || 0);
+          });
+        });
+        const seasonStandings = finalTeams
+          .map(t => ({ team: t.name, totalEarnings: seasonTotals[t.id] || 0 }))
+          .sort((a, b) => b.totalEarnings - a.totalEarnings);
+        const body = { tournamentName: selectedTourney, teamResults: teamResultsForEmail, seasonStandings };
         if (award) {
           body.swingWinnerInfo = {
             segment: award.segment,
@@ -460,6 +475,20 @@ export const TournamentResultsPanel = ({
             team: team.name,
             totalEarnings: resultsTeams[team.id].totalEarnings || 0,
           }));
+        // Season standings summed across all completed tournaments (current
+        // league state already includes this event) so the resent email's
+        // season total matches StandingsView. Same source as auto-process.
+        const seasonTotals = {};
+        teams.forEach(team => { seasonTotals[team.id] = 0; });
+        tournaments.forEach(tt => {
+          if (!tt.completed || !tt.results?.teams) return;
+          Object.entries(tt.results.teams).forEach(([tid, r]) => {
+            if (seasonTotals[tid] !== undefined) seasonTotals[tid] += (r.totalEarnings || 0);
+          });
+        });
+        const seasonStandings = teams
+          .map(team => ({ team: team.name, totalEarnings: seasonTotals[team.id] || 0 }))
+          .sort((a, b) => b.totalEarnings - a.totalEarnings);
         if (teamResultsForEmail.length === 0) {
           dialog.showToast('No team results in this tournament — nothing to email', 'error');
         } else {
@@ -469,6 +498,7 @@ export const TournamentResultsPanel = ({
             body: JSON.stringify({
               tournamentName: selectedTourney,
               teamResults: teamResultsForEmail,
+              seasonStandings,
             }),
           });
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);

@@ -320,22 +320,25 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
   const thisWeekByTeam = {};
   list.forEach(tr => { thisWeekByTeam[tr.team] = tr.totalEarnings || 0; });
 
-  const standingsCard = standingsList.length ? `<div style="padding:14px 16px;background:linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02));border:1px solid rgba(255,255,255,0.08);border-radius:4px;margin:0 0 18px;">
+  const standingsCard = standingsList.length ? `<div style="margin:0 0 18px;">
     <div style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:0 0 10px;">📊 Season Standings</div>
     ${standingsList.map((s, i) => {
       const isMe = s.team === recipientTeam;
       const isFirst = i === 0;
       const rankColor = isFirst ? '#f5c518' : 'rgba(255,255,255,0.4)';
       const teamColor = isMe ? '#ffffff' : 'rgba(255,255,255,0.85)';
+      const bg = isMe ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)';
+      const leftBorder = isMe ? 'border-left:3px solid #ffffff;' : isFirst ? 'border-left:3px solid rgba(245,197,24,0.55);' : '';
       const delta = thisWeekByTeam[s.team] || 0;
       const deltaText = delta > 0
-        ? `<span style="font-family:${FONT_STACK};font-size:10px;color:rgba(80,180,120,0.85);font-weight:500;margin-left:6px;">+$${delta.toLocaleString()}</span>`
+        ? `<span style="font-family:${FONT_STACK};font-size:11px;color:rgba(80,180,120,0.85);font-weight:500;margin-left:6px;">+$${delta.toLocaleString()}</span>`
         : '';
-      // Same row layout as the per-tournament rows below for visual rhythm,
-      // but no player breakdown sub-table — keeps the card compact at the
-      // top of the email so it doesn't dwarf the tournament-specific
-      // detail that follows.
-      return `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:4px;${isMe ? 'background:rgba(255,255,255,0.04);' : ''}"><tr><td width="22" style="font-family:${FONT_STACK};font-size:13px;font-weight:700;color:${rankColor};vertical-align:middle;padding:4px 0 4px 4px;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:13px;font-weight:${isMe ? '700' : '500'};color:${teamColor};vertical-align:middle;padding:4px 0;">${s.team}${deltaText}</td><td style="font-family:${FONT_STACK};font-size:13px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;padding:4px 4px 4px 0;">$${(s.totalEarnings || 0).toLocaleString()}</td></tr></table>`;
+      // Identical card layout to the per-tournament rows below (padding, bg,
+      // border-radius, left-border, 14px type) so the two sections read as
+      // one visual system. No player breakdown sub-table here — the season
+      // card stays a clean leaderboard; the inline "+$X" shows this week's
+      // delta alongside each team's season total.
+      return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${s.team}${deltaText}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${(s.totalEarnings || 0).toLocaleString()}</td></tr></table></div>`;
     }).join('')}
   </div>` : '';
 
