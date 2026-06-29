@@ -223,7 +223,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
     const d = et.getDay();
     const t = et.getHours() * 60 + et.getMinutes();
     const cutoffMinutes = wHour * 60 + wMin;
-    if (d < wDay || (d === wDay && t < cutoffMinutes)) return `Waiver window closes ${cutoffLabel} ET`;
+    if (d < wDay || (d === wDay && t < cutoffMinutes)) return `${cutoffLabel} ET`;
     return 'Pending commish processing';
   })();
 
@@ -235,7 +235,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: fontSize.sm }}>
-          ⏰ Pending Waiver Claims ({pendingWaivers.length})
+          Pending claims ({pendingWaivers.length})
         </h3>
         <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>{waiverStatusLabel}</span>
       </div>

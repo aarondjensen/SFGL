@@ -583,7 +583,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     flex: 1,
                     background: 'rgba(255,255,255,0.03)',
                     border: `1px solid ${colors.borderSubtle}`,
-                    borderRadius: 2, padding: '8px 6px', textAlign: 'center', minWidth: 0,
+                    borderRadius: 10, padding: '8px 6px', textAlign: 'center', minWidth: 0,
                   }}>
                     <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>
                       {abbr}
@@ -633,7 +633,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               <select
                 value={filterSwing}
                 onChange={e => setFilterSwing(e.target.value)}
-                style={{ ...theme.select, flex: 1, minWidth: 0, fontSize: 11, padding: '5px 10px' }}
+                style={{ ...theme.select, flex: 1, minWidth: 0, fontSize: 11, padding: '5px 10px', borderRadius: 8 }}
                 onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
@@ -646,7 +646,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               <select
                 value={filterTeam}
                 onChange={e => setFilterTeam(e.target.value)}
-                style={{ ...theme.select, flex: 1, minWidth: 0, fontSize: 11, padding: '5px 10px' }}
+                style={{ ...theme.select, flex: 1, minWidth: 0, fontSize: 11, padding: '5px 10px', borderRadius: 8 }}
                 onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
