@@ -297,25 +297,19 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   const [showAddTx,    setShowAddTx]    = useState(false);
   const dialog = useDialog();
 
-  // ── Sealed waiver claims ────────────────────────────────────────────────────
-  // A pending waiver claim is visible ONLY to the team that submitted it and to
-  // the commissioner. Every other manager sees no trace of it — not the feed
-  // row, and not a fee bump on that team's summary card — until the weekly
-  // waiver round processes and the status flips to 'processed'/'failed'. This
-  // stops managers from scouting each other's open claims during the window.
-  // We filter once here and drive BOTH the fee summary and the feed off the
-  // result so the two can never disagree. Mutation paths (delete/undo/edit) and
-  // realIndex() keep using the full `transactions` prop; those are commish-only.
-  const myTeamName = useMemo(
-    () => (loggedInUser ? (teams.find(t => t.owner === loggedInUser)?.name || null) : null),
-    [loggedInUser, teams],
+  // ── Pending waivers live only on the Rosters page ───────────────────────────
+  // A waiver claim that hasn't processed yet (status 'pending') is NEVER shown in
+  // the transaction history — not in the feed, and not in the per-team fee cards —
+  // for ANY viewer, commissioner included. Managers manage their own claims from
+  // the Rosters page's "Pending Waiver Claims" box; the commissioner processes
+  // them there too. A claim only surfaces here once the weekly round runs and its
+  // status flips to 'processed' or 'failed'. We filter once and drive BOTH the fee
+  // summary and the feed off the result so they can never disagree. Mutation paths
+  // (delete/undo/edit) and realIndex() keep using the full `transactions` prop.
+  const visibleTransactions = useMemo(
+    () => transactions.filter(tx => !(tx.type === 'waiver' && tx.status === 'pending')),
+    [transactions],
   );
-  const visibleTransactions = useMemo(() => {
-    if (isCommissioner) return transactions;
-    return transactions.filter(
-      tx => !(tx.type === 'waiver' && tx.status === 'pending' && tx.team !== myTeamName),
-    );
-  }, [transactions, isCommissioner, myTeamName]);
 
   // Wave C.5: was a local re-implementation of segment-from-tournament
   // resolution that disagreed slightly with utils on the boundary handling.
@@ -708,11 +702,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                       {tx.status === 'failed' && tx.type === 'waiver' && (
                         <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: colors.textGold, marginLeft: 5, letterSpacing: '0.4px' }}>BLOCKED</span>
                       )}
-                      {tx.status === 'pending' && tx.type === 'waiver' && (
-                        <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(9px, 0.75vw, 11px)', fontWeight: 700, color: 'rgba(220,200,80,0.95)', marginLeft: 5, letterSpacing: '0.4px' }}>PENDING</span>
-                      )}
                       {': '}
-                      <span style={{ color: tx.status === 'failed' ? colors.danger : tx.status === 'pending' ? 'rgba(220,200,80,0.95)' : colors.success }}>
+                      <span style={{ color: tx.status === 'failed' ? colors.danger : colors.success }}>
                         {tx.type === 'swing_winner'
                           ? (tx.player ? shortName(tx.player) : tx.team)
                           : shortName(tx.player)
