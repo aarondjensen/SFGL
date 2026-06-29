@@ -688,12 +688,19 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           left: 0,
           right: 0,
           zIndex: 50,
-          background: 'rgba(8, 18, 40, 0.97)',
+          // Mirrors the sticky header: tints gold while commish mode is active
+          // so the top banner and bottom bar read as one framed commish state.
+          background: isCommissioner
+            ? 'rgba(58, 47, 12, 0.97)'
+            : 'rgba(8, 18, 40, 0.97)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
-          borderTop: '1px solid rgba(180,160,100,0.15)',
+          borderTop: isCommissioner
+            ? '1px solid rgba(245,197,24,0.55)'
+            : '1px solid rgba(180,160,100,0.15)',
           paddingTop: 6,
           paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
+          transition: 'background 0.25s, border-color 0.25s',
         }}
       >
         <div
@@ -706,7 +713,11 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
             position: 'relative',
           }}
         >
-          {TABS.filter(tab => tab.id !== 'admin' || isCommissioner).map(tab => {
+          {/* Admin is intentionally excluded from the bottom nav — the
+              commish panel is reached via More > Admin, and commish mode is
+              flipped by the toggle beside it. 'admin' stays in TABS so it
+              remains a valid activeTab/#hash route. */}
+          {TABS.filter(tab => tab.id !== 'admin').map(tab => {
             const isActive = activeTab === tab.id;
             return (
               <button
@@ -833,20 +844,70 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
             )}
 
             {taggedCommissioner && (
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setShowMoreMenu(false);
-                  const next = !isCommissioner;
-                  setIsCommissioner(next);
-                  if (next) setActiveTab('admin');
-                  else setActiveTab(t => (t === 'admin' ? 'standings' : t));
-                }}
-                style={{ ...MORE_MENU_ITEM_STYLE, color: isCommissioner ? '#f5c518' : MORE_MENU_ITEM_STYLE.color }}
-              >
-                <Shield style={{ width: 18, height: 18, opacity: 0.85 }} />
-                <span>Admin</span>
-              </button>
+              <div role="group" aria-label="Commish controls" style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 6 }}>
+                {/* Admin — opens the commish panel. The panel is gated on commish
+                    mode, so opening it switches commish mode on (reflected by the
+                    toggle to the right, which controls that same state). */}
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    if (!isCommissioner) setIsCommissioner(true);
+                    setActiveTab('admin');
+                  }}
+                  style={{ ...MORE_MENU_ITEM_STYLE, flex: 1, color: activeTab === 'admin' ? '#f5c518' : MORE_MENU_ITEM_STYLE.color }}
+                >
+                  <Shield style={{ width: 18, height: 18, opacity: 0.85 }} />
+                  <span>Admin</span>
+                </button>
+
+                {/* Commish-mode toggle — flips the gold edit mode in place without
+                    leaving the current view. Turning it off while the Admin panel
+                    is open drops back to Standings (panel is commish-gated). Stays
+                    inside the menu (no close) so the state change is visible. */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isCommissioner}
+                  aria-label="Commish mode"
+                  title={isCommissioner ? 'Commish mode on' : 'Commish mode off'}
+                  onClick={() => {
+                    const next = !isCommissioner;
+                    setIsCommissioner(next);
+                    if (!next) setActiveTab(t => (t === 'admin' ? 'standings' : t));
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    boxSizing: 'border-box',
+                    width: 40,
+                    height: 24,
+                    padding: 0,
+                    border: '1px solid ' + (isCommissioner ? 'rgba(245,197,24,0.6)' : 'rgba(255,255,255,0.18)'),
+                    borderRadius: 999,
+                    background: isCommissioner ? 'rgba(245,197,24,0.28)' : 'rgba(255,255,255,0.06)',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    transition: 'background 0.18s, border-color 0.18s',
+                    outline: 'none',
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: isCommissioner ? 18 : 2,
+                      transform: 'translateY(-50%)',
+                      width: 18,
+                      height: 18,
+                      borderRadius: '50%',
+                      background: isCommissioner ? '#f5c518' : 'rgba(255,255,255,0.65)',
+                      transition: 'left 0.18s, background 0.18s',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
+                    }}
+                  />
+                </button>
+              </div>
             )}
           </div>
         </>
