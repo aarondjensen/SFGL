@@ -10,6 +10,7 @@ import {
   getSegmentByDate, isTournamentLocked,
   isWaiverWindowOpen,
   getCurrentTournamentIndex,
+  abbreviateName,
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts, fontSize } from '../theme.js';
@@ -272,15 +273,11 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
                 border: '1px solid rgba(255,255,255,0.10)',
               }}
             />
-            <div style={{ flex: 1 }}>
-              <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 500 }}>Add: {waiver.player}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: colors.success, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 500 }}>Add: {abbreviateName(waiver.player)}</div>
               {waiver.droppedPlayer && (
-                <>
-                  <span style={{ color: colors.textMuted, margin: '0 4px' }}>→</span>
-                  <span style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: fontSize.sm }}>Drop: {waiver.droppedPlayer}</span>
-                </>
+                <div style={{ color: colors.danger, fontFamily: fonts.sans, fontSize: fontSize.sm, marginTop: 2 }}>Drop: {abbreviateName(waiver.droppedPlayer)}</div>
               )}
-              <div style={{ ...theme.smallText, marginTop: 2 }}>${waiver.fee} fee · {waiver.segment || 'Current Swing'}</div>
             </div>
             {isOwnTeam && (
               <div style={{ display: 'flex', gap: 6 }}>
