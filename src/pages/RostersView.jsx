@@ -160,7 +160,14 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
   </div>
 );
 
-const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam, settings, onEdit }) => {
+// Ordinal suffix for waiver priority pills: 1 -> "1st", 2 -> "2nd", 3 -> "3rd"...
+const ordinal = (n) => {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+};
+
+const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam, settings, onEdit, headshots = {} }) => {
   const dialog = useDialog();
   const txRef = React.useRef(transactions);
   txRef.current = transactions; // always up to date
@@ -243,12 +250,28 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
                 <button onClick={() => swapPriority(index, index - 1)} disabled={index === 0}
                   style={{ background: 'none', border: 'none', cursor: index === 0 ? 'not-allowed' : 'pointer',
                     color: index === 0 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: fontSize.md, padding: '6px 10px', lineHeight: 1 }}>▲</button>
-                <span style={{ fontSize: fontSize.xs, color: 'rgba(220,200,80,0.8)', fontWeight: 700 }}>{index + 1}</span>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  minWidth: 30, padding: '2px 7px', margin: '2px 0', borderRadius: 999,
+                  background: 'rgba(220,200,80,0.16)', border: '1px solid rgba(220,200,80,0.35)',
+                  fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700,
+                  color: 'rgba(220,200,80,0.95)', lineHeight: 1.3, letterSpacing: '0.2px',
+                }}>{ordinal(index + 1)}</span>
                 <button onClick={() => swapPriority(index, index + 1)} disabled={index === pendingWaivers.length - 1}
                   style={{ background: 'none', border: 'none', cursor: index === pendingWaivers.length - 1 ? 'not-allowed' : 'pointer',
                     color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: fontSize.md, padding: '6px 10px', lineHeight: 1 }}>▼</button>
               </div>
             )}
+            <img
+              src={getPlayerHeadshot(waiver.player, false, headshots)}
+              onError={makeHeadshotErrorHandler(waiver.player, false, headshots)}
+              alt=""
+              style={{
+                width: 32, height: 32, borderRadius: '50%', objectFit: 'cover',
+                flexShrink: 0, background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.10)',
+              }}
+            />
             <div style={{ flex: 1 }}>
               <span style={{ color: colors.success, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 500 }}>Add: {waiver.player}</span>
               {waiver.droppedPlayer && (
@@ -1208,6 +1231,7 @@ export const RostersView = ({
           setTransactions={setTransactions} updateTeams={updateTeams} teams={teams}
           isOwnTeam={isOwnTeam} settings={resolvedSettings}
           onEdit={(waiver) => { setEditingWaiverData(waiver); setIsWaiverMode(true); setShowAddDropModal(true); }}
+          headshots={headshots}
         />
       )}
 
