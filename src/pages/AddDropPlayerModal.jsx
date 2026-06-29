@@ -4,7 +4,7 @@ import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
-import { getTransactionFee } from '../utils/sharedHelpers';
+import { getTransactionFee, normalizeNordic } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
@@ -29,7 +29,7 @@ export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, teams,
   updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
-  headshots, fieldPlayerIds = {}, leagueSettings = {}, onHeadshotsFound,
+  headshots, fieldPlayerIds = {}, tournamentField = null, leagueSettings = {}, onHeadshotsFound,
 }) => {
   const ROSTER_LIMIT            = leagueSettings.rosterLimit ?? 13;
   const TRANSACTION_FEE_FREE_AGENT = leagueSettings.feeFA    ?? 1;
@@ -569,6 +569,9 @@ export const AddDropPlayerModal = ({
                       }}>
                         {player.name}
                       </span>
+                      {tournamentField?.has(normalizeNordic(player.name)) && (
+                        <span title="In this week's field" style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>⛳</span>
+                      )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                       {inPendingDrop && (
@@ -674,6 +677,9 @@ export const AddDropPlayerModal = ({
                     <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 500, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
                       {player.name}
                     </span>
+                    {tournamentField?.has(normalizeNordic(player.name)) && (
+                      <span title="In this week's field" style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>⛳</span>
+                    )}
                     {player.worldRank && !isRostered && (
                       <span style={{ fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted, marginLeft: 4 }}>
                         #{player.worldRank}
