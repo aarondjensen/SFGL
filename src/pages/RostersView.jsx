@@ -160,7 +160,7 @@ const RosterSlider = ({ leftVal, leftLabel, rightVal, rightLabel, current, sette
   </div>
 );
 
-const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam, settings }) => {
+const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam, settings, onEdit }) => {
   const dialog = useDialog();
   const txRef = React.useRef(transactions);
   txRef.current = transactions; // always up to date
@@ -223,7 +223,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
     <div style={{
       background: 'rgba(180,160,60,0.08)',
       border: '1px solid rgba(180,160,60,0.3)',
-      borderRadius: 3, padding: 12,
+      borderRadius: 12, padding: 12,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <h3 style={{ ...theme.label, color: 'rgba(220,200,80,0.9)', fontSize: fontSize.sm }}>
@@ -231,14 +231,11 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
         </h3>
         <span style={{ ...theme.smallText, color: 'rgba(220,200,80,0.6)' }}>{waiverStatusLabel}</span>
       </div>
-      {pendingWaivers.length > 1 && isOwnTeam && (
-        <p style={{ ...theme.smallText, marginBottom: 8 }}>↕ Use arrows to set priority — #1 processes first</p>
-      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {pendingWaivers.map((waiver, index) => (
           <div key={waiver._txIdx} style={{
             background: 'rgba(255,255,255,0.04)',
-            borderRadius: 2, padding: '8px 10px',
+            borderRadius: 10, padding: '8px 10px',
             display: 'flex', alignItems: 'center', gap: 8,
           }}>
             {isOwnTeam && pendingWaivers.length > 1 && (
@@ -264,18 +261,38 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
             </div>
             {isOwnTeam && (
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => deleteWaiver(waiver)}
-                  title="Withdraw this waiver claim"
-                  aria-label="Withdraw this waiver claim"
-                  style={{ ...theme.btnSecondary, padding: '8px 12px', fontSize: fontSize.sm, minHeight: 36 }}>✏️</button>
+                <button onClick={() => onEdit && onEdit(waiver)}
+                  title="Edit this waiver claim"
+                  aria-label="Edit this waiver claim"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    color: 'rgba(255,255,255,0.78)', cursor: 'pointer',
+                    fontSize: fontSize.sm, lineHeight: 1, transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.10)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.20)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.10)'; }}
+                >✎</button>
                 <button onClick={async () => {
-                  const ok = await dialog.showConfirm('Delete Waiver', `Delete waiver claim for ${waiver.player}?`, { type: 'danger', confirmText: 'Delete' });
+                  const ok = await dialog.showConfirm('Withdraw Waiver', `Withdraw the waiver claim for ${waiver.player}? The $${waiver.fee || 0} fee will be refunded.`, { type: 'danger', confirmText: 'Withdraw' });
                   if (!ok) return;
                   deleteWaiver(waiver);
                 }}
-                title="Delete waiver claim (with confirmation)"
-                aria-label="Delete waiver claim"
-                style={{ ...theme.btnDanger, padding: '8px 12px', fontSize: fontSize.sm, minHeight: 36 }}>✕</button>
+                title="Withdraw this waiver claim"
+                aria-label="Withdraw this waiver claim"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                  background: 'rgba(220,80,80,0.10)',
+                  border: '1px solid rgba(220,80,80,0.28)',
+                  color: 'rgba(232,120,120,0.95)', cursor: 'pointer',
+                  fontSize: fontSize.sm, lineHeight: 1, transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,80,80,0.18)'; e.currentTarget.style.borderColor = 'rgba(220,80,80,0.45)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,80,80,0.10)'; e.currentTarget.style.borderColor = 'rgba(220,80,80,0.28)'; }}
+                >✕</button>
               </div>
             )}
           </div>
@@ -1190,6 +1207,7 @@ export const RostersView = ({
           team={team} pendingWaivers={pendingWaivers} transactions={transactions}
           setTransactions={setTransactions} updateTeams={updateTeams} teams={teams}
           isOwnTeam={isOwnTeam} settings={resolvedSettings}
+          onEdit={(waiver) => { setEditingWaiverData(waiver); setIsWaiverMode(true); setShowAddDropModal(true); }}
         />
       )}
 

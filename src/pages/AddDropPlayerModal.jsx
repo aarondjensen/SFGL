@@ -259,7 +259,11 @@ export const AddDropPlayerModal = ({
     // claim made during the waiver window can NEVER instant-apply. We trust an
     // open window over the prop (|| isWaiverMode keeps the normal FA path intact).
     const submitTournament = tournaments?.[nextTournamentIndex ?? activeTournamentIndex] || null;
-    const treatAsWaiver = isWaiverWindowOpen(submitTournament, leagueSettings) || isWaiverMode;
+    // Editing an existing pending waiver is always a waiver edit, even if the
+    // window has since closed (e.g. editing after cutoff while awaiting the
+    // round). Otherwise fall back to the live window check + click-time prop.
+    const isEdit = !!editingWaiverData;
+    const treatAsWaiver = isEdit || isWaiverWindowOpen(submitTournament, leagueSettings) || isWaiverMode;
     const submitFee = getTransactionFee(treatAsWaiver ? 'waiver' : 'fa', leagueSettings);
 
     const newTx = {
@@ -288,6 +292,30 @@ export const AddDropPlayerModal = ({
       pgaTourEarnings: 0, sfglEarnings: 0,
     };
 
+    // When editing, replace the original pending waiver rather than adding a
+    // second one: keep its queue priority, drop the old row, and apply only the
+    // FEE DELTA (the original fee was already charged at first submission).
+    let baseTransactions = transactions;
+    let teamFeeDelta = submitFee;
+    if (isEdit) {
+      // Remove exactly ONE matching original claim — by id when present, else by
+      // fields (same approach as deleteWaiver, robust to index shifts).
+      const origId = editingWaiverData.id;
+      let removed = false;
+      baseTransactions = transactions.filter(t => {
+        if (removed) return true;
+        const match = origId != null
+          ? t.id === origId
+          : (t.team === team.name && t.type === 'waiver' && t.status === 'pending'
+             && t.player === editingWaiverData.player
+             && (t.droppedPlayer || null) === (editingWaiverData.droppedPlayer || null));
+        if (match) { removed = true; return false; }
+        return true;
+      });
+      teamFeeDelta = submitFee - (editingWaiverData.fee || 0);
+      newTx.priority = editingWaiverData.priority ?? newTx.priority;
+    }
+
     const updatedTeams = teams.map(t => {
       if (t.id !== team.id) return t;
       let newRoster = [...t.roster];
@@ -295,10 +323,10 @@ export const AddDropPlayerModal = ({
         if (selectedPlayerToDrop) newRoster = newRoster.filter(p => p.name !== selectedPlayerToDrop.name);
         if (!newRoster.some(p => p.name === newPlayer.name)) newRoster.push(newPlayer);
       }
-      return { ...t, roster: newRoster, transactionFees: (t.transactionFees || 0) + submitFee };
+      return { ...t, roster: newRoster, transactionFees: (t.transactionFees || 0) + teamFeeDelta };
     });
 
-    const newTransactions = [newTx, ...transactions];
+    const newTransactions = [newTx, ...baseTransactions];
     updateTeams(updatedTeams);
     setTransactions(newTransactions); // setTransactions IS updateTransactions — persists to Firebase + localStorage
 
@@ -333,7 +361,7 @@ export const AddDropPlayerModal = ({
 
     setSaving(false);
     dialog.showToast(
-      `${treatAsWaiver ? 'Waiver claim submitted' : `Added ${selectedPlayerToAdd.name}`}${selectedPlayerToDrop ? ` / Dropped ${selectedPlayerToDrop.name}` : ''}`,
+      `${isEdit ? 'Waiver claim updated' : treatAsWaiver ? 'Waiver claim submitted' : `Added ${selectedPlayerToAdd.name}`}${selectedPlayerToDrop ? `${isEdit ? ' · ' : ' / '}${isEdit ? 'drop ' : 'Dropped '}${selectedPlayerToDrop.name}` : ''}`,
       'success',
     );
     reset();
