@@ -436,6 +436,14 @@ export const RostersView = ({
   // fallback chain (next non-completed → last tournament).
   const addDropTournamentIndex = getCurrentTournamentIndex(tournaments);
 
+  // Window math (waiver / free-agent) must survive the gap between an event being
+  // marked processed/not-playing and the next being flagged `playing`. During
+  // that gap `activeTournament` is undefined, so isWaiverWindowOpen() collapses
+  // to false and an in-window claim would silently degrade to an instant
+  // free-agent add. Fall back to the date-anchored upcoming tournament so the
+  // window is evaluated against a real event regardless of the `playing` flag.
+  const windowTournament = activeTournament || tournaments[addDropTournamentIndex] || null;
+
   // Switch to the logged-in manager's team whenever loggedInUser changes (e.g. after login)
   const prevLoggedInUser = React.useRef(null);
   useEffect(() => {
@@ -986,7 +994,7 @@ export const RostersView = ({
             return (
               <button
                 onClick={() => {
-                  setIsWaiverMode(isWaiverWindowOpen(activeTournament, resolvedSettings));
+                  setIsWaiverMode(isWaiverWindowOpen(windowTournament, resolvedSettings));
                   setShowAddDropModal(true);
                 }}
                 style={{

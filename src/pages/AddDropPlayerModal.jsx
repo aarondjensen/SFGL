@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, isTournamentLocked, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
+import { getSegmentByDate, isTournamentLocked, isWaiverWindowOpen, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
 import { getTransactionFee, normalizeNordic } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
@@ -249,20 +249,33 @@ export const AddDropPlayerModal = ({
     if (!canConfirm) return;
     setSaving(true);
 
+    // ── Defense in depth: re-derive waiver status at SUBMIT time ──────────────
+    // `isWaiverMode` is computed once, when the modal opens, from the tournament
+    // flagged `playing`. In the gap between an event being marked processed and
+    // the next being flagged `playing` — which overlaps the waiver window — that
+    // source tournament is undefined and the click-time prop comes back false,
+    // which would write an INSTANT free-agent add and mutate the roster. We
+    // re-check the window here against the date-anchored upcoming tournament so a
+    // claim made during the waiver window can NEVER instant-apply. We trust an
+    // open window over the prop (|| isWaiverMode keeps the normal FA path intact).
+    const submitTournament = tournaments?.[nextTournamentIndex ?? activeTournamentIndex] || null;
+    const treatAsWaiver = isWaiverWindowOpen(submitTournament, leagueSettings) || isWaiverMode;
+    const submitFee = getTransactionFee(treatAsWaiver ? 'waiver' : 'fa', leagueSettings);
+
     const newTx = {
       team:            team.name,
-      type:            isWaiverMode ? 'waiver' : 'free agent',
+      type:            treatAsWaiver ? 'waiver' : 'free agent',
       player:          selectedPlayerToAdd.name,
       droppedPlayer:   selectedPlayerToDrop?.name || null,
-      fee,
+      fee:             submitFee,
       segment:         txSegment || getSegmentByDate(),
       date:            new Date().toLocaleDateString(),
       // fa/waiver tag the NEXT upcoming event (the one players will play in)
       tournamentIndex: nextTournamentIndex ?? activeTournamentIndex,
       // Stable tournament identity alongside the positional index (reorder-safe).
       tournament: tournaments?.[nextTournamentIndex ?? activeTournamentIndex]?.name || undefined,
-      status:          isWaiverMode ? 'pending' : 'processed',
-      priority: isWaiverMode
+      status:          treatAsWaiver ? 'pending' : 'processed',
+      priority: treatAsWaiver
         ? (transactions.filter(tx => tx.team === team.name && tx.type === 'waiver' && tx.status === 'pending').length + 1)
         : undefined,
       timestamp: Date.now(),
@@ -278,11 +291,11 @@ export const AddDropPlayerModal = ({
     const updatedTeams = teams.map(t => {
       if (t.id !== team.id) return t;
       let newRoster = [...t.roster];
-      if (!isWaiverMode) {
+      if (!treatAsWaiver) {
         if (selectedPlayerToDrop) newRoster = newRoster.filter(p => p.name !== selectedPlayerToDrop.name);
         if (!newRoster.some(p => p.name === newPlayer.name)) newRoster.push(newPlayer);
       }
-      return { ...t, roster: newRoster, transactionFees: (t.transactionFees || 0) + fee };
+      return { ...t, roster: newRoster, transactionFees: (t.transactionFees || 0) + submitFee };
     });
 
     const newTransactions = [newTx, ...transactions];
@@ -301,7 +314,7 @@ export const AddDropPlayerModal = ({
     // Fire-and-forget: the transaction is already committed in Firestore.
     // A push failure (network blip, missing VAPID, etc) shouldn't undo the
     // transaction or block the success toast.
-    if (!isWaiverMode) {
+    if (!treatAsWaiver) {
       const recipientIds = teams
         .filter(t => t.id !== team.id)
         .map(t => t.id);
@@ -320,7 +333,7 @@ export const AddDropPlayerModal = ({
 
     setSaving(false);
     dialog.showToast(
-      `${isWaiverMode ? 'Waiver claim submitted' : `Added ${selectedPlayerToAdd.name}`}${selectedPlayerToDrop ? ` / Dropped ${selectedPlayerToDrop.name}` : ''}`,
+      `${treatAsWaiver ? 'Waiver claim submitted' : `Added ${selectedPlayerToAdd.name}`}${selectedPlayerToDrop ? ` / Dropped ${selectedPlayerToDrop.name}` : ''}`,
       'success',
     );
     reset();
