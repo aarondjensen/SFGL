@@ -14,7 +14,7 @@ import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { M, disabledBtn } from './adminStyles';
-import { getETClock, fmtETTime, DAY_NAMES } from '../../utils/sharedHelpers';
+import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam } from '../../utils/sharedHelpers';
 
 const buildRoster = (team, transactions) => {
   let r = team.roster.map(p => p.name);
@@ -40,6 +40,7 @@ const applyWaiver = (t, w) => {
 export const WaiverProcessingPanel = ({
   transactions, setTransactions,
   teams, updateTeams,
+  tournaments,
   settings,
   STORAGE_KEYS,
 }) => {
@@ -90,7 +91,9 @@ export const WaiverProcessingPanel = ({
     const competing = transactions
       .map((tx, i) => ({ ...tx, _idx: i }))
       .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.player === w.player && tx.team !== w.team);
-    const earningsMap = {}; teams.forEach(t => { earningsMap[t.name] = t.earnings || 0; });
+    // Tie-breaker = YTD earnings derived from results (see handleProcessAll).
+    const seasonByTeam = getSeasonEarningsByTeam(tournaments);
+    const earningsMap = {}; teams.forEach(t => { earningsMap[t.name] = seasonByTeam[t.id] || 0; });
     const allClaims = [w, ...competing].sort((a, b) => (earningsMap[a.team] || 0) - (earningsMap[b.team] || 0));
     const winner = allClaims[0];
     const losers = allClaims.slice(1);
@@ -128,9 +131,13 @@ export const WaiverProcessingPanel = ({
     );
     if (!ok) return;
 
-    const em = {}; teams.forEach(t => { em[t.name] = t.earnings || 0; });
+    // Tie-breaker = YTD earnings, derived from completed tournament results (the
+    // authoritative figure) rather than the drift-prone team.earnings field — so
+    // manual and auto (cron) processing always pick the same winner.
+    const seasonByTeam = getSeasonEarningsByTeam(tournaments);
+    const em = {}; teams.forEach(t => { em[t.name] = seasonByTeam[t.id] || 0; });
     const pm = {};
-    [...teams].sort((a, b) => (a.earnings || 0) - (b.earnings || 0)).forEach((t, i) => { pm[t.name] = i; });
+    [...teams].sort((a, b) => (seasonByTeam[a.id] || 0) - (seasonByTeam[b.id] || 0)).forEach((t, i) => { pm[t.name] = i; });
     let nextLastPlace = teams.length;
 
     const byTeam = {};

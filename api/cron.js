@@ -586,7 +586,11 @@ async function handleWaivers(res) {
     if (!roster.some(p => p.name === w.player)) {
       roster.push({ name: w.player, limited: false, stars: 0, unlimited: false, yearsOfService: 1, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0 });
     }
-    batch.update(db.collection('teams').doc(team.id), { roster, transactionFees: (team.transactionFees || 0) + (w.fee || 0) });
+    // Fee was already charged at submission (AddDropPlayerModal). Processing
+    // only applies the roster move — mirrors the manual path's applyWaiver(),
+    // which never re-touches transactionFees. Re-adding here double-charged the
+    // (currently display-unused) field on the auto path only.
+    batch.update(db.collection('teams').doc(team.id), { roster });
   }
 
   batch.set(db.collection('sfgl_data').doc('last_auto_waiver'), { key: 'last_auto_waiver', value: today });
