@@ -135,7 +135,32 @@ export const SeasonSettingsPanel = ({
     setWaiverSaving(true);
     try {
       await setSettings({ ...settings, waiverDay, waiverHour, waiverMinute });
-      dialog.showToast(`✓ Waivers process ${DAY_NAMES[waiverDay]} at ${fmtETTime(waiverHour, waiverMinute)} ET`, 'success');
+
+      // Re-program the cron-job.org "waivers" job so its ping schedule tracks the
+      // new gate. Without this the in-app gate moves but cron-job.org keeps
+      // pinging on the old schedule — so a day/time change could silently never
+      // fire. Best-effort: the settings (the gate) are already saved above, so a
+      // sync failure degrades to gate-only behavior rather than blocking the save.
+      let syncWarn = '';
+      try {
+        const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobType: 'waivers', day: waiverDay, hour: waiverHour, minute: waiverMinute }),
+        });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          syncWarn = d.hint || d.error || `HTTP ${resp.status}`;
+        }
+      } catch (e) {
+        syncWarn = e.message;
+      }
+
+      if (syncWarn) {
+        dialog.showToast(`Saved the time, but cron-job.org didn't update: ${syncWarn}. Update the waivers job there manually.`, 'error');
+      } else {
+        dialog.showToast(`✓ Waivers process ${DAY_NAMES[waiverDay]} at ${fmtETTime(waiverHour, waiverMinute)} ET`, 'success');
+      }
     } catch (err) {
       dialog.showToast('Error: ' + err.message, 'error');
     } finally {
