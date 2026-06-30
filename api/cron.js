@@ -249,7 +249,13 @@ function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transaction
   if (!swingSegment) return null;
   if (transactions.some(tx => tx.type === 'swing_winner' && tx.segment === swingSegment)) return null;
 
-  const swingTournaments = (tournaments || []).filter(t => getSegmentForTournamentServer(t) === swingSegment);
+  // Exclude alternate events from the completion gate — they are optional
+  // and may never be marked completed, which would otherwise permanently
+  // block the auto-award. Mirrors the client-side computeSwingAward, which
+  // filters `!t.isAlternate`. (Previously the server included alternates,
+  // diverging from the client and leaving such swings recoverable only via
+  // the manual Swing Winner panel.)
+  const swingTournaments = (tournaments || []).filter(t => getSegmentForTournamentServer(t) === swingSegment && !t.isAlternate);
   if (swingTournaments.length === 0) return null;
   if (!swingTournaments.every(t => t.completed)) return null;
 

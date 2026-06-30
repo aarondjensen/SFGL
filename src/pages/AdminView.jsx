@@ -19,7 +19,6 @@ import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
 import { MergePlayersPanel } from './admin/MergePlayersPanel';
 import { ScheduleImportPanel } from './admin/ScheduleImportPanel';
 import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
-import { SwingWinnerPanel } from './admin/SwingWinnerPanel';
 import { TournamentResultsPanel } from './admin/TournamentResultsPanel';
 import { WaiverProcessingPanel } from './admin/WaiverProcessingPanel';
 
@@ -457,11 +456,17 @@ export const AdminView = ({
       jump: 'waivers',
     });
   }
+  // Swing winners auto-award the moment the final event of a swing is
+  // processed (client process/reprocess paths + the server cron path). This
+  // alert is now purely a safety signal: it only ever populates if that
+  // auto-award DIDN'T fire for some reason. Recovery is to reprocess the
+  // swing's final event, which re-runs the same award logic idempotently —
+  // so the alert routes to the results panel rather than a manual award UI.
   swingsReadyToAward.forEach(s => {
     alerts.push({
       level: 'action',
-      text: `${s.segment} ready to award${s.winnerName ? ` — ${s.winnerName} leads` : ''}`,
-      jump: 'swing_winner',
+      text: `${s.segment} auto-award didn't fire${s.winnerName ? ` — ${s.winnerName} leads` : ''}. Reprocess the final event to award the pot.`,
+      jump: 'results',
     });
   });
   if (tournamentsNeedingProcess.length > 0) {
@@ -533,15 +538,6 @@ export const AdminView = ({
             : 'Process pending waivers',
           badge: pendingWaivers.length > 0
             ? { count: pendingWaivers.length, level: 'action' }
-            : null,
-        },
-        {
-          id: 'swing_winner', icon: '🥇', label: 'Swing Winners',
-          desc: swingsReadyToAward.length > 0
-            ? `${swingsReadyToAward.length} ready to award`
-            : 'Award swing pot winners',
-          badge: swingsReadyToAward.length > 0
-            ? { count: swingsReadyToAward.length, level: 'action' }
             : null,
         },
       ],
@@ -635,19 +631,6 @@ export const AdminView = ({
               updateTeams={updateTeams}
               tournaments={tournaments}
               settings={settings}
-            />
-          </>
-        );
-      case 'swing_winner':
-        return (
-          <>
-            <BackBar label="Swing Winners" onBack={back} />
-            <SwingWinnerPanel
-              tournaments={tournaments}
-              teams={teams}
-              transactions={transactions}
-              setTransactions={setTransactions}
-              updateTeams={updateTeams}
             />
           </>
         );
