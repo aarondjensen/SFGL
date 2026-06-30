@@ -489,6 +489,21 @@ export const TournamentResultsPanel = ({
         const seasonStandings = teams
           .map(team => ({ team: team.name, totalEarnings: seasonTotals[team.id] || 0 }))
           .sort((a, b) => b.totalEarnings - a.totalEarnings);
+        // If this tournament was the event that closed out a swing, the
+        // swing_winner tx is anchored to it (computeSwingAward stamps the
+        // closing event's name onto tx.tournament). Re-attach the banner so a
+        // resent results email matches the original — without this, resending
+        // the closing week's results would silently drop the swing-winner
+        // banner that the manual/cron paths include. Matching on tx.tournament
+        // (not just segment) keeps the banner on the closing week only.
+        const swingWinnerTx = (transactions || []).find(
+          tx => tx.type === 'swing_winner' && tx.tournament === selectedTourney
+        );
+        const swingWinnerInfo = swingWinnerTx ? {
+          segment: swingWinnerTx.segment,
+          team: swingWinnerTx.team,
+          pot: swingWinnerTx.amount || 0,
+        } : null;
         if (teamResultsForEmail.length === 0) {
           dialog.showToast('No team results in this tournament — nothing to email', 'error');
         } else {
@@ -499,6 +514,7 @@ export const TournamentResultsPanel = ({
               tournamentName: selectedTourney,
               teamResults: teamResultsForEmail,
               seasonStandings,
+              ...(swingWinnerInfo ? { swingWinnerInfo } : {}),
             }),
           });
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
