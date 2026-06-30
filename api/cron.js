@@ -1279,11 +1279,15 @@ async function handlePgatStats(res) {
 // DataSyncPanel.handleSyncOwgr does on the client, but runs server-side via
 // cron so the manager doesn't have to remember to sync weekly.
 //
-// Schedule: defaults to Monday 2pm ET. OWGR publishes new rankings every
-// Monday morning, so 2pm ET gives them several hours to settle before we
-// fetch. Day/hour/minute are configurable via settings (owgrSyncDay,
-// owgrSyncHour, owgrSyncMinute) following the same pattern as waivers and
-// lineup-reminder.
+// Schedule: defaults to Monday 5pm ET. OWGR publishes new rankings Monday
+// morning (after the weekend's events), so syncing Monday late-afternoon gives
+// the rankings time to settle. Day/hour/minute are configurable via settings
+// (owgrSyncDay, owgrSyncHour, owgrSyncMinute) following the same pattern as
+// waivers and lineup-reminder.
+//
+// Requires a cron-job.org job pinging ?action=owgr-rankings (auth: Bearer
+// CRON_SECRET) — without it this handler is dormant and rankings only update
+// when the commish hits "Sync Now" in DataSyncPanel.
 //
 // Idempotency: cron-job.org will fire on schedule but the day/hour gate
 // short-circuits any out-of-window pings. The `last_owgr_sync` doc tracks
@@ -1305,7 +1309,7 @@ async function handleOwgrRankings(res) {
 
   // Day/hour/minute gate, mirroring handleLineupReminder.
   const targetDay    = settings?.owgrSyncDay    ?? 1;   // Mon
-  const targetHour   = settings?.owgrSyncHour   ?? 14;  // 2pm ET
+  const targetHour   = settings?.owgrSyncHour   ?? 17;  // 5pm ET
   const targetMinute = settings?.owgrSyncMinute ?? 0;
 
   if (et.getDay() !== targetDay) {
