@@ -11,7 +11,9 @@
 //                          so it's no longer a separate tile).
 //   • Results email       — per-team override written to team_claims.notifyEmail,
 //                          which api/cron.js prefers over the legacy
-//                          settings.managerEmails map.
+//                          settings.managerEmails map. Now lives inline in each
+//                          team's profile row (next to UID + notification
+//                          status) rather than in its own section.
 //
 // Removed as dead post-migration: the password credential setter and the
 // team.isCommissioner toggle (commissioner is a Firebase custom claim now, not a
@@ -167,10 +169,10 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
     <div style={M.page}>
       {/* ── Claims + activity ── */}
       <div style={M.group}>
-        <div style={M.eyebrow}>👥 Team Claims & Activity</div>
+        <div style={M.eyebrow}>👥 Claims, Activity & Email</div>
         <div style={M.descText}>
-          Who has signed in and claimed each team, their most recent login, and
-          whether push is enabled on a device.{' '}
+          Who has signed in and claimed each team, their most recent login,
+          whether push is enabled on a device, and the results-email override.{' '}
           {!claimsLoading && (
             <span style={{ color: colors.textSecondary }}>
               {claimedCount}/{rows.length} teams claimed.
@@ -234,6 +236,27 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
                 {on ? '🔔 Notifications on' : '🔕 Notifications off'}
               </div>
 
+              {/* Results-email override — lives in the profile now (folded in
+                  from the old standalone section). Blank = falls back to the
+                  manager's saved sign-in email. */}
+              <div style={{ marginTop: 8 }}>
+                <label style={{
+                  display: 'block',
+                  fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                  letterSpacing: '0.4px', textTransform: 'uppercase',
+                  color: colors.textMuted, marginBottom: 4,
+                }}>
+                  📧 Results email
+                </label>
+                <input
+                  type="email"
+                  placeholder="Falls back to saved email"
+                  value={emailDraft[t.id] ?? (c?.notifyEmail || '')}
+                  onChange={(e) => setEmailDraft((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                  style={{ ...M.input, boxSizing: 'border-box' }}
+                />
+              </div>
+
               {/* uid + actions (claimed only) */}
               {claimed && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -274,51 +297,21 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
           );
         })}
 
+        {hasEmailEdits && (
+          <button
+            onClick={handleSaveEmails}
+            disabled={savingEmails}
+            className="modal-feel-lift modal-feel-primary"
+            style={{ ...M.btnPrimary, ...disabledBtn(savingEmails), marginTop: 12 }}
+          >
+            {savingEmails ? 'Saving…' : '💾 Save Email Changes'}
+          </button>
+        )}
+
         <div style={{ ...M.descText, marginTop: 10, marginBottom: 0 }}>
           To make a manager a commissioner, copy their UID above and run the
           <span style={{ color: colors.textSecondary }}> stamp-commissioner</span> action with it.
         </div>
-      </div>
-
-      {/* ── Results emails ── */}
-      <div style={M.group}>
-        <div style={M.eyebrow}>📧 Results Emails</div>
-        <div style={M.descText}>
-          Override where each team's waiver/results/lineup emails go. Leaving a
-          field blank falls back to the manager's saved email.
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {teams.map((t) => {
-            const current = (claims && claims[t.id]?.notifyEmail) || '';
-            return (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{
-                  fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
-                  color: colors.textPrimary, width: 120, flexShrink: 0,
-                }}>
-                  <TeamName name={t.name} />
-                </span>
-                <input
-                  type="email"
-                  placeholder="email@example.com"
-                  value={emailDraft[t.id] ?? current}
-                  onChange={(e) => setEmailDraft((prev) => ({ ...prev, [t.id]: e.target.value }))}
-                  style={{ ...M.input, flex: 1 }}
-                />
-              </div>
-            );
-          })}
-        </div>
-
-        <button
-          onClick={handleSaveEmails}
-          disabled={savingEmails || !hasEmailEdits}
-          className="modal-feel-lift modal-feel-primary"
-          style={{ ...M.btnPrimary, ...disabledBtn(savingEmails || !hasEmailEdits), marginTop: 4 }}
-        >
-          {savingEmails ? 'Saving…' : '💾 Save Emails'}
-        </button>
       </div>
 
       {/* ── Manual reassign (edge cases) ── */}
