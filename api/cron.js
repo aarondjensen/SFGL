@@ -610,13 +610,57 @@ async function handleWaivers(res) {
     }
   });
 
+  // Durable player attributes for the auto-processor — mirrors the client's
+  // buildPlayerAttributeIndex / hydratePlayer in sharedHelpers (api/ can't import
+  // from src/). A claimed LIMITED player must keep limited status, stars, years
+  // of service, and accumulated SFGL data — never come back as unlimited.
+  const attrIndex = (() => {
+    const idx = {};
+    const upsert = (name, a = {}) => {
+      if (!name) return;
+      const cur = idx[name] || {};
+      const limited = !!(cur.limited || a.limited);
+      idx[name] = {
+        ...cur, ...a, limited,
+        unlimited: limited ? false : !!(a.unlimited ?? cur.unlimited),
+        stars:           Math.max(cur.stars ?? 0, a.stars ?? 0),
+        yearsOfService:  Math.max(cur.yearsOfService ?? 0, a.yearsOfService ?? 0),
+        starts:          Math.max(cur.starts ?? 0, a.starts ?? 0),
+        eventsPlayed:    Math.max(cur.eventsPlayed ?? 0, a.eventsPlayed ?? 0),
+        cutsMade:        Math.max(cur.cutsMade ?? 0, a.cutsMade ?? 0),
+        pgaTourEarnings: Math.max(cur.pgaTourEarnings ?? 0, a.pgaTourEarnings ?? 0),
+        sfglEarnings:    Math.max(cur.sfglEarnings ?? 0, a.sfglEarnings ?? 0),
+        headshot: a.headshot || cur.headshot || '',
+      };
+    };
+    teams.forEach(t => (t.roster || []).forEach(p => upsert(p.name, p)));
+    (tournamentsForWaivers || []).forEach(t => {
+      const tr = t?.results?.teams;
+      if (!tr) return;
+      Object.values(tr).forEach(res => (res.players || []).forEach(pl => upsert(pl.name || pl, { limited: !!pl.limited })));
+    });
+    return idx;
+  })();
+  const hydrate = (name) => {
+    const a = attrIndex[name] || {};
+    const limited = !!a.limited;
+    return {
+      name, limited,
+      unlimited: limited ? false : !!a.unlimited,
+      stars: a.stars ?? 0, yearsOfService: a.yearsOfService ?? 1,
+      starts: a.starts ?? 0, eventsPlayed: a.eventsPlayed ?? 0, cutsMade: a.cutsMade ?? 0,
+      pgaTourEarnings: a.pgaTourEarnings ?? 0, sfglEarnings: a.sfglEarnings ?? 0,
+      headshot: a.headshot || '',
+    };
+  };
+
   for (const w of applied) {
     const team = teams.find(t => t.name === w.team);
     if (!team) continue;
     let roster = [...(team.roster || [])];
     if (w.droppedPlayer) roster = roster.filter(p => p.name !== w.droppedPlayer);
     if (!roster.some(p => p.name === w.player)) {
-      roster.push({ name: w.player, limited: false, stars: 0, unlimited: false, yearsOfService: 1, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0 });
+      roster.push(hydrate(w.player));
     }
     // Fee was already charged at submission (AddDropPlayerModal). Processing
     // only applies the roster move — mirrors the manual path's applyWaiver(),

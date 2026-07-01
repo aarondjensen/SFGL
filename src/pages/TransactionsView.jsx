@@ -3,7 +3,7 @@ import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
-import { getTransactionFee } from '../utils/sharedHelpers';
+import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer } from '../utils/sharedHelpers';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
@@ -452,11 +452,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     // the same player results in that player appearing twice (the bug that
     // put two Ryan Foxes on World #1).
     if (tx.droppedPlayer && !newRoster.some(p => p.name === tx.droppedPlayer)) {
-      const playerData = allPlayers?.find(p => p.name === tx.droppedPlayer);
-      newRoster.push(playerData
-        ? { name: playerData.name, limited: playerData.limited || false, unlimited: playerData.unlimited || false, stars: playerData.stars || 0, starts: playerData.starts || 0, eventsPlayed: playerData.eventsPlayed || 0, cutsMade: playerData.cutsMade || 0, pgaTourEarnings: playerData.pgaTourEarnings || 0, sfglEarnings: playerData.sfglEarnings || 0 }
-        : makePlayer(tx.droppedPlayer)
-      );
+      // Hydrate from the durable index so undoing a transaction that dropped a
+      // LIMITED player restores them limited, with stars and SFGL data intact —
+      // not as a fresh unlimited player (the old allPlayers lookup carried only
+      // world rank, so limited status was silently lost on every undo).
+      newRoster.push(hydratePlayer(tx.droppedPlayer, buildPlayerAttributeIndex(teams, tournaments)));
     }
 
     const newTeams = teams.map(t =>

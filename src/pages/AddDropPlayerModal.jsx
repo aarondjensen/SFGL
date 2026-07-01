@@ -4,7 +4,7 @@ import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, isWaiverWindowOpen, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
-import { getTransactionFee, normalizeNordic } from '../utils/sharedHelpers';
+import { getTransactionFee, normalizeNordic, buildPlayerAttributeIndex, hydratePlayer } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
@@ -285,12 +285,14 @@ export const AddDropPlayerModal = ({
       timestamp: Date.now(),
     };
 
-    const newPlayer = {
-      name: selectedPlayerToAdd.name,
-      limited: false, unlimited: false, stars: 0,
-      starts: 0, eventsPlayed: 0, cutsMade: 0,
-      pgaTourEarnings: 0, sfglEarnings: 0,
-    };
+    // Hydrate from the durable attribute index so a re-added LIMITED player
+    // keeps limited status, stars, years of service, and accumulated SFGL data.
+    // A limited player can never come back as unlimited.
+    const newPlayer = hydratePlayer(
+      selectedPlayerToAdd.name,
+      buildPlayerAttributeIndex(teams, tournaments),
+      selectedPlayerToAdd.headshot || '',
+    );
 
     // When editing, replace the original pending waiver rather than adding a
     // second one: keep its queue priority, drop the old row, and apply only the
