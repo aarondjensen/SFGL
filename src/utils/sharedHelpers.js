@@ -251,6 +251,72 @@ export const buildEffectiveRoster = (team, transactions, opts = {}) => {
   return rosterSet;
 };
 
+// ── Durable player attributes ────────────────────────────────────────────────
+// A player's SFGL identity (limited/unlimited/stars/yearsOfService) and career
+// tallies (starts/sfglEarnings/eventsPlayed/cutsMade/pgaTourEarnings) must
+// survive a drop → re-add. They used to live ONLY on the roster-array entry, so
+// dropping a player destroyed them and a re-add rebuilt them as a fresh,
+// UNLIMITED player with zeroed stats. League rule: a limited player can never
+// come back unlimited, and their data must be preserved.
+//
+// buildPlayerAttributeIndex assembles a durable name→attributes lookup from the
+// two already-persisted sources:
+//   1. current roster entries across every team (the fullest attributes), and
+//   2. tournament results snapshots, which record `limited` for anyone who ever
+//      started — so a currently-dropped limited player is still known limited.
+// Merge rule: once limited, ALWAYS limited (no source can downgrade), and
+// numeric tallies take the max so a stale zero can't wipe a real value.
+export const buildPlayerAttributeIndex = (teams = [], tournaments = []) => {
+  const idx = {};
+  const upsert = (name, attrs = {}) => {
+    if (!name) return;
+    const cur = idx[name] || {};
+    const limited = !!(cur.limited || attrs.limited);
+    idx[name] = {
+      ...cur,
+      ...attrs,
+      limited,
+      unlimited: limited ? false : !!(attrs.unlimited ?? cur.unlimited),
+      stars:           Math.max(cur.stars ?? 0, attrs.stars ?? 0),
+      yearsOfService:  Math.max(cur.yearsOfService ?? 0, attrs.yearsOfService ?? 0),
+      starts:          Math.max(cur.starts ?? 0, attrs.starts ?? 0),
+      eventsPlayed:    Math.max(cur.eventsPlayed ?? 0, attrs.eventsPlayed ?? 0),
+      cutsMade:        Math.max(cur.cutsMade ?? 0, attrs.cutsMade ?? 0),
+      pgaTourEarnings: Math.max(cur.pgaTourEarnings ?? 0, attrs.pgaTourEarnings ?? 0),
+      sfglEarnings:    Math.max(cur.sfglEarnings ?? 0, attrs.sfglEarnings ?? 0),
+      headshot: attrs.headshot || cur.headshot || '',
+    };
+  };
+  (teams || []).forEach(t => (t.roster || []).forEach(p => upsert(p.name, p)));
+  (tournaments || []).forEach(t => {
+    const teamsRes = t?.results?.teams;
+    if (!teamsRes) return;
+    Object.values(teamsRes).forEach(tr =>
+      (tr.players || []).forEach(pl => upsert(pl.name || pl, { limited: !!pl.limited })));
+  });
+  return idx;
+};
+
+// Build a complete roster-entry for `name`, hydrated from the durable index.
+// Unknown players (genuinely new to the league) get safe unlimited defaults.
+export const hydratePlayer = (name, attrIndex = {}, headshot = '') => {
+  const a = attrIndex[name] || {};
+  const limited = !!a.limited;
+  return {
+    name,
+    limited,
+    unlimited: limited ? false : !!a.unlimited,
+    stars:           a.stars ?? 0,
+    yearsOfService:  a.yearsOfService ?? 1,
+    starts:          a.starts ?? 0,
+    eventsPlayed:    a.eventsPlayed ?? 0,
+    cutsMade:        a.cutsMade ?? 0,
+    pgaTourEarnings: a.pgaTourEarnings ?? 0,
+    sfglEarnings:    a.sfglEarnings ?? 0,
+    headshot: headshot || a.headshot || '',
+  };
+};
+
 // Returns a Map<playerName, teamName> showing which team currently owns each
 // rostered player across the entire league. Used by AddDropPlayerModal to
 // label players as "Unavailable / on Team X" without re-running the same

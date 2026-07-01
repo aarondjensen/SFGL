@@ -14,7 +14,7 @@ import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { M, disabledBtn } from './adminStyles';
-import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam, buildEffectiveRoster } from '../../utils/sharedHelpers';
+import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam, buildEffectiveRoster, buildPlayerAttributeIndex, hydratePlayer } from '../../utils/sharedHelpers';
 
 // Roster membership for waiver processing uses the CANONICAL buildEffectiveRoster
 // from sharedHelpers — the same builder behind useRoster, so the manual processor
@@ -23,12 +23,14 @@ import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam, buildEffecti
 // swing_winner, so it could disagree with the roster screen — the same class of
 // divergence that mis-blocked the Denny McCarthy claim.
 
-const applyWaiver = (t, w) => {
+const applyWaiver = (t, w, attrIndex = {}) => {
   if (t.name !== w.team) return t;
   let r = [...t.roster];
   if (w.droppedPlayer) r = r.filter(p => p.name !== w.droppedPlayer);
   if (!r.some(p => p.name === w.player)) {
-    r.push({ name: w.player, limited: false, unlimited: false, stars: 0, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0 });
+    // Hydrate from the durable index so a claimed LIMITED player keeps their
+    // limited status, stars, and accumulated SFGL data.
+    r.push(hydratePlayer(w.player, attrIndex));
   }
   return { ...t, roster: r };
 };
@@ -107,7 +109,8 @@ export const WaiverProcessingPanel = ({
       tx2[l._idx] = { ...tx2[l._idx], status: 'failed', failReason: `Lost tiebreaker to ${winner.team} (${winEarn} vs ${loseEarn})`, processedDate: new Date().toLocaleDateString() };
     });
 
-    const t2 = teams.map(t => applyWaiver(t, winner));
+    const waiverAttrIndex = buildPlayerAttributeIndex(teams, tournaments);
+    const t2 = teams.map(t => applyWaiver(t, winner, waiverAttrIndex));
     setTransactions(tx2); updateTeams(t2);
     sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
     if (losers.length) {
@@ -204,7 +207,8 @@ export const WaiverProcessingPanel = ({
     }
 
     let t2 = [...teams];
-    applied.forEach(w => { t2 = t2.map(t => applyWaiver(t, w)); });
+    const batchAttrIndex = buildPlayerAttributeIndex(teams, tournaments);
+    applied.forEach(w => { t2 = t2.map(t => applyWaiver(t, w, batchAttrIndex)); });
     setTransactions(tx2); updateTeams(t2);
     sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
     sfglDataApi.set(STORAGE_KEYS.TEAMS, t2).catch(() => {});
