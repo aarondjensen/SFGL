@@ -614,6 +614,12 @@ async function handleWaivers(res) {
   // buildPlayerAttributeIndex / hydratePlayer in sharedHelpers (api/ can't import
   // from src/). A claimed LIMITED player must keep limited status, stars, years
   // of service, and accumulated SFGL data — never come back as unlimited.
+  const registryDoc = await (async () => {
+    try {
+      const snap = await db.collection('sfgl_data').doc('player-registry').get();
+      return snap.exists ? (snap.data().value || {}) : {};
+    } catch (e) { console.warn('[cron] registry load skipped:', e); return {}; }
+  })();
   const attrIndex = (() => {
     const idx = {};
     const upsert = (name, a = {}) => {
@@ -639,6 +645,9 @@ async function handleWaivers(res) {
       if (!tr) return;
       Object.values(tr).forEach(res => (res.players || []).forEach(pl => upsert(pl.name || pl, { limited: !!pl.limited })));
     });
+    // Durable registry (sfgl_data/player-registry) — recovers attributes for a
+    // player who has vanished from every current roster and from results.
+    Object.entries(registryDoc || {}).forEach(([name, a]) => upsert(name, a));
     return idx;
   })();
   const hydrate = (name) => {

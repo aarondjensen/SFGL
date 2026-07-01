@@ -993,3 +993,15 @@ export const globalPlayerStatsApi = {
   async get()         { return (await sfglDataApi.get('fantasy-golf-global-stats')) || {}; },
   async set(stats)    { await sfglDataApi.set('fantasy-golf-global-stats', stats); },
 };
+
+// ============================================================================
+// PLAYER REGISTRY API
+// ============================================================================
+// Durable single source of truth for per-player SFGL attributes (limited,
+// unlimited, stars, yearsOfService, and career tallies). Survives drop/re-add,
+// so a limited player can never come back unlimited or lose their data.
+// Populated + persisted by useLeague at load and on every team save.
+export const playerRegistryApi = {
+  async get()      { return (await sfglDataApi.get('player-registry')) || {}; },
+  async set(reg)   { await sfglDataApi.set('player-registry', reg); },
+};

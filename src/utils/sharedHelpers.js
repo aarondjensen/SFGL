@@ -252,6 +252,14 @@ export const buildEffectiveRoster = (team, transactions, opts = {}) => {
 };
 
 // ── Durable player attributes ────────────────────────────────────────────────
+// Module-level cache of the persisted player registry (sfgl_data/player-registry).
+// useLeague populates it at load and refreshes it on every team save, so
+// buildPlayerAttributeIndex can consult the durable single-source-of-truth
+// WITHOUT threading the registry through every component. Client-only singleton.
+let _playerRegistryCache = {};
+export const setPlayerRegistry = (reg) => { _playerRegistryCache = reg || {}; };
+export const getPlayerRegistry = () => _playerRegistryCache;
+
 // A player's SFGL identity (limited/unlimited/stars/yearsOfService) and career
 // tallies (starts/sfglEarnings/eventsPlayed/cutsMade/pgaTourEarnings) must
 // survive a drop → re-add. They used to live ONLY on the roster-array entry, so
@@ -266,7 +274,7 @@ export const buildEffectiveRoster = (team, transactions, opts = {}) => {
 //      started — so a currently-dropped limited player is still known limited.
 // Merge rule: once limited, ALWAYS limited (no source can downgrade), and
 // numeric tallies take the max so a stale zero can't wipe a real value.
-export const buildPlayerAttributeIndex = (teams = [], tournaments = []) => {
+export const buildPlayerAttributeIndex = (teams = [], tournaments = [], registry = _playerRegistryCache) => {
   const idx = {};
   const upsert = (name, attrs = {}) => {
     if (!name) return;
@@ -287,6 +295,10 @@ export const buildPlayerAttributeIndex = (teams = [], tournaments = []) => {
       headshot: attrs.headshot || cur.headshot || '',
     };
   };
+  // Durable registry first (lowest precedence — a player who has vanished from
+  // every current roster and from results history is still recovered here).
+  Object.entries(registry || {}).forEach(([name, a]) => upsert(name, a));
+  // Then current rosters (fullest live attributes) and results history.
   (teams || []).forEach(t => (t.roster || []).forEach(p => upsert(p.name, p)));
   (tournaments || []).forEach(t => {
     const teamsRes = t?.results?.teams;
