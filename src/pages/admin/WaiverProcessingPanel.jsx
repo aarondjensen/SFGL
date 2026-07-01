@@ -71,8 +71,12 @@ export const WaiverProcessingPanel = ({
       if (!okEarly) return;
     }
 
+    // Judge "already rostered" against the EFFECTIVE roster (base + replayed
+    // processed txns), never the raw stored array — matching handleProcessAll,
+    // the cron auto-processor, and the AddDropPlayerModal availability view. The
+    // raw array can lag reality and wrongly fail a genuine free-agent claim.
     const allRostered = new Set();
-    teams.forEach(t => t.roster.forEach(p => allRostered.add(p.name)));
+    teams.forEach(t => buildRoster(t, transactions).forEach(n => allRostered.add(n)));
     if (allRostered.has(w.player)) {
       const tx2 = transactions.map((tx, i) => i === w._idx
         ? { ...tx, status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() }
@@ -80,7 +84,8 @@ export const WaiverProcessingPanel = ({
       setTransactions(tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
       dialog.showToast(w.player + ' already rostered', 'error'); return;
     }
-    if (w.droppedPlayer && !teams.find(t => t.name === w.team)?.roster.some(p => p.name === w.droppedPlayer)) {
+    const claimTeam = teams.find(t => t.name === w.team);
+    if (w.droppedPlayer && !(claimTeam && buildRoster(claimTeam, transactions).has(w.droppedPlayer))) {
       const tx2 = transactions.map((tx, i) => i === w._idx
         ? { ...tx, status: 'failed', failReason: w.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }
         : tx);

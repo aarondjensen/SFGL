@@ -36,6 +36,32 @@ import { LIV_GOLF_ROSTER } from '../constants';
 // new free agents that haven't been synced yet.
 const LIV_PLAYERS = new Set(LIV_GOLF_ROSTER);
 
+// Effective roster for a team: the stored base roster with every processed/
+// completed add & drop replayed on top. A player netted out by a processed drop
+// but still lingering in the stored `roster` array is treated as gone; a player
+// added by a processed txn not yet written back is treated as present. Mirrors
+// useRoster / buildRoster used everywhere else, so the commish picker never
+// disagrees with the Rosters screen or the free-agent modal — which is exactly
+// what let a ghost-rostered free agent (Denny McCarthy) get filtered out of the
+// "Player Added" pool with "No players found."
+const effectiveRoster = (team, transactions) => {
+  let r = [...((team && team.roster) || [])];
+  (transactions || [])
+    .filter(tx =>
+      team && tx.team === team.name &&
+      tx.type !== 'mulligan' &&
+      tx.type !== 'swing_winner' &&
+      (tx.status === 'processed' || tx.status === 'completed'))
+    .sort((a, b) => (a.tournamentIndex ?? 0) - (b.tournamentIndex ?? 0))
+    .forEach(tx => {
+      if (tx.droppedPlayer) r = r.filter(p => (p.name || p) !== tx.droppedPlayer);
+      if (tx.player && !r.some(p => (p.name || p) === tx.player)) r.push({ name: tx.player });
+    });
+  return r;
+};
+const effectiveRosterNames = (team, transactions) =>
+  new Set(effectiveRoster(team, transactions).map(p => p.name || p));
+
 // Search-result sorter. Given a query and a filtered list of player records,
 // returns them sorted by:
 //   1. Prefix match priority — any word in the name starts with the query
@@ -621,12 +647,16 @@ export const AddTransactionModal = ({
             // policy applies to waiver-blocked entries (you can't log a
             // blocked claim for a player who couldn't have been claimed).
             const isLivIneligible = (p) => p.isLiv || LIV_PLAYERS.has(p.name);
+            // Exclude players who are EFFECTIVELY rostered anywhere (base roster
+            // with processed adds/drops replayed) — not the raw stored array,
+            // which can still list a player who was already dropped.
+            const allRostered = new Set();
+            teams.forEach(t => effectiveRosterNames(t, transactions).forEach(n => allRostered.add(n)));
             const pool = type === 'waiver blocked'
               ? allPlayers.filter(p => validPlayer(p) && !isLivIneligible(p))
               : allPlayers.filter(p => {
                   if (!validPlayer(p)) return false;
                   if (isLivIneligible(p)) return false;
-                  const allRostered = new Set(teams.flatMap(t => t.roster.map(r => r.name)));
                   return !allRostered.has(p.name);
                 });
             // Substring filter, then rank by relevance + world rank.
@@ -792,8 +822,10 @@ export const AddTransactionModal = ({
             // FA / Waiver: search this team's roster. Substring filter,
             // then alphabetical — the roster is small (≤13) so we don't
             // need the prefix+rank weighting used for the free-agent pool;
-            // a stable name order is enough.
-            const pool = teamObj?.roster || [];
+            // a stable name order is enough. Use the EFFECTIVE roster (processed
+            // adds/drops replayed) so a ghost left in the stored array isn't
+            // offered as droppable and a processed pickup isn't missing.
+            const pool = effectiveRoster(teamObj, transactions);
             const filtered = pool
               .filter(p => (p.name || p).toLowerCase().includes(searchOut.toLowerCase()))
               .sort((a, b) => (a.name || a).localeCompare(b.name || b));
