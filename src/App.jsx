@@ -74,6 +74,24 @@ const LazyFallback = () => (
   </div>
 );
 
+// ── Full-screen loading splash ─────────────────────────────────────────────
+// Shared by BOTH boot phases: the auth-resolution gate (App) and the league
+// data load (FantasyGolfLeague). Rendering one component in both places keeps
+// the "SFGL" wordmark in the exact same spot across the transition, so there's
+// no visible jump when the app moves from auth check → data load.
+const LoadingScreen = () => (
+  <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
+    {/* Loading-screen animations live in app-global.css (Wave 1 cleanup) */}
+    <div className="sfgl-logo-load" style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: 'rgba(255,255,255,0.93)', userSelect: 'none' }}>SFGL</div>
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <span className="sfgl-dot" />
+      <span className="sfgl-dot" />
+      <span className="sfgl-dot" />
+    </div>
+    <div style={{ fontSize: fontSize.sm, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading 2026 League</div>
+  </div>
+);
+
 // ── Tabs ────────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'standings',    label: 'Standings',    Icon: Trophy     },
@@ -507,18 +525,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   };
 
   if (loading || claims === null) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
-        {/* Loading-screen animations are now in app-global.css (Wave 1 cleanup) */}
-        <div className="sfgl-logo-load" style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: 'rgba(255,255,255,0.93)', userSelect: 'none' }}>SFGL</div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span className="sfgl-dot" />
-          <span className="sfgl-dot" />
-          <span className="sfgl-dot" />
-        </div>
-        <div style={{ fontSize: fontSize.sm, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading 2026 League</div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   // Signed in but no team yet (and not the commissioner): self-claim a team.
@@ -957,11 +964,7 @@ const App = () => {
   }), []);
 
   if (auth.status === 'loading') {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
-        <div className="sfgl-logo-load" style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: 'rgba(255,255,255,0.93)', userSelect: 'none' }}>SFGL</div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!auth.user) {
