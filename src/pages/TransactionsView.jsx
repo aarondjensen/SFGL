@@ -477,7 +477,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
           t.status === 'failed' &&
           t.type === 'waiver' &&
           t.player === tx.player &&
-          t.failReason?.includes('lost tiebreaker')
+          t.failReason?.toLowerCase().includes('lost tiebreaker')
         ) {
           // Re-queue the blocked claim so it can be processed again
           const { failReason, processedDate, ...rest } = t;

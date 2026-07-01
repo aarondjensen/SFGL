@@ -14,18 +14,14 @@ import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { M, disabledBtn } from './adminStyles';
-import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam } from '../../utils/sharedHelpers';
+import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam, buildEffectiveRoster } from '../../utils/sharedHelpers';
 
-const buildRoster = (team, transactions) => {
-  let r = team.roster.map(p => p.name);
-  transactions
-    .filter(tx => tx.team === team.name && tx.status === 'processed' && tx.type !== 'mulligan')
-    .forEach(tx => {
-      if (tx.droppedPlayer) r = r.filter(n => n !== tx.droppedPlayer);
-      if (!r.includes(tx.player)) r.push(tx.player);
-    });
-  return new Set(r);
-};
+// Roster membership for waiver processing uses the CANONICAL buildEffectiveRoster
+// from sharedHelpers — the same builder behind useRoster, so the manual processor
+// agrees exactly with what managers see. The previous local copy counted only
+// 'processed' (missing 'completed', e.g. commish-added pickups) and didn't exclude
+// swing_winner, so it could disagree with the roster screen — the same class of
+// divergence that mis-blocked the Denny McCarthy claim.
 
 const applyWaiver = (t, w) => {
   if (t.name !== w.team) return t;
@@ -76,7 +72,7 @@ export const WaiverProcessingPanel = ({
     // the cron auto-processor, and the AddDropPlayerModal availability view. The
     // raw array can lag reality and wrongly fail a genuine free-agent claim.
     const allRostered = new Set();
-    teams.forEach(t => buildRoster(t, transactions).forEach(n => allRostered.add(n)));
+    teams.forEach(t => buildEffectiveRoster(t, transactions).forEach(n => allRostered.add(n)));
     if (allRostered.has(w.player)) {
       const tx2 = transactions.map((tx, i) => i === w._idx
         ? { ...tx, status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() }
@@ -85,7 +81,7 @@ export const WaiverProcessingPanel = ({
       dialog.showToast(w.player + ' already rostered', 'error'); return;
     }
     const claimTeam = teams.find(t => t.name === w.team);
-    if (w.droppedPlayer && !(claimTeam && buildRoster(claimTeam, transactions).has(w.droppedPlayer))) {
+    if (w.droppedPlayer && !(claimTeam && buildEffectiveRoster(claimTeam, transactions).has(w.droppedPlayer))) {
       const tx2 = transactions.map((tx, i) => i === w._idx
         ? { ...tx, status: 'failed', failReason: w.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }
         : tx);
@@ -150,7 +146,7 @@ export const WaiverProcessingPanel = ({
     Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
 
     const allR = new Set();
-    teams.forEach(t => buildRoster(t, transactions).forEach(n => allR.add(n)));
+    teams.forEach(t => buildEffectiveRoster(t, transactions).forEach(n => allR.add(n)));
 
     const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
     const tx2 = [...transactions];

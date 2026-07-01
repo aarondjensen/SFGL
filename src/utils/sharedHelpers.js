@@ -232,6 +232,10 @@ export const buildEffectiveRoster = (team, transactions, opts = {}) => {
     .filter(tx =>
       tx.team === team.name &&
       tx.type !== 'mulligan' &&
+      // swing_winner.player is the MANAGER's owner name, not a golfer —
+      // replaying it would inject the manager's name into the roster set.
+      // Mirrors the exclusion in the useRoster hook.
+      tx.type !== 'swing_winner' &&
       (tx.status === 'processed' || tx.status === 'completed')
     )
     .forEach(tx => {
