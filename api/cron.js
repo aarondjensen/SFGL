@@ -524,8 +524,34 @@ async function handleWaivers(res) {
   pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
   Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
 
+  // "Already rostered" must be judged against each team's EFFECTIVE roster —
+  // the stored base roster with every processed/completed add & drop replayed on
+  // top — NOT the raw stored `team.roster` array. The stored array can lag the
+  // effective roster (e.g. a player netted out by a processed drop that never
+  // got written back into the array), and when it does, a genuine free agent
+  // gets wrongly failed as "already rostered." That is exactly the bug that
+  // blocked a valid Denny McCarthy claim while he showed as available everywhere
+  // else. This mirrors the client's useRoster hook / AddDropPlayerModal
+  // availability logic and the manual handleProcessAll() path (buildRoster), so
+  // the auto-processor can never disagree with what managers see on-screen.
+  const effectiveRoster = (t) => {
+    let names = (t.roster || []).map(p => p.name);
+    allTx
+      .filter(tx =>
+        tx.team === t.name &&
+        tx.type !== 'mulligan' &&
+        tx.type !== 'swing_winner' &&
+        (tx.status === 'processed' || tx.status === 'completed'))
+      .sort((a, b) => (a.tournamentIndex ?? 0) - (b.tournamentIndex ?? 0))
+      .forEach(tx => {
+        if (tx.droppedPlayer) names = names.filter(n => n !== tx.droppedPlayer);
+        if (tx.player && !names.includes(tx.player)) names.push(tx.player);
+      });
+    return names;
+  };
+
   const allRostered = new Set();
-  teams.forEach(t => (t.roster || []).forEach(p => allRostered.add(p.name)));
+  teams.forEach(t => effectiveRoster(t).forEach(n => allRostered.add(n)));
 
   const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
   const processedResults = [];
