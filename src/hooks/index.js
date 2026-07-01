@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { storage } from '../api';
 import { playerRankingsApi } from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
+import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry } from '../utils/sharedHelpers';
 
 // ============================================================================
 // useLeague — central state manager for all league data
@@ -54,6 +55,7 @@ export const useLeague = (STORAGE_KEYS) => {
         headshotsApi,
         playerRankingsApi: prApi,
         sfglDataApi,
+        playerRegistryApi,
       } = await import('../api/firebase');
 
       console.log(`[useLeague] ${isRefetch ? 'Refetching' : 'Loading'} from Firebase...`);
@@ -77,6 +79,8 @@ export const useLeague = (STORAGE_KEYS) => {
         headshotsApi.getAll().catch((e)    => { console.error('[useLeague] headshots:', e);    return null; }),
         prApi.getAll().catch((e)           => { console.error('[useLeague] rankings:', e);     return null; }),
       ]);
+
+      const firebaseRegistry = await playerRegistryApi.get().catch(() => null);
 
       const sfglFallback = await sfglDataApi.getMany([
         STORAGE_KEYS.TEAMS,
@@ -161,6 +165,26 @@ export const useLeague = (STORAGE_KEYS) => {
           setAllPlayers(localRankings.players);
           setRankingsLastUpdated(localRankings.lastUpdated);
         }
+      }
+
+      // ── Durable player registry (single source of truth for SFGL attributes) ──
+      // Merge the persisted registry with the just-loaded rosters + results
+      // history, then cache it (for hydration everywhere) and persist the union.
+      // The merge only ever adds/corrects (limited never downgrades; tallies take
+      // the max), so it's monotonic and safe — a player is captured the first
+      // time they're seen on any roster and never lost afterward.
+      try {
+        const regTeams = (firebaseTeams?.length > 0)
+          ? firebaseTeams
+          : (sfglFallback[STORAGE_KEYS.TEAMS] || []);
+        const regTournaments = (firebaseTournaments?.length > 0)
+          ? firebaseTournaments
+          : (sfglFallback[STORAGE_KEYS.TOURNAMENTS] || []);
+        const mergedRegistry = buildPlayerAttributeIndex(regTeams, regTournaments, firebaseRegistry || {});
+        setPlayerRegistry(mergedRegistry);
+        playerRegistryApi.set(mergedRegistry).catch((e) => console.warn('[useLeague] registry persist skipped:', e));
+      } catch (e) {
+        console.warn('[useLeague] registry seed skipped:', e);
       }
 
       setLoadErrors(errors);
@@ -279,6 +303,17 @@ export const useLeague = (STORAGE_KEYS) => {
   const updateTeams = useCallback(async (next) => {
     const resolved = typeof next === 'function' ? next(teamsRef.current) : next;
     setTeams(resolved);
+    // Keep the durable registry fresh at the single team-save chokepoint, so a
+    // player's attributes are captured before they can ever be dropped. Monotonic
+    // merge (limited never downgrades; tallies take the max).
+    try {
+      const merged = buildPlayerAttributeIndex(resolved, tournamentsRef.current, getPlayerRegistry());
+      setPlayerRegistry(merged);
+      const { playerRegistryApi } = await import('../api/firebase');
+      playerRegistryApi.set(merged).catch(() => {});
+    } catch (e) {
+      console.warn('[useLeague] registry upkeep skipped:', e);
+    }
     try {
       setIsSyncing(true);
       const { teamsApi } = await import('../api/firebase');
