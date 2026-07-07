@@ -184,7 +184,36 @@ export const SeasonSettingsPanel = ({
     setResultsSaving(true);
     try {
       await setSettings({ ...settings, resultsDay, resultsHour, resultsMinute });
-      dialog.showToast(`✓ Results process ${DAY_NAMES[resultsDay]} at ${fmtETTime(resultsHour, resultsMinute)} ET`, 'success');
+
+      // Re-program the cron-job.org "results" job so its ping schedule tracks
+      // the new gate. The backend expands 'results' into a same-day RETRY
+      // WINDOW (every 30 min from the set time to 10pm ET) so a weather-
+      // delayed finish still auto-processes. Without this sync the in-app
+      // gate moves but cron-job.org keeps pinging on the old schedule — this
+      // is exactly what caused the John Deere Classic to sit unprocessed:
+      // the job pinged once at 9:00 AM against a noon gate and never again.
+      // Best-effort: settings (the gate) are already saved above, so a sync
+      // failure degrades to gate-only behavior rather than blocking the save.
+      let syncWarn = '';
+      try {
+        const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobType: 'results', day: resultsDay, hour: resultsHour, minute: resultsMinute }),
+        });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          syncWarn = d.hint || d.error || `HTTP ${resp.status}`;
+        }
+      } catch (e) {
+        syncWarn = e.message;
+      }
+
+      if (syncWarn) {
+        dialog.showToast(`Saved the time, but cron-job.org didn't update: ${syncWarn}. Update the results job there manually.`, 'error');
+      } else {
+        dialog.showToast(`✓ Results process ${DAY_NAMES[resultsDay]} at ${fmtETTime(resultsHour, resultsMinute)} ET`, 'success');
+      }
     } catch (err) {
       dialog.showToast('Error: ' + err.message, 'error');
     } finally {
@@ -208,7 +237,29 @@ export const SeasonSettingsPanel = ({
     setReminderSaving(true);
     try {
       await setSettings({ ...settings, lineupReminderDay: reminderDay, lineupReminderHour: reminderHour, lineupReminderMinute: reminderMinute });
-      dialog.showToast(`✓ Lineup reminders send ${DAY_NAMES[reminderDay]} at ${fmtETTime(reminderHour, reminderMinute)} ET`, 'success');
+
+      // Re-program the cron-job.org "lineup-reminder" job to track the new
+      // gate (weekly single fire). Same best-effort posture as waivers/results.
+      let syncWarn = '';
+      try {
+        const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobType: 'lineup-reminder', day: reminderDay, hour: reminderHour, minute: reminderMinute }),
+        });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          syncWarn = d.hint || d.error || `HTTP ${resp.status}`;
+        }
+      } catch (e) {
+        syncWarn = e.message;
+      }
+
+      if (syncWarn) {
+        dialog.showToast(`Saved the time, but cron-job.org didn't update: ${syncWarn}. Update the lineup-reminder job there manually.`, 'error');
+      } else {
+        dialog.showToast(`✓ Lineup reminders send ${DAY_NAMES[reminderDay]} at ${fmtETTime(reminderHour, reminderMinute)} ET`, 'success');
+      }
     } catch (err) {
       dialog.showToast('Error: ' + err.message, 'error');
     } finally {
