@@ -65,6 +65,7 @@ export default async function handler(req, res) {
     let tournamentName = '';
     let tournamentId = '';
     let currentStatus = '';
+    let pgaTourns = [];
     const tournamentsQuery = queries.find(q =>
       Array.isArray(q.queryKey) && q.queryKey[0] === 'tournaments'
     );
@@ -72,7 +73,7 @@ export default async function handler(req, res) {
       const allTourns = Array.isArray(tournamentsQuery.state.data)
         ? tournamentsQuery.state.data
         : Object.values(tournamentsQuery.state.data);
-      const pgaTourns = allTourns.filter(isPgaTourTournament);
+      pgaTourns = allTourns.filter(isPgaTourTournament);
       // Prefer IN_PROGRESS, then NOT_STARTED, then any PGA Tour event.
       const current = pgaTourns.find(t => t.tournamentStatus === 'IN_PROGRESS')
         || pgaTourns.find(t => t.tournamentStatus === 'NOT_STARTED')
@@ -170,14 +171,47 @@ export default async function handler(req, res) {
     );
     const state = anyStarted ? 'in' : 'pre';
 
-    // Stale-leaderboard guard: between events (e.g. Mon-Wed of a tournament
-    // week) pgatour.com still serves the just-completed event's board while
-    // the "tournaments" query already lists the upcoming NOT_STARTED event —
-    // which is the name we resolved above. If the named event hasn't started
-    // but the board shows finished/in-progress play, the players and the name
-    // describe DIFFERENT events. Report pre + no players so clients never pin
-    // last week's positions onto this week's field.
+    // Stale-leaderboard resolution: between events (e.g. Sun night → Wed of
+    // the next tournament week) pgatour.com still serves the just-completed
+    // event's board while the "tournaments" query already lists the upcoming
+    // NOT_STARTED event — which is the name we resolved above. If the named
+    // event hasn't started but the board shows finished/in-progress play, the
+    // players and the name describe DIFFERENT events.
+    //
+    // The board is still valuable in this window: if the commish hasn't
+    // processed results yet, the app's active tournament is the COMPLETED
+    // event and managers want to keep seeing final positions. So instead of
+    // blanking, identify the completed event the board belongs to and return
+    // the players labeled with THAT event's name and state 'post'. Clients
+    // fuzzy-match tournamentName against their active tournament, so:
+    //   • Results not yet processed (active = completed event) → names match,
+    //     final positions keep rendering with a "Final" treatment.
+    //   • Results processed / app moved on (active = upcoming event) → names
+    //     mismatch, clients discard the data — same safety as before. Last
+    //     week's positions are never pinned onto this week's field because
+    //     the name we send is the completed event's, not the upcoming one's.
     if (currentStatus === 'NOT_STARTED' && anyStarted) {
+      const isDone = (s) => !!s && s !== 'IN_PROGRESS' && s !== 'NOT_STARTED';
+      // Prefer tying the board to its own tournament via the leaderboard
+      // query key / data id; fall back to any completed PGA Tour event in
+      // the tournaments list (the page only carries current-week-adjacent
+      // events, so this is unambiguous in practice).
+      const lbKey = lbQuery?.queryKey?.[1];
+      const lbTournId = (lbKey && typeof lbKey === 'object')
+        ? (lbKey.tournamentId || lbKey.id || '')
+        : (lbData.tournamentId || lbData.id || '');
+      const boardTourn =
+        (lbTournId && pgaTourns.find(t => (t.id || t.tournamentId) === lbTournId && isDone(t.tournamentStatus)))
+        || pgaTourns.find(t => isDone(t.tournamentStatus))
+        || null;
+      if (boardTourn?.tournamentName) {
+        return res.status(200).json({
+          state: 'post',
+          players,
+          tournamentName: boardTourn.tournamentName,
+        });
+      }
+      // Can't identify the completed event — keep the conservative blank.
       return res.status(200).json({ state: 'pre', players: [], tournamentName });
     }
 

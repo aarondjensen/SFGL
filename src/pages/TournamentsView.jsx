@@ -515,13 +515,18 @@ export const TournamentsView = ({
   // from a static date label — fantasy managers should be able to spot the
   // live event the moment they open the tab.
   //
-  // Two states:
-  //   • Pre-tournament (liveData state !== 'in') → "This week", calm, no dot.
+  // Three states:
+  //   • Pre-tournament (liveData null or state 'pre') → "Next", calm, no dot.
   //     The active tournament has been set but no player has teed off yet.
   //   • Live (liveData state === 'in') → "Live", pulsing red dot.
   //     /api/live flips state to 'in' as soon as any player has a thru value
   //     ('F', a number, CUT, or WD), so this updates within the live-fetch
   //     interval (5 min) of the first tee-off.
+  //   • Final (liveData state === 'post') → "Final", static. The event has
+  //     concluded on tour but SFGL results haven't been processed yet —
+  //     /api/live keeps serving the final board labeled with the completed
+  //     event's name, so managers keep seeing final positions until the
+  //     results cron runs.
   //
   // Visual urgency comes from the pulsing red dot — by reserving it for the
   // "Live" state only, the affordance carries real meaning.
@@ -538,6 +543,7 @@ export const TournamentsView = ({
     // failure, or genuinely no players started). The badge reads as "This
     // week" until /api/live confirms play has begun.
     const hasStarted = liveData?.state === 'in';
+    const isFinal    = liveData?.state === 'post';
 
     return (
       <span style={{
@@ -570,7 +576,7 @@ export const TournamentsView = ({
             flexShrink: 0,
           }} />
         )}
-        {hasStarted ? 'Live' : 'Next'}
+        {hasStarted ? 'Live' : isFinal ? 'Final' : 'Next'}
       </span>
     );
   };
@@ -644,11 +650,13 @@ export const TournamentsView = ({
     };
 
     // Whether play has actually begun. Mirrors StatusBadge: `liveData.state`
-    // flips to 'in' as soon as any player has teed off. Used to gate the
+    // flips to 'in' as soon as any player has teed off, and to 'post' once
+    // the event has concluded on tour (final board, results not yet
+    // processed). Both mean real positions exist. Used to gate the
     // rank-number display — before the tournament starts, "rank" is just
     // "whoever submitted a lineup with non-zero placeholder," which isn't
     // meaningful. Once play begins, rank reflects actual cumulative score.
-    const hasStarted = liveData?.state === 'in';
+    const hasStarted = liveData?.state === 'in' || liveData?.state === 'post';
 
     // Rank teams: best (lowest) sum first; teams with no live data or no
     // lineup sort last. Pre-tournament, all teams sort together at the
