@@ -13,7 +13,8 @@ It ALSO computes each started player's SFGL value directly (money + round-leader
 bonuses) so the historical DB doesn't depend on a spreadsheet recalc.
 
 REQUIRES: network egress to site.api.espn.com (add via Settings > Capabilities >
-Allow network egress). Verify with the smoke test in main().
+Allow network egress). Verify with the smoke test in main() -- it re-proves the
+2019 US Open (Woodland 2,350,000 / Rose 601,872) end-to-end before any batch run.
 
 Raw-tab column layout (verified against intact 2019 front-half tabs, e.g.
 'sony-open-in-hawaii'):
@@ -32,15 +33,44 @@ import json, re, subprocess, unicodedata
 from collections import defaultdict
 import openpyxl
 
-ESPN_LB = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/leaderboard?event={eid}"
+# NOTE (2026-07-08): ESPN moved the leaderboard endpoint. The old
+# `.../golf/pga/leaderboard?event={id}` path now 404s (it routes to
+# leagues/all/events/{id}, which no longer resolves). The working form is
+# `.../golf/leaderboard?league=pga&event={id}` -- same {"events":[...]} shape,
+# carries per-competitor `earnings` + `linescores` + cut `status`.
+ESPN_LB  = "https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?league=pga&event={eid}"
+ESPN_SCB = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?dates={year}"
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+def _curl_json(url):
+    out = subprocess.run(["curl", "-sS", "-m", "30", "-A", UA, url],
+                         capture_output=True, text=True)
+    body = out.stdout
+    if out.returncode != 0 or not body.strip():
+        raise SystemExit(f"ESPN fetch failed ({out.returncode}). "
+                         f"Is site.api.espn.com allowlisted? stderr: {out.stderr[:200]}")
+    data = json.loads(body)
+    # ESPN error envelope: {"code":404,"message":...} -- fail loud, don't return junk.
+    if isinstance(data, dict) and data.get("code") and "message" in data:
+        raise SystemExit(f"ESPN returned error {data['code']}: {data['message'][:180]}\n"
+                         f"URL: {url}\n(If this is a path/param change, update ESPN_LB.)")
+    return data
 
 def fetch_espn(eid):
     """Return parsed ESPN leaderboard JSON for a tournament id (via curl in-sandbox)."""
-    url = ESPN_LB.format(eid=eid)
-    out = subprocess.run(["curl", "-sS", "-m", "30", url], capture_output=True, text=True)
-    if "Host not in allowlist" in out.stdout:
-        raise SystemExit("ESPN not allowlisted yet -- add site.api.espn.com to network egress.")
-    return json.loads(out.stdout)
+    return _curl_json(ESPN_LB.format(eid=eid))
+
+def fetch_schedule(year):
+    """Return {canonical(event name): espn_event_id} for a PGA season.
+    Uses the scoreboard endpoint (dates={year}), which lists the full season
+    with ids -- more reliable than scraping the static schedule HTML."""
+    d = _curl_json(ESPN_SCB.format(year=year))
+    out = {}
+    for e in d.get("events", []):
+        eid, nm = e.get("id"), e.get("name")
+        if eid and nm:
+            out[canonical(nm)] = eid
+    return out
 
 def parse_field(espn_json):
     """Extract [{name, pos, rounds:[r1..], total, earnings, made_cut}] from ESPN JSON.
@@ -130,21 +160,33 @@ def sfgl_values(field, rostered_names, consts):
         out[nm] = {"value": v + bonus, "money": v, "bonus": bonus}
     return out
 
-# 2019 event tab -> ESPN tournament id (CONFIRMED ones; re-derive the rest from
-# the ESPN schedule page season/2019, which is static-HTML fetchable by name).
+# 2019 event tab -> ESPN tournament id (CONFIRMED ones; auto-derive the rest with
+# fetch_schedule(2019), then match canonical(event-tab name) -> id).
 ESPN_IDS_2019_CONFIRMED = {
     "US OPEN": 401056556, "PGA CHAMPIONSHIP": 401056552, "OPEN CHAMPIONSHIP": 401056547,
     "BMW": 401056543, "Tour Championship": 401056542, "WGC Matchplay": 401056524,
 }
 
 def main():
-    print("Smoke test ESPN access...")
-    d = fetch_espn(401056556)  # 2019 US Open
+    print("Smoke test ESPN access + reconstruction math (2019 US Open)...")
+    d = fetch_espn(401056556)  # 2019 US Open (major: 20/40/60k round-leader bonuses)
     field = parse_field(d)
-    print(f"  parsed {len(field)} competitors; winner-ish sample:",
-          sorted(field, key=lambda x:(x['total'] or 999))[:1])
-    print("If earnings/rounds look wrong, dump one competitor JSON and fix parse_field key paths:")
-    print("  json.dump(d['events'][0]['competitions'][0]['competitors'][0], open('one.json','w'), indent=1)")
+    print(f"  parsed {len(field)} competitors")
+    vals = sfgl_values(field, ["Gary Woodland", "Justin Rose"], consts=[20000, 40000, 60000])
+    expect = {"Gary Woodland": 2350000, "Justin Rose": 601872}
+    ok = True
+    for nm, exp in expect.items():
+        got = vals[nm]["value"]
+        flag = "OK" if got == exp else "MISMATCH"
+        if got != exp: ok = False
+        print(f"  {nm:16s} money={vals[nm]['money']:>10,.0f} +bonus={vals[nm]['bonus']:>6,} "
+              f"=> SFGL={got:>10,.0f}  expect {exp:,}  [{flag}]")
+    if not ok:
+        raise SystemExit("Reconstruction math changed -- dump a competitor JSON and re-check "
+                         "parse_field key paths before trusting any batch run:\n"
+                         "  json.dump(d['events'][0]['competitions'][0]['competitors'][0], "
+                         "open('one.json','w'), indent=1)")
+    print("  PASS -- endpoint + parse + bonus logic all verified.")
 
 if __name__ == "__main__":
     main()

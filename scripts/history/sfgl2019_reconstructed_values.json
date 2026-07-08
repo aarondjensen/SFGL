@@ -1,0 +1,3737 @@
+{
+ "season": 2019,
+ "events": [
+  {
+   "event": "Wells Fargo",
+   "slug": "wells-fargo",
+   "espnId": "401056550",
+   "espnName": "Wells Fargo Championship",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Gary Woodland",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": "T28",
+       "money": 56090.0,
+       "bonus": 0,
+       "value": 56090.0
+      },
+      {
+       "player": "Phil Mickelson",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Keegan Bradley",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Peter Uihlein",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 56090.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Jason Kokrak",
+       "played": true,
+       "pos": 69,
+       "money": 15958.0,
+       "bonus": 0,
+       "value": 15958.0
+      },
+      {
+       "player": "Lucas Glover",
+       "played": true,
+       "pos": "T31",
+       "money": 44804.0,
+       "bonus": 0,
+       "value": 44804.0
+      },
+      {
+       "player": "Joel Dahmen",
+       "played": true,
+       "pos": 2,
+       "money": 853200.0,
+       "bonus": 40000,
+       "value": 893200.0
+      },
+      {
+       "player": "Johnson Wagner",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 953962.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Hideki Matsuyama",
+       "played": true,
+       "pos": "T31",
+       "money": 44804.0,
+       "bonus": 0,
+       "value": 44804.0
+      },
+      {
+       "player": "Paul Casey",
+       "played": true,
+       "pos": "T4",
+       "money": 311062.0,
+       "bonus": 0,
+       "value": 311062.0
+      },
+      {
+       "player": "Sergio Garcia",
+       "played": true,
+       "pos": "T4",
+       "money": 311062.0,
+       "bonus": 0,
+       "value": 311062.0
+      },
+      {
+       "player": "Sungjae Im",
+       "played": true,
+       "pos": "T31",
+       "money": 44804.0,
+       "bonus": 0,
+       "value": 44804.0
+      },
+      {
+       "player": "J.B. Holmes",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 711732.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Rickie Fowler",
+       "played": true,
+       "pos": "T4",
+       "money": 311062.0,
+       "bonus": 0,
+       "value": 311062.0
+      },
+      {
+       "player": "Tony Finau",
+       "played": true,
+       "pos": "T60",
+       "money": 17064.0,
+       "bonus": 0,
+       "value": 17064.0
+      },
+      {
+       "player": "Henrik Stenson",
+       "played": true,
+       "pos": "T28",
+       "money": 56090.0,
+       "bonus": 0,
+       "value": 56090.0
+      },
+      {
+       "player": "Charles Howell III",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Keith Mitchell",
+       "played": true,
+       "pos": "T8",
+       "money": 213300.0,
+       "bonus": 0,
+       "value": 213300.0
+      }
+     ],
+     "total": 597516.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Justin Rose",
+       "played": true,
+       "pos": 3,
+       "money": 537200.0,
+       "bonus": 0,
+       "value": 537200.0
+      },
+      {
+       "player": "Webb Simpson",
+       "played": true,
+       "pos": "T18",
+       "money": 99540.0,
+       "bonus": 0,
+       "value": 99540.0
+      },
+      {
+       "player": "Luke List",
+       "played": true,
+       "pos": "T65",
+       "money": 16432.0,
+       "bonus": 0,
+       "value": 16432.0
+      },
+      {
+       "player": "Chez Reavie",
+       "played": true,
+       "pos": "T18",
+       "money": 99540.0,
+       "bonus": 0,
+       "value": 99540.0
+      },
+      {
+       "player": "Zach Johnson",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 752712.0
+    }
+   }
+  },
+  {
+   "event": "AT&T Byron Nelson",
+   "slug": "at&t-byron-nelson",
+   "espnId": "401056551",
+   "espnName": "AT&T Byron Nelson",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Alex Noren",
+       "played": true,
+       "pos": "T35",
+       "money": 36488.0,
+       "bonus": 0,
+       "value": 36488.0
+      },
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": "T63",
+       "money": 16669.0,
+       "bonus": 0,
+       "value": 16669.0
+      },
+      {
+       "player": "Peter Uihlein",
+       "played": true,
+       "pos": "T5",
+       "money": 267810.0,
+       "bonus": 0,
+       "value": 267810.0
+      },
+      {
+       "player": "Rafa Cabrera Bello",
+       "played": true,
+       "pos": "T53",
+       "money": 18117.0,
+       "bonus": 0,
+       "value": 18117.0
+      }
+     ],
+     "total": 339084.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Jordan Spieth",
+       "played": true,
+       "pos": "T29",
+       "money": 50231.0,
+       "bonus": 0,
+       "value": 50231.0
+      },
+      {
+       "player": "Abraham Ancer",
+       "played": true,
+       "pos": "T59",
+       "money": 17301.0,
+       "bonus": 0,
+       "value": 17301.0
+      },
+      {
+       "player": "Ryan Moore",
+       "played": true,
+       "pos": "T69",
+       "money": 15800.0,
+       "bonus": 0,
+       "value": 15800.0
+      },
+      {
+       "player": "Kevin Na",
+       "played": true,
+       "pos": "T35",
+       "money": 36488.0,
+       "bonus": 0,
+       "value": 36488.0
+      }
+     ],
+     "total": 119820.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Hideki Matsuyama",
+       "played": true,
+       "pos": "T23",
+       "money": 68335.0,
+       "bonus": 0,
+       "value": 68335.0
+      },
+      {
+       "player": "Aaron Wise",
+       "played": true,
+       "pos": "T43",
+       "money": 23084.0,
+       "bonus": 0,
+       "value": 23084.0
+      },
+      {
+       "player": "Sungjae Im",
+       "played": true,
+       "pos": "CUT",
+       "money": 13746.0,
+       "bonus": 0,
+       "value": 13746.0
+      },
+      {
+       "player": "Kevin Tway",
+       "played": true,
+       "pos": "T53",
+       "money": 18117.0,
+       "bonus": 0,
+       "value": 18117.0
+      }
+     ],
+     "total": 123282.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Henrik Stenson",
+       "played": true,
+       "pos": "T20",
+       "money": 95327.0,
+       "bonus": 0,
+       "value": 95327.0
+      },
+      {
+       "player": "Charles Howell III",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Keith Mitchell",
+       "played": true,
+       "pos": "T59",
+       "money": 17301.0,
+       "bonus": 0,
+       "value": 17301.0
+      },
+      {
+       "player": "Rory Sabbatini",
+       "played": true,
+       "pos": "T5",
+       "money": 267810.0,
+       "bonus": 0,
+       "value": 267810.0
+      },
+      {
+       "player": "Lucas Bjerregaard",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 380438.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Beau Hossler",
+       "played": true,
+       "pos": "T43",
+       "money": 23084.0,
+       "bonus": 0,
+       "value": 23084.0
+      },
+      {
+       "player": "Branden Grace",
+       "played": true,
+       "pos": "T63",
+       "money": 16669.0,
+       "bonus": 0,
+       "value": 16669.0
+      },
+      {
+       "player": "Ryan Palmer",
+       "played": true,
+       "pos": "T43",
+       "money": 23084.0,
+       "bonus": 0,
+       "value": 23084.0
+      },
+      {
+       "player": "Brian Harman",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Trey Mullinax",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 62837.0
+    }
+   }
+  },
+  {
+   "event": "PGA CHAMPIONSHIP",
+   "slug": "pga-championship",
+   "espnId": "401056552",
+   "espnName": "PGA Championship",
+   "bonuses": [
+    20000,
+    40000,
+    60000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Rory McIlroy",
+       "played": true,
+       "pos": "T8",
+       "money": 264395.0,
+       "bonus": 0,
+       "value": 264395.0
+      },
+      {
+       "player": "Gary Woodland",
+       "played": true,
+       "pos": "T8",
+       "money": 264395.0,
+       "bonus": 0,
+       "value": 264395.0
+      },
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Phil Mickelson",
+       "played": true,
+       "pos": "T71",
+       "money": 19250.0,
+       "bonus": 0,
+       "value": 19250.0
+      },
+      {
+       "player": "Rafa Cabrera Bello",
+       "played": true,
+       "pos": "T71",
+       "money": 19250.0,
+       "bonus": 0,
+       "value": 19250.0
+      }
+     ],
+     "total": 567290.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Jordan Spieth",
+       "played": true,
+       "pos": "T3",
+       "money": 575500.0,
+       "bonus": 0,
+       "value": 575500.0
+      },
+      {
+       "player": "Tiger Woods",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Tommy Fleetwood",
+       "played": true,
+       "pos": "T48",
+       "money": 26250.0,
+       "bonus": 0,
+       "value": 26250.0
+      },
+      {
+       "player": "Bryson DeChambeau",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Adam Scott",
+       "played": true,
+       "pos": "T8",
+       "money": 264395.0,
+       "bonus": 0,
+       "value": 264395.0
+      }
+     ],
+     "total": 866145.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Brooks Koepka",
+       "played": true,
+       "pos": 1,
+       "money": 1980000.0,
+       "bonus": 80000,
+       "value": 2060000.0
+      },
+      {
+       "player": "Jason Day",
+       "played": true,
+       "pos": "T23",
+       "money": 91000.0,
+       "bonus": 0,
+       "value": 91000.0
+      },
+      {
+       "player": "Hideki Matsuyama",
+       "played": true,
+       "pos": "T16",
+       "money": 143100.0,
+       "bonus": 0,
+       "value": 143100.0
+      },
+      {
+       "player": "Paul Casey",
+       "played": true,
+       "pos": "T29",
+       "money": 65000.0,
+       "bonus": 0,
+       "value": 65000.0
+      },
+      {
+       "player": "Sergio Garcia",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 2359100.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Dustin Johnson",
+       "played": true,
+       "pos": 2,
+       "money": 1188000.0,
+       "bonus": 0,
+       "value": 1188000.0
+      },
+      {
+       "player": "Rickie Fowler",
+       "played": true,
+       "pos": "T36",
+       "money": 48200.0,
+       "bonus": 0,
+       "value": 48200.0
+      },
+      {
+       "player": "Jon Rahm",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Tony Finau",
+       "played": true,
+       "pos": "T64",
+       "money": 20200.0,
+       "bonus": 0,
+       "value": 20200.0
+      },
+      {
+       "player": "Matt Kuchar",
+       "played": true,
+       "pos": "T8",
+       "money": 264395.0,
+       "bonus": 0,
+       "value": 264395.0
+      }
+     ],
+     "total": 1520795.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Justin Rose",
+       "played": true,
+       "pos": "T29",
+       "money": 65000.0,
+       "bonus": 0,
+       "value": 65000.0
+      },
+      {
+       "player": "Xander Schauffele",
+       "played": true,
+       "pos": "T16",
+       "money": 143100.0,
+       "bonus": 0,
+       "value": 143100.0
+      },
+      {
+       "player": "Francesco Molinari",
+       "played": true,
+       "pos": "T48",
+       "money": 26250.0,
+       "bonus": 0,
+       "value": 26250.0
+      },
+      {
+       "player": "Webb Simpson",
+       "played": true,
+       "pos": "T29",
+       "money": 65000.0,
+       "bonus": 0,
+       "value": 65000.0
+      },
+      {
+       "player": "Billy Horschel",
+       "played": true,
+       "pos": "T23",
+       "money": 91000.0,
+       "bonus": 0,
+       "value": 91000.0
+      }
+     ],
+     "total": 390350.0
+    }
+   }
+  },
+  {
+   "event": "Charles Schwab",
+   "slug": "charles-schwab-challenge",
+   "espnId": "401056553",
+   "espnName": "Charles Schwab Challenge",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Cameron Champ",
+       "played": true,
+       "pos": "T58",
+       "money": 15987.0,
+       "bonus": 0,
+       "value": 15987.0
+      },
+      {
+       "player": "Patton Kizzire",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Si Woo Kim",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Peter Uihlein",
+       "played": true,
+       "pos": "T13",
+       "money": 136875.0,
+       "bonus": 0,
+       "value": 136875.0
+      },
+      {
+       "player": "Max Homa",
+       "played": true,
+       "pos": "T27",
+       "money": 55115.0,
+       "bonus": 0,
+       "value": 55115.0
+      }
+     ],
+     "total": 207977.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Jordan Spieth",
+       "played": true,
+       "pos": "T8",
+       "money": 197100.0,
+       "bonus": 0,
+       "value": 197100.0
+      },
+      {
+       "player": "Bryson DeChambeau",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Abraham Ancer",
+       "played": true,
+       "pos": "T58",
+       "money": 15987.0,
+       "bonus": 0,
+       "value": 15987.0
+      },
+      {
+       "player": "Ian Poulter",
+       "played": true,
+       "pos": "T70",
+       "money": 14527.0,
+       "bonus": 0,
+       "value": 14527.0
+      },
+      {
+       "player": "Daniel Berger",
+       "played": true,
+       "pos": "T53",
+       "money": 16819.0,
+       "bonus": 0,
+       "value": 16819.0
+      }
+     ],
+     "total": 244433.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Paul Casey",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 20000,
+       "value": 20000
+      },
+      {
+       "player": "Kevin Kisner",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Kevin Tway",
+       "played": true,
+       "pos": "T19",
+       "money": 79388.0,
+       "bonus": 0,
+       "value": 79388.0
+      },
+      {
+       "player": "Sungjae Im",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Joel Dahmen",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 99388.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Tony Finau",
+       "played": true,
+       "pos": 2,
+       "money": 788400.0,
+       "bonus": 10000,
+       "value": 798400.0
+      },
+      {
+       "player": "Brandt Snedeker",
+       "played": true,
+       "pos": "T19",
+       "money": 79388.0,
+       "bonus": 0,
+       "value": 79388.0
+      },
+      {
+       "player": "Rory Sabbatini",
+       "played": true,
+       "pos": "T6",
+       "money": 253675.0,
+       "bonus": 0,
+       "value": 253675.0
+      },
+      {
+       "player": "Emiliano Grillo",
+       "played": true,
+       "pos": "T19",
+       "money": 79388.0,
+       "bonus": 0,
+       "value": 79388.0
+      }
+     ],
+     "total": 1210851.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Francesco Molinari",
+       "played": true,
+       "pos": "T53",
+       "money": 16819.0,
+       "bonus": 0,
+       "value": 16819.0
+      },
+      {
+       "player": "Billy Horschel",
+       "played": true,
+       "pos": "T19",
+       "money": 79388.0,
+       "bonus": 0,
+       "value": 79388.0
+      },
+      {
+       "player": "Ryan Palmer",
+       "played": true,
+       "pos": "T6",
+       "money": 253675.0,
+       "bonus": 0,
+       "value": 253675.0
+      },
+      {
+       "player": "Charley Hoffman",
+       "played": true,
+       "pos": "T13",
+       "money": 136875.0,
+       "bonus": 0,
+       "value": 136875.0
+      },
+      {
+       "player": "Scott Piercy",
+       "played": true,
+       "pos": "T19",
+       "money": 79388.0,
+       "bonus": 0,
+       "value": 79388.0
+      }
+     ],
+     "total": 566145.0
+    }
+   }
+  },
+  {
+   "event": "Memorial Tournament",
+   "slug": "memorial-tournament",
+   "espnId": "401056554",
+   "espnName": "the Memorial Tournament pres. by Nationwide",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Rory McIlroy",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Gary Woodland",
+       "played": true,
+       "pos": "T52",
+       "money": 21221.0,
+       "bonus": 0,
+       "value": 21221.0
+      },
+      {
+       "player": "Phil Mickelson",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Si Woo Kim",
+       "played": true,
+       "pos": "T41",
+       "money": 31850.0,
+       "bonus": 0,
+       "value": 31850.0
+      },
+      {
+       "player": "Rafa Cabrera Bello",
+       "played": true,
+       "pos": "T41",
+       "money": 31850.0,
+       "bonus": 0,
+       "value": 31850.0
+      }
+     ],
+     "total": 84921.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Tiger Woods",
+       "played": true,
+       "pos": "T9",
+       "money": 236600.0,
+       "bonus": 0,
+       "value": 236600.0
+      },
+      {
+       "player": "Bryson DeChambeau",
+       "played": true,
+       "pos": "T22",
+       "money": 87360.0,
+       "bonus": 0,
+       "value": 87360.0
+      },
+      {
+       "player": "Marc Leishman",
+       "played": true,
+       "pos": 5,
+       "money": 364000.0,
+       "bonus": 0,
+       "value": 364000.0
+      },
+      {
+       "player": "Adam Scott",
+       "played": true,
+       "pos": 2,
+       "money": 982800.0,
+       "bonus": 0,
+       "value": 982800.0
+      },
+      {
+       "player": "Louis Oosthuizen",
+       "played": true,
+       "pos": "T57",
+       "money": 20202.0,
+       "bonus": 0,
+       "value": 20202.0
+      }
+     ],
+     "total": 1690962.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Hideki Matsuyama",
+       "played": true,
+       "pos": 6,
+       "money": 327600.0,
+       "bonus": 0,
+       "value": 327600.0
+      },
+      {
+       "player": "Patrick Cantlay",
+       "played": true,
+       "pos": 1,
+       "money": 1638000.0,
+       "bonus": 0,
+       "value": 1638000.0
+      },
+      {
+       "player": "Kevin Kisner",
+       "played": true,
+       "pos": "T41",
+       "money": 31850.0,
+       "bonus": 0,
+       "value": 31850.0
+      },
+      {
+       "player": "Byeong Hun An",
+       "played": true,
+       "pos": "T17",
+       "money": 127400.0,
+       "bonus": 0,
+       "value": 127400.0
+      },
+      {
+       "player": "Sungjae Im",
+       "played": true,
+       "pos": "T57",
+       "money": 20202.0,
+       "bonus": 0,
+       "value": 20202.0
+      }
+     ],
+     "total": 2145052.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Rickie Fowler",
+       "played": true,
+       "pos": "T14",
+       "money": 163800.0,
+       "bonus": 0,
+       "value": 163800.0
+      },
+      {
+       "player": "Tony Finau",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Matt Kuchar",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Henrik Stenson",
+       "played": true,
+       "pos": "T37",
+       "money": 41860.0,
+       "bonus": 0,
+       "value": 41860.0
+      },
+      {
+       "player": "Rory Sabbatini",
+       "played": true,
+       "pos": "T27",
+       "money": 63245.0,
+       "bonus": 0,
+       "value": 63245.0
+      }
+     ],
+     "total": 268905.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Kyle Stanley",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Billy Horschel",
+       "played": true,
+       "pos": "T9",
+       "money": 236600.0,
+       "bonus": 0,
+       "value": 236600.0
+      },
+      {
+       "player": "Luke List",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Brian Harman",
+       "played": true,
+       "pos": "T27",
+       "money": 63245.0,
+       "bonus": 0,
+       "value": 63245.0
+      },
+      {
+       "player": "Charley Hoffman",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 299845.0
+    }
+   }
+  },
+  {
+   "event": "RBC Canadian",
+   "slug": "rbc-canadian-open",
+   "espnId": "401056555",
+   "espnName": "RBC Canadian Open",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Alex Noren",
+       "played": true,
+       "pos": "T63",
+       "money": 15960.0,
+       "bonus": 0,
+       "value": 15960.0
+      },
+      {
+       "player": "Keegan Bradley",
+       "played": true,
+       "pos": "T44",
+       "money": 22977.0,
+       "bonus": 10000,
+       "value": 32977.0
+      },
+      {
+       "player": "Peter Uihlein",
+       "played": true,
+       "pos": "T44",
+       "money": 22977.0,
+       "bonus": 0,
+       "value": 22977.0
+      },
+      {
+       "player": "Austin Cook",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 71914.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Daniel Berger",
+       "played": true,
+       "pos": "T35",
+       "money": 34327.0,
+       "bonus": 0,
+       "value": 34327.0
+      },
+      {
+       "player": "Shane Lowry",
+       "played": true,
+       "pos": "T2",
+       "money": 668800.0,
+       "bonus": 0,
+       "value": 668800.0
+      },
+      {
+       "player": "Bud Cauley",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 703127.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Sergio Garcia",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Sungjae Im",
+       "played": true,
+       "pos": 7,
+       "money": 254600.0,
+       "bonus": 0,
+       "value": 254600.0
+      },
+      {
+       "player": "Corey Conners",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Graeme McDowell",
+       "played": true,
+       "pos": "T8",
+       "money": 220400.0,
+       "bonus": 0,
+       "value": 220400.0
+      }
+     ],
+     "total": 475000.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Bubba Watson",
+       "played": true,
+       "pos": "T63",
+       "money": 15960.0,
+       "bonus": 0,
+       "value": 15960.0
+      },
+      {
+       "player": "Matt Kuchar",
+       "played": true,
+       "pos": "T4",
+       "money": 334400.0,
+       "bonus": 50000,
+       "value": 384400.0
+      },
+      {
+       "player": "Henrik Stenson",
+       "played": true,
+       "pos": "T8",
+       "money": 220400.0,
+       "bonus": 0,
+       "value": 220400.0
+      },
+      {
+       "player": "Brandt Snedeker",
+       "played": true,
+       "pos": "T4",
+       "money": 334400.0,
+       "bonus": 0,
+       "value": 334400.0
+      },
+      {
+       "player": "Jim Furyk",
+       "played": true,
+       "pos": "T27",
+       "money": 55100.0,
+       "bonus": 0,
+       "value": 55100.0
+      }
+     ],
+     "total": 1010260.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Webb Simpson",
+       "played": true,
+       "pos": "T2",
+       "money": 668800.0,
+       "bonus": 30000,
+       "value": 698800.0
+      },
+      {
+       "player": "J.B. Holmes",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Brian Harman",
+       "played": true,
+       "pos": "T50",
+       "money": 18189.0,
+       "bonus": 0,
+       "value": 18189.0
+      },
+      {
+       "player": "Ryan Palmer",
+       "played": true,
+       "pos": "T35",
+       "money": 34327.0,
+       "bonus": 0,
+       "value": 34327.0
+      },
+      {
+       "player": "Scott Piercy",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 751316.0
+    }
+   }
+  },
+  {
+   "event": "US OPEN",
+   "slug": "us-open-championship",
+   "espnId": "401056556",
+   "espnName": "U.S. Open",
+   "bonuses": [
+    20000,
+    40000,
+    60000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Rory McIlroy",
+       "played": true,
+       "pos": "T9",
+       "money": 288715.0,
+       "bonus": 0,
+       "value": 288715.0
+      },
+      {
+       "player": "Justin Thomas",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Gary Woodland",
+       "played": true,
+       "pos": 1,
+       "money": 2250000.0,
+       "bonus": 100000,
+       "value": 2350000.0
+      },
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": "T32",
+       "money": 72928.0,
+       "bonus": 0,
+       "value": 72928.0
+      },
+      {
+       "player": "Phil Mickelson",
+       "played": true,
+       "pos": "T52",
+       "money": 27181.0,
+       "bonus": 0,
+       "value": 27181.0
+      }
+     ],
+     "total": 2738824.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Jordan Spieth",
+       "played": true,
+       "pos": "T65",
+       "money": 23851.0,
+       "bonus": 0,
+       "value": 23851.0
+      },
+      {
+       "player": "Tiger Woods",
+       "played": true,
+       "pos": "T21",
+       "money": 117598.0,
+       "bonus": 0,
+       "value": 117598.0
+      },
+      {
+       "player": "Tommy Fleetwood",
+       "played": true,
+       "pos": "T65",
+       "money": 23851.0,
+       "bonus": 0,
+       "value": 23851.0
+      },
+      {
+       "player": "Adam Scott",
+       "played": true,
+       "pos": "T7",
+       "money": 367387.0,
+       "bonus": 0,
+       "value": 367387.0
+      },
+      {
+       "player": "Shane Lowry",
+       "played": true,
+       "pos": "T28",
+       "money": 86071.0,
+       "bonus": 0,
+       "value": 86071.0
+      }
+     ],
+     "total": 618758.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Brooks Koepka",
+       "played": true,
+       "pos": 2,
+       "money": 1350000.0,
+       "bonus": 0,
+       "value": 1350000.0
+      },
+      {
+       "player": "Jason Day",
+       "played": true,
+       "pos": "T21",
+       "money": 117598.0,
+       "bonus": 0,
+       "value": 117598.0
+      },
+      {
+       "player": "Hideki Matsuyama",
+       "played": true,
+       "pos": "T21",
+       "money": 117598.0,
+       "bonus": 0,
+       "value": 117598.0
+      },
+      {
+       "player": "Patrick Cantlay",
+       "played": true,
+       "pos": "T21",
+       "money": 117598.0,
+       "bonus": 0,
+       "value": 117598.0
+      },
+      {
+       "player": "Paul Casey",
+       "played": true,
+       "pos": "T21",
+       "money": 117598.0,
+       "bonus": 0,
+       "value": 117598.0
+      }
+     ],
+     "total": 1820392.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Dustin Johnson",
+       "played": true,
+       "pos": "T35",
+       "money": 57853.0,
+       "bonus": 0,
+       "value": 57853.0
+      },
+      {
+       "player": "Rickie Fowler",
+       "played": true,
+       "pos": "T43",
+       "money": 41500.0,
+       "bonus": 0,
+       "value": 41500.0
+      },
+      {
+       "player": "Jon Rahm",
+       "played": true,
+       "pos": "T3",
+       "money": 581872.0,
+       "bonus": 0,
+       "value": 581872.0
+      },
+      {
+       "player": "Tony Finau",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Matt Kuchar",
+       "played": true,
+       "pos": "T16",
+       "money": 172455.0,
+       "bonus": 0,
+       "value": 172455.0
+      }
+     ],
+     "total": 853680.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Justin Rose",
+       "played": true,
+       "pos": "T3",
+       "money": 581872.0,
+       "bonus": 20000,
+       "value": 601872.0
+      },
+      {
+       "player": "Francesco Molinari",
+       "played": true,
+       "pos": "T16",
+       "money": 172455.0,
+       "bonus": 0,
+       "value": 172455.0
+      },
+      {
+       "player": "Xander Schauffele",
+       "played": true,
+       "pos": "T3",
+       "money": 581872.0,
+       "bonus": 0,
+       "value": 581872.0
+      },
+      {
+       "player": "Webb Simpson",
+       "played": true,
+       "pos": "T16",
+       "money": 172455.0,
+       "bonus": 0,
+       "value": 172455.0
+      },
+      {
+       "player": "Billy Horschel",
+       "played": true,
+       "pos": "T32",
+       "money": 72928.0,
+       "bonus": 0,
+       "value": 72928.0
+      }
+     ],
+     "total": 1601582.0
+    }
+   }
+  },
+  {
+   "event": "Travelers",
+   "slug": "the-travelers-championship",
+   "espnId": "401056549",
+   "espnName": "Travelers Championship",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": "T30",
+       "money": 43740.0,
+       "bonus": 0,
+       "value": 43740.0
+      },
+      {
+       "player": "Phil Mickelson",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Keegan Bradley",
+       "played": true,
+       "pos": "T2",
+       "money": 633600.0,
+       "bonus": 0,
+       "value": 633600.0
+      },
+      {
+       "player": "Si Woo Kim",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Viktor Hovland",
+       "played": true,
+       "pos": "T54",
+       "money": 16560.0,
+       "bonus": 0,
+       "value": 16560.0
+      }
+     ],
+     "total": 693900.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Jordan Spieth",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Bryson DeChambeau",
+       "played": true,
+       "pos": "T8",
+       "money": 194400.0,
+       "bonus": 0,
+       "value": 194400.0
+      },
+      {
+       "player": "Marc Leishman",
+       "played": true,
+       "pos": "T21",
+       "money": 65760.0,
+       "bonus": 0,
+       "value": 65760.0
+      },
+      {
+       "player": "Ryan Moore",
+       "played": true,
+       "pos": "T15",
+       "money": 115200.0,
+       "bonus": 0,
+       "value": 115200.0
+      },
+      {
+       "player": "Louis Oosthuizen",
+       "played": true,
+       "pos": "T36",
+       "money": 32451.0,
+       "bonus": 0,
+       "value": 32451.0
+      }
+     ],
+     "total": 407811.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Patrick Cantlay",
+       "played": true,
+       "pos": "T15",
+       "money": 115200.0,
+       "bonus": 0,
+       "value": 115200.0
+      },
+      {
+       "player": "Paul Casey",
+       "played": true,
+       "pos": "T5",
+       "money": 262800.0,
+       "bonus": 0,
+       "value": 262800.0
+      },
+      {
+       "player": "Kevin Kisner",
+       "played": true,
+       "pos": "T15",
+       "money": 115200.0,
+       "bonus": 0,
+       "value": 115200.0
+      },
+      {
+       "player": "Cameron Smith",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Sungjae Im",
+       "played": true,
+       "pos": "T21",
+       "money": 65760.0,
+       "bonus": 0,
+       "value": 65760.0
+      }
+     ],
+     "total": 558960.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Tony Finau",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Bubba Watson",
+       "played": true,
+       "pos": "T54",
+       "money": 16560.0,
+       "bonus": 0,
+       "value": 16560.0
+      },
+      {
+       "player": "Brandt Snedeker",
+       "played": true,
+       "pos": "T43",
+       "money": 21924.0,
+       "bonus": 0,
+       "value": 21924.0
+      },
+      {
+       "player": "Chez Reavie",
+       "played": true,
+       "pos": 1,
+       "money": 1296000.0,
+       "bonus": 30000,
+       "value": 1326000.0
+      },
+      {
+       "player": "Jason Kokrak",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 1364484.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Francesco Molinari",
+       "played": true,
+       "pos": "T57",
+       "money": 16128.0,
+       "bonus": 0,
+       "value": 16128.0
+      },
+      {
+       "player": "Kyle Stanley",
+       "played": true,
+       "pos": "T36",
+       "money": 32451.0,
+       "bonus": 0,
+       "value": 32451.0
+      },
+      {
+       "player": "J.B. Holmes",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Brian Harman",
+       "played": true,
+       "pos": "T8",
+       "money": 194400.0,
+       "bonus": 0,
+       "value": 194400.0
+      },
+      {
+       "player": "Charley Hoffman",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 242979.0
+    }
+   }
+  },
+  {
+   "event": "Rocket Mortgage",
+   "slug": "rocket-mortgage-classic",
+   "espnId": "401056557",
+   "espnName": "Rocket Mortgage Classic",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Gary Woodland",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": "T5",
+       "money": 239075.0,
+       "bonus": 0,
+       "value": 239075.0
+      },
+      {
+       "player": "Cameron Champ",
+       "played": true,
+       "pos": "T46",
+       "money": 18980.0,
+       "bonus": 0,
+       "value": 18980.0
+      },
+      {
+       "player": "Viktor Hovland",
+       "played": true,
+       "pos": "T13",
+       "money": 136875.0,
+       "bonus": 0,
+       "value": 136875.0
+      },
+      {
+       "player": "Joaquin Niemann",
+       "played": true,
+       "pos": "T5",
+       "money": 239075.0,
+       "bonus": 0,
+       "value": 239075.0
+      }
+     ],
+     "total": 634005.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Ryan Moore",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Martin Laird",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Michael Thompson",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Kevin Streelman",
+       "played": true,
+       "pos": "T35",
+       "money": 34466.0,
+       "bonus": 0,
+       "value": 34466.0
+      }
+     ],
+     "total": 34466.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Kevin Kisner",
+       "played": true,
+       "pos": "T46",
+       "money": 18980.0,
+       "bonus": 0,
+       "value": 18980.0
+      },
+      {
+       "player": "Cameron Smith",
+       "played": true,
+       "pos": "T29",
+       "money": 46416.0,
+       "bonus": 0,
+       "value": 46416.0
+      },
+      {
+       "player": "Byeong Hun An",
+       "played": true,
+       "pos": "T13",
+       "money": 136875.0,
+       "bonus": 0,
+       "value": 136875.0
+      },
+      {
+       "player": "Sungjae Im",
+       "played": true,
+       "pos": "T21",
+       "money": 68529.0,
+       "bonus": 0,
+       "value": 68529.0
+      },
+      {
+       "player": "Matthew Wolff",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 270800.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Bubba Watson",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Brandt Snedeker",
+       "played": true,
+       "pos": "T5",
+       "money": 239075.0,
+       "bonus": 0,
+       "value": 239075.0
+      },
+      {
+       "player": "Charles Howell III",
+       "played": true,
+       "pos": "T35",
+       "money": 34466.0,
+       "bonus": 0,
+       "value": 34466.0
+      },
+      {
+       "player": "Jason Kokrak",
+       "played": true,
+       "pos": "T29",
+       "money": 46416.0,
+       "bonus": 0,
+       "value": 46416.0
+      },
+      {
+       "player": "Chez Reavie",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 319957.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Kyle Stanley",
+       "played": true,
+       "pos": "T21",
+       "money": 68529.0,
+       "bonus": 0,
+       "value": 68529.0
+      },
+      {
+       "player": "Billy Horschel",
+       "played": true,
+       "pos": "T17",
+       "money": 105850.0,
+       "bonus": 0,
+       "value": 105850.0
+      },
+      {
+       "player": "Brian Harman",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Charley Hoffman",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Luke List",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 174379.0
+    }
+   }
+  },
+  {
+   "event": "3M Open",
+   "slug": "3m-open",
+   "espnId": "401056558",
+   "espnName": "3M Open",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": "T23",
+       "money": 49105.0,
+       "bonus": 0,
+       "value": 49105.0
+      },
+      {
+       "player": "Phil Mickelson",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Keegan Bradley",
+       "played": true,
+       "pos": "T46",
+       "money": 17115.0,
+       "bonus": 0,
+       "value": 17115.0
+      },
+      {
+       "player": "Joaquin Niemann",
+       "played": true,
+       "pos": "T23",
+       "money": 49105.0,
+       "bonus": 0,
+       "value": 49105.0
+      },
+      {
+       "player": "Viktor Hovland",
+       "played": true,
+       "pos": "T13",
+       "money": 128000.0,
+       "bonus": 0,
+       "value": 128000.0
+      }
+     ],
+     "total": 243325.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Bryson DeChambeau",
+       "played": true,
+       "pos": "T2",
+       "money": 563200.0,
+       "bonus": 30000,
+       "value": 593200.0
+      },
+      {
+       "player": "Kevin Na",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Kevin Streelman",
+       "played": true,
+       "pos": "T34",
+       "money": 30960.0,
+       "bonus": 0,
+       "value": 30960.0
+      },
+      {
+       "player": "Ryan Moore",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Cameron Tringale",
+       "played": true,
+       "pos": "T42",
+       "money": 23040.0,
+       "bonus": 0,
+       "value": 23040.0
+      }
+     ],
+     "total": 647200.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Brooks Koepka",
+       "played": true,
+       "pos": 65,
+       "money": 13440.0,
+       "bonus": 0,
+       "value": 13440.0
+      },
+      {
+       "player": "Jason Day",
+       "played": true,
+       "pos": "T66",
+       "money": 12992.0,
+       "bonus": 0,
+       "value": 12992.0
+      },
+      {
+       "player": "Sungjae Im",
+       "played": true,
+       "pos": "T15",
+       "money": 92960.0,
+       "bonus": 0,
+       "value": 92960.0
+      },
+      {
+       "player": "Matthew Wolff",
+       "played": true,
+       "pos": 1,
+       "money": 1152000.0,
+       "bonus": 30000,
+       "value": 1182000.0
+      },
+      {
+       "player": "Peter Malnati",
+       "played": true,
+       "pos": "T46",
+       "money": 17115.0,
+       "bonus": 0,
+       "value": 17115.0
+      }
+     ],
+     "total": 1318507.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Tony Finau",
+       "played": true,
+       "pos": "T23",
+       "money": 49105.0,
+       "bonus": 0,
+       "value": 49105.0
+      },
+      {
+       "player": "Charles Howell III",
+       "played": true,
+       "pos": "T23",
+       "money": 49105.0,
+       "bonus": 0,
+       "value": 49105.0
+      },
+      {
+       "player": "Rory Sabbatini",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Adam Hadwin",
+       "played": true,
+       "pos": 4,
+       "money": 307200.0,
+       "bonus": 0,
+       "value": 307200.0
+      }
+     ],
+     "total": 405410.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Luke List",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Scott Piercy",
+       "played": true,
+       "pos": "T15",
+       "money": 92960.0,
+       "bonus": 0,
+       "value": 92960.0
+      },
+      {
+       "player": "Brian Harman",
+       "played": true,
+       "pos": "T7",
+       "money": 179733.0,
+       "bonus": 0,
+       "value": 179733.0
+      },
+      {
+       "player": "Nate Lashley",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Doc Redman",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 272693.0
+    }
+   }
+  },
+  {
+   "event": "John Deere",
+   "slug": "john-deere-classic",
+   "espnId": "401056548",
+   "espnName": "John Deere Classic",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Cameron Champ",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Viktor Hovland",
+       "played": true,
+       "pos": "T16",
+       "money": 99000.0,
+       "bonus": 0,
+       "value": 99000.0
+      },
+      {
+       "player": "Joaquin Niemann",
+       "played": true,
+       "pos": "T10",
+       "money": 133000.0,
+       "bonus": 0,
+       "value": 133000.0
+      },
+      {
+       "player": "Jason Dufner",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 232000.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Ryan Moore",
+       "played": true,
+       "pos": "T18",
+       "money": 70500.0,
+       "bonus": 0,
+       "value": 70500.0
+      },
+      {
+       "player": "Daniel Berger",
+       "played": true,
+       "pos": "T33",
+       "money": 33150.0,
+       "bonus": 0,
+       "value": 33150.0
+      },
+      {
+       "player": "Martin Laird",
+       "played": true,
+       "pos": "T37",
+       "money": 24000.0,
+       "bonus": 0,
+       "value": 24000.0
+      },
+      {
+       "player": "Cameron Tringale",
+       "played": true,
+       "pos": "T16",
+       "money": 99000.0,
+       "bonus": 30000,
+       "value": 129000.0
+      },
+      {
+       "player": "Scott Brown",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 256650.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Sungjae Im",
+       "played": true,
+       "pos": "T26",
+       "money": 42600.0,
+       "bonus": 0,
+       "value": 42600.0
+      },
+      {
+       "player": "Matthew Wolff",
+       "played": true,
+       "pos": "T37",
+       "money": 24000.0,
+       "bonus": 0,
+       "value": 24000.0
+      },
+      {
+       "player": "Peter Malnati",
+       "played": true,
+       "pos": "T56",
+       "money": 13440.0,
+       "bonus": 0,
+       "value": 13440.0
+      },
+      {
+       "player": "Bud Cauley",
+       "played": true,
+       "pos": "T18",
+       "money": 70500.0,
+       "bonus": 0,
+       "value": 70500.0
+      },
+      {
+       "player": "Collin Morikawa",
+       "played": true,
+       "pos": "T4",
+       "money": 264000.0,
+       "bonus": 0,
+       "value": 264000.0
+      }
+     ],
+     "total": 414540.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Charles Howell III",
+       "played": true,
+       "pos": "T6",
+       "money": 194250.0,
+       "bonus": 0,
+       "value": 194250.0
+      },
+      {
+       "player": "Lucas Glover",
+       "played": true,
+       "pos": "T10",
+       "money": 133000.0,
+       "bonus": 0,
+       "value": 133000.0
+      },
+      {
+       "player": "Zach Johnson",
+       "played": true,
+       "pos": "T37",
+       "money": 24000.0,
+       "bonus": 0,
+       "value": 24000.0
+      }
+     ],
+     "total": 351250.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Kyle Stanley",
+       "played": true,
+       "pos": "T18",
+       "money": 70500.0,
+       "bonus": 0,
+       "value": 70500.0
+      },
+      {
+       "player": "Brian Harman",
+       "played": true,
+       "pos": "T26",
+       "money": 42600.0,
+       "bonus": 0,
+       "value": 42600.0
+      },
+      {
+       "player": "Joel Dahmen",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Michael Kim",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Wyndham Clark",
+       "played": true,
+       "pos": "CUT",
+       "money": 11760.0,
+       "bonus": 0,
+       "value": 11760.0
+      }
+     ],
+     "total": 124860.0
+    }
+   }
+  },
+  {
+   "event": "OPEN CHAMPIONSHIP",
+   "slug": "the-open-championship",
+   "espnId": "401056547",
+   "espnName": "The Open Championship",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Rory McIlroy",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Justin Thomas",
+       "played": true,
+       "pos": "T11",
+       "money": 171700.0,
+       "bonus": 0,
+       "value": 171700.0
+      },
+      {
+       "player": "Gary Woodland",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Phil Mickelson",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Rafa Cabrera Bello",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 171700.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Jordan Spieth",
+       "played": true,
+       "pos": "T20",
+       "money": 91350.0,
+       "bonus": 0,
+       "value": 91350.0
+      },
+      {
+       "player": "Tiger Woods",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Tommy Fleetwood",
+       "played": true,
+       "pos": 2,
+       "money": 1120000.0,
+       "bonus": 0,
+       "value": 1120000.0
+      },
+      {
+       "player": "Adam Scott",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Marc Leishman",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 1211350.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Brooks Koepka",
+       "played": true,
+       "pos": "T4",
+       "money": 503500.0,
+       "bonus": 0,
+       "value": 503500.0
+      },
+      {
+       "player": "Hideki Matsuyama",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Patrick Cantlay",
+       "played": true,
+       "pos": "T41",
+       "money": 36925.0,
+       "bonus": 0,
+       "value": 36925.0
+      },
+      {
+       "player": "Paul Casey",
+       "played": true,
+       "pos": "T57",
+       "money": 26467.0,
+       "bonus": 0,
+       "value": 26467.0
+      },
+      {
+       "player": "Graeme McDowell",
+       "played": true,
+       "pos": "T57",
+       "money": 26467.0,
+       "bonus": 0,
+       "value": 26467.0
+      }
+     ],
+     "total": 593359.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Dustin Johnson",
+       "played": true,
+       "pos": "T51",
+       "money": 28317.0,
+       "bonus": 0,
+       "value": 28317.0
+      },
+      {
+       "player": "Rickie Fowler",
+       "played": true,
+       "pos": "T6",
+       "money": 313000.0,
+       "bonus": 0,
+       "value": 313000.0
+      },
+      {
+       "player": "Jon Rahm",
+       "played": true,
+       "pos": "T11",
+       "money": 171700.0,
+       "bonus": 0,
+       "value": 171700.0
+      },
+      {
+       "player": "Matt Kuchar",
+       "played": true,
+       "pos": "T41",
+       "money": 36925.0,
+       "bonus": 0,
+       "value": 36925.0
+      },
+      {
+       "player": "Henrik Stenson",
+       "played": true,
+       "pos": "T20",
+       "money": 91350.0,
+       "bonus": 0,
+       "value": 91350.0
+      }
+     ],
+     "total": 641292.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Justin Rose",
+       "played": true,
+       "pos": "T20",
+       "money": 91350.0,
+       "bonus": 0,
+       "value": 91350.0
+      },
+      {
+       "player": "Francesco Molinari",
+       "played": true,
+       "pos": "T11",
+       "money": 171700.0,
+       "bonus": 0,
+       "value": 171700.0
+      },
+      {
+       "player": "Xander Schauffele",
+       "played": true,
+       "pos": "T41",
+       "money": 36925.0,
+       "bonus": 0,
+       "value": 36925.0
+      },
+      {
+       "player": "Webb Simpson",
+       "played": true,
+       "pos": "T30",
+       "money": 69875.0,
+       "bonus": 0,
+       "value": 69875.0
+      },
+      {
+       "player": "Billy Horschel",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 369850.0
+    }
+   }
+  },
+  {
+   "event": "WGC-FedEx St. Jude",
+   "slug": "wgc-fedex-st-jude-invitational",
+   "espnId": "401056559",
+   "espnName": "WGC-FedEx St. Jude Invitational",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Rory McIlroy",
+       "played": true,
+       "pos": "T4",
+       "money": 384333.0,
+       "bonus": 30000,
+       "value": 414333.0
+      },
+      {
+       "player": "Justin Thomas",
+       "played": true,
+       "pos": "T12",
+       "money": 143625.0,
+       "bonus": 0,
+       "value": 143625.0
+      },
+      {
+       "player": "Alex Noren",
+       "played": true,
+       "pos": "T12",
+       "money": 143625.0,
+       "bonus": 0,
+       "value": 143625.0
+      },
+      {
+       "player": "Gary Woodland",
+       "played": true,
+       "pos": "T55",
+       "money": 59500.0,
+       "bonus": 0,
+       "value": 59500.0
+      },
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": "T12",
+       "money": 143625.0,
+       "bonus": 0,
+       "value": 143625.0
+      }
+     ],
+     "total": 904708.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Jordan Spieth",
+       "played": true,
+       "pos": "T12",
+       "money": 143625.0,
+       "bonus": 0,
+       "value": 143625.0
+      },
+      {
+       "player": "Tommy Fleetwood",
+       "played": true,
+       "pos": "T4",
+       "money": 384333.0,
+       "bonus": 0,
+       "value": 384333.0
+      },
+      {
+       "player": "Marc Leishman",
+       "played": true,
+       "pos": 3,
+       "money": 602000.0,
+       "bonus": 0,
+       "value": 602000.0
+      },
+      {
+       "player": "Adam Scott",
+       "played": true,
+       "pos": "T40",
+       "money": 74000.0,
+       "bonus": 0,
+       "value": 74000.0
+      },
+      {
+       "player": "Cameron Smith",
+       "played": true,
+       "pos": "T12",
+       "money": 143625.0,
+       "bonus": 0,
+       "value": 143625.0
+      }
+     ],
+     "total": 1347583.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Brooks Koepka",
+       "played": true,
+       "pos": 1,
+       "money": 1745000.0,
+       "bonus": 0,
+       "value": 1745000.0
+      },
+      {
+       "player": "Hideki Matsuyama",
+       "played": true,
+       "pos": "T43",
+       "money": 70000.0,
+       "bonus": 0,
+       "value": 70000.0
+      },
+      {
+       "player": "Patrick Cantlay",
+       "played": true,
+       "pos": "T12",
+       "money": 143625.0,
+       "bonus": 0,
+       "value": 143625.0
+      },
+      {
+       "player": "Paul Casey",
+       "played": true,
+       "pos": "T27",
+       "money": 86250.0,
+       "bonus": 0,
+       "value": 86250.0
+      },
+      {
+       "player": "Kevin Kisner",
+       "played": true,
+       "pos": "T27",
+       "money": 86250.0,
+       "bonus": 0,
+       "value": 86250.0
+      }
+     ],
+     "total": 2131125.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Dustin Johnson",
+       "played": true,
+       "pos": "T20",
+       "money": 113500.0,
+       "bonus": 0,
+       "value": 113500.0
+      },
+      {
+       "player": "Jon Rahm",
+       "played": true,
+       "pos": 7,
+       "money": 273000.0,
+       "bonus": 10000,
+       "value": 283000.0
+      },
+      {
+       "player": "Tony Finau",
+       "played": true,
+       "pos": "T27",
+       "money": 86250.0,
+       "bonus": 0,
+       "value": 86250.0
+      },
+      {
+       "player": "Matt Kuchar",
+       "played": true,
+       "pos": "T43",
+       "money": 70000.0,
+       "bonus": 0,
+       "value": 70000.0
+      },
+      {
+       "player": "Henrik Stenson",
+       "played": true,
+       "pos": "T27",
+       "money": 86250.0,
+       "bonus": 0,
+       "value": 86250.0
+      }
+     ],
+     "total": 639000.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Justin Rose",
+       "played": true,
+       "pos": 11,
+       "money": 183000.0,
+       "bonus": 0,
+       "value": 183000.0
+      },
+      {
+       "player": "Webb Simpson",
+       "played": true,
+       "pos": 2,
+       "money": 1095000.0,
+       "bonus": 0,
+       "value": 1095000.0
+      },
+      {
+       "player": "Billy Horschel",
+       "played": true,
+       "pos": "T9",
+       "money": 205000.0,
+       "bonus": 0,
+       "value": 205000.0
+      },
+      {
+       "player": "J.B. Holmes",
+       "played": true,
+       "pos": 54,
+       "money": 61000.0,
+       "bonus": 0,
+       "value": 61000.0
+      },
+      {
+       "player": "Nate Lashley",
+       "played": true,
+       "pos": "T20",
+       "money": 113500.0,
+       "bonus": 0,
+       "value": 113500.0
+      }
+     ],
+     "total": 1657500.0
+    }
+   }
+  },
+  {
+   "event": "Wyndham",
+   "slug": "wyndham-championship",
+   "espnId": "401056545",
+   "espnName": "Wyndham Championship",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Alex Noren",
+       "played": true,
+       "pos": "T60",
+       "money": 13144.0,
+       "bonus": 0,
+       "value": 13144.0
+      },
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": "T22",
+       "money": 53044.0,
+       "bonus": 0,
+       "value": 53044.0
+      },
+      {
+       "player": "Si Woo Kim",
+       "played": true,
+       "pos": 5,
+       "money": 248000.0,
+       "bonus": 0,
+       "value": 248000.0
+      },
+      {
+       "player": "Joaquin Niemann",
+       "played": true,
+       "pos": "T13",
+       "money": 109533.0,
+       "bonus": 0,
+       "value": 109533.0
+      },
+      {
+       "player": "Viktor Hovland",
+       "played": true,
+       "pos": 4,
+       "money": 297600.0,
+       "bonus": 0,
+       "value": 297600.0
+      }
+     ],
+     "total": 721321.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Abraham Ancer",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Martin Laird",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Daniel Berger",
+       "played": true,
+       "pos": "T39",
+       "money": 22940.0,
+       "bonus": 0,
+       "value": 22940.0
+      },
+      {
+       "player": "Cameron Smith",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Andrew Landry",
+       "played": true,
+       "pos": "T19",
+       "money": 80600.0,
+       "bonus": 0,
+       "value": 80600.0
+      }
+     ],
+     "total": 103540.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Byeong Hun An",
+       "played": true,
+       "pos": 3,
+       "money": 421600.0,
+       "bonus": 30000,
+       "value": 451600.0
+      },
+      {
+       "player": "Paul Casey",
+       "played": true,
+       "pos": "T13",
+       "money": 109533.0,
+       "bonus": 0,
+       "value": 109533.0
+      },
+      {
+       "player": "Collin Morikawa",
+       "played": true,
+       "pos": "T31",
+       "money": 36766.0,
+       "bonus": 0,
+       "value": 36766.0
+      },
+      {
+       "player": "Sungjae Im",
+       "played": true,
+       "pos": "T6",
+       "money": 181129.0,
+       "bonus": 0,
+       "value": 181129.0
+      },
+      {
+       "player": "Matthew Wolff",
+       "played": true,
+       "pos": "T19",
+       "money": 80600.0,
+       "bonus": 0,
+       "value": 80600.0
+      }
+     ],
+     "total": 859628.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Brandt Snedeker",
+       "played": true,
+       "pos": "T39",
+       "money": 22940.0,
+       "bonus": 0,
+       "value": 22940.0
+      },
+      {
+       "player": "Charles Howell III",
+       "played": true,
+       "pos": "T22",
+       "money": 53044.0,
+       "bonus": 0,
+       "value": 53044.0
+      },
+      {
+       "player": "Lucas Glover",
+       "played": true,
+       "pos": "T72",
+       "money": 12028.0,
+       "bonus": 0,
+       "value": 12028.0
+      },
+      {
+       "player": "Rory Sabbatini",
+       "played": true,
+       "pos": "T6",
+       "money": 181129.0,
+       "bonus": 0,
+       "value": 181129.0
+      },
+      {
+       "player": "Chez Reavie",
+       "played": true,
+       "pos": "T48",
+       "money": 15773.0,
+       "bonus": 0,
+       "value": 15773.0
+      }
+     ],
+     "total": 284914.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Webb Simpson",
+       "played": true,
+       "pos": 2,
+       "money": 669600.0,
+       "bonus": 0,
+       "value": 669600.0
+      },
+      {
+       "player": "Kyle Stanley",
+       "played": true,
+       "pos": "T13",
+       "money": 109533.0,
+       "bonus": 0,
+       "value": 109533.0
+      },
+      {
+       "player": "Billy Horschel",
+       "played": true,
+       "pos": "T6",
+       "money": 181129.0,
+       "bonus": 0,
+       "value": 181129.0
+      },
+      {
+       "player": "Scott Piercy",
+       "played": true,
+       "pos": "T36",
+       "money": 30483.0,
+       "bonus": 0,
+       "value": 30483.0
+      },
+      {
+       "player": "Brian Harman",
+       "played": true,
+       "pos": "T6",
+       "money": 181129.0,
+       "bonus": 0,
+       "value": 181129.0
+      }
+     ],
+     "total": 1171874.0
+    }
+   }
+  },
+  {
+   "event": "Northern Trust",
+   "slug": "the-northern-trust",
+   "espnId": "401056544",
+   "espnName": "THE NORTHERN TRUST",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Rory McIlroy",
+       "played": true,
+       "pos": "T6",
+       "money": 299469.0,
+       "bonus": 0,
+       "value": 299469.0
+      },
+      {
+       "player": "Justin Thomas",
+       "played": true,
+       "pos": "T12",
+       "money": 175750.0,
+       "bonus": 0,
+       "value": 175750.0
+      },
+      {
+       "player": "Gary Woodland",
+       "played": true,
+       "pos": "T52",
+       "money": 21354.0,
+       "bonus": 0,
+       "value": 21354.0
+      },
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": 1,
+       "money": 1665000.0,
+       "bonus": 30000,
+       "value": 1695000.0
+      },
+      {
+       "player": "Joaquin Niemann",
+       "played": true,
+       "pos": "T30",
+       "money": 53766.0,
+       "bonus": 0,
+       "value": 53766.0
+      }
+     ],
+     "total": 2245339.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Jordan Spieth",
+       "played": true,
+       "pos": "T6",
+       "money": 299469.0,
+       "bonus": 0,
+       "value": 299469.0
+      },
+      {
+       "player": "Tiger Woods",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Tommy Fleetwood",
+       "played": true,
+       "pos": "T43",
+       "money": 27565.0,
+       "bonus": 0,
+       "value": 27565.0
+      },
+      {
+       "player": "Bryson DeChambeau",
+       "played": true,
+       "pos": "T24",
+       "money": 74925.0,
+       "bonus": 0,
+       "value": 74925.0
+      },
+      {
+       "player": "Marc Leishman",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 401959.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Brooks Koepka",
+       "played": true,
+       "pos": "T30",
+       "money": 53766.0,
+       "bonus": 0,
+       "value": 53766.0
+      },
+      {
+       "player": "Jason Day",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Patrick Cantlay",
+       "played": true,
+       "pos": "T12",
+       "money": 175750.0,
+       "bonus": 0,
+       "value": 175750.0
+      },
+      {
+       "player": "Matthew Wolff",
+       "played": true,
+       "pos": "T71",
+       "money": 17945.0,
+       "bonus": 0,
+       "value": 17945.0
+      },
+      {
+       "player": "Collin Morikawa",
+       "played": true,
+       "pos": "T52",
+       "money": 21354.0,
+       "bonus": 0,
+       "value": 21354.0
+      }
+     ],
+     "total": 268815.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Dustin Johnson",
+       "played": true,
+       "pos": "T24",
+       "money": 74925.0,
+       "bonus": 0,
+       "value": 74925.0
+      },
+      {
+       "player": "Rickie Fowler",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      },
+      {
+       "player": "Jon Rahm",
+       "played": true,
+       "pos": "T3",
+       "money": 536500.0,
+       "bonus": 0,
+       "value": 536500.0
+      },
+      {
+       "player": "Tony Finau",
+       "played": true,
+       "pos": "T30",
+       "money": 53766.0,
+       "bonus": 0,
+       "value": 53766.0
+      },
+      {
+       "player": "Matt Kuchar",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 665191.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Webb Simpson",
+       "played": true,
+       "pos": "T18",
+       "money": 129500.0,
+       "bonus": 0,
+       "value": 129500.0
+      },
+      {
+       "player": "Billy Horschel",
+       "played": true,
+       "pos": "T21",
+       "money": 103600.0,
+       "bonus": 0,
+       "value": 103600.0
+      },
+      {
+       "player": "Brian Harman",
+       "played": true,
+       "pos": "T52",
+       "money": 21354.0,
+       "bonus": 0,
+       "value": 21354.0
+      },
+      {
+       "player": "J.T. Poston",
+       "played": true,
+       "pos": "T59",
+       "money": 20165.0,
+       "bonus": 0,
+       "value": 20165.0
+      },
+      {
+       "player": "Nate Lashley",
+       "played": true,
+       "pos": "CUT",
+       "money": 0,
+       "bonus": 0,
+       "value": 0
+      }
+     ],
+     "total": 274619.0
+    }
+   }
+  },
+  {
+   "event": "BMW",
+   "slug": "bmw-championship",
+   "espnId": "401056543",
+   "espnName": "BMW Championship",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [
+      {
+       "player": "Rory McIlroy",
+       "played": true,
+       "pos": "T19",
+       "money": 112110.0,
+       "bonus": 0,
+       "value": 112110.0
+      },
+      {
+       "player": "Justin Thomas",
+       "played": true,
+       "pos": 1,
+       "money": 1665000.0,
+       "bonus": 40000,
+       "value": 1705000.0
+      },
+      {
+       "player": "Gary Woodland",
+       "played": true,
+       "pos": "T31",
+       "money": 53650.0,
+       "bonus": 0,
+       "value": 53650.0
+      },
+      {
+       "player": "Patrick Reed",
+       "played": true,
+       "pos": "T19",
+       "money": 112110.0,
+       "bonus": 0,
+       "value": 112110.0
+      },
+      {
+       "player": "Rafa Cabrera Bello",
+       "played": true,
+       "pos": "T63",
+       "money": 19702.0,
+       "bonus": 0,
+       "value": 19702.0
+      }
+     ],
+     "total": 2002572.0
+    },
+    "GBD (m)": {
+     "players": [
+      {
+       "player": "Jordan Spieth",
+       "played": true,
+       "pos": "T37",
+       "money": 40700.0,
+       "bonus": 0,
+       "value": 40700.0
+      },
+      {
+       "player": "Tommy Fleetwood",
+       "played": true,
+       "pos": "T11",
+       "money": 196100.0,
+       "bonus": 0,
+       "value": 196100.0
+      },
+      {
+       "player": "Tiger Woods",
+       "played": true,
+       "pos": "T37",
+       "money": 40700.0,
+       "bonus": 0,
+       "value": 40700.0
+      },
+      {
+       "player": "Adam Scott",
+       "played": true,
+       "pos": "T9",
+       "money": 259000.0,
+       "bonus": 0,
+       "value": 259000.0
+      },
+      {
+       "player": "Ian Poulter",
+       "played": true,
+       "pos": "T31",
+       "money": 53650.0,
+       "bonus": 0,
+       "value": 53650.0
+      }
+     ],
+     "total": 590150.0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [
+      {
+       "player": "Brooks Koepka",
+       "played": true,
+       "pos": "T24",
+       "money": 78856.0,
+       "bonus": 0,
+       "value": 78856.0
+      },
+      {
+       "player": "Jason Day",
+       "played": true,
+       "pos": "T52",
+       "money": 21571.0,
+       "bonus": 0,
+       "value": 21571.0
+      },
+      {
+       "player": "Hideki Matsuyama",
+       "played": true,
+       "pos": 3,
+       "money": 629000.0,
+       "bonus": 20000,
+       "value": 649000.0
+      },
+      {
+       "player": "Patrick Cantlay",
+       "played": true,
+       "pos": 2,
+       "money": 999000.0,
+       "bonus": 0,
+       "value": 999000.0
+      },
+      {
+       "player": "Paul Casey",
+       "played": true,
+       "pos": "T24",
+       "money": 78856.0,
+       "bonus": 0,
+       "value": 78856.0
+      }
+     ],
+     "total": 1827283.0
+    },
+    "World #1 (m)": {
+     "players": [
+      {
+       "player": "Dustin Johnson",
+       "played": true,
+       "pos": "T57",
+       "money": 20628.0,
+       "bonus": 0,
+       "value": 20628.0
+      },
+      {
+       "player": "Jon Rahm",
+       "played": true,
+       "pos": "T5",
+       "money": 351500.0,
+       "bonus": 0,
+       "value": 351500.0
+      },
+      {
+       "player": "Rickie Fowler",
+       "played": true,
+       "pos": "T11",
+       "money": 196100.0,
+       "bonus": 0,
+       "value": 196100.0
+      },
+      {
+       "player": "Tony Finau",
+       "played": true,
+       "pos": 4,
+       "money": 444000.0,
+       "bonus": 0,
+       "value": 444000.0
+      },
+      {
+       "player": "Rory Sabbatini",
+       "played": true,
+       "pos": "T16",
+       "money": 148000.0,
+       "bonus": 0,
+       "value": 148000.0
+      }
+     ],
+     "total": 1160228.0
+    },
+    "National Champs (m)": {
+     "players": [
+      {
+       "player": "Justin Rose",
+       "played": true,
+       "pos": "T52",
+       "money": 21571.0,
+       "bonus": 0,
+       "value": 21571.0
+      },
+      {
+       "player": "Xander Schauffele",
+       "played": true,
+       "pos": "T19",
+       "money": 112110.0,
+       "bonus": 0,
+       "value": 112110.0
+      },
+      {
+       "player": "Webb Simpson",
+       "played": true,
+       "pos": "T24",
+       "money": 78856.0,
+       "bonus": 0,
+       "value": 78856.0
+      },
+      {
+       "player": "Billy Horschel",
+       "played": true,
+       "pos": "T37",
+       "money": 40700.0,
+       "bonus": 0,
+       "value": 40700.0
+      },
+      {
+       "player": "J.T. Poston",
+       "played": true,
+       "pos": "T16",
+       "money": 148000.0,
+       "bonus": 0,
+       "value": 148000.0
+      }
+     ],
+     "total": 401237.0
+    }
+   }
+  },
+  {
+   "event": "Tour Championship",
+   "slug": "tour-championship",
+   "espnId": "401056542",
+   "espnName": "Tour Championship",
+   "bonuses": [
+    10000,
+    20000,
+    30000
+   ],
+   "teams": {
+    "Detroit Rock City (m)": {
+     "players": [],
+     "total": 0
+    },
+    "GBD (m)": {
+     "players": [],
+     "total": 0
+    },
+    "Dirty Bird(ies) (m)": {
+     "players": [],
+     "total": 0
+    },
+    "World #1 (m)": {
+     "players": [],
+     "total": 0
+    },
+    "National Champs (m)": {
+     "players": [],
+     "total": 0
+    }
+   }
+  }
+ ],
+ "flags": [
+  "Tour Championship 2019: FedExCup staggered start + bonus payout; ESPN earnings are the bonus money \u2014 REVIEW before trusting."
+ ]
+}

@@ -527,9 +527,44 @@ export const teamsApi = {
 // ============================================================================
 // TOURNAMENTS API
 // ============================================================================
+// ── Tournament ordering (start_date is ORDERING-ONLY; the visible date is the
+// `dates` string). We sort in JS rather than via Firestore orderBy('start_date')
+// because orderBy SILENTLY DROPS any doc missing the field — which is exactly
+// what left the whole collection reading as empty (docs had no start_date), so
+// the client fell back to the legacy sfgl_data doc and the cron saw nothing.
+// Sorting in JS keeps every doc; a doc missing start_date sorts LAST (visible,
+// never dropped), tie-broken by name for stability.
+const _byStartDate = (a, b) => {
+  const sa = a.start_date || '', sb = b.start_date || '';
+  if (sa && sb) return sa < sb ? -1 : sa > sb ? 1 : (a.name || '').localeCompare(b.name || '');
+  if (sa) return -1;
+  if (sb) return 1;
+  return (a.name || '').localeCompare(b.name || '');
+};
+
+// Guarantee every tournament carries an ordering start_date that is monotonic
+// with array order. Preserves existing valid, in-order dates; fills gaps or
+// out-of-order entries with a synthetic weekly step. This closes the write-side
+// hole that created docs with no start_date in the first place.
+const _START_DATE_ANCHOR = '2025-01-06';
+const _ensureStartDates = (arr) => {
+  let cursor = null;
+  return arr.map((t) => {
+    const sd = (typeof t.start_date === 'string' && t.start_date) ? t.start_date : null;
+    if (sd && (cursor === null || sd > cursor)) { cursor = sd; return t; }
+    let next;
+    if (cursor === null) next = _START_DATE_ANCHOR;
+    else { const d = new Date(cursor + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 7); next = d.toISOString().slice(0, 10); }
+    cursor = next;
+    return { ...t, start_date: next };
+  });
+};
+
 export const tournamentsApi = {
   async getAll() {
-    return _getAllOrdered('tournaments', 'start_date');
+    // Unordered fetch + JS sort (see _byStartDate). Never orderBy('start_date').
+    const snap = await getDocs(collection(db, 'tournaments'));
+    return snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(_byStartDate);
   },
 
   async setAll(tournaments) {
@@ -537,6 +572,9 @@ export const tournamentsApi = {
     // subscriptions made the delete-all-then-insert pattern emit transient
     // empty / partial snapshots that clobbered local state mid-write.
     if (!Array.isArray(tournaments)) return [];
+    // Guarantee an ordering start_date on every tournament before writing, so a
+    // doc can never again be created without one (which is what broke reads).
+    tournaments = _ensureStartDates(tournaments);
     const snap = await getDocs(collection(db, 'tournaments'));
     const remoteIds = new Set(snap.docs.map(d => d.id));
     const localIds = new Set(tournaments.map(t => t.name || t.id));
@@ -568,7 +606,18 @@ export const tournamentsApi = {
    * Wave A fix: real-time subscription via onSnapshot.
    */
   subscribe(callback) {
-    return _subscribeOrdered('tournaments', 'start_date', null, callback);
+    // Unordered onSnapshot + JS sort — same reason as getAll: orderBy would
+    // drop docs missing start_date and emit an empty snapshot.
+    return onSnapshot(
+      collection(db, 'tournaments'),
+      (snap) => {
+        try {
+          const docs = snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(_byStartDate);
+          callback(docs);
+        } catch (e) { console.error('[subscribe:tournaments] handler error:', e); }
+      },
+      (err) => console.error('[subscribe:tournaments] firestore error:', err)
+    );
   },
 };
 

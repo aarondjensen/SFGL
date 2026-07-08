@@ -442,8 +442,21 @@ async function loadTeams() {
 // position is used for next-event progression in handleProcessResults, so it
 // must match the client's ordering.
 async function loadTournaments() {
-  const snap = await db.collection('tournaments').orderBy('start_date').get();
-  return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+  // Unordered fetch + JS sort by start_date. NOT orderBy('start_date'): that
+  // silently drops any doc missing the field, which made this return an EMPTY
+  // collection (docs had no start_date) so cron processed nothing. start_date is
+  // ordering-only; a doc missing it sorts last (visible), never dropped. Must
+  // match the client's ordering (firebase.js _byStartDate) since array position
+  // drives next-event progression in handleProcessResults.
+  const snap = await db.collection('tournaments').get();
+  const byStartDate = (a, b) => {
+    const sa = a.start_date || '', sb = b.start_date || '';
+    if (sa && sb) return sa < sb ? -1 : sa > sb ? 1 : (a.name || '').localeCompare(b.name || '');
+    if (sa) return -1;
+    if (sb) return 1;
+    return (a.name || '').localeCompare(b.name || '');
+  };
+  return snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(byStartDate);
 }
 
 async function loadClaims() {
