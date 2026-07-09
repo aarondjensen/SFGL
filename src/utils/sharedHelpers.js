@@ -340,3 +340,29 @@ export const buildOwnershipMap = (teams, transactions) => {
   });
   return map;
 };
+
+// ── Transaction → tournament resolution ─────────────────────────────────────
+// Maps a transaction to the tournament it belongs to. Mirrors the resolution
+// in mulliganReversal.js: prefer a live name lookup (so a schedule reorder
+// can't misalign anything), then fall back to the stored legacy index for
+// older rows that only carry tournamentIndex. Transactions carry the name in
+// either `tournament` or `tournamentName` depending on when they were written,
+// so both are checked.
+export const resolveTxTournamentIndex = (tx, tournaments = []) => {
+  if (!tx) return undefined;
+  const name = tx.tournament ?? tx.tournamentName;
+  if (name) {
+    const idx = tournaments.findIndex(t => t && t.name === name);
+    if (idx !== -1) return idx;
+  }
+  if (tx.tournamentIndex != null) return tx.tournamentIndex;
+  return undefined;
+};
+
+// Same resolution, returning the tournament object (or null). Callers that
+// need the tournament itself use this; those that need its array position use
+// resolveTxTournamentIndex above.
+export const resolveTxTournament = (tx, tournaments = []) => {
+  const idx = resolveTxTournamentIndex(tx, tournaments);
+  return idx == null ? null : (tournaments[idx] || null);
+};
