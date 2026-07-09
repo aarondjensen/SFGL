@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { storage } from '../api';
 import { playerRankingsApi } from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
-import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry } from '../utils/sharedHelpers';
+import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, resolveTxTournamentIndex } from '../utils/sharedHelpers';
 
 // ============================================================================
 // useLeague — central state manager for all league data
@@ -300,7 +300,7 @@ export const useLeague = (STORAGE_KEYS) => {
   useEffect(() => { headshotsRef.current = headshots; },       [headshots]);
 
   // ── Persisted updaters ─────────────────────────────────────────────────
-  const updateTeams = useCallback(async (next) => {
+  const updateTeams = useCallback(async (next, registryOverrides = null) => {
     const resolved = typeof next === 'function' ? next(teamsRef.current) : next;
     setTeams(resolved);
     // Keep the durable registry fresh at the single team-save chokepoint, so a
@@ -308,6 +308,18 @@ export const useLeague = (STORAGE_KEYS) => {
     // merge (limited never downgrades; tallies take the max).
     try {
       const merged = buildPlayerAttributeIndex(resolved, tournamentsRef.current, getPlayerRegistry());
+      // Authoritative overrides: some operations must DECREASE a monotonic tally
+      // (e.g. reversing a mulligan pulls a player's start/earnings back). The
+      // max-merge above would re-inflate it, so force-set the corrected values
+      // here. Callers pass { playerName: { starts, sfglEarnings, ... } }. Because
+      // the roster is corrected to the same value in `resolved`, future saves
+      // stay put (max(corrected, corrected) === corrected). Works for off-roster
+      // players too — their durable registry record is corrected in place.
+      if (registryOverrides) {
+        for (const [name, attrs] of Object.entries(registryOverrides)) {
+          merged[name] = { ...(merged[name] || {}), ...attrs };
+        }
+      }
       setPlayerRegistry(merged);
       const { playerRegistryApi } = await import('../api/firebase');
       playerRegistryApi.set(merged).catch(() => {});
@@ -450,20 +462,24 @@ export const useLeague = (STORAGE_KEYS) => {
 //     for "Jensen won the West Coast Swing pot" display), NOT an actual
 //     golfer. Replaying it would pollute the roster with the manager's name.
 // ============================================================================
-export const useRoster = (team, transactions, activeTournamentIndex) => {
+export const useRoster = (team, transactions, activeTournamentIndex, tournaments = null) => {
   if (!team) return [];
   let roster = [...team.roster];
   if (activeTournamentIndex >= 0) {
+    // Resolve each tx's tournament position FRESH from its stable name (falling
+    // back to the stored index for legacy rows), so a schedule reorder can never
+    // misalign the cutoff again. Compute the position once per tx.
     const teamTx = transactions
       .filter(tx =>
         tx.team === team.name &&
         tx.type !== 'mulligan' &&
         tx.type !== 'swing_winner' &&
-        tx.tournamentIndex !== undefined &&
-        tx.tournamentIndex <= activeTournamentIndex &&
         (tx.status === 'processed' || tx.status === 'completed'),
       )
-      .sort((a, b) => a.tournamentIndex - b.tournamentIndex);
+      .map(tx => ({ tx, pos: resolveTxTournamentIndex(tx, tournaments) }))
+      .filter(x => x.pos !== undefined && x.pos <= activeTournamentIndex)
+      .sort((a, b) => a.pos - b.pos)
+      .map(x => x.tx);
 
     teamTx.forEach(tx => {
       if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
