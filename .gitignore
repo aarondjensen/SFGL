@@ -34,3 +34,6 @@ firebase-adminsdk*.json
 serviceAccount*.json
 service-account*.json
 *-service-account*.json
+android/keystore.properties
+*.keystore
+*.jks
