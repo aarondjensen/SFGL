@@ -1859,6 +1859,22 @@ async function handleStampCommissioner(req, res) {
   return res.json({ status: 'ok', uid, commissioner: makeCommish });
 }
 
+// ── Action: resync legacy tournament store ──────────────────────────────────
+// Forces /sfgl_data/fantasy-golf-tournaments to match the canonical /tournaments
+// collection. The app reads canonical directly now; this keeps the legacy
+// fallback doc (and any legacy reader) in lockstep. Idempotent — canonical is
+// never modified. Browser-initiated from the commish panel with no CRON_SECRET,
+// so it's exempted in NO_AUTH_ACTIONS below (same posture as notify-results /
+// pgat-stats / sync-cron-schedule). Note: tournamentsApi.setAll now syncs the
+// legacy doc automatically on every write, so this is a manual repair tool for
+// out-of-band edits rather than a routine necessity.
+async function handleResyncLegacyTournaments(res) {
+  const tournaments = await loadTournaments();
+  await db.collection('sfgl_data').doc('fantasy-golf-tournaments')
+    .set({ key: 'fantasy-golf-tournaments', value: tournaments });
+  return res.json({ updated: tournaments.length });
+}
+
 export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
@@ -1867,7 +1883,7 @@ export default async function handler(req, res) {
   // Cron actions require auth. Client-callable actions are exempted:
   //   - notify-results: triggered from AdminView after processing
   //   - pgat-stats:     triggered from AdminView's Sync button
-  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule']);
+  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule', 'resync-legacy-tournaments']);
   // Fail CLOSED: a protected action with no configured CRON_SECRET must be
   // rejected, not allowed. (Previously the `&& cronSecret` short-circuit meant
   // an unset secret silently disabled auth entirely.)
@@ -1890,8 +1906,9 @@ export default async function handler(req, res) {
       case 'lead-watch':        return await handleLeadWatch(res);
       case 'owgr-rankings':     return await handleOwgrRankings(res);
       case 'sync-cron-schedule': return await handleSyncCronSchedule(req, res);
+      case 'resync-legacy-tournaments': return await handleResyncLegacyTournaments(res);
       case 'stamp-commissioner': return await handleStampCommissioner(req, res);
-      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings|sync-cron-schedule' });
+      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings|sync-cron-schedule|resync-legacy-tournaments' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);

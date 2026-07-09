@@ -594,6 +594,12 @@ export const tournamentsApi = {
       toDelete.forEach(id => batch.delete(doc(db, 'tournaments', id)));
       await batch.commit();
     }
+    // Keep the legacy sfgl_data/fantasy-golf-tournaments doc in sync on every
+    // write so the load-cascade fallback (and any legacy reader) can never drift
+    // from canonical again. Best-effort: a legacy failure must not fail the
+    // canonical write that already succeeded above.
+    try { await sfglDataApi.set('fantasy-golf-tournaments', tournaments); }
+    catch (e) { console.error('[tournamentsApi.setAll] legacy sync failed:', e); }
     return tournaments;
   },
 
