@@ -12,7 +12,20 @@
           "package_name": "com.sfglgolf.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "737106270109-vd72oprmarm7p42r1cvol76ies4vig5o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.sfglgolf.app",
+            "certificate_hash": "474b45becd80c97260b62ac337d2bc8c56d609dd"
+          }
+        },
+        {
+          "client_id": "737106270109-1svrliog5197a5ohlfkgee0upguq9h0d.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBEPQNvYKCbVZ1ZFXUioH46FWvxtPsmNRg"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "737106270109-1svrliog5197a5ohlfkgee0upguq9h0d.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "737106270109-qua9pm51edc8fr7s7f0fnbsgjdau1cbf.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.sfglgolf.app"
+              }
+            }
+          ]
         }
       }
     }
