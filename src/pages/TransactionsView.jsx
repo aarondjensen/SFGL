@@ -3,7 +3,7 @@ import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
-import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer } from '../utils/sharedHelpers';
+import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament } from '../utils/sharedHelpers';
 import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
@@ -417,9 +417,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   });
   const getTxSegment = (tx) => {
     if (tx.segment) return tx.segment;
-    if (tx.tournamentIndex !== undefined && tournaments[tx.tournamentIndex]) {
-      return getSegForTourney(tournaments[tx.tournamentIndex]);
-    }
+    // Resolve by stable name (reorder-safe); legacy rows fall back to index.
+    const t = resolveTxTournament(tx, tournaments);
+    if (t) return getSegForTourney(t);
     return '';
   };
 
@@ -685,7 +685,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             ? <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>{tx.segment}</span>
                             : null;
                         }
-                        const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
+                        const t = resolveTxTournament(tx, tournaments);
                         const name = t?.name || tx.tournament || null;
                         if (!name) return null;
                         return (
@@ -789,19 +789,46 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             // swing_winner with positive amount → earnings reversal
                             const isSwingUndoPath = liveTx.type === 'swing_winner' && (liveTx.amount || 0) > 0;
 
-                            const label = liveTx.type === 'mulligan'
-                              ? `Delete mulligan for ${liveTx.team}?\n\n${liveTx.player} IN → ${liveTx.droppedPlayer} OUT`
+                            const isMulligan = liveTx.type === 'mulligan';
+                            const label = isMulligan
+                              ? `Reverse mulligan for ${liveTx.team}?\n\nRestores ${liveTx.droppedPlayer} and removes ${liveTx.player}. This reverses the lineup, results, standings and starts, restores the mulligan allowance, and refunds the fee.`
                               : isSwingUndoPath
                                 ? `Undo ${liveTx.segment || 'swing'} winner: ${liveTx.team}?\n\nThis will subtract $${(liveTx.amount || 0).toLocaleString()} from ${liveTx.team}'s total earnings and remove this transaction. The pot returns to "unawarded" status.`
                                 : isUndoPath
                                   ? `${statusChanged ? '⚠️ This was processed since you last refreshed.\n\n' : ''}Undo ${liveTx.type}: ${liveTx.team} added ${liveTx.player}${liveTx.droppedPlayer ? ' / dropped ' + liveTx.droppedPlayer : ''}?\n\nThis will reverse the roster change and refund the $${liveTx.fee} fee.`
                                   : `Delete ${liveTx.type} record for ${liveTx.team}: ${liveTx.player}?`;
                             const ok = await dialog.showConfirm(
-                              (isUndoPath || isSwingUndoPath) ? 'Undo Transaction' : 'Delete Transaction',
+                              isMulligan ? 'Reverse Mulligan' : (isUndoPath || isSwingUndoPath) ? 'Undo Transaction' : 'Delete Transaction',
                               label,
-                              { type: 'danger', confirmText: (isUndoPath || isSwingUndoPath) ? 'Undo' : 'Delete' },
+                              { type: 'danger', confirmText: isMulligan ? 'Reverse' : (isUndoPath || isSwingUndoPath) ? 'Undo' : 'Delete' },
                             );
                             if (!ok) return;
+                            // Mulligan: full reversal (lineup, results, standings,
+                            // starts, earnings, allowance) + registry force-reset,
+                            // then remove the record (its fee is derived, so it
+                            // drops out of the pot automatically).
+                            if (isMulligan) {
+                              try {
+                                const { computeMulliganReversal } = await import('../utils/mulliganReversal');
+                                const r = computeMulliganReversal(liveTx, teams, tournaments);
+                                if (r.error) { dialog.showToast(`Cannot reverse mulligan: ${r.error}`, 'error'); return; }
+                                if (r.processed) setTournaments(r.newTournaments);
+                                updateTeams(r.newTeams, r.registryOverrides);
+                                const newTx = transactions.filter(t => liveTx.id ? t.id !== liveTx.id : t !== liveTx);
+                                setTransactions(newTx);
+                                const s = r.summary || {};
+                                dialog.showToast(
+                                  r.processed
+                                    ? `Mulligan reversed: ${s.playerOut} restored, ${s.playerIn} removed (${(s.delta || 0) >= 0 ? '+' : '\u2212'}$${Math.abs(s.delta || 0).toLocaleString()} to ${liveTx.team})`
+                                    : `Mulligan reversed: ${s.playerOut} restored to ${liveTx.team}'s lineup`,
+                                  'success',
+                                );
+                              } catch (e) {
+                                console.error('[TransactionsView] mulligan reversal failed:', e);
+                                dialog.showToast('Mulligan reversal failed \u2014 see console. Nothing was changed.', 'error');
+                              }
+                              return;
+                            }
                             // For processed FA/waiver/drop: full undo with roster reversal
                             if (isUndoPath) {
                               undoTransaction(liveTx, true); // skipConfirm

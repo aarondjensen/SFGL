@@ -230,7 +230,12 @@ export const AddTransactionModal = ({
     const newTx = {
       txId: `manual-${team}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team,
-      type: isBlocked ? 'waiver' : type,
+      // Canonicalize the persisted free-agent type. This modal's dropdown value
+      // is 'fa', but the main add/drop flow (AddDropPlayerModal) writes
+      // 'free agent'. Store ONE form so readers never have to check both. The
+      // 'fa' dropdown value and this modal's internal type checks are unchanged;
+      // only the saved transaction type is normalized.
+      type: isBlocked ? 'waiver' : (type === 'fa' ? 'free agent' : type),
       player: playerInName  || playerOutName || '—',
       droppedPlayer: type === 'mulligan' ? playerOutName || undefined
                    : type === 'drop'     ? undefined

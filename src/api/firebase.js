@@ -564,7 +564,22 @@ export const tournamentsApi = {
   async getAll() {
     // Unordered fetch + JS sort (see _byStartDate). Never orderBy('start_date').
     const snap = await getDocs(collection(db, 'tournaments'));
-    return snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(_byStartDate);
+    const docs = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+    // GUARD: if any doc lacks start_date, a JS sort would fall back to
+    // alphabetical and scramble the schedule — which corrupts activeTournamentIndex
+    // and roster replay (the incident this guards against). Fail SAFE by using the
+    // legacy doc's chronological array order instead, and fail LOUD in the console.
+    const missing = docs.filter(t => !t.start_date).length;
+    if (docs.length > 0 && missing > 0) {
+      console.error(`[tournamentsApi.getAll] ${missing}/${docs.length} tournaments missing start_date — NOT alphabetizing (would scramble rosters). Falling back to legacy chronological order. Fix start_date.`);
+      try {
+        const legacy = await sfglDataApi.get('fantasy-golf-tournaments');
+        if (Array.isArray(legacy) && legacy.length > 0) return legacy;
+      } catch (e) { console.error('[tournamentsApi.getAll] legacy fallback failed:', e); }
+      console.error('[tournamentsApi.getAll] No legacy fallback available; returning Firestore order UNSORTED. Populate start_date immediately.');
+      return docs;
+    }
+    return docs.sort(_byStartDate);
   },
 
   async setAll(tournaments) {
@@ -613,13 +628,24 @@ export const tournamentsApi = {
    */
   subscribe(callback) {
     // Unordered onSnapshot + JS sort — same reason as getAll: orderBy would
-    // drop docs missing start_date and emit an empty snapshot.
+    // drop docs missing start_date and emit an empty snapshot. Same fail-safe
+    // guard as getAll: never alphabetize a start_date-less set.
     return onSnapshot(
       collection(db, 'tournaments'),
-      (snap) => {
+      async (snap) => {
         try {
-          const docs = snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(_byStartDate);
-          callback(docs);
+          const docs = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+          const missing = docs.filter(t => !t.start_date).length;
+          if (docs.length > 0 && missing > 0) {
+            console.error(`[subscribe:tournaments] ${missing}/${docs.length} missing start_date — NOT alphabetizing. Falling back to legacy chronological order.`);
+            try {
+              const legacy = await sfglDataApi.get('fantasy-golf-tournaments');
+              if (Array.isArray(legacy) && legacy.length > 0) { callback(legacy); return; }
+            } catch (e) { console.error('[subscribe:tournaments] legacy fallback failed:', e); }
+            callback(docs); // unsorted, already warned
+            return;
+          }
+          callback(docs.sort(_byStartDate));
         } catch (e) { console.error('[subscribe:tournaments] handler error:', e); }
       },
       (err) => console.error('[subscribe:tournaments] firestore error:', err)

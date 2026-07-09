@@ -16,7 +16,7 @@ import {
 import { theme, colors, fonts, fontSize } from '../theme.js';
 import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
-import { isBackupSpotEnabled } from '../utils/sharedHelpers';
+import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament } from '../utils/sharedHelpers';
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
 // Thin wrappers preserve the (name, isLimited, headshotMap) call signature
@@ -497,7 +497,7 @@ export const RostersView = ({
   }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
 
   const team          = teams.find(t => t.id === selectedTeam);
-  const currentRoster = useRoster(team, transactions, activeTournamentIndex) || [];
+  const currentRoster = useRoster(team, transactions, activeTournamentIndex, tournaments) || [];
   const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
@@ -646,9 +646,15 @@ export const RostersView = ({
     // Build set of mulliganed-out players per tournament index
     const mulliganedOut = {};
     transactions.forEach(tx => {
-      if (tx.type === 'mulligan' && tx.status !== 'failed' && tx.droppedPlayer && tx.tournamentIndex != null) {
-        if (!mulliganedOut[tx.tournamentIndex]) mulliganedOut[tx.tournamentIndex] = new Set();
-        mulliganedOut[tx.tournamentIndex].add(tx.droppedPlayer);
+      if (tx.type === 'mulligan' && tx.status !== 'failed' && tx.droppedPlayer) {
+        // Key by the tournament's CURRENT position, resolved from its stable
+        // name, so this aligns with the `tournaments.forEach((t, tIdx) => ...)`
+        // consumer below regardless of schedule order. (Was keyed by the fragile
+        // stored tx.tournamentIndex — the same misalignment that skewed starts.)
+        const pos = resolveTxTournamentIndex(tx, tournaments);
+        if (pos == null) return;
+        if (!mulliganedOut[pos]) mulliganedOut[pos] = new Set();
+        mulliganedOut[pos].add(tx.droppedPlayer);
       }
     });
 
@@ -708,7 +714,7 @@ export const RostersView = ({
       if (tx.type !== 'mulligan') return;
       if (tx.team !== team.name) return;
       if (tx.status === 'failed') return;
-      const t = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
+      const t = resolveTxTournament(tx, tournaments);
       const isSigOrMajor = !!(t && (t.isSignature || t.isMajor));
       if (isSigOrMajor) signatureMajor += 1; else regular += 1;
     });
