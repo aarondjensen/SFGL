@@ -26,6 +26,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getMessaging, getToken, onMessage, isSupported, deleteToken } from 'firebase/messaging';
 import { doc, setDoc, deleteDoc, getDocs, query, where, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
+import { getIdToken } from './authApi';
 import { Capacitor } from '@capacitor/core';
 
 // Reuse the same Firebase app instance the rest of the app uses. We can't
@@ -558,28 +559,32 @@ export const buildChannelPrefUpdate = (team, eventKey, channel, value) => {
  * Trigger a commish-authorized push (test or commishModified events).
  *
  * Used by AdminView (test pushes) and TransactionsView (when commish modifies
- * a manager's roster). Uses the same commish-team-lookup auth as test pushes
- * — no CRON_SECRET required client-side.
+ * a manager's roster). Auth: the signed-in commissioner's Firebase ID token
+ * (custom claim commissioner === true), sent as Authorization: Bearer and
+ * verified server-side with the Admin SDK — no CRON_SECRET in the browser,
+ * and no reliance on the client-writable team.isCommissioner flag.
  *
  * @param {Object} opts
  * @param {string} opts.event            — 'test' or 'commishModified'
- * @param {string} opts.commishTeamId    — current commish's teamId (auth check)
+ * @param {string} [opts.commishTeamId]  — legacy, no longer used for auth
  * @param {string|string[]} opts.recipients — 'all' or array of teamIds
  * @param {string} opts.title            — notification heading
  * @param {string} opts.body             — notification body
  * @param {string} [opts.deepLink]       — optional URL hash
  */
-export const sendCommishPush = async ({ event, commishTeamId, recipients, title, body, deepLink = '#standings' }) => {
+export const sendCommishPush = async ({ event, recipients, title, body, deepLink = '#standings' }) => {
   const resp = await fetch('/api/push', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await getIdToken()}`,
+    },
     body: JSON.stringify({
       event,
       title,
       body,
       deepLink,
       recipients,
-      asCommishOfTeamId: commishTeamId,
     }),
   });
   const data = await resp.json();
@@ -590,32 +595,33 @@ export const sendCommishPush = async ({ event, commishTeamId, recipients, title,
 };
 
 /**
- * Trigger a manager-authorized push. Used for events any manager can
- * dispatch — currently 'freeAgent' (FA add/drop broadcast) and 'results'
- * (tournament results broadcast).
+ * Trigger a manager-authorized push — currently only 'freeAgent' (FA add/drop
+ * broadcast).
  *
- * Auth: just verifies the asTeamId is a real team in the league (no
- * commissioner check). Suitable for a small trusted league. The event
- * type whitelist on the server (MANAGER_ALLOWED_EVENTS) bounds what
- * events this path can trigger, so a spoofed team ID still can't send
- * arbitrary push types.
+ * Auth: the signed-in manager's Firebase ID token. The server verifies the
+ * token, checks asTeamId is a real team the caller owns (via team_claims),
+ * and composes the notification text ITSELF from the structured player
+ * fields — free-text title/body from managers is not accepted.
  *
  * @param {Object} opts
- * @param {string} opts.event       — 'freeAgent' or 'results'
- * @param {string} opts.teamId      — the manager's own teamId (auth check)
+ * @param {string} opts.event       — 'freeAgent'
+ * @param {string} opts.teamId      — the manager's own teamId
  * @param {string|string[]} opts.recipients — 'all' or array of teamIds
- * @param {string} opts.title
- * @param {string} opts.body
+ * @param {string} opts.playerName          — player added
+ * @param {string} [opts.droppedPlayerName] — player dropped, if any
  * @param {string} [opts.deepLink]
  */
-export const sendManagerPush = async ({ event, teamId, recipients, title, body, deepLink = '#standings' }) => {
+export const sendManagerPush = async ({ event, teamId, recipients, playerName, droppedPlayerName, deepLink = '#standings' }) => {
   const resp = await fetch('/api/push', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await getIdToken()}`,
+    },
     body: JSON.stringify({
       event,
-      title,
-      body,
+      playerName,
+      droppedPlayerName,
       deepLink,
       recipients,
       asTeamId: teamId,
@@ -631,13 +637,11 @@ export const sendManagerPush = async ({ event, teamId, recipients, title, body, 
 /**
  * Trigger a test push from the commissioner's AdminView.
  *
- * Calls /api/push with event='test', which uses a lighter auth check
- * (verifies the commish's team has isCommissioner=true) instead of
- * requiring the CRON_SECRET. This lets the test button work without
- * exposing the secret to the browser.
+ * Calls /api/push with event='test', authorized by the signed-in
+ * commissioner's ID token (see sendCommishPush). This lets the test button
+ * work without exposing the CRON_SECRET to the browser.
  *
  * @param {Object} opts
- * @param {string} opts.commishTeamId    — current commish's teamId (auth check)
  * @param {string|string[]} opts.recipients — 'all' or array of teamIds
  * @param {string} opts.title            — notification heading
  * @param {string} opts.body             — notification body
@@ -645,8 +649,8 @@ export const sendManagerPush = async ({ event, teamId, recipients, title, body, 
  *
  * Returns the API response: { sent, failed, totalTokens, cleanedUp }.
  */
-export const sendTestPush = async ({ commishTeamId, recipients, title, body, deepLink = '#standings' }) => {
-  return sendCommishPush({ event: 'test', commishTeamId, recipients, title, body, deepLink });
+export const sendTestPush = async ({ recipients, title, body, deepLink = '#standings' }) => {
+  return sendCommishPush({ event: 'test', recipients, title, body, deepLink });
 };
 
 // ── Foreground message handler (auto-bound on import) ───────────────────────

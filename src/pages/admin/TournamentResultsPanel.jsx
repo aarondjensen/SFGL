@@ -16,6 +16,7 @@ import { colors, fonts } from '../../theme.js';
 import { compactTeamName } from '../../utils/index.js';
 import { sfglDataApi } from '../../api/firebase';
 import { sendCommishPush } from '../../api/pushNotifications';
+import { getIdToken } from '../../api/authApi';
 import { processTournamentData } from './processTournamentData';
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { S, M, disabledBtn } from './adminStyles';
@@ -288,7 +289,7 @@ export const TournamentResultsPanel = ({
         }
         const emailResp = await fetch('/api/cron?action=notify-results', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await getIdToken()}` },
           body: JSON.stringify(body),
         });
         if (!emailResp.ok) {
@@ -509,7 +510,7 @@ export const TournamentResultsPanel = ({
         } else {
           const resp = await fetch('/api/cron?action=notify-results', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await getIdToken()}` },
             body: JSON.stringify({
               tournamentName: selectedTourney,
               teamResults: teamResultsForEmail,
@@ -575,7 +576,9 @@ export const TournamentResultsPanel = ({
     if (!ok) return;
     setResyncing(true);
     try {
-      const resp = await fetch('/api/cron?action=resync-legacy-tournaments');
+      const resp = await fetch('/api/cron?action=resync-legacy-tournaments', {
+        headers: { Authorization: `Bearer ${await getIdToken()}` },
+      });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         dialog.showToast(`Resync failed: ${data?.error || resp.status}`, 'error');
@@ -739,7 +742,9 @@ export const TournamentResultsPanel = ({
       // Fire-and-forget; if resync fails, the toast surfaces it but doesn't
       // roll back the React state updates above.
       try {
-        const resyncResp = await fetch('/api/cron?action=resync-legacy-tournaments');
+        const resyncResp = await fetch('/api/cron?action=resync-legacy-tournaments', {
+          headers: { Authorization: `Bearer ${await getIdToken()}` },
+        });
         const resyncData = await resyncResp.json().catch(() => ({}));
         if (!resyncResp.ok) {
           console.warn('[handleUndoResults] resync-legacy failed:', resyncData);

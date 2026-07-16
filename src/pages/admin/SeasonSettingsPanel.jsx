@@ -17,6 +17,7 @@ import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
 import { M, disabledBtn } from './adminStyles';
 import { DAY_NAMES, fmtETTime } from '../../utils/sharedHelpers';
+import { getIdToken } from '../../api/authApi';
 
 // ── ScheduleEditor — shared helper used by all three schedule sub-sections ──
 // Each schedule (waivers, results, lineup reminder) has identical UI: day +
@@ -145,7 +146,7 @@ export const SeasonSettingsPanel = ({
       try {
         const resp = await fetch('/api/cron?action=sync-cron-schedule', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await getIdToken()}` },
           body: JSON.stringify({ jobType: 'waivers', day: waiverDay, hour: waiverHour, minute: waiverMinute }),
         });
         if (!resp.ok) {
@@ -198,7 +199,7 @@ export const SeasonSettingsPanel = ({
       try {
         const resp = await fetch('/api/cron?action=sync-cron-schedule', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await getIdToken()}` },
           body: JSON.stringify({ jobType: 'results', day: resultsDay, hour: resultsHour, minute: resultsMinute }),
         });
         if (!resp.ok) {
@@ -244,7 +245,7 @@ export const SeasonSettingsPanel = ({
       try {
         const resp = await fetch('/api/cron?action=sync-cron-schedule', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await getIdToken()}` },
           body: JSON.stringify({ jobType: 'lineup-reminder', day: reminderDay, hour: reminderHour, minute: reminderMinute }),
         });
         if (!resp.ok) {

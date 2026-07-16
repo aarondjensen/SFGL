@@ -186,6 +186,28 @@ function wrap(body) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">${FONT_LINK}</head><body style="margin:0;padding:0;background:#060e1a;font-family:${FONT_STACK};"><div style="max-width:560px;margin:0 auto;background:#0f1e30;border-radius:4px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">${HEADER}<div style="padding:24px;">${body}</div>${FOOTER}</div></body></html>`;
 }
 
+// Escape EVERY dynamic value interpolated into email HTML. Several builders
+// receive client-supplied data (handleNotifyResults takes the whole payload
+// from the request body), so unescaped interpolation would let a caller inject
+// arbitrary HTML into mail sent from the league's verified Brevo sender.
+// Same implementation as api/log-error.js.
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Money formatter for email templates. Coerces through Number() first so a
+// string smuggled into a numeric field (e.g. body.swingWinnerInfo.pot) can't
+// ride String.prototype.toLocaleString straight into the HTML unescaped.
+function fmtMoney(n) {
+  const v = Number(n);
+  return (Number.isFinite(v) ? v : 0).toLocaleString();
+}
+
 function buildWaiverResultsEmail(processed, recipientTeam) {
   const rows = processed.map(w => {
     const isMe = w.team === recipientTeam;
@@ -194,7 +216,7 @@ function buildWaiverResultsEmail(processed, recipientTeam) {
     const accent = ok ? '#50b478' : '#cc5555';
     const icon = ok ? '✅' : '❌';
     const label = ok ? 'Approved' : 'Blocked';
-    return `<div style="background:${bg};border:1px solid rgba(255,255,255,0.06);border-radius:3px;padding:10px 14px;margin-bottom:6px;${isMe ? 'border-left:3px solid #ffffff;' : ''}font-family:${FONT_STACK};"><div style="font-size:13px;font-weight:600;color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.85)'};">${w.team}<span style="float:right;font-size:11px;font-weight:600;color:${accent};">${icon} ${label}</span></div><div style="font-size:12px;margin-top:4px;font-weight:400;"><span style="color:#50b478;">+ ${w.player}</span>${w.droppedPlayer ? `<span style="color:rgba(255,255,255,0.35);"> → </span><span style="color:#cc5555;">- ${w.droppedPlayer}</span>` : ''}</div>${w.failReason ? `<div style="font-size:10px;color:rgba(255,255,255,0.45);margin-top:4px;font-weight:300;">${w.failReason}</div>` : ''}</div>`;
+    return `<div style="background:${bg};border:1px solid rgba(255,255,255,0.06);border-radius:3px;padding:10px 14px;margin-bottom:6px;${isMe ? 'border-left:3px solid #ffffff;' : ''}font-family:${FONT_STACK};"><div style="font-size:13px;font-weight:600;color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.85)'};">${escapeHtml(w.team)}<span style="float:right;font-size:11px;font-weight:600;color:${accent};">${icon} ${label}</span></div><div style="font-size:12px;margin-top:4px;font-weight:400;"><span style="color:#50b478;">+ ${escapeHtml(w.player)}</span>${w.droppedPlayer ? `<span style="color:rgba(255,255,255,0.35);"> → </span><span style="color:#cc5555;">- ${escapeHtml(w.droppedPlayer)}</span>` : ''}</div>${w.failReason ? `<div style="font-size:10px;color:rgba(255,255,255,0.45);margin-top:4px;font-weight:300;">${escapeHtml(w.failReason)}</div>` : ''}</div>`;
   }).join('');
   return wrap(`<h2 style="font-family:${FONT_STACK};font-size:18px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">⏰ Waiver Results</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Processed ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>${rows}`);
 }
@@ -335,16 +357,16 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
       const teamColor = isMe ? '#ffffff' : 'rgba(255,255,255,0.85)';
       const bg = isMe ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)';
       const leftBorder = isMe ? 'border-left:3px solid #ffffff;' : isFirst ? 'border-left:3px solid rgba(245,197,24,0.55);' : '';
-      const delta = thisWeekByTeam[s.team] || 0;
+      const delta = Number(thisWeekByTeam[s.team]) || 0;
       const deltaText = delta > 0
-        ? `<span style="font-family:${FONT_STACK};font-size:11px;color:rgba(80,180,120,0.85);font-weight:500;margin-left:6px;">+$${delta.toLocaleString()}</span>`
+        ? `<span style="font-family:${FONT_STACK};font-size:11px;color:rgba(80,180,120,0.85);font-weight:500;margin-left:6px;">+$${fmtMoney(delta)}</span>`
         : '';
       // Identical card layout to the per-tournament rows below (padding, bg,
       // border-radius, left-border, 14px type) so the two sections read as
       // one visual system. No player breakdown sub-table here — the season
       // card stays a clean leaderboard; the inline "+$X" shows this week's
       // delta alongside each team's season total.
-      return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${s.team}${deltaText}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${(s.totalEarnings || 0).toLocaleString()}</td></tr></table></div>`;
+      return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${escapeHtml(s.team)}${deltaText}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${fmtMoney(s.totalEarnings)}</td></tr></table></div>`;
     }).join('')}
   </div>` : '';
 
@@ -353,7 +375,7 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
   // was auto-awarded, the caller passes swingWinnerInfo so we render a
   // celebratory banner above the tournament results. Same color logic as
   // the in-app StandingsView swing card (gold accent for the winner).
-  const swingBanner = swingWinnerInfo ? `<div style="padding:18px 16px;background:linear-gradient(180deg,rgba(245,197,24,0.12),rgba(245,197,24,0.04));border:1px solid rgba(245,197,24,0.35);border-radius:4px;margin:0 0 22px;text-align:center;"><div style="font-family:${FONT_STACK};font-size:10px;color:rgba(245,197,24,0.85);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:0 0 6px;">🏆 ${swingWinnerInfo.segment || 'Swing'} Complete</div><div style="font-family:${FONT_STACK};font-size:18px;color:#ffffff;font-weight:600;margin:0 0 4px;">${swingWinnerInfo.team || ''}</div><div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.7);font-weight:400;">wins the $${(swingWinnerInfo.pot || 0).toLocaleString()} pot</div></div>` : '';
+  const swingBanner = swingWinnerInfo ? `<div style="padding:18px 16px;background:linear-gradient(180deg,rgba(245,197,24,0.12),rgba(245,197,24,0.04));border:1px solid rgba(245,197,24,0.35);border-radius:4px;margin:0 0 22px;text-align:center;"><div style="font-family:${FONT_STACK};font-size:10px;color:rgba(245,197,24,0.85);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:0 0 6px;">🏆 ${escapeHtml(swingWinnerInfo.segment || 'Swing')} Complete</div><div style="font-family:${FONT_STACK};font-size:18px;color:#ffffff;font-weight:600;margin:0 0 4px;">${escapeHtml(swingWinnerInfo.team || '')}</div><div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.7);font-weight:400;">wins the $${fmtMoney(swingWinnerInfo.pot)} pot</div></div>` : '';
 
   // ── Section header for the per-tournament breakdown ──
   // Only render when we have actual rows; keeps very-first-event emails
@@ -392,12 +414,12 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
       // Email clients vary on flex support, so use inline-block spans
       // separated by hair-spaces for reliable cross-client rendering.
       const rounds = Array.isArray(p.roundsLed) ? p.roundsLed : [];
-      const roundBadges = rounds.length ? rounds.map(rl => `<span style="display:inline-block;padding:1px 5px;margin-left:4px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;font-family:${FONT_STACK};vertical-align:middle;letter-spacing:0.5px;">R${rl.round || rl}</span>`).join('') : '';
+      const roundBadges = rounds.length ? rounds.map(rl => `<span style="display:inline-block;padding:1px 5px;margin-left:4px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;font-family:${FONT_STACK};vertical-align:middle;letter-spacing:0.5px;">R${escapeHtml(rl.round || rl)}</span>`).join('') : '';
 
-      return `<tr><td style="font-family:${FONT_STACK};font-size:11px;color:${nameColor};padding:2px 0;font-weight:400;">${p.name || ''}${roundBadges}</td><td style="font-family:${FONT_STACK};font-size:11px;color:${totalEarnings > 0 ? '#50b478' : 'rgba(255,255,255,0.35)'};padding:2px 0;text-align:right;font-weight:500;">$${totalEarnings.toLocaleString()}</td></tr>`;
+      return `<tr><td style="font-family:${FONT_STACK};font-size:11px;color:${nameColor};padding:2px 0;font-weight:400;">${escapeHtml(p.name || '')}${roundBadges}</td><td style="font-family:${FONT_STACK};font-size:11px;color:${totalEarnings > 0 ? '#50b478' : 'rgba(255,255,255,0.35)'};padding:2px 0;text-align:right;font-weight:500;">$${fmtMoney(totalEarnings)}</td></tr>`;
     }).join('');
 
-    return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${tr.team}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${(tr.totalEarnings || 0).toLocaleString()}</td></tr></table>${playerRows ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);">${playerRows}</table>` : ''}</div>`;
+    return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${escapeHtml(tr.team)}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${fmtMoney(tr.totalEarnings)}</td></tr></table>${playerRows ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);">${playerRows}</table>` : ''}</div>`;
   }).join('') : `<div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.5);padding:24px;text-align:center;background:rgba(255,255,255,0.03);border-radius:3px;font-weight:400;">Team results unavailable for this email. Check the app for the latest standings.</div>`;
 
   // ── Color-coded player legend ──
@@ -407,11 +429,11 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
   const hasPlayerData = sorted.some(tr => Array.isArray(tr.players) && tr.players.length > 0);
   const legend = hasPlayerData ? `<div style="margin:14px 0 0;padding:10px 12px;background:rgba(255,255,255,0.02);border-radius:3px;font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:0.4px;font-weight:400;text-align:center;"><span style="color:rgba(245,197,24,0.95);font-weight:600;">●</span> Limited &nbsp;&nbsp;<span style="color:rgba(100,180,255,0.95);font-weight:600;">●</span> Unlimited &nbsp;&nbsp;<span style="display:inline-block;padding:1px 5px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;letter-spacing:0.5px;">R#</span> Round Leader</div>` : '';
 
-  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">🏆 ${tournamentName}</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Tournament Results</p>${standingsCard}${swingBanner}${tournamentHeader}${rows}${legend}`);
+  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">🏆 ${escapeHtml(tournamentName)}</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Tournament Results</p>${standingsCard}${swingBanner}${tournamentHeader}${rows}${legend}`);
 }
 
 function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
-  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:18px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">⛳ Lineups Lock Tomorrow</h2><p style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.85);margin:0 0 8px;font-weight:500;">${tournamentName}</p><p style="font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.55);margin:0 0 20px;font-weight:400;">Lineups lock <strong style="color:#ffffff;font-weight:600;">Thursday at ${lockTime} ET</strong>. Make sure your lineup is set!</p><a href="https://sfglgolf.com" style="display:inline-block;padding:10px 24px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#ffffff;text-decoration:none;font-weight:600;font-size:13px;font-family:${FONT_STACK};letter-spacing:0.5px;">Set Lineup →</a>`);
+  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:18px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">⛳ Lineups Lock Tomorrow</h2><p style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.85);margin:0 0 8px;font-weight:500;">${escapeHtml(tournamentName)}</p><p style="font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.55);margin:0 0 20px;font-weight:400;">Lineups lock <strong style="color:#ffffff;font-weight:600;">Thursday at ${escapeHtml(lockTime)} ET</strong>. Make sure your lineup is set!</p><a href="https://sfglgolf.com" style="display:inline-block;padding:10px 24px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#ffffff;text-decoration:none;font-weight:600;font-size:13px;font-family:${FONT_STACK};letter-spacing:0.5px;">Set Lineup →</a>`);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -834,8 +856,16 @@ async function handleLineupReminder(res) {
 // ── Action: notify results ──────────────────────────────────────────────────
 
 async function handleNotifyResults(req, res) {
-  const { tournamentName, teamResults, swingWinnerInfo, seasonStandings } = req.body || {};
+  let { tournamentName, teamResults, swingWinnerInfo, seasonStandings } = req.body || {};
   if (!tournamentName || !teamResults?.length) return res.status(400).json({ error: 'Missing tournamentName or teamResults' });
+  // Shape guards — the payload is client-supplied. escapeHtml in the template
+  // handles injection; these caps keep a malformed/bloated payload from
+  // producing a mega-email or a non-string subject.
+  if (typeof tournamentName !== 'string') return res.status(400).json({ error: 'tournamentName must be a string' });
+  tournamentName = tournamentName.slice(0, 120);
+  if (!Array.isArray(teamResults) || teamResults.length > 50) {
+    return res.status(400).json({ error: 'teamResults must be an array of at most 50 entries' });
+  }
 
   const settings = await loadSettings();
   const teams = await loadTeams();
@@ -1226,7 +1256,7 @@ async function handleProcessResults(res) {
 //
 // Called from AdminView's "Sync PGAT Stats" button via:
 //   GET /api/cron?action=pgat-stats
-// No auth required (parallel to notify-results).
+// Auth: commissioner ID token or CRON_SECRET (see COMMISSIONER_ACTIONS).
 const PGAT_STATS_URLS = [
   'https://www.pgatour.com/stats/detail/02671',          // Money Earned
   'https://www.pgatour.com/stats/category/money/02671',  // alternate route
@@ -1718,8 +1748,8 @@ async function handleLeadWatch(res) {
 // ── Cron-job.org schedule sync ─────────────────────────────────────────
 // Pushes a schedule change from the commish panel (SeasonSettingsPanel) to the
 // matching cron-job.org job, so the actual ping time tracks the in-app gate.
-// Browser-initiated with no CRON_SECRET, so 'sync-cron-schedule' is exempted in
-// NO_AUTH_ACTIONS (same posture as notify-results / pgat-stats).
+// Browser-initiated: the panel sends the signed-in commissioner's Firebase ID
+// token, verified in the handler's COMMISSIONER_ACTIONS path.
 //
 // Payload shapes (from the panel):
 //   weekly:   { jobType: 'waivers' | 'results' | 'lineup-reminder', day, hour, minute }
@@ -1844,7 +1874,8 @@ async function handleSyncCronSchedule(req, res) {
 // ── Action: stamp the commissioner custom claim (one-time bootstrap) ─────────
 // Sets { commissioner: true } on a Firebase Auth user so the locked Firestore
 // rules and the app's commish gate recognize them. Auth-gated by CRON_SECRET
-// (it is NOT in NO_AUTH_ACTIONS). Run once, after you've signed in at least
+// only (it is NOT in COMMISSIONER_ACTIONS — a commissioner token can't mint
+// more commissioners). Run once, after you've signed in at least
 // once so your account exists (find your UID in Firebase console →
 // Authentication → Users):
 //   curl -X POST "https://www.sfglgolf.com/api/cron?action=stamp-commissioner&uid=YOUR_UID" \\
@@ -1863,9 +1894,9 @@ async function handleStampCommissioner(req, res) {
 // Forces /sfgl_data/fantasy-golf-tournaments to match the canonical /tournaments
 // collection. The app reads canonical directly now; this keeps the legacy
 // fallback doc (and any legacy reader) in lockstep. Idempotent — canonical is
-// never modified. Browser-initiated from the commish panel with no CRON_SECRET,
-// so it's exempted in NO_AUTH_ACTIONS below (same posture as notify-results /
-// pgat-stats / sync-cron-schedule). Note: tournamentsApi.setAll now syncs the
+// never modified. Browser-initiated from the commish panel with the signed-in
+// commissioner's ID token (verified in the handler's COMMISSIONER_ACTIONS
+// path, same posture as notify-results). Note: tournamentsApi.setAll now syncs the
 // legacy doc automatically on every write, so this is a manual repair tool for
 // out-of-band edits rather than a routine necessity.
 async function handleResyncLegacyTournaments(res) {
@@ -1875,24 +1906,95 @@ async function handleResyncLegacyTournaments(res) {
   return res.json({ updated: tournaments.length });
 }
 
+// ── Auth helpers ────────────────────────────────────────────────────────────
+
+// Origin allowlist for browser-initiated calls — same pattern as
+// api/log-error.js. Machine callers (cron-job.org with CRON_SECRET) send no
+// Origin header and skip this check entirely.
+const ALLOWED_ORIGINS = new Set([
+  'https://www.sfglgolf.com',
+  'https://sfglgolf.com',
+]);
+
+function originAllowed(origin) {
+  if (!origin) return null; // header absent — token auth still applies
+  if (ALLOWED_ORIGINS.has(origin)) return true;
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true; // local dev
+  if (/^capacitor:\/\//.test(origin)) return true;               // native app WebView
+  return false;
+}
+
+function resolveOrigin(req) {
+  if (req.headers.origin) return req.headers.origin;
+  const ref = req.headers.referer;
+  if (ref) { try { return new URL(ref).origin; } catch { /* ignore */ } }
+  return null;
+}
+
+// Coarse per-instance burst cap for the commissioner-token path — best-effort
+// (resets on cold start, per-instance) but blunts bulk POSTs that would spam
+// inboxes / burn the Brevo daily quota. Same pattern as api/log-error.js.
+const RL_WINDOW_MS = 60 * 1000;
+const RL_MAX = 15;
+let _rlHits = [];
+function rateLimited() {
+  const now = Date.now();
+  _rlHits = _rlHits.filter((t) => now - t < RL_WINDOW_MS);
+  if (_rlHits.length >= RL_MAX) return true;
+  _rlHits.push(now);
+  return false;
+}
+
+// Verify a Firebase ID token from the Authorization header and require the
+// commissioner custom claim (stamped via the stamp-commissioner action; the
+// client reads the same claim in src/api/authApi.js watchAuth). Returns the
+// decoded token on success, null on any failure.
+async function verifyCommissionerToken(req) {
+  const authHeader = req.headers.authorization || '';
+  const m = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!m) return null;
+  try {
+    const decoded = await getAuth(getApp()).verifyIdToken(m[1]);
+    return decoded?.commissioner === true ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
   const action = req.query.action || '';
 
-  // Cron actions require auth. Client-callable actions are exempted:
-  //   - notify-results: triggered from AdminView after processing
-  //   - pgat-stats:     triggered from AdminView's Sync button
-  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule', 'resync-legacy-tournaments']);
+  // Two auth paths:
+  //   1. CRON_SECRET (machine callers — cron-job.org). Valid for every action.
+  //   2. Commissioner Firebase ID token (browser callers — the admin panel).
+  //      Valid only for the admin-panel actions below. These used to be fully
+  //      unauthenticated (NO_AUTH_ACTIONS), which let anyone email arbitrary
+  //      HTML to all managers (notify-results) or reprogram the league's
+  //      cron-job.org jobs (sync-cron-schedule).
+  const COMMISSIONER_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule', 'resync-legacy-tournaments']);
   // Fail CLOSED: a protected action with no configured CRON_SECRET must be
   // rejected, not allowed. (Previously the `&& cronSecret` short-circuit meant
   // an unset secret silently disabled auth entirely.)
-  if (!NO_AUTH_ACTIONS.has(action)) {
-    if (!cronSecret) {
-      return res.status(503).json({ error: 'CRON_SECRET not configured' });
-    }
-    if (req.headers.authorization !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    return res.status(503).json({ error: 'CRON_SECRET not configured' });
+  }
+  const isCronAuth = req.headers.authorization === `Bearer ${cronSecret}`;
+  if (!isCronAuth) {
+    if (!COMMISSIONER_ACTIONS.has(action)) {
       return res.status(401).json({ error: 'Unauthorized' });
+    }
+    // Browser path: origin allowlist + burst cap + commissioner ID token.
+    if (originAllowed(resolveOrigin(req)) === false) {
+      return res.status(403).json({ error: 'Forbidden origin' });
+    }
+    if (rateLimited()) {
+      return res.status(429).json({ error: 'Rate limited — try again shortly' });
+    }
+    const decoded = await verifyCommissionerToken(req);
+    if (!decoded) {
+      return res.status(401).json({ error: 'Unauthorized — commissioner sign-in required' });
     }
   }
 

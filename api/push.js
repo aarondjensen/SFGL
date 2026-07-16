@@ -2,15 +2,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Server-side FCM push sender for SFGL.
 //
-// POST /api/push  (requires Authorization: Bearer ${CRON_SECRET})
+// POST /api/push
 //
 // Body:
 //   {
-//     event:      'waiver_won' | 'waiver_lost' | 'lineup_lock' | 'test' | ...
-//     title:      string  — notification heading
-//     body:       string  — notification body text
+//     event:      'test' | 'commishModified' | 'results' | 'freeAgent' | ...
+//     title:      string  — notification heading (CRON_SECRET / commish paths only)
+//     body:       string  — notification body text (CRON_SECRET / commish paths only)
 //     deepLink:   '#standings' | '#rosters' | '#transactions' | ...
 //     recipients: 'all' | string[] — teamIds (or 'all' = every team's tokens)
+//     asTeamId:   string  — acting team (freeAgent path)
+//     playerName / droppedPlayerName: strings — freeAgent structured fields;
+//                 the push text is composed server-side from these (managers
+//                 can NOT send free-text title/body)
 //   }
 //
 // Returns:
@@ -21,18 +25,16 @@
 //     cleanedUp:    number  — invalid tokens that were removed from Firestore
 //   }
 //
-// Authentication: uses the same CRON_SECRET as the rest of api/cron.js, so
-// only our own server-side code (cron jobs, AdminView via authenticated
-// fetch) can trigger pushes. External callers get 401.
-//
-// Wave J Round 6: web push notifications, batch 1 (scaffolding). This
-// endpoint is callable today but no event triggers are wired up yet — only
-// the test push from AdminView.
+// Authentication (see the Auth section in the handler):
+//   1. CRON_SECRET — server-to-server (cron jobs).
+//   2. Firebase ID token with the commissioner custom claim — commish events.
+//   3. Firebase ID token of any signed-in manager — freeAgent broadcasts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { getAuth } from 'firebase-admin/auth';
 import { DEFAULTS_ON, dedupeTokenDocs } from './_constants.js';
 
 // ── Firebase Admin init (mirrors api/cron.js pattern) ───────────────────────
@@ -58,30 +60,43 @@ export default async function handler(req, res) {
   }
 
   // ── Parse + validate ──────────────────────────────────────────────────────
-  const { event, title, body, deepLink, recipients, asCommishOfTeamId, asTeamId } = req.body || {};
-  if (!event || !title || !body) {
-    return res.status(400).json({ error: 'missing required fields: event, title, body' });
+  const { event, deepLink, recipients, asTeamId, playerName, droppedPlayerName } = req.body || {};
+  let { title, body } = req.body || {};
+  if (!event) {
+    return res.status(400).json({ error: 'missing required field: event' });
   }
   if (!recipients) {
     return res.status(400).json({ error: 'missing recipients (use "all" or an array of teamIds)' });
   }
 
+  // Strip control chars + cap length on anything that ends up in a
+  // notification. Used for the freeAgent structured fields below.
+  const clean = (s, max) => typeof s === 'string'
+    ? s.replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, max)
+    : '';
+
+  // deepLink feeds both the SW payload and the fcmOptions.link URL — constrain
+  // it to an in-app hash route so a caller can't smuggle in an arbitrary value.
+  const safeDeepLink = typeof deepLink === 'string' && /^#[\w-]{1,64}$/.test(deepLink)
+    ? deepLink
+    : '#standings';
+
   // ── Auth ──────────────────────────────────────────────────────────────────
   // Three auth paths (most → least privileged):
-  //   1. CRON_SECRET (server-to-server). Trusted, can send any event to anyone.
-  //      Used by cron jobs (waivers, lineup-reminder, process-results).
-  //   2. Commish auth (asCommishOfTeamId + verified isCommissioner=true).
-  //      Trusted to send a defined whitelist of events. Used by AdminView
-  //      ('test') and TransactionsView ('commishModified').
-  //   3. Manager auth (asTeamId + verified team exists in the league).
-  //      Lightest verification — used for events where ANY manager triggers
-  //      a push (e.g. 'freeAgent' broadcasts to the league when a manager
-  //      adds a free agent).
-  //
-  // Auth is bounded by the per-path event whitelist, so even if someone
-  // spoofs asTeamId they can only trigger event types we've explicitly
-  // permitted via that path. For a 5-person trusted league this is
-  // appropriate; for a larger league we'd want real auth (JWTs etc).
+  //   1. CRON_SECRET (server-to-server). Trusted, can send any event to anyone
+  //      with caller-supplied title/body. Used by cron jobs (waivers,
+  //      lineup-reminder, process-results).
+  //   2. Commissioner Firebase ID token (custom claim commissioner === true —
+  //      the same claim stamped via cron.js stamp-commissioner and read by
+  //      src/api/authApi.js). Whitelisted commish events, caller-supplied
+  //      title/body. Replaces the old asCommishOfTeamId + team.isCommissioner
+  //      check, which any client could satisfy by writing the flag onto a team
+  //      doc it controlled.
+  //   3. Manager Firebase ID token (any signed-in league account) for the
+  //      freeAgent broadcast. The push text is composed SERVER-side from the
+  //      team doc + structured player fields — a manager cannot send free-text
+  //      title/body to the league. If the acting team has a claim doc, the
+  //      token's uid must own it (commissioners are exempt).
   const COMMISH_ALLOWED_EVENTS = new Set([
     'test',             // diagnostic pushes from AdminView
     'commishModified',  // commish-modified-roster pushes from TransactionsView
@@ -92,40 +107,69 @@ export default async function handler(req, res) {
   ]);
   const expectedSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.authorization || '';
-  const providedSecret = authHeader.replace(/^Bearer\s+/i, '');
-  const isCronAuth = expectedSecret && providedSecret === expectedSecret;
+  const providedToken = authHeader.replace(/^Bearer\s+/i, '');
+  const isCronAuth = expectedSecret && providedToken === expectedSecret;
 
   if (!isCronAuth) {
-    // Try commish auth, then manager auth. Each requires a verified team ID.
-    if (COMMISH_ALLOWED_EVENTS.has(event)) {
-      if (!asCommishOfTeamId) {
-        return res.status(401).json({ error: `unauthorized: '${event}' events require asCommishOfTeamId` });
-      }
+    // Both browser paths present a Firebase ID token in the same header.
+    let decoded = null;
+    if (providedToken) {
       try {
-        const teamSnap = await db.collection('teams').doc(asCommishOfTeamId).get();
-        if (!teamSnap.exists || teamSnap.data()?.isCommissioner !== true) {
-          return res.status(403).json({ error: 'forbidden: not a commissioner team' });
-        }
-      } catch (err) {
-        console.error('[push] commish auth lookup failed:', err);
-        return res.status(500).json({ error: 'auth lookup failed' });
+        decoded = await getAuth(getApp()).verifyIdToken(providedToken);
+      } catch {
+        decoded = null;
+      }
+    }
+    if (!decoded) {
+      return res.status(401).json({ error: 'unauthorized: sign-in required' });
+    }
+
+    if (COMMISH_ALLOWED_EVENTS.has(event)) {
+      if (decoded.commissioner !== true) {
+        return res.status(403).json({ error: `forbidden: '${event}' events require the commissioner` });
+      }
+      if (!title || !body) {
+        return res.status(400).json({ error: 'missing required fields: title, body' });
       }
     } else if (MANAGER_ALLOWED_EVENTS.has(event)) {
       if (!asTeamId) {
         return res.status(401).json({ error: `unauthorized: '${event}' events require asTeamId` });
       }
+      let teamName;
       try {
         const teamSnap = await db.collection('teams').doc(asTeamId).get();
         if (!teamSnap.exists) {
           return res.status(403).json({ error: 'forbidden: team not found' });
         }
+        teamName = teamSnap.data()?.name || asTeamId;
+        // If the team is claimed, only its owner (or the commissioner) may
+        // broadcast as it. Unclaimed teams fall through — any signed-in
+        // league account can act for them (5-person trusted league).
+        const claimSnap = await db.collection('team_claims').doc(asTeamId).get();
+        const claimUid = claimSnap.exists ? claimSnap.data()?.uid : null;
+        if (claimUid && claimUid !== decoded.uid && decoded.commissioner !== true) {
+          return res.status(403).json({ error: 'forbidden: not your team' });
+        }
       } catch (err) {
         console.error('[push] manager auth lookup failed:', err);
         return res.status(500).json({ error: 'auth lookup failed' });
       }
+      // Compose the push text server-side. Only the player names come from
+      // the request, and they're control-stripped + length-capped.
+      const added = clean(playerName, 60);
+      if (!added) {
+        return res.status(400).json({ error: `'${event}' events require playerName` });
+      }
+      const droppedClean = clean(droppedPlayerName, 60);
+      title = `🔄 ${teamName}`;
+      body = droppedClean ? `+${added} / -${droppedClean}` : `+${added}`;
     } else {
       return res.status(401).json({ error: `unauthorized: event '${event}' requires CRON_SECRET` });
     }
+  }
+
+  if (!title || !body) {
+    return res.status(400).json({ error: 'missing required fields: title, body' });
   }
 
   // ── Resolve recipients → list of FCM tokens ──────────────────────────────
@@ -218,7 +262,7 @@ export default async function handler(req, res) {
     // FCM requires all data values to be strings — we coerce here.
     data: {
       eventType: String(event),
-      deepLink:  String(deepLink || '#standings'),
+      deepLink:  safeDeepLink,
     },
     // Web-specific options: icon path, click action handled by SW.
     webpush: {
@@ -229,7 +273,8 @@ export default async function handler(req, res) {
       fcmOptions: {
         // The link FCM will open when the notification is clicked. This is a
         // fallback for browsers that don't have a service worker handler.
-        link: deepLink ? `https://sfglgolf.com/${deepLink.startsWith('#') ? deepLink : '#' + deepLink}` : 'https://sfglgolf.com/',
+        // safeDeepLink is always a validated '#route' hash.
+        link: `https://sfglgolf.com/${safeDeepLink}`,
       },
     },
   });
