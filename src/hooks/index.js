@@ -355,15 +355,19 @@ export const useLeague = (STORAGE_KEYS) => {
     }
   }, [STORAGE_KEYS.TOURNAMENTS]);
 
-  const updateTransactions = useCallback(async (next) => {
+  // opts.deleted: transactions (or id/txId strings) the caller explicitly
+  // removed. sync() is upsert-only — it never infers deletion from a row's
+  // absence (a stale local array must not delete other managers' recent
+  // transactions) — so delete/undo flows MUST pass what they removed here.
+  const updateTransactions = useCallback(async (next, opts = {}) => {
     const resolved = typeof next === 'function' ? next(transactionsRef.current) : next;
     setTransactions(resolved);
     try {
       const { transactionsApi } = await import('../api/firebase');
-      const merged = await transactionsApi.sync(resolved);
-      if (merged && merged.length > resolved.length) {
-        setTransactions(merged);
+      if (opts.deleted && opts.deleted.length > 0) {
+        await transactionsApi.delete(opts.deleted);
       }
+      await transactionsApi.sync(resolved);
     } catch (e) {
       console.error('[useLeague] transactions sync failed:', e);
     }
