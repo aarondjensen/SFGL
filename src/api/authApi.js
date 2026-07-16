@@ -188,6 +188,16 @@ export async function refreshToken() {
   if (auth.currentUser) await auth.currentUser.getIdToken(true);
 }
 
+// Current user's Firebase ID token, for Authorization: Bearer headers on the
+// serverless endpoints (api/cron.js admin actions, api/push.js). The SDK
+// caches and auto-refreshes it, so calling per-request is cheap. Throws when
+// signed out — callers surface that as their normal error toast.
+export async function getIdToken() {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not signed in');
+  return user.getIdToken();
+}
+
 // ── Team claims ──────────────────────────────────────────────────────────────
 // Realtime map of teamId → { uid, claimedAt, notifyEmail }.
 export function subscribeClaims(cb) {

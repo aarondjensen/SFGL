@@ -348,15 +348,14 @@ export const AddDropPlayerModal = ({
       const recipientIds = teams
         .filter(t => t.id !== team.id)
         .map(t => t.id);
-      const playerSummary = selectedPlayerToDrop
-        ? `+${selectedPlayerToAdd.name} / -${selectedPlayerToDrop.name}`
-        : `+${selectedPlayerToAdd.name}`;
+      // Structured fields only — /api/push composes the "🔄 Team · +Add / -Drop"
+      // text server-side so managers can't broadcast arbitrary content.
       sendManagerPush({
         event: 'freeAgent',
         teamId: team.id,
         recipients: recipientIds,
-        title: `🔄 ${team.name}`,
-        body: playerSummary,
+        playerName: selectedPlayerToAdd.name,
+        droppedPlayerName: selectedPlayerToDrop?.name,
         deepLink: '#transactions',
       }).catch(err => console.warn('[push] freeAgent send failed:', err.message));
     }
