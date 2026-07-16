@@ -719,6 +719,9 @@ export const TournamentResultsPanel = ({
       // the final event of its swing. Identify by tournamentIndex match. If
       // the swing-winner was already there before this processing (manually
       // awarded), the tournamentIndex won't match and we leave it alone.
+      const removedSwingTxs = (transactions || []).filter(tx =>
+        tx.type === 'swing_winner' && tx.tournamentIndex === ti
+      );
       const newTransactions = (transactions || []).filter(tx => {
         if (tx.type !== 'swing_winner') return true;
         return tx.tournamentIndex !== ti;
@@ -729,7 +732,8 @@ export const TournamentResultsPanel = ({
       setTournaments(newTournaments);
       if (setGlobalPlayerStats) setGlobalPlayerStats(restoredStats);
       if (newTransactions.length !== (transactions || []).length) {
-        setTransactions(newTransactions);
+        // sync() never deletes by absence — pass the removed txs explicitly.
+        setTransactions(newTransactions, { deleted: removedSwingTxs });
       }
 
       // Resync the legacy /sfgl_data/fantasy-golf-tournaments doc so it

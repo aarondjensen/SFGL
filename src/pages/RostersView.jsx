@@ -173,24 +173,25 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
   const txRef = React.useRef(transactions);
   txRef.current = transactions; // always up to date
 
-  const persistTransactions = (newTx) => {
-    setTransactions(newTx);
+  const persistTransactions = (newTx, opts) => {
+    setTransactions(newTx, opts);
   };
 
   const deleteWaiver = (waiver) => {
     const current = txRef.current;
     // Match by fields to find the right transaction regardless of index shifts
-    let removed = false;
+    let removedTx = null;
     const newTx = current.filter(tx => {
-      if (!removed && tx.team === team.name && tx.player === waiver.player && tx.droppedPlayer === waiver.droppedPlayer && tx.status === 'pending' && tx.type === 'waiver') {
-        removed = true;
+      if (!removedTx && tx.team === team.name && tx.player === waiver.player && tx.droppedPlayer === waiver.droppedPlayer && tx.status === 'pending' && tx.type === 'waiver') {
+        removedTx = tx;
         return false;
       }
       return true;
     });
-    if (!removed) return; // nothing matched
+    if (!removedTx) return; // nothing matched
     const newTeams = teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - (waiver.fee || 0) } : t);
-    persistTransactions(newTx);
+    // sync() never deletes by absence — pass the removed claim explicitly.
+    persistTransactions(newTx, { deleted: [removedTx] });
     updateTeams(newTeams);
   };
 
