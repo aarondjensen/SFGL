@@ -14,7 +14,6 @@ import {
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts, fontSize } from '../theme.js';
-import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament } from '../utils/sharedHelpers';
 
@@ -168,7 +167,7 @@ const ordinal = (n) => {
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 };
 
-const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam, settings, onEdit, headshots = {} }) => {
+const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeam, isOwnTeam, settings, onEdit, headshots = {} }) => {
   const dialog = useDialog();
   const txRef = React.useRef(transactions);
   txRef.current = transactions; // always up to date
@@ -189,9 +188,9 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
       return true;
     });
     if (!removed) return; // nothing matched
-    const newTeams = teams.map(t => t.id === team.id ? { ...t, transactionFees: (t.transactionFees || 0) - (waiver.fee || 0) } : t);
     persistTransactions(newTx);
-    updateTeams(newTeams);
+    // Per-doc write: refund the fee on this team only.
+    updateTeam(team.id, t => ({ ...t, transactionFees: (t.transactionFees || 0) - (waiver.fee || 0) }));
   };
 
   const swapPriority = (fromIdx, toIdx) => {
@@ -426,7 +425,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
 };
 
 export const RostersView = ({
-  teams, selectedTeam, setSelectedTeam, updateTeams,
+  teams, selectedTeam, setSelectedTeam, updateTeam,
   tournaments, allPlayers, transactions, setTransactions,
   loggedInUser, isCommissioner, globalPlayerStats, headshots,
   updateHeadshots,
@@ -533,15 +532,14 @@ export const RostersView = ({
 
       // If they tapped a player who's currently a starter, move them out of
       // starters and into the backup slot. (Avoids a player being in both.)
-      const newTeams = teams.map(t => {
-        if (t.id !== team.id) return t;
-        return {
-          ...t,
-          backup: player.name,
-          lineup: (t.lineup || []).filter(n => n !== player.name),
-        };
-      });
-      updateTeams(newTeams);
+      // Per-doc write (updateTeam) — patches the FRESHEST copy of this team
+      // and persists only its doc, so a concurrent manager editing another
+      // team can't be reverted.
+      updateTeam(team.id, t => ({
+        ...t,
+        backup: player.name,
+        lineup: (t.lineup || []).filter(n => n !== player.name),
+      }));
       dialog.showToast(
         isInLineup
           ? `${lastName} moved from starter to backup`
@@ -556,20 +554,14 @@ export const RostersView = ({
 
     // Case 1: Player IS a starter — remove from lineup.
     if (isInLineup) {
-      const newTeams = teams.map(t =>
-        t.id !== team.id ? t : { ...t, lineup: t.lineup.filter(p => p !== player.name) }
-      );
-      updateTeams(newTeams);
+      updateTeam(team.id, t => ({ ...t, lineup: (t.lineup || []).filter(p => p !== player.name) }));
       dialog.showToast(`${lastName} removed from lineup`, 'info', { position: 'top' });
       return;
     }
 
     // Case 2: Player IS the backup — clear backup.
     if (isBackup) {
-      const newTeams = teams.map(t =>
-        t.id !== team.id ? t : { ...t, backup: null }
-      );
-      updateTeams(newTeams);
+      updateTeam(team.id, { backup: null });
       dialog.showToast(`${lastName} removed as backup`, 'info', { position: 'top' });
       return;
     }
@@ -583,10 +575,7 @@ export const RostersView = ({
         // Limited start limit check ONLY applies when they'd actually start.
         // As a backup they sit on the bench; only counts if commish promotes
         // them, which happens via team.lineup → covered by the starter path.
-        const newTeams = teams.map(t =>
-          t.id !== team.id ? t : { ...t, backup: player.name }
-        );
-        updateTeams(newTeams);
+        updateTeam(team.id, { backup: player.name });
         dialog.showToast(`${lastName} set as backup`, 'success', { position: 'top' });
         return;
       }
@@ -604,12 +593,9 @@ export const RostersView = ({
       return;
     }
 
-    const newTeams = teams.map(t =>
-      t.id !== team.id ? t : { ...t, lineup: [...(t.lineup || []), player.name] }
-    );
-    updateTeams(newTeams);
+    updateTeam(team.id, t => ({ ...t, lineup: [...(t.lineup || []), player.name] }));
     dialog.showToast(`${lastName} added to lineup`, 'success', { position: 'top' });
-  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE, pickingBackup, backupAllowed]);
+  }, [team, updateTeam, dialog, activeTournament, currentRoster, LINEUP_SIZE, MAX_LIMITED_STARTS, pickingBackup, backupAllowed]);
 
 
   const pendingWaivers = useMemo(() => {
@@ -770,25 +756,11 @@ export const RostersView = ({
 
   // Odds are now fetched as part of the field fetch above
 
-  // Real-time lineup sync — polls Firebase every 30s so changes on desktop
-  // appear on mobile without a manual refresh
-  useEffect(() => {
-    if (!team) return;
-    let cancelled = false;
-    const poll = () => {
-      teamsApi.getAll().then(freshTeams => {
-        if (cancelled) return;
-        const fresh = freshTeams.find(t => t.id === team.id);
-        const freshLineup = fresh?.lineup || [];
-        const currentLineup = team.lineup || [];
-        if (fresh && JSON.stringify(freshLineup) !== JSON.stringify(currentLineup)) {
-          updateTeams(freshTeams.map(t => ({ ...t, lineup: t.lineup || [] })));
-        }
-      }).catch(() => {});
-    };
-    const interval = setInterval(poll, 90000); // every 90s (was 30s — reduces Firebase reads)
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Lineup changes from other devices arrive via the realtime Firestore
+  // subscription in useLeague. The old 90s polling fallback is gone: it
+  // called updateTeams(freshTeams) on any observed diff, which PERSISTED a
+  // full write-back of the whole collection — merely seeing another
+  // manager's edit could revert it mid-flight.
 
   // Fetch live leaderboard from /api/live during tournament week
   // Polls every 5 minutes while the tournament is in progress.
@@ -1231,7 +1203,7 @@ export const RostersView = ({
       {isOwnTeam && (
         <WaiverQueue
           team={team} pendingWaivers={pendingWaivers} transactions={transactions}
-          setTransactions={setTransactions} updateTeams={updateTeams} teams={teams}
+          setTransactions={setTransactions} updateTeam={updateTeam}
           isOwnTeam={isOwnTeam} settings={resolvedSettings}
           onEdit={(waiver) => { setEditingWaiverData(waiver); setIsWaiverMode(true); setShowAddDropModal(true); }}
           headshots={headshots}
@@ -1653,7 +1625,7 @@ export const RostersView = ({
         team={team}
         currentRoster={currentRoster}
         teams={teams}
-        updateTeams={updateTeams}
+        updateTeam={updateTeam}
         transactions={transactions}
         setTransactions={setTransactions}
         tournaments={tournaments}

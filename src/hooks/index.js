@@ -300,21 +300,35 @@ export const useLeague = (STORAGE_KEYS) => {
   useEffect(() => { headshotsRef.current = headshots; },       [headshots]);
 
   // ── Persisted updaters ─────────────────────────────────────────────────
-  const updateTeams = useCallback(async (next, registryOverrides = null) => {
-    const resolved = typeof next === 'function' ? next(teamsRef.current) : next;
-    setTeams(resolved);
-    // Keep the durable registry fresh at the single team-save chokepoint, so a
-    // player's attributes are captured before they can ever be dropped. Monotonic
-    // merge (limited never downgrades; tallies take the max).
+  //
+  // Concurrency contract (July 2026 fix):
+  //   • updateTeams resolves against teamsRef.current, syncs the ref
+  //     IMMEDIATELY (not in a post-render effect), and persists ONLY the team
+  //     docs that actually changed relative to that base — one setDoc per
+  //     changed team, never the whole collection, never any deletes. A stale
+  //     in-memory copy of the OTHER teams therefore can't revert a concurrent
+  //     manager's edit to them.
+  //   • updateTeam(teamId, patch) is the preferred path for single-team edits
+  //     (lineup toggles, add/drop, name/pref edits): it applies the patch to
+  //     the FRESHEST copy of that team (teamsRef, kept live by the realtime
+  //     subscription) and writes only the changed fields of that one doc.
+  //   • teamsApi.setAll (full replace + delete-missing) is reserved for
+  //     explicit commissioner bulk operations via updateTeams(next, null,
+  //     { bulk: true }).
+
+  const registryUpkeep = useCallback(async (resolvedTeams, registryOverrides) => {
+    // Keep the durable registry fresh at the team-save chokepoint, so a
+    // player's attributes are captured before they can ever be dropped.
+    // Monotonic merge (limited never downgrades; tallies take the max).
     try {
-      const merged = buildPlayerAttributeIndex(resolved, tournamentsRef.current, getPlayerRegistry());
-      // Authoritative overrides: some operations must DECREASE a monotonic tally
-      // (e.g. reversing a mulligan pulls a player's start/earnings back). The
-      // max-merge above would re-inflate it, so force-set the corrected values
-      // here. Callers pass { playerName: { starts, sfglEarnings, ... } }. Because
-      // the roster is corrected to the same value in `resolved`, future saves
-      // stay put (max(corrected, corrected) === corrected). Works for off-roster
-      // players too — their durable registry record is corrected in place.
+      const merged = buildPlayerAttributeIndex(resolvedTeams, tournamentsRef.current, getPlayerRegistry());
+      // Authoritative overrides: some operations must DECREASE a monotonic
+      // tally (e.g. reversing a mulligan pulls a player's start/earnings
+      // back). The max-merge above would re-inflate it, so force-set the
+      // corrected values here. Callers pass { playerName: { starts, ... } }.
+      // Because the roster is corrected to the same value in `resolvedTeams`,
+      // future saves stay put (max(corrected, corrected) === corrected).
+      // Works for off-roster players too.
       if (registryOverrides) {
         for (const [name, attrs] of Object.entries(registryOverrides)) {
           merged[name] = { ...(merged[name] || {}), ...attrs };
@@ -326,21 +340,91 @@ export const useLeague = (STORAGE_KEYS) => {
     } catch (e) {
       console.warn('[useLeague] registry upkeep skipped:', e);
     }
+  }, []);
+
+  const updateTeams = useCallback(async (next, registryOverrides = null, options = {}) => {
+    const base = teamsRef.current;
+    const resolved = typeof next === 'function' ? next(base) : next;
+    // Sync the ref NOW, not in the post-render effect: two updates in the
+    // same tick must see each other's result, or the first one is lost.
+    teamsRef.current = resolved;
+    setTeams(resolved);
+    await registryUpkeep(resolved, registryOverrides);
+    // localStorage backup FIRST: a Firestore batch commit never resolves while
+    // offline, so writing the backup after it meant offline edits were never
+    // backed up at all.
+    try { await storage.set(STORAGE_KEYS.TEAMS, resolved); } catch (e) {
+      console.error('[useLeague] teams local backup failed:', e);
+    }
     try {
       setIsSyncing(true);
       const { teamsApi } = await import('../api/firebase');
-      await teamsApi.setAll(resolved);
-      await storage.set(STORAGE_KEYS.TEAMS, resolved);
+      if (options.bulk) {
+        // Explicit commissioner bulk replace — the only path that may delete.
+        await teamsApi.setAll(resolved);
+      } else {
+        const baseByKey = new Map(base.map(t => [t.id || t.name, t]));
+        const changed = resolved.filter(t => {
+          const prev = baseByKey.get(t.id || t.name);
+          return !prev || JSON.stringify(prev) !== JSON.stringify(t);
+        });
+        if (resolved.length < base.length) {
+          console.warn('[useLeague] updateTeams: team removal detected — deletions are skipped outside bulk mode');
+        }
+        if (changed.length) await teamsApi.upsertMany(changed);
+      }
     } catch (e) {
       console.error('[useLeague] teams write failed:', e);
-      try { await storage.set(STORAGE_KEYS.TEAMS, resolved); } catch {}
     } finally {
       setIsSyncing(false);
     }
-  }, [STORAGE_KEYS.TEAMS]);
+  }, [STORAGE_KEYS.TEAMS, registryUpkeep]);
+
+  // Single-team edit: patch is an object merged onto the team, or a function
+  // of the CURRENT team (freshest copy — teamsRef is kept live by the realtime
+  // subscription). Persists only the changed fields of that one doc, so
+  // concurrent managers editing different teams — or even different fields of
+  // the same team — can't clobber each other.
+  const updateTeam = useCallback(async (teamId, patch, registryOverrides = null) => {
+    const base = teamsRef.current;
+    const idx = base.findIndex(t => (t.id || t.name) === teamId);
+    if (idx === -1) {
+      console.warn(`[useLeague] updateTeam: unknown team "${teamId}" — nothing saved`);
+      return;
+    }
+    const prev = base[idx];
+    const updatedTeam = typeof patch === 'function' ? patch(prev) : { ...prev, ...patch };
+    const resolved = base.map((t, i) => (i === idx ? updatedTeam : t));
+    teamsRef.current = resolved;
+    setTeams(resolved);
+    await registryUpkeep(resolved, registryOverrides);
+    try { await storage.set(STORAGE_KEYS.TEAMS, resolved); } catch (e) {
+      console.error('[useLeague] teams local backup failed:', e);
+    }
+    try {
+      setIsSyncing(true);
+      const { teamsApi } = await import('../api/firebase');
+      const removedField = Object.keys(prev).some(k => !(k in updatedTeam));
+      if (removedField) {
+        // set+merge can't delete fields — replace the whole doc instead.
+        await teamsApi.upsertMany([updatedTeam]);
+      } else {
+        const changedFields = {};
+        for (const k of Object.keys(updatedTeam)) {
+          if (JSON.stringify(updatedTeam[k]) !== JSON.stringify(prev[k])) changedFields[k] = updatedTeam[k];
+        }
+        if (Object.keys(changedFields).length) await teamsApi.update(teamId, changedFields);
+      }
+    } catch (e) {
+      console.error('[useLeague] team write failed:', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [STORAGE_KEYS.TEAMS, registryUpkeep]);
 
   const updateTournaments = useCallback(async (next) => {
     const resolved = typeof next === 'function' ? next(tournamentsRef.current) : next;
+    tournamentsRef.current = resolved; // sync now — see updateTeams
     setTournaments(resolved);
     try {
       setIsSyncing(true);
@@ -357,11 +441,13 @@ export const useLeague = (STORAGE_KEYS) => {
 
   const updateTransactions = useCallback(async (next) => {
     const resolved = typeof next === 'function' ? next(transactionsRef.current) : next;
+    transactionsRef.current = resolved; // sync now — see updateTeams
     setTransactions(resolved);
     try {
       const { transactionsApi } = await import('../api/firebase');
       const merged = await transactionsApi.sync(resolved);
       if (merged && merged.length > resolved.length) {
+        transactionsRef.current = merged;
         setTransactions(merged);
       }
     } catch (e) {
@@ -374,6 +460,7 @@ export const useLeague = (STORAGE_KEYS) => {
 
   const updateSettings = useCallback(async (next) => {
     const resolved = typeof next === 'function' ? next(settingsRef.current) : next;
+    settingsRef.current = resolved; // sync now — see updateTeams
     setSettings(resolved);
     try {
       const { settingsApi } = await import('../api/firebase');
@@ -389,6 +476,7 @@ export const useLeague = (STORAGE_KEYS) => {
 
   const updateGlobalStats = useCallback(async (next) => {
     const resolved = typeof next === 'function' ? next(statsRef.current) : next;
+    statsRef.current = resolved; // sync now — see updateTeams
     setGlobalPlayerStats(resolved);
     try {
       const { playerStatsApi } = await import('../api/firebase');
@@ -402,6 +490,7 @@ export const useLeague = (STORAGE_KEYS) => {
 
   const updateHeadshots = useCallback(async (next) => {
     const resolved = typeof next === 'function' ? next(headshotsRef.current) : next;
+    headshotsRef.current = resolved; // sync now — see updateTeams
     setHeadshots(resolved);
     try {
       const { headshotsApi } = await import('../api/firebase');
@@ -443,7 +532,7 @@ export const useLeague = (STORAGE_KEYS) => {
     setTeams, setTournaments, setTransactions, setSettings,
     setGlobalPlayerStats, setHeadshots, setAllPlayers, setRankingsLastUpdated,
     // persisted updaters
-    updateTeams, updateTournaments, updateTransactions,
+    updateTeams, updateTeam, updateTournaments, updateTransactions,
     updateSettings, updateGlobalStats, updateHeadshots, updateRankings,
     // refetch
     refetch,

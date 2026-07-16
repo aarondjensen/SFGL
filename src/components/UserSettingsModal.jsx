@@ -85,7 +85,7 @@ export const UserSettingsModal = ({
   loggedInUser,
   loggedInTeamId,
   teams,
-  updateTeams,
+  updateTeam,
   isCommissioner,
   setIsCommissioner,
   taggedCommissioner,
@@ -124,16 +124,14 @@ export const UserSettingsModal = ({
     const currentValue = effectivePrefs[eventKey];
     const newValue = !currentValue;
 
-    // Optimistic update: write new prefs map to local state immediately
-    // via updateTeams. Realtime subscription will reconcile if needed.
+    // Optimistic update: write the new prefs map to local state immediately
+    // via updateTeam (per-doc — only this team is persisted). Realtime
+    // subscription will reconcile if needed.
     const newPrefs = { ...(userTeam.notificationPrefs || {}), [eventKey]: newValue };
-    const newTeams = teams.map(t =>
-      t.id === userTeam.id ? { ...t, notificationPrefs: newPrefs } : t
-    );
 
     setPrefSaving(p => ({ ...p, [eventKey]: true }));
     try {
-      await updateTeams(newTeams);
+      await updateTeam(userTeam.id, { notificationPrefs: newPrefs });
     } catch (err) {
       dialog.showToast('Could not save preference: ' + err.message, 'error');
     } finally {

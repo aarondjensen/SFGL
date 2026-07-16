@@ -94,7 +94,7 @@ const TogglePill = ({ on, saving, onToggle, ariaLabel }) => (
   </button>
 );
 
-export const NotificationStatusPanel = ({ teams = [], updateTeams }) => {
+export const NotificationStatusPanel = ({ teams = [], updateTeam }) => {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
   const [tokensByTeam, setTokensByTeam] = React.useState(new Map());
@@ -122,23 +122,21 @@ export const NotificationStatusPanel = ({ teams = [], updateTeams }) => {
   React.useEffect(() => { load(); }, [load]);
 
   // Commish edits another team's prefs. Same write path as the user's own
-  // settings (buildChannelPrefUpdate → updateTeams), just targeting an
-  // arbitrary team rather than the logged-in one.
+  // settings (buildChannelPrefUpdate → updateTeam), just targeting an
+  // arbitrary team rather than the logged-in one. Per-doc write — only the
+  // toggled team is persisted.
   const handleToggleChannel = async (team, eventKey, channel) => {
-    if (!updateTeams) return;
+    if (!updateTeam) return;
     const savingKey = `${team.id}:${eventKey}:${channel}`;
     if (prefSaving[savingKey]) return;
 
     const current = getEffectiveChannelPrefs(team)[eventKey] || { push: true, email: true };
     const newValue = !current[channel];
     const newPrefs = buildChannelPrefUpdate(team, eventKey, channel, newValue);
-    const newTeams = teams.map(t =>
-      t.id === team.id ? { ...t, notificationPrefs: newPrefs } : t
-    );
 
     setPrefSaving(p => ({ ...p, [savingKey]: true }));
     try {
-      await updateTeams(newTeams);
+      await updateTeam(team.id, { notificationPrefs: newPrefs });
     } catch (err) {
       console.warn('[NotificationStatusPanel] pref write failed:', err?.message);
     } finally {
@@ -160,7 +158,7 @@ export const NotificationStatusPanel = ({ teams = [], updateTeams }) => {
   });
 
   const onCount = rows.filter(r => r.count > 0).length;
-  const canEdit = typeof updateTeams === 'function';
+  const canEdit = typeof updateTeam === 'function';
 
   return (
     <div style={M.group}>

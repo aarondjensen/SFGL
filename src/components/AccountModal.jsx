@@ -1,7 +1,7 @@
 // src/components/AccountModal.jsx
 // ============================================================================
 // Account panel (opened from the More menu). Three things:
-//   • Team name — manager-editable; saving cascades app-wide via updateTeams
+//   • Team name — manager-editable; saving cascades app-wide via updateTeam
 //     (the realtime teams subscription repaints standings/rosters/dropdowns).
 //   • Sign-in methods — link Google + Apple so either button resolves to the
 //     same Firebase uid / team (see authApi linkAppleAccount/linkGoogleAccount).
@@ -24,7 +24,7 @@ export const AccountModal = ({
   loggedInUser,
   loggedInTeamId,
   teams,
-  updateTeams,
+  updateTeam,
 }) => {
   const dialog = useDialog();
   useModalBehavior(isOpen, onClose);
@@ -51,10 +51,10 @@ export const AccountModal = ({
     if (!userTeam || !nameChanged || savingName) return;
     setSavingName(true);
     try {
-      // Single source of truth: write the new name onto the team and persist
-      // the whole array. The teams subscription repaints the rest of the app.
-      const newTeams = teams.map(t => (t.id === userTeam.id ? { ...t, name: trimmedName } : t));
-      await updateTeams(newTeams);
+      // Per-doc write: only this team's doc is touched, so a concurrent edit
+      // to another team can't be reverted by our copy of it. The teams
+      // subscription repaints the rest of the app.
+      await updateTeam(userTeam.id, { name: trimmedName });
       dialog.showToast('\u2713 Team name updated', 'success');
     } catch (e) {
       dialog.showToast('Could not update team name: ' + (e?.message || 'error'), 'error');

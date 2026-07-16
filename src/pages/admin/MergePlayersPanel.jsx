@@ -11,7 +11,7 @@
 import React from 'react';
 import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
-import { sfglDataApi, playersApi, teamsApi } from '../../api/firebase';
+import { sfglDataApi, playersApi } from '../../api/firebase';
 import { STORAGE_KEYS } from '../../constants';
 import { M, disabledBtn } from './adminStyles';
 
@@ -109,13 +109,14 @@ export const MergePlayersPanel = ({
       }));
 
       await Promise.all([
-        ...uTeams.map(t => teamsApi.update(t.id, t)),
         sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, uTx),
         playersApi.addAlias(player2, player1).catch(() => {}),
         playersApi.delete(player1).catch(() => {}),
       ]);
 
-      updateTeams(uTeams);
+      // updateTeams persists per-doc diffs itself now — the explicit
+      // teamsApi.update() fan-out this used to do would be a double write.
+      await updateTeams(uTeams);
       setTransactions(uTx);
       setStatus('done');
       dialog.showToast(`Merged "${player1}" → "${player2}"`, 'success');
