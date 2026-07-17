@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx eslint *)",
+      "PowerShell(npx eslint *)",
+      "Bash(npm run lint)",
+      "PowerShell(npm run lint)",
+      "Bash(npm run build)",
+      "PowerShell(npm run build)",
+      "Bash(git fetch *)",
+      "PowerShell(git fetch *)",
+      "Bash(python -m compileall *)"
+    ]
+  }
+}
