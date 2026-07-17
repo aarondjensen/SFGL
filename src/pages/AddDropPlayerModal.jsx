@@ -267,6 +267,11 @@ export const AddDropPlayerModal = ({
     const submitFee = getTransactionFee(treatAsWaiver ? 'waiver' : 'fa', leagueSettings);
 
     const newTx = {
+      // Stable identity from birth (same pattern as AddTransactionModal /
+      // swingAward). Without it, sync() can't match this row against its
+      // Firestore doc until a refetch attaches the doc id, causing re-insert
+      // churn and defeating txId-based dedup.
+      txId: `${treatAsWaiver ? 'waiver' : 'fa'}-${team.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team:            team.name,
       type:            treatAsWaiver ? 'waiver' : 'free agent',
       player:          selectedPlayerToAdd.name,
@@ -299,19 +304,19 @@ export const AddDropPlayerModal = ({
     // FEE DELTA (the original fee was already charged at first submission).
     let baseTransactions = transactions;
     let teamFeeDelta = submitFee;
+    let replacedClaim = null; // the original pending waiver this edit replaces
     if (isEdit) {
       // Remove exactly ONE matching original claim — by id when present, else by
       // fields (same approach as deleteWaiver, robust to index shifts).
       const origId = editingWaiverData.id;
-      let removed = false;
       baseTransactions = transactions.filter(t => {
-        if (removed) return true;
+        if (replacedClaim) return true;
         const match = origId != null
           ? t.id === origId
           : (t.team === team.name && t.type === 'waiver' && t.status === 'pending'
              && t.player === editingWaiverData.player
              && (t.droppedPlayer || null) === (editingWaiverData.droppedPlayer || null));
-        if (match) { removed = true; return false; }
+        if (match) { replacedClaim = t; return false; }
         return true;
       });
       teamFeeDelta = submitFee - (editingWaiverData.fee || 0);
@@ -330,7 +335,10 @@ export const AddDropPlayerModal = ({
 
     const newTransactions = [newTx, ...baseTransactions];
     updateTeams(updatedTeams);
-    setTransactions(newTransactions); // setTransactions IS updateTransactions — persists to Firebase + localStorage
+    // setTransactions IS updateTransactions — persists to Firebase + localStorage.
+    // sync() never deletes by absence, so when editing we must explicitly pass
+    // the original claim this edit replaces or its Firestore doc would survive.
+    setTransactions(newTransactions, replacedClaim ? { deleted: [replacedClaim] } : undefined);
 
     // ── Push notification (Wave J Round 6 — freeAgent broadcast) ───────────
     // Only fires for IMMEDIATE free agent actions, NOT pending waivers.

@@ -486,7 +486,8 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       });
 
     updateTeams(newTeams);
-    setTransactions(newTransactions);
+    // sync() never deletes by absence — pass the removed tx explicitly.
+    setTransactions(newTransactions, { deleted: [tx] });
     dialog.showToast('Undone: ' + tx.player + ' removed from ' + tx.team, 'success');
   };
 
@@ -809,7 +810,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                                 if (r.processed) setTournaments(r.newTournaments);
                                 updateTeams(r.newTeams, r.registryOverrides);
                                 const newTx = transactions.filter(t => liveTx.id ? t.id !== liveTx.id : t !== liveTx);
-                                setTransactions(newTx);
+                                setTransactions(newTx, { deleted: [liveTx] });
                                 const s = r.summary || {};
                                 dialog.showToast(
                                   r.processed
@@ -841,12 +842,12 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                                 updateTeams(newTeams);
                               }
                               const newTx = transactions.filter(t => liveTx.id ? t.id !== liveTx.id : t !== liveTx);
-                              setTransactions(newTx);
+                              setTransactions(newTx, { deleted: [liveTx] });
                               dialog.showToast(`Swing winner reversed: -$${(liveTx.amount || 0).toLocaleString()} from ${liveTx.team}`, 'success');
                             } else {
                               // Simple delete for everything else
                               const newTx = transactions.filter(t => tx.id ? t.id !== tx.id : t !== tx);
-                              setTransactions(newTx);
+                              setTransactions(newTx, { deleted: [liveTx] });
                               dialog.showToast('Transaction deleted', 'success');
                             }
                           }}

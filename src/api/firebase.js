@@ -45,6 +45,7 @@ import {
   limit,
   writeBatch,
   onSnapshot,
+  deleteField,
 } from 'firebase/firestore';
 
 // ── Firebase config — values come from environment variables ─────────────────
@@ -450,25 +451,16 @@ export const teamsApi = {
     return teams.map(t => ({ ...t, lineup: t.lineup || [] }));
   },
 
-  async setAll(teams) {
-    // Wave A hotfix: previously this did `_deleteAll('teams')` followed by a
-    // batch insert — destructive, multi-step, and pre-Wave-A it didn't matter
-    // because real-time subscriptions weren't actually wired up. Now they are,
-    // and the delete-all phase emits a stream of intermediate snapshots
-    // (8 teams → 7 → 6 → ... → 0 → 8) to every subscribed client, including
-    // the one issuing the write. That caused mulligans, lineups, and any
-    // other team-level fields to flicker / reset during the write window.
-    //
-    // Replaced with an upsert (idempotent per-doc writes) plus a targeted
-    // delete of any docs that exist remotely but aren't in the local set.
-    // Snapshots now arrive as a single coherent emission per write.
-    if (!Array.isArray(teams)) return [];
-    const snap = await getDocs(collection(db, 'teams'));
-    const remoteIds = new Set(snap.docs.map(d => d.id));
-    const localIds = new Set(teams.map(t => t.id || t.name));
-
+  /**
+   * Upsert ONLY the given team docs. Never touches docs that aren't in the
+   * list and never deletes anything. This is the normal persistence path for
+   * roster/lineup edits: a manager's save writes exactly the team(s) they
+   * changed, so a concurrent manager's edit to a DIFFERENT team can't be
+   * reverted by this client's possibly-stale copy of it.
+   */
+  async upsertMany(teams) {
+    if (!Array.isArray(teams) || teams.length === 0) return teams || [];
     const BATCH_SIZE = 499;
-    // Upsert all locals
     for (let i = 0; i < teams.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       teams.slice(i, i + BATCH_SIZE).forEach(team => {
@@ -477,6 +469,25 @@ export const teamsApi = {
       });
       await batch.commit();
     }
+    return teams;
+  },
+
+  /**
+   * FULL-COLLECTION REPLACE — reserved for explicit commissioner bulk
+   * operations (season import / restore). Upserts every local doc, then
+   * deletes any remote doc not in the local set. Do NOT use this for
+   * ordinary roster/lineup edits: it persists the caller's entire in-memory
+   * array, so a stale copy silently reverts other managers' concurrent
+   * changes. Ordinary edits go through upsertMany/update (see
+   * useLeague.updateTeams / updateTeam).
+   */
+  async setAll(teams) {
+    if (!Array.isArray(teams)) return [];
+    const snap = await getDocs(collection(db, 'teams'));
+    const remoteIds = new Set(snap.docs.map(d => d.id));
+    const localIds = new Set(teams.map(t => t.id || t.name));
+
+    await this.upsertMany(teams);
     // Delete any remote docs that no longer exist locally
     const toDelete = [...remoteIds].filter(id => !localIds.has(id));
     if (toDelete.length) {
@@ -487,8 +498,10 @@ export const teamsApi = {
     return teams;
   },
 
+  // set+merge (not updateDoc) so a patch also succeeds if the doc is missing
+  // (e.g. a team created on another device that hasn't synced here yet).
   async update(teamId, updates) {
-    await updateDoc(doc(db, 'teams', teamId), updates);
+    await setDoc(doc(db, 'teams', teamId), updates, { merge: true });
     return updates;
   },
 
@@ -638,13 +651,32 @@ export const tournamentsApi = {
 // ============================================================================
 // TRANSACTIONS API
 // ============================================================================
+// Timestamp is a number (Date.now()) at every creation site today, but legacy
+// rows may carry a date string, or neither. Rows with no resolvable time sort
+// last (desc).
+const _txTimeMs = (tx) => {
+  if (typeof tx.timestamp === 'number') return tx.timestamp;
+  const raw = tx.timestamp || tx.date;
+  const ms = raw ? new Date(raw).getTime() : NaN;
+  return Number.isNaN(ms) ? 0 : ms;
+};
+const _byTimestampDesc = (a, b) => _txTimeMs(b) - _txTimeMs(a);
+
 export const transactionsApi = {
   async getAll() {
-    const snap = await getDocs(
-      query(collection(db, 'transactions'), orderBy('timestamp', 'desc'))
-    );
+    // Unordered fetch + JS sort. Never orderBy('timestamp'): Firestore orderBy
+    // silently omits docs missing the ordered field, so legacy rows without a
+    // timestamp would vanish from every read (same failure mode as the
+    // start_date incident — see tournamentsApi.getAll and utils/swingAward.js).
+    const snap = await getDocs(collection(db, 'transactions'));
     const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    return _dedupeTransactions(data);
+    return _dedupeTransactions(data.sort(_byTimestampDesc));
+  },
+
+  async getById(id) {
+    if (!id) return null;
+    const snap = await getDoc(doc(db, 'transactions', id));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
   },
 
   async add(transaction) {
@@ -656,6 +688,15 @@ export const transactionsApi = {
     return this.sync(transactions);
   },
 
+  /**
+   * Upsert-only sync: inserts new local transactions and updates changed ones.
+   * NEVER deletes. It used to infer deletion from absence (any remote doc
+   * missing from the caller's array was removed), so a stale client — snapshot
+   * lag, or the localStorage fallback in useLeague — saving any transaction
+   * permanently deleted other managers' recent transactions. Deletion is now
+   * only ever explicit, via transactionsApi.delete() from the UI's
+   * delete/undo flows.
+   */
   async sync(localTransactions) {
     const snap = await getDocs(collection(db, 'transactions'));
     const remote = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -680,31 +721,27 @@ export const transactionsApi = {
                        'tournamentIndex','tournament','date','amount','note'];
 
     localTransactions.forEach(tx => {
-      if (tx.txId && remoteByTxId.has(tx.txId)) {
-        const r = remoteByTxId.get(tx.txId);
-        if (tx.status !== r.status || tx.failReason !== r.failReason || tx.priority !== r.priority) {
-          toUpdate.push({ ...tx, id: r.id });
-        }
-      } else if (tx.id && remoteById.has(tx.id)) {
-        const r = remoteById.get(tx.id);
-        if (tx.status !== r.status || tx.failReason !== r.failReason || tx.priority !== r.priority) {
-          toUpdate.push(tx);
-        }
+      const r = (tx.txId && remoteByTxId.get(tx.txId)) ||
+                (tx.id   && remoteById.get(tx.id)) || null;
+      if (r) {
+        // Diff EVERY valid column — not just status/failReason/priority, which
+        // silently reverted commissioner edits to team/player/droppedPlayer/
+        // fee/tournament/amount/note. A field cleared locally (e.g. failReason
+        // when a blocked waiver is re-queued) is deleted remotely.
+        const changes = {};
+        validCols.forEach(c => {
+          if (tx[c] !== r[c]) {
+            changes[c] = tx[c] !== undefined ? tx[c] : deleteField();
+          }
+        });
+        if (Object.keys(changes).length > 0) toUpdate.push({ id: r.id, changes });
       } else if (!tx.id) {
         const row = {};
         validCols.forEach(c => { if (tx[c] !== undefined) row[c] = tx[c]; });
         toInsert.push(row);
       }
-    });
-
-    // Detect remote transactions that were deleted locally and remove them from Firebase
-    const localTxIds = new Set(localTransactions.filter(t => t.txId).map(t => t.txId));
-    const localIds   = new Set(localTransactions.filter(t => t.id).map(t => t.id));
-    const toDelete = remote.filter(tx => {
-      if (tx.txId && localTxIds.has(tx.txId)) return false; // still exists locally
-      if (tx.id   && localIds.has(tx.id))     return false; // still exists locally
-      // If remote tx has neither txId nor id match in local, it was deleted
-      return true;
+      // tx.id set but doc gone remotely: another manager deleted it — don't
+      // resurrect it.
     });
 
     // Batch inserts
@@ -719,45 +756,58 @@ export const transactionsApi = {
       }
     }
 
-    // Individual updates (preserving ids)
-    for (const tx of toUpdate) {
-      if (tx.id) {
-        const { id, ...rest } = tx;
-        await updateDoc(doc(db, 'transactions', id), rest).catch(e =>
-          console.error('[transactionsApi.sync] update error:', e)
-        );
-      }
+    // Individual updates (changed fields only, preserving ids)
+    for (const u of toUpdate) {
+      await updateDoc(doc(db, 'transactions', u.id), u.changes).catch(e =>
+        console.error('[transactionsApi.sync] update error:', e)
+      );
     }
 
-    // Delete removed transactions from Firebase
-    if (toDelete.length > 0) {
-      const BATCH_SIZE = 499;
-      for (let i = 0; i < toDelete.length; i += BATCH_SIZE) {
-        const batch = writeBatch(db);
-        toDelete.slice(i, i + BATCH_SIZE).forEach(tx => {
-          batch.delete(doc(db, 'transactions', tx.id));
-        });
-        await batch.commit();
-      }
-    }
-
-    // Return only what the local state should have (no more merging back deleted items)
     return localTransactions;
+  },
+
+  /**
+   * Explicit deletion — the ONLY path that removes transaction docs.
+   * Accepts one or many transactions (or bare id/txId strings). Matches remote
+   * docs by doc id OR txId, so rows created locally (txId only, no doc id yet)
+   * and rows fetched from Firestore (doc id) both resolve; txId matching also
+   * sweeps up any duplicate docs sharing the same txId.
+   */
+  async delete(txsOrKeys) {
+    const list = (Array.isArray(txsOrKeys) ? txsOrKeys : [txsOrKeys]).filter(Boolean);
+    const keys = new Set();
+    list.forEach(t => {
+      if (typeof t === 'string') { keys.add(t); return; }
+      if (t.id)   keys.add(t.id);
+      if (t.txId) keys.add(t.txId);
+    });
+    if (keys.size === 0) return 0;
+
+    const snap = await getDocs(collection(db, 'transactions'));
+    const targets = snap.docs.filter(d => keys.has(d.id) || (d.data().txId && keys.has(d.data().txId)));
+
+    const BATCH_SIZE = 499;
+    for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      targets.slice(i, i + BATCH_SIZE).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    return targets.length;
   },
 
   /**
    * Wave A fix: real-time subscription via onSnapshot. Applies the same
    * dedup logic that getAll() uses so subscribers and direct fetchers see
-   * identical shapes.
+   * identical shapes. Unordered snapshot + JS sort — same reason as getAll:
+   * orderBy('timestamp') drops docs missing the field.
    */
   subscribe(callback) {
-    const q = query(collection(db, 'transactions'), orderBy('timestamp', 'desc'));
     return onSnapshot(
-      q,
+      collection(db, 'transactions'),
       (snap) => {
         try {
           const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          callback(_dedupeTransactions(data));
+          callback(_dedupeTransactions(data.sort(_byTimestampDesc)));
         } catch (e) {
           console.error('[subscribe:transactions] handler error:', e);
         }
