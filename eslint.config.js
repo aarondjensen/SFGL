@@ -16,7 +16,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 // missing useEffect deps, unused variables, etc.
 
 export default defineConfig([
-  globalIgnores(['dist', 'node_modules', 'api/**']),
+  globalIgnores(['dist', 'node_modules']),
 
   // TypeScript files (main.tsx, vite.config.ts, etc.)
   {
@@ -36,6 +36,7 @@ export default defineConfig([
   // JavaScript / JSX (the entire src/ tree)
   {
     files: ['**/*.{js,jsx}'],
+    ignores: ['api/**'],   // serverless functions get their own Node block below
     extends: [
       js.configs.recommended,
       reactHooks.configs.flat.recommended,
@@ -63,6 +64,27 @@ export default defineConfig([
         varsIgnorePattern: '^_',
         // React lint quirk: components imported only as JSX usage are flagged
         // unless we tell it to ignore PascalCase identifiers.
+        ignoreRestSiblings: true,
+      }],
+      'no-empty': ['warn', { allowEmptyCatch: true }],
+    },
+  },
+
+  // Vercel serverless functions (api/) — plain Node, no React, no browser
+  // globals. Previously these were globalIgnored and never linted at all.
+  {
+    files: ['api/**/*.js'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: globals.node,
+    },
+    rules: {
+      'no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',   // `catch (_)` is the api/ convention
         ignoreRestSiblings: true,
       }],
       'no-empty': ['warn', { allowEmptyCatch: true }],
