@@ -101,6 +101,21 @@ export const WaiverProcessingPanel = ({
     const winner = allClaims[0];
     const losers = allClaims.slice(1);
 
+    // Roster-limit enforcement: a drop-less claim can't push the winner past
+    // the roster limit. Fail just that claim (competing claims stay pending
+    // so they can be processed fairly on a re-run).
+    const rosterLimit = settings?.rosterLimit ?? 13;
+    const winnerTeam = teams.find(t => t.name === winner.team);
+    if (!winner.droppedPlayer && winnerTeam &&
+        buildEffectiveRoster(winnerTeam, transactions).size >= rosterLimit) {
+      const txFail = transactions.map((tx, i) => i === winner._idx
+        ? { ...tx, status: 'failed', failReason: `Roster full (${rosterLimit}) — no drop specified`, processedDate: new Date().toLocaleDateString() }
+        : tx);
+      setTransactions(txFail); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, txFail).catch(() => {});
+      dialog.showToast(winner.team + "'s claim failed — roster full with no drop specified", 'error');
+      return;
+    }
+
     let tx2 = [...transactions];
     tx2[winner._idx] = { ...tx2[winner._idx], status: 'processed', processedDate: new Date().toLocaleDateString() };
     losers.forEach(l => {
@@ -151,6 +166,12 @@ export const WaiverProcessingPanel = ({
     const allR = new Set();
     teams.forEach(t => buildEffectiveRoster(t, transactions).forEach(n => allR.add(n)));
 
+    // Live per-team roster counts, updated as claims apply, so a team at the
+    // limit can't win multiple drop-less claims in one batch and exceed it.
+    const rosterLimit = settings?.rosterLimit ?? 13;
+    const rosterCount = {};
+    teams.forEach(t => { rosterCount[t.name] = buildEffectiveRoster(t, transactions).size; });
+
     const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
     const tx2 = [...transactions];
     let processedCount = 0, failedCount = 0, more = true;
@@ -187,7 +208,16 @@ export const WaiverProcessingPanel = ({
           tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: w.claim.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() };
           failedCount++; more = true; return;
         }
+        // Roster-limit enforcement: a drop-less claim fails if the team is
+        // already at the limit (counting claims applied earlier this batch).
+        // Competing claims stay in play for the next round.
+        if (!w.claim.droppedPlayer && (rosterCount[w.tn] ?? 0) >= rosterLimit) {
+          failed.add(w.claim._idx);
+          tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'failed', failReason: `Roster full (${rosterLimit}) — no drop specified`, processedDate: new Date().toLocaleDateString() };
+          failedCount++; more = true; return;
+        }
         if (w.claim.droppedPlayer) { allR.delete(w.claim.droppedPlayer); dropped.add(w.claim.droppedPlayer); }
+        else { rosterCount[w.tn] = (rosterCount[w.tn] ?? 0) + 1; }
         allR.add(player);
         done.add(w.claim._idx);
         tx2[w.claim._idx] = { ...tx2[w.claim._idx], status: 'processed', processedDate: new Date().toLocaleDateString() };

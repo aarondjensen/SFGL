@@ -4,7 +4,7 @@ import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, isWaiverWindowOpen, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
-import { getTransactionFee, normalizeNordic, buildPlayerAttributeIndex, hydratePlayer } from '../utils/sharedHelpers';
+import { getTransactionFee, normalizeNordic, buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
@@ -30,6 +30,7 @@ export const AddDropPlayerModal = ({
   updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
   headshots, fieldPlayerIds = {}, tournamentField = null, leagueSettings = {}, onHeadshotsFound,
+  addDropBlocked = false,
 }) => {
   const ROSTER_LIMIT            = leagueSettings.rosterLimit ?? 13;
   const TRANSACTION_FEE_FREE_AGENT = leagueSettings.feeFA    ?? 1;
@@ -177,21 +178,24 @@ export const AddDropPlayerModal = ({
 
   // Players dropped via a processed FA/waiver whose tournament hasn't been completed yet
   // are "on waivers" — unavailable until that tournament is processed.
-  // We consider a drop "in limbo" if its tournamentIndex maps to an incomplete tournament,
-  // OR if it has no tournamentIndex but happened recently (this week).
+  // A drop is "in limbo" while its tournament — resolved by stable name first,
+  // so a schedule reorder can't misattribute it — is not yet completed. Rows
+  // with no resolvable tournament fall back to a time check: only drops from
+  // the last 7 days stay in limbo; anything older is free (the old code held
+  // index-less drops in limbo FOREVER).
   const limboPlayers = new Set(
     transactions
       .filter(tx => {
         if (tx.status !== 'processed' && tx.status !== 'completed') return false;
         if (tx.type === 'mulligan') return false;
         if (!tx.droppedPlayer) return false;
-        // If we have a tournamentIndex, check if that tournament is completed
-        if (tx.tournamentIndex !== undefined) {
-          const t = tournaments?.[tx.tournamentIndex];
-          return t && !t.completed; // limbo = tournament not yet completed
-        }
-        // No tournamentIndex: treat as current week (in limbo)
-        return true;
+        const t = resolveTxTournament(tx, tournaments);
+        if (t) return !t.completed; // limbo = tournament not yet completed
+        const ts = typeof tx.timestamp === 'number'
+          ? tx.timestamp
+          : Date.parse(tx.timestamp || tx.date || '');
+        if (!Number.isNaN(ts)) return (Date.now() - ts) < 7 * 24 * 60 * 60 * 1000;
+        return false; // undated legacy row — don't trap the player forever
       })
       .map(tx => normalizePlayerName(tx.droppedPlayer))
   );
@@ -232,7 +236,29 @@ export const AddDropPlayerModal = ({
         .filter(p => !rosteredPlayers.has(normalizePlayerName(p.name)) && !limboPlayers.has(normalizePlayerName(p.name)))
         .sort((a, b) => (a.worldRank ?? 9999) - (b.worldRank ?? 9999));
 
-  const rosterFull   = currentRoster.length >= ROSTER_LIMIT;
+  // Enforce the roster limit against the PROJECTED size, not just the current
+  // one: every pending drop-less waiver claim adds a player if it wins, so at
+  // 12/13 a manager could otherwise queue several drop-less claims and land
+  // over the limit when more than one wins. When editing an existing claim,
+  // that claim is being replaced — exclude it from the projection.
+  const pendingNetAdds = transactions.filter(tx => {
+    if (tx.team !== team.name || tx.type !== 'waiver' || tx.status !== 'pending') return false;
+    if (!tx.player || tx.droppedPlayer) return false;
+    if (editingWaiverData) {
+      const isOriginal = editingWaiverData.id != null
+        ? tx.id === editingWaiverData.id
+        : (tx.player === editingWaiverData.player
+           && (tx.droppedPlayer || null) === (editingWaiverData.droppedPlayer || null));
+      if (isOriginal) return false;
+    }
+    return true;
+  }).length;
+  const rosterFull   = currentRoster.length + pendingNetAdds >= ROSTER_LIMIT;
+
+  // Blocked state: FA window is open but pending waivers exist — instant adds
+  // would jump the waiver queue, so selection and confirm are disabled until
+  // the claims process. Editing an existing pending claim stays allowed.
+  const blocked = addDropBlocked && !isWaiverMode && !editingWaiverData;
 
   // Players already listed as the drop in another pending waiver for this team
   const pendingDropNames = new Set(
@@ -241,7 +267,7 @@ export const AddDropPlayerModal = ({
       .map(tx => tx.droppedPlayer)
   );
   const needsDrop    = rosterFull && selectedPlayerToAdd;
-  const canConfirm   = selectedPlayerToAdd && (!rosterFull || selectedPlayerToDrop);
+  const canConfirm   = selectedPlayerToAdd && (!rosterFull || selectedPlayerToDrop) && !blocked;
   const fee          = getTransactionFee(isWaiverMode ? 'waiver' : 'fa', leagueSettings);
 
   // ── Confirm & persist ──────────────────────────────────────────────────────
@@ -265,6 +291,16 @@ export const AddDropPlayerModal = ({
     const isEdit = !!editingWaiverData;
     const treatAsWaiver = isEdit || isWaiverWindowOpen(submitTournament, leagueSettings) || isWaiverMode;
     const submitFee = getTransactionFee(treatAsWaiver ? 'waiver' : 'fa', leagueSettings);
+
+    // League rule: while waiver claims are pending, instant free-agent adds
+    // are blocked — an instant add here would jump the waiver queue. Re-check
+    // at submit time (not just render time) so a stale open modal can't slip
+    // a write through.
+    if (addDropBlocked && !treatAsWaiver) {
+      setSaving(false);
+      dialog.showToast('Blocked until waivers process — free agency opens once pending claims are processed', 'error');
+      return;
+    }
 
     const newTx = {
       team:            team.name,
@@ -329,8 +365,18 @@ export const AddDropPlayerModal = ({
     });
 
     const newTransactions = [newTx, ...baseTransactions];
-    updateTeams(updatedTeams);
-    setTransactions(newTransactions); // setTransactions IS updateTransactions — persists to Firebase + localStorage
+    // setTransactions IS updateTransactions — persists to Firebase + localStorage.
+    // Both updaters resolve false when the authoritative write fails; await
+    // them so we never toast success for a transaction that didn't stick.
+    const [teamsOk, txOk] = await Promise.all([
+      updateTeams(updatedTeams),
+      setTransactions(newTransactions),
+    ]);
+    if (teamsOk === false || txOk === false) {
+      setSaving(false);
+      dialog.showToast('Save failed — the change may not have synced. Check your connection and try again.', 'error');
+      return;
+    }
 
     // ── Push notification (Wave J Round 6 — freeAgent broadcast) ───────────
     // Only fires for IMMEDIATE free agent actions, NOT pending waivers.
@@ -569,6 +615,20 @@ export const AddDropPlayerModal = ({
         {/* ── Body ── */}
         <div ref={bodyRef} className="sfgl-modal-scroll" style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', minHeight: 0 }}>
 
+          {/* ── Blocked banner — pending waivers freeze free agency ── */}
+          {blocked && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '10px 14px', marginBottom: 12, borderRadius: 6,
+              background: 'rgba(220,170,60,0.08)',
+              border: '1px solid rgba(220,170,60,0.35)',
+              fontFamily: fonts.sans, fontSize: 12, color: 'rgba(220,190,80,0.95)',
+            }}>
+              <span style={{ fontSize: 14, lineHeight: 1 }}>⏳</span>
+              <span>Blocked until waivers process — free agency opens after the Commish processes pending claims.</span>
+            </div>
+          )}
+
           {/* ── Drop list — shown when add player is selected and roster full ── */}
           {needsDrop && (
             <div style={{ marginBottom: 16 }}>
@@ -581,7 +641,9 @@ export const AddDropPlayerModal = ({
                 color: colors.textMuted,
                 marginBottom: 8,
               }}>
-                Roster full — select a player to drop
+                {currentRoster.length >= ROSTER_LIMIT
+                  ? 'Roster full — select a player to drop'
+                  : 'Roster + pending claims at the limit — select a player to drop'}
               </div>
               {currentRoster.filter(player => !player.limited).map(player => {
                 const isSelected     = selectedPlayerToDrop?.name === player.name;
@@ -700,11 +762,11 @@ export const AddDropPlayerModal = ({
                     background: isCurrentlySelected ? accentBg(isWaiverMode) : 'rgba(255,255,255,0.02)',
                     border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
                     transition: 'all 0.15s',
-                    cursor: (isLimbo || isRostered || tournamentIsLocked) ? 'default' : 'pointer',
+                    cursor: (isLimbo || isRostered || tournamentIsLocked || blocked) ? 'default' : 'pointer',
                   }}
-                  onClick={() => { if (!isLimbo && !isRostered && !tournamentIsLocked) selectPlayerToAdd(player); }}
-                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; } }}
-                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; } }}
+                  onClick={() => { if (!isLimbo && !isRostered && !tournamentIsLocked && !blocked) selectPlayerToAdd(player); }}
+                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked && !blocked) { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; } }}
+                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked && !blocked) { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; } }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <img
@@ -759,18 +821,21 @@ export const AddDropPlayerModal = ({
                     }}>
                       On Waivers
                     </span>
-                  ) : tournamentIsLocked ? (
-                    <span style={{
-                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
-                      padding: '5px 0', borderRadius: 6,
-                      width: 96, textAlign: 'center', flexShrink: 0,
-                      background: 'rgba(255,255,255,0.03)',
-                      border: `1px solid ${colors.borderSubtle}`,
-                      color: colors.textMuted,
-                      letterSpacing: '0.3px',
-                      display: 'inline-block',
-                    }}>
-                      Locked
+                  ) : (tournamentIsLocked || blocked) ? (
+                    <span
+                      title={blocked ? 'Blocked until waivers process' : undefined}
+                      style={{
+                        fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                        padding: '5px 0', borderRadius: 6,
+                        width: 96, textAlign: 'center', flexShrink: 0,
+                        background: 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${colors.borderSubtle}`,
+                        color: colors.textMuted,
+                        letterSpacing: '0.3px',
+                        display: 'inline-block',
+                      }}
+                    >
+                      {blocked ? 'Blocked' : 'Locked'}
                     </span>
                   ) : (
                     <button

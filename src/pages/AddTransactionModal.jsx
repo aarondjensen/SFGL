@@ -219,6 +219,11 @@ export const AddTransactionModal = ({
 
     setSaving(true);
 
+    // Collect the persistence promises so we can await them all before
+    // announcing success — the useLeague updaters resolve false when the
+    // authoritative Firebase write fails.
+    const writes = [];
+
     const tournamentIndex = parseInt(tourney);
     const isBlocked = type === 'waiver blocked';
 
@@ -350,7 +355,7 @@ export const AddTransactionModal = ({
               },
             };
           });
-          setTournaments(updatedTournaments);
+          writes.push(setTournaments(updatedTournaments));
 
           // Also adjust team earnings + roster sfglEarnings to reflect the swap.
           const oldResult = tournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
@@ -375,13 +380,20 @@ export const AddTransactionModal = ({
           }
         }
 
-        updateTeams(updatedTeams);
+        writes.push(updateTeams(updatedTeams));
       }
     }
 
-    setTransactions(copy);
     // setTransactions is updateTransactions from useLeague — it handles
     // both local state, localStorage, and Firebase sync internally.
+    writes.push(setTransactions(copy));
+
+    const results = await Promise.all(writes);
+    if (results.some(r => r === false)) {
+      setSaving(false);
+      dialog.showToast('Save failed — the transaction may not have synced. Check your connection and try again.', 'error');
+      return;
+    }
 
     // ── Push notification (Wave J Round 6 batch 3) ─────────────────────────
     // Notify the affected manager. Skip when blocked (no real roster change)

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
+import { getSegmentByDate, getSegmentForTournament, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
 import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament } from '../utils/sharedHelpers';
 import { STORAGE_KEYS } from '../constants/index.js';
@@ -73,37 +73,54 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
         : t
     );
 
-    // Patch the old team's roster: undo old change, apply new change
-    let updatedTeams = teams.map(t => {
-      // Reverse old transaction on old team
-      if (t.name === oldTeam) {
-        let r = [...t.roster];
-        // Remove the old added player
-        r = r.filter(p => p.name !== oldAdd);
-        // Re-add the old dropped player (if there was one)
-        if (oldDrop && !r.some(p => p.name === oldDrop)) r.push(makePlayer(oldDrop));
-        return { ...t, roster: r };
-      }
-      return t;
-    });
+    // Patch rosters ONLY for transactions that actually mutated them. A
+    // pending or BLOCKED/failed waiver never touched a roster, so reversing/
+    // re-applying it here would corrupt rosters (e.g. hand a team a player
+    // whose claim lost the tiebreaker).
+    const rosterApplied = tx.status === 'processed' || tx.status === 'completed';
+    let updatedTeams = teams;
+    if (rosterApplied) {
+      // Hydrate restored players from the durable attribute index (same as
+      // undoTransaction) so a re-added LIMITED player keeps limited status,
+      // stars, and SFGL data instead of coming back as a fresh unlimited one.
+      const attrIndex = buildPlayerAttributeIndex(teams, tournaments);
+      updatedTeams = teams.map(t => {
+        // Reverse old transaction on old team
+        if (t.name === oldTeam) {
+          let r = [...t.roster];
+          // Remove the old added player
+          r = r.filter(p => p.name !== oldAdd);
+          // Re-add the old dropped player (if there was one)
+          if (oldDrop && !r.some(p => p.name === oldDrop)) r.push(hydratePlayer(oldDrop, attrIndex));
+          return { ...t, roster: r };
+        }
+        return t;
+      });
 
-    updatedTeams = updatedTeams.map(t => {
-      // Apply new transaction on new team
-      if (t.name === newTeam) {
-        let r = [...t.roster];
-        // Remove new dropped player
-        if (newDrop) r = r.filter(p => p.name !== newDrop);
-        // Add new added player
-        if (!r.some(p => p.name === newAdd)) r.push(makePlayer(newAdd));
-        return { ...t, roster: r };
-      }
-      return t;
-    });
+      updatedTeams = updatedTeams.map(t => {
+        // Apply new transaction on new team
+        if (t.name === newTeam) {
+          let r = [...t.roster];
+          // Remove new dropped player
+          if (newDrop) r = r.filter(p => p.name !== newDrop);
+          // Add new added player
+          if (!r.some(p => p.name === newAdd)) r.push(hydratePlayer(newAdd, attrIndex));
+          return { ...t, roster: r };
+        }
+        return t;
+      });
+    }
 
-    setTransactions(updatedTx);
-    updateTeams(updatedTeams);
+    const results = await Promise.all([
+      setTransactions(updatedTx),
+      rosterApplied ? updateTeams(updatedTeams) : Promise.resolve(true),
+    ]);
 
     setSaving(false);
+    if (results.some(r => r === false)) {
+      dialog.showToast('Save failed — the edit may not have synced. Check your connection and try again.', 'error');
+      return;
+    }
     dialog.showToast('Transaction updated', 'success');
     onClose();
   };
@@ -485,8 +502,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
         return t;
       });
 
-    updateTeams(newTeams);
-    setTransactions(newTransactions);
+    const [teamsOk, txOk] = await Promise.all([
+      updateTeams(newTeams),
+      setTransactions(newTransactions),
+    ]);
+    if (teamsOk === false || txOk === false) {
+      dialog.showToast('Undo failed — the change may not have synced. Check your connection and try again.', 'error');
+      return;
+    }
     dialog.showToast('Undone: ' + tx.player + ' removed from ' + tx.team, 'success');
   };
 
