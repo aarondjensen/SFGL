@@ -1,13 +1,12 @@
 // src/api/admin.js
 // ============================================================================
-// Admin-domain APIs grouped together: league settings, draft state, manager
-// auth, and draft picks. Includes the _hashPassword helper used by
-// managerAuthApi (SHA-256 via the SubtleCrypto Web API).
+// Admin-domain APIs grouped together: league settings, draft state, and
+// draft picks. (The legacy name/password managerAuthApi was removed when
+// Firebase Auth + locked Firestore rules landed — see src/api/authApi.js.)
 //
 // Extracted from firebase.js in Batch 5.
 //   • settingsApi      → /league_settings/{key}
 //   • draftStateApi    → /draft_state/default
-//   • managerAuthApi   → /league_settings/{ownerName} (yes, settings collection)
 //   • draftPicksApi    → /draft_picks/{autoId}
 // ============================================================================
 
@@ -22,7 +21,9 @@ import {
   deleteDoc,
   query,
   orderBy,
+  where,
   writeBatch,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db } from './_init';
 
@@ -88,61 +89,6 @@ export const draftStateApi = {
 
   async clear() {
     await deleteDoc(doc(db, 'draft_state', 'default'));
-  },
-};
-
-// ============================================================================
-const CREDS_KEY = 'manager_credentials';
-
-const _hashPassword = async (password) => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-};
-
-export const managerAuthApi = {
-  async _getCreds() {
-    const creds = await sfglDataApi.get(CREDS_KEY);
-    return creds || {};
-  },
-
-  async setCredentials(teamId, name, password) {
-    const creds       = await this._getCreds();
-    const passwordHash = await _hashPassword(password.trim());
-    creds[teamId]     = { name: name.trim(), passwordHash };
-    await sfglDataApi.set(CREDS_KEY, creds);
-  },
-
-  async login(name, password) {
-    const creds        = await this._getCreds();
-    const passwordHash = await _hashPassword(password.trim());
-    const entry = Object.entries(creds).find(([, c]) =>
-      c.name.toLowerCase() === name.trim().toLowerCase() &&
-      (c.passwordHash === passwordHash || c.password === password.trim())
-    );
-    if (!entry) throw new Error('Invalid name or password');
-    const [teamId, cred] = entry;
-    // Auto-migrate legacy plain-text → hashed
-    if (cred.password && !cred.passwordHash) {
-      creds[teamId] = { name: cred.name, passwordHash };
-      await sfglDataApi.set(CREDS_KEY, creds);
-    }
-    localStorage.setItem('manager_team_id', teamId);
-    localStorage.removeItem('is_commissioner');
-    return { teamId };
-  },
-
-  async getCurrentSession() {
-    const teamId = localStorage.getItem('manager_team_id');
-    return teamId ? { teamId } : null;
-  },
-
-  async logout() {
-    localStorage.removeItem('manager_team_id');
-    localStorage.removeItem('is_commissioner');
   },
 };
 
