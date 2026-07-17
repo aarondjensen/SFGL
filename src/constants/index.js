@@ -1,3 +1,5 @@
+import { NAME_ALIASES } from '../../api/_constants.js';
+
 // ============================================================================
 // STORAGE KEYS
 // ============================================================================
@@ -90,14 +92,14 @@ export const PGA_TOUR_IDS = {
   'Brian Harman': '34021', 'Sepp Straka': '49960', 'Sungjae Im': '49298',
   'Justin Rose': '22405', 'Tom Kim': '55182', 'Aaron Rai': '46414',
   'Billy Horschel': '28679', 'Adam Scott': '24502', 'Min Woo Lee': '54591',
-  'Byeong Hun An': '32058', 'Denny McCarthy': '47856', 'Taylor Pendrith': '48867',
+  'Byeong-Hun An': '32058', 'Denny McCarthy': '47856', 'Taylor Pendrith': '48867',
   'Christiaan Bezuidenhout': '51349', 'Eric Cole': '39546', 'Chris Kirk': '29478',
   'Adam Hadwin': '33399', 'Alex Noren': '27349', 'Tom Hoge': '35532',
   'J.T. Poston': '34306', 'Nick Taylor': '25493', 'Max Greyserman': '52375',
   'Maverick McNealy': '49766', 'Harris English': '30925',
   'Patrick Rodgers': '36699', 'Stephan Jaeger': '35421', 'Davis Thompson': '56441',
   'Justin Lower': '49964', 'Nick Dunlap': '59442', 'Luke Clanton': '60529',
-  'Austin Eckroat': '53165', 'Ben Griffin': '50095', 'Nico Echavarria': '52440',
+  'Austin Eckroat': '53165', 'Ben Griffin': '50095', 'Nicolas Echavarria': '52440',
   'Andrew Novak': '51997', 'Keith Mitchell': '40009', 'Jake Knapp': '47420',
   'Harry Hall': '51890', 'Michael Thorbjornsen': '57366', 'Cam Davis': '45526',
   'Matt Kuchar': '22371', 'Taylor Moore': '49771', 'J.J. Spaun': '39324',
@@ -126,12 +128,22 @@ export const PGA_TOUR_IDS = {
   'Cameron Smith': '34360', 'Tyrrell Hatton': '34363',
 };
 
+// Lowercase-keyed alias map for OWGR/API name resolution. The entries that
+// also exist in the shared static table (api/_constants.js NAME_ALIASES) are
+// DERIVED from it so the two can never contradict each other again — they
+// used to disagree on Byeong-Hun An, Nicolas Echavarria, and Kyoung-Hoon Lee
+// (this file even had 'kyoung-hoon lee' → 'K.H. Lee' while nameAliases.js
+// mapped 'K.H. Lee' → 'Kyoung-Hoon Lee'). Canonical forms follow
+// NAME_ALIASES: 'Byeong-Hun An', 'Nicolas Echavarria', 'Kyoung-Hoon Lee'.
 export const PLAYER_NAME_ALIASES = {
-  'samuel stevens': 'Sam Stevens', 'john keefer': 'Johnny Keefer',
-  'si woo kim': 'Si Woo Kim', 'byeong hun an': 'Byeong Hun An',
+  ...Object.fromEntries(
+    Object.entries(NAME_ALIASES).map(([alt, canon]) => [alt.toLowerCase(), canon])
+  ),
+  'john keefer': 'Johnny Keefer',
+  'si woo kim': 'Si Woo Kim',
   'sung-jae im': 'Sungjae Im', 'sungjae im': 'Sungjae Im',
-  'seung-jae im': 'Sungjae Im', 'kyoung-hoon lee': 'K.H. Lee',
-  'k.h. lee': 'K.H. Lee', 'min-woo lee': 'Min Woo Lee',
+  'seung-jae im': 'Sungjae Im',
+  'min-woo lee': 'Min Woo Lee',
   'c.t. pan': 'C.T. Pan', 'ct pan': 'C.T. Pan',
   'matthew fitzpatrick': 'Matt Fitzpatrick', 'matthew kuchar': 'Matt Kuchar',
   'matthew wallace': 'Matt Wallace', 'matthew mccarty': 'Matt McCarty',
@@ -149,14 +161,9 @@ export const PLAYER_NAME_ALIASES = {
   'francisco molinari': 'Francesco Molinari', 'haotong li': 'Haotong Li',
 };
 
-export const CHAR_MAP = {
-  'ø':'o','ö':'o','ó':'o','ô':'o','õ':'o',
-  'å':'a','ä':'a','á':'a','à':'a','â':'a','ã':'a',
-  'ü':'u','ú':'u','ù':'u','û':'u',
-  'é':'e','è':'e','ê':'e','ë':'e',
-  'í':'i','ì':'i','î':'i','ï':'i',
-  'ñ':'n','ç':'c','ß':'ss',
-};
+// CHAR_MAP removed — diacritic stripping now happens in the shared
+// normalizePlayerName (api/_constants.js) via Unicode NFD decomposition,
+// which covers every accented character rather than a hand-picked set.
 
 // ============================================================================
 // LIV GOLF ROSTER (2026 Season)
@@ -175,7 +182,7 @@ export const LIV_GOLF_ROSTER = [
   // HyFlyers GC
   'Phil Mickelson', 'Michael La Sasso', 'Brendan Steele', 'Cameron Tringale',
   // Korean Golf Club
-  'Byeong Hun An', 'Minkyu Kim', 'Danny Lee', 'Younghan Song',
+  'Byeong-Hun An', 'Minkyu Kim', 'Danny Lee', 'Younghan Song',
   // Legion XIII
   'Jon Rahm', 'Tyrrell Hatton', 'Tom McKibbin', 'Caleb Surratt',
   // Majesticks GC

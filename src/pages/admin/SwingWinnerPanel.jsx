@@ -20,7 +20,7 @@ import { getSwingLeader, getSwingPot } from '../../utils/sharedHelpers';
 import { computeSwingAward } from '../../utils/swingAward';
 
 export const SwingWinnerPanel = ({
-  tournaments, teams, transactions, setTransactions, updateTeams,
+  tournaments, teams, transactions, setTransactions, updateTeams, settings,
 }) => {
   const dialog = useDialog();
   const [swingAwardSeg, setSwingAwardSeg] = React.useState('');
@@ -37,6 +37,7 @@ export const SwingWinnerPanel = ({
       allTournaments: tournaments,
       transactions,
       teams,
+      settings,
     });
 
     if (!award) {
@@ -46,7 +47,7 @@ export const SwingWinnerPanel = ({
         dialog.showToast(swingAwardSeg + ' has already been awarded', 'warning');
         return;
       }
-      const pot = getSwingPot(transactions, tournaments, swingAwardSeg);
+      const pot = getSwingPot(transactions, tournaments, swingAwardSeg, settings);
       if (pot === 0) { dialog.showToast('No fees collected for ' + swingAwardSeg, 'error'); return; }
       // Most likely the swing isn't fully complete yet
       dialog.showToast(swingAwardSeg + ' isn\'t fully complete yet — wait until all tournaments are processed', 'error');
@@ -94,7 +95,7 @@ export const SwingWinnerPanel = ({
           // depends on. Without this consistency, the dropdown could show a
           // different pot total than the Transaction Fees panel for the same
           // swing.
-          const pot = getSwingPot(transactions, tournaments, s);
+          const pot = getSwingPot(transactions, tournaments, s, settings);
           const alreadyAwarded = transactions.some(tx => tx.type === 'swing_winner' && tx.segment === s);
           return (
             <option key={s} value={s} disabled={alreadyAwarded}>
@@ -105,7 +106,7 @@ export const SwingWinnerPanel = ({
       </select>
 
       {swingAwardSeg && (() => {
-        const pot = getSwingPot(transactions, tournaments, swingAwardSeg);
+        const pot = getSwingPot(transactions, tournaments, swingAwardSeg, settings);
         const leader = getSwingLeader(tournaments, swingAwardSeg);
         const leaderTeam = leader ? teams.find(t => t.id === leader.teamId) : null;
         return (

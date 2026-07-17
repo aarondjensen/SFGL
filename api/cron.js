@@ -11,7 +11,8 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
-import { DEFAULTS_ON, dedupeTokenDocs } from './_constants.js';
+import { DEFAULTS_ON, dedupeTokenDocs, matchPlayerName, resolvePlayerName } from './_constants.js';
+import { getBonusAmounts, computeTeamTournamentResult } from './_scoring.js';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
 
@@ -420,6 +421,66 @@ function getETNow() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
 }
 
+// ── Daily-run idempotency markers ────────────────────────────────────────────
+// The weekly handlers (waivers, results) must run AT MOST ONCE per day even
+// when cron-job.org retry windows, manual pings, or slow invocations overlap.
+// Previously each handler read a "last run" doc at the start and wrote it in
+// its final batch — two overlapping invocations both passed the read check and
+// BOTH committed (double-applied += earnings/rosters). Now a run CLAIMS the
+// marker first via a Firestore transaction; only the claimer proceeds.
+//
+// Marker shape: { key, date, claimedAt, completed, value }
+//   date/claimedAt — today's claim and when it was taken
+//   completed      — true once the run committed successfully
+//   value          — legacy field ("ran on <date>"), still written on
+//                    completion for back-compat with pre-claim docs/readers
+// A claim that never completes (crashed invocation) goes stale after
+// DAILY_RUN_STALE_MS and can be re-claimed — Vercel functions cap out at
+// well under a minute, so 15 min is safely past any live run.
+const DAILY_RUN_STALE_MS = 15 * 60 * 1000;
+
+function dailyRunPayload(docId, today, completed) {
+  return {
+    key: docId,
+    date: today,
+    claimedAt: Date.now(),
+    completed,
+    value: completed ? today : null,
+  };
+}
+
+// Returns 'claimed' | 'already_run' | 'running' | 'error'.
+async function claimDailyRun(docId, today) {
+  const ref = db.collection('sfgl_data').doc(docId);
+  try {
+    return await db.runTransaction(async (t) => {
+      const snap = await t.get(ref);
+      const d = snap.exists ? snap.data() : null;
+      if (d) {
+        // Legacy docs carry { value: '<date>' }; new docs carry date+completed.
+        if (d.value === today || (d.date === today && d.completed)) return 'already_run';
+        if (d.date === today && !d.completed && Date.now() - (d.claimedAt || 0) < DAILY_RUN_STALE_MS) return 'running';
+      }
+      t.set(ref, dailyRunPayload(docId, today, false));
+      return 'claimed';
+    });
+  } catch (err) {
+    console.warn(`[cron] daily-run claim failed for ${docId}:`, err.message);
+    return 'error'; // fail safe: don't process without a confirmed claim
+  }
+}
+
+// Release a claim so a later ping TODAY can retry — used when we claimed the
+// run but found nothing to commit yet (no active tournament, results not
+// final/posted). Never called after a successful commit.
+async function releaseDailyRun(docId) {
+  try {
+    await db.collection('sfgl_data').doc(docId).delete();
+  } catch (err) {
+    console.warn(`[cron] daily-run release failed for ${docId}:`, err.message);
+  }
+}
+
 async function loadSettings() {
   const snap = await db.collection('league_settings').get();
   const s = {};
@@ -496,11 +557,16 @@ async function handleWaivers(res) {
     return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time' });
   }
 
-  // Already run today?
-  const metaSnap = await db.collection('sfgl_data').doc('last_auto_waiver').get();
+  // Claim today's run BEFORE doing any work — overlapping invocations (retry
+  // pings, manual + scheduled) otherwise both pass a read-only check and
+  // double-apply every roster move.
   const today = getETNow().toLocaleDateString('en-US');
-  if (metaSnap.exists && metaSnap.data().value === today) {
-    return res.json({ status: 'already_run', message: 'Waivers already processed today' });
+  const claim = await claimDailyRun('last_auto_waiver', today);
+  if (claim !== 'claimed') {
+    return res.json({
+      status: 'already_run',
+      message: claim === 'running' ? 'Waiver processing already in progress' : 'Waivers already processed today',
+    });
   }
 
   // Load transactions
@@ -509,7 +575,7 @@ async function handleWaivers(res) {
   const pending = allTx.filter(tx => tx.status === 'pending' && tx.type === 'waiver');
 
   if (pending.length === 0) {
-    await db.collection('sfgl_data').doc('last_auto_waiver').set({ key: 'last_auto_waiver', value: today });
+    await db.collection('sfgl_data').doc('last_auto_waiver').set(dailyRunPayload('last_auto_waiver', today, true));
     return res.json({ status: 'no_pending', message: 'No pending waiver claims' });
   }
 
@@ -691,7 +757,7 @@ async function handleWaivers(res) {
     batch.update(db.collection('teams').doc(team.id), { roster });
   }
 
-  batch.set(db.collection('sfgl_data').doc('last_auto_waiver'), { key: 'last_auto_waiver', value: today });
+  batch.set(db.collection('sfgl_data').doc('last_auto_waiver'), dailyRunPayload('last_auto_waiver', today, true));
   await batch.commit();
 
   // ── Push notifications ───────────────────────────────────────────────────
@@ -890,14 +956,6 @@ function abbreviateName(name) {
   return parts[0][0] + '. ' + parts[parts.length - 1];
 }
 
-function matchName(a, b) {
-  const na = normalizeName(a), nb = normalizeName(b);
-  if (na === nb) return true;
-  const wa = na.split(' '), wb = nb.split(' ');
-  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
-  return false;
-}
-
 async function handleProcessResults(res) {
   const settings = await loadSettings();
   const et = getETNow();
@@ -914,10 +972,19 @@ async function handleProcessResults(res) {
     return res.json({ status: 'not_yet', message: 'Not past results processing time' });
   }
 
+  // Claim today's run BEFORE loading/processing anything. The old flow read
+  // the marker here and only wrote it in the final batch — two overlapping
+  // invocations both passed the read and BOTH committed, doubling every
+  // team's earnings (all the writes are += increments). Only the claimer
+  // proceeds; early-exits below RELEASE the claim so the Monday retry window
+  // keeps trying until results are actually final.
   const today = et.toLocaleDateString('en-US');
-  const metaSnap = await db.collection('sfgl_data').doc('last_auto_results').get();
-  if (metaSnap.exists && metaSnap.data().value === today) {
-    return res.json({ status: 'already_run', message: 'Results already processed today' });
+  const claim = await claimDailyRun('last_auto_results', today);
+  if (claim !== 'claimed') {
+    return res.json({
+      status: 'already_run',
+      message: claim === 'running' ? 'Results processing already in progress' : 'Results already processed today',
+    });
   }
 
   // Load remaining data (settings already loaded above)
@@ -926,10 +993,12 @@ async function handleProcessResults(res) {
   const statsSnap = await db.collection('sfgl_data').doc('fantasy-golf-global-stats').get();
   const globalStats = statsSnap.exists ? statsSnap.data().value : {};
 
-  // Find active tournament
+  // Find active tournament. Do NOT mark the day as run here — releasing the
+  // claim means a same-day flag fix (commish sets a tournament playing) can
+  // still be picked up by a later ping today.
   const ti = tournaments.findIndex(t => t.playing && !t.completed);
   if (ti === -1) {
-    await db.collection('sfgl_data').doc('last_auto_results').set({ key: 'last_auto_results', value: today });
+    await releaseDailyRun('last_auto_results');
     return res.json({ status: 'no_active_tournament' });
   }
   const tournament = tournaments[ti];
@@ -946,23 +1015,51 @@ async function handleProcessResults(res) {
     const pgaResp = await fetch(`${baseUrl}/api/pga-results?${params.toString()}`);
     pgaData = await pgaResp.json();
     if (!pgaResp.ok || !pgaData.players?.length) {
+      await releaseDailyRun('last_auto_results');
       return res.json({ status: 'no_results', message: pgaData.error || 'No results available yet for ' + tournament.name });
     }
   } catch (err) {
+    await releaseDailyRun('last_auto_results');
     return res.json({ status: 'fetch_error', message: 'Failed to fetch results: ' + err.message });
   }
 
-  const { players, roundLeaders: rl } = pgaData;
+  const { players, roundLeaders: rl, status: resultsStatus } = pgaData;
+
+  // ── Finality guard ────────────────────────────────────────────────────────
+  // pga-results computes status.isFinal from the tournament/round state keys
+  // in the source page for exactly this purpose. Committing non-final results
+  // (weather-suspended Sunday, mid-playoff) is PERMANENT — partial earnings
+  // land in every roster and standings. Return no_results (with the claim
+  // released) so the Monday retry window keeps trying until the event is
+  // official. When the source exposed no status at all (HTML-table fallback),
+  // proceed as before — the day/time gate is the only protection available.
+  if (resultsStatus?.sawAnyStatus && !resultsStatus.isFinal) {
+    await releaseDailyRun('last_auto_results');
+    return res.json({
+      status: 'no_results',
+      message: `Results for ${tournament.name} are not final yet (${(resultsStatus.raw || []).slice(0, 3).join(', ') || 'in progress'}) — will retry`,
+    });
+  }
 
   // Build earnings map
   const earningsMap = {};
   players.forEach(p => { if (p.name && p.earnings >= 0) earningsMap[p.name] = p.earnings; });
 
-  // Filter round leaders to only those in SFGL lineups
-  const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
+  // Filter round leaders to only those in SFGL lineups, RESOLVING each leader
+  // to the lineup's spelling of the name. The old exact Set.has dropped
+  // alias/diacritic/hyphen variants ("Samuel Stevens" vs "Sam Stevens",
+  // "Højgaard" vs "Hojgaard") before bonus matching ever ran, silently
+  // costing the team its round bonus.
+  const lineupNames = [...new Set(teams.flatMap(t => t.lineup || []))];
   const filterToStarted = (names) => {
     if (!names?.length) return [];
-    return names.filter(n => startedPlayers.has(n));
+    const resolved = names.map(n => {
+      const direct = lineupNames.find(ln => matchPlayerName(ln, n));
+      if (direct) return direct;
+      const fuzzy = resolvePlayerName(n, lineupNames);
+      return fuzzy && lineupNames.includes(fuzzy) ? fuzzy : null;
+    }).filter(Boolean);
+    return [...new Set(resolved)];
   };
   const roundLeaders = {
     round1: filterToStarted(rl?.round1) || [],
@@ -970,15 +1067,12 @@ async function handleProcessResults(res) {
     round3: filterToStarted(rl?.round3) || [],
   };
 
-  // Build bonus amounts from settings
-  const BONUSES_REG = { round1: 20000, round2: 40000, round3: 60000 };
-  const BONUSES_MAJ = { round1: 40000, round2: 80000, round3: 120000 };
-  const bonuses = tournament.isMajor
-    ? { round1: settings.bonusR1Major ?? BONUSES_MAJ.round1, round2: settings.bonusR2Major ?? BONUSES_MAJ.round2, round3: settings.bonusR3Major ?? BONUSES_MAJ.round3 }
-    : { round1: settings.bonusR1Regular ?? BONUSES_REG.round1, round2: settings.bonusR2Regular ?? BONUSES_REG.round2, round3: settings.bonusR3Regular ?? BONUSES_REG.round3 };
+  // Bonus amounts from settings (SeasonSettingsPanel) with league defaults —
+  // resolved by the shared scoring module, same as the client paths.
+  const bonuses = getBonusAmounts(tournament.isMajor, settings);
 
-  // Process each team — mirrors processTournamentData exactly
-  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders, fullLineups: {} };
+  // Process each team — same shared engine as the client processTournamentData
+  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders, fullLineups: {}, fullBackups: {} };
   const newStats = { ...globalStats };
 
   // Update global player stats
@@ -996,49 +1090,18 @@ async function handleProcessResults(res) {
     if (!team.lineup || team.lineup.length === 0) return team;
 
     resultsData.fullLineups[team.id] = [...team.lineup];
+    if (team.backup) resultsData.fullBackups[team.id] = team.backup;
 
-    const starterResults = team.lineup.map(playerName => {
-      let earnings = earningsMap[playerName];
-      if (earnings === undefined) {
-        const mk = Object.keys(earningsMap).find(k => matchName(k, playerName));
-        earnings = mk !== undefined ? earningsMap[mk] : 0;
-      }
-      return { playerName, earnings: earnings || 0 };
+    // ── Score the team via the shared engine (api/_scoring.js) ───────────
+    const { teamResult, starterResults } = computeTeamTournamentResult({
+      lineup: team.lineup,
+      earningsMap,
+      roundLeaders,
+      bonuses,
+      roster: team.roster,
     });
-
-    const topStarters = [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5);
-    let totalEarnings = topStarters.reduce((s, p) => s + p.earnings, 0);
-    const bonusEarnings = { round1: 0, round2: 0, round3: 0 };
-    const playersWithBonuses = {};
-
-    ['round1', 'round2', 'round3'].forEach(round => {
-      const leaders = Array.isArray(roundLeaders[round]) ? roundLeaders[round] : (roundLeaders[round] ? [roundLeaders[round]] : []);
-      leaders.forEach(leaderName => {
-        if (!leaderName) return;
-        const actual = team.lineup.find(pn => normalizeName(pn) === normalizeName(leaderName));
-        if (actual) {
-          bonusEarnings[round] = bonuses[round];
-          totalEarnings += bonuses[round];
-          if (!playersWithBonuses[actual]) playersWithBonuses[actual] = { total: 0, rounds: [] };
-          playersWithBonuses[actual].total += bonuses[round];
-          playersWithBonuses[actual].rounds.push({ round: round.replace('round', ''), bonus: bonuses[round] });
-        }
-      });
-    });
-
-    resultsData.teams[team.id] = {
-      totalEarnings,
-      bonuses: bonusEarnings,
-      players: topStarters.map(s => ({
-        name: s.playerName,
-        earnings: s.earnings,
-        limited: team.roster.find(p => p.name === s.playerName)?.limited || false,
-        unlimited: team.roster.find(p => p.name === s.playerName)?.unlimited || false,
-        bonus: playersWithBonuses[s.playerName]?.total || 0,
-        roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
-        wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
-      })),
-    };
+    resultsData.teams[team.id] = teamResult;
+    const totalEarnings = teamResult.totalEarnings;
 
     // Build lineup-name → earnings map from starterResults so the roster
     // update below uses the EXACT same numbers as resultsData.teams[id].
@@ -1096,17 +1159,20 @@ async function handleProcessResults(res) {
   // Update only the two tournament docs that actually change — the completed
   // event and the next event we advance to "playing" — via field-level updates,
   // so we don't rewrite (or risk clobbering a concurrent write to) the rest of
-  // the collection.
-  batch.update(db.collection('tournaments').doc(tournament.name), {
+  // the collection. Address docs by the LOADED doc id (_id from
+  // loadTournaments), not doc(tournament.name) — doc ids are not guaranteed to
+  // equal the name field, and a mismatch made this update() throw NOT_FOUND
+  // (or worse, touch the wrong doc).
+  batch.update(db.collection('tournaments').doc(tournament._id), {
     completed: true,
     playing: false,
     results: resultsData,
   });
   if (nx !== -1) {
-    batch.update(db.collection('tournaments').doc(newTournaments[nx].name), { playing: true });
+    batch.update(db.collection('tournaments').doc(newTournaments[nx]._id), { playing: true });
   }
   batch.set(db.collection('sfgl_data').doc('fantasy-golf-global-stats'), { key: 'fantasy-golf-global-stats', value: newStats });
-  batch.set(db.collection('sfgl_data').doc('last_auto_results'), { key: 'last_auto_results', value: today });
+  batch.set(db.collection('sfgl_data').doc('last_auto_results'), dailyRunPayload('last_auto_results', today, true));
 
   // Append swing winner transaction if auto-awarded. New doc; let Firestore
   // generate the doc id and use our txId as the dedup key.

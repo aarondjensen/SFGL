@@ -2,20 +2,22 @@
 // ============================================================================
 // Core tournament-result processing. Extracted from AdminView's monolith.
 // Used by both the "Process" and "Reprocess" flows.
+//
+// The per-team scoring math (top-5 + full-bonus-per-co-leader) lives in the
+// SHARED engine at api/_scoring.js — the same module api/cron.js uses for the
+// weekly auto-process — so the manual and automatic paths can never drift.
+// This file owns the client-side orchestration around it: mulligan replay,
+// global stat updates, and roster/team mutations.
 // ============================================================================
 
-import { normalizePlayerName } from '../../utils';
-import { BONUSES_REGULAR, BONUSES_MAJOR } from '../../constants';
+import {
+  matchPlayerName,
+  getBonusAmounts,
+  computeTeamTournamentResult,
+} from '../../../api/_scoring.js';
 
-// Match two player names accounting for normalization variants.
-export const matchPlayerName = (a, b) => {
-  const na = normalizePlayerName(a);
-  const nb = normalizePlayerName(b);
-  if (na === nb) return true;
-  const wa = na.split(' '); const wb = nb.split(' ');
-  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
-  return false;
-};
+// Re-exported for existing consumers (alias-aware word-set name match).
+export { matchPlayerName };
 
 // Replay transactions to reconstruct a team's roster as it existed at the time
 // of a given tournament. Used during result processing where we need each
@@ -55,8 +57,10 @@ export const getRosterForTournament = (team, tournamentIndex, allTransactions) =
  *   resultsData — the structure stored on tournament.results: per-team breakdown,
  *                 earningsMap, roundLeaders, fullLineups
  */
-export const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = []) => {
-  const bonuses = tournament.isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
+export const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = [], settings = {}) => {
+  // Settings-aware bonuses (SeasonSettingsPanel bonusR{1,2,3}{Regular,Major})
+  // with league defaults as fallback — same resolution the cron path uses.
+  const bonuses = getBonusAmounts(tournament.isMajor, settings);
 
   // Build earningsMap from the tournamentData (Map | object | competitor array).
   const earningsMap = {};
@@ -154,51 +158,17 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     resultsData.fullLineups[team.id] = [...effectiveLineup];
     if (team.backup) resultsData.fullBackups[team.id] = team.backup;
 
-    const starterResults = effectiveLineup.map(playerName => {
-      let earnings = earningsMap[playerName];
-      if (earnings === undefined) {
-        const mk = Object.keys(earningsMap).find(k => matchPlayerName(k, playerName));
-        earnings = mk !== undefined ? earningsMap[mk] : 0;
-      }
-      return { playerName, earnings: earnings || 0 };
+    // ── Score the team via the shared engine (api/_scoring.js) ───────────
+    const { teamResult, starterResults } = computeTeamTournamentResult({
+      lineup: effectiveLineup,
+      earningsMap,
+      roundLeaders: tournamentData.roundLeaders || {},
+      bonuses,
+      roster: team.roster,
     });
+    const totalEarnings = teamResult.totalEarnings;
 
-    const topStarters = [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5);
-    let totalEarnings = topStarters.reduce((s, p) => s + p.earnings, 0);
-    const bonusEarnings = { round1: 0, round2: 0, round3: 0 };
-    const playersWithBonuses = {};
-
-    if (tournamentData.roundLeaders) {
-      ['round1', 'round2', 'round3'].forEach(round => {
-        const leaders = Array.isArray(tournamentData.roundLeaders[round])
-          ? tournamentData.roundLeaders[round]
-          : (tournamentData.roundLeaders[round] ? [tournamentData.roundLeaders[round]] : []);
-        leaders.forEach(leaderName => {
-          if (!leaderName) return;
-          const actual = effectiveLineup.find(pn => normalizePlayerName(pn) === normalizePlayerName(leaderName));
-          if (actual) {
-            bonusEarnings[round] = bonuses[round];
-            totalEarnings += bonuses[round];
-            if (!playersWithBonuses[actual]) playersWithBonuses[actual] = { total: 0, rounds: [] };
-            playersWithBonuses[actual].total  += bonuses[round];
-            playersWithBonuses[actual].rounds.push({ round: round.replace('round', ''), bonus: bonuses[round] });
-          }
-        });
-      });
-    }
-
-    resultsData.teams[team.id] = {
-      totalEarnings,
-      bonuses: bonusEarnings,
-      players: topStarters.map(s => ({
-        name: s.playerName,
-        earnings: s.earnings,
-        limited: team.roster.find(p => p.name === s.playerName)?.limited || false,
-        bonus: playersWithBonuses[s.playerName]?.total || 0,
-        roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
-        wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
-      })),
-    };
+    resultsData.teams[team.id] = teamResult;
 
     // Build lineup-name → earnings map from starterResults so the roster
     // update below uses the EXACT same numbers as what's stored in

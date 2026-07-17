@@ -13,69 +13,38 @@
 // The transaction-record removal (and thus the fee, which is derived from the
 // transaction list) is handled by the caller.
 //
-// The recompute mirrors processTournamentData's top-5 + round-bonus math. It's
-// kept standalone here rather than refactoring the core processing path
-// mid-flight; matchPlayerName is a small pure mirror of the one there.
+// The recompute delegates to the SHARED scoring engine (api/_scoring.js) —
+// the same module the live process paths (client + cron) use — so a reversal
+// always recomputes the exact totals the original processing produced.
 // ============================================================================
-import { normalizePlayerName } from './index.js';
 import { getPlayerRegistry } from './sharedHelpers';
-import { BONUSES_REGULAR, BONUSES_MAJOR } from '../constants/index.js';
+import {
+  matchPlayerName,
+  lookupPlayerEarnings,
+  getBonusAmounts,
+  computeTeamTournamentResult,
+} from '../../api/_scoring.js';
 
-// Mirror of processTournamentData.matchPlayerName (word-set match).
-const matchPlayerName = (a, b) => {
-  const na = normalizePlayerName(a), nb = normalizePlayerName(b);
-  if (!na || !nb) return false;
-  if (na === nb) return true;
-  const wa = na.split(' '), wb = nb.split(' ');
-  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
-  return false;
-};
-
-const lookupEarnings = (name, earningsMap) => {
-  if (earningsMap[name] !== undefined) return earningsMap[name] || 0;
-  const k = Object.keys(earningsMap).find(key => matchPlayerName(key, name));
-  return k !== undefined ? (earningsMap[k] || 0) : 0;
-};
+const lookupEarnings = (name, earningsMap) => lookupPlayerEarnings(name, earningsMap);
 
 // Recompute a team's tournament result for an effective lineup — same math as
-// processTournamentData (top-5 by earnings + round-leader bonuses).
-export const recomputeTeamTournamentResult = (lineup, earningsMap, roundLeaders, isMajor, roster) => {
-  const bonuses = isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
-  const starterResults = (lineup || []).map(pn => ({ playerName: pn, earnings: lookupEarnings(pn, earningsMap) }));
-  const topStarters = [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5);
-  let totalEarnings = topStarters.reduce((s, p) => s + p.earnings, 0);
-  const bonusEarnings = { round1: 0, round2: 0, round3: 0 };
-  const playersWithBonuses = {};
-  ['round1', 'round2', 'round3'].forEach(round => {
-    const leaders = Array.isArray(roundLeaders?.[round]) ? roundLeaders[round]
-      : (roundLeaders?.[round] ? [roundLeaders[round]] : []);
-    leaders.forEach(leaderName => {
-      if (!leaderName) return;
-      const actual = (lineup || []).find(pn => normalizePlayerName(pn) === normalizePlayerName(leaderName));
-      if (actual) {
-        bonusEarnings[round] = bonuses[round];
-        totalEarnings += bonuses[round];
-        if (!playersWithBonuses[actual]) playersWithBonuses[actual] = { total: 0, rounds: [] };
-        playersWithBonuses[actual].total += bonuses[round];
-        playersWithBonuses[actual].rounds.push({ round: round.replace('round', ''), bonus: bonuses[round] });
-      }
-    });
+// the live engines (top-5 by earnings + full round-leader bonus per co-leader),
+// settings-aware for custom bonus amounts.
+export const recomputeTeamTournamentResult = (lineup, earningsMap, roundLeaders, isMajor, roster, settings = {}) => {
+  const { teamResult } = computeTeamTournamentResult({
+    lineup,
+    earningsMap,
+    roundLeaders,
+    bonuses: getBonusAmounts(isMajor, settings),
+    roster,
   });
-  const players = topStarters.map(s => ({
-    name: s.playerName,
-    earnings: s.earnings,
-    limited: (roster || []).find(p => p.name === s.playerName)?.limited || false,
-    bonus: playersWithBonuses[s.playerName]?.total || 0,
-    roundsLed: playersWithBonuses[s.playerName]?.rounds || [],
-    wasRoundLeader: (playersWithBonuses[s.playerName]?.total || 0) > 0,
-  }));
-  return { totalEarnings, bonuses: bonusEarnings, players };
+  return teamResult;
 };
 
 // Compute the complete reversal of a mulligan tx.
 // Returns { newTeams, newTournaments, registryOverrides, processed, summary }
 // or { error } if it can't be reversed safely.
-export const computeMulliganReversal = (tx, teams, tournaments) => {
+export const computeMulliganReversal = (tx, teams, tournaments, settings = {}) => {
   const team = teams.find(t => t.name === tx.team);
   if (!team) return { error: `Team "${tx.team}" not found.` };
   const playerIn = tx.player;         // wrongly added — remove its credit
@@ -127,7 +96,7 @@ export const computeMulliganReversal = (tx, teams, tournaments) => {
     ? oldFull.map(p => (matchPlayerName(p, playerIn) ? playerOut : p))
     : oldFull; // defensive: IN not in snapshot — leave lineup, still fix tallies
 
-  const newTeamRes = recomputeTeamTournamentResult(newFull, earningsMap, roundLeaders, isMajor, team.roster);
+  const newTeamRes = recomputeTeamTournamentResult(newFull, earningsMap, roundLeaders, isMajor, team.roster, settings);
   const oldTotal = oldTeamRes.totalEarnings || 0;
   const newTotal = newTeamRes.totalEarnings || 0;
   const delta = newTotal - oldTotal;

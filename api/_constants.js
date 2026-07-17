@@ -27,6 +27,100 @@ export const DEFAULTS_ON = new Set([
   'waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified', 'leadChange',
 ]);
 
+// ── Player-name canonicalization & matching ─────────────────────────────────
+// SINGLE SOURCE OF TRUTH for the static player-name alias table and the
+// name-matching helpers. Consumed by:
+//   • api/field.js + api/cron.js          (server-side matching)
+//   • src/constants/nameAliases.js        (re-exports NAME_ALIASES to the client)
+//   • api/_scoring.js                     (shared scoring engine)
+// Previously api/field.js and src/constants/nameAliases.js each carried a
+// hand-synced copy of this table (with "keep in sync" comments) — and the two
+// client tables had drifted into CONTRADICTING each other on Byeong-Hun An,
+// Nicolas Echavarria, and Kyoung-Hoon Lee. This is now the only copy.
+//
+// Format: alternate (API/OWGR/PGA Tour form) → canonical (SFGL roster form,
+// i.e. the /players/{name} doc ID we keep).
+export const NAME_ALIASES = {
+  'Samuel Stevens':     'Sam Stevens',
+  'Vincent Whaley':     'Vince Whaley',
+  'Rafa Cabrera Bello': 'Rafael Cabrera Bello',
+  'Si-Woo Kim':         'Si Woo Kim',
+  'Byeong Hun An':      'Byeong-Hun An',
+  'Nico Echavarria':    'Nicolas Echavarria',
+  'K.H. Lee':           'Kyoung-Hoon Lee',
+  'S.H. Kim':           'Sung-Hyun Kim',
+};
+
+// Lowercase-keyed view for case-insensitive lookups.
+const NAME_ALIASES_LC = Object.fromEntries(
+  Object.entries(NAME_ALIASES).map(([alt, canon]) => [alt.toLowerCase(), canon])
+);
+
+// Resolve an alternate name to its canonical form (identity when no alias).
+export function canonicalName(name) {
+  const trimmed = (name || '').trim();
+  return NAME_ALIASES[trimmed] || NAME_ALIASES_LC[trimmed.toLowerCase()] || trimmed;
+}
+
+// Normalize for fuzzy comparison: strip diacritics, lowercase, treat dots and
+// hyphens as spaces, collapse whitespace. "Sí-Woo Kim" → "si woo kim".
+export function normalizePlayerName(name) {
+  if (!name) return '';
+  return String(name)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[.-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// True when two names refer to the same player: alias-canonicalized equality,
+// normalized equality, or same word set (handles reordered name parts).
+export function matchPlayerName(a, b) {
+  if (!a || !b) return false;
+  const na = normalizePlayerName(canonicalName(a));
+  const nb = normalizePlayerName(canonicalName(b));
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const wa = na.split(' '), wb = nb.split(' ');
+  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
+  return false;
+}
+
+// Resolve an external-source name against a list of known (roster) names.
+// Order: static alias table (+ caller-supplied extras) → exact → normalized →
+// last-name + first-initial (only when the candidate is unique, so
+// "Samuel Stevens" finds "Sam Stevens" but ambiguous initials never guess).
+export function resolvePlayerName(rawName, knownNames = [], extraAliases = {}) {
+  if (!rawName) return null;
+  const trimmed = String(rawName).trim();
+  const lower = trimmed.toLowerCase();
+
+  const aliased = NAME_ALIASES[trimmed] || NAME_ALIASES_LC[lower] || extraAliases[lower];
+  if (aliased) return aliased;
+
+  const exact = knownNames.find(n => n.toLowerCase() === lower);
+  if (exact) return exact;
+
+  const norm = normalizePlayerName(trimmed);
+  const normMatch = knownNames.find(n => normalizePlayerName(n) === norm);
+  if (normMatch) return normMatch;
+
+  const parts = lower.split(/\s+/);
+  if (parts.length >= 2) {
+    const lastName     = parts[parts.length - 1];
+    const firstInitial = parts[0][0];
+    const candidates = knownNames.filter(n => {
+      const np = n.toLowerCase().split(/\s+/);
+      return np[np.length - 1] === lastName && np[0][0] === firstInitial;
+    });
+    if (candidates.length === 1) return candidates[0];
+    // Multiple matches → ambiguous, don't guess
+  }
+  return null;
+}
+
 // ── Push-token de-duplication ───────────────────────────────────────────────
 // A single physical device can end up with MORE THAN ONE deliverable pushTokens
 // doc, which makes that device receive the same push twice. Two causes:

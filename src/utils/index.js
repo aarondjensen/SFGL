@@ -1,4 +1,8 @@
-import { CHAR_MAP, PLAYER_NAME_ALIASES, PGA_TOUR_IDS, TEAM_ABBREVIATIONS, BONUSES_REGULAR, BONUSES_MAJOR, SWINGS } from '../constants';
+import { PLAYER_NAME_ALIASES, PGA_TOUR_IDS, TEAM_ABBREVIATIONS } from '../constants';
+import {
+  normalizePlayerName as sharedNormalizePlayerName,
+  resolvePlayerName as sharedResolvePlayerName,
+} from '../../api/_constants.js';
 
 // ============================================================================
 // AUTH
@@ -28,41 +32,15 @@ export const makePlayer = (name, limited = false, stars = 0, unlimited = false, 
   headshot: '',
 });
 
-export const normalizePlayerName = (name) => {
-  if (!name) return '';
-  let normalized = name.toLowerCase().trim();
-  Object.keys(CHAR_MAP).forEach(char => {
-    normalized = normalized.replace(new RegExp(char, 'g'), CHAR_MAP[char]);
-  });
-  return normalized.replace(/[.-]/g, ' ').replace(/\s+/g, ' ').trim();
-};
+// Name normalization + resolution now live in api/_constants.js — the shared
+// module the serverless functions and the scoring engine (api/_scoring.js)
+// use — so client and server can never disagree about whether two spellings
+// are the same player. The client wrapper layers PLAYER_NAME_ALIASES (the
+// richer lowercase OWGR table) on top of the shared static alias map.
+export const normalizePlayerName = sharedNormalizePlayerName;
 
-export const resolvePlayerName = (owgrName, knownNames) => {
-  if (!owgrName) return null;
-  const lower = owgrName.toLowerCase().trim();
-  if (PLAYER_NAME_ALIASES[lower]) return PLAYER_NAME_ALIASES[lower];
-
-  const exact = knownNames.find(n => n.toLowerCase() === lower);
-  if (exact) return exact;
-
-  const normOwgr = normalizePlayerName(owgrName);
-  const normMatch = knownNames.find(n => normalizePlayerName(n) === normOwgr);
-  if (normMatch) return normMatch;
-
-  // Last-name + first-initial fuzzy match — only if unique to avoid false positives
-  const parts = lower.split(/\s+/);
-  if (parts.length >= 2) {
-    const lastName    = parts[parts.length - 1];
-    const firstInitial = parts[0][0];
-    const candidates = knownNames.filter(n => {
-      const np = n.toLowerCase().split(/\s+/);
-      return np[np.length - 1] === lastName && np[0][0] === firstInitial;
-    });
-    if (candidates.length === 1) return candidates[0];
-    // Multiple matches → ambiguous, don't guess
-  }
-  return null;
-};
+export const resolvePlayerName = (owgrName, knownNames) =>
+  sharedResolvePlayerName(owgrName, knownNames, PLAYER_NAME_ALIASES);
 
 export const shortName = (fullName) => {
   if (!fullName) return '';
@@ -477,106 +455,14 @@ export const getWaiverWindowStatus = (tournament, settings) =>
     : { open: false, label: 'Closed' };
 
 // ============================================================================
-// SCORING ENGINE
+// SCORING ENGINE — removed.
+// The tournament scoring engine now lives in api/_scoring.js, shared by the
+// live process paths (src/pages/admin/processTournamentData.js and
+// api/cron.js) and the mulligan reversal recompute. The processTournamentData
+// that used to live here was DEAD CODE (never imported) and implemented a
+// bonus-SPLIT for tied round co-leaders, which contradicts the league rule:
+// each co-leader earns the FULL round bonus (commissioner ruling).
 // ============================================================================
-
-/**
- * Processes raw API leaderboard data for a completed tournament.
- *
- * Fixes vs. original:
- *  - eventsPlayed only increments for players who STARTED (i.e. have round data),
- *    not just anyone who appears in the payout object.
- *  - Bonus splits are Math.round()ed to avoid fractional-dollar storage values.
- *  - cutsMade keyed off earnings > 0 (unchanged, but documented).
- */
-export const processTournamentData = (tournament, apiPlayers, currentTeams, currentStats, allPlayerNames, leagueSettings = {}) => {
-  const isMajor = tournament.isMajor;
-  const bonuses = isMajor
-    ? { round1: leagueSettings.bonusR1Major ?? BONUSES_MAJOR.round1, round2: leagueSettings.bonusR2Major ?? BONUSES_MAJOR.round2, round3: leagueSettings.bonusR3Major ?? BONUSES_MAJOR.round3 }
-    : { round1: leagueSettings.bonusR1Regular ?? BONUSES_REGULAR.round1, round2: leagueSettings.bonusR2Regular ?? BONUSES_REGULAR.round2, round3: leagueSettings.bonusR3Regular ?? BONUSES_REGULAR.round3 };
-
-  // ── Round leaders ─────────────────────────────────────────────────────────
-  let r1Leaders = [], r2Leaders = [], r3Leaders = [];
-  let r1Best = Infinity, r2Best = Infinity, r3Best = Infinity;
-
-  const apiEntries = apiPlayers.map(ap => {
-    const pObj = ap?.player || ap;
-    let rawName = pObj?.fullName || pObj?.displayName || pObj?.name || '';
-    if (!rawName) rawName = `${pObj?.firstName || ''} ${pObj?.lastName || ''}`.trim();
-    const name   = resolvePlayerName(rawName, allPlayerNames) || rawName;
-    const rounds  = ap.rounds || [];
-    const scores  = rounds.map(r => (r?.score !== undefined && r?.score !== null) ? parseInt(r.score) : null);
-    let earnings  = ap.earnings || ap.winnings || ap.payout || 0;
-    if (typeof earnings === 'string') earnings = parseInt(earnings.replace(/[^0-9]/g, '')) || 0;
-    const started = scores[0] !== null; // has at least R1 score
-    return { name, scores, earnings, started };
-  }).filter(e => e.name);
-
-  apiEntries.forEach(({ name, scores }) => {
-    if (scores[0] !== null) {
-      const r1 = scores[0];
-      if (r1 < r1Best)      { r1Best = r1; r1Leaders = [name]; }
-      else if (r1 === r1Best) r1Leaders.push(name);
-    }
-    if (scores[0] !== null && scores[1] !== null) {
-      const r2 = scores[0] + scores[1];
-      if (r2 < r2Best)      { r2Best = r2; r2Leaders = [name]; }
-      else if (r2 === r2Best) r2Leaders.push(name);
-    }
-    if (scores[0] !== null && scores[1] !== null && scores[2] !== null) {
-      const r3 = scores[0] + scores[1] + scores[2];
-      if (r3 < r3Best)      { r3Best = r3; r3Leaders = [name]; }
-      else if (r3 === r3Best) r3Leaders.push(name);
-    }
-  });
-
-  // ── Player payouts ────────────────────────────────────────────────────────
-  const playerPayouts = {};
-  apiEntries.forEach(({ name, earnings, started }) => {
-    let bonus     = 0;
-    const roundsLed = [];
-    if (r1Leaders.includes(name)) { bonus += Math.round(bonuses.round1 / r1Leaders.length); roundsLed.push({ round: 1 }); }
-    if (r2Leaders.includes(name)) { bonus += Math.round(bonuses.round2 / r2Leaders.length); roundsLed.push({ round: 2 }); }
-    if (r3Leaders.includes(name)) { bonus += Math.round(bonuses.round3 / r3Leaders.length); roundsLed.push({ round: 3 }); }
-    playerPayouts[name] = { earnings, bonus, roundsLed, total: earnings + bonus, started };
-  });
-
-  // ── Global stats update ───────────────────────────────────────────────────
-  const newStats = { ...currentStats };
-  Object.entries(playerPayouts).forEach(([pName, payout]) => {
-    if (!payout.started) return; // only count players who actually teed it up
-    if (!newStats[pName]) newStats[pName] = { eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0 };
-    newStats[pName].eventsPlayed   += 1;
-    newStats[pName].pgaTourEarnings += payout.earnings;
-    if (payout.earnings > 0) newStats[pName].cutsMade += 1;
-  });
-
-  // ── Team earnings ─────────────────────────────────────────────────────────
-  const resultsData = { teams: {} };
-  const newTeams    = currentTeams.map(team => {
-    let teamTotal    = 0;
-    const resultPlayers = [];
-
-    const newRoster = team.roster.map(rp => {
-      if (!(team.lineup || []).includes(rp.name)) return rp;
-      const payout = playerPayouts[rp.name] || { earnings: 0, bonus: 0, roundsLed: [], total: 0, started: false };
-      teamTotal += payout.total;
-      resultPlayers.push({ ...rp, ...payout });
-      return {
-        ...rp,
-        sfglEarnings:   (rp.sfglEarnings   || 0) + payout.total,
-        pgaTourEarnings: (rp.pgaTourEarnings || 0) + payout.earnings,
-        eventsPlayed:   (rp.eventsPlayed    || 0) + (payout.started ? 1 : 0),
-        cutsMade:       (rp.cutsMade        || 0) + (payout.earnings > 0 ? 1 : 0),
-      };
-    });
-
-    resultsData.teams[team.id] = { totalEarnings: teamTotal, players: resultPlayers };
-    return { ...team, earnings: (team.earnings || 0) + teamTotal, segmentEarnings: (team.segmentEarnings || 0) + teamTotal, roster: newRoster, lineup: [] };
-  });
-
-  return { newTeams, newStats, resultsData };
-};
 
 // Wave C.5: removed the API FETCH section (slashGolfFetch + fetchFirstTeeTime).
 // Both were dead code — slashGolfFetch was only used by the deleted

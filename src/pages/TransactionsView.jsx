@@ -810,7 +810,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             if (isMulligan) {
                               try {
                                 const { computeMulliganReversal } = await import('../utils/mulliganReversal');
-                                const r = computeMulliganReversal(liveTx, teams, tournaments);
+                                const r = computeMulliganReversal(liveTx, teams, tournaments, settings);
                                 if (r.error) { dialog.showToast(`Cannot reverse mulligan: ${r.error}`, 'error'); return; }
                                 if (r.processed) setTournaments(r.newTournaments);
                                 updateTeams(r.newTeams, r.registryOverrides);

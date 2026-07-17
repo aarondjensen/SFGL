@@ -25,7 +25,7 @@ import { getSwingPot, getSwingLeader } from './sharedHelpers.js';
  * Otherwise returns null. Idempotent: safe to call repeatedly — once a
  * swing_winner tx exists for the segment, this returns null forever.
  */
-export const computeSwingAward = ({ segment, allTournaments, transactions, teams }) => {
+export const computeSwingAward = ({ segment, allTournaments, transactions, teams, settings }) => {
   if (!segment) return null;
 
   // Idempotent guard
@@ -41,8 +41,10 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
   if (swingTourneys.length === 0) return null;
   if (!swingTourneys.every(t => t.completed)) return null;
 
-  // Pot must be > 0
-  const pot = getSwingPot(transactions, allTournaments, segment);
+  // Pot must be > 0. Settings matter here: getSwingPot derives fees for
+  // legacy $0-fee rows from settings.feeWaiver / settings.feeFA — without
+  // them a league with custom fees computes the wrong pot.
+  const pot = getSwingPot(transactions, allTournaments, segment, settings);
   if (pot === 0) return null;
 
   // Determine winner
@@ -106,8 +108,9 @@ export const maybeAwardForCompletedTournament = ({
   allTournaments,
   transactions,
   teams,
+  settings,
 }) => {
   if (!justProcessedTournament) return null;
   const segment = getSegmentForTournament(justProcessedTournament);
-  return computeSwingAward({ segment, allTournaments, transactions, teams });
+  return computeSwingAward({ segment, allTournaments, transactions, teams, settings });
 };

@@ -22,21 +22,14 @@
 // are stripped by cleanName() in AdminView before any alias lookup, so they
 // no longer need entries here.
 //
-// ⚠ KEEP IN SYNC with `api/field.js` NAME_ALIASES — the serverless function
-// can't import this file (different deploy target), so it has its own copy.
-// When you edit this file, mirror the changes there too.
+// The static table itself lives in api/_constants.js — the ONE copy shared by
+// the serverless functions (api/field.js, api/cron.js) and the client (via
+// this re-export). Both deploy targets are plain ESM, so the previous
+// "keep in sync" hand-copies (which had drifted into contradicting each
+// other) are gone. Edit the table there.
 
-export const NAME_ALIASES = {
-  // Format: alternate (OWGR/PGA form) → canonical (roster form)
-  'Samuel Stevens':        'Sam Stevens',
-  'Vincent Whaley':        'Vince Whaley',
-  'Rafa Cabrera Bello':    'Rafael Cabrera Bello',
-  'Si-Woo Kim':            'Si Woo Kim',
-  'Byeong Hun An':         'Byeong-Hun An',
-  'Nico Echavarria':       'Nicolas Echavarria',
-  'K.H. Lee':              'Kyoung-Hoon Lee',
-  'S.H. Kim':              'Sung-Hyun Kim',
-};
+export { NAME_ALIASES } from '../../api/_constants.js';
+import { NAME_ALIASES } from '../../api/_constants.js';
 
 // Resolve an alternate name to its canonical form. Used as a fallback when
 // the dynamic Firestore alias map doesn't have the entry.

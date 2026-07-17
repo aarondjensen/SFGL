@@ -5,6 +5,8 @@
 // GET /api/field          → { players, playerIds, teeTimes, odds, tournament, count, source }
 // GET /api/field?debug=1  → diagnostic info
 
+import { canonicalName } from './_constants.js';
+
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -85,26 +87,10 @@ function makeTeeTimeRecorder(teeTimeMap, teeTimeISOMap) {
   };
 }
 
-// ── Known name aliases — maps API name variants to canonical names ──────────────
-//
-// ⚠ KEEP IN SYNC with `src/constants/nameAliases.js` — that file is the source
-// of truth for client-side alias resolution; this is a copy because serverless
-// functions can't import client-side code.
-//
-// Format: alternate (API/PGA Tour form) → canonical (SFGL roster form)
-const NAME_ALIASES = {
-  'Samuel Stevens':        'Sam Stevens',
-  'Vincent Whaley':        'Vince Whaley',
-  'Rafa Cabrera Bello':    'Rafael Cabrera Bello',
-  'Si-Woo Kim':            'Si Woo Kim',
-  'Byeong Hun An':         'Byeong-Hun An',
-  'Nico Echavarria':       'Nicolas Echavarria',
-  'K.H. Lee':              'Kyoung-Hoon Lee',
-  'S.H. Kim':              'Sung-Hyun Kim',
-};
-function canonicalName(name) {
-  return NAME_ALIASES[name?.trim()] || name?.trim();
-}
+// ── Known name aliases ───────────────────────────────────────────────────────
+// The alias table + canonicalName live in api/_constants.js (imported at the
+// top of this file) — the single source of truth shared with api/cron.js and
+// (via re-export in src/constants/nameAliases.js) the client.
 
 // Strip diacritics, hyphens, whitespace, lowercase — for robust name matching
 // across PGA Tour data sections that may render the same player differently

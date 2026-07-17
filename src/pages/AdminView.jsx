@@ -234,6 +234,7 @@ export const AdminView = ({
         allTournaments: tournaments,
         transactions,
         teams,
+        settings,
       });
       if (result) list.push({ segment, winnerName: result.winnerTeam?.name, pot: result.pot });
     });
