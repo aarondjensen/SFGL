@@ -6,6 +6,7 @@ import { draftStateApi } from '../api/firebase';
 import { useDialog } from './DialogContext';
 import { theme, colors, fonts } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
+import { getPlayerHeadshot as resolveHeadshot } from '../utils/headshotUtils';
 import { TeamName } from '../components/TeamName';
 
 // ── Shared modal shell ────────────────────────────────────────────────────────
@@ -196,7 +197,7 @@ const KeeperBox = ({ type, label, accentColor, searchVal, setSearch, searchResul
 );
 
 // ── Main DraftModal ───────────────────────────────────────────────────────────
-export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots = {}, initialPhase }) => {
+export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots = {}, initialPhase, tournaments = [] }) => {
   const [phase, setPhase]                     = useState('resume_prompt');
   const [hasSavedState, setHasSavedState]     = useState(false);
   const [draftOrder, setDraftOrder]           = useState(teams.map((t, i) => ({ ...t, order: i })));
@@ -211,6 +212,7 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const [unlimitedSearch, setUnlimitedSearch] = useState('');
   const [draggedIndex, setDraggedIndex]       = useState(null);
   const [confirmDraft, setConfirmDraft]       = useState(null);
+  const maxRounds = 12;
   const dialog = useDialog();
 
   useModalBehaviorAlways(onClose);
@@ -278,12 +280,13 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
       try {
         await draftStateApi.save({
           phase, draftOrder, keeperTeamIndex, keepers,
-          currentTeamIndex, currentRound, draftedPlayers, pick_history: pickHistory,
+          currentTeamIndex, currentRound, draftedPlayers, pickHistory,
+          isComplete: currentRound > maxRounds,
         });
       } catch (e) { console.error('Failed to save draft state:', e); }
     };
     save();
-  }, [phase, draftOrder, keeperTeamIndex, keepers, currentTeamIndex, currentRound, draftedPlayers, pickHistory]);
+  }, [phase, draftOrder, keeperTeamIndex, keepers, currentTeamIndex, currentRound, draftedPlayers, pickHistory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clearDraftState = async () => {
     try { await draftStateApi.clear(); } catch { /* ignore */ }
@@ -312,15 +315,10 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     onClose();
   };
 
-  const getPlayerHeadshot = (playerName) => {
-    let id = headshots[playerName];
-    if (!id) { const p = allPlayers.find(p => p.name === playerName); id = p?.pgaTourId; }
-    if (id) {
-      if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('/'))) return id;
-      return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${id}`;
-    }
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=0f1d35&color=6b7280&size=128`;
-  };
+  // Shared headshot resolution (ESPN CDN via headshotUtils). The previous
+  // local version pushed ESPN athlete IDs into a pga-tour Cloudinary URL
+  // template, which 404'd for every player.
+  const getPlayerHeadshot = (playerName) => resolveHeadshot(playerName, headshots);
 
   const currentTeam = phase === 'order' || phase === 'resume_prompt'
     ? null
@@ -367,21 +365,39 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     setLimitedSearch(''); setUnlimitedSearch('');
   };
 
-  const handleNextTeamKeepers = () => {
+  const handleNextTeamKeepers = async () => {
     if (keeperTeamIndex < draftOrder.length - 1) {
       setKeeperTeamIndex(keeperTeamIndex + 1);
-    } else {
-      const updatedTeams = teams.map(team => {
-        const tk = keepers[team.id]; const newRoster = [];
-        if (tk?.limited)   newRoster.push({ name: tk.limited.name,   stars: tk.limited.stars, starts: 0, limited: true,  unlimited: false, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0 });
-        if (tk?.unlimited) newRoster.push({ name: tk.unlimited.name, stars: 0,                starts: 0, limited: false, unlimited: true,  eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0 });
-        return { ...team, roster: newRoster };
-      });
-      const keeperNames = allKeeperNames();
-      updateTeams(updatedTeams);
-      setDraftedPlayers(keeperNames);
-      setPhase('draft'); setCurrentRound(1);
+      return;
     }
+    // Starting the draft REPLACES every team's roster with just its 2 keepers
+    // and persists immediately. Refuse outright mid-season (processed results
+    // exist — wiping rosters would corrupt the live season), and otherwise
+    // require an explicit confirmation.
+    if (tournaments.some(t => t.completed && t.results)) {
+      await dialog.showConfirm(
+        'Cannot Start Draft',
+        'This season already has processed tournament results. Starting the draft would wipe every team\'s roster. Clear the season results first if you really intend to re-draft.',
+        { confirmText: 'OK', cancelText: 'Close' },
+      );
+      return;
+    }
+    const confirmed = await dialog.showConfirm(
+      '⚠️ Start Draft',
+      'Starting the draft will RESET every team\'s roster to just its two keepers, and save immediately. This cannot be undone.\n\nContinue?',
+      { type: 'danger', confirmText: 'Reset Rosters & Start Draft', cancelText: 'Cancel' },
+    );
+    if (!confirmed) return;
+    const updatedTeams = teams.map(team => {
+      const tk = keepers[team.id]; const newRoster = [];
+      if (tk?.limited)   newRoster.push({ name: tk.limited.name,   stars: tk.limited.stars, starts: 0, limited: true,  unlimited: false, eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0 });
+      if (tk?.unlimited) newRoster.push({ name: tk.unlimited.name, stars: 0,                starts: 0, limited: false, unlimited: true,  eventsPlayed: 0, cutsMade: 0, sfglEarnings: 0, pgaTourEarnings: 0 });
+      return { ...team, roster: newRoster };
+    });
+    const keeperNames = allKeeperNames();
+    updateTeams(updatedTeams);
+    setDraftedPlayers(keeperNames);
+    setPhase('draft'); setCurrentRound(1);
   };
 
   const handleDraftPlayer = (playerName) => {
@@ -427,7 +443,6 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     setCurrentTeamIndex(last.teamIndex);
   };
 
-  const maxRounds    = 12;
   const isDraftComplete = currentRound > maxRounds;
   const isLimitedRound  = currentRound <= 2;
   const isSnakeDraft    = currentRound % 2 === 0;

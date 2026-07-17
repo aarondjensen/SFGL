@@ -7,8 +7,19 @@ import { useEffect, useRef } from 'react';
 /**
  * Lock body scroll (prevents background scroll on iOS while modal is open).
  * Saves scroll position and applies `position: fixed` to prevent iOS bounce.
+ *
+ * Reference-counted: nested modals (e.g. a confirm dialog over AddDropModal)
+ * each call lockScroll/unlockScroll. Without the count, the INNER modal's
+ * lock re-read window.scrollY while the body was already position:fixed
+ * (always 0), clobbering the saved position — and its unlock restored scroll
+ * while the outer modal was still open. Only the first lock captures the
+ * position and only the last unlock restores it.
  */
+let _scrollLockCount = 0;
+
 export function lockScroll() {
+  _scrollLockCount += 1;
+  if (_scrollLockCount > 1) return; // already locked by an outer modal
   const scrollY = window.scrollY;
   document.body.classList.add('sfgl-modal-open');
   document.body.style.top = `-${scrollY}px`;
@@ -16,9 +27,12 @@ export function lockScroll() {
 }
 
 /**
- * Unlock body scroll — restores previous scroll position.
+ * Unlock body scroll — restores previous scroll position once the last
+ * lock holder releases.
  */
 export function unlockScroll() {
+  _scrollLockCount = Math.max(0, _scrollLockCount - 1);
+  if (_scrollLockCount > 0) return; // an outer modal still holds the lock
   const scrollY = parseInt(document.body.dataset.scrollY || '0', 10);
   document.body.classList.remove('sfgl-modal-open');
   document.body.style.top = '';

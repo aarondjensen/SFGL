@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { storage } from '../api';
 import { playerRankingsApi } from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
@@ -266,7 +266,24 @@ export const useLeague = (STORAGE_KEYS) => {
         }));
 
         unsubs.push(tournamentsApi.subscribe(next => {
-          if (Array.isArray(next) && next.length > 0) setTournaments(next);
+          if (!Array.isArray(next) || next.length === 0) return;
+          // MERGE, don't replace: App.jsx hydrates completed tournaments'
+          // `results` from the tournament_results collection into local state
+          // only — the tournaments docs themselves may not embed results. A
+          // wholesale setTournaments(next) with raw docs wiped those merged
+          // results ("every team shows $0" incident). Local results win
+          // whenever the incoming doc lacks them.
+          setTournaments(prev => {
+            if (!Array.isArray(prev) || prev.length === 0) return next;
+            const prevByName = new Map(prev.map(t => [t.name, t]));
+            return next.map(t => {
+              const old = prevByName.get(t.name);
+              if (old?.completed && old.results && !t.results) {
+                return { ...t, completed: true, results: old.results };
+              }
+              return t;
+            });
+          });
         }));
 
         unsubs.push(settingsApi.subscribe(next => {
@@ -377,9 +394,7 @@ export const useLeague = (STORAGE_KEYS) => {
     setSettings(resolved);
     try {
       const { settingsApi } = await import('../api/firebase');
-      for (const [key, value] of Object.entries(resolved)) {
-        await settingsApi.set(key, value);
-      }
+      await settingsApi.setAll(resolved);
       await storage.set(STORAGE_KEYS.SETTINGS, resolved);
     } catch (e) {
       console.error('[useLeague] settings write failed:', e);
@@ -401,11 +416,22 @@ export const useLeague = (STORAGE_KEYS) => {
   }, [STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
 
   const updateHeadshots = useCallback(async (next) => {
-    const resolved = typeof next === 'function' ? next(headshotsRef.current) : next;
+    const prev = headshotsRef.current || {};
+    const resolved = typeof next === 'function' ? next(prev) : next;
     setHeadshots(resolved);
+    // Persist only the DELTA (added/changed entries). Writing the whole map
+    // meant one new headshot re-upserted every player doc (hundreds of writes);
+    // this is the single persistence path — App.jsx no longer double-writes
+    // the same delta via playersApi.upsertMany.
+    const delta = {};
+    for (const [name, id] of Object.entries(resolved || {})) {
+      if (prev[name] !== id) delta[name] = id;
+    }
     try {
-      const { headshotsApi } = await import('../api/firebase');
-      await headshotsApi.setAll(resolved);
+      if (Object.keys(delta).length > 0) {
+        const { headshotsApi } = await import('../api/firebase');
+        await headshotsApi.setAll(delta);
+      }
       await storage.set(STORAGE_KEYS.HEADSHOTS, resolved);
     } catch (e) {
       console.error('[useLeague] headshots write failed:', e);
@@ -463,35 +489,37 @@ export const useLeague = (STORAGE_KEYS) => {
 //     golfer. Replaying it would pollute the roster with the manager's name.
 // ============================================================================
 export const useRoster = (team, transactions, activeTournamentIndex, tournaments = null) => {
-  if (!team) return [];
-  let roster = [...team.roster];
-  if (activeTournamentIndex >= 0) {
-    // Resolve each tx's tournament position FRESH from its stable name (falling
-    // back to the stored index for legacy rows), so a schedule reorder can never
-    // misalign the cutoff again. Compute the position once per tx.
-    const teamTx = transactions
-      .filter(tx =>
-        tx.team === team.name &&
-        tx.type !== 'mulligan' &&
-        tx.type !== 'swing_winner' &&
-        (tx.status === 'processed' || tx.status === 'completed'),
-      )
-      .map(tx => ({ tx, pos: resolveTxTournamentIndex(tx, tournaments) }))
-      .filter(x => x.pos !== undefined && x.pos <= activeTournamentIndex)
-      .sort((a, b) => a.pos - b.pos)
-      .map(x => x.tx);
+  return useMemo(() => {
+    if (!team) return [];
+    let roster = [...team.roster];
+    if (activeTournamentIndex >= 0) {
+      // Resolve each tx's tournament position FRESH from its stable name (falling
+      // back to the stored index for legacy rows), so a schedule reorder can never
+      // misalign the cutoff again. Compute the position once per tx.
+      const teamTx = transactions
+        .filter(tx =>
+          tx.team === team.name &&
+          tx.type !== 'mulligan' &&
+          tx.type !== 'swing_winner' &&
+          (tx.status === 'processed' || tx.status === 'completed'),
+        )
+        .map(tx => ({ tx, pos: resolveTxTournamentIndex(tx, tournaments) }))
+        .filter(x => x.pos !== undefined && x.pos <= activeTournamentIndex)
+        .sort((a, b) => a.pos - b.pos)
+        .map(x => x.tx);
 
-    teamTx.forEach(tx => {
-      if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
-      // Guard: only push when tx.player is defined. Without this, any tx
-      // missing a player field (e.g., a future tx shape) would inject a
-      // {name: undefined} ghost into the roster.
-      if (tx.player && !roster.some(p => p.name === tx.player)) {
-        roster.push({ name: tx.player, limited: false, stars: 0, unlimited: false, yearsOfService: 1, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' });
-      }
-    });
-  }
-  return roster;
+      teamTx.forEach(tx => {
+        if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
+        // Guard: only push when tx.player is defined. Without this, any tx
+        // missing a player field (e.g., a future tx shape) would inject a
+        // {name: undefined} ghost into the roster.
+        if (tx.player && !roster.some(p => p.name === tx.player)) {
+          roster.push({ name: tx.player, limited: false, stars: 0, unlimited: false, yearsOfService: 1, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' });
+        }
+      });
+    }
+    return roster;
+  }, [team, transactions, activeTournamentIndex, tournaments]);
 };
 
 // ============================================================================

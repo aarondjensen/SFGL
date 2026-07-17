@@ -158,9 +158,32 @@ function _dedupeTransactions(rows) {
 // ============================================================================
 // PLAYERS API
 // ============================================================================
+// ── Shared players fetch ─────────────────────────────────────────────────────
+// The ~700-doc players collection used to be scanned 2-3 times on every app
+// open (stats map, headshots map, rankings on cache miss) plus once per
+// AddDrop-modal open (getTopRanked). All of those now share ONE scan: the
+// promise is cached for a short TTL and invalidated on any player write, so
+// concurrent callers during a load resolve from the same snapshot.
+const PLAYERS_SCAN_TTL = 60 * 1000;
+let _playersScan = null;
+let _playersScanAt = 0;
+function _getAllPlayersShared() {
+  const now = Date.now();
+  if (_playersScan && now - _playersScanAt < PLAYERS_SCAN_TTL) return _playersScan;
+  _playersScanAt = now;
+  _playersScan = _getAllOrdered('players', 'world_rank').catch(e => {
+    _playersScan = null; // don't cache failures
+    throw e;
+  });
+  return _playersScan;
+}
+let _searchCorpus = null;
+let _searchCorpusAt = 0;
+function invalidatePlayersScan() { _playersScan = null; _searchCorpus = null; }
+
 export const playersApi = {
   async getAll() {
-    return _getAllOrdered('players', 'world_rank');
+    return _getAllPlayersShared();
   },
 
   async getByName(name) {
@@ -168,24 +191,23 @@ export const playersApi = {
     return snap.exists() ? { _id: snap.id, ...snap.data() } : null;
   },
 
-  // Get top N players by world rank, excluding LIV players
+  // Get top N players by world rank, excluding LIV players.
+  // Derived from the shared collection scan (see _getAllPlayersShared) instead
+  // of a separate limit(700) query — same doc set, zero extra reads. Unranked
+  // players (null world_rank) sort last.
   async getTopRanked(n = 50) {
-    const rankedQ = query(
-      collection(db, 'players'),
-      orderBy('world_rank', 'asc'),
-      limit(700) // covers full OWGR list (~600) plus buffer
-    );
-    const rankedSnap = await getDocs(rankedQ);
-    return rankedSnap.docs
-      .map(d => ({
-        name:        d.id,
-        worldRank:   d.data().world_rank,
-        espnId:      d.data().espn_id,
-        headshotUrl: d.data().headshot_url,
-        isLiv:       d.data().is_liv,
-        aliases:     d.data().aliases || [],
+    const all = await _getAllPlayersShared();
+    return all
+      .map(p => ({
+        name:        p._id || p.name,
+        worldRank:   p.world_rank,
+        espnId:      p.espn_id,
+        headshotUrl: p.headshot_url,
+        isLiv:       p.is_liv,
+        aliases:     p.aliases || [],
       }))
       .filter(p => !p.isLiv && p.name && !/^\d+$/.test(p.name.trim()) && p.name.includes(' '))
+      .sort((a, b) => (a.worldRank ?? Infinity) - (b.worldRank ?? Infinity))
       .slice(0, n);
   },
 
@@ -221,9 +243,11 @@ export const playersApi = {
     snapRaw.docs.forEach(addDoc);
     snapCap.docs.forEach(addDoc);
 
-    // Also search all ranked players client-side for substring/last-name matches
+    // Also search all ranked players client-side for substring/last-name matches.
+    // The corpus is cached (see _searchCorpus) so repeated searches in a session
+    // don't re-scan the collection on every keystroke-debounce.
     try {
-      const allRanked = await this.getTopRanked(700);
+      const allRanked = await this._getSearchCorpus();
       const lower = searchTerm.toLowerCase();
       allRanked.forEach(p => {
         if (!seen.has(p.name) && p.name.toLowerCase().includes(lower)) {
@@ -234,6 +258,18 @@ export const playersApi = {
     } catch (_) {}
 
     return results.slice(0, maxResults);
+  },
+
+  // Cached full ranked corpus for client-side search matching. Longer TTL than
+  // the shared scan — rankings only move weekly, and search never needs
+  // second-level freshness. Invalidated on player writes alongside the scan.
+  async _getSearchCorpus() {
+    const now = Date.now();
+    if (_searchCorpus && now - _searchCorpusAt < 5 * 60 * 1000) return _searchCorpus;
+    const corpus = await this.getTopRanked(700);
+    _searchCorpus = corpus;
+    _searchCorpusAt = now;
+    return corpus;
   },
 
   // Get specific players by name (for rostered players)
@@ -280,12 +316,14 @@ export const playersApi = {
       doc(db, 'app_metadata', 'players_last_updated'),
       { key: 'players_last_updated', value: Date.now().toString() }
     );
+    invalidatePlayersScan();
     return players;
   },
 
   async delete(name) {
     await deleteDoc(doc(db, 'players', name));
     invalidateAliasCache();
+    invalidatePlayersScan();
   },
 
   /**
@@ -307,6 +345,7 @@ export const playersApi = {
       });
       await batch.commit();
     }
+    invalidatePlayersScan();
   },
 
   // Add an alias to a player doc — e.g. addAlias('Nicolas Echavarria', 'Nico Echavarria')
@@ -320,6 +359,7 @@ export const playersApi = {
       await updateDoc(ref, { aliases: [...existing, aliasName] });
     }
     invalidateAliasCache();
+    invalidatePlayersScan();
   },
 
   async update(name, updates) {
@@ -330,6 +370,7 @@ export const playersApi = {
     if (updates.stats      !== undefined) updateData.career_stats  = updates.stats;
     if (updates.isLiv      !== undefined) updateData.is_liv        = updates.isLiv;
     await updateDoc(doc(db, 'players', name), updateData);
+    invalidatePlayersScan();
     return updateData;
   },
 
@@ -413,6 +454,7 @@ export const playerRankingsApi = {
   },
   async invalidateCache() {
     try { localStorage.removeItem(PLAYER_CACHE_KEY); } catch (_) {}
+    invalidatePlayersScan();
   },
   async updateAll(players) { return playersApi.upsertMany(players); },
   async getLastUpdated()   { return playersApi.getLastUpdated(); },
@@ -799,6 +841,18 @@ export const settingsApi = {
     return [{ key, value }];
   },
 
+  // Write every key in ONE batch (single commit, single snapshot emission)
+  // instead of a sequential setDoc per key.
+  async setAll(settings) {
+    const entries = Object.entries(settings || {});
+    if (!entries.length) return;
+    const batch = writeBatch(db);
+    entries.forEach(([key, value]) => {
+      batch.set(doc(db, 'league_settings', key), { key, value });
+    });
+    await batch.commit();
+  },
+
   async getAll() {
     const snap = await getDocs(collection(db, 'league_settings'));
     const settings = {};
@@ -846,6 +900,9 @@ export const draftStateApi = {
       current_team_index:  state.currentTeamIndex,
       current_round:       state.currentRound,
       drafted_players:     state.draftedPlayers,
+      // pick_history powers Undo + the end-of-draft summary on resume. It was
+      // silently dropped by this whitelist, so a resumed draft lost both.
+      pick_history:        state.pickHistory || [],
       is_complete:         state.isComplete || false,
     });
     return state;

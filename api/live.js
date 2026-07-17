@@ -16,6 +16,22 @@ function extractNextData(html) {
   try { return JSON.parse(m[1]); } catch { return null; }
 }
 
+// Per-fetch AbortController timeout (mirrors pgatFetchAndParse in cron.js):
+// an unbounded pgatour.com fetch could otherwise burn the whole 10s Vercel
+// budget and surface as the HTML "function timed out" page.
+async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`Timeout (${timeoutMs}ms) fetching ${url}`);
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -28,7 +44,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const resp = await fetch('https://www.pgatour.com/leaderboard', { headers: HEADERS });
+    const resp = await fetchWithTimeout('https://www.pgatour.com/leaderboard', { headers: HEADERS });
     if (!resp.ok) return res.status(502).json({ error: `pgatour.com ${resp.status}` });
 
     const html = await resp.text();

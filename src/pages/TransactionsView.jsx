@@ -379,42 +379,46 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   }, [teams, visibleTransactions, tournaments]);
 
   const TYPE_ORDER = { 'fa': 0, 'free agent': 0, 'waiver': 1, 'mulligan': 2, 'drop': 3, 'swing_winner': 99 };
-  // Build a map of segment → last tournamentIndex for sorting swing_winner records.
-  const swingLastIndex = {};
-  tournaments.forEach((t, i) => {
-    const seg = t.segment || '';
-    if (seg && t.completed) swingLastIndex[seg] = Math.max(swingLastIndex[seg] ?? -1, i);
-  });
 
-  const sortedTransactions = [...visibleTransactions].sort((a, b) => {
-    const resolveKey = tx => {
-      if (tx.type === 'swing_winner') {
-        const lastIdx = tx.tournamentIndex ?? (tx.segment ? swingLastIndex[tx.segment] : undefined);
-        return lastIdx !== undefined ? lastIdx + 0.5 : -1;
+  const sortedTransactions = useMemo(() => {
+    // Build a map of segment → last tournamentIndex for sorting swing_winner records.
+    const swingLastIndex = {};
+    tournaments.forEach((t, i) => {
+      const seg = t.segment || '';
+      if (seg && t.completed) swingLastIndex[seg] = Math.max(swingLastIndex[seg] ?? -1, i);
+    });
+
+    return [...visibleTransactions].sort((a, b) => {
+      const resolveKey = tx => {
+        if (tx.type === 'swing_winner') {
+          const lastIdx = tx.tournamentIndex ?? (tx.segment ? swingLastIndex[tx.segment] : undefined);
+          return lastIdx !== undefined ? lastIdx + 0.5 : -1;
+        }
+        return tx.tournamentIndex ?? -1;
+      };
+      const ak = resolveKey(a);
+      const bk = resolveKey(b);
+      if (bk !== ak) return bk - ak;
+      // Same tournament: sort by type order (waiver → FA → mulligan)
+      const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
+      const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
+      if (ta !== tb) return ta - tb;
+      // Within waivers: blocked before successful (blocked is the consequence)
+      if (a.type === 'waiver' && b.type === 'waiver') {
+        const sa = a.status === 'failed' ? 0 : 1;
+        const sb = b.status === 'failed' ? 0 : 1;
+        if (sa !== sb) return sa - sb;
       }
-      return tx.tournamentIndex ?? -1;
-    };
-    const ak = resolveKey(a);
-    const bk = resolveKey(b);
-    if (bk !== ak) return bk - ak;
-    // Same tournament: sort by type order (waiver → FA → mulligan)
-    const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
-    const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
-    if (ta !== tb) return ta - tb;
-    // Within waivers: blocked before successful (blocked is the consequence)
-    if (a.type === 'waiver' && b.type === 'waiver') {
-      const sa = a.status === 'failed' ? 0 : 1;
-      const sb = b.status === 'failed' ? 0 : 1;
-      if (sa !== sb) return sa - sb;
-    }
-    // Final tiebreak: timestamp, most recent first
-    const toMs = tx => {
-      if (tx.timestamp) return typeof tx.timestamp === 'number' ? tx.timestamp : new Date(tx.timestamp).getTime();
-      if (tx.date) return new Date(tx.date).getTime();
-      return 0;
-    };
-    return toMs(b) - toMs(a);
-  });
+      // Final tiebreak: timestamp, most recent first
+      const toMs = tx => {
+        if (tx.timestamp) return typeof tx.timestamp === 'number' ? tx.timestamp : new Date(tx.timestamp).getTime();
+        if (tx.date) return new Date(tx.date).getTime();
+        return 0;
+      };
+      return toMs(b) - toMs(a);
+    });
+  }, [visibleTransactions, tournaments]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const getTxSegment = (tx) => {
     if (tx.segment) return tx.segment;
     // Resolve by stable name (reorder-safe); legacy rows fall back to index.
@@ -423,12 +427,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     return '';
   };
 
-  const filteredTransactions = sortedTransactions
-    .filter(tx => filterTeam === 'all' || tx.team === filterTeam)
-    .filter(tx => {
-      if (filterSwing === 'all') return true;
-      return getTxSegment(tx) === filterSwing;
-    });
+  const filteredTransactions = useMemo(() =>
+    sortedTransactions
+      .filter(tx => filterTeam === 'all' || tx.team === filterTeam)
+      .filter(tx => {
+        if (filterSwing === 'all') return true;
+        return getTxSegment(tx) === filterSwing;
+      }),
+  [sortedTransactions, filterTeam, filterSwing, tournaments]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const undoTransaction = async (tx, skipConfirm = false) => {
     if (tx.status !== 'processed') return; // only reverse completed transactions

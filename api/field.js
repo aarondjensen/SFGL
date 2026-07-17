@@ -11,6 +11,23 @@ const HEADERS = {
   'Accept-Language': 'en-US,en;q=0.9',
 };
 
+// Per-fetch AbortController timeout (mirrors pgatFetchAndParse in cron.js):
+// this handler chains several sequential upstream fetches, so one slow URL
+// must not burn the whole 10s Vercel Hobby budget and return the HTML
+// "function timed out" page to the client.
+async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`Timeout (${timeoutMs}ms) fetching ${url}`);
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function extractNextData(html) {
   const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
   if (!m) return null;
@@ -135,7 +152,7 @@ function joinPlayersToTeeTimes(players, teeTimeMap) {
 
 // ── Get upcoming tournament from schedule ─────────────────────────────────────
 async function getUpcomingTournament() {
-  const resp = await fetch('https://www.pgatour.com/schedule', { headers: HEADERS });
+  const resp = await fetchWithTimeout('https://www.pgatour.com/schedule', { headers: HEADERS });
   if (!resp.ok) throw new Error(`Schedule ${resp.status}`);
   const nd = extractNextData(await resp.text());
   if (!nd) throw new Error('No __NEXT_DATA__ on schedule');
@@ -236,17 +253,28 @@ function parseFieldPage(nd) {
 
 // ── ESPN fallback for field + tee times ───────────────────────────────────────
 async function fetchFromESPN() {
+  // Overall deadline for the whole date-walk. Worst case this loop used to
+  // issue up to 15 unbounded sequential scoreboard fetches (plus leaderboard
+  // fetches) — enough to blow the serverless time budget on a slow upstream.
+  const deadline = Date.now() + 6000;
   for (let offset = 0; offset <= 14; offset++) {
+    if (Date.now() > deadline) throw new Error('ESPN fallback deadline exceeded');
     const d = new Date(); d.setDate(d.getDate() + offset);
     const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-    const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?dates=${ds}`, { headers: { 'User-Agent': HEADERS['User-Agent'], 'Accept': 'application/json' } });
+    let r;
+    try {
+      r = await fetchWithTimeout(`https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?dates=${ds}`, { headers: { 'User-Agent': HEADERS['User-Agent'], 'Accept': 'application/json' } }, 3000);
+    } catch { continue; }
     if (!r.ok) continue;
     const data = await r.json();
     const pga = (data?.events || []).filter(e => e.status?.type?.state !== 'post');
     if (!pga.length) continue;
     const event = pga.find(e => e.status?.type?.state === 'pre') || pga[0];
 
-    const r2 = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${event.id}`, { headers: { 'User-Agent': HEADERS['User-Agent'], 'Accept': 'application/json' } });
+    let r2;
+    try {
+      r2 = await fetchWithTimeout(`https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${event.id}`, { headers: { 'User-Agent': HEADERS['User-Agent'], 'Accept': 'application/json' } }, 3000);
+    } catch { continue; }
     if (!r2.ok) continue;
     const ld = await r2.json();
     const competitors = ld?.events?.[0]?.competitions?.[0]?.competitors || [];
@@ -292,7 +320,7 @@ export default async function handler(req, res) {
     const tournament = await getUpcomingTournament();
     const slug = nameToSlug(tournament.name);
     const fieldUrl = `https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/field`;
-    const fieldResp = await fetch(fieldUrl, { headers: HEADERS });
+    const fieldResp = await fetchWithTimeout(fieldUrl, { headers: HEADERS });
 
     if (fieldResp.ok) {
       const fieldNd = extractNextData(await fieldResp.text());
@@ -303,7 +331,7 @@ export default async function handler(req, res) {
         let finalTeeTimes = joinPlayersToTeeTimes(players, teeTimeMap);
         if (!finalTeeTimes.length && players.length) {
           try {
-            const ttResp = await fetch(`https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/tee-times`, { headers: HEADERS });
+            const ttResp = await fetchWithTimeout(`https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/tee-times`, { headers: HEADERS }, 4000);
             if (ttResp.ok) {
               const ttNd = extractNextData(await ttResp.text());
               if (ttNd) {
@@ -339,7 +367,7 @@ export default async function handler(req, res) {
         let finalOdds = Object.entries(oddsMap).map(([name, odds]) => ({ name, odds }));
         if (!finalOdds.length) {
           try {
-            const oddsResp = await fetch(`https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/odds`, { headers: HEADERS });
+            const oddsResp = await fetchWithTimeout(`https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/odds`, { headers: HEADERS }, 4000);
             if (oddsResp.ok) {
               const oddsNd = extractNextData(await oddsResp.text());
               if (oddsNd) {

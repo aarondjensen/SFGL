@@ -129,12 +129,7 @@ export const AddDropPlayerModal = ({
     return () => clearTimeout(searchTimerRef.current);
   }, [searchTerm]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!isOpen || !team) return null;
-
-  // Merge prop headshots with locally fetched ones
-  const mergedHeadshots = { ...localHeadshots, ...headshots };
-
-  // ── Available players ──────────────────────────────────────────────────────
+  // ── Available players (memoised — must sit above the early return) ─────────
   // Build the effective roster name-set for a team by replaying transactions in
   // EXACTLY the same way as the canonical `useRoster` hook that RostersView uses,
   // so the modal's ownership/availability view never diverges from the Rosters
@@ -147,54 +142,74 @@ export const AddDropPlayerModal = ({
   //     `'completed'`, exactly like useRoster does;
   //   • it ignored the `tournamentIndex <= activeTournamentIndex` upper bound.
   // Mirroring useRoster fixes the "shows on my team but not on my roster" bug.
-  const effectiveRosterNames = (t) => {
-    const names = new Set((t.roster || []).map(p => p.name));
-    if (activeTournamentIndex >= 0) {
+  //
+  // Wrapped in one useMemo keyed on the actual inputs so the full-league
+  // transaction replay (teams × transactions) doesn't re-run on every keystroke
+  // in the search box.
+  const { effectiveRosterNames, rosteredPlayers, limboPlayers, ownerMap } = useMemo(() => {
+    const effectiveRosterNames = (t) => {
+      const names = new Set((t.roster || []).map(p => p.name));
+      if (activeTournamentIndex >= 0) {
+        transactions
+          .filter(tx =>
+            tx.team === t.name &&
+            tx.type !== 'mulligan' &&
+            tx.type !== 'swing_winner' &&
+            tx.tournamentIndex !== undefined &&
+            tx.tournamentIndex <= activeTournamentIndex &&
+            // Match useRoster EXACTLY: count both 'processed' and 'completed'.
+            // Counting only 'processed' wrongly freed FA/waiver pickups that
+            // landed in 'completed' status, so they showed as available here.
+            (tx.status === 'processed' || tx.status === 'completed')
+          )
+          .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
+          .forEach(tx => {
+            if (tx.droppedPlayer) names.delete(tx.droppedPlayer);
+            if (tx.player) names.add(tx.player);
+          });
+      }
+      return names;
+    };
+
+    const rosteredPlayers = new Set(
+      teams.flatMap(t => [...effectiveRosterNames(t)].map(normalizePlayerName))
+    );
+
+    // Players dropped via a processed FA/waiver whose tournament hasn't been completed yet
+    // are "on waivers" — unavailable until that tournament is processed.
+    // We consider a drop "in limbo" if its tournamentIndex maps to an incomplete tournament,
+    // OR if it has no tournamentIndex but happened recently (this week).
+    const limboPlayers = new Set(
       transactions
-        .filter(tx =>
-          tx.team === t.name &&
-          tx.type !== 'mulligan' &&
-          tx.type !== 'swing_winner' &&
-          tx.tournamentIndex !== undefined &&
-          tx.tournamentIndex <= activeTournamentIndex &&
-          // Match useRoster EXACTLY: count both 'processed' and 'completed'.
-          // Counting only 'processed' wrongly freed FA/waiver pickups that
-          // landed in 'completed' status, so they showed as available here.
-          (tx.status === 'processed' || tx.status === 'completed')
-        )
-        .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
-        .forEach(tx => {
-          if (tx.droppedPlayer) names.delete(tx.droppedPlayer);
-          if (tx.player) names.add(tx.player);
-        });
-    }
-    return names;
-  };
+        .filter(tx => {
+          if (tx.status !== 'processed' && tx.status !== 'completed') return false;
+          if (tx.type === 'mulligan') return false;
+          if (!tx.droppedPlayer) return false;
+          // If we have a tournamentIndex, check if that tournament is completed
+          if (tx.tournamentIndex !== undefined) {
+            const t = tournaments?.[tx.tournamentIndex];
+            return t && !t.completed; // limbo = tournament not yet completed
+          }
+          // No tournamentIndex: treat as current week (in limbo)
+          return true;
+        })
+        .map(tx => normalizePlayerName(tx.droppedPlayer))
+    );
 
-  const rosteredPlayers = new Set(
-    teams.flatMap(t => [...effectiveRosterNames(t)].map(normalizePlayerName))
-  );
+    // Ownership map: playerName → teamName (same effective-roster logic as
+    // RostersView, so the owner badge matches the roster).
+    const ownerMap = new Map();
+    teams.forEach(t => {
+      effectiveRosterNames(t).forEach(name => ownerMap.set(normalizePlayerName(name), t.name));
+    });
 
-  // Players dropped via a processed FA/waiver whose tournament hasn't been completed yet
-  // are "on waivers" — unavailable until that tournament is processed.
-  // We consider a drop "in limbo" if its tournamentIndex maps to an incomplete tournament,
-  // OR if it has no tournamentIndex but happened recently (this week).
-  const limboPlayers = new Set(
-    transactions
-      .filter(tx => {
-        if (tx.status !== 'processed' && tx.status !== 'completed') return false;
-        if (tx.type === 'mulligan') return false;
-        if (!tx.droppedPlayer) return false;
-        // If we have a tournamentIndex, check if that tournament is completed
-        if (tx.tournamentIndex !== undefined) {
-          const t = tournaments?.[tx.tournamentIndex];
-          return t && !t.completed; // limbo = tournament not yet completed
-        }
-        // No tournamentIndex: treat as current week (in limbo)
-        return true;
-      })
-      .map(tx => normalizePlayerName(tx.droppedPlayer))
-  );
+    return { effectiveRosterNames, rosteredPlayers, limboPlayers, ownerMap };
+  }, [teams, transactions, activeTournamentIndex, tournaments]);
+
+  if (!isOpen || !team) return null;
+
+  // Merge prop headshots with locally fetched ones
+  const mergedHeadshots = { ...localHeadshots, ...headshots };
 
   // Hide players this team already has a pending waiver claim for
   const thisTeamPendingClaims = new Set(
@@ -210,13 +225,6 @@ export const AddDropPlayerModal = ({
     if (p.isLiv || LIV_PLAYERS.has(p.name)) return false;
     if (thisTeamPendingClaims.has(normalizePlayerName(p.name))) return false;
     return true;
-  });
-
-  // Build ownership map: playerName → teamName (same effective-roster logic as
-  // RostersView, via effectiveRosterNames, so the owner badge matches the roster).
-  const ownerMap = new Map();
-  teams.forEach(t => {
-    effectiveRosterNames(t).forEach(name => ownerMap.set(normalizePlayerName(name), t.name));
   });
 
   // Is the active tournament currently locked (Thu–Sun)?

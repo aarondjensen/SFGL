@@ -129,6 +129,9 @@ export const AddTransactionModal = ({
   // Default the tournament dropdown when the modal opens or the type changes.
   // For mulligan, prefer the currently-playing tournament; for everything else,
   // use the canonical Sun-Sat week math. The commish can still override.
+  // Deliberately NOT keyed on `tournaments`: a background snapshot producing a
+  // new array identity mid-edit would silently reset the commish's manual
+  // tournament selection while the form is open.
   useEffect(() => {
     if (!isOpen) return;
     if (type === 'mulligan') {
@@ -138,7 +141,7 @@ export const AddTransactionModal = ({
       const found = getCurrentTournamentIndex(tournaments);
       if (found >= 0) setTourney(String(found));
     }
-  }, [isOpen, type, tournaments]);
+  }, [isOpen, type]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset all form state when the modal closes so re-opening starts fresh.
   // Avoids the "I opened the panel, picked Detroit, closed, reopened, and
@@ -816,7 +819,7 @@ export const AddTransactionModal = ({
                     style={M.select}
                   >
                     <option value="">— select player —</option>
-                    {lineup.sort((a, b) => a.localeCompare(b)).map(name => (
+                    {[...lineup].sort((a, b) => a.localeCompare(b)).map(name => (
                       <option key={name} value={name}>{name}{rosterMap[name]?.limited ? ' ⭐' : ''}</option>
                     ))}
                   </select>

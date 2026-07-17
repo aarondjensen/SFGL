@@ -28,6 +28,22 @@ function buildUrl(page) {
   return `${API_URL}?pageSize=${PAGE_SIZE}&pageNumber=${page}&rankingDate=&regionId=0&countryId=0&categoryId=0`;
 }
 
+// Per-fetch AbortController timeout (mirrors pgatFetchAndParse in cron.js):
+// pages are fetched in parallel, so one hung OWGR request must not stall the
+// whole handler past the 10s Vercel budget.
+async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`Timeout (${timeoutMs}ms) fetching ${url}`);
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function extractPlayers(data) {
   const out = [];
   const rows = data?.rankingsList;
@@ -49,7 +65,7 @@ export default async function handler(req, res) {
 
   try {
     // Step 1: fetch page 1 to discover how many pages exist.
-    const firstResp = await fetch(buildUrl(1), { headers: HEADERS });
+    const firstResp = await fetchWithTimeout(buildUrl(1), { headers: HEADERS });
     if (!firstResp.ok) throw new Error(`OWGR API returned ${firstResp.status} on page 1`);
     const firstData = await firstResp.json();
 
@@ -67,7 +83,7 @@ export default async function handler(req, res) {
       const remainingPageNums = Array.from({ length: pagesToFetch - 1 }, (_, i) => i + 2);
       const results = await Promise.all(
         remainingPageNums.map(async (page) => {
-          const resp = await fetch(buildUrl(page), { headers: HEADERS });
+          const resp = await fetchWithTimeout(buildUrl(page), { headers: HEADERS });
           if (!resp.ok) throw new Error(`OWGR API returned ${resp.status} on page ${page}`);
           return resp.json();
         })

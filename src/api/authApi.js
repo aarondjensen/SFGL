@@ -198,7 +198,15 @@ export function subscribeClaims(cb) {
       snap.forEach((d) => { map[d.id] = d.data(); });
       cb(map);
     },
-    (e) => console.error('[authApi] subscribeClaims:', e),
+    (e) => {
+      // Fail OPEN with an empty claims map. App.jsx renders LoadingScreen
+      // until the first snapshot arrives (claims === null); if the listener
+      // errors instead of delivering, only-logging left the app on the
+      // loading screen forever. An empty map degrades to "no team claimed"
+      // (public view / claim screen), which is recoverable.
+      console.error('[authApi] subscribeClaims:', e);
+      cb({});
+    },
   );
 }
 

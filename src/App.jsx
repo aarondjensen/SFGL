@@ -465,15 +465,12 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           // with a wrong relative's ID; if the player can't be uniquely
           // identified, they're absent from results (preserving any
           // existing value, but at least not making it worse).
+          // updateHeadshots persists the delta to the player docs itself,
+          // so no separate playersApi.upsertMany write is needed here.
           updateHeadshots(prev => ({ ...(prev || {}), ...data.results }));
           const found = Object.keys(data.results).length;
           const notFound = toFetch.length - found;
           console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found (will retry in ${HEADSHOT_RETRY_MS / 1000}s if still missing)`);
-          // Persist to player documents for future loads
-          import('./api/firebase').then(({ playersApi }) => {
-            const toSave = Object.entries(data.results).map(([name, espnId]) => ({ name, espnId }));
-            if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
-          }).catch(() => {});
         }
       })
       .catch(() => {});

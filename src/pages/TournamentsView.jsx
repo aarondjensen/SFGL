@@ -908,10 +908,13 @@ export const TournamentsView = ({
                 <td style={{ padding: '8px 8px' }}>
                   <div style={{ display: 'flex', gap: 4 }}>
                     {[
-                      { badge: 'S', key: 'isSignature', activeColor: 'rgba(130,80,200,0.8)', activeBorder: 'rgba(130,80,200,0.5)' },
-                      { badge: 'M', key: 'isMajor',     activeColor: colors.textGold,         activeBorder: colors.border },
-                      { badge: 'Alt', key: 'isAlternate', activeColor: colors.danger,           activeBorder: colors.dangerBorder },
-                    ].map(({ badge, key, activeColor, activeBorder }) => {
+                      // activeBg is a ready-to-use color — activeColor values are
+                      // full rgba()/hex strings, so wrapping them in another
+                      // rgba(..., 0.15) produced invalid CSS (no tint rendered).
+                      { badge: 'S', key: 'isSignature', activeColor: 'rgba(130,80,200,0.8)', activeBorder: 'rgba(130,80,200,0.5)', activeBg: 'rgba(130,80,200,0.15)' },
+                      { badge: 'M', key: 'isMajor',     activeColor: colors.textGold,         activeBorder: colors.border,          activeBg: 'rgba(245,197,24,0.15)' },
+                      { badge: 'Alt', key: 'isAlternate', activeColor: colors.danger,           activeBorder: colors.dangerBorder,    activeBg: 'rgba(220,80,80,0.15)' },
+                    ].map(({ badge, key, activeColor, activeBorder, activeBg }) => {
                       const active = t[key];
                       return (
                         <button key={badge} onClick={() => updateLocal(realIndex, { [key]: !active })}
@@ -920,7 +923,7 @@ export const TournamentsView = ({
                             borderRadius: 2, fontFamily: fonts.sans,
                             fontSize: fontSize.xs, fontWeight: 700, cursor: 'pointer',
                             transition: 'all 0.15s',
-                            background: active ? `rgba(${activeColor}, 0.15)` : 'rgba(255,255,255,0.04)',
+                            background: active ? activeBg : 'rgba(255,255,255,0.04)',
                             border: `1px solid ${active ? activeBorder : colors.borderSubtle}`,
                             color: active ? activeColor : colors.textMuted,
                           }}

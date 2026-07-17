@@ -54,6 +54,15 @@ const normalizeNordic = (s) => (s || '')
   .replace(/\s+/g, ' ')
   .trim();
 
+// "B. Brown" ↔ "Ben Brown" style matching key: initials of all but the last
+// word + the last word. Used by the live-leaderboard matcher in RostersView.
+const buildInitialsKey = (name) => {
+  const parts = normalizeNordic(name).split(' ');
+  if (parts.length < 2) return null;
+  const initials = parts.slice(0, -1).map(p => p[0]).join('');
+  return `${initials} ${parts[parts.length - 1]}`;
+};
+
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
   player.limited   ? 'rgba(245,197,24,0.9)' :
@@ -430,7 +439,7 @@ export const RostersView = ({
   tournaments, allPlayers, transactions, setTransactions,
   loggedInUser, isCommissioner, globalPlayerStats, headshots,
   updateHeadshots,
-  leagueSettings = {}, settings, firstTeeTime,
+  leagueSettings = {}, settings,
 }) => {
   // leagueSettings may come from either prop name (App passes settings=)
   const resolvedSettings = settings || leagueSettings;
@@ -935,6 +944,46 @@ export const RostersView = ({
     });
   }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglStatsMap, rosterView, tournamentField, statsView, globalPlayerStats, worldRankMap, playerDirectoryMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Name-keyed live-leaderboard matcher, built once per liveData update
+  // (mirrors TournamentsView) so the roster table doesn't re-scan the whole
+  // players array per row per render.
+  //   findStrict: exact → last-name       (used by the Pos column)
+  //   find:       + substring → initials  (used by the Score/Tee column)
+  const liveByName = useMemo(() => {
+    if (!liveData?.players?.length) return null;
+    const exact = new Map();
+    const byLast = new Map();
+    const byInitials = new Map();
+    liveData.players.forEach(lp => {
+      const n = normalizeNordic(lp.name);
+      if (!exact.has(n)) exact.set(n, lp);
+      const ln = n.split(' ').slice(-1)[0];
+      if (ln && ln.length > 3 && !byLast.has(ln)) byLast.set(ln, lp);
+      const ik = buildInitialsKey(lp.name);
+      if (ik && !byInitials.has(ik)) byInitials.set(ik, lp);
+    });
+    const findStrict = (rosterName) => {
+      const n = normalizeNordic(rosterName);
+      const e = exact.get(n);
+      if (e) return e;
+      const ln = n.split(' ').slice(-1)[0];
+      return (ln && ln.length > 3 && byLast.get(ln)) || null;
+    };
+    const find = (rosterName) => {
+      const strict = findStrict(rosterName);
+      if (strict) return strict;
+      const n = normalizeNordic(rosterName);
+      const sub = liveData.players.find(lp => {
+        const ln2 = normalizeNordic(lp.name);
+        return ln2.includes(n) || n.includes(ln2);
+      });
+      if (sub) return sub;
+      const ik = buildInitialsKey(rosterName);
+      return (ik && byInitials.get(ik)) || null;
+    };
+    return { find, findStrict };
+  }, [liveData]);
+
   if (!team) return null;
 
   const lineupOpen    = windowStatus.lineupOpen;
@@ -1334,9 +1383,11 @@ export const RostersView = ({
                 const hasLineup      = (team.lineup || []).length > 0;
                 const isEditing      = canEditLineup && lineupMode;
                 // Only dim benched players once the tournament week has actually begun —
-                // i.e. tee times are posted (firstTeeTime exists) or lineup window is open.
+                // i.e. the tournament is locked (Thu–Sun play) or the lineup window is
+                // open. (The old `firstTeeTime` prop was never passed by App — always
+                // undefined — so dimming never activated during play.)
                 // Between events the lineup carries over from the prior week and should not dim.
-                const tournamentActive = !!(firstTeeTime || lineupOpen);
+                const tournamentActive = isTournamentLocked(activeTournament) || lineupOpen;
                 const isBenched      = tournamentActive && hasLineup && !isInLineup && !isEditing;
                 const dimColor       = 'rgba(255,255,255,0.45)';
                 const rowClickable   = isEditing && isOwnTeam && (isInLineup || canAddToLineup);
@@ -1479,34 +1530,14 @@ export const RostersView = ({
 
                       // Col 1: Score (live) → Tee Time → ⛳ in field → —
                       let col1;
-                      if (liveData?.players?.length) {
-                        // Multi-strategy name matching from golfUtils pattern
-                        const buildInitialsKey = (name) => {
-                          const parts = normalize(name).split(' ');
-                          if (parts.length < 2) return null;
-                          const initials = parts.slice(0, -1).map(p => p[0]).join('');
-                          return `${initials} ${parts[parts.length - 1]}`;
-                        };
-                        const rosterLast = normName.split(' ').slice(-1)[0];
-                        const rosterInitialsKey = buildInitialsKey(player.name);
+                      if (liveByName) {
                         // Only match roster players who are actually in this week's
                         // field (i.e. those that earn the ⛳ flag). A non-field
                         // player must never pick up a leaderboard entry via the
-                        // fuzzy last-name / substring fallbacks below — that caused
+                        // fuzzy last-name / substring fallbacks — that caused
                         // a benched "B. Brown" who isn't playing to inherit another
                         // Brown's CUT status from the live leaderboard.
-                        const live = !inField ? null : (
-                          liveData.players.find(p => normalize(p.name) === normName)
-                          || liveData.players.find(p => {
-                            const ln = normalize(p.name).split(' ').slice(-1)[0];
-                            return ln === rosterLast && rosterLast.length > 3;
-                          })
-                          || liveData.players.find(p => {
-                            const ln = normalize(p.name);
-                            return ln.includes(normName) || normName.includes(ln);
-                          })
-                          || (rosterInitialsKey ? liveData.players.find(p => buildInitialsKey(p.name) === rosterInitialsKey) : null)
-                        );
+                        const live = !inField ? null : liveByName.find(player.name);
 
                         // Determine display mode from thru field (golfUtils pattern):
                         // "F" or numeric → player has started, show score
@@ -1561,16 +1592,9 @@ export const RostersView = ({
                       // processed — final positions are still the most useful
                       // thing to show. (Once processed, the processedAt gate
                       // in the /api/live effect suppresses liveData entirely.)
-                      if (liveData?.state === 'in' || liveData?.state === 'post') {
-                        // Re-find live entry (same field-gated match logic as col1)
-                        const rosterLast = normName.split(' ').slice(-1)[0];
-                        const live = !inField ? null : (
-                          liveData.players.find(p => normalize(p.name) === normName)
-                          || liveData.players.find(p => {
-                            const ln = normalize(p.name).split(' ').slice(-1)[0];
-                            return ln === rosterLast && rosterLast.length > 3;
-                          })
-                        );
+                      if (liveByName && (liveData?.state === 'in' || liveData?.state === 'post')) {
+                        // Re-find live entry (field-gated, exact → last-name only)
+                        const live = !inField ? null : liveByName.findStrict(player.name);
                         if (live && !live.isCut && !live.isWD) {
                           const thruNum = live.thru ? parseInt(live.thru, 10) : NaN;
                           const isFinished = live.thru === 'F';
