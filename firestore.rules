@@ -1,0 +1,167 @@
+rules_version = '2';
+
+// ============================================================================
+// SFGL Firestore security rules — the server-enforced counterpart to the
+// client-side gates in the app. Deploy with:
+//
+//   firebase deploy --only firestore:rules
+//
+// Identity model (see src/api/authApi.js):
+//   • request.auth.uid                    — Firebase Auth user (Google/Apple).
+//   • request.auth.token.commissioner     — custom claim stamped once via the
+//     Admin SDK ('stamp-commissioner' action in api/cron.js). NOT writable
+//     from any client, so client state can never grant admin.
+//   • /team_claims/{teamId}.uid           — which user owns which team.
+//
+// The Vercel serverless functions (api/*.js) use the Admin SDK, which
+// BYPASSES these rules entirely — cron jobs, waiver processing, OWGR sync,
+// and push fan-out are unaffected by anything in this file.
+//
+// Every read requires sign-in: the app renders AuthGate until the user is
+// signed in AND owns a team (or is the commissioner), so no legitimate
+// client ever reads Firestore while signed out (see App root in src/App.jsx).
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isCommissioner() {
+      return signedIn() && request.auth.token.commissioner == true;
+    }
+
+    // Caller owns the team: their uid is recorded on team_claims/{teamId}.
+    function ownsTeam(teamId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/team_claims/$(teamId))
+        && get(/databases/$(database)/documents/team_claims/$(teamId)).data.uid == request.auth.uid;
+    }
+
+    // ── Teams ────────────────────────────────────────────────────────────────
+    // Managers may update their OWN team doc (lineup, mulligans, roster after
+    // an add/drop); the commissioner may write any team. Creating/deleting
+    // team docs is a league-structure change — commissioner only.
+    // Client coordination: teamsApi.setAll (src/api/firebase.js) diffs against
+    // the remote docs and only writes teams that actually changed, so a
+    // manager's save touches only their own doc and passes this rule.
+    match /teams/{teamId} {
+      allow read: if signedIn();
+      allow update: if isCommissioner() || ownsTeam(teamId);
+      allow create, delete: if isCommissioner();
+    }
+
+    // ── Team claims ──────────────────────────────────────────────────────────
+    // Self-claim: a signed-in user may bind their OWN uid to an unclaimed
+    // team, and may update their own claim doc (notifyEmail, linked email /
+    // displayName). Reassigning or releasing a claimed team (including
+    // setting uid back to null) is commissioner-only.
+    match /team_claims/{teamId} {
+      allow read: if signedIn();
+      allow create: if isCommissioner()
+        || (signedIn() && request.resource.data.uid == request.auth.uid);
+      allow update: if isCommissioner()
+        || (signedIn()
+            && request.resource.data.uid == request.auth.uid
+            && (resource.data.uid == null || resource.data.uid == request.auth.uid));
+      allow delete: if isCommissioner();
+    }
+
+    // ── League structure & results — commissioner-only writes ───────────────
+    match /tournaments/{tournamentName} {
+      allow read: if signedIn();
+      allow write: if isCommissioner();
+    }
+
+    match /league_settings/{key} {
+      allow read: if signedIn();
+      allow write: if isCommissioner();
+    }
+
+    match /tournament_results/{resultId} {
+      allow read: if signedIn();
+      allow write: if isCommissioner();
+    }
+
+    // ── Transactions ─────────────────────────────────────────────────────────
+    // Any signed-in manager may submit and update transactions (add/drop,
+    // waiver claims, status changes). Deleting league history is
+    // commissioner-only. transactionsApi.sync's client-side deletes are
+    // covered by the transaction-sync rework; a denied delete fails only the
+    // delete batch — inserts/updates commit independently.
+    match /transactions/{txId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if isCommissioner();
+    }
+
+    // ── sfgl_data (legacy key-value store) ───────────────────────────────────
+    // Commissioner-only, with two manager carve-outs:
+    //   • manager_activity_<teamId> — last-login heartbeat, written by every
+    //     manager on session restore (src/api/managerActivity.js).
+    //   • player-registry — durable player-attribute index persisted from the
+    //     updateTeams chokepoint on every save, including manager add/drops
+    //     (src/hooks/index.js).
+    // 'manager_credentials' (retired password hashes) is locked to NO ONE —
+    // delete the doc with scripts/delete-manager-credentials.js.
+    match /sfgl_data/{key} {
+      allow read: if signedIn() && key != 'manager_credentials';
+      allow write: if key != 'manager_credentials'
+        && (isCommissioner()
+            || (signedIn()
+                && (key == 'player-registry' || key.matches('manager_activity_.+'))));
+    }
+
+    // ── Players ──────────────────────────────────────────────────────────────
+    // Commissioner has full control (OWGR sync, LIV flags, merges). Any
+    // signed-in client may persist auto-fetched headshot IDs — App.jsx fetches
+    // missing espn_ids from /api/headshots on load and writes them back — but
+    // may touch ONLY those fields, never ranks/stats/LIV status.
+    match /players/{playerName} {
+      allow read: if signedIn();
+      allow create: if isCommissioner()
+        || (signedIn()
+            && request.resource.data.keys().hasOnly(['name', 'espn_id', 'headshot_url']));
+      allow update: if isCommissioner()
+        || (signedIn()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['name', 'espn_id', 'headshot_url']));
+      allow delete: if isCommissioner();
+    }
+
+    // ── App metadata (cache timestamps) ──────────────────────────────────────
+    // players_last_updated is stamped by playersApi.upsertMany, which the
+    // headshot auto-persist path above also runs — so it stays signed-in
+    // writable. Anything else in here is commissioner-only.
+    match /app_metadata/{key} {
+      allow read: if signedIn();
+      allow write: if isCommissioner() || (signedIn() && key == 'players_last_updated');
+    }
+
+    // ── Draft ────────────────────────────────────────────────────────────────
+    // The draft is commissioner-driven: DraftModal writes every team's roster
+    // via updateTeams, which only the commissioner may do — so draft state and
+    // picks are commissioner-only too.
+    match /draft_state/{docId} {
+      allow read: if signedIn();
+      allow write: if isCommissioner();
+    }
+
+    match /draft_picks/{pickId} {
+      allow read: if signedIn();
+      allow write: if isCommissioner();
+    }
+
+    // ── Push tokens ──────────────────────────────────────────────────────────
+    // Devices register/refresh/remove their own FCM token doc (doc ID is the
+    // token itself). Server-side fan-out reads these with the Admin SDK.
+    match /pushTokens/{token} {
+      allow read, write: if signedIn();
+    }
+
+    // Everything not matched above (including the deprecated /liv_roster) is
+    // denied by Firestore's implicit default — no catch-all allow exists.
+  }
+}

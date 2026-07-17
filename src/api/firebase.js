@@ -9,7 +9,8 @@
  *
  * Firebase services used:
  *   • Firestore  — all league data (replaces every Supabase table)
- *   • No Firebase Auth — manager auth stays localStorage-based (unchanged)
+ *   • Firebase Auth — Google/Apple sign-in + team claims (see api/authApi.js;
+ *     the legacy name/password managerAuthApi was removed with the locked rules)
  *   • No Firebase Storage — headshots still served from CDN / manual overrides
  *
  * Firestore collections → former Supabase tables:
@@ -28,9 +29,7 @@
  * ============================================================================
  */
 
-import { initializeApp, getApps } from 'firebase/app';
 import {
-  getFirestore,
   collection,
   doc,
   getDoc,
@@ -48,20 +47,11 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 
-// ── Firebase config — values come from environment variables ─────────────────
-// Vite exposes env vars prefixed with VITE_
-const firebaseConfig = {
-  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
-};
-
-// Avoid re-initialising on hot reload
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// App + Firestore initialization lives in _init.js — the single home for the
+// Firebase app instance, so App Check (initialized there) covers every
+// Firestore call. This file must never call initializeApp() itself.
+import { db } from './_init';
+export { db };
 
 // ── Alias cache — maps alternate player names to canonical doc IDs ────────────
 // Populated lazily from player docs that have an 'aliases' array field.
@@ -82,6 +72,24 @@ async function getAliasMap() {
 function invalidateAliasCache() { _aliasCache = null; }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Deterministic stringify (sorted object keys, undefined-valued keys skipped)
+ * so local-vs-remote doc comparison can't be fooled by key order, which
+ * differs between app-built objects and Firestore's decoded data.
+ */
+function _stableStringify(v) {
+  if (Array.isArray(v)) {
+    return '[' + v.map(x => (x === undefined ? 'null' : _stableStringify(x))).join(',') + ']';
+  }
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).sort()
+      .filter(k => v[k] !== undefined)
+      .map(k => JSON.stringify(k) + ':' + _stableStringify(v[k]))
+      .join(',') + '}';
+  }
+  return JSON.stringify(v);
+}
 
 /** Return all documents from a collection as an array of plain objects. */
 async function _getAll(collectionName) {
@@ -298,6 +306,7 @@ export const playersApi = {
    */
   async clearEspnIds(names) {
     if (!Array.isArray(names) || names.length === 0) return;
+    const aliasMap = await getAliasMap();
     const BATCH_SIZE = 250;
     for (let i = 0; i < names.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
@@ -477,30 +486,44 @@ export const teamsApi = {
     // the one issuing the write. That caused mulligans, lineups, and any
     // other team-level fields to flicker / reset during the write window.
     //
-    // Replaced with an upsert (idempotent per-doc writes) plus a targeted
-    // delete of any docs that exist remotely but aren't in the local set.
-    // Snapshots now arrive as a single coherent emission per write.
+    // Locked-rules coordination (firestore.rules): a manager may only write
+    // their OWN team doc, but updateTeams always passes the full team list.
+    // So (1) skip docs identical to remote — a manager's save then touches
+    // only the team they changed — and (2) write each doc independently
+    // rather than in one batch, so a denied write to someone else's (stale)
+    // doc can never sink the caller's write to their own team.
     if (!Array.isArray(teams)) return [];
     const snap = await getDocs(collection(db, 'teams'));
-    const remoteIds = new Set(snap.docs.map(d => d.id));
+    const remoteById = new Map(snap.docs.map(d => [d.id, d.data()]));
     const localIds = new Set(teams.map(t => t.id || t.name));
 
-    const BATCH_SIZE = 499;
-    // Upsert all locals
-    for (let i = 0; i < teams.length; i += BATCH_SIZE) {
-      const batch = writeBatch(db);
-      teams.slice(i, i + BATCH_SIZE).forEach(team => {
-        const id = team.id || team.name;
-        batch.set(doc(db, 'teams', id), { ...team });
-      });
-      await batch.commit();
-    }
-    // Delete any remote docs that no longer exist locally
-    const toDelete = [...remoteIds].filter(id => !localIds.has(id));
+    const changed = teams.filter(team => {
+      const id = team.id || team.name;
+      const remote = remoteById.get(id);
+      return !remote || _stableStringify({ ...team }) !== _stableStringify(remote);
+    });
+    const writes = await Promise.allSettled(
+      changed.map(team => setDoc(doc(db, 'teams', team.id || team.name), { ...team }))
+    );
+    writes.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        console.error('[teamsApi.setAll] write failed for team', changed[i].id || changed[i].name, r.reason);
+      }
+    });
+
+    // Delete any remote docs that no longer exist locally — a league-structure
+    // change only the commissioner's rules allow; settled individually for the
+    // same isolation reason as above.
+    const toDelete = [...remoteById.keys()].filter(id => !localIds.has(id));
     if (toDelete.length) {
-      const batch = writeBatch(db);
-      toDelete.forEach(id => batch.delete(doc(db, 'teams', id)));
-      await batch.commit();
+      const deletes = await Promise.allSettled(
+        toDelete.map(id => deleteDoc(doc(db, 'teams', id)))
+      );
+      deletes.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          console.error('[teamsApi.setAll] delete failed for team', toDelete[i], r.reason);
+        }
+      });
     }
     return teams;
   },
@@ -853,65 +876,6 @@ export const draftStateApi = {
 
   async clear() {
     await deleteDoc(doc(db, 'draft_state', 'default'));
-  },
-};
-
-// ============================================================================
-// MANAGER AUTH API
-// Credentials stored in sfgl_data (via sfglDataApi). Sessions in localStorage.
-// Identical behaviour to supabase.js.
-// ============================================================================
-const CREDS_KEY = 'manager_credentials';
-
-const _hashPassword = async (password) => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-};
-
-export const managerAuthApi = {
-  async _getCreds() {
-    const creds = await sfglDataApi.get(CREDS_KEY);
-    return creds || {};
-  },
-
-  async setCredentials(teamId, name, password) {
-    const creds       = await this._getCreds();
-    const passwordHash = await _hashPassword(password.trim());
-    creds[teamId]     = { name: name.trim(), passwordHash };
-    await sfglDataApi.set(CREDS_KEY, creds);
-  },
-
-  async login(name, password) {
-    const creds        = await this._getCreds();
-    const passwordHash = await _hashPassword(password.trim());
-    const entry = Object.entries(creds).find(([, c]) =>
-      c.name.toLowerCase() === name.trim().toLowerCase() &&
-      (c.passwordHash === passwordHash || c.password === password.trim())
-    );
-    if (!entry) throw new Error('Invalid name or password');
-    const [teamId, cred] = entry;
-    // Auto-migrate legacy plain-text → hashed
-    if (cred.password && !cred.passwordHash) {
-      creds[teamId] = { name: cred.name, passwordHash };
-      await sfglDataApi.set(CREDS_KEY, creds);
-    }
-    localStorage.setItem('manager_team_id', teamId);
-    localStorage.removeItem('is_commissioner');
-    return { teamId };
-  },
-
-  async getCurrentSession() {
-    const teamId = localStorage.getItem('manager_team_id');
-    return teamId ? { teamId } : null;
-  },
-
-  async logout() {
-    localStorage.removeItem('manager_team_id');
-    localStorage.removeItem('is_commissioner');
   },
 };
 

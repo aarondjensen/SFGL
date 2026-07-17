@@ -1,17 +1,6 @@
 import { CHAR_MAP, PLAYER_NAME_ALIASES, PGA_TOUR_IDS, TEAM_ABBREVIATIONS, BONUSES_REGULAR, BONUSES_MAJOR, SWINGS } from '../constants';
 
 // ============================================================================
-// AUTH
-// ============================================================================
-export const hashPassword = async (password) => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-};
-
-// ============================================================================
 // PLAYER / NAME UTILITIES
 // ============================================================================
 export const makePlayer = (name, limited = false, stars = 0, unlimited = false, yearsOfService = 1) => ({

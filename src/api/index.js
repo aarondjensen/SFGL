@@ -13,7 +13,6 @@ export {
   playerStatsApi,
   headshotsApi,
   draftStateApi,
-  managerAuthApi,
   draftPicksApi,
   sfglDataApi,
   globalPlayerStatsApi,
