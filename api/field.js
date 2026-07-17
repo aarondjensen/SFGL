@@ -11,15 +11,7 @@ const HEADERS = {
   'Accept-Language': 'en-US,en;q=0.9',
 };
 
-function extractNextData(html) {
-  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (!m) return null;
-  try { return JSON.parse(m[1]); } catch { return null; }
-}
-
-function nameToSlug(name) {
-  return name.toLowerCase().replace(/['']/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
+import { extractNextData, nameToSlug } from './_constants.js';
 
 function walkAll(obj, fn) {
   if (!obj || typeof obj !== 'object') return;

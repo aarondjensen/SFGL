@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useDialog } from './DialogContext';
 import { theme, colors, fonts, SWINGS, fontSize } from '../theme.js';
 import { computeSwingAward } from '../utils/swingAward';
+import { buildEffectiveRoster } from '../utils/sharedHelpers';
 
 // Panel imports — each becomes a drillable section in the new architecture.
 import { S, M, disabledBtn } from './admin/adminStyles';
@@ -31,37 +32,6 @@ import { WaiverProcessingPanel } from './admin/WaiverProcessingPanel';
 // accordion" pattern: the commish lands on the page seeing what needs their
 // attention NOW, rather than a flat wall of admin tooling.
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Effective-roster helper — unchanged from prior version. Used to feed
-// TournamentResultsPanel a roster snapshot that matches what RostersView
-// shows (current team.roster + processed transactions not yet synced).
-const getEffectiveRoster = (team, allTransactions) => {
-  if (!team) return [];
-  const teamKey = String(team.name || '').trim().toLowerCase();
-  let roster = (team.roster || []).filter(p => p && typeof p.name === 'string' && p.name.length > 0);
-  roster = roster.map(p => ({ ...p }));
-
-  (allTransactions || [])
-    .filter(tx => {
-      if (String(tx.team || '').trim().toLowerCase() !== teamKey) return false;
-      if (tx.type === 'mulligan') return false;
-      if (tx.type === 'swing_winner') return false;
-      if (tx.status === 'pending') return false;
-      if (tx.status === 'failed')  return false;
-      return true;
-    })
-    .sort((a, b) => (a.tournamentIndex ?? 0) - (b.tournamentIndex ?? 0))
-    .forEach(tx => {
-      if (tx.droppedPlayer && typeof tx.droppedPlayer === 'string') {
-        roster = roster.filter(p => p.name !== tx.droppedPlayer);
-      }
-      if (typeof tx.player === 'string' && tx.player.length > 0 && !roster.some(p => p.name === tx.player)) {
-        roster.push({ name: tx.player, limited: !!tx.limited });
-      }
-    });
-
-  return roster;
-};
 
 // ── Chevron arrow used in status-banner rows + section tiles ──
 const ChevronRight = ({ size = 14, color }) => (
@@ -182,7 +152,7 @@ export const AdminView = ({
     safeTeams.forEach(t => {
       if (!t || !t.id) return;
       try {
-        map[t.id] = getEffectiveRoster(t, safeTx);
+        map[t.id] = buildEffectiveRoster(t, safeTx, { asArray: true });
       } catch (err) {
         console.warn('[AdminView] roster snapshot failed for', t.name, err);
         map[t.id] = t.roster || [];

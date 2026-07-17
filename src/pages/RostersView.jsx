@@ -16,7 +16,7 @@ import {
 import { theme, colors, fonts, fontSize } from '../theme.js';
 import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
-import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament } from '../utils/sharedHelpers';
+import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, normalizeNordic } from '../utils/sharedHelpers';
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
 // Thin wrappers preserve the (name, isLimited, headshotMap) call signature
@@ -32,27 +32,6 @@ const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) =>
 
 const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) =>
   _makeHeadshotErrorHandler(playerName, headshotMap, isLimited);
-
-// ── Nordic name normalization (single definition, used throughout) ────────────
-// Normalizes Nordic and other diacritics, plus hyphens and whitespace, so
-// roster names match field/leaderboard names regardless of source format.
-//   • Diacritics: NFD decompose + strip combining marks (Höjgaard → Hojgaard)
-//   • Nordic special letters: ø/Ø → o/O, æ/Æ → ae/Ae, ß → ss
-//   • Hyphens to spaces ("Si-Woo Kim" → "Si Woo Kim") — PGA Tour renders
-//     Korean names hyphenated; rosters often use spaces (especially after
-//     a merge canonicalised to the spaced form). Without this, the playing
-//     badge and tee-time lookup silently miss those players.
-//   • Collapse whitespace so the hyphen->space replacement doesn't leave
-//     double spaces.
-const normalizeNordic = (s) => (s || '')
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/ø/g, 'o').replace(/Ø/g, 'O')
-  .replace(/æ/g, 'ae').replace(/Æ/g, 'Ae')
-  .replace(/ß/g, 'ss')
-  .replace(/-/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
 
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>

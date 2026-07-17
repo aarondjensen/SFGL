@@ -46,9 +46,6 @@ import { TournamentsView }  from './pages/TournamentsView';
 // AdminView and TransactionsView (and their transitive deps like DraftModal)
 // are deferred until the user actually navigates to those tabs. This removes
 // thousands of lines of JS from the initial bundle.
-// LoginPage was added to this list in Wave 5 — most users browse anonymously
-// and never click Sign In, so the LoginPage component + its CSS shouldn't be
-// in the initial bundle.
 const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m => ({ default: m.AdminView })));
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 

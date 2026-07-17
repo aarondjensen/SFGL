@@ -1,5 +1,10 @@
 // src/pages/admin/TeamLineupsEditor.jsx
 // ============================================================================
+// TODO(dead-code): currently imported by nothing — kept (not deleted with the
+// other orphaned admin panels) because the admin-panel fix task (missing-lineup
+// warning) may re-wire it into TournamentResultsPanel. If that task lands
+// without adopting this component, delete this file.
+// ============================================================================
 // Inline editor for the selected tournament's team lineups. Used during both
 // manual processing (first time the tournament is scored) and reprocessing
 // (correcting an already-completed tournament). Edits flow directly into
