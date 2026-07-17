@@ -33,10 +33,12 @@ importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-comp
 // identifier (security is enforced via Firestore rules + App Check, not by
 // hiding this key).
 //
-// SETUP NOTE: replace these placeholders by hardcoding the same values that
-// your VITE_FIREBASE_* env vars contain. Service workers can't read Vite env
-// vars, so they need to be baked in. Find them in:
-//   Firebase Console → Project Settings → General → Your apps → Web app config
+// BUILD NOTE: the REPLACE_WITH_* placeholders below are substituted with the
+// real VITE_FIREBASE_* values by the `firebase-messaging-sw` plugin in
+// vite.config.ts — at build time for `npm run build` (rewrites the copy in
+// dist/) and on the fly for `npm run dev`. Service workers can't read Vite
+// env vars directly, so this file is treated as a template. Do NOT deploy
+// this file verbatim without running the build.
 firebase.initializeApp({
   apiKey:            'REPLACE_WITH_VITE_FIREBASE_API_KEY',
   authDomain:        'REPLACE_WITH_VITE_FIREBASE_AUTH_DOMAIN',
@@ -66,8 +68,8 @@ messaging.onBackgroundMessage((payload) => {
   // present.
   const options = {
     body,
-    icon: '/web-app-manifest-192x192.png',
-    badge: '/web-app-manifest-192x192.png',
+    icon: '/favicon/web-app-manifest-192x192.png',
+    badge: '/favicon/web-app-manifest-192x192.png',
     // Tag groups notifications: a new push with the same tag replaces the old
     // one. We use eventType so e.g. multiple waiver-result pushes collapse
     // into one rather than stacking up.

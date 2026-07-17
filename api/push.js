@@ -223,13 +223,14 @@ export default async function handler(req, res) {
     // Web-specific options: icon path, click action handled by SW.
     webpush: {
       notification: {
-        icon: '/web-app-manifest-192x192.png',
-        badge: '/web-app-manifest-192x192.png',
+        icon: '/favicon/web-app-manifest-192x192.png',
+        badge: '/favicon/web-app-manifest-192x192.png',
       },
       fcmOptions: {
         // The link FCM will open when the notification is clicked. This is a
         // fallback for browsers that don't have a service worker handler.
-        link: deepLink ? `https://sfglgolf.com/${deepLink.startsWith('#') ? deepLink : '#' + deepLink}` : 'https://sfglgolf.com/',
+        // www is the canonical host — the bare domain 307-redirects.
+        link: deepLink ? `https://www.sfglgolf.com/${deepLink.startsWith('#') ? deepLink : '#' + deepLink}` : 'https://www.sfglgolf.com/',
       },
     },
   });

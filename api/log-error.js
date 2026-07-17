@@ -43,6 +43,7 @@ const MAX_UA = 300;
 
 function clean(s, max) {
   if (typeof s !== 'string') return '';
+  // eslint-disable-next-line no-control-regex -- stripping control chars is the point
   return s.replace(/[\u0000-\u001F\u007F]/g, ' ').slice(0, max);
 }
 

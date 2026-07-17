@@ -1,6 +1,58 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
+import { readFileSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
+
+// public/firebase-messaging-sw.js is a template: service workers can't read
+// Vite env vars, so its firebase.initializeApp() block contains
+// REPLACE_WITH_VITE_FIREBASE_* placeholders. This plugin substitutes the real
+// values from the environment (.env locally, project env vars on Vercel):
+//   • build: Vite copies public/ verbatim into dist/, so after the bundle is
+//     written we rewrite dist/firebase-messaging-sw.js in place.
+//   • dev:   a middleware serves the substituted file at its root URL.
+// A missing env var fails the build loudly — a placeholder reaching
+// production means background push is silently broken.
+function firebaseMessagingSw(env: Record<string, string>): Plugin {
+  const inject = (source: string) =>
+    source.replace(/REPLACE_WITH_(VITE_[A-Z0-9_]+)/g, (_match, key) => {
+      const value = env[key]
+      if (!value) {
+        throw new Error(
+          `firebase-messaging-sw.js: env var ${key} is not set — ` +
+          'define it in .env (or Vercel project settings) so the service ' +
+          'worker gets a real Firebase config.'
+        )
+      }
+      return value
+    })
+
+  let root = process.cwd()
+  let outDir = 'dist'
+  let isBuild = false
+
+  return {
+    name: 'firebase-messaging-sw',
+    configResolved(config) {
+      root = config.root
+      outDir = config.build.outDir
+      isBuild = config.command === 'build'
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.split('?')[0] !== '/firebase-messaging-sw.js') return next()
+        const source = readFileSync(path.join(root, 'public/firebase-messaging-sw.js'), 'utf8')
+        res.setHeader('Content-Type', 'text/javascript')
+        res.end(inject(source))
+      })
+    },
+    closeBundle() {
+      if (!isBuild) return
+      const outFile = path.resolve(root, outDir, 'firebase-messaging-sw.js')
+      writeFileSync(outFile, inject(readFileSync(outFile, 'utf8')))
+    },
+  }
+}
 
 // `npm run analyze` (= `vite build --mode analyze`) writes a treemap of the
 // bundle to dist/stats.html and auto-opens it. After the Wave I refactor the
@@ -19,6 +71,7 @@ import { visualizer } from 'rollup-plugin-visualizer'
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
+    firebaseMessagingSw(loadEnv(mode, process.cwd(), 'VITE_')),
     mode === 'analyze' && visualizer({
       filename: 'dist/stats.html',
       open: true,         // auto-open the report in the default browser

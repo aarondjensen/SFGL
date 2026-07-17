@@ -105,13 +105,15 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
       },
       webpush: {
         notification: {
-          icon: '/web-app-manifest-192x192.png',
-          badge: '/web-app-manifest-192x192.png',
+          icon: '/favicon/web-app-manifest-192x192.png',
+          badge: '/favicon/web-app-manifest-192x192.png',
         },
         fcmOptions: {
+          // www is the canonical host — the bare domain 307-redirects, which
+          // breaks the notification click-through on some platforms.
           link: deepLink
-            ? `https://sfglgolf.com/${deepLink.startsWith('#') ? deepLink : '#' + deepLink}`
-            : 'https://sfglgolf.com/',
+            ? `https://www.sfglgolf.com/${deepLink.startsWith('#') ? deepLink : '#' + deepLink}`
+            : 'https://www.sfglgolf.com/',
         },
       },
     };
