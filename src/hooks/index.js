@@ -326,38 +326,48 @@ export const useLeague = (STORAGE_KEYS) => {
     } catch (e) {
       console.warn('[useLeague] registry upkeep skipped:', e);
     }
+    // Returns true when the authoritative Firebase write succeeded, false
+    // otherwise — callers await this to decide between a success and an
+    // error toast instead of announcing success for a write that failed.
+    let ok = true;
     try {
       setIsSyncing(true);
       const { teamsApi } = await import('../api/firebase');
       await teamsApi.setAll(resolved);
       await storage.set(STORAGE_KEYS.TEAMS, resolved);
     } catch (e) {
+      ok = false;
       console.error('[useLeague] teams write failed:', e);
       try { await storage.set(STORAGE_KEYS.TEAMS, resolved); } catch {}
     } finally {
       setIsSyncing(false);
     }
+    return ok;
   }, [STORAGE_KEYS.TEAMS]);
 
   const updateTournaments = useCallback(async (next) => {
     const resolved = typeof next === 'function' ? next(tournamentsRef.current) : next;
     setTournaments(resolved);
+    let ok = true;
     try {
       setIsSyncing(true);
       const { tournamentsApi } = await import('../api/firebase');
       await tournamentsApi.setAll(resolved);
       await storage.set(STORAGE_KEYS.TOURNAMENTS, resolved);
     } catch (e) {
+      ok = false;
       console.error('[useLeague] tournaments write failed:', e);
       try { await storage.set(STORAGE_KEYS.TOURNAMENTS, resolved); } catch {}
     } finally {
       setIsSyncing(false);
     }
+    return ok;
   }, [STORAGE_KEYS.TOURNAMENTS]);
 
   const updateTransactions = useCallback(async (next) => {
     const resolved = typeof next === 'function' ? next(transactionsRef.current) : next;
     setTransactions(resolved);
+    let ok = true;
     try {
       const { transactionsApi } = await import('../api/firebase');
       const merged = await transactionsApi.sync(resolved);
@@ -365,11 +375,13 @@ export const useLeague = (STORAGE_KEYS) => {
         setTransactions(merged);
       }
     } catch (e) {
+      ok = false;
       console.error('[useLeague] transactions sync failed:', e);
     }
     storage.set(STORAGE_KEYS.TRANSACTIONS, resolved).catch(e =>
       console.error('[useLeague] transactions backup failed:', e)
     );
+    return ok;
   }, [STORAGE_KEYS.TRANSACTIONS]);
 
   const updateSettings = useCallback(async (next) => {

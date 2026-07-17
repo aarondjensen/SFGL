@@ -501,6 +501,85 @@ export const RostersView = ({
   const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
   const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
 
+  // Derive SFGL cuts per player per team from completed tournament results
+  // sfglStatsMap: { playerName: { cuts, starts, earnings } }
+  // Source of truth for everything the Stats panel renders — AND for the
+  // limited-player start-limit gate below. Derived entirely from
+  // tournament.results.teams[teamId].players + fullLineups,
+  // matching the same pattern that already worked for cuts/starts.
+  //
+  // Why derive earnings instead of reading player.sfglEarnings off the
+  // roster doc: that field is maintained by handleReprocess and the
+  // add/drop modal, and can DRIFT from the underlying tournament data
+  // when name matching produces a different result on the reversal pass
+  // vs the new-processing pass. We've seen this in production — a player
+  // showing 1/1 cuts/starts (derived correctly) but $0 sfglEarnings
+  // (stored field stuck at 0 because the new-processing add didn't fire).
+  // Deriving from tournament.results is self-healing; it always matches
+  // what the Tournaments page shows. (Same drift applies to player.starts,
+  // which is why the start-limit gate reads this map, not the stored field.)
+  //
+  // starts = appeared in lineup, cuts = appeared AND earned > $0,
+  // earnings = sum of (base earnings + round-leader bonus) across all
+  // tournaments where they started. Mulligan-out players are excluded.
+  const sfglStatsMap = useMemo(() => {
+    const map = {};
+    if (!team) return map;
+
+    // Build set of mulliganed-out players per tournament index
+    const mulliganedOut = {};
+    transactions.forEach(tx => {
+      if (tx.type === 'mulligan' && tx.status !== 'failed' && tx.droppedPlayer) {
+        // Key by the tournament's CURRENT position, resolved from its stable
+        // name, so this aligns with the `tournaments.forEach((t, tIdx) => ...)`
+        // consumer below regardless of schedule order. (Was keyed by the fragile
+        // stored tx.tournamentIndex — the same misalignment that skewed starts.)
+        const pos = resolveTxTournamentIndex(tx, tournaments);
+        if (pos == null) return;
+        if (!mulliganedOut[pos]) mulliganedOut[pos] = new Set();
+        mulliganedOut[pos].add(tx.droppedPlayer);
+      }
+    });
+
+    tournaments.forEach((t, tIdx) => {
+      if (!t.completed || !t.results?.teams?.[team.id]) return;
+      const teamResult = t.results.teams[team.id];
+      const players = teamResult.players || [];
+      const excluded = mulliganedOut[tIdx] || new Set();
+      const fullLineup = t.results.fullLineups?.[team.id] || [];
+
+      // Build earnings lookup from players array. Include bonus in totals
+      // since the Tournaments page shows earnings as (base + bonus) too.
+      const earningsLookup = {};
+      players.forEach(p => {
+        if (p?.name) earningsLookup[p.name] = (p.earnings || 0) + (p.bonus || 0);
+      });
+
+      // Union of players array names and fullLineup names — captures
+      // anyone who started even if their entry is missing from the
+      // top-5 players array (e.g. lineup of 6 with one $0 earner).
+      const allStarted = new Set([
+        ...players.map(p => p.name || p),
+        ...fullLineup,
+      ]);
+
+      allStarted.forEach(name => {
+        if (!name || excluded.has(name)) return;
+        if (!map[name]) map[name] = { cuts: 0, starts: 0, earnings: 0 };
+        map[name].starts += 1;
+        const earned = earningsLookup[name] || 0;
+        map[name].earnings += earned;
+        if (earned > 0) map[name].cuts += 1;
+      });
+    });
+    return map;
+  }, [team, tournaments, transactions]);
+
+  // Backwards-compat alias — older code references sfglCutsMap directly.
+  // Same object shape (cuts/starts), just doesn't expose earnings to
+  // existing callers. Anything new should reach for sfglStatsMap.
+  const sfglCutsMap = sfglStatsMap;
+
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
     const isInLineup = (team.lineup || []).includes(player.name);
@@ -598,9 +677,11 @@ export const RostersView = ({
       return;
     }
 
-    // Adding to starters — Limited start limit check applies here.
-    if (player.limited && player.starts >= MAX_LIMITED_STARTS) {
-      dialog.showToast('This player has reached their 12-start limit', 'error', { position: 'top' });
+    // Adding to starters — Limited start limit check applies here. Gate on
+    // the DERIVED starts from sfglStatsMap (same number the UI displays), not
+    // the drift-prone stored player.starts field.
+    if (player.limited && (sfglStatsMap[player.name]?.starts ?? 0) >= MAX_LIMITED_STARTS) {
+      dialog.showToast(`This player has reached their ${MAX_LIMITED_STARTS}-start limit`, 'error', { position: 'top' });
       return;
     }
 
@@ -609,7 +690,7 @@ export const RostersView = ({
     );
     updateTeams(newTeams);
     dialog.showToast(`${lastName} added to lineup`, 'success', { position: 'top' });
-  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE, pickingBackup, backupAllowed]);
+  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE, pickingBackup, backupAllowed, sfglStatsMap, MAX_LIMITED_STARTS]);
 
 
   const pendingWaivers = useMemo(() => {
@@ -619,83 +700,6 @@ export const RostersView = ({
       .filter(t => t.team === team.name && t.type === 'waiver' && t.status === 'pending')
       .sort((a, b) => (a.priority || 999) - (b.priority || 999));
   }, [team, transactions]);
-
-  // Derive SFGL cuts per player per team from completed tournament results
-  // sfglStatsMap: { playerName: { cuts, starts, earnings } }
-  // Source of truth for everything the Stats panel renders. Derived
-  // entirely from tournament.results.teams[teamId].players + fullLineups,
-  // matching the same pattern that already worked for cuts/starts.
-  //
-  // Why derive earnings instead of reading player.sfglEarnings off the
-  // roster doc: that field is maintained by handleReprocess and the
-  // add/drop modal, and can DRIFT from the underlying tournament data
-  // when name matching produces a different result on the reversal pass
-  // vs the new-processing pass. We've seen this in production — a player
-  // showing 1/1 cuts/starts (derived correctly) but $0 sfglEarnings
-  // (stored field stuck at 0 because the new-processing add didn't fire).
-  // Deriving from tournament.results is self-healing; it always matches
-  // what the Tournaments page shows.
-  //
-  // starts = appeared in lineup, cuts = appeared AND earned > $0,
-  // earnings = sum of (base earnings + round-leader bonus) across all
-  // tournaments where they started. Mulligan-out players are excluded.
-  const sfglStatsMap = useMemo(() => {
-    const map = {};
-    if (!team) return map;
-
-    // Build set of mulliganed-out players per tournament index
-    const mulliganedOut = {};
-    transactions.forEach(tx => {
-      if (tx.type === 'mulligan' && tx.status !== 'failed' && tx.droppedPlayer) {
-        // Key by the tournament's CURRENT position, resolved from its stable
-        // name, so this aligns with the `tournaments.forEach((t, tIdx) => ...)`
-        // consumer below regardless of schedule order. (Was keyed by the fragile
-        // stored tx.tournamentIndex — the same misalignment that skewed starts.)
-        const pos = resolveTxTournamentIndex(tx, tournaments);
-        if (pos == null) return;
-        if (!mulliganedOut[pos]) mulliganedOut[pos] = new Set();
-        mulliganedOut[pos].add(tx.droppedPlayer);
-      }
-    });
-
-    tournaments.forEach((t, tIdx) => {
-      if (!t.completed || !t.results?.teams?.[team.id]) return;
-      const teamResult = t.results.teams[team.id];
-      const players = teamResult.players || [];
-      const excluded = mulliganedOut[tIdx] || new Set();
-      const fullLineup = t.results.fullLineups?.[team.id] || [];
-
-      // Build earnings lookup from players array. Include bonus in totals
-      // since the Tournaments page shows earnings as (base + bonus) too.
-      const earningsLookup = {};
-      players.forEach(p => {
-        if (p?.name) earningsLookup[p.name] = (p.earnings || 0) + (p.bonus || 0);
-      });
-
-      // Union of players array names and fullLineup names — captures
-      // anyone who started even if their entry is missing from the
-      // top-5 players array (e.g. lineup of 6 with one $0 earner).
-      const allStarted = new Set([
-        ...players.map(p => p.name || p),
-        ...fullLineup,
-      ]);
-
-      allStarted.forEach(name => {
-        if (!name || excluded.has(name)) return;
-        if (!map[name]) map[name] = { cuts: 0, starts: 0, earnings: 0 };
-        map[name].starts += 1;
-        const earned = earningsLookup[name] || 0;
-        map[name].earnings += earned;
-        if (earned > 0) map[name].cuts += 1;
-      });
-    });
-    return map;
-  }, [team, tournaments, transactions]);
-
-  // Backwards-compat alias — older code references sfglCutsMap directly.
-  // Same object shape (cuts/starts), just doesn't expose earnings to
-  // existing callers. Anything new should reach for sfglStatsMap.
-  const sfglCutsMap = sfglStatsMap;
 
   // Derive mulligans used by this team from the transaction history.
   // Source of truth = transactions array (matches how every other counter in
@@ -950,7 +954,11 @@ export const RostersView = ({
     color: col === sortCol ? 'rgba(255,255,255,0.95)' : (baseColor || undefined),
   });
   const sortArrow = (col) => col === sortCol ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
-  const faStatus      = getFreeAgentWindowStatus(activeTournament, resolvedSettings);
+  // Evaluate the FA window against windowTournament (not activeTournament):
+  // the Tue-cutoff→Thu FA stretch is exactly when the played event may already
+  // be processed and nothing is flagged `playing`, which would make this
+  // always-false right when the pending-waivers block matters most.
+  const faStatus      = getFreeAgentWindowStatus(windowTournament, resolvedSettings);
   const hasPendingWaivers = transactions.some(tx => tx.status === 'pending' && tx.type === 'waiver');
   const addDropBlocked = faStatus.open && hasPendingWaivers;
 
@@ -1330,7 +1338,7 @@ export const RostersView = ({
               {sortedRoster.map(player => {
                 const isInLineup     = (team.lineup || []).includes(player.name);
                 const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
-                const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
+                const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || (sfglStatsMap[player.name]?.starts ?? 0) < MAX_LIMITED_STARTS);
                 const hasLineup      = (team.lineup || []).length > 0;
                 const isEditing      = canEditLineup && lineupMode;
                 // Only dim benched players once the tournament week has actually begun —
@@ -1666,6 +1674,7 @@ export const RostersView = ({
         fieldPlayerIds={fieldPlayerIds}
         tournamentField={tournamentField}
         leagueSettings={resolvedSettings}
+        addDropBlocked={addDropBlocked}
         onHeadshotsFound={found => updateHeadshots && updateHeadshots(prev => ({ ...(prev || {}), ...found }))}
       />
     </div>

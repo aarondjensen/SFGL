@@ -322,49 +322,34 @@ export const isLineupEditingOpen = (tournament) => {
 
 export const isFreeAgentWindowOpen = (tournament, settings) => {
   if (!tournament) return false;
-  // Wave 7: also coordinate with tournament lock — once first-tee Thursday
-  // arrives, FA closes regardless of day-of-week math below.
+  // Free agency owns the slice of the week from the configured waiver cutoff
+  // (default Tue 8pm ET) to first-tee Thursday. Defined as the exact
+  // complement of isWaiverWindowOpen (minus locked time) so the two windows
+  // can NEVER both be open — an early-Thursday add before lock is an instant
+  // free-agent pickup, not a pending waiver that would sit until the
+  // following cutoff and miss the event.
   if (isTournamentLocked(tournament)) return false;
-
-  // Free agency opens after waiver cutoff (when waiver period ends) through Thursday lock
-  const wDay  = settings?.waiverDay    ?? 2;  // default Tue
-  const wHour = settings?.waiverHour   ?? 20; // default 8pm
-  const wMin  = settings?.waiverMinute ?? 0;
-  const cutoff = wDay * 24 * 60 + wHour * 60 + wMin;
-  const et      = getETNow();
-  const day     = et.getDay();
-  const timeVal = et.getHours() * 60 + et.getMinutes();
-  const nowVal  = day * 24 * 60 + timeVal;
-  // Open from waiver cutoff through Thursday lock
-  // Must be past the cutoff and before tournament locks (Thu)
-  if (day === 4 || day === 3) return true;
-  if (day === wDay && timeVal >= wHour * 60 + wMin) return true;
-  // If waiver day is before Wed and we're between cutoff and Thu
-  if (nowVal >= cutoff && day < 4) return true;
-  return false;
+  return !isWaiverWindowOpen(tournament, settings);
 };
 
 export const isWaiverWindowOpen = (tournament, settings) => {
   if (!tournament) return false;
-  // Waiver window: tournament start through configurable cutoff (default Tue 8pm ET)
+  // Waiver window: first-tee Thursday lock, wrapping through the weekend,
+  // until the configured cutoff (default Tue 8pm ET). Free agency owns the
+  // rest of the week (cutoff → Thursday lock); see isFreeAgentWindowOpen.
   const wDay  = settings?.waiverDay    ?? 2;  // default Tue
   const wHour = settings?.waiverHour   ?? 20; // default 8pm
   const wMin  = settings?.waiverMinute ?? 0;
+  const cutoff  = wDay * 24 * 60 + wHour * 60 + wMin;
   const et      = getETNow();
   const day     = et.getDay();
-  const timeVal = et.getHours() * 60 + et.getMinutes();
-  // Before waiver cutoff day: open on Thu(4), Fri(5), Sat(6), Sun(0), Mon(1), and any day before cutoff day
-  // On waiver cutoff day: open only before the cutoff time
-  // After cutoff through Wed: closed (free agency takes over)
-  if (day === wDay) return timeVal < wHour * 60 + wMin;
-  // Days after cutoff but before Thursday are closed
-  // We need to check if current day is between cutoff day and Thu
-  // Thu(4) Fri(5) Sat(6) Sun(0) Mon(1) are always open (tournament active, before cutoff)
-  if (day >= 4) return true; // Thu, Fri, Sat
-  if (day === 0 || day === 1) return true; // Sun, Mon
-  // Day 2 (Tue) or 3 (Wed): only open if before the cutoff
-  if (day < wDay) return true;
-  return false;
+  const nowVal  = day * 24 * 60 + et.getHours() * 60 + et.getMinutes();
+  // Thu/Fri/Sat: open only once the tournament has actually locked — this
+  // respects per-event lock hours and weather-delayed starts, and keeps
+  // Thursday-before-lock in the FA window.
+  if (day >= 4) return isTournamentLocked(tournament);
+  // Sun through the cutoff: open. After the cutoff until Thursday: closed.
+  return nowVal < cutoff;
 };
 
 /** Returns true if the round-start cut-off has passed for a given round number.

@@ -4,6 +4,7 @@ import { useDialog } from './DialogContext';
 
 import { theme, colors, fonts, fontSize, SWINGS, getSwingColor, getSwingColorAt } from '../theme.js';
 import { getSegmentForTournament, shortName } from '../utils';
+import { resolveTxTournamentIndex } from '../utils/sharedHelpers';
 import { TeamName } from '../components/TeamName';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
@@ -376,15 +377,21 @@ export const TournamentsView = ({
   const activeTournament = localTournaments.find(t => t.playing && !t.completed);
 
   const saveChanges = async () => {
-    setTournaments(localTournaments);
+    // setTournaments (= updateTournaments from useLeague) persists to
+    // Firestore + localStorage and resolves false when the authoritative
+    // write fails — await it so the toast reflects what actually happened.
+    const ok = await setTournaments(localTournaments);
     setEditMode(false);
-    // setTournaments (= updateTournaments from useLeague) already persists to
-    // Firestore + localStorage. The sfglDataApi write below is a belt-and-
-    // suspenders backup to the key-value fallback path the cascade-loader checks.
+    // The sfglDataApi write below is a belt-and-suspenders backup to the
+    // key-value fallback path the cascade-loader checks.
     try {
       await sfglDataApi.set(STORAGE_KEYS.TOURNAMENTS, localTournaments);
     } catch (e) {
       console.error('sfglDataApi.set tournaments failed:', e);
+    }
+    if (ok === false) {
+      dialog.showToast('Schedule save failed — changes may not have synced', 'error');
+      return;
     }
     dialog.showToast('Schedule updated!', 'success');
   };
@@ -478,13 +485,17 @@ export const TournamentsView = ({
     const map = {};
     transactions.forEach(tx => {
       if (tx.type !== 'mulligan' || !tx.player) return;
-      const idx = tx.tournamentIndex ?? -1;
+      // Resolve the tournament's CURRENT position from its stable name
+      // (falling back to the stored index for legacy rows) so a schedule
+      // reorder can't misplace the mulligan badge — same fix as
+      // RostersView's mulliganedOut map.
+      const idx = resolveTxTournamentIndex(tx, tournaments) ?? -1;
       if (!map[idx]) map[idx] = { ins: {}, outs: {} };
       map[idx].ins[tx.player] = tx.droppedPlayer || '?';
       if (tx.droppedPlayer) map[idx].outs[tx.droppedPlayer] = tx.player;
     });
     return map;
-  }, [transactions]);
+  }, [transactions, tournaments]);
 
   // Enrich a result-player record with live roster flags + mulligan detection.
   const enrich = (p, tournamentIndex) => {
