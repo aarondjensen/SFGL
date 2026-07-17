@@ -6,6 +6,8 @@
 //   2. ?pgaTourId=R2026011&name=...
 //   3. ?name=The+Players&year=2026  (schedule lookup)
 
+import { extractNextData, nameToSlug } from './_constants.js';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -113,10 +115,6 @@ export default async function handler(req, res) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function nameToSlug(name) {
-  return name.toLowerCase().replace(/['']/g, '').replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-');
-}
-
 async function fetchPage(url) {
   const resp = await fetch(url, {
     headers: {
@@ -128,12 +126,6 @@ async function fetchPage(url) {
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
   return resp.text();
-}
-
-function extractNextData(html) {
-  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (!m) return null;
-  try { return JSON.parse(m[1]); } catch { return null; }
 }
 
 async function lookupFromSchedule(name, year) {
@@ -424,22 +416,3 @@ function cleanName(raw) {
   return raw.replace(/\s+/g, ' ').replace(/[^\p{L}\p{N}\s'.,-]/gu, '').trim();
 }
 
-// ── Debug helpers ─────────────────────────────────────────────────────────────
-
-function walkForDebug(obj, results, maxDepth, depth = 0, path = '') {
-  if (!obj || typeof obj !== 'object' || depth > maxDepth) return;
-  if (Array.isArray(obj)) {
-    obj.slice(0, 2).forEach((item, i) => walkForDebug(item, results, maxDepth, depth + 1, `${path}[${i}]`));
-    return;
-  }
-  const MONEY_KEYS = ['earnings', 'officialMoney', 'prize', 'purse', 'moneyAmount', 'winnings', 'money'];
-  const NAME_KEYS  = ['displayName', 'name', 'fullName', 'playerName'];
-  const hasMoneyKey = MONEY_KEYS.some(k => k in obj);
-  const hasNameKey  = NAME_KEYS.some(k => typeof obj[k] === 'string') || NAME_KEYS.some(k => typeof obj.player?.[k] === 'string');
-  if (hasMoneyKey && hasNameKey && results.length < 5) {
-    results.push({ path, keys: Object.keys(obj), sample: JSON.stringify(obj).slice(0, 400) });
-  }
-  for (const [k, v] of Object.entries(obj)) {
-    if (v && typeof v === 'object') walkForDebug(v, results, maxDepth, depth + 1, `${path}.${k}`);
-  }
-}

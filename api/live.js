@@ -10,11 +10,7 @@ const HEADERS = {
   'Referer': 'https://www.pgatour.com/',
 };
 
-function extractNextData(html) {
-  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (!m) return null;
-  try { return JSON.parse(m[1]); } catch { return null; }
-}
+import { extractNextData, isPgaTourTournament } from './_constants.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -37,27 +33,8 @@ export default async function handler(req, res) {
 
     const queries = nd.props?.pageProps?.dehydratedState?.queries || [];
 
-    // ── Identify PGA Tour vs other tours ──
-    // PGA Tour's tourCode is 'R' across their data. Other tours have:
-    //   'H' = Korn Ferry, 'S' = Champions, 'P' = LPGA, 'X' = LIV, etc.
-    // Some objects use other field names — tour.id, tourId, tour.code — so
-    // we check several. Returns true if the tournament looks like PGA Tour
-    // OR if we can't tell (fail open rather than skip everything).
-    const isPgaTourTournament = (t) => {
-      if (!t || typeof t !== 'object') return true;
-      const code = t.tourCode || t.tour?.code || t.tour?.id || t.tourId || '';
-      const name = String(t.tour?.name || t.tourName || '').toLowerCase();
-      // Explicit non-PGA Tour signals
-      if (code === 'H' || code === 'S' || code === 'P' || code === 'X' || code === 'M') return false;
-      if (name.includes('korn') || name.includes('champion') || name.includes('lpga') || name.includes('liv')) return false;
-      // Explicit PGA Tour signal — preferred
-      if (code === 'R') return true;
-      if (name.includes('pga tour')) return true;
-      // Unknown → assume PGA Tour (we're on pgatour.com)
-      return true;
-    };
-
     // ── Extract tournament name + ID from the "tournaments" query ──
+    // PGA Tour vs other tours: isPgaTourTournament (shared, _constants.js).
     // CRITICAL: filter to PGA Tour events only. Without this, when both
     // PGA Championship and a Korn Ferry event run the same week, we'd
     // pick whichever came first in the array (recently: Colonial Life

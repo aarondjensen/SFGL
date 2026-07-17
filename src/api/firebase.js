@@ -45,7 +45,6 @@ import {
   limit,
   writeBatch,
   onSnapshot,
-  serverTimestamp,
 } from 'firebase/firestore';
 
 // ── Firebase config — values come from environment variables ─────────────────
@@ -94,23 +93,6 @@ async function _getAllOrdered(collectionName, field, dir = 'asc') {
   const q = query(collection(db, collectionName), orderBy(field, dir));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-}
-
-/** Delete every document in a collection using a batched write. */
-async function _deleteAll(collectionName) {
-  const snap = await getDocs(collection(db, collectionName));
-  if (snap.empty) return;
-  // Firestore batch limit is 500 ops; chunk if needed
-  const chunks = [];
-  let batch = writeBatch(db);
-  let count = 0;
-  snap.docs.forEach(d => {
-    batch.delete(d.ref);
-    count++;
-    if (count === 499) { chunks.push(batch); batch = writeBatch(db); count = 0; }
-  });
-  chunks.push(batch);
-  await Promise.all(chunks.map(b => b.commit()));
 }
 
 /**
@@ -853,65 +835,6 @@ export const draftStateApi = {
 
   async clear() {
     await deleteDoc(doc(db, 'draft_state', 'default'));
-  },
-};
-
-// ============================================================================
-// MANAGER AUTH API
-// Credentials stored in sfgl_data (via sfglDataApi). Sessions in localStorage.
-// Identical behaviour to supabase.js.
-// ============================================================================
-const CREDS_KEY = 'manager_credentials';
-
-const _hashPassword = async (password) => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-};
-
-export const managerAuthApi = {
-  async _getCreds() {
-    const creds = await sfglDataApi.get(CREDS_KEY);
-    return creds || {};
-  },
-
-  async setCredentials(teamId, name, password) {
-    const creds       = await this._getCreds();
-    const passwordHash = await _hashPassword(password.trim());
-    creds[teamId]     = { name: name.trim(), passwordHash };
-    await sfglDataApi.set(CREDS_KEY, creds);
-  },
-
-  async login(name, password) {
-    const creds        = await this._getCreds();
-    const passwordHash = await _hashPassword(password.trim());
-    const entry = Object.entries(creds).find(([, c]) =>
-      c.name.toLowerCase() === name.trim().toLowerCase() &&
-      (c.passwordHash === passwordHash || c.password === password.trim())
-    );
-    if (!entry) throw new Error('Invalid name or password');
-    const [teamId, cred] = entry;
-    // Auto-migrate legacy plain-text → hashed
-    if (cred.password && !cred.passwordHash) {
-      creds[teamId] = { name: cred.name, passwordHash };
-      await sfglDataApi.set(CREDS_KEY, creds);
-    }
-    localStorage.setItem('manager_team_id', teamId);
-    localStorage.removeItem('is_commissioner');
-    return { teamId };
-  },
-
-  async getCurrentSession() {
-    const teamId = localStorage.getItem('manager_team_id');
-    return teamId ? { teamId } : null;
-  },
-
-  async logout() {
-    localStorage.removeItem('manager_team_id');
-    localStorage.removeItem('is_commissioner');
   },
 };
 

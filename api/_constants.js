@@ -11,6 +11,45 @@
 // hazard — change the set once and both senders pick it up.
 // ============================================================================
 
+// ── pgatour.com scraping helpers ─────────────────────────────────────────────
+// Shared by api/field.js, live.js, pga-results.js, pga-schedule.js, and
+// cron.js — each previously carried its own copy (cron's was named
+// pgatExtractNextData), with the usual keep-in-sync hazard.
+
+// Pull the parsed __NEXT_DATA__ JSON blob out of a pgatour.com HTML page.
+export function extractNextData(html) {
+  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  try { return JSON.parse(m[1]); } catch { return null; }
+}
+
+// Tournament name → pgatour.com URL slug. '&' (and other symbols) must be
+// DROPPED, not hyphenated: "AT&T Pebble Beach Pro-Am" →
+// "att-pebble-beach-pro-am". The old field.js variant hyphenated symbol runs,
+// producing "at-t-pebble-beach-pro-am", which 404s on pgatour.com.
+export function nameToSlug(name) {
+  return name.toLowerCase().replace(/['']/g, '').replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-');
+}
+
+// Filter for PGA Tour events only. PGA Tour's tourCode is 'R' across their
+// data; other tours have 'H' = Korn Ferry, 'S' = Champions, 'P' = LPGA,
+// 'X' = LIV, etc. Some objects use other field names — tour.id, tourId,
+// tour.code — so we check several. Returns true if the tournament looks like
+// PGA Tour OR if we can't tell (fail open rather than skip everything —
+// we're scraping pgatour.com, so unknown is probably PGA Tour).
+export const isPgaTourTournament = (t) => {
+  if (!t || typeof t !== 'object') return true;
+  const code = t.tourCode || t.tour?.code || t.tour?.id || t.tourId || '';
+  const name = String(t.tour?.name || t.tourName || '').toLowerCase();
+  // Explicit non-PGA Tour signals
+  if (code === 'H' || code === 'S' || code === 'P' || code === 'X' || code === 'M') return false;
+  if (name.includes('korn') || name.includes('champion') || name.includes('lpga') || name.includes('liv') || name.includes('dp world')) return false;
+  // Explicit PGA Tour signal — preferred
+  if (code === 'R') return true;
+  if (name.includes('pga tour')) return true;
+  return true;
+};
+
 // Notification events that are ON by default when a team has no explicit
 // per-event preference stored.
 //   • team has no prefs map at all        → fall through to these defaults

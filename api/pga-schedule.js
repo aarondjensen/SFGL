@@ -73,11 +73,7 @@ const isMajorByName = (name) => MAJOR_NAME_PATTERNS.some(re => re.test(String(na
 // can untoggle in the UI either way.
 const SIGNATURE_PURSE_THRESHOLD = 20_000_000;
 
-function extractNextData(html) {
-  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (!m) return null;
-  try { return JSON.parse(m[1]); } catch { return null; }
-}
+import { extractNextData, isPgaTourTournament } from './_constants.js';
 
 // Pull a value out of an object trying a sequence of possible field paths.
 // Each path can be either a simple key ("name") or a dotted path ("a.b.c").
@@ -133,19 +129,7 @@ const formatDateRange = (startIso, endIso) => {
   return `${sm} ${sday} - ${em} ${eday}, ${syear}`;
 };
 
-// Filter for PGA Tour events only (matches the same logic as live.js).
-// Returns true when t is plausibly a PGA Tour event; conservatively excludes
-// known non-PGA tours (Korn Ferry, Champions, LPGA, LIV, DP World).
-const isPgaTourTournament = (t) => {
-  if (!t || typeof t !== 'object') return true;
-  const code = t.tourCode || t.tour?.code || t.tour?.id || t.tourId || '';
-  const name = String(t.tour?.name || t.tourName || '').toLowerCase();
-  if (code === 'H' || code === 'S' || code === 'P' || code === 'X' || code === 'M') return false;
-  if (name.includes('korn') || name.includes('champion') || name.includes('lpga') || name.includes('liv') || name.includes('dp world')) return false;
-  if (code === 'R') return true;
-  if (name.includes('pga tour')) return true;
-  return true;  // unknown → assume PGA Tour (we're on pgatour.com)
-};
+// PGA Tour-only filtering: isPgaTourTournament (shared, _constants.js).
 
 // Locate the schedule data inside the dehydratedState.queries array. PGA Tour
 // uses different query keys depending on the page; we try multiple known ones

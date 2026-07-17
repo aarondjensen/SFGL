@@ -11,7 +11,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
-import { DEFAULTS_ON, dedupeTokenDocs } from './_constants.js';
+import { DEFAULTS_ON, dedupeTokenDocs, extractNextData } from './_constants.js';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
 
@@ -1240,12 +1240,6 @@ const PGAT_FETCH_HEADERS = {
   'Referer': 'https://www.pgatour.com/',
 };
 
-function pgatExtractNextData(html) {
-  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (!m) return null;
-  try { return JSON.parse(m[1]); } catch { return null; }
-}
-
 function pgatParseStatsFromNextData(nd) {
   const NAME_KEYS  = ['displayName', 'playerName', 'name', 'fullName'];
   const MONEY_KEYS = ['money', 'earnings', 'officialMoney', 'moneyEarned', 'amount', 'statValue'];
@@ -1323,7 +1317,7 @@ async function pgatFetchAndParse(url, timeoutMs = 7000) {
     const resp = await fetch(url, { headers: PGAT_FETCH_HEADERS, signal: controller.signal });
     if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
     const html = await resp.text();
-    const nd = pgatExtractNextData(html);
+    const nd = extractNextData(html);
     if (!nd) throw new Error(`No __NEXT_DATA__ on ${url}`);
     return pgatParseStatsFromNextData(nd);
   } catch (err) {
