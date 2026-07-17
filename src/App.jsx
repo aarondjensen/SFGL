@@ -234,7 +234,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
     allPlayers, rankingsLastUpdated, headshots, loading, isSyncing,
     loadErrors, // Wave 7: surfaces Firebase failures to the UI
     setTournaments, setAllPlayers,
-    updateTeams, updateTournaments, updateTransactions, updateSettings,
+    updateTeams, updateTeam, updateTournaments, updateTransactions, updateSettings,
     updateGlobalStats, updateHeadshots, updateRankings,
     refetch, // Wave 7: lets PullToRefresh do a real refetch instead of window.location.reload()
   } = league;
@@ -246,6 +246,39 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   const safeHeadshots    = headshots && typeof headshots === 'object' ? headshots : {};
 
   const resolvedTeams     = safeTeams.length > 0 ? safeTeams : INITIAL_TEAMS;
+
+  // ── Read-only mode on load failure ─────────────────────────────────────────
+  // If any user-visible collection failed to load, what's on screen is a
+  // fallback (possibly INITIAL_TEAMS with empty rosters, or stale localStorage
+  // data). One save from that state would persist it over the real league, so
+  // ALL persisted writes are blocked until a successful (re)load clears
+  // loadErrors — pull-to-refresh retries. A banner under the header says so.
+  const USER_VISIBLE_COLLECTIONS = ['teams', 'tournaments', 'transactions', 'settings'];
+  const visibleLoadFailures = useMemo(
+    () => (loadErrors || []).filter(c => USER_VISIBLE_COLLECTIONS.includes(c)),
+    [loadErrors] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const isReadOnly = visibleLoadFailures.length > 0;
+
+  const guardWrite = useMemo(() => (fn, label) => (...args) => {
+    if (visibleLoadFailures.length > 0) {
+      console.warn(`[App] Blocked ${label} write — read-only mode (failed to load: ${visibleLoadFailures.join(', ')})`);
+      const err = new Error('Editing is disabled because some league data failed to load. Pull to refresh and try again.');
+      const p = Promise.reject(err);
+      // Pre-attach a handler so fire-and-forget callers don't surface an
+      // unhandledrejection (which would hit the error reporter); callers that
+      // await still see the rejection.
+      p.catch(() => {});
+      return p;
+    }
+    return fn(...args);
+  }, [visibleLoadFailures]);
+
+  const guardedUpdateTeams        = useMemo(() => guardWrite(updateTeams, 'teams'),               [guardWrite, updateTeams]);
+  const guardedUpdateTeam         = useMemo(() => guardWrite(updateTeam, 'team'),                 [guardWrite, updateTeam]);
+  const guardedUpdateTournaments  = useMemo(() => guardWrite(updateTournaments, 'tournaments'),   [guardWrite, updateTournaments]);
+  const guardedUpdateTransactions = useMemo(() => guardWrite(updateTransactions, 'transactions'), [guardWrite, updateTransactions]);
+  const guardedUpdateSettings     = useMemo(() => guardWrite(updateSettings, 'settings'),         [guardWrite, updateSettings]);
 
   // Whether the logged-in manager is *allowed* to enter commish mode. Derived
   // from the current team list + loggedInTeamId so it's always accurate: it
@@ -589,6 +622,23 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           </div>
         </header>
 
+        {/* ── Read-only banner: some league data failed to load, editing is
+            blocked (see guardWrite above) until pull-to-refresh succeeds. ── */}
+        {isReadOnly && (
+          <div style={{
+            background: 'rgba(140,40,40,0.95)',
+            borderTop: '1px solid rgba(255,120,120,0.4)',
+            color: 'rgba(255,235,235,0.95)',
+            textAlign: 'center',
+            padding: '7px 14px',
+            fontSize: fontSize.sm,
+            fontWeight: 600,
+            letterSpacing: 0.4,
+          }}>
+            ⚠️ Couldn't load {visibleLoadFailures.join(', ')} — editing is disabled so nothing gets overwritten. Pull to refresh to retry.
+          </div>
+        )}
+
         {/* Nav moved to fixed bottom bar (see below the <main> element). */}
       </div>{/* end sticky shell */}
 
@@ -604,11 +654,11 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
               teams={resolvedTeams}
               selectedTeam={selectedTeam}
               setSelectedTeam={setSelectedTeam}
-              updateTeams={updateTeams}
+              updateTeam={guardedUpdateTeam}
               tournaments={safeTournaments}
               allPlayers={allPlayers}
               transactions={safeTransactions}
-              setTransactions={updateTransactions}
+              setTransactions={guardedUpdateTransactions}
               settings={settings}
               loggedInUser={loggedInUser}
               loggedInTeamId={loggedInTeamId}
@@ -625,9 +675,9 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                 tournaments={safeTournaments}
                 teams={resolvedTeams}
                 allPlayers={allPlayers}
-                setTransactions={updateTransactions}
-                updateTeams={updateTeams}
-                setTournaments={updateTournaments}
+                setTransactions={guardedUpdateTransactions}
+                updateTeams={guardedUpdateTeams}
+                setTournaments={guardedUpdateTournaments}
                 isCommissioner={isCommissioner}
                 settings={settings}
                 loggedInUser={loggedInUser}
@@ -638,7 +688,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
             <TournamentsView
               tournaments={safeTournaments}
               isCommissioner={isCommissioner}
-              setTournaments={updateTournaments}
+              setTournaments={guardedUpdateTournaments}
               teams={resolvedTeams}
               transactions={safeTransactions}
             />
@@ -650,13 +700,13 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                 setIsCommissioner={setIsCommissioner}
                 setActiveTab={setActiveTab}
                 settings={settings}
-                setSettings={updateSettings}
+                setSettings={guardedUpdateSettings}
                 teams={resolvedTeams}
-                updateTeams={updateTeams}
+                updateTeams={guardedUpdateTeams}
                 tournaments={safeTournaments}
-                setTournaments={updateTournaments}
+                setTournaments={guardedUpdateTournaments}
                 transactions={safeTransactions}
-                setTransactions={updateTransactions}
+                setTransactions={guardedUpdateTransactions}
                 allPlayers={allPlayers}
                 setAllPlayers={setAllPlayers}
                 globalPlayerStats={globalPlayerStats}
@@ -931,7 +981,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
         loggedInUser={loggedInUser}
         loggedInTeamId={loggedInTeamId}
         teams={resolvedTeams}
-        updateTeams={updateTeams}
+        updateTeam={guardedUpdateTeam}
       />
 
       <UserSettingsModal
@@ -941,7 +991,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
         loggedInUser={loggedInUser}
         loggedInTeamId={loggedInTeamId}
         teams={resolvedTeams}
-        updateTeams={updateTeams}
+        updateTeam={guardedUpdateTeam}
         isCommissioner={isCommissioner}
         setIsCommissioner={setIsCommissioner}
         taggedCommissioner={taggedCommissioner}

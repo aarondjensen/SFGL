@@ -27,7 +27,7 @@ import {
 
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, teams,
-  updateTeams, transactions, setTransactions, tournaments,
+  updateTeam, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
   headshots, fieldPlayerIds = {}, tournamentField = null, leagueSettings = {}, onHeadshotsFound,
 }) => {
@@ -318,8 +318,10 @@ export const AddDropPlayerModal = ({
       newTx.priority = editingWaiverData.priority ?? newTx.priority;
     }
 
-    const updatedTeams = teams.map(t => {
-      if (t.id !== team.id) return t;
+    const newTransactions = [newTx, ...baseTransactions];
+    // Per-doc write: patch the FRESHEST copy of this team and persist only
+    // its doc — a concurrent manager's edit to another team is untouched.
+    updateTeam(team.id, t => {
       let newRoster = [...t.roster];
       if (!treatAsWaiver) {
         if (selectedPlayerToDrop) newRoster = newRoster.filter(p => p.name !== selectedPlayerToDrop.name);
@@ -327,9 +329,6 @@ export const AddDropPlayerModal = ({
       }
       return { ...t, roster: newRoster, transactionFees: (t.transactionFees || 0) + teamFeeDelta };
     });
-
-    const newTransactions = [newTx, ...baseTransactions];
-    updateTeams(updatedTeams);
     setTransactions(newTransactions); // setTransactions IS updateTransactions — persists to Firebase + localStorage
 
     // ── Push notification (Wave J Round 6 — freeAgent broadcast) ───────────

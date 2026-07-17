@@ -468,25 +468,16 @@ export const teamsApi = {
     return teams.map(t => ({ ...t, lineup: t.lineup || [] }));
   },
 
-  async setAll(teams) {
-    // Wave A hotfix: previously this did `_deleteAll('teams')` followed by a
-    // batch insert — destructive, multi-step, and pre-Wave-A it didn't matter
-    // because real-time subscriptions weren't actually wired up. Now they are,
-    // and the delete-all phase emits a stream of intermediate snapshots
-    // (8 teams → 7 → 6 → ... → 0 → 8) to every subscribed client, including
-    // the one issuing the write. That caused mulligans, lineups, and any
-    // other team-level fields to flicker / reset during the write window.
-    //
-    // Replaced with an upsert (idempotent per-doc writes) plus a targeted
-    // delete of any docs that exist remotely but aren't in the local set.
-    // Snapshots now arrive as a single coherent emission per write.
-    if (!Array.isArray(teams)) return [];
-    const snap = await getDocs(collection(db, 'teams'));
-    const remoteIds = new Set(snap.docs.map(d => d.id));
-    const localIds = new Set(teams.map(t => t.id || t.name));
-
+  /**
+   * Upsert ONLY the given team docs. Never touches docs that aren't in the
+   * list and never deletes anything. This is the normal persistence path for
+   * roster/lineup edits: a manager's save writes exactly the team(s) they
+   * changed, so a concurrent manager's edit to a DIFFERENT team can't be
+   * reverted by this client's possibly-stale copy of it.
+   */
+  async upsertMany(teams) {
+    if (!Array.isArray(teams) || teams.length === 0) return teams || [];
     const BATCH_SIZE = 499;
-    // Upsert all locals
     for (let i = 0; i < teams.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       teams.slice(i, i + BATCH_SIZE).forEach(team => {
@@ -495,6 +486,25 @@ export const teamsApi = {
       });
       await batch.commit();
     }
+    return teams;
+  },
+
+  /**
+   * FULL-COLLECTION REPLACE — reserved for explicit commissioner bulk
+   * operations (season import / restore). Upserts every local doc, then
+   * deletes any remote doc not in the local set. Do NOT use this for
+   * ordinary roster/lineup edits: it persists the caller's entire in-memory
+   * array, so a stale copy silently reverts other managers' concurrent
+   * changes. Ordinary edits go through upsertMany/update (see
+   * useLeague.updateTeams / updateTeam).
+   */
+  async setAll(teams) {
+    if (!Array.isArray(teams)) return [];
+    const snap = await getDocs(collection(db, 'teams'));
+    const remoteIds = new Set(snap.docs.map(d => d.id));
+    const localIds = new Set(teams.map(t => t.id || t.name));
+
+    await this.upsertMany(teams);
     // Delete any remote docs that no longer exist locally
     const toDelete = [...remoteIds].filter(id => !localIds.has(id));
     if (toDelete.length) {
@@ -505,8 +515,10 @@ export const teamsApi = {
     return teams;
   },
 
+  // set+merge (not updateDoc) so a patch also succeeds if the doc is missing
+  // (e.g. a team created on another device that hasn't synced here yet).
   async update(teamId, updates) {
-    await updateDoc(doc(db, 'teams', teamId), updates);
+    await setDoc(doc(db, 'teams', teamId), updates, { merge: true });
     return updates;
   },
 

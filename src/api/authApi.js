@@ -36,6 +36,7 @@ import {
   setDoc,
   collection,
   onSnapshot,
+  runTransaction,
   serverTimestamp,
 } from 'firebase/firestore';
 import { auth, db } from './_init';
@@ -211,22 +212,27 @@ export function teamIdForUid(uid, claims) {
 
 // Self-claim: bind my uid to an UNclaimed team. Refuses if the team is already
 // owned by someone else — in that case the commissioner must reassign it.
+// Runs as a Firestore transaction so the check-then-claim is atomic: if two
+// users race for the same team, exactly one wins and the other gets the
+// "already claimed" error instead of silently overwriting the first claim.
 export async function claimTeam(teamId, uid, email = null, displayName = null) {
   const ref = doc(db, CLAIMS, teamId);
-  const snap = await getDoc(ref);
-  const existing = snap.exists() ? snap.data()?.uid : null;
-  if (existing && existing !== uid) {
-    throw new Error('That team is already claimed. Ask the commissioner to reassign it.');
-  }
-  // Persist email/displayName alongside the uid so the commissioner's Managers
-  // panel can show a human-readable owner instead of an opaque uid. These are
-  // self-reported by the signing-in account and only written on self-claim.
-  await setDoc(ref, {
-    uid,
-    email: email || null,
-    displayName: displayName || null,
-    claimedAt: serverTimestamp(),
-  }, { merge: true });
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const existing = snap.exists() ? snap.data()?.uid : null;
+    if (existing && existing !== uid) {
+      throw new Error('That team is already claimed. Ask the commissioner to reassign it.');
+    }
+    // Persist email/displayName alongside the uid so the commissioner's Managers
+    // panel can show a human-readable owner instead of an opaque uid. These are
+    // self-reported by the signing-in account and only written on self-claim.
+    tx.set(ref, {
+      uid,
+      email: email || null,
+      displayName: displayName || null,
+      claimedAt: serverTimestamp(),
+    }, { merge: true });
+  });
 }
 
 // Commissioner reassign: force a team's owner uid. Pass uid = null to release
