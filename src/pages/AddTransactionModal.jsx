@@ -274,7 +274,16 @@ export const AddTransactionModal = ({
       const tournament = tournaments[tournamentIndex];
       const isSigOrMajor = tournament?.isSignature || tournament?.isMajor;
       const mullKey = isSigOrMajor ? 'signatureMajor' : 'regular';
-      const alreadyProcessed = !!tournament?.completed;
+      // A tournament counts as "already processed" for mulligan purposes if it
+      // has stored results for this team — NOT solely the `completed` flag.
+      // Relying on `completed` alone was fragile: if that flag was false or
+      // hadn't synced into the client when a mulligan was added to an event that
+      // was in fact already scored, the modal took the "not processed yet" branch
+      // and silently skipped the results swap, the earnings delta, AND the starts
+      // adjustment — persisting only the lineup swap, counter, and transaction.
+      // (This is exactly the Sam Burns / Open Championship miss.) Stored results
+      // only exist after processing, so has-results is the reliable signal.
+      const alreadyProcessed = !!(tournament?.completed || tournament?.results?.teams?.[mulliganTeam?.id]);
 
       // Detect re-add of a previously-applied mulligan transaction record:
       // if the IN player is already in stored results, skip re-application.

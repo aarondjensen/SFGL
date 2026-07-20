@@ -358,7 +358,7 @@ async function main() {
       // per-player money delta to apply. Verify and warn if that ever fails.
       const oldMoney = {}; (storedTeamRes.players || []).forEach(p => { oldMoney[p.name || p] = (oldMoney[p.name || p] || 0) + (p.earnings || 0); });
       const newMoney = {}; recomputed.players.forEach(p => { newMoney[p.name] = (newMoney[p.name] || 0) + (p.earnings || 0); });
-      const moneyDiffers = new Set([...Object.keys(oldMoney), ...Object.keys(newMoney)])
+      const moneyDiffers = [...new Set([...Object.keys(oldMoney), ...Object.keys(newMoney)])]
         .some(n => Math.abs((newMoney[n] || 0) - (oldMoney[n] || 0)) > 0.5);
       if (moneyDiffers) {
         console.log(`       ⚠️  per-player MONEY changed too (top-5 composition shifted). Roster sfglEarnings deltas will be applied.`);
