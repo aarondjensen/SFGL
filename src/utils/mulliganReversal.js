@@ -90,7 +90,15 @@ export const computeMulliganReversal = (tx, teams, tournaments) => {
 
   const isSigOrMajor = tourney?.isSignature || tourney?.isMajor;
   const mullKey = isSigOrMajor ? 'signatureMajor' : 'regular';
-  const processed = !!(tourney && tourney.completed && tourney.results?.teams?.[team.id]);
+  // "Processed" = the event has stored results for this team. Do NOT also
+  // require tourney.completed: the add path (AddTransactionModal) applies a
+  // mulligan's results/standings/starts whenever results exist, regardless of
+  // the completed flag, so the reversal must unwind them under the same
+  // condition. Keying off `completed` here (while the add keyed off results)
+  // created an asymmetry — an add could write results a delete wouldn't reverse,
+  // orphaning the earnings/starts. Results only exist post-processing, so their
+  // presence is the reliable, symmetric signal.
+  const processed = !!(tourney && tourney.results?.teams?.[team.id]);
 
   // Restore this team's mulligan allowance (the swap never legitimately happened).
   const restoreCounter = (t) => ({
