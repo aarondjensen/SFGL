@@ -95,7 +95,7 @@ const RoundLeaderSelect = ({
   );
 };
 
-const EMPTY_ENTRY = { round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], playerEarnings: '', teamLineups: {} };
+const EMPTY_ENTRY = { round1Leaders: [''], round2Leaders: [''], round3Leaders: [''], round1LeadersAll: [], round2LeadersAll: [], round3LeadersAll: [], playerEarnings: '', teamLineups: {} };
 
 const parseEarningsLines = (text) => {
   const map = new Map();
@@ -145,6 +145,10 @@ export const TournamentResultsPanel = ({
         round1Leaders: t.results.roundLeaders?.round1?.length ? t.results.roundLeaders.round1 : [''],
         round2Leaders: t.results.roundLeaders?.round2?.length ? t.results.roundLeaders.round2 : [''],
         round3Leaders: t.results.roundLeaders?.round3?.length ? t.results.roundLeaders.round3 : [''],
+        // Carry the unfiltered set forward so a reprocess doesn't lose it.
+        round1LeadersAll: (t.results.roundLeadersAll?.round1 || t.results.roundLeaders?.round1 || []).filter(Boolean),
+        round2LeadersAll: (t.results.roundLeadersAll?.round2 || t.results.roundLeaders?.round2 || []).filter(Boolean),
+        round3LeadersAll: (t.results.roundLeadersAll?.round3 || t.results.roundLeaders?.round3 || []).filter(Boolean),
       }));
     } else {
       setManualEntry(EMPTY_ENTRY);
@@ -183,6 +187,12 @@ export const TournamentResultsPanel = ({
         round1Leaders: filterToStarted(rl.round1),
         round2Leaders: filterToStarted(rl.round2),
         round3Leaders: filterToStarted(rl.round3),
+        // Keep the UNFILTERED leaders so a later mulligan can credit an IN
+        // player who led a round but wasn't started (and so is absent from the
+        // filtered, display-facing lists above).
+        round1LeadersAll: (rl.round1 || []).filter(Boolean),
+        round2LeadersAll: (rl.round2 || []).filter(Boolean),
+        round3LeadersAll: (rl.round3 || []).filter(Boolean),
       }));
 
       dialog.showToast(`✓ ${players.length} players loaded`, 'success');
@@ -206,13 +216,23 @@ export const TournamentResultsPanel = ({
       if (!earningsMap.size) { dialog.showToast('No valid earnings lines found. Format: "Player Name, 123456"', 'error'); return; }
 
       const ti = tournaments.findIndex(t => t.name === selectedTourney);
+      const _rlFiltered = {
+        round1: manualEntry.round1Leaders.filter(l => l.trim()),
+        round2: manualEntry.round2Leaders.filter(l => l.trim()),
+        round3: manualEntry.round3Leaders.filter(l => l.trim()),
+      };
+      const _rlAll = {
+        round1: (manualEntry.round1LeadersAll || []).filter(l => l && l.trim()),
+        round2: (manualEntry.round2LeadersAll || []).filter(l => l && l.trim()),
+        round3: (manualEntry.round3LeadersAll || []).filter(l => l && l.trim()),
+      };
+      const _hasAll = _rlAll.round1.length || _rlAll.round2.length || _rlAll.round3.length;
       const manualData = {
         name: selectedTourney, status: 'post', competitors: [],
-        roundLeaders: {
-          round1: manualEntry.round1Leaders.filter(l => l.trim()),
-          round2: manualEntry.round2Leaders.filter(l => l.trim()),
-          round3: manualEntry.round3Leaders.filter(l => l.trim()),
-        },
+        roundLeaders: _rlFiltered,
+        // Unfiltered set for later mulligan crediting; never worse than the
+        // filtered set (falls back to it on pure manual entry with no fetch).
+        roundLeadersAll: _hasAll ? _rlAll : _rlFiltered,
         earningsMap, isManualEntry: true,
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));
@@ -392,13 +412,21 @@ export const TournamentResultsPanel = ({
       });
 
       // Step 2: Apply corrected results
+      const _rlFiltered2 = {
+        round1: manualEntry.round1Leaders.filter(l => l.trim()),
+        round2: manualEntry.round2Leaders.filter(l => l.trim()),
+        round3: manualEntry.round3Leaders.filter(l => l.trim()),
+      };
+      const _rlAll2 = {
+        round1: (manualEntry.round1LeadersAll || []).filter(l => l && l.trim()),
+        round2: (manualEntry.round2LeadersAll || []).filter(l => l && l.trim()),
+        round3: (manualEntry.round3LeadersAll || []).filter(l => l && l.trim()),
+      };
+      const _hasAll2 = _rlAll2.round1.length || _rlAll2.round2.length || _rlAll2.round3.length;
       const manualData = {
         name: selectedTourney, status: 'post', competitors: [],
-        roundLeaders: {
-          round1: manualEntry.round1Leaders.filter(l => l.trim()),
-          round2: manualEntry.round2Leaders.filter(l => l.trim()),
-          round3: manualEntry.round3Leaders.filter(l => l.trim()),
-        },
+        roundLeaders: _rlFiltered2,
+        roundLeadersAll: _hasAll2 ? _rlAll2 : _rlFiltered2,
         earningsMap, isManualEntry: true,
       };
       const names = teams.flatMap(t => t.roster.map(p => p.name));

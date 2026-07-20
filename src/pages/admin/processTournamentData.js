@@ -88,6 +88,12 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     teams: {},
     earningsMap: { ...earningsMap },
     roundLeaders: tournamentData.roundLeaders || {},
+    // Unfiltered round leaders (every golfer who led a round, not just those in
+    // a lineup at process time). roundLeaders is filtered to started players for
+    // display; roundLeadersAll preserves the full list so a mulligan added later
+    // can credit an IN player who led a round despite not having been started.
+    // Falls back to the filtered set when a caller doesn't supply the full one.
+    roundLeadersAll: tournamentData.roundLeadersAll || tournamentData.roundLeaders || {},
     fullLineups: {},
     // Snapshot pre-process backups too, so undo can restore them. Without
     // this, undoing a processed tournament leaves backup=null on every team

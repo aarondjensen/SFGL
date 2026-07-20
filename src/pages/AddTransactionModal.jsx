@@ -24,6 +24,7 @@ import { sendCommishPush } from '../api/pushNotifications';
 import { getCurrentTournamentIndex } from '../utils/index.js';
 import { compactTeamName } from '../utils/index.js';
 import { getTransactionFee } from '../utils/sharedHelpers';
+import { recomputeTeamTournamentResult } from '../utils/mulliganReversal';
 import { colors, fonts } from '../theme.js';
 import { M, disabledBtn } from './admin/adminStyles';
 import { LIV_GOLF_ROSTER } from '../constants';
@@ -317,35 +318,60 @@ export const AddTransactionModal = ({
             if (i !== tournamentIndex || !t.results?.teams?.[mulliganTeam.id]) return t;
             const teamResult = t.results.teams[mulliganTeam.id];
 
-            // Try to find IN player's actual earnings from the tournament earnings map.
+            // Recompute the team's stored result the SAME way processTournamentData
+            // and mulliganReversal do — top-5 by earnings + round-leader bonuses —
+            // instead of hand-swapping the OUT slot and zeroing the IN player's
+            // bonus. The old approach (bonus: 0, roundsLed: []) meant a mulligan
+            // added to an already-completed tournament silently stripped the IN
+            // player's round-1/2/3 leader bonuses until a full reprocess healed
+            // it, and it never re-ran top-5 selection when the swap changed which
+            // five actually scored. Deriving from the canonical helper fixes both.
             const earningsMap = t.results?.earningsMap || {};
-            let inPlayerEarnings = earningsMap[playerInName] ?? 0;
-            // Fuzzy match if exact name not found
-            if (inPlayerEarnings === 0) {
-              const fuzzyKey = Object.keys(earningsMap).find(k =>
-                k.toLowerCase().replace(/[^a-z]/g, '') === playerInName.toLowerCase().replace(/[^a-z]/g, '')
-              );
-              if (fuzzyKey) inPlayerEarnings = earningsMap[fuzzyKey];
-            }
+            // Prefer the UNFILTERED leaders: results.roundLeaders is filtered to
+            // started players, so an IN player who led a round but wasn't started
+            // is absent from it. roundLeadersAll (added at process time) keeps the
+            // full list; fall back to roundLeaders for events processed before it
+            // existed.
+            const roundLeaders = t.results?.roundLeadersAll || t.results?.roundLeaders || {};
+            // Bonuses key off isMajor only (signature events use regular bonuses),
+            // matching processTournamentData — NOT the sig/major mulligan-allowance
+            // bucket used above.
+            const bonusIsMajor = !!t.isMajor;
 
-            const updatedPlayers = (teamResult.players || []).map(p => {
-              const name = p.name || p;
-              if (name !== playerOutName) return p;
-              return typeof p === 'string'
-                ? { name: playerInName, earnings: inPlayerEarnings, mulliganIn: true, replacedPlayer: playerOutName }
-                : { ...p, name: playerInName, earnings: inPlayerEarnings, bonus: 0, roundsLed: [], wasRoundLeader: false, mulliganIn: true, replacedPlayer: playerOutName };
-            });
+            // Full effective lineup as processed, with this mulligan applied. Fall
+            // back to the stored top-5 names if fullLineups is absent (older
+            // events): recompute still fixes bonuses, only 6th+ starters can't be
+            // reconsidered for the top-5 in that degraded case.
+            const storedFull = Array.isArray(t.results?.fullLineups?.[mulliganTeam.id])
+              ? t.results.fullLineups[mulliganTeam.id]
+              : (teamResult.players || []).map(p => p.name || p);
+            const swappedLineup = storedFull.map(n => (n === playerOutName ? playerInName : n));
 
-            // Recalculate team totalEarnings from updated players
-            const newTotal = updatedPlayers.reduce((sum, p) => sum + (p.earnings || 0) + (p.bonus || 0), 0);
+            const recomputed = recomputeTeamTournamentResult(
+              swappedLineup, earningsMap, roundLeaders, bonusIsMajor, mulliganTeam.roster
+            );
+
+            // Preserve the IN player's mulligan display markers (used by
+            // TournamentsView). Only lands if IN actually made the scoring five.
+            const markedPlayers = (recomputed.players || []).map(p =>
+              p.name === playerInName
+                ? { ...p, mulliganIn: true, replacedPlayer: playerOutName }
+                : p
+            );
 
             return {
               ...t,
               results: {
                 ...t.results,
+                fullLineups: { ...(t.results.fullLineups || {}), [mulliganTeam.id]: swappedLineup },
                 teams: {
                   ...t.results.teams,
-                  [mulliganTeam.id]: { ...teamResult, players: updatedPlayers, totalEarnings: newTotal },
+                  [mulliganTeam.id]: {
+                    ...teamResult,
+                    players: markedPlayers,
+                    totalEarnings: recomputed.totalEarnings,
+                    bonuses: recomputed.bonuses,
+                  },
                 },
               },
             };
@@ -357,8 +383,23 @@ export const AddTransactionModal = ({
           const newResult = updatedTournaments[tournamentIndex]?.results?.teams?.[mulliganTeam.id];
           if (oldResult && newResult) {
             const earningsDiff = (newResult.totalEarnings || 0) - (oldResult.totalEarnings || 0);
-            const outPlayerOldEarnings = (oldResult.players || []).find(p => (p.name || p) === playerOutName)?.earnings || 0;
-            const inPlayerNewEarnings = (newResult.players || []).find(p => (p.name || p) === playerInName)?.earnings || 0;
+            // Per-player scoring-earnings deltas across the WHOLE top-5, not just
+            // IN/OUT. Recompute can shuffle which five score (e.g. IN misses the
+            // cut and a 6th starter moves in), so a naive IN/OUT-only adjustment
+            // would leave a third player's sfglEarnings stale. sfglEarnings is
+            // money-only (bonuses live in team earnings), so we diff the .earnings
+            // field only — matching processTournamentData's per-player crediting.
+            const sumByName = (players) => {
+              const m = {};
+              (players || []).forEach(p => {
+                const n = p.name || p;
+                m[n] = (m[n] || 0) + (p.earnings || 0);
+              });
+              return m;
+            };
+            const oldEarn = sumByName(oldResult.players);
+            const newEarn = sumByName(newResult.players);
+            const affected = new Set([...Object.keys(oldEarn), ...Object.keys(newEarn)]);
             updatedTeams = updatedTeams.map(t => {
               if (t.name !== team) return t;
               return {
@@ -366,9 +407,10 @@ export const AddTransactionModal = ({
                 earnings: (t.earnings || 0) + earningsDiff,
                 segmentEarnings: (t.segmentEarnings || 0) + earningsDiff,
                 roster: t.roster.map(p => {
-                  if (p.name === playerOutName) return { ...p, sfglEarnings: Math.max(0, (p.sfglEarnings || 0) - outPlayerOldEarnings) };
-                  if (p.name === playerInName) return { ...p, sfglEarnings: (p.sfglEarnings || 0) + inPlayerNewEarnings };
-                  return p;
+                  if (!affected.has(p.name)) return p;
+                  const delta = (newEarn[p.name] || 0) - (oldEarn[p.name] || 0);
+                  if (delta === 0) return p;
+                  return { ...p, sfglEarnings: Math.max(0, (p.sfglEarnings || 0) + delta) };
                 }),
               };
             });

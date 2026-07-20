@@ -969,6 +969,16 @@ async function handleProcessResults(res) {
     round2: filterToStarted(rl?.round2) || [],
     round3: filterToStarted(rl?.round3) || [],
   };
+  // Unfiltered round leaders — the full list before restricting to started
+  // players. Stored alongside roundLeaders so a mulligan added after processing
+  // can credit an IN player who led a round despite not having been in a lineup
+  // at process time (roundLeaders would have stripped their name).
+  const normLeaders = (names) => (Array.isArray(names) ? names : (names ? [names] : [])).filter(Boolean);
+  const roundLeadersAll = {
+    round1: normLeaders(rl?.round1),
+    round2: normLeaders(rl?.round2),
+    round3: normLeaders(rl?.round3),
+  };
 
   // Build bonus amounts from settings
   const BONUSES_REG = { round1: 20000, round2: 40000, round3: 60000 };
@@ -978,7 +988,7 @@ async function handleProcessResults(res) {
     : { round1: settings.bonusR1Regular ?? BONUSES_REG.round1, round2: settings.bonusR2Regular ?? BONUSES_REG.round2, round3: settings.bonusR3Regular ?? BONUSES_REG.round3 };
 
   // Process each team — mirrors processTournamentData exactly
-  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders, fullLineups: {} };
+  const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders, roundLeadersAll, fullLineups: {} };
   const newStats = { ...globalStats };
 
   // Update global player stats
