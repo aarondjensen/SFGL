@@ -377,7 +377,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     return Object.values(fees).sort((a, b) => b.seasonTotal - a.seasonTotal);
   }, [teams, visibleTransactions, tournaments]);
 
-  const TYPE_ORDER = { 'fa': 0, 'free agent': 0, 'waiver': 1, 'mulligan': 2, 'drop': 3, 'swing_winner': 99 };
+  const TYPE_ORDER = { 'waiver': 0, 'fa': 1, 'free agent': 1, 'drop': 2, 'mulligan': 3, 'swing_winner': 99 };
   // Build a map of segment → last tournamentIndex for sorting swing_winner records.
   const swingLastIndex = {};
   tournaments.forEach((t, i) => {
@@ -396,14 +396,16 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     const ak = resolveKey(a);
     const bk = resolveKey(b);
     if (bk !== ak) return bk - ak;
-    // Same tournament: sort by type order (waiver → FA → mulligan)
+    // Same tournament: sort by type order. Mulligan is always last because it
+    // happens after the event has started (Waiver → Waiver Blocked → Free Agent
+    // → Drop → Mulligan).
     const ta = TYPE_ORDER[a.type?.toLowerCase()] ?? 1;
     const tb = TYPE_ORDER[b.type?.toLowerCase()] ?? 1;
     if (ta !== tb) return ta - tb;
-    // Within waivers: blocked before successful (blocked is the consequence)
+    // Within waivers: successful first, then blocked (Waiver → Waiver Blocked)
     if (a.type === 'waiver' && b.type === 'waiver') {
-      const sa = a.status === 'failed' ? 0 : 1;
-      const sb = b.status === 'failed' ? 0 : 1;
+      const sa = a.status === 'failed' ? 1 : 0;
+      const sb = b.status === 'failed' ? 1 : 0;
       if (sa !== sb) return sa - sb;
     }
     // Final tiebreak: timestamp, most recent first
