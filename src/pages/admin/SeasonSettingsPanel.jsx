@@ -273,6 +273,55 @@ export const SeasonSettingsPanel = ({
     (settings.lineupReminderMinute ?? 0) !== reminderMinute
   );
 
+  // ── OWGR sync schedule ──
+  // Gate defaults (api/cron.js handleOwgrRankings): Monday (1) at 5pm (17) ET.
+  const [owgrDay,    setOwgrDay]    = React.useState(() => settings?.owgrSyncDay    ?? 1);
+  const [owgrHour,   setOwgrHour]   = React.useState(() => settings?.owgrSyncHour   ?? 17);
+  const [owgrMinute, setOwgrMinute] = React.useState(() => settings?.owgrSyncMinute ?? 0);
+  const [owgrSaving, setOwgrSaving] = React.useState(false);
+
+  const handleSaveOwgrSchedule = async () => {
+    setOwgrSaving(true);
+    try {
+      // Keys must match exactly what the cron gate reads: owgrSyncDay/Hour/Minute.
+      await setSettings({ ...settings, owgrSyncDay: owgrDay, owgrSyncHour: owgrHour, owgrSyncMinute: owgrMinute });
+
+      // Re-program the cron-job.org "owgr-rankings" job so its ping schedule
+      // tracks the new gate. Best-effort: settings (the gate) are already saved
+      // above, so a sync failure degrades to gate-only behavior.
+      let syncWarn = '';
+      try {
+        const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobType: 'owgr-rankings', day: owgrDay, hour: owgrHour, minute: owgrMinute }),
+        });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          syncWarn = d.hint || d.error || `HTTP ${resp.status}`;
+        }
+      } catch (e) {
+        syncWarn = e.message;
+      }
+
+      if (syncWarn) {
+        dialog.showToast(`Saved the time, but cron-job.org didn't update: ${syncWarn}. Update the OWGR job there manually.`, 'error');
+      } else {
+        dialog.showToast(`✓ OWGR syncs ${DAY_NAMES[owgrDay]} at ${fmtETTime(owgrHour, owgrMinute)} ET`, 'success');
+      }
+    } catch (err) {
+      dialog.showToast('Error: ' + err.message, 'error');
+    } finally {
+      setOwgrSaving(false);
+    }
+  };
+
+  const owgrHasUnsavedChanges = settings?.owgrSyncDay !== undefined && (
+    settings.owgrSyncDay !== owgrDay ||
+    settings.owgrSyncHour !== owgrHour ||
+    (settings.owgrSyncMinute ?? 0) !== owgrMinute
+  );
+
   // Numeric input helper used in the collapsible Season Settings section.
   // Renders a $ prefix for dollar fields and right-aligns the value; plain
   // count fields get a centered numeric input.
@@ -595,6 +644,19 @@ export const SeasonSettingsPanel = ({
         onSave={handleSaveReminderSchedule}
         saveLabel="💾 Save Reminder Schedule"
         currentLabel="reminders send"
+      />
+
+      <ScheduleEditor
+        eyebrow="🌐 OWGR Sync Schedule"
+        description="When world rankings are refreshed from OWGR each week. Default: Monday at 5:00 PM ET (rankings publish Monday afternoon). The Data Sync panel's manual button is a backup."
+        day={owgrDay}     setDay={setOwgrDay}
+        hour={owgrHour}   setHour={setOwgrHour}
+        minute={owgrMinute} setMinute={setOwgrMinute}
+        saving={owgrSaving}
+        hasChanges={owgrHasUnsavedChanges}
+        onSave={handleSaveOwgrSchedule}
+        saveLabel="💾 Save OWGR Schedule"
+        currentLabel="OWGR syncs"
       />
 
       {/* Cron-schedule explainer note. Reframed as a subtle info row instead

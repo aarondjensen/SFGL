@@ -1741,6 +1741,7 @@ const CRON_JOB_ID_ENV  = {
   'results':         'CRONJOB_RESULTS_JOB_ID',
   'lineup-reminder': 'CRONJOB_LINEUP_REMINDER_JOB_ID',
   'lead-watch':      'CRONJOB_LEAD_WATCH_JOB_ID',
+  'owgr-rankings':   'CRONJOB_OWGR_JOB_ID',
 };
 
 async function handleSyncCronSchedule(req, res) {
@@ -1759,7 +1760,7 @@ async function handleSyncCronSchedule(req, res) {
   if (!envName) {
     return res.status(400).json({
       error: `Unknown jobType "${jobType}"`,
-      hint:  'Expected waivers, results, lineup-reminder, or lead-watch',
+      hint:  'Expected waivers, results, lineup-reminder, lead-watch, or owgr-rankings',
     });
   }
 
