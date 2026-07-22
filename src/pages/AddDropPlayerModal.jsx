@@ -19,6 +19,31 @@ const accentColor   = (waiver) => waiver ? colors.warning              : colors.
 const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.08)'      : 'rgba(80,195,120,0.08)';
 const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)'      : 'rgba(80,195,120,0.35)';
 
+// ── "Playing in current tourney" toggle — mirrors the All / ⛳ slider in
+// RostersView. Boolean-backed: value=true means "field only". ─────────────────
+const FieldToggle = ({ value, setter, disabled = false, width = 84 }) => (
+  <div style={{ opacity: disabled ? 0.3 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.18s', flexShrink: 0 }}>
+    <div style={{ display: 'flex', gap: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 10, padding: 3, width }}>
+      {[['all', 'All', 'rgba(100,180,255,0.95)'], ['field', '⛳', 'rgba(80,180,120,0.95)']].map(([val, label, color]) => {
+        const active = (value ? 'field' : 'all') === val;
+        return (
+          <button key={val} type="button" onClick={() => setter(val === 'field')} style={{
+            flex: 1, padding: '8px 0', borderRadius: 8,
+            background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+            border: active ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
+            fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+            color: active ? color : colors.textMuted,
+            cursor: 'pointer', transition: 'all 0.15s',
+          }}
+          onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+          onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+          >{label}</button>
+        );
+      })}
+    </div>
+  </div>
+);
+
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
 import {
   getPlayerHeadshot,
@@ -35,6 +60,7 @@ export const AddDropPlayerModal = ({
   const TRANSACTION_FEE_FREE_AGENT = leagueSettings.feeFA    ?? 1;
   const TRANSACTION_FEE_WAIVER  = leagueSettings.feeWaiver   ?? 2;
   const [searchTerm,           setSearchTerm]           = useState('');
+  const [fieldOnly,            setFieldOnly]            = useState(false); // "playing in current tourney" toggle
   const [selectedPlayerToAdd,  setSelectedPlayerToAdd]  = useState(null);
   const [selectedPlayerToDrop, setSelectedPlayerToDrop] = useState(null);
   const [saving,               setSaving]               = useState(false);
@@ -209,6 +235,8 @@ export const AddDropPlayerModal = ({
     if (!p.name || typeof p.name !== 'string') return false;
     if (p.isLiv || LIV_PLAYERS.has(p.name)) return false;
     if (thisTeamPendingClaims.has(normalizePlayerName(p.name))) return false;
+    // "Playing in current tourney" toggle — restrict to this week's field
+    if (fieldOnly && tournamentField && !tournamentField.has(normalizeNordic(p.name))) return false;
     return true;
   });
 
@@ -381,6 +409,7 @@ export const AddDropPlayerModal = ({
     setSelectedPlayerToAdd(null);
     setSelectedPlayerToDrop(null);
     setSearchTerm('');
+    setFieldOnly(false);
     onClose();
   };
 
@@ -662,28 +691,31 @@ export const AddDropPlayerModal = ({
           )}
 
           {/* ── Browse list ── */}
-          <input
-            type="text"
-            placeholder="Search by name…"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            autoFocus={!selectedPlayerToAdd}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              background: 'rgba(255,255,255,0.02)',
-              border: `1px solid ${colors.borderSubtle}`,
-              borderRadius: 6,
-              color: colors.textPrimary,
-              fontFamily: fonts.sans,
-              fontSize: 16, // prevent iOS zoom
-              marginBottom: 12,
-              outline: 'none',
-              transition: 'background 0.15s, border-color 0.15s',
-            }}
-            onFocus={e => { e.target.style.borderColor = 'rgba(255,255,255,0.25)'; e.target.style.background = 'rgba(255,255,255,0.04)'; }}
-            onBlur={e => { e.target.style.borderColor = colors.borderSubtle; e.target.style.background = 'rgba(255,255,255,0.02)'; }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <input
+              type="text"
+              placeholder="Player Search"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              autoFocus={!selectedPlayerToAdd}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: '10px 12px',
+                background: 'rgba(255,255,255,0.02)',
+                border: `1px solid ${colors.borderSubtle}`,
+                borderRadius: 6,
+                color: colors.textPrimary,
+                fontFamily: fonts.sans,
+                fontSize: 16, // prevent iOS zoom
+                outline: 'none',
+                transition: 'background 0.15s, border-color 0.15s',
+              }}
+              onFocus={e => { e.target.style.borderColor = 'rgba(255,255,255,0.25)'; e.target.style.background = 'rgba(255,255,255,0.04)'; }}
+              onBlur={e => { e.target.style.borderColor = colors.borderSubtle; e.target.style.background = 'rgba(255,255,255,0.02)'; }}
+            />
+            <FieldToggle value={fieldOnly} setter={setFieldOnly} disabled={!tournamentField?.size} />
+          </div>
 
           {loadingPlayers ? (
             <p style={{ ...theme.smallText, textAlign: 'center', padding: '24px 0', color: colors.textMuted }}>Loading players…</p>
