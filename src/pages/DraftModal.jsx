@@ -1,5 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Search, RotateCcw, Flag } from 'lucide-react';
+// Single source of truth for headshots — same ESPN resolver the roster views
+// use. Draft previously built PGA-Tour Cloudinary URLs from the headshots map
+// (which holds ESPN athlete IDs), a crossed namespace that rendered broken
+// faces; and its `pgaTourId` fallback was dead (getAllForApp never projects it).
+import { getPlayerHeadshotUrls } from '../utils/headshotUtils.js';
 // Wave I: standardised on '../api/firebase' direct import (was '../api' barrel,
 // inconsistent with every other file in the project).
 import { draftStateApi } from '../api/firebase';
@@ -211,6 +216,8 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
   const [unlimitedSearch, setUnlimitedSearch] = useState('');
   const [draggedIndex, setDraggedIndex]       = useState(null);
   const [confirmDraft, setConfirmDraft]       = useState(null);
+  const [localHeadshots, setLocalHeadshots]   = useState({});
+  const hsAttemptedRef = useRef(new Set()); // names already sent to /api/headshots
   const dialog = useDialog();
 
   useModalBehaviorAlways(onClose);
@@ -312,13 +319,16 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
     onClose();
   };
 
+  // Merge locally-hydrated headshots (fetched below for the draftable pool)
+  // under the prop map, which wins. Both are keyed name -> ESPN id | full URL,
+  // exactly the shape getPlayerHeadshotUrls expects.
+  const mergedHeadshots = { ...localHeadshots, ...headshots };
+
   const getPlayerHeadshot = (playerName) => {
-    let id = headshots[playerName];
-    if (!id) { const p = allPlayers.find(p => p.name === playerName); id = p?.pgaTourId; }
-    if (id) {
-      if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('/'))) return id;
-      return `https://pga-tour-res.cloudinary.com/image/upload/c_thumb,g_face,z_0.7,q_auto,f_auto,dpr_2.0,w_96,h_96,b_rgb:F2F2F2,d_stub:default_avatar_light.webp/headshots_${id}`;
-    }
+    const urls = getPlayerHeadshotUrls(playerName, mergedHeadshots);
+    if (urls.length) return urls[0];
+    // Draft keeps its own darker initials chip (cosmetic only); the source of
+    // truth above is the shared ESPN resolver.
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=0f1d35&color=6b7280&size=128`;
   };
 
@@ -337,6 +347,30 @@ export const DraftModal = ({ teams, allPlayers, updateTeams, onClose, headshots 
 
   const limitedSearchResults  = allPlayers.filter(p => !allKeeperNames().includes(p.name) && p.name.toLowerCase().includes(limitedSearch.toLowerCase())).slice(0, 10);
   const unlimitedSearchResults = allPlayers.filter(p => !allKeeperNames().includes(p.name) && p.name.toLowerCase().includes(unlimitedSearch.toLowerCase())).slice(0, 10);
+
+  // ── Hydrate headshots for the draftable pool ─────────────────────────────
+  // Undrafted players aren't rostered, so App.jsx's global hydration never
+  // fetched their ESPN IDs — the draft board would otherwise be mostly initials.
+  // Fetch the visible pool from the SAME canonical /api/headshots endpoint the
+  // roster views use, merge into local state, and let getPlayerHeadshot resolve
+  // via the shared ESPN resolver. An attempted-names ref prevents refetch loops.
+  const poolNamesKey = [
+    ...availablePlayers.map(p => p.name),
+    ...limitedSearchResults.map(p => p.name),
+    ...unlimitedSearchResults.map(p => p.name),
+  ].join(',');
+  useEffect(() => {
+    const poolNames = poolNamesKey ? poolNamesKey.split(',') : [];
+    const missing = [...new Set(poolNames)]
+      .filter(n => n && !headshots[n] && !localHeadshots[n] && !hsAttemptedRef.current.has(n))
+      .slice(0, 50);
+    if (!missing.length) return;
+    missing.forEach(n => hsAttemptedRef.current.add(n));
+    fetch(`/api/headshots?names=${missing.map(n => encodeURIComponent(n)).join(',')}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (data?.results) setLocalHeadshots(prev => ({ ...prev, ...data.results })); })
+      .catch(() => {});
+  }, [poolNamesKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveDraftOrder = (fromIndex, dir) => {
     const toIndex = fromIndex + dir;

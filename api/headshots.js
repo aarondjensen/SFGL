@@ -13,11 +13,20 @@ const HEADERS = {
   'Accept': 'application/json',
 };
 
-// Recent 2026 PGA Tour event ESPN IDs — Signature + full-field events for max coverage.
-// Signature events have small fields (~75) of top players. Full-field events
-// include lower-tier players who don't qualify for Signatures (e.g. Alex
-// Fitzpatrick at Truist 2026). Mixing both ensures we index headshots for
-// the widest possible roster.
+// ── BACKFILL event list ──────────────────────────────────────────────────
+// The index is built from TWO sources, in this priority order:
+//   1. The CURRENT PGA event's field (resolved dynamically at request time —
+//      see getCurrentPgaEventIds). By definition every player you can roster
+//      THIS week is in this week's field, so this is what rescues lower-ranked
+//      players / rookies / one-week qualifiers (e.g. Ben James, Ben Kohles)
+//      who never appear in the elite Signature fields below.
+//   2. These fixed recent events, as a BACKFILL for benched/non-playing
+//      players who aren't in the current field but were in a recent event.
+//
+// Signature events have small fields (~75) of top players; full-field events
+// include lower-tier players who don't qualify for Signatures. Mixing both
+// widens backfill coverage. The current-event lookup (source 1) is what makes
+// the index self-maintaining week to week — you rarely need to touch this list.
 //
 // To update: find new IDs at https://www.espn.com/golf/leaderboard?tournamentId=XXXXXXX
 // — open a recent tournament's leaderboard and the ID is in the URL.
@@ -59,11 +68,26 @@ export default async function handler(req, res) {
   const { names, eventId, debug } = req.query;
 
   try {
-    const playerMap = await buildPlayerMap(eventId ? [eventId] : ESPN_EVENT_IDS);
+    // Build the event list to index. An explicit ?eventId= overrides everything
+    // (debugging/one-off). Otherwise: current PGA event field FIRST (self-
+    // maintaining coverage for this week's rosterable players), then the fixed
+    // backfill list for benched/non-playing players. De-duped, order-preserving.
+    let eventIds;
+    let currentEventIds = [];
+    if (eventId) {
+      eventIds = [eventId];
+    } else {
+      currentEventIds = await getCurrentPgaEventIds();
+      eventIds = [...new Set([...currentEventIds, ...ESPN_EVENT_IDS])];
+    }
+
+    const playerMap = await buildPlayerMap(eventIds);
 
     if (debug === '1') {
       return res.status(200).json({
         totalPlayers: playerMap.size,
+        currentEventIds,
+        indexedEventIds: eventIds,
         sample: [...playerMap.entries()].slice(0, 10).map(([name, p]) => ({ name, espnId: p.espnId })),
         manualOverrides: Object.keys(MANUAL_OVERRIDES),
       });
@@ -108,6 +132,34 @@ function normalize(name) {
     .replace(/[^a-z0-9\s]/gi, '')
     .toLowerCase()
     .trim();
+}
+
+// ── Resolve the current PGA event ID(s) ─────────────────────────────────────
+// ESPN's PGA scoreboard returns the current week's event(s) with their IDs and
+// status ('pre' = upcoming this week, 'in' = live, 'post' = just finished).
+// We index whatever it returns so this week's full field is always covered.
+// Falls back to the generic golf leaderboard endpoint, then to [] (in which
+// case the handler still has the fixed backfill list to work with).
+async function getCurrentPgaEventIds() {
+  const endpoints = [
+    'https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard',
+    'https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard',
+  ];
+  for (const url of endpoints) {
+    try {
+      const resp = await fetch(url, { headers: HEADERS });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      const ids = (data?.events || [])
+        .map(e => e?.id)
+        .filter(Boolean)
+        .map(String);
+      if (ids.length) return [...new Set(ids)];
+    } catch {
+      // try next endpoint
+    }
+  }
+  return [];
 }
 
 // ── Build player map from ESPN events (parallel) ────────────────────────────
