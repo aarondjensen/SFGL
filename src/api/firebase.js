@@ -153,10 +153,15 @@ export const playersApi = {
 
   // Get top N players by world rank, excluding LIV players
   async getTopRanked(n = 50) {
+    // Fetch only as many docs as we need (plus a buffer for LIV/junk filtering)
+    // rather than the entire ~700-doc collection every time. A caller that
+    // genuinely wants the full list (e.g. searchByName passes n=700) still gets
+    // it, since the cap is 700.
+    const fetchLimit = Math.min(Math.max(n + 100, 200), 700);
     const rankedQ = query(
       collection(db, 'players'),
       orderBy('world_rank', 'asc'),
-      limit(700) // covers full OWGR list (~600) plus buffer
+      limit(fetchLimit)
     );
     const rankedSnap = await getDocs(rankedQ);
     return rankedSnap.docs

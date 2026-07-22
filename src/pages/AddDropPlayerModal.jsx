@@ -55,6 +55,7 @@ export const AddDropPlayerModal = ({
   updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
   headshots, fieldPlayerIds = {}, tournamentField = null, leagueSettings = {}, onHeadshotsFound,
+  allPlayers = [],
 }) => {
   const ROSTER_LIMIT            = leagueSettings.rosterLimit ?? 13;
   const TRANSACTION_FEE_FREE_AGENT = leagueSettings.feeFA    ?? 1;
@@ -73,15 +74,32 @@ export const AddDropPlayerModal = ({
   const searchTimerRef = useRef(null);
   const dialog   = useDialog();
 
-  // Load top 50 free agents when modal opens
+  // Populate the browse list when the modal opens. Prefer the in-memory
+  // `allPlayers` list — it's already loaded at app startup and localStorage-
+  // cached, so the top-100 list appears INSTANTLY. This avoids re-downloading
+  // the entire `players` collection (~700 docs) from Firestore on every open,
+  // which was the cause of the long "Loading players…" hang on first open.
+  // Fall back to a Firestore fetch only when allPlayers isn't available.
   useEffect(() => {
     if (!isOpen) return;
+    const buildTop = (list) => (list || [])
+      .filter(p => p && !p.isLiv && p.name && typeof p.name === 'string'
+        && !/^\d+$/.test(p.name.trim()) && p.name.includes(' '))
+      .sort((a, b) => (a.worldRank ?? 9999) - (b.worldRank ?? 9999))
+      .slice(0, 100);
+
+    if (allPlayers?.length) {
+      setTopPlayers(buildTop(allPlayers));
+      setLoadingPlayers(false);
+      return;
+    }
+
     setLoadingPlayers(true);
     playersApi.getTopRanked(100)
       .then(players => setTopPlayers(players))
       .catch(() => setTopPlayers([]))
       .finally(() => setLoadingPlayers(false));
-  }, [isOpen]);
+  }, [isOpen, allPlayers]);
 
   // ── Escape key + body scroll lock (shared) ─────────────────────────────────
   useModalBehavior(isOpen, onClose);

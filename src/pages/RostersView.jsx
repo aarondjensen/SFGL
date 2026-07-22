@@ -1645,6 +1645,7 @@ export const RostersView = ({
         headshots={headshots}
         fieldPlayerIds={fieldPlayerIds}
         tournamentField={tournamentField}
+        allPlayers={allPlayers}
         leagueSettings={resolvedSettings}
         onHeadshotsFound={found => updateHeadshots && updateHeadshots(prev => ({ ...(prev || {}), ...found }))}
       />
