@@ -28,21 +28,59 @@ import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, resolv
 // Each Firebase call has no timeout — if it takes 30 seconds, we wait. If it
 // errors, we fall through to the next tier. This is the original contract.
 // ============================================================================
+// Synchronous localStorage read for warm-open seeding (see below). Kept tiny
+// and dependency-free so it can run inside useState initializers.
+const readLocalSync = (key) => {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : null;
+  } catch { return null; }
+};
+
 export const useLeague = (STORAGE_KEYS) => {
-  const [teams,               setTeams]               = useState([]);
-  const [tournaments,         setTournaments]         = useState([]);
-  const [transactions,        setTransactions]        = useState([]);
-  const [settings,            setSettings]            = useState({ commissioner: 'Detroit Rock City', currentSegment: 'West Coast Swing' });
-  const [globalPlayerStats,   setGlobalPlayerStats]   = useState({});
-  const [allPlayers,          setAllPlayers]          = useState([]);
-  const [rankingsLastUpdated, setRankingsLastUpdated] = useState(null);
-  const [headshots,           setHeadshots]           = useState({});
-  const [loading,             setLoading]             = useState(true);
+  // ── Warm-open seed (stale-while-revalidate) ──────────────────────────────
+  // Returning visitors already have the last-known league data in localStorage
+  // (the app writes it on every update and load). Seed React state from it
+  // synchronously so the UI paints IMMEDIATELY on reopen, then revalidate
+  // against Firebase in the background (loadFromFirebase, below). First-ever
+  // visitors have no cache → state starts empty and the splash shows as before.
+  const [teams,               setTeams]               = useState(() => readLocalSync(STORAGE_KEYS.TEAMS) || []);
+  const [tournaments,         setTournaments]         = useState(() => readLocalSync(STORAGE_KEYS.TOURNAMENTS) || []);
+  const [transactions,        setTransactions]        = useState(() => readLocalSync(STORAGE_KEYS.TRANSACTIONS) || []);
+  const [settings,            setSettings]            = useState(() => readLocalSync(STORAGE_KEYS.SETTINGS) || { commissioner: 'Detroit Rock City', currentSegment: 'West Coast Swing' });
+  const [globalPlayerStats,   setGlobalPlayerStats]   = useState(() => readLocalSync(STORAGE_KEYS.GLOBAL_PLAYER_STATS) || {});
+  const [allPlayers,          setAllPlayers]          = useState(() => readLocalSync(STORAGE_KEYS.PLAYER_RANKINGS)?.players || []);
+  const [rankingsLastUpdated, setRankingsLastUpdated] = useState(() => readLocalSync(STORAGE_KEYS.PLAYER_RANKINGS)?.lastUpdated || null);
+  const [headshots,           setHeadshots]           = useState(() => readLocalSync(STORAGE_KEYS.HEADSHOTS) || {});
+  // If we already have cached teams, don't block first paint on the network:
+  // start loading=false and let the background revalidation update state.
+  const [loading,             setLoading]             = useState(() => {
+    const cached = readLocalSync(STORAGE_KEYS.TEAMS);
+    return !(Array.isArray(cached) && cached.length > 0);
+  });
   const [isSyncing,           setIsSyncing]           = useState(false);
   const [loadErrors,          setLoadErrors]          = useState([]);
 
   // Core loader. Extracted as useCallback so refetch() can call it.
-  // No timeouts. No retries. No watchdog. Original behaviour.
+  //
+  // Two-tier load so first paint isn't held hostage by the heavy collections:
+  //   • Tier 1 (awaited): teams, tournaments, transactions, settings, registry
+  //     — everything the default Standings view needs. The splash lifts as soon
+  //     as these resolve.
+  //   • Tier 2 (background, NOT awaited): player stats, headshots, and the
+  //     ~600-player rankings — large payloads only the Rosters/Admin tabs need.
+  //     They stream in and update state after the app is already interactive.
+  //
+  // Cascade per collection is unchanged: Firebase → sfgl_data → localStorage.
+  // No timeouts. No retries. No watchdog. Original contract otherwise.
+  //
+  // Two waste removals vs. the previous version:
+  //   1. The registry read now joins the Tier-1 Promise.all instead of running
+  //      as a separate sequential round-trip afterward.
+  //   2. The sfgl_data disaster-recovery fallback is fetched ONLY when a core
+  //      collection comes back empty (it used to be fetched on every load,
+  //      adding a wasted sequential multi-doc read to the happy path).
   const loadFromFirebase = useCallback(async (isRefetch = false) => {
     const errors = [];
     try {
@@ -60,58 +98,71 @@ export const useLeague = (STORAGE_KEYS) => {
 
       console.log(`[useLeague] ${isRefetch ? 'Refetching' : 'Loading'} from Firebase...`);
 
-      // Each call has .catch that logs the error and returns null. No timeout.
-      // If a call hangs, we wait. If it rejects, we fall through to fallbacks.
+      // ── Tier 1: first-paint-critical collections + registry, in parallel ──
+      // Each call has .catch that logs and returns null. If a call hangs we
+      // wait; if it rejects we fall through to the fallbacks below.
       const [
         firebaseTeams,
         firebaseTournaments,
         firebaseTransactions,
         firebaseSettings,
-        firebaseStats,
-        firebaseHeadshots,
-        firebaseRankings,
+        firebaseRegistry,
       ] = await Promise.all([
         teamsApi.getAll().catch((e)        => { console.error('[useLeague] teams:', e);        errors.push('teams');        return null; }),
         tournamentsApi.getAll().catch((e)  => { console.error('[useLeague] tournaments:', e);  errors.push('tournaments');  return null; }),
         transactionsApi.getAll().catch((e) => { console.error('[useLeague] transactions:', e); errors.push('transactions'); return null; }),
         settingsApi.getAll().catch((e)     => { console.error('[useLeague] settings:', e);     errors.push('settings');     return null; }),
-        playerStatsApi.getAll().catch((e)  => { console.error('[useLeague] stats:', e);        return null; }),
-        headshotsApi.getAll().catch((e)    => { console.error('[useLeague] headshots:', e);    return null; }),
-        prApi.getAll().catch((e)           => { console.error('[useLeague] rankings:', e);     return null; }),
+        playerRegistryApi.get().catch(()   => null),
       ]);
 
-      const firebaseRegistry = await playerRegistryApi.get().catch(() => null);
+      // sfgl_data disaster-recovery fallback — fetched ONLY if a core collection
+      // is missing (Firebase unreachable/empty). Skipped entirely on a healthy
+      // load, removing a wasted sequential read from the critical path.
+      const coreMissing =
+        !(firebaseTeams?.length > 0) ||
+        !(firebaseTournaments?.length > 0) ||
+        !(firebaseTransactions?.length > 0) ||
+        !(firebaseSettings && Object.keys(firebaseSettings).length > 0);
+      const sfglFallback = coreMissing
+        ? await sfglDataApi.getMany([
+            STORAGE_KEYS.TEAMS,
+            STORAGE_KEYS.TOURNAMENTS,
+            STORAGE_KEYS.TRANSACTIONS,
+            STORAGE_KEYS.SETTINGS,
+            STORAGE_KEYS.GLOBAL_PLAYER_STATS,
+          ]).catch(() => ({}))
+        : {};
 
-      const sfglFallback = await sfglDataApi.getMany([
-        STORAGE_KEYS.TEAMS,
-        STORAGE_KEYS.TOURNAMENTS,
-        STORAGE_KEYS.TRANSACTIONS,
-        STORAGE_KEYS.SETTINGS,
-        STORAGE_KEYS.GLOBAL_PLAYER_STATS,
-      ]).catch(() => ({}));
+      // Cascade for each collection: Firebase → sfgl_data → localStorage.
+      // (The localStorage tier is already reflected in state via the warm-open
+      // seed above, so a fall-through simply keeps the seeded value.)
 
-      // Cascade for each collection: Firebase → sfgl_data → localStorage
-
+      let resolvedTeams = null;
       if (firebaseTeams?.length > 0) {
+        resolvedTeams = firebaseTeams;
         setTeams(firebaseTeams);
         console.log(`✓ Loaded ${firebaseTeams.length} teams from Firebase`);
       } else if (sfglFallback[STORAGE_KEYS.TEAMS]?.length > 0) {
-        setTeams(sfglFallback[STORAGE_KEYS.TEAMS]);
-        console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TEAMS].length} teams from sfgl_data`);
+        resolvedTeams = sfglFallback[STORAGE_KEYS.TEAMS];
+        setTeams(resolvedTeams);
+        console.log(`✓ Loaded ${resolvedTeams.length} teams from sfgl_data`);
       } else {
         const localTeams = await storage.get(STORAGE_KEYS.TEAMS, null);
-        if (localTeams && !isRefetch) setTeams(localTeams);
+        if (localTeams && !isRefetch) { resolvedTeams = localTeams; setTeams(localTeams); }
       }
 
+      let resolvedTournaments = null;
       if (firebaseTournaments?.length > 0) {
+        resolvedTournaments = firebaseTournaments;
         setTournaments(firebaseTournaments);
         console.log(`✓ Loaded ${firebaseTournaments.length} tournaments from Firebase`);
       } else if (sfglFallback[STORAGE_KEYS.TOURNAMENTS]?.length > 0) {
-        setTournaments(sfglFallback[STORAGE_KEYS.TOURNAMENTS]);
-        console.log(`✓ Loaded ${sfglFallback[STORAGE_KEYS.TOURNAMENTS].length} tournaments from sfgl_data`);
+        resolvedTournaments = sfglFallback[STORAGE_KEYS.TOURNAMENTS];
+        setTournaments(resolvedTournaments);
+        console.log(`✓ Loaded ${resolvedTournaments.length} tournaments from sfgl_data`);
       } else {
         const localTournaments = await storage.get(STORAGE_KEYS.TOURNAMENTS, null);
-        if (localTournaments && !isRefetch) setTournaments(localTournaments);
+        if (localTournaments && !isRefetch) { resolvedTournaments = localTournaments; setTournaments(localTournaments); }
       }
 
       if (firebaseTransactions?.length > 0) {
@@ -136,37 +187,6 @@ export const useLeague = (STORAGE_KEYS) => {
         if (localSettings && !isRefetch) setSettings(localSettings);
       }
 
-      if (firebaseStats && Object.keys(firebaseStats).length > 0) {
-        setGlobalPlayerStats(firebaseStats);
-        console.log(`✓ Loaded ${Object.keys(firebaseStats).length} player stats from Firebase`);
-      } else if (sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS] && Object.keys(sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS]).length > 0) {
-        setGlobalPlayerStats(sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
-      } else {
-        const localStats = await storage.get(STORAGE_KEYS.GLOBAL_PLAYER_STATS, null);
-        if (localStats && !isRefetch) setGlobalPlayerStats(localStats);
-      }
-
-      if (firebaseHeadshots && Object.keys(firebaseHeadshots).length > 0) {
-        setHeadshots(firebaseHeadshots);
-        console.log(`✓ Loaded ${Object.keys(firebaseHeadshots).length} headshots from Firebase`);
-      } else {
-        const localHeadshots = await storage.get(STORAGE_KEYS.HEADSHOTS, null);
-        if (localHeadshots && !isRefetch) setHeadshots(localHeadshots);
-      }
-
-      if (firebaseRankings?.length > 0) {
-        setAllPlayers(firebaseRankings);
-        const lastUpdated = await prApi.getLastUpdated().catch(() => null);
-        setRankingsLastUpdated(lastUpdated);
-        console.log(`✓ Loaded ${firebaseRankings.length} players from Firebase`);
-      } else {
-        const localRankings = await storage.get(STORAGE_KEYS.PLAYER_RANKINGS, null);
-        if (localRankings?.players && !isRefetch) {
-          setAllPlayers(localRankings.players);
-          setRankingsLastUpdated(localRankings.lastUpdated);
-        }
-      }
-
       // ── Durable player registry (single source of truth for SFGL attributes) ──
       // Merge the persisted registry with the just-loaded rosters + results
       // history, then cache it (for hydration everywhere) and persist the union.
@@ -174,12 +194,8 @@ export const useLeague = (STORAGE_KEYS) => {
       // the max), so it's monotonic and safe — a player is captured the first
       // time they're seen on any roster and never lost afterward.
       try {
-        const regTeams = (firebaseTeams?.length > 0)
-          ? firebaseTeams
-          : (sfglFallback[STORAGE_KEYS.TEAMS] || []);
-        const regTournaments = (firebaseTournaments?.length > 0)
-          ? firebaseTournaments
-          : (sfglFallback[STORAGE_KEYS.TOURNAMENTS] || []);
+        const regTeams = resolvedTeams || readLocalSync(STORAGE_KEYS.TEAMS) || [];
+        const regTournaments = resolvedTournaments || readLocalSync(STORAGE_KEYS.TOURNAMENTS) || [];
         const mergedRegistry = buildPlayerAttributeIndex(regTeams, regTournaments, firebaseRegistry || {});
         setPlayerRegistry(mergedRegistry);
         playerRegistryApi.set(mergedRegistry).catch((e) => console.warn('[useLeague] registry persist skipped:', e));
@@ -190,10 +206,48 @@ export const useLeague = (STORAGE_KEYS) => {
       setLoadErrors(errors);
 
       if (errors.length === 0) {
-        console.log('[useLeague] ✓ All data loaded successfully');
+        console.log('[useLeague] ✓ Tier-1 data loaded successfully');
       } else {
         console.warn(`[useLeague] ⚠ Failed to load from Firebase: ${errors.join(', ')} (used local fallback)`);
       }
+
+      // ── Tier 2: heavy, non-critical collections — background, NOT awaited ──
+      // Player stats, headshots, and the ~600-player rankings only matter to
+      // the Rosters/Admin tabs. Loading them here (after Tier 1 has already let
+      // the splash lift) keeps them off the first-paint critical path. Failures
+      // fall back to the seeded localStorage values already in state.
+      (async () => {
+        try {
+          const [firebaseStats, firebaseHeadshots, firebaseRankings] = await Promise.all([
+            playerStatsApi.getAll().catch((e) => { console.error('[useLeague] stats:', e);     return null; }),
+            headshotsApi.getAll().catch((e)   => { console.error('[useLeague] headshots:', e); return null; }),
+            prApi.getAll().catch((e)          => { console.error('[useLeague] rankings:', e);  return null; }),
+          ]);
+
+          if (firebaseStats && Object.keys(firebaseStats).length > 0) {
+            setGlobalPlayerStats(firebaseStats);
+            console.log(`✓ Loaded ${Object.keys(firebaseStats).length} player stats from Firebase`);
+          } else if (sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS] && Object.keys(sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS]).length > 0) {
+            setGlobalPlayerStats(sfglFallback[STORAGE_KEYS.GLOBAL_PLAYER_STATS]);
+          }
+
+          if (firebaseHeadshots && Object.keys(firebaseHeadshots).length > 0) {
+            setHeadshots(firebaseHeadshots);
+            console.log(`✓ Loaded ${Object.keys(firebaseHeadshots).length} headshots from Firebase`);
+          }
+
+          if (firebaseRankings?.length > 0) {
+            setAllPlayers(firebaseRankings);
+            const lastUpdated = await prApi.getLastUpdated().catch(() => null);
+            setRankingsLastUpdated(lastUpdated);
+            console.log(`✓ Loaded ${firebaseRankings.length} players from Firebase`);
+          }
+
+          console.log('[useLeague] ✓ Tier-2 background load complete');
+        } catch (e) {
+          console.warn('[useLeague] tier-2 background load skipped:', e);
+        }
+      })();
     } catch (e) {
       console.error('[useLeague] Catastrophic load error:', e);
       // Complete fallback to localStorage on initial load only
@@ -227,7 +281,9 @@ export const useLeague = (STORAGE_KEYS) => {
     }
   }, [STORAGE_KEYS]);
 
-  // Initial load
+  // Initial load. loadFromFirebase resolves as soon as Tier 1 is in hand (the
+  // Tier-2 heavy load continues in the background), so the splash lifts on the
+  // critical collections alone. On a warm open, loading already started false.
   useEffect(() => {
     loadFromFirebase(false).finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
