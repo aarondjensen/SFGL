@@ -584,12 +584,29 @@ export const RostersView = ({
       return;
     }
 
+    // Soft-warn when adding a starter who isn't in this week's field — but ONLY
+    // once the app has actually learned the field (tournamentField populated).
+    // Before the field is known (e.g. a Monday-morning lineup set before the
+    // field is published) we stay silent so early setters aren't nagged by a
+    // false alarm — the tournamentField?.size > 0 guard is the "field known"
+    // gate, mirroring the ⛳ flag + field-only filter elsewhere in this view.
+    // This is a confirm, not a hard block: a manager may knowingly roster
+    // someone the source hasn't listed yet, and field data can lag reality.
+    if (tournamentField?.size > 0 && !tournamentField.has(normalizeNordic(player.name))) {
+      const proceed = await dialog.showConfirm(
+        "Not in this week's field",
+        `${player.name} isn't listed in this week's tournament field. If they've withdrawn or aren't playing, they'll score nothing this week. Add to your lineup anyway?`,
+        { type: 'warning', confirmText: 'Add anyway', cancelText: 'Cancel' }
+      );
+      if (!proceed) return;
+    }
+
     const newTeams = teams.map(t =>
       t.id !== team.id ? t : { ...t, lineup: [...(t.lineup || []), player.name] }
     );
     updateTeams(newTeams);
     dialog.showToast(`${lastName} added to lineup`, 'success', { position: 'top' });
-  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE, pickingBackup, backupAllowed]);
+  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE, pickingBackup, backupAllowed, tournamentField]);
 
 
   const pendingWaivers = useMemo(() => {

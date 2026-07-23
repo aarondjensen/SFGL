@@ -63,7 +63,7 @@ export const isPgaTourTournament = (t) => {
 // here. When adding a new default-on event, update both this set and the
 // matching pushNotifications.js entry.
 export const DEFAULTS_ON = new Set([
-  'waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified', 'leadChange',
+  'waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified', 'leadChange', 'fieldCheck',
 ]);
 
 // ── Push-token de-duplication ───────────────────────────────────────────────

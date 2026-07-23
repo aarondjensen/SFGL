@@ -473,6 +473,11 @@ export const NOTIFICATION_EVENTS = [
   // Server-side cron (?action=lead-watch) polls every 10 minutes during a
   // live tournament. Rate-limited to one ping per team+player per 30 min.
   { key: 'leadChange',      label: 'Player takes the lead', desc: 'A starting lineup player takes the lead (round 2+)', batch: 5, default: true },
+  // fieldCheck — fires from the scheduled cron (?action=field-check) when a
+  // starter in your lineup is NOT in this week's tournament field (set early,
+  // or withdrawn after you set it). Re-notifies only when your out-of-field
+  // set changes, so it never nags.
+  { key: 'fieldCheck',      label: 'Player not in field',  desc: "A starter isn't in this week's tournament field", batch: 5, default: true },
 ];
 
 /**

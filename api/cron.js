@@ -1719,6 +1719,161 @@ async function handleLeadWatch(res) {
   });
 }
 
+// ── Action: field-check ──────────────────────────────────────────────────────
+//
+// Pushes a heads-up to any manager whose STARTING lineup contains a player who
+// is NOT in this week's tournament field. Two situations it catches:
+//   (1) a lineup set EARLY — before the field was published — that guessed
+//       wrong about who's actually playing; and
+//   (2) a rostered starter who WITHDREW after the lineup was set.
+//
+// Cadence: driven by the commish-set schedule (SeasonSettingsPanel → "Field
+// Check Schedule", synced to the cron-job.org field-check job via
+// sync-cron-schedule). This handler mirrors handleLineupReminder's day/hour/
+// minute gate, so it fires at the configured weekly slot. Timing note: a
+// withdrawal announced AFTER the configured check time won't alert until the
+// next scheduled run, so setting the check close to lock maximizes WD capture.
+//
+// Dedup: per-team CONTENT SIGNATURE keyed to the active tournament (state doc
+// sfgl_data/fieldCheck). A team is pushed only when its set of out-of-field
+// starters CHANGES since the last push — so repeated pings on the configured
+// day never nag, but a manager who fixes then re-breaks (or a fresh withdrawal)
+// re-notifies. A tournament change fully resets the stored signatures.
+//
+// Field-known gate: if /api/field returns no players we bail (status
+// 'field_unknown') and never warn — exactly like the in-app RostersView
+// warning, which stays silent until tournamentField is populated.
+async function handleFieldCheck(res) {
+  const settings = await loadSettings();
+  if (settings?.fieldCheckEnabled === false) {
+    return res.json({ status: 'disabled' });
+  }
+
+  // Admin-configurable day/hour/minute gate (mirrors handleLineupReminder).
+  // Default: Wednesday (3) 6pm ET — late enough that most fields are final,
+  // early enough to act before Thursday's lineup lock.
+  const targetDay    = settings?.fieldCheckDay    ?? 3;
+  const targetHour   = settings?.fieldCheckHour   ?? 18;
+  const targetMinute = settings?.fieldCheckMinute ?? 0;
+
+  const et = getETNow();
+  if (et.getDay() !== targetDay) {
+    return res.json({ status: 'not_target_day', targetDay });
+  }
+  if (et.getHours() < targetHour || (et.getHours() === targetHour && et.getMinutes() < targetMinute)) {
+    return res.json({ status: 'not_yet', targetHour, targetMinute });
+  }
+
+  // Must have an active tournament to check against.
+  const tournaments = await loadTournaments();
+  const activeTourney = tournaments?.find(t => t.playing && !t.completed);
+  if (!activeTourney) return res.json({ status: 'no_tournament' });
+
+  // Fetch this week's field from the SAME source RostersView reads (/api/field).
+  // Its CDN cache (s-maxage=300) is fine here — field membership isn't second-
+  // sensitive — so no aggressive cache-bust. Self-call pattern mirrors
+  // handleLeadWatch's /api/live fetch.
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : 'https://www.sfglgolf.com';
+  let fieldData;
+  try {
+    const resp = await fetch(`${baseUrl}/api/field`, { headers: { 'Cache-Control': 'no-cache' } });
+    if (!resp.ok) return res.json({ status: 'field_fetch_failed', http: resp.status });
+    fieldData = await resp.json();
+  } catch (err) {
+    return res.json({ status: 'field_fetch_error', error: err.message });
+  }
+  const fieldPlayers = fieldData?.players || [];
+  if (!fieldPlayers.length) return res.json({ status: 'field_unknown' });
+
+  // Normalize identically to the client's normalizeNordic (Nordic letters +
+  // diacritics + hyphens + whitespace) PLUS lowercase on both sides for extra
+  // case-robustness, so server-side membership matches the ⛳ flag the manager
+  // sees. Applying the same transform to both the field and the lineup names
+  // can only make matching MORE lenient on case — it never turns an in-field
+  // player into a false "not in field".
+  const norm = (s) => (s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ø/g, 'o').replace(/Ø/g, 'O')
+    .replace(/æ/g, 'ae').replace(/Æ/g, 'Ae')
+    .replace(/ß/g, 'ss')
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  const fieldSet = new Set(fieldPlayers.map(norm));
+
+  const tournamentName = fieldData.tournament || activeTourney.name || '';
+
+  // Load prior dedup state; reset when the tournament changes.
+  const stateRef = db.collection('sfgl_data').doc('fieldCheck');
+  const stateSnap = await stateRef.get();
+  const prevState = stateSnap.exists ? (stateSnap.data().value || {}) : {};
+  const sameTournament = prevState.tournamentName === tournamentName;
+  const lastSig = sameTournament ? (prevState.lastNotified || {}) : {};
+
+  const teams = await loadTeams();
+  const newSig = { ...lastSig };
+  const results = [];
+
+  for (const team of teams) {
+    const starters = team.lineup || [];
+    const outOfField = starters.filter(name => !fieldSet.has(norm(name)));
+    const signature = [...outOfField].sort().join('|');
+
+    // Nothing out of field → clear any stored signature so a future break
+    // re-notifies, and move on.
+    if (!signature) {
+      if (newSig[team.id]) delete newSig[team.id];
+      results.push({ team: team.name, outOfField: [] });
+      continue;
+    }
+
+    // Same out-of-field set we already notified about → don't nag.
+    if (lastSig[team.id] === signature) {
+      results.push({ team: team.name, outOfField, skipped: 'already_notified' });
+      continue;
+    }
+
+    // New / changed out-of-field set → push. Names shown as "F. Last" to match
+    // the leaderboard/roster rendering.
+    const names = outOfField.map(abbreviateName);
+    const list = names.length <= 2
+      ? names.join(' and ')
+      : `${names.slice(0, -1).join(', ')}, and ${names.slice(-1)}`;
+    const isPlural = outOfField.length > 1;
+    const title = isPlural
+      ? `⛳ ${outOfField.length} starters not in the field`
+      : `⛳ ${names[0]} isn't in the field`;
+    const body = isPlural
+      ? `${list} aren't in ${tournamentName}'s field — they'll score nothing. Tap to fix your lineup.`
+      : `${names[0]} isn't in ${tournamentName}'s field — they'll score nothing. Tap to fix your lineup.`;
+
+    try {
+      const pushResult = await sendPushToTeam({
+        teamId: team.id,
+        event: 'fieldCheck',
+        title,
+        body,
+        deepLink: '#rosters',
+      });
+      newSig[team.id] = signature;
+      results.push({ team: team.name, outOfField, sent: pushResult.sent, failed: pushResult.failed });
+    } catch (err) {
+      results.push({ team: team.name, outOfField, error: err.message });
+    }
+  }
+
+  await stateRef.set({
+    key: 'fieldCheck',
+    value: { tournamentName, lastNotified: newSig },
+  });
+
+  return res.json({ status: 'sent', tournament: tournamentName, fieldCount: fieldPlayers.length, results });
+}
+
 // ── Cron-job.org schedule sync ─────────────────────────────────────────
 // Pushes a schedule change from the commish panel (SeasonSettingsPanel) to the
 // matching cron-job.org job, so the actual ping time tracks the in-app gate.
@@ -1742,6 +1897,7 @@ const CRON_JOB_ID_ENV  = {
   'lineup-reminder': 'CRONJOB_LINEUP_REMINDER_JOB_ID',
   'lead-watch':      'CRONJOB_LEAD_WATCH_JOB_ID',
   'owgr-rankings':   'CRONJOB_OWGR_JOB_ID',
+  'field-check':     'CRONJOB_FIELD_CHECK_JOB_ID',
 };
 
 async function handleSyncCronSchedule(req, res) {
@@ -1760,7 +1916,7 @@ async function handleSyncCronSchedule(req, res) {
   if (!envName) {
     return res.status(400).json({
       error: `Unknown jobType "${jobType}"`,
-      hint:  'Expected waivers, results, lineup-reminder, lead-watch, or owgr-rankings',
+      hint:  'Expected waivers, results, lineup-reminder, lead-watch, owgr-rankings, or field-check',
     });
   }
 
@@ -1909,11 +2065,12 @@ export default async function handler(req, res) {
       case 'notify-results':    return await handleNotifyResults(req, res);
       case 'pgat-stats':        return await handlePgatStats(res);
       case 'lead-watch':        return await handleLeadWatch(res);
+      case 'field-check':       return await handleFieldCheck(res);
       case 'owgr-rankings':     return await handleOwgrRankings(res);
       case 'sync-cron-schedule': return await handleSyncCronSchedule(req, res);
       case 'resync-legacy-tournaments': return await handleResyncLegacyTournaments(res);
       case 'stamp-commissioner': return await handleStampCommissioner(req, res);
-      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|owgr-rankings|sync-cron-schedule|resync-legacy-tournaments' });
+      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|field-check|owgr-rankings|sync-cron-schedule|resync-legacy-tournaments' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);

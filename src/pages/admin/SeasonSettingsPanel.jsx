@@ -322,6 +322,55 @@ export const SeasonSettingsPanel = ({
     (settings.owgrSyncMinute ?? 0) !== owgrMinute
   );
 
+  // ── Field check schedule ──
+  // Gate defaults (api/cron.js handleFieldCheck): Wednesday (3) at 6pm (18) ET.
+  const [fieldCheckDay,    setFieldCheckDay]    = React.useState(() => settings?.fieldCheckDay    ?? 3);
+  const [fieldCheckHour,   setFieldCheckHour]   = React.useState(() => settings?.fieldCheckHour   ?? 18);
+  const [fieldCheckMinute, setFieldCheckMinute] = React.useState(() => settings?.fieldCheckMinute ?? 0);
+  const [fieldCheckSaving, setFieldCheckSaving] = React.useState(false);
+
+  const handleSaveFieldCheckSchedule = async () => {
+    setFieldCheckSaving(true);
+    try {
+      // Keys must match exactly what the cron gate reads: fieldCheckDay/Hour/Minute.
+      await setSettings({ ...settings, fieldCheckDay, fieldCheckHour, fieldCheckMinute });
+
+      // Re-program the cron-job.org "field-check" job so its ping schedule
+      // tracks the new gate. Best-effort: settings (the gate) are already saved
+      // above, so a sync failure degrades to gate-only behavior.
+      let syncWarn = '';
+      try {
+        const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobType: 'field-check', day: fieldCheckDay, hour: fieldCheckHour, minute: fieldCheckMinute }),
+        });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          syncWarn = d.hint || d.error || `HTTP ${resp.status}`;
+        }
+      } catch (e) {
+        syncWarn = e.message;
+      }
+
+      if (syncWarn) {
+        dialog.showToast(`Saved the time, but cron-job.org didn't update: ${syncWarn}. Update the field-check job there manually.`, 'error');
+      } else {
+        dialog.showToast(`✓ Field check runs ${DAY_NAMES[fieldCheckDay]} at ${fmtETTime(fieldCheckHour, fieldCheckMinute)} ET`, 'success');
+      }
+    } catch (err) {
+      dialog.showToast('Error: ' + err.message, 'error');
+    } finally {
+      setFieldCheckSaving(false);
+    }
+  };
+
+  const fieldCheckHasUnsavedChanges = settings?.fieldCheckDay !== undefined && (
+    settings.fieldCheckDay !== fieldCheckDay ||
+    settings.fieldCheckHour !== fieldCheckHour ||
+    (settings.fieldCheckMinute ?? 0) !== fieldCheckMinute
+  );
+
   // Numeric input helper used in the collapsible Season Settings section.
   // Renders a $ prefix for dollar fields and right-aligns the value; plain
   // count fields get a centered numeric input.
@@ -657,6 +706,19 @@ export const SeasonSettingsPanel = ({
         onSave={handleSaveOwgrSchedule}
         saveLabel="💾 Save OWGR Schedule"
         currentLabel="OWGR syncs"
+      />
+
+      <ScheduleEditor
+        eyebrow="🏌 Field Check Schedule"
+        description="When managers get a push if a starter in their lineup isn't in this week's tournament field — catches lineups set before the field was known and players who withdrew after being slotted. Only notifies when a team's out-of-field set changes, so it never nags. Default: Wednesday at 6:00 PM ET — set it close to lineup lock to catch late withdrawals."
+        day={fieldCheckDay}     setDay={setFieldCheckDay}
+        hour={fieldCheckHour}   setHour={setFieldCheckHour}
+        minute={fieldCheckMinute} setMinute={setFieldCheckMinute}
+        saving={fieldCheckSaving}
+        hasChanges={fieldCheckHasUnsavedChanges}
+        onSave={handleSaveFieldCheckSchedule}
+        saveLabel="💾 Save Field Check Schedule"
+        currentLabel="field check runs"
       />
 
       {/* Cron-schedule explainer note. Reframed as a subtle info row instead
