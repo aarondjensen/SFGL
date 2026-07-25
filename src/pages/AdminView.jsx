@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useDialog } from './DialogContext';
 import { theme, colors, fonts, SWINGS, fontSize } from '../theme.js';
+import { getTournamentStartDate, getETNow } from '../utils';
 import { computeSwingAward } from '../utils/swingAward';
 import { buildEffectiveRoster } from '../utils/sharedHelpers';
 
@@ -173,20 +174,44 @@ export const AdminView = ({
     [transactions]
   );
 
-  // 2. Tournament ready to mark complete — playing && past end-of-tournament.
-  //    Heuristic: today is past startDate + 5 days (Thu start → Tue after Sun).
+  // 2. Tournament ready to mark complete — playing && the tournament week is over.
+  //
+  // This used to read the RAW `start_date` field and add 5 days. Two problems:
+  //
+  //   • `start_date` is an ORDERING field, not a real date. _ensureStartDates in
+  //     api/firebase.js back-fills missing ones with a synthetic weekly series
+  //     anchored at '2025-01-06', so for many events it has no relationship to
+  //     when the tournament is actually played. Adding 5 days to a synthetic
+  //     date produces a meaningless threshold — which is how the 3M Open showed
+  //     as "ready to process" on the SATURDAY of its own tournament week, two
+  //     rounds before it finished.
+  //
+  //   • Even with a real date, +5 days only lands after Sunday if the stored
+  //     date happens to be the Thursday. A Sunday- or Monday-anchored date puts
+  //     the threshold mid-event.
+  //
+  // Now it uses the same anchoring as every other lock/window calculation in the
+  // app: resolve the start via getTournamentStartDate (startDate → parsed
+  // `dates` string), walk forward to that week's Thursday, and treat the event
+  // as finished once the following MONDAY begins in ET. Raw `start_date` is only
+  // consulted as a last resort, when there's nothing better to go on.
   const tournamentsReadyToComplete = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return (tournaments || []).filter(t => {
-      if (!t.playing || t.completed) return false;
-      const start = t.start_date || t.startDate;
-      if (!start) return false;
-      const sd = new Date(start + 'T12:00:00Z');
-      if (isNaN(sd.getTime())) return false;
-      sd.setUTCDate(sd.getUTCDate() + 5);
-      return today.getTime() >= sd.getTime();
-    });
+    const isTournamentWeekOver = (t) => {
+      const start = getTournamentStartDate(t)
+        || (t.start_date ? new Date(`${t.start_date}T12:00:00Z`) : null);
+      if (!start || isNaN(start.getTime())) return false;
+      // Thursday of the tournament week (same walk as isTournamentLocked).
+      const thursday = new Date(start);
+      while (thursday.getDay() !== 4) thursday.setDate(thursday.getDate() + 1);
+      // Play ends Sunday; the event is "done" once Monday 00:00 ET arrives.
+      const monday = new Date(thursday);
+      monday.setDate(monday.getDate() + 4);
+      monday.setHours(0, 0, 0, 0);
+      return getETNow() >= monday;
+    };
+    return (tournaments || []).filter(t =>
+      t.playing && !t.completed && isTournamentWeekOver(t)
+    );
   }, [tournaments]);
 
   // 3. Of those, the ones with no results yet — distinct alert level.
