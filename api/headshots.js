@@ -15,30 +15,62 @@ const HEADERS = {
 
 // ── BACKFILL event list ──────────────────────────────────────────────────
 // The index is built from TWO sources, in this priority order:
-//   1. The CURRENT PGA event's field (resolved dynamically at request time —
-//      see getCurrentPgaEventIds). By definition every player you can roster
-//      THIS week is in this week's field, so this is what rescues lower-ranked
-//      players / rookies / one-week qualifiers (e.g. Ben James, Ben Kohles)
-//      who never appear in the elite Signature fields below.
-//   2. These fixed recent events, as a BACKFILL for benched/non-playing
-//      players who aren't in the current field but were in a recent event.
+//   1. The CURRENT PGA event's field (getCurrentPgaEventIds). By definition
+//      every player you can roster THIS week is in this week's field, so this
+//      rescues lower-ranked players / rookies / one-week qualifiers who never
+//      appear in elite Signature fields.
+//   2. Recent COMPLETED events of the current season, as a backfill for
+//      BENCHED players who aren't in this week's field. Fetched lazily —
+//      see resolveWithBackfill in the handler: if source 1 answered every
+//      requested name, we never make these requests at all.
 //
-// Signature events have small fields (~75) of top players; full-field events
-// include lower-tier players who don't qualify for Signatures. Mixing both
-// widens backfill coverage. The current-event lookup (source 1) is what makes
-// the index self-maintaining week to week — you rarely need to touch this list.
+// This list used to be seven hardcoded event IDs with an "UPDATE EACH SEASON"
+// note. Two problems, both of which this replaces:
+//   • Annual maintenance chore, and a silent one — a stale list still returns
+//     200s, just against last season's fields.
+//   • It was WRONG and nobody could tell. Six of the seven IDs did not match
+//     the events their comments named (the ID commented "Truist Championship
+//     … includes Alex Fitzpatrick" was actually the Zurich Classic — which is
+//     why Alex Fitzpatrick needed a MANUAL_OVERRIDE below to work around a
+//     backfill entry that was never indexing the field its author intended).
 //
-// To update: find new IDs at https://www.espn.com/golf/leaderboard?tournamentId=XXXXXXX
-// — open a recent tournament's leaderboard and the ID is in the URL.
-const ESPN_EVENT_IDS = [
-  '401811942', // RBC Heritage 2026 (Signature — 82 players)
-  '401811940', // Masters 2026
-  '401811938', // THE PLAYERS 2026 (Signature)
-  '401811934', // Arnold Palmer Invitational 2026
-  '401811932', // Genesis Invitational 2026
-  '401811943', // Truist Championship 2026 (full-field, includes Alex Fitzpatrick et al)
-  '401811935', // Cognizant Classic 2026 (full-field — opposite week from a Signature)
-];
+// ESPN's scoreboard endpoint takes a date range and returns the whole season
+// with IDs and completion state, so the list is fully derivable from one
+// request. If that request fails we fall back to the last cached result, and
+// failing that to no backfill at all — source 1 still covers this week's field.
+const BACKFILL_MAX_EVENTS = 8;
+const BACKFILL_TTL_MS = 6 * 60 * 60 * 1000; // 6h — the schedule barely moves
+
+let _backfillCache = { season: null, ids: [], fetchedAt: 0 };
+
+async function getBackfillEventIds(season) {
+  const now = Date.now();
+  if (
+    _backfillCache.season === season &&
+    _backfillCache.ids.length &&
+    now - _backfillCache.fetchedAt < BACKFILL_TTL_MS
+  ) {
+    return _backfillCache.ids;
+  }
+
+  try {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?dates=${season}0101-${season}1231`;
+    const resp = await fetch(url, { headers: HEADERS });
+    if (!resp.ok) return _backfillCache.ids;
+    const data = await resp.json();
+    // Events come back in chronological order; keep the most recent COMPLETED
+    // ones. Completed events have a settled field, which is exactly what a
+    // backfill index wants.
+    const completed = (data?.events || [])
+      .filter((e) => e?.id && e?.status?.type?.state === 'post')
+      .map((e) => String(e.id));
+    const ids = completed.slice(-BACKFILL_MAX_EVENTS);
+    if (ids.length) _backfillCache = { season, ids, fetchedAt: now };
+    return ids;
+  } catch {
+    return _backfillCache.ids;
+  }
+}
 
 // ── Manual overrides ─────────────────────────────────────────────────────
 // Verified ESPN athlete IDs for names that the event-index strict-matcher
@@ -51,6 +83,13 @@ const ESPN_EVENT_IDS = [
 // same normalized form findInMap uses: lowercased, accent-stripped, single-
 // spaced. Verify each ID against the ESPN profile URL:
 //   https://www.espn.com/golf/player/_/id/{ID}/{name-slug}
+//
+// ⚠ A near-duplicate of this map lives in src/utils/headshotUtils.js, which
+// applies at RENDER time and therefore wins even over what this endpoint
+// returns. api/ and src/ are separate deploy targets and can't share a module
+// (same constraint as NAME_ALIASES / normalizeNordic). Keep the two in sync:
+// this one fixes the DATA (its result is persisted to /players/{name}.espn_id),
+// the client one is the last-resort display guarantee.
 const MANUAL_OVERRIDES = {
   'alex fitzpatrick': '4364865', // verified at .../id/4364865/alex-fitzpatrick
 };
@@ -67,55 +106,107 @@ export default async function handler(req, res) {
 
   const { names, eventId, debug } = req.query;
 
+  // Validate BEFORE any outbound work. This check used to sit after the index
+  // was built, so a request with no ?names= still fired a fetch per indexed
+  // event before returning 400.
+  if (!names && debug !== '1') {
+    return res.status(400).json({ error: 'Provide ?names=Player+Name,Another+Player' });
+  }
+
   try {
-    // Build the event list to index. An explicit ?eventId= overrides everything
-    // (debugging/one-off). Otherwise: current PGA event field FIRST (self-
-    // maintaining coverage for this week's rosterable players), then the fixed
-    // backfill list for benched/non-playing players. De-duped, order-preserving.
-    let eventIds;
-    let currentEventIds = [];
+    const season = new Date().getUTCFullYear();
+
+    // Resolve a batch of names against an index. Manual overrides win outright
+    // (verified IDs that bypass the strict matcher to avoid brother/relative
+    // collisions); everything else goes through findInMap, which returns null
+    // rather than guessing when a name is ambiguous.
+    const resolveNames = (list, map) => {
+      const results = {};
+      const notFound = [];
+      for (const name of list) {
+        const override = MANUAL_OVERRIDES[normalize(name)];
+        if (override) { results[name] = override; continue; }
+        const player = findInMap(map, name);
+        if (player?.espnId) results[name] = player.espnId;
+        else notFound.push(name);
+      }
+      return { results, notFound };
+    };
+
+    // ── Explicit ?eventId= — debugging / one-off, index just that event ──
     if (eventId) {
-      eventIds = [eventId];
-    } else {
-      currentEventIds = await getCurrentPgaEventIds();
-      eventIds = [...new Set([...currentEventIds, ...ESPN_EVENT_IDS])];
+      const map = await buildPlayerMap([eventId]);
+      if (debug === '1') {
+        return res.status(200).json({
+          totalPlayers: map.size,
+          indexedEventIds: [eventId],
+          sample: [...map.entries()].slice(0, 10).map(([n, p]) => ({ name: n, espnId: p.espnId })),
+          manualOverrides: Object.keys(MANUAL_OVERRIDES),
+        });
+      }
+      const requested = names.split(',').map(n => decodeURIComponent(n.trim())).filter(Boolean);
+      const { results, notFound } = resolveNames(requested, map);
+      return res.status(200).json({ results, notFound, totalIndexed: map.size, indexedEventIds: [eventId] });
     }
 
-    const playerMap = await buildPlayerMap(eventIds);
+    // ── Source 1: this week's field ──
+    const currentEventIds = await getCurrentPgaEventIds();
+    const playerMap = await buildPlayerMap(currentEventIds);
+    let indexedEventIds = [...currentEventIds];
+    let backfillUsed = false;
+
+    // Merge a secondary index in WITHOUT letting it override source 1 —
+    // the current field is the fresher, more authoritative answer.
+    const mergeInto = (target, extra) => {
+      for (const [k, v] of extra) if (!target.has(k)) target.set(k, v);
+    };
 
     if (debug === '1') {
+      const backfillIds = await getBackfillEventIds(season);
+      const extra = backfillIds.filter(id => !indexedEventIds.includes(id));
+      if (extra.length) {
+        mergeInto(playerMap, await buildPlayerMap(extra));
+        indexedEventIds = [...indexedEventIds, ...extra];
+      }
       return res.status(200).json({
         totalPlayers: playerMap.size,
+        season,
         currentEventIds,
-        indexedEventIds: eventIds,
-        sample: [...playerMap.entries()].slice(0, 10).map(([name, p]) => ({ name, espnId: p.espnId })),
+        backfillEventIds: extra,
+        indexedEventIds,
+        sample: [...playerMap.entries()].slice(0, 10).map(([n, p]) => ({ name: n, espnId: p.espnId })),
         manualOverrides: Object.keys(MANUAL_OVERRIDES),
       });
     }
 
-    if (!names) {
-      return res.status(400).json({ error: 'Provide ?names=Player+Name,Another+Player' });
-    }
-
     const requestedNames = names.split(',').map(n => decodeURIComponent(n.trim())).filter(Boolean);
-    const results = {};
-    const notFound = [];
+    let { results, notFound } = resolveNames(requestedNames, playerMap);
 
-    for (const name of requestedNames) {
-      // 1. Manual overrides take precedence — these are verified IDs that
-      //    bypass the strict-matcher entirely to avoid brother-collisions.
-      const normalized = normalize(name);
-      if (MANUAL_OVERRIDES[normalized]) {
-        results[name] = MANUAL_OVERRIDES[normalized];
-        continue;
+    // ── Source 2: lazy backfill, ONLY for names this week's field missed ──
+    // In the common case (every requested player is in the field, or already
+    // resolved) this block never runs, so the request costs one ESPN fetch
+    // instead of the eight the old fixed-list version always paid.
+    if (notFound.length > 0) {
+      const backfillIds = await getBackfillEventIds(season);
+      const extra = backfillIds.filter(id => !indexedEventIds.includes(id));
+      if (extra.length > 0) {
+        mergeInto(playerMap, await buildPlayerMap(extra));
+        indexedEventIds = [...indexedEventIds, ...extra];
+        backfillUsed = true;
+        // Re-resolve only the misses.
+        const second = resolveNames(notFound, playerMap);
+        Object.assign(results, second.results);
+        notFound = second.notFound;
       }
-      // 2. Otherwise fall through to the event-index strict-matcher.
-      const player = findInMap(playerMap, name);
-      if (player?.espnId) results[name] = player.espnId;
-      else notFound.push(name);
     }
 
-    return res.status(200).json({ results, notFound, totalIndexed: playerMap.size });
+    return res.status(200).json({
+      results,
+      notFound,
+      totalIndexed: playerMap.size,
+      indexedEventIds,
+      backfillUsed,
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -140,7 +231,15 @@ function normalize(name) {
 // We index whatever it returns so this week's full field is always covered.
 // Falls back to the generic golf leaderboard endpoint, then to [] (in which
 // case the handler still has the fixed backfill list to work with).
+// Memoized for 15 minutes: the current event changes at most weekly, so
+// re-resolving it on every request is pure overhead on a warm instance.
+const CURRENT_EVENT_TTL_MS = 15 * 60 * 1000;
+let _currentEventCache = { ids: [], fetchedAt: 0 };
+
 async function getCurrentPgaEventIds() {
+  if (_currentEventCache.ids.length && Date.now() - _currentEventCache.fetchedAt < CURRENT_EVENT_TTL_MS) {
+    return _currentEventCache.ids;
+  }
   const endpoints = [
     'https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard',
     'https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard',
@@ -154,43 +253,61 @@ async function getCurrentPgaEventIds() {
         .map(e => e?.id)
         .filter(Boolean)
         .map(String);
-      if (ids.length) return [...new Set(ids)];
+      if (ids.length) {
+        const unique = [...new Set(ids)];
+        _currentEventCache = { ids: unique, fetchedAt: Date.now() };
+        return unique;
+      }
     } catch {
       // try next endpoint
     }
   }
-  return [];
+  return _currentEventCache.ids;
 }
 
-// ── Build player map from ESPN events (parallel) ────────────────────────────
+// ── Build player map from ESPN events (parallel, memoized per event) ────────
+// Per-event results are cached in module scope for the life of the warm
+// lambda. A completed event's field never changes, and an in-progress event's
+// roster of competitors only changes at cut time — neither needs re-fetching
+// within a single instance's lifetime. This is what keeps the lazy-backfill
+// path cheap: the first request that needs backfill pays for it, every
+// subsequent request on that instance reuses the index for free.
+const EVENT_CACHE_TTL_MS = 60 * 60 * 1000; // 1h
+const _eventCache = new Map(); // eventId -> { entries: [[key, val], ...], fetchedAt }
+
+async function fetchEventEntries(eventId) {
+  const cached = _eventCache.get(eventId);
+  if (cached && Date.now() - cached.fetchedAt < EVENT_CACHE_TTL_MS) return cached.entries;
+
+  const url = `https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${eventId}`;
+  const resp = await fetch(url, { headers: HEADERS });
+  if (!resp.ok) return cached?.entries || [];
+  const data = await resp.json();
+  const competitors = data?.events?.[0]?.competitions?.[0]?.competitors || [];
+
+  const entries = [];
+  for (const c of competitors) {
+    const athlete = c.athlete || c;
+    const displayName = athlete.displayName || athlete.shortName || '';
+    const espnId = athlete.id || '';
+    if (!displayName || !espnId) continue;
+    entries.push([normalize(displayName), { espnId: String(espnId), name: displayName }]);
+  }
+  _eventCache.set(eventId, { entries, fetchedAt: Date.now() });
+  return entries;
+}
+
 async function buildPlayerMap(eventIds) {
   const map = new Map(); // normalizedName -> { espnId, name }
 
   // Fetch all events in parallel — ~2s total instead of ~10s sequential
-  const results = await Promise.allSettled(
-    eventIds.map(async (eventId) => {
-      const url = `https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${eventId}`;
-      const resp = await fetch(url, { headers: HEADERS });
-      if (!resp.ok) return [];
-      const data = await resp.json();
-      return data?.events?.[0]?.competitions?.[0]?.competitors || [];
-    })
-  );
+  const results = await Promise.allSettled(eventIds.map(fetchEventEntries));
 
   for (const result of results) {
     if (result.status !== 'fulfilled') continue;
-    const competitors = result.value;
-
-    for (const c of competitors) {
-      const athlete = c.athlete || c;
-      const displayName = athlete.displayName || athlete.shortName || '';
-      const espnId = athlete.id || '';
-      if (!displayName || !espnId) continue;
-
-      const key = normalize(displayName);
-      if (!map.has(key)) {
-        map.set(key, { espnId: String(espnId), name: displayName });
-      }
+    for (const [key, val] of result.value) {
+      // First event wins — eventIds are passed most-authoritative-first.
+      if (!map.has(key)) map.set(key, val);
     }
   }
 

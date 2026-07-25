@@ -408,8 +408,18 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   // Matt Fitzpatrick's ID being incorrectly cached for Alex) from ever
   // being corrected. Now every rostered player is subject to the TTL
   // refresh — cached, miscached, and uncached all get re-fetched after
-  // the TTL expires. Static PGA_TOUR_IDS still take precedence and aren't
-  // re-fetched (they're hard-coded fallbacks).
+  // the TTL expires.
+  //
+  // The same fix is now applied to the last remaining veto: names in the
+  // static PGA_TOUR_IDS map were ALSO skipped here, on the stated assumption
+  // that hard-coded values are "never wrong". They were wrong — every one of
+  // them. That map held PGA TOUR player IDs, but headshotUtils builds ESPN
+  // CDN URLs (a different ID namespace), so all 134 entries 404'd to the
+  // initials-avatar fallback AND were excluded from the lookup that would
+  // have given them a working ESPN ID. Scheffler, McIlroy and 132 others were
+  // permanently stuck on initials. The map is gone; nothing vetoes the fetch
+  // now, so every rostered player resolves through /api/headshots and is
+  // persisted to /players/{name}.espn_id.
   const fetchAttemptsRef = useRef(new Map()); // name → timestamp of last attempt
   const HEADSHOT_RETRY_MS = 60 * 1000;
 
