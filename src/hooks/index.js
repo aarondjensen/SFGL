@@ -3,6 +3,7 @@ import { storage } from '../api';
 import { playerRankingsApi } from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
 import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, buildEffectiveRoster, hydratePlayer } from '../utils/sharedHelpers';
+import { mergeHeadshotEntry } from '../utils/headshotUtils';
 
 // ============================================================================
 // useLeague — central state manager for all league data
@@ -232,8 +233,33 @@ export const useLeague = (STORAGE_KEYS) => {
           }
 
           if (firebaseHeadshots && Object.keys(firebaseHeadshots).length > 0) {
-            setHeadshots(firebaseHeadshots);
-            console.log(`✓ Loaded ${Object.keys(firebaseHeadshots).length} headshots from Firebase`);
+            // MERGE, don't replace.
+            //
+            // This is Tier 2 — it is deliberately NOT awaited, so it lands a
+            // second or two AFTER App.jsx's headshot effect has already
+            // resolved every rostered player via /api/headshots and merged the
+            // ids into state. A wholesale setHeadshots(firebaseHeadshots) threw
+            // all of that away, and any player whose /players/{name} doc has no
+            // espn_id/pga_id yet simply VANISHED from the map — getHeadshotsMap
+            // omits players with no id fields at all.
+            //
+            // That left them on an initials avatar for the rest of the session,
+            // because App.jsx's fetch effect is keyed on [loading, resolvedTeams]
+            // — it does not re-run on a timer, so nothing re-populated them.
+            // The players hit hardest were exactly the ones the old PGA_TOUR_IDS
+            // veto had prevented from ever being resolved and persisted.
+            //
+            // Firestore wins field-by-field where it has a value (it holds the
+            // commish's headshot_url pin); anything it is silent about keeps
+            // whatever we already resolved.
+            setHeadshots(prev => {
+              const next = { ...(prev || {}) };
+              Object.entries(firebaseHeadshots).forEach(([name, entry]) => {
+                next[name] = mergeHeadshotEntry(next[name], entry);
+              });
+              return next;
+            });
+            console.log(`✓ Merged ${Object.keys(firebaseHeadshots).length} headshots from Firebase`);
           }
 
           if (firebaseRankings?.length > 0) {
