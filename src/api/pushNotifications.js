@@ -26,6 +26,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getMessaging, getToken, onMessage, isSupported, deleteToken } from 'firebase/messaging';
 import { doc, setDoc, deleteDoc, getDocs, query, where, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
+import { registerMessagingSW } from './swRegistration';
 import { Capacitor } from '@capacitor/core';
 
 // Reuse the same Firebase app instance the rest of the app uses. We can't
@@ -265,7 +266,12 @@ export const requestPermissionAndSubscribe = async (teamId) => {
   console.log('[push] step 3: register service worker');
   let swRegistration;
   try {
-    swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    // Shared registration (api/swRegistration.js) — carries the Firebase
+    // config on the URL so the SW can initialize FCM. Registering '/firebase-
+    // messaging-sw.js' bare here would create a SECOND registration with a
+    // config-less SW that can't route background messages.
+    swRegistration = await registerMessagingSW();
+    if (!swRegistration) throw new Error('service worker unavailable');
     console.log('[push] step 3 register OK; states — installing:', !!swRegistration.installing,
       'waiting:', !!swRegistration.waiting, 'active:', !!swRegistration.active);
     // Wait until the SW is fully active. getToken can race the registration.

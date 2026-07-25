@@ -345,7 +345,7 @@ export const TournamentsView = ({
       }) || null;
     };
     return { find };
-  }, [liveData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [liveData]);
 
   // ── Schedule editing logic (existing) ─────────────────────────────────────
   const formatTeeTime = (date) => {
@@ -364,6 +364,11 @@ export const TournamentsView = ({
   // separate ticker would be overkill for a casual freshness indicator.
   const formatRelative = (ts) => {
     if (!ts) return '';
+    // Deliberate clock read during render — this is a "last updated N min ago"
+    // freshness label. It's recomputed on the poll tick and on visibility
+    // change, which is exactly the cadence we want; a dedicated ticker would
+    // re-render the whole tab once a second for a casual indicator.
+    // eslint-disable-next-line react-hooks/purity
     const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
     if (diffSec < 30) return 'just now';
     if (diffSec < 60) return `${diffSec}s ago`;

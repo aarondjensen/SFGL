@@ -16,7 +16,24 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 // missing useEffect deps, unused variables, etc.
 
 export default defineConfig([
-  globalIgnores(['dist', 'node_modules', 'api/**']),
+  // Ignore build output and native wrappers. The previous list was just
+  // ['dist', 'node_modules', 'api/**'], which left the linter walking
+  // android/app/build/, android/app/src/main/assets/public/, and every
+  // .claude/worktrees/*/dist/ — i.e. minified vendor bundles. `npm run lint`
+  // reported ~3,500 problems, of which only ~180 were in src/, so real errors
+  // were unfindable.
+  //
+  // 'api/**' was ALSO ignored, meaning the serverless layer (including the
+  // 2,000-line cron.js that processes waivers and results) was never linted at
+  // all. It is linted now — see the Node block below.
+  globalIgnores([
+    '**/dist/**',
+    '**/node_modules/**',
+    'android/**',
+    'ios/**',
+    '.claude/**',
+    'scripts/history/**',
+  ]),
 
   // TypeScript files (main.tsx, vite.config.ts, etc.)
   {
@@ -33,9 +50,11 @@ export default defineConfig([
     },
   },
 
-  // JavaScript / JSX (the entire src/ tree)
+  // JavaScript / JSX — the browser app (src/ tree only).
+  // Scoped to src/ so the React-specific rules (react-hooks, react-refresh)
+  // don't fire on the Node serverless functions, which have no components.
   {
-    files: ['**/*.{js,jsx}'],
+    files: ['src/**/*.{js,jsx}'],
     extends: [
       js.configs.recommended,
       reactHooks.configs.flat.recommended,
@@ -58,6 +77,14 @@ export default defineConfig([
       // these strictly going forward.
       'react-hooks/exhaustive-deps': 'warn',
       'react-hooks/rules-of-hooks': 'error',
+      // Downgraded from error: this is a Fast-Refresh DX rule, not a
+      // correctness one, and the codebase deliberately co-locates a few
+      // non-component exports with their components — useDialog beside
+      // DialogProvider, addGlobalErrorReporters beside ErrorBoundary, the
+      // shared style objects in adminStyles. Splitting those into separate
+      // files to satisfy the rule would cost more in indirection than it
+      // saves in occasional full reloads during development.
+      'react-refresh/only-export-components': 'warn',
       'no-unused-vars': ['warn', {
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',
@@ -66,6 +93,45 @@ export default defineConfig([
         ignoreRestSiblings: true,
       }],
       'no-empty': ['warn', { allowEmptyCatch: true }],
+    },
+  },
+
+  // Node serverless functions + build scripts. Previously excluded from
+  // linting entirely via an `api/**` global ignore, which is how the
+  // `aliasMap` no-undef class of bug could sit undetected in a deploy target
+  // that runs waiver and results processing.
+  {
+    files: ['api/**/*.js', 'scripts/**/*.{js,mjs}'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+        fetch: 'readonly',   // Node 18+ global on Vercel
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        ignoreRestSiblings: true,
+      }],
+      'no-empty': ['warn', { allowEmptyCatch: true }],
+    },
+  },
+
+  // Service worker — browser-ish but with worker globals, and it deliberately
+  // uses importScripts + the global `firebase` compat namespace.
+  {
+    files: ['public/firebase-messaging-sw.js'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: { ...globals.serviceworker, firebase: 'readonly', importScripts: 'readonly' },
     },
   },
 ])

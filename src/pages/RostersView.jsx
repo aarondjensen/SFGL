@@ -14,7 +14,6 @@ import {
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts, fontSize } from '../theme.js';
-import { teamsApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, normalizeNordic } from '../utils/sharedHelpers';
 
@@ -149,15 +148,21 @@ const ordinal = (n) => {
 
 const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, updateTeams, teams, isOwnTeam, settings, onEdit, headshots = {} }) => {
   const dialog = useDialog();
-  const txRef = React.useRef(transactions);
-  txRef.current = transactions; // always up to date
+
+  // NOTE: these handlers read the `transactions` PROP directly rather than a
+  // ref mirror. The old `txRef.current = transactions` assignment happened
+  // during render (which React forbids — refs aren't render-safe) and bought
+  // nothing: handlers are recreated every render, so the prop is already the
+  // freshest value at the moment one fires. Reading the prop also keeps them
+  // consistent with `pendingWaivers._txIdx`, which is computed against this
+  // same array — reading a ref that could differ is how those indexes drift.
 
   const persistTransactions = (newTx, opts) => {
     setTransactions(newTx, opts);
   };
 
   const deleteWaiver = (waiver) => {
-    const current = txRef.current;
+    const current = transactions;
     // Match by fields to find the right transaction regardless of index shifts
     let removedTx = null;
     const newTx = current.filter(tx => {
@@ -176,7 +181,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 
   const swapPriority = (fromIdx, toIdx) => {
     if (toIdx < 0 || toIdx >= pendingWaivers.length) return;
-    const updated   = [...txRef.current];
+    const updated   = [...transactions];
     const fromTxIdx = pendingWaivers[fromIdx]._txIdx;
     const toTxIdx   = pendingWaivers[toIdx]._txIdx;
     const fromPri   = pendingWaivers[fromIdx].priority || fromIdx + 1;
@@ -408,7 +413,14 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
 export const RostersView = ({
   teams, selectedTeam, setSelectedTeam, updateTeams,
   tournaments, allPlayers, transactions, setTransactions,
-  loggedInUser, isCommissioner, globalPlayerStats, headshots,
+  // loggedInTeamId is the IMMUTABLE edit-permission key (Firebase uid → team,
+  // via team_claims). App.jsx has always passed it, but this view used to
+  // destructure only the EDITABLE owner name (loggedInUser) and key
+  // permissions off `team.owner === loggedInUser` — so renaming an owner
+  // locked that manager out of their own lineup, exactly what App.jsx's
+  // comment on loggedInTeamId warns against. Nothing here needs the owner
+  // name any more, so it is no longer destructured.
+  loggedInTeamId, isCommissioner, globalPlayerStats, headshots,
   updateHeadshots,
   leagueSettings = {}, settings, firstTeeTime,
 }) => {
@@ -461,25 +473,27 @@ export const RostersView = ({
   // window is evaluated against a real event regardless of the `playing` flag.
   const windowTournament = activeTournament || tournaments[addDropTournamentIndex] || null;
 
-  // Switch to the logged-in manager's team whenever loggedInUser changes (e.g. after login)
-  const prevLoggedInUser = React.useRef(null);
+  // Switch to the logged-in manager's team when their claimed team resolves
+  // (e.g. after login). Keyed on loggedInTeamId, not the owner name.
+  const prevLoggedInTeamId = React.useRef(null);
   useEffect(() => {
     if (teams.length === 0) return;
-    const userTeam = loggedInUser ? teams.find(t => t.owner === loggedInUser) : null;
-    if (loggedInUser && loggedInUser !== prevLoggedInUser.current && userTeam) {
-      // User just logged in — jump to their team
+    const userTeam = loggedInTeamId ? teams.find(t => t.id === loggedInTeamId) : null;
+    if (loggedInTeamId && loggedInTeamId !== prevLoggedInTeamId.current && userTeam) {
+      // User just signed in / their claim resolved — jump to their team
       setSelectedTeam(userTeam.id);
     } else if (!selectedTeam) {
       // No selection yet — default to user's team or first team
       setSelectedTeam(userTeam?.id ?? teams[0].id);
     }
-    prevLoggedInUser.current = loggedInUser;
-  }, [selectedTeam, teams, loggedInUser, setSelectedTeam]);
+    prevLoggedInTeamId.current = loggedInTeamId;
+  }, [selectedTeam, teams, loggedInTeamId, setSelectedTeam]);
 
   const team          = teams.find(t => t.id === selectedTeam);
   const currentRoster = useRoster(team, transactions, activeTournamentIndex, tournaments) || [];
   const windowStatus  = useWindowStatus(activeTournament, resolvedSettings);
-  const isOwnTeam     = (loggedInUser && team?.owner === loggedInUser) || isCommissioner;
+  // Ownership is the immutable uid→team claim, never the editable owner name.
+  const isOwnTeam     = (!!loggedInTeamId && team?.id === loggedInTeamId) || isCommissioner;
 
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
@@ -606,7 +620,10 @@ export const RostersView = ({
     );
     updateTeams(newTeams);
     dialog.showToast(`${lastName} added to lineup`, 'success', { position: 'top' });
-  }, [team, teams, updateTeams, dialog, activeTournament, currentRoster, LINEUP_SIZE, pickingBackup, backupAllowed, tournamentField]);
+    // `activeTournament` was listed here but is never read in this callback —
+    // it only forced needless re-creation on every tournament-object identity
+    // change (and blocked the React compiler from preserving the memo).
+  }, [team, teams, updateTeams, dialog, currentRoster, LINEUP_SIZE, MAX_LIMITED_STARTS, pickingBackup, backupAllowed, tournamentField]);
 
 
   const pendingWaivers = useMemo(() => {
@@ -767,25 +784,19 @@ export const RostersView = ({
 
   // Odds are now fetched as part of the field fetch above
 
-  // Real-time lineup sync — polls Firebase every 30s so changes on desktop
-  // appear on mobile without a manual refresh
-  useEffect(() => {
-    if (!team) return;
-    let cancelled = false;
-    const poll = () => {
-      teamsApi.getAll().then(freshTeams => {
-        if (cancelled) return;
-        const fresh = freshTeams.find(t => t.id === team.id);
-        const freshLineup = fresh?.lineup || [];
-        const currentLineup = team.lineup || [];
-        if (fresh && JSON.stringify(freshLineup) !== JSON.stringify(currentLineup)) {
-          updateTeams(freshTeams.map(t => ({ ...t, lineup: t.lineup || [] })));
-        }
-      }).catch(() => {});
-    };
-    const interval = setInterval(poll, 90000); // every 90s (was 30s — reduces Firebase reads)
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [team?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ── Lineup sync ──────────────────────────────────────────────────────────
+  // REMOVED: a 90-second poll that called teamsApi.getAll() and, on any lineup
+  // difference, passed the result to updateTeams(). Two problems:
+  //
+  //   1. Redundant. useLeague attaches a realtime teamsApi.subscribe()
+  //      listener (hooks/index.js), so a lineup change on another device
+  //      already lands here within a second — the poll was re-fetching data
+  //      the snapshot listener had usually delivered already.
+  //   2. It turned a read into a read + WRITE. updateTeams persists whatever
+  //      it's handed, so every poll that saw a difference wrote the teams it
+  //      had just read straight back to Firestore.
+  //
+  // The subscription is the single sync path now.
 
   // Fetch live leaderboard from /api/live during tournament week
   // Polls every 5 minutes while the tournament is in progress.
@@ -794,7 +805,11 @@ export const RostersView = ({
   // from /api/live against activeTournament.name and discard mismatched data
   // so we never show scores from the wrong event.
   useEffect(() => {
-    // Clear stale data from previous tournament immediately
+    // Clear stale data from previous tournament immediately. This is a
+    // deliberate synchronous reset: the effect key is the tournament name, and
+    // showing the PREVIOUS event's scores for even one frame after switching
+    // is worse than the extra render pass this costs.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLiveData(null);
 
     if (!activeTournament) return;
@@ -930,7 +945,7 @@ export const RostersView = ({
       if (av === bv) return 0;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
-  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglStatsMap, rosterView, tournamentField, statsView, globalPlayerStats, worldRankMap, playerDirectoryMap]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentRoster, sortCol, sortDir, teeTimeMap, oddsMap, sfglStatsMap, rosterView, tournamentField, statsView, globalPlayerStats, worldRankMap, playerDirectoryMap]);
 
   if (!team) return null;
 

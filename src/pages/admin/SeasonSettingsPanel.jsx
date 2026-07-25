@@ -17,6 +17,7 @@ import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
 import { M, disabledBtn } from './adminStyles';
 import { DAY_NAMES, fmtETTime } from '../../utils/sharedHelpers';
+import { cronFetch } from '../../api/cronApi';
 
 // ── ScheduleEditor — shared helper used by all three schedule sub-sections ──
 // Each schedule (waivers, results, lineup reminder) has identical UI: day +
@@ -143,10 +144,9 @@ export const SeasonSettingsPanel = ({
       // sync failure degrades to gate-only behavior rather than blocking the save.
       let syncWarn = '';
       try {
-        const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+        const resp = await cronFetch('sync-cron-schedule', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jobType: 'waivers', day: waiverDay, hour: waiverHour, minute: waiverMinute }),
+          body: ({ jobType: 'waivers', day: waiverDay, hour: waiverHour, minute: waiverMinute }),
         });
         if (!resp.ok) {
           const d = await resp.json().catch(() => ({}));
@@ -196,10 +196,9 @@ export const SeasonSettingsPanel = ({
       // failure degrades to gate-only behavior rather than blocking the save.
       let syncWarn = '';
       try {
-        const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+        const resp = await cronFetch('sync-cron-schedule', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jobType: 'results', day: resultsDay, hour: resultsHour, minute: resultsMinute }),
+          body: ({ jobType: 'results', day: resultsDay, hour: resultsHour, minute: resultsMinute }),
         });
         if (!resp.ok) {
           const d = await resp.json().catch(() => ({}));
@@ -242,10 +241,9 @@ export const SeasonSettingsPanel = ({
       // gate (weekly single fire). Same best-effort posture as waivers/results.
       let syncWarn = '';
       try {
-        const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+        const resp = await cronFetch('sync-cron-schedule', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jobType: 'lineup-reminder', day: reminderDay, hour: reminderHour, minute: reminderMinute }),
+          body: ({ jobType: 'lineup-reminder', day: reminderDay, hour: reminderHour, minute: reminderMinute }),
         });
         if (!resp.ok) {
           const d = await resp.json().catch(() => ({}));
@@ -291,10 +289,9 @@ export const SeasonSettingsPanel = ({
       // above, so a sync failure degrades to gate-only behavior.
       let syncWarn = '';
       try {
-        const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+        const resp = await cronFetch('sync-cron-schedule', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jobType: 'owgr-rankings', day: owgrDay, hour: owgrHour, minute: owgrMinute }),
+          body: ({ jobType: 'owgr-rankings', day: owgrDay, hour: owgrHour, minute: owgrMinute }),
         });
         if (!resp.ok) {
           const d = await resp.json().catch(() => ({}));
@@ -340,10 +337,9 @@ export const SeasonSettingsPanel = ({
       // above, so a sync failure degrades to gate-only behavior.
       let syncWarn = '';
       try {
-        const resp = await fetch('/api/cron?action=sync-cron-schedule', {
+        const resp = await cronFetch('sync-cron-schedule', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jobType: 'field-check', day: fieldCheckDay, hour: fieldCheckHour, minute: fieldCheckMinute }),
+          body: ({ jobType: 'field-check', day: fieldCheckDay, hour: fieldCheckHour, minute: fieldCheckMinute }),
         });
         if (!resp.ok) {
           const d = await resp.json().catch(() => ({}));

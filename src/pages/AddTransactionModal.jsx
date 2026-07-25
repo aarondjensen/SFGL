@@ -130,10 +130,14 @@ export const AddTransactionModal = ({
   // Default the tournament dropdown when the modal opens or the type changes.
   // For mulligan, prefer the currently-playing tournament; for everything else,
   // use the canonical Sun-Sat week math. The commish can still override.
+  // Deliberate setState-in-effect: `tourney` is user-editable state that we
+  // SEED from the schedule, so it can't be derived during render — the commish
+  // must be able to override the default and have that stick.
   useEffect(() => {
     if (!isOpen) return;
     if (type === 'mulligan') {
       const idx = tournaments.findIndex(t => t.playing);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (idx >= 0) setTourney(String(idx));
     } else {
       const found = getCurrentTournamentIndex(tournaments);
@@ -144,12 +148,18 @@ export const AddTransactionModal = ({
   // Reset all form state when the modal closes so re-opening starts fresh.
   // Avoids the "I opened the panel, picked Detroit, closed, reopened, and
   // Detroit was still selected" gotcha that bit the inline version.
+  // Deliberate setState-in-effect: the modal stays mounted while closed (the
+  // parent toggles `isOpen` rather than unmounting), so form state has to be
+  // cleared explicitly. The renders this triggers happen while the modal
+  // renders null, so they cost nothing visible.
   useEffect(() => {
     if (isOpen) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
     setTeam(''); setType('waiver'); setTourney('');
     setPlayerIn(null); setPlayerOut(null);
     setSearchIn(''); setSearchOut('');
     setSaving(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [isOpen]);
 
   if (!isOpen) return null;

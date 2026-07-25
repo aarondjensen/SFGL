@@ -25,7 +25,7 @@ import { getSwingPot, getSwingLeader } from './sharedHelpers.js';
  * Otherwise returns null. Idempotent: safe to call repeatedly — once a
  * swing_winner tx exists for the segment, this returns null forever.
  */
-export const computeSwingAward = ({ segment, allTournaments, transactions, teams }) => {
+export const computeSwingAward = ({ segment, allTournaments, transactions, teams, settings }) => {
   if (!segment) return null;
 
   // Idempotent guard
@@ -41,8 +41,12 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
   if (swingTourneys.length === 0) return null;
   if (!swingTourneys.every(t => t.completed)) return null;
 
-  // Pot must be > 0
-  const pot = getSwingPot(transactions, allTournaments, segment);
+  // Pot must be > 0.
+  // `settings` is REQUIRED for the fee derivation to honor the commish's
+  // configured feeWaiver/feeFA — omitting it (as this call used to) silently
+  // fell back to the hard-coded 2/1 defaults, so the pot computed here could
+  // disagree with the figure TransactionsView shows for the same swing.
+  const pot = getSwingPot(transactions, allTournaments, segment, settings);
   if (pot === 0) return null;
 
   // Determine winner
@@ -80,11 +84,20 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
     note: `${segment} winner pot`,
   };
 
-  const updatedTeams = (teams || []).map(t =>
-    t.id === leader.teamId
-      ? { ...t, earnings: (t.earnings || 0) + pot }
-      : t
-  );
+  // The pot is a SIDE PRIZE, tracked solely on the swing_winner transaction
+  // (tx.amount). It is deliberately NOT added to team.earnings:
+  //   • Standings derive from tournament.results.teams[].totalEarnings
+  //     (getSeasonEarningsByTeam), so adding it there changes no display; and
+  //   • team.earnings is the drift-prone denormalized tally that
+  //     sharedHelpers explicitly warns against trusting — folding a fee pot
+  //     into a field that otherwise holds tournament winnings makes it mean
+  //     two different things.
+  // The server path (maybeAutoAwardSwingServer in api/cron.js) has always
+  // behaved this way; this client copy used to add the pot, so which number a
+  // team ended up with depended on whether the cron or the commish's browser
+  // awarded the swing. teams is returned unchanged so existing call sites
+  // that persist `updatedTeams` stay valid.
+  const updatedTeams = teams || [];
 
   return {
     segment,
@@ -106,8 +119,9 @@ export const maybeAwardForCompletedTournament = ({
   allTournaments,
   transactions,
   teams,
+  settings,
 }) => {
   if (!justProcessedTournament) return null;
   const segment = getSegmentForTournament(justProcessedTournament);
-  return computeSwingAward({ segment, allTournaments, transactions, teams });
+  return computeSwingAward({ segment, allTournaments, transactions, teams, settings });
 };

@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { storage } from '../api';
 import { playerRankingsApi } from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
-import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, resolveTxTournamentIndex } from '../utils/sharedHelpers';
+import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, buildEffectiveRoster, hydratePlayer } from '../utils/sharedHelpers';
 
 // ============================================================================
 // useLeague — central state manager for all league data
@@ -611,35 +611,25 @@ export const useLeague = (STORAGE_KEYS) => {
 //     golfer. Replaying it would pollute the roster with the manager's name.
 // ============================================================================
 export const useRoster = (team, transactions, activeTournamentIndex, tournaments = null) => {
-  if (!team) return [];
-  let roster = [...team.roster];
-  if (activeTournamentIndex >= 0) {
-    // Resolve each tx's tournament position FRESH from its stable name (falling
-    // back to the stored index for legacy rows), so a schedule reorder can never
-    // misalign the cutoff again. Compute the position once per tx.
-    const teamTx = transactions
-      .filter(tx =>
-        tx.team === team.name &&
-        tx.type !== 'mulligan' &&
-        tx.type !== 'swing_winner' &&
-        (tx.status === 'processed' || tx.status === 'completed'),
-      )
-      .map(tx => ({ tx, pos: resolveTxTournamentIndex(tx, tournaments) }))
-      .filter(x => x.pos !== undefined && x.pos <= activeTournamentIndex)
-      .sort((a, b) => a.pos - b.pos)
-      .map(x => x.tx);
+  return useMemo(() => {
+    if (!team) return [];
 
-    teamTx.forEach(tx => {
-      if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
-      // Guard: only push when tx.player is defined. Without this, any tx
-      // missing a player field (e.g., a future tx shape) would inject a
-      // {name: undefined} ghost into the roster.
-      if (tx.player && !roster.some(p => p.name === tx.player)) {
-        roster.push({ name: tx.player, limited: false, stars: 0, unlimited: false, yearsOfService: 1, starts: 0, eventsPlayed: 0, cutsMade: 0, pgaTourEarnings: 0, sfglEarnings: 0, headshot: '' });
-      }
+    // Membership + ordering come from the canonical helper, so this hook can't
+    // drift from AddDropPlayerModal / AdminView / WaiverProcessingPanel again.
+    const names = buildEffectiveRoster(team, transactions, {
+      tournaments: tournaments || [],
+      upToTournamentIndex: activeTournamentIndex >= 0 ? activeTournamentIndex : undefined,
     });
-  }
-  return roster;
+
+    // Hydrate from the durable attribute index rather than minting a zeroed
+    // UNLIMITED player for anyone added by transaction. That default was the
+    // same data-loss bug hydratePlayer exists to prevent: a LIMITED player
+    // picked back up mid-season came back unlimited with their stars, years of
+    // service, and SFGL tallies wiped.
+    const attrIndex = buildPlayerAttributeIndex(team ? [team] : [], tournaments || []);
+    const byName = new Map((team.roster || []).map(p => [p.name, p]));
+    return [...names].map(name => byName.get(name) || hydratePlayer(name, attrIndex));
+  }, [team, transactions, activeTournamentIndex, tournaments]);
 };
 
 // ============================================================================
@@ -656,13 +646,17 @@ export const useWindowStatus = (tournament, settings) => {
     waiverOpen:       isWaiverWindowOpen(tournament, settings),
   }), [tournament, settings]);
 
-  const [status, setStatus] = useState(compute);
+  // A minute-resolution ticker is the only thing the effect needs to own. The
+  // status itself is DERIVED during render from (compute, tick), so a change
+  // to `tournament` or `settings` is reflected in the same render rather than
+  // via a setState inside an effect — which produced an extra render pass on
+  // every dependency change and tripped react-hooks/set-state-in-effect.
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    setStatus(compute());
-    const id = setInterval(() => setStatus(compute()), 60_000);
+    const id = setInterval(() => setTick(t => t + 1), 60_000);
     return () => clearInterval(id);
-  }, [compute]);
+  }, []);
 
-  return status;
+  return useMemo(() => compute(), [compute, tick]);
 };

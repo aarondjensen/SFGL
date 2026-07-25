@@ -17,34 +17,16 @@ export const matchPlayerName = (a, b) => {
   return false;
 };
 
-// Replay transactions to reconstruct a team's roster as it existed at the time
-// of a given tournament. Used during result processing where we need each
-// team's effective roster at that point in the season (post earlier add/drops).
+// REMOVED: getRosterForTournament — a sixth hand-rolled roster replay. It was
+// exported but had no callers (only a stale mention in a sharedHelpers
+// comment), and it carried a bug the others didn't: it filtered on
+// `status !== 'pending'`, which meant FAILED waiver claims were replayed onto
+// the roster as if they had succeeded.
 //
-// Skips:
-//   • mulligan — restores a previously-dropped player; the original add/drop
-//     pair already accounts for the roster movement.
-//   • swing_winner — `tx.player` on these is the manager's owner name (used
-//     for "Jensen won the West Coast Swing pot" display), NOT an actual
-//     golfer. Replaying it would pollute the roster with the manager's name.
-export const getRosterForTournament = (team, tournamentIndex, allTransactions) => {
-  let roster = [...team.roster];
-  allTransactions
-    .filter(tx =>
-      tx.team === team.name &&
-      tx.type !== 'mulligan' &&
-      tx.type !== 'swing_winner' &&
-      tx.tournamentIndex !== undefined &&
-      tx.tournamentIndex <= tournamentIndex &&
-      tx.status !== 'pending'
-    )
-    .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
-    .forEach(tx => {
-      if (tx.droppedPlayer) roster = roster.filter(p => p.name !== tx.droppedPlayer);
-      if (tx.player && !roster.some(p => p.name === tx.player)) roster.push({ name: tx.player });
-    });
-  return roster;
-};
+// Use buildEffectiveRoster(team, transactions, { tournaments,
+// upToTournamentIndex }) from utils/sharedHelpers instead — it resolves each
+// transaction's position from the stable tournament name, sorts
+// chronologically, and counts only processed/completed rows.
 
 /**
  * Core tournament processing.

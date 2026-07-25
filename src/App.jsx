@@ -43,9 +43,9 @@ import { RostersView }    from './pages/RostersView';
 import { TournamentsView }  from './pages/TournamentsView';
 
 // ── Lazy-loaded views (heavy, rarely visited on initial load) ──────────────
-// AdminView and TransactionsView (and their transitive deps like DraftModal)
-// are deferred until the user actually navigates to those tabs. This removes
-// thousands of lines of JS from the initial bundle.
+// AdminView and TransactionsView (and their transitive deps) are deferred
+// until the user actually navigates to those tabs. This removes thousands of
+// lines of JS from the initial bundle.
 const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m => ({ default: m.AdminView })));
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 

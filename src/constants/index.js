@@ -71,6 +71,17 @@ export const INITIAL_TEAMS = [
 // ============================================================================
 // PLAYER DATA
 // ============================================================================
+// Static ESPN athlete IDs. These are the HIGHEST-precedence headshot source:
+// App.jsx skips any name present here when auto-fetching from /api/headshots,
+// so a wrong ID here can never self-heal. Two invariants matter:
+//   1. Every ID must be unique — two names sharing one ID means one of them
+//      permanently renders the other player's face. 'Nick Taylor' and
+//      'Kevin Streelman' both carried 25493 and were removed rather than
+//      guessed at; /api/headshots resolves them dynamically now (and falls
+//      back to an initials avatar rather than a wrong face when ambiguous).
+//   2. Only add an ID you have verified at
+//      https://www.espn.com/golf/player/_/id/{ID}
+// assertUniqueEspnIds() below enforces (1) in dev.
 export const PGA_TOUR_IDS = {
   'Scottie Scheffler': '46046', 'Rory McIlroy': '28237', 'Xander Schauffele': '48081',
   'Viktor Hovland': '46717', 'Brooks Koepka': '36689', 'Tommy Fleetwood': '30911',
@@ -87,7 +98,7 @@ export const PGA_TOUR_IDS = {
   'Byeong Hun An': '32058', 'Denny McCarthy': '47856', 'Taylor Pendrith': '48867',
   'Christiaan Bezuidenhout': '51349', 'Eric Cole': '39546', 'Chris Kirk': '29478',
   'Adam Hadwin': '33399', 'Alex Noren': '27349', 'Tom Hoge': '35532',
-  'J.T. Poston': '34306', 'Nick Taylor': '25493', 'Max Greyserman': '52375',
+  'J.T. Poston': '34306', 'Max Greyserman': '52375',
   'Maverick McNealy': '49766', 'Harris English': '30925',
   'Patrick Rodgers': '36699', 'Stephan Jaeger': '35421', 'Davis Thompson': '56441',
   'Justin Lower': '49964', 'Nick Dunlap': '59442', 'Luke Clanton': '60529',
@@ -106,7 +117,7 @@ export const PGA_TOUR_IDS = {
   'Brendon Todd': '30978', 'Kevin Kisner': '29908', 'Scott Stallings': '30692',
   'Andrew Putnam': '33486', 'Charley Hoffman': '21528', 'Nick Hardy': '49768',
   'Zach Johnson': '20766', 'Sam Ryder': '49959', 'Nate Lashley': '28775',
-  'Chad Ramey': '50048', 'Martin Laird': '25632', 'Kevin Streelman': '25493',
+  'Chad Ramey': '50048', 'Martin Laird': '25632',
   'Brandon Wu': '54825', 'Pierceson Coody': '55898', 'Chris Gotterup': '59095',
   'Rico Hoey': '52366', 'Will Gordon': '50395', 'Hayden Springer': '58168',
   'Davis Riley': '51070', 'Austin Smotherman': '53197', 'Karl Vilips': '59820',
@@ -119,6 +130,22 @@ export const PGA_TOUR_IDS = {
   'Doc Redman': '48117', 'Wilson Furr': '55905', 'Bryson DeChambeau': '47959',
   'Cameron Smith': '34360', 'Tyrrell Hatton': '34363',
 };
+
+// Dev-only guard for invariant (1) above. Runs once at module load, costs a
+// single pass over ~135 entries, and is stripped from production builds by the
+// import.meta.env.DEV check. Catches a duplicate the moment it's pasted in,
+// instead of months later when someone notices the wrong face on a roster.
+if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
+  const seen = new Map();
+  const dupes = [];
+  Object.entries(PGA_TOUR_IDS).forEach(([name, id]) => {
+    if (seen.has(id)) dupes.push(`${id}: ${seen.get(id)} / ${name}`);
+    else seen.set(id, name);
+  });
+  if (dupes.length) {
+    console.error('[constants] Duplicate ESPN IDs in PGA_TOUR_IDS — one of each pair will show the wrong headshot:\n  ' + dupes.join('\n  '));
+  }
+}
 
 export const PLAYER_NAME_ALIASES = {
   'samuel stevens': 'Sam Stevens', 'john keefer': 'Johnny Keefer',

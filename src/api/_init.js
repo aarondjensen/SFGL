@@ -48,7 +48,6 @@ if (typeof window !== 'undefined' && import.meta.env.VITE_FIREBASE_APPCHECK_SITE
   // Dev: emit a debug token to the console; register it under
   // App Check → (your web app) → Manage debug tokens so localhost is allowed.
   if (import.meta.env.DEV) {
-    // eslint-disable-next-line no-undef
     self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
   }
   try {

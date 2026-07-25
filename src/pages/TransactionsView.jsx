@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { getSegmentByDate, getSegmentForTournament, makePlayer, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
+import { getSegmentByDate, getSegmentForTournament, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
 import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament } from '../utils/sharedHelpers';
 import { STORAGE_KEYS } from '../constants/index.js';
@@ -65,13 +65,41 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
     const oldTeam = tx.team;
     const newTeam = editTeam;
 
-    // Update the transaction record
+    // Update the transaction record.
+    //
+    // Matched by IDENTITY (doc id, then txId), not by the array position
+    // captured when the modal opened. useLeague holds a live Firestore
+    // subscription, so any change from any source — the cron, another
+    // manager, this user on another device — replaces the transactions array
+    // underneath an open modal. A positional `i === txIndex` write then lands
+    // on whatever transaction happens to occupy that slot now, silently
+    // rewriting the wrong record. Falls back to the index only when the row
+    // has neither id nor txId (very old local-only rows).
     const newTourneyIdx = editTourneyIdx !== '' ? parseInt(editTourneyIdx) : tx.tournamentIndex;
+    const isTarget = (t, i) => {
+      if (tx.id)   return t.id === tx.id;
+      if (tx.txId) return t.txId === tx.txId;
+      return i === txIndex;
+    };
+    if (!transactions.some(isTarget)) {
+      setSaving(false);
+      dialog.showToast('That transaction no longer exists — it may have been deleted or reprocessed. Nothing was changed.', 'error');
+      onClose();
+      return;
+    }
     const updatedTx = transactions.map((t, i) =>
-      i === txIndex
+      isTarget(t, i)
         ? { ...t, team: newTeam, player: newAdd, droppedPlayer: newDrop || undefined, tournamentIndex: newTourneyIdx, tournament: tournaments[newTourneyIdx]?.name ?? t.tournament, segment: tournaments[newTourneyIdx]?.segment || t.segment }
         : t
     );
+
+    // Restoring a dropped player hydrates from the durable attribute index, so
+    // a LIMITED player comes back limited with their stars, years of service
+    // and SFGL tallies intact. makePlayer() — used here previously — mints a
+    // fresh UNLIMITED player with zeroed stats, which is the same data loss
+    // the undo path already fixed by switching to hydratePlayer; this edit
+    // path was simply never updated to match.
+    const attrIndex = buildPlayerAttributeIndex(teams, tournaments);
 
     // Patch the old team's roster: undo old change, apply new change
     let updatedTeams = teams.map(t => {
@@ -81,7 +109,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
         // Remove the old added player
         r = r.filter(p => p.name !== oldAdd);
         // Re-add the old dropped player (if there was one)
-        if (oldDrop && !r.some(p => p.name === oldDrop)) r.push(makePlayer(oldDrop));
+        if (oldDrop && !r.some(p => p.name === oldDrop)) r.push(hydratePlayer(oldDrop, attrIndex));
         return { ...t, roster: r };
       }
       return t;
@@ -94,7 +122,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
         // Remove new dropped player
         if (newDrop) r = r.filter(p => p.name !== newDrop);
         // Add new added player
-        if (!r.some(p => p.name === newAdd)) r.push(makePlayer(newAdd));
+        if (!r.some(p => p.name === newAdd)) r.push(hydratePlayer(newAdd, attrIndex));
         return { ...t, roster: r };
       }
       return t;
@@ -830,19 +858,15 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             if (isUndoPath) {
                               undoTransaction(liveTx, true); // skipConfirm
                             } else if (isSwingUndoPath) {
-                              // Reverse the earnings credit on the winner team, then
-                              // delete the swing_winner tx. The pot becomes
-                              // "unawarded" again — handleSwingWinner (or the next
-                              // auto-award trigger) can re-award it later.
-                              const winnerTeam = teams.find(t => t.name === liveTx.team);
-                              if (winnerTeam) {
-                                const newTeams = teams.map(t =>
-                                  t.id === winnerTeam.id
-                                    ? { ...t, earnings: Math.max(0, (t.earnings || 0) - (liveTx.amount || 0)) }
-                                    : t
-                                );
-                                updateTeams(newTeams);
-                              }
+                              // Delete the swing_winner tx; the pot becomes
+                              // "unawarded" again and the next auto-award trigger
+                              // can re-award it.
+                              //
+                              // No team.earnings adjustment: the pot is a side
+                              // prize carried on the transaction (tx.amount) and
+                              // is no longer folded into team.earnings when
+                              // awarded (see computeSwingAward). Subtracting here
+                              // would now deduct money the award never added.
                               const newTx = transactions.filter(t => liveTx.id ? t.id !== liveTx.id : t !== liveTx);
                               setTransactions(newTx, { deleted: [liveTx] });
                               dialog.showToast(`Swing winner reversed: -$${(liveTx.amount || 0).toLocaleString()} from ${liveTx.team}`, 'success');

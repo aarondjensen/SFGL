@@ -4,7 +4,7 @@ import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, isWaiverWindowOpen, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
-import { getTransactionFee, normalizeNordic, buildPlayerAttributeIndex, hydratePlayer } from '../utils/sharedHelpers';
+import { getTransactionFee, normalizeNordic, buildPlayerAttributeIndex, hydratePlayer, buildEffectiveRoster } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
@@ -179,41 +179,22 @@ export const AddDropPlayerModal = ({
   const mergedHeadshots = { ...localHeadshots, ...headshots };
 
   // ── Available players ──────────────────────────────────────────────────────
-  // Build the effective roster name-set for a team by replaying transactions in
-  // EXACTLY the same way as the canonical `useRoster` hook that RostersView uses,
-  // so the modal's ownership/availability view never diverges from the Rosters
-  // screen. The previous local copy diverged in three ways that could wrongly
-  // mark a dropped player as still-owned:
-  //   • it replayed in raw array order (no sort) — an add stored after a later
-  //     drop would re-add a player who was actually netted out;
-  //   • it dropped transactions with no `tournamentIndex` (useRoster requires
-  //     one) — but it must count BOTH `status === 'processed'` and
-  //     `'completed'`, exactly like useRoster does;
-  //   • it ignored the `tournamentIndex <= activeTournamentIndex` upper bound.
-  // Mirroring useRoster fixes the "shows on my team but not on my roster" bug.
-  const effectiveRosterNames = (t) => {
-    const names = new Set((t.roster || []).map(p => p.name));
-    if (activeTournamentIndex >= 0) {
-      transactions
-        .filter(tx =>
-          tx.team === t.name &&
-          tx.type !== 'mulligan' &&
-          tx.type !== 'swing_winner' &&
-          tx.tournamentIndex !== undefined &&
-          tx.tournamentIndex <= activeTournamentIndex &&
-          // Match useRoster EXACTLY: count both 'processed' and 'completed'.
-          // Counting only 'processed' wrongly freed FA/waiver pickups that
-          // landed in 'completed' status, so they showed as available here.
-          (tx.status === 'processed' || tx.status === 'completed')
-        )
-        .sort((a, b) => a.tournamentIndex - b.tournamentIndex)
-        .forEach(tx => {
-          if (tx.droppedPlayer) names.delete(tx.droppedPlayer);
-          if (tx.player) names.add(tx.player);
-        });
-    }
-    return names;
+  // Effective roster comes from the CANONICAL buildEffectiveRoster helper, so
+  // the modal's ownership/availability view can't diverge from the Rosters
+  // screen, the waiver processor, or the admin panels. This was previously a
+  // local re-implementation (the third of six) that resolved tournament
+  // positions from the raw stored `tx.tournamentIndex` rather than the stable
+  // tournament name, so a schedule reorder misaligned the cutoff.
+  //
+  // When no tournament is flagged `playing`, activeTournamentIndex is -1. The
+  // old code skipped the replay entirely in that case, showing stale ownership
+  // between events; passing `undefined` instead replays the full history,
+  // which is the correct "who owns this player right now" answer.
+  const rosterOpts = {
+    tournaments,
+    upToTournamentIndex: activeTournamentIndex >= 0 ? activeTournamentIndex : undefined,
   };
+  const effectiveRosterNames = (t) => buildEffectiveRoster(t, transactions, rosterOpts);
 
   const rosteredPlayers = new Set(
     teams.flatMap(t => [...effectiveRosterNames(t)].map(normalizePlayerName))

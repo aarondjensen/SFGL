@@ -15,6 +15,7 @@ import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
 import { compactTeamName } from '../../utils/index.js';
 import { sfglDataApi } from '../../api/firebase';
+import { cronFetch } from '../../api/cronApi';
 import { sendCommishPush } from '../../api/pushNotifications';
 import { processTournamentData } from './processTournamentData';
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
@@ -116,6 +117,10 @@ export const TournamentResultsPanel = ({
   teams, updateTeams,
   transactions, setTransactions,
   globalPlayerStats, setGlobalPlayerStats,
+  // AdminView has always passed `settings`; it just wasn't destructured. The
+  // swing-award path needs it so the pot honors the commish's configured
+  // feeWaiver/feeFA instead of falling back to the 2/1 defaults.
+  settings,
   loggedInUser,
 }) => {
   const dialog = useDialog();
@@ -254,6 +259,7 @@ export const TournamentResultsPanel = ({
         allTournaments: newT,
         transactions,
         teams: newTeams,
+        settings,
       });
       const finalTeams = award ? award.updatedTeams : newTeams;
       const finalTransactions = award ? [...transactions, award.newTx] : transactions;
@@ -306,11 +312,7 @@ export const TournamentResultsPanel = ({
             pot: award.pot,
           };
         }
-        const emailResp = await fetch('/api/cron?action=notify-results', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+        const emailResp = await cronFetch('notify-results', { method: 'POST', body });
         if (!emailResp.ok) {
           const ed = await emailResp.json().catch(() => ({}));
           throw new Error(ed.error || `HTTP ${emailResp.status}`);
@@ -443,6 +445,7 @@ export const TournamentResultsPanel = ({
         allTournaments: newT,
         transactions,
         teams: newTeams,
+        settings,
       });
       const finalTeams = award ? award.updatedTeams : newTeams;
       const finalTransactions = award ? [...transactions, award.newTx] : transactions;
@@ -535,15 +538,14 @@ export const TournamentResultsPanel = ({
         if (teamResultsForEmail.length === 0) {
           dialog.showToast('No team results in this tournament — nothing to email', 'error');
         } else {
-          const resp = await fetch('/api/cron?action=notify-results', {
+          const resp = await cronFetch('notify-results', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+            body: {
               tournamentName: selectedTourney,
               teamResults: teamResultsForEmail,
               seasonStandings,
               ...(swingWinnerInfo ? { swingWinnerInfo } : {}),
-            }),
+            },
           });
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           dialog.showToast('📧 Results emails sent', 'success');
@@ -603,7 +605,7 @@ export const TournamentResultsPanel = ({
     if (!ok) return;
     setResyncing(true);
     try {
-      const resp = await fetch('/api/cron?action=resync-legacy-tournaments');
+      const resp = await cronFetch('resync-legacy-tournaments');
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         dialog.showToast(`Resync failed: ${data?.error || resp.status}`, 'error');
@@ -771,7 +773,7 @@ export const TournamentResultsPanel = ({
       // Fire-and-forget; if resync fails, the toast surfaces it but doesn't
       // roll back the React state updates above.
       try {
-        const resyncResp = await fetch('/api/cron?action=resync-legacy-tournaments');
+        const resyncResp = await cronFetch('resync-legacy-tournaments');
         const resyncData = await resyncResp.json().catch(() => ({}));
         if (!resyncResp.ok) {
           console.warn('[handleUndoResults] resync-legacy failed:', resyncData);

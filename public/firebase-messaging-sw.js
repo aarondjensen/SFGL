@@ -22,38 +22,60 @@
 // main app and Firebase ships specific compat builds for SW use.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/* eslint-disable */
-
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
 
-// Firebase config is duplicated here (can't share with main app — different
-// execution context). Keep these in sync with src/api/firebase.js. The values
-// below are PUBLIC config — apiKey for Firebase is not a secret, it's just an
-// identifier (security is enforced via Firestore rules + App Check, not by
-// hiding this key).
+// ── Firebase config, supplied at registration time ──────────────────────────
+// Service workers can't read Vite's import.meta.env, so the config arrives on
+// the registration URL's query string — see src/api/swRegistration.js, which
+// is the single place that registers this file.
 //
-// SETUP NOTE: replace these placeholders by hardcoding the same values that
-// your VITE_FIREBASE_* env vars contain. Service workers can't read Vite env
-// vars, so they need to be baked in. Find them in:
-//   Firebase Console → Project Settings → General → Your apps → Web app config
-firebase.initializeApp({
-  apiKey:            'REPLACE_WITH_VITE_FIREBASE_API_KEY',
-  authDomain:        'REPLACE_WITH_VITE_FIREBASE_AUTH_DOMAIN',
-  projectId:         'REPLACE_WITH_VITE_FIREBASE_PROJECT_ID',
-  storageBucket:     'REPLACE_WITH_VITE_FIREBASE_STORAGE_BUCKET',
-  messagingSenderId: 'REPLACE_WITH_VITE_FIREBASE_MESSAGING_SENDER_ID',
-  appId:             'REPLACE_WITH_VITE_FIREBASE_APP_ID',
-});
+// This replaces a hardcoded config block that shipped to production still
+// holding REPLACE_WITH_VITE_FIREBASE_* placeholders. Two things went wrong
+// with that: FCM initialized against a bogus sender ID so background pushes
+// could never route, and a throw from firebase.messaging() killed the whole
+// script before the shell-cache handlers at the bottom of this file were
+// registered — silently disabling the PWA cold-start cache for everyone.
+//
+// These are PUBLIC values (Firebase security comes from Firestore rules +
+// App Check, not from hiding the web config); passing them by URL simply
+// keeps them in Vercel env vars rather than in source control.
+const SW_CONFIG = (() => {
+  const p = new URLSearchParams(self.location.search);
+  return {
+    apiKey:            p.get('apiKey')            || '',
+    authDomain:        p.get('authDomain')        || '',
+    projectId:         p.get('projectId')         || '',
+    storageBucket:     p.get('storageBucket')     || '',
+    messagingSenderId: p.get('messagingSenderId') || '',
+    appId:             p.get('appId')             || '',
+  };
+})();
 
-const messaging = firebase.messaging();
+// ── Messaging init ──────────────────────────────────────────────────────────
+// Wrapped and guarded so a missing/invalid config degrades to "no background
+// push" instead of taking the shell cache down with it. `messaging` stays null
+// in that case and the onBackgroundMessage wiring below is skipped.
+let messaging = null;
+if (SW_CONFIG.apiKey && SW_CONFIG.messagingSenderId && SW_CONFIG.projectId) {
+  try {
+    firebase.initializeApp(SW_CONFIG);
+    messaging = firebase.messaging();
+  } catch (err) {
+    console.error('[SW] Firebase messaging init failed — background push disabled, shell cache unaffected:', err);
+    messaging = null;
+  }
+} else {
+  console.warn('[SW] No Firebase config on the SW URL — background push disabled. ' +
+    'Check VITE_FIREBASE_* env vars; registration happens in src/api/swRegistration.js.');
+}
 
 // ── Background message handler ──────────────────────────────────────────────
 // Fires when a push arrives while the app is closed or in a different tab.
 // The payload comes from /api/push (our server-side sender). We expect:
 //   notification: { title, body, icon }
 //   data:         { deepLink: '#standings' | '#rosters' | etc, eventType: '...' }
-messaging.onBackgroundMessage((payload) => {
+if (messaging) messaging.onBackgroundMessage((payload) => {
   // Defensive logging — visible in DevTools → Application → Service Workers
   // → click the SW → Console output. Helps debug iOS quirks.
   console.log('[SW] Background push received:', payload);
@@ -63,11 +85,12 @@ messaging.onBackgroundMessage((payload) => {
 
   // Build the notification options. Icon path matches site.webmanifest.
   // Badge falls back to the same icon if a dedicated smaller asset isn't
-  // present.
+  // present. NOTE: these live under /favicon/ — pointing them at the site
+  // root (as they did) 404s, so pushes rendered with no icon at all.
   const options = {
     body,
-    icon: '/web-app-manifest-192x192.png',
-    badge: '/web-app-manifest-192x192.png',
+    icon: '/favicon/web-app-manifest-192x192.png',
+    badge: '/favicon/web-app-manifest-192x192.png',
     // Tag groups notifications: a new push with the same tag replaces the old
     // one. We use eventType so e.g. multiple waiver-result pushes collapse
     // into one rather than stacking up.

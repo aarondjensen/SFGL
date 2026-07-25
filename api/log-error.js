@@ -43,6 +43,9 @@ const MAX_UA = 300;
 
 function clean(s, max) {
   if (typeof s !== 'string') return '';
+  // Matching control characters is the entire point here — this strips them
+  // out of client-supplied error text before it reaches an email header/body.
+  // eslint-disable-next-line no-control-regex
   return s.replace(/[\u0000-\u001F\u007F]/g, ' ').slice(0, max);
 }
 

@@ -286,6 +286,11 @@ export const playersApi = {
    */
   async clearEspnIds(names) {
     if (!Array.isArray(names) || names.length === 0) return;
+    // Resolve the dynamic alias map first — this used to reference a bare
+    // `aliasMap` that only exists inside upsertMany's scope, so every call
+    // threw a ReferenceError before writing anything (i.e. the admin
+    // "Rebuild Headshots" repair path silently never worked).
+    const aliasMap = await getAliasMap();
     const BATCH_SIZE = 250;
     for (let i = 0; i < names.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
@@ -865,77 +870,13 @@ export const settingsApi = {
 };
 
 // ============================================================================
-// DRAFT STATE API
+// DRAFT APIs — REMOVED
 // ============================================================================
-export const draftStateApi = {
-  async get() {
-    const snap = await getDoc(doc(db, 'draft_state', 'default'));
-    return snap.exists() ? { league_id: 'default', ...snap.data() } : null;
-  },
-
-  async save(state) {
-    await setDoc(doc(db, 'draft_state', 'default'), {
-      league_id:           'default',
-      phase:               state.phase,
-      draft_order:         state.draftOrder,
-      keeper_team_index:   state.keeperTeamIndex,
-      keepers:             state.keepers,
-      current_team_index:  state.currentTeamIndex,
-      current_round:       state.currentRound,
-      drafted_players:     state.draftedPlayers,
-      is_complete:         state.isComplete || false,
-    });
-    return state;
-  },
-
-  async clear() {
-    await deleteDoc(doc(db, 'draft_state', 'default'));
-  },
-};
-
-// ============================================================================
-// DRAFT PICKS API
-// ============================================================================
-export const draftPicksApi = {
-  async getAllForDraft(draftId = 'default') {
-    const q = query(
-      collection(db, 'draft_picks'),
-      where('draft_id', '==', draftId),
-      orderBy('pick_number')
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  },
-
-  async addPick(pick) {
-    const data = {
-      draft_id:          pick.draftId || 'default',
-      pick_number:       pick.pickNumber,
-      round_number:      pick.roundNumber,
-      team_id:           pick.teamId,
-      team_name:         pick.teamName,
-      player_name:       pick.playerName,
-      player_type:       pick.playerType,
-      picked_by_manager: pick.pickedByManager !== false,
-    };
-    const ref = await addDoc(collection(db, 'draft_picks'), data);
-    return [{ id: ref.id, ...data }];
-  },
-
-  async deleteLastPick(draftId = 'default') {
-    const q = query(
-      collection(db, 'draft_picks'),
-      where('draft_id', '==', draftId),
-      orderBy('pick_number', 'desc')
-    );
-    const snap = await getDocs(q);
-    if (snap.empty) return null;
-    const lastDoc  = snap.docs[0];
-    const lastPick = { id: lastDoc.id, ...lastDoc.data() };
-    await deleteDoc(lastDoc.ref);
-    return lastPick;
-  },
-};
+// draftStateApi and draftPicksApi existed solely to serve src/pages/DraftModal.jsx,
+// which was deleted as dead code (it had no importers — App.jsx's comment
+// claiming it was a transitive dependency of AdminView was stale). The
+// /draft_state and /draft_picks Firestore collections are left untouched; if
+// the draft UI is rebuilt for a future season, restore these from git history.
 
 // ============================================================================
 // TOURNAMENT RESULTS API

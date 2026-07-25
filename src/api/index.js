@@ -12,8 +12,6 @@ export {
   settingsApi,
   playerStatsApi,
   headshotsApi,
-  draftStateApi,
-  draftPicksApi,
   sfglDataApi,
   globalPlayerStatsApi,
   playerRegistryApi,

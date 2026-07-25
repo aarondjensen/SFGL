@@ -223,11 +223,31 @@ export const getSwingPot = (transactions, tournaments, segment, settings) => {
 //   • AddDropPlayerModal — rosteredPlayers + ownerMap
 //   • AdminView.jsx — buildRoster + getRosterForTournament
 //
-// Returns a Set<string> of player names. Pass `asArray: true` to get an
-// ordered array of {name} player objects instead.
+// ORDERING IS LOAD-BEARING. Replaying an add/drop history is order-dependent:
+// "add A in week 1, drop A for B in week 3" nets to {B}, but applying those
+// two transactions in the reverse order nets to {A, B} — the drop removes an
+// A that hasn't been added yet, then week 1 adds A back.
+//
+// This function used to have NO sort at all. The `transactions` array it is
+// handed comes from transactionsApi.getAll(), which sorts NEWEST FIRST — so
+// every caller was replaying history backwards and resurrecting dropped
+// players. Positions are resolved from each tx's stable tournament NAME
+// (resolveTxTournamentIndex), so a schedule reorder can't misalign them
+// either; legacy rows carrying only a positional index still work.
+//
+// Options:
+//   asArray: true            — return an ordered array of player objects
+//                              (hydrated from team.roster) instead of a Set.
+//   upToTournamentIndex: n   — only replay transactions at or before
+//                              tournament position n, i.e. "the roster as it
+//                              stood for event n". Omit for the current roster.
+//
+// Returns a Set<string> of player names by default.
 export const buildEffectiveRoster = (team, transactions, opts = {}) => {
   if (!team) return opts.asArray ? [] : new Set();
+  const { tournaments = [], upToTournamentIndex } = opts;
   const rosterSet = new Set((team.roster || []).map(p => p.name));
+
   (transactions || [])
     .filter(tx =>
       tx.team === team.name &&
@@ -238,10 +258,17 @@ export const buildEffectiveRoster = (team, transactions, opts = {}) => {
       tx.type !== 'swing_winner' &&
       (tx.status === 'processed' || tx.status === 'completed')
     )
-    .forEach(tx => {
+    .map(tx => ({ tx, pos: resolveTxTournamentIndex(tx, tournaments) }))
+    .filter(({ pos }) =>
+      upToTournamentIndex === undefined || (pos !== undefined && pos <= upToTournamentIndex))
+    // Chronological. Transactions with no resolvable position sort last so a
+    // legacy row missing both name and index can't jump ahead of dated ones.
+    .sort((a, b) => (a.pos ?? Number.MAX_SAFE_INTEGER) - (b.pos ?? Number.MAX_SAFE_INTEGER))
+    .forEach(({ tx }) => {
       if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
       if (tx.player) rosterSet.add(tx.player);
     });
+
   if (opts.asArray) {
     return [...rosterSet].map(name => {
       const existing = (team.roster || []).find(p => p.name === name);
@@ -333,10 +360,10 @@ export const hydratePlayer = (name, attrIndex = {}, headshot = '') => {
 // rostered player across the entire league. Used by AddDropPlayerModal to
 // label players as "Unavailable / on Team X" without re-running the same
 // roster-rebuild logic.
-export const buildOwnershipMap = (teams, transactions) => {
+export const buildOwnershipMap = (teams, transactions, tournaments = []) => {
   const map = new Map();
   (teams || []).forEach(t => {
-    buildEffectiveRoster(t, transactions).forEach(name => map.set(name, t.name));
+    buildEffectiveRoster(t, transactions, { tournaments }).forEach(name => map.set(name, t.name));
   });
   return map;
 };

@@ -74,7 +74,7 @@ export const WaiverProcessingPanel = ({
     // the cron auto-processor, and the AddDropPlayerModal availability view. The
     // raw array can lag reality and wrongly fail a genuine free-agent claim.
     const allRostered = new Set();
-    teams.forEach(t => buildEffectiveRoster(t, transactions).forEach(n => allRostered.add(n)));
+    teams.forEach(t => buildEffectiveRoster(t, transactions, { tournaments }).forEach(n => allRostered.add(n)));
     if (allRostered.has(w.player)) {
       const tx2 = transactions.map((tx, i) => i === w._idx
         ? { ...tx, status: 'failed', failReason: 'Player already rostered', processedDate: new Date().toLocaleDateString() }
@@ -83,7 +83,7 @@ export const WaiverProcessingPanel = ({
       dialog.showToast(w.player + ' already rostered', 'error'); return;
     }
     const claimTeam = teams.find(t => t.name === w.team);
-    if (w.droppedPlayer && !(claimTeam && buildEffectiveRoster(claimTeam, transactions).has(w.droppedPlayer))) {
+    if (w.droppedPlayer && !(claimTeam && buildEffectiveRoster(claimTeam, transactions, { tournaments }).has(w.droppedPlayer))) {
       const tx2 = transactions.map((tx, i) => i === w._idx
         ? { ...tx, status: 'failed', failReason: w.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }
         : tx);
@@ -149,7 +149,7 @@ export const WaiverProcessingPanel = ({
     Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
 
     const allR = new Set();
-    teams.forEach(t => buildEffectiveRoster(t, transactions).forEach(n => allR.add(n)));
+    teams.forEach(t => buildEffectiveRoster(t, transactions, { tournaments }).forEach(n => allR.add(n)));
 
     const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
     const tx2 = [...transactions];

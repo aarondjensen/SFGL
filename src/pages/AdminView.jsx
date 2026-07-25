@@ -152,7 +152,7 @@ export const AdminView = ({
     safeTeams.forEach(t => {
       if (!t || !t.id) return;
       try {
-        map[t.id] = buildEffectiveRoster(t, safeTx, { asArray: true });
+        map[t.id] = buildEffectiveRoster(t, safeTx, { asArray: true, tournaments });
       } catch (err) {
         console.warn('[AdminView] roster snapshot failed for', t.name, err);
         map[t.id] = t.roster || [];
@@ -204,11 +204,12 @@ export const AdminView = ({
         allTournaments: tournaments,
         transactions,
         teams,
+        settings,
       });
       if (result) list.push({ segment, winnerName: result.winnerTeam?.name, pot: result.pot });
     });
     return list;
-  }, [tournaments, transactions, teams]);
+  }, [tournaments, transactions, teams, settings]);
 
   // 5. Lineup not set — teams missing lineup for the next imminent event.
   //    Imminent = startDate within 7 days. Only surfaces non-alternate events.
@@ -238,6 +239,11 @@ export const AdminView = ({
   const dataSyncAlerts = useMemo(() => {
     const items = [];
     const STALE_DAYS = 7;
+    // Intentional read of the clock inside the memo: staleness is measured in
+    // DAYS, so recomputing only when rankingsLastUpdated / settings change is
+    // plenty fresh, and a ticking timer would be pure overhead on a dashboard
+    // that's re-mounted every visit.
+    // eslint-disable-next-line react-hooks/purity
     const now = Date.now();
     const owgrTs = rankingsLastUpdated;
     const pgatTs = settings?.pgatStatsLastSynced;

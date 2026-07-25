@@ -171,6 +171,22 @@ async function sendEmail(to, subject, html) {
 
 // ── Email templates ─────────────────────────────────────────────────────────
 
+// HTML-escape every value that reaches an email body. Most of these strings
+// are league data (team/player/tournament names), but handleNotifyResults
+// builds its email entirely from a client-supplied POST body — so an
+// unescaped interpolation is an HTML-injection sink in mail sent from the
+// league's own domain. Mirrors escapeHtml() in api/log-error.js.
+// Non-strings (numbers from toLocaleString, etc.) pass through via String().
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // All email styling uses Raleway with Arial fallback. Most email clients load
 // the Google Font link below (Gmail web, Apple Mail, Outlook web); the rest
 // fall back to Arial which has nearly identical metrics for our purposes.
@@ -194,35 +210,84 @@ function buildWaiverResultsEmail(processed, recipientTeam) {
     const accent = ok ? '#50b478' : '#cc5555';
     const icon = ok ? '✅' : '❌';
     const label = ok ? 'Approved' : 'Blocked';
-    return `<div style="background:${bg};border:1px solid rgba(255,255,255,0.06);border-radius:3px;padding:10px 14px;margin-bottom:6px;${isMe ? 'border-left:3px solid #ffffff;' : ''}font-family:${FONT_STACK};"><div style="font-size:13px;font-weight:600;color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.85)'};">${w.team}<span style="float:right;font-size:11px;font-weight:600;color:${accent};">${icon} ${label}</span></div><div style="font-size:12px;margin-top:4px;font-weight:400;"><span style="color:#50b478;">+ ${w.player}</span>${w.droppedPlayer ? `<span style="color:rgba(255,255,255,0.35);"> → </span><span style="color:#cc5555;">- ${w.droppedPlayer}</span>` : ''}</div>${w.failReason ? `<div style="font-size:10px;color:rgba(255,255,255,0.45);margin-top:4px;font-weight:300;">${w.failReason}</div>` : ''}</div>`;
+    return `<div style="background:${bg};border:1px solid rgba(255,255,255,0.06);border-radius:3px;padding:10px 14px;margin-bottom:6px;${isMe ? 'border-left:3px solid #ffffff;' : ''}font-family:${FONT_STACK};"><div style="font-size:13px;font-weight:600;color:${isMe ? '#ffffff' : 'rgba(255,255,255,0.85)'};">${esc(w.team)}<span style="float:right;font-size:11px;font-weight:600;color:${accent};">${icon} ${label}</span></div><div style="font-size:12px;margin-top:4px;font-weight:400;"><span style="color:#50b478;">+ ${esc(w.player)}</span>${w.droppedPlayer ? `<span style="color:rgba(255,255,255,0.35);"> → </span><span style="color:#cc5555;">- ${esc(w.droppedPlayer)}</span>` : ''}</div>${w.failReason ? `<div style="font-size:10px;color:rgba(255,255,255,0.45);margin-top:4px;font-weight:300;">${esc(w.failReason)}</div>` : ''}</div>`;
   }).join('');
   return wrap(`<h2 style="font-family:${FONT_STACK};font-size:18px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">⏰ Waiver Results</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Processed ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>${rows}`);
 }
 
 // ── Segment + swing helpers (server-side, mirror AdminView client-side) ──
 
-// Resolve a tournament's segment. Prefer the explicit segment field; fall
-// back to date-derived inference when missing (older data).
+// Resolve a tournament's segment. Prefer the explicit segment field, then the
+// legacy `swing` field, then date-derived inference.
+//
+// ⚠ KEEP IN SYNC with getSegmentForTournament / getSegmentByDate in
+// src/utils/index.js — api/ is a separate deploy target and can't import from
+// src/. The canonical SFGL model is four swings, three months each:
+//
+//   Jan–Mar  West Coast Swing
+//   Apr–Jun  Spring Swing
+//   Jul–Sep  Summer Swing
+//   Oct–Dec  Fall Finish
+//
+// This function previously disagreed with the client on nearly every month:
+// it mapped Jan–Mar to 'Spring Swing', June to 'Summer Swing', and Aug–Sep to
+// 'Fall Swing' — a segment name that exists nowhere else in the codebase (no
+// constant, no theme color, no filter option) — and returned null for Oct–Dec
+// entirely. Every server-side pot calculation and auto-award keyed off those
+// wrong or phantom segments.
+const MONTH_TO_SEGMENT = {
+  jan: 'West Coast Swing', feb: 'West Coast Swing', mar: 'West Coast Swing',
+  apr: 'Spring Swing',     may: 'Spring Swing',     jun: 'Spring Swing',
+  jul: 'Summer Swing',     aug: 'Summer Swing',     sep: 'Summer Swing',
+  oct: 'Fall Finish',      nov: 'Fall Finish',      dec: 'Fall Finish',
+};
+
 function getSegmentForTournamentServer(t) {
   if (t?.segment) return t.segment;
-  // Date-based fallback: parse a month out of the tournament's dates field
-  // (e.g. "May 7-10") and map to the standard SFGL swings.
+  if (t?.swing)   return t.swing;
+
+  // Prefer the ordering date (ISO 'YYYY-MM-DD') when present — unambiguous.
+  const iso = t?.start_date || t?.startDate;
+  if (typeof iso === 'string' && /^\d{4}-\d{2}/.test(iso)) {
+    const monthNum = parseInt(iso.slice(5, 7), 10);
+    const key = Object.keys(MONTH_TO_SEGMENT)[monthNum - 1];
+    if (key) return MONTH_TO_SEGMENT[key];
+  }
+
+  // Fall back to parsing a month name out of the display `dates` string
+  // (e.g. "May 7-10").
   const d = String(t?.dates || '').toLowerCase();
-  if (d.match(/jan|feb|mar/))                                    return 'Spring Swing';
-  if (d.match(/apr|may/))                                        return 'Spring Swing';
-  if (d.match(/jun|jul/))                                        return 'Summer Swing';
-  if (d.match(/aug|sep/))                                        return 'Fall Swing';
+  for (const [abbr, segment] of Object.entries(MONTH_TO_SEGMENT)) {
+    if (d.includes(abbr)) return segment;
+  }
   return null;
 }
 
-// Compute the fee pot for a swing — match the client-side computeSwingPot.
-// Used by the auto-award path below.
-function computeSwingPotServer(transactions, tournaments, swingSegment) {
+// Fee owed by a transaction, derived from its type + league settings.
+// ⚠ KEEP IN SYNC with getTransactionFee in src/utils/sharedHelpers.js.
+// The free-agent type is stored as BOTH 'fa' and 'free agent' depending on
+// which UI created it, so both spellings are normalized here.
+function getTransactionFeeServer(type, settings, status) {
+  if (status === 'failed') return 0;
+  const t = String(type || '').trim().toLowerCase();
+  if (t === 'waiver') return settings?.feeWaiver ?? 2;
+  if (t === 'fa' || t === 'free agent') return settings?.feeFA ?? 1;
+  return 0;
+}
+
+// Compute the fee pot for a swing.
+// ⚠ KEEP IN SYNC with getSwingPot in src/utils/sharedHelpers.js. This copy
+// previously diverged in two ways that made the server's pot differ from the
+// figure managers see in the app:
+//   1. it did NOT exclude alternate events, so alternate-week fees inflated it;
+//   2. it summed the raw stored `tx.fee` only, so legacy rows saved with fee 0
+//      by the old FA type-string mismatch were silently dropped.
+function computeSwingPotServer(transactions, tournaments, swingSegment, settings) {
   if (!swingSegment) return 0;
   const swingNames = new Set();
   const swingIndexes = new Set();
   (tournaments || []).forEach((t, i) => {
-    if (getSegmentForTournamentServer(t) === swingSegment) {
+    if (getSegmentForTournamentServer(t) === swingSegment && !t.isAlternate) {
       if (t?.name) swingNames.add(t.name);
       swingIndexes.add(i);
     }
@@ -232,20 +297,26 @@ function computeSwingPotServer(transactions, tournaments, swingSegment) {
     if (tx.tournamentIndex !== undefined) return swingIndexes.has(tx.tournamentIndex);
     return tx.segment === swingSegment;
   };
+  // Trust a stored fee when present (preserves custom amounts), else derive
+  // from type — recovers the legacy fee-0 rows.
+  const effFee = (tx) => {
+    const stored = tx.fee || 0;
+    return stored > 0 ? stored : getTransactionFeeServer(tx.type, settings, tx.status);
+  };
   return (transactions || [])
     .filter(tx => {
-      if ((tx.fee || 0) <= 0) return false;
       if (tx.status === 'failed') return false;
       if (tx.type === 'swing_winner') return false;
+      if (effFee(tx) <= 0) return false;
       return inSwing(tx);
     })
-    .reduce((sum, tx) => sum + (tx.fee || 0), 0);
+    .reduce((sum, tx) => sum + effFee(tx), 0);
 }
 
 // Auto-award helper for server-side processing. Same conditions as the
 // client-side maybeAutoAwardSwing in AdminView. Returns { updatedTeams,
 // newSwingTx, summary } when an award should fire, or null otherwise.
-function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transactions) {
+function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transactions, settings) {
   if (!swingSegment) return null;
   if (transactions.some(tx => tx.type === 'swing_winner' && tx.segment === swingSegment)) return null;
 
@@ -274,7 +345,7 @@ function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transaction
   const winnerTeam = (teams || []).find(t => t.id === winnerId);
   if (!winnerTeam) return null;
 
-  const pot = computeSwingPotServer(transactions, tournaments, swingSegment);
+  const pot = computeSwingPotServer(transactions, tournaments, swingSegment, settings);
   if (pot === 0) return null;
 
   const lastSegTourney = rankedTournaments.reduce((last, tt) => {
@@ -300,7 +371,9 @@ function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transaction
 
   // Pot is a side-prize tracked in transactions only — does NOT add to
   // team.earnings, so standings (which derive from tournament.results)
-  // remain unaffected. Mirrors the client-side maybeAutoAwardSwing.
+  // remain unaffected. The client's computeSwingAward now matches this
+  // (it used to ADD the pot to team.earnings, so a team's stored total
+  // depended on whether cron or the commish's browser awarded the swing).
   return {
     updatedTeams: teams,
     newSwingTx,
@@ -344,7 +417,7 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
       // one visual system. No player breakdown sub-table here — the season
       // card stays a clean leaderboard; the inline "+$X" shows this week's
       // delta alongside each team's season total.
-      return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${s.team}${deltaText}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${(s.totalEarnings || 0).toLocaleString()}</td></tr></table></div>`;
+      return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${esc(s.team)}${deltaText}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${(s.totalEarnings || 0).toLocaleString()}</td></tr></table></div>`;
     }).join('')}
   </div>` : '';
 
@@ -353,7 +426,7 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
   // was auto-awarded, the caller passes swingWinnerInfo so we render a
   // celebratory banner above the tournament results. Same color logic as
   // the in-app StandingsView swing card (gold accent for the winner).
-  const swingBanner = swingWinnerInfo ? `<div style="padding:18px 16px;background:linear-gradient(180deg,rgba(245,197,24,0.12),rgba(245,197,24,0.04));border:1px solid rgba(245,197,24,0.35);border-radius:4px;margin:0 0 22px;text-align:center;"><div style="font-family:${FONT_STACK};font-size:10px;color:rgba(245,197,24,0.85);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:0 0 6px;">🏆 ${swingWinnerInfo.segment || 'Swing'} Complete</div><div style="font-family:${FONT_STACK};font-size:18px;color:#ffffff;font-weight:600;margin:0 0 4px;">${swingWinnerInfo.team || ''}</div><div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.7);font-weight:400;">wins the $${(swingWinnerInfo.pot || 0).toLocaleString()} pot</div></div>` : '';
+  const swingBanner = swingWinnerInfo ? `<div style="padding:18px 16px;background:linear-gradient(180deg,rgba(245,197,24,0.12),rgba(245,197,24,0.04));border:1px solid rgba(245,197,24,0.35);border-radius:4px;margin:0 0 22px;text-align:center;"><div style="font-family:${FONT_STACK};font-size:10px;color:rgba(245,197,24,0.85);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:0 0 6px;">🏆 ${esc(swingWinnerInfo.segment || 'Swing')} Complete</div><div style="font-family:${FONT_STACK};font-size:18px;color:#ffffff;font-weight:600;margin:0 0 4px;">${esc(swingWinnerInfo.team)}</div><div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.7);font-weight:400;">wins the $${(swingWinnerInfo.pot || 0).toLocaleString()} pot</div></div>` : '';
 
   // ── Section header for the per-tournament breakdown ──
   // Only render when we have actual rows; keeps very-first-event emails
@@ -392,12 +465,12 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
       // Email clients vary on flex support, so use inline-block spans
       // separated by hair-spaces for reliable cross-client rendering.
       const rounds = Array.isArray(p.roundsLed) ? p.roundsLed : [];
-      const roundBadges = rounds.length ? rounds.map(rl => `<span style="display:inline-block;padding:1px 5px;margin-left:4px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;font-family:${FONT_STACK};vertical-align:middle;letter-spacing:0.5px;">R${rl.round || rl}</span>`).join('') : '';
+      const roundBadges = rounds.length ? rounds.map(rl => `<span style="display:inline-block;padding:1px 5px;margin-left:4px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;font-family:${FONT_STACK};vertical-align:middle;letter-spacing:0.5px;">R${esc(rl.round || rl)}</span>`).join('') : '';
 
-      return `<tr><td style="font-family:${FONT_STACK};font-size:11px;color:${nameColor};padding:2px 0;font-weight:400;">${p.name || ''}${roundBadges}</td><td style="font-family:${FONT_STACK};font-size:11px;color:${totalEarnings > 0 ? '#50b478' : 'rgba(255,255,255,0.35)'};padding:2px 0;text-align:right;font-weight:500;">$${totalEarnings.toLocaleString()}</td></tr>`;
+      return `<tr><td style="font-family:${FONT_STACK};font-size:11px;color:${nameColor};padding:2px 0;font-weight:400;">${esc(p.name)}${roundBadges}</td><td style="font-family:${FONT_STACK};font-size:11px;color:${totalEarnings > 0 ? '#50b478' : 'rgba(255,255,255,0.35)'};padding:2px 0;text-align:right;font-weight:500;">$${totalEarnings.toLocaleString()}</td></tr>`;
     }).join('');
 
-    return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${tr.team}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${(tr.totalEarnings || 0).toLocaleString()}</td></tr></table>${playerRows ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);">${playerRows}</table>` : ''}</div>`;
+    return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${esc(tr.team)}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${(tr.totalEarnings || 0).toLocaleString()}</td></tr></table>${playerRows ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);">${playerRows}</table>` : ''}</div>`;
   }).join('') : `<div style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.5);padding:24px;text-align:center;background:rgba(255,255,255,0.03);border-radius:3px;font-weight:400;">Team results unavailable for this email. Check the app for the latest standings.</div>`;
 
   // ── Color-coded player legend ──
@@ -407,11 +480,11 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
   const hasPlayerData = sorted.some(tr => Array.isArray(tr.players) && tr.players.length > 0);
   const legend = hasPlayerData ? `<div style="margin:14px 0 0;padding:10px 12px;background:rgba(255,255,255,0.02);border-radius:3px;font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:0.4px;font-weight:400;text-align:center;"><span style="color:rgba(245,197,24,0.95);font-weight:600;">●</span> Limited &nbsp;&nbsp;<span style="color:rgba(100,180,255,0.95);font-weight:600;">●</span> Unlimited &nbsp;&nbsp;<span style="display:inline-block;padding:1px 5px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;letter-spacing:0.5px;">R#</span> Round Leader</div>` : '';
 
-  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">🏆 ${tournamentName}</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Tournament Results</p>${standingsCard}${swingBanner}${tournamentHeader}${rows}${legend}`);
+  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">🏆 ${esc(tournamentName)}</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Tournament Results</p>${standingsCard}${swingBanner}${tournamentHeader}${rows}${legend}`);
 }
 
 function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
-  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:18px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">⛳ Lineups Lock Tomorrow</h2><p style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.85);margin:0 0 8px;font-weight:500;">${tournamentName}</p><p style="font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.55);margin:0 0 20px;font-weight:400;">Lineups lock <strong style="color:#ffffff;font-weight:600;">Thursday at ${lockTime} ET</strong>. Make sure your lineup is set!</p><a href="https://sfglgolf.com" style="display:inline-block;padding:10px 24px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#ffffff;text-decoration:none;font-weight:600;font-size:13px;font-family:${FONT_STACK};letter-spacing:0.5px;">Set Lineup →</a>`);
+  return wrap(`<h2 style="font-family:${FONT_STACK};font-size:18px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">⛳ Lineups Lock Tomorrow</h2><p style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.85);margin:0 0 8px;font-weight:500;">${esc(tournamentName)}</p><p style="font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.55);margin:0 0 20px;font-weight:400;">Lineups lock <strong style="color:#ffffff;font-weight:600;">Thursday at ${esc(lockTime)} ET</strong>. Make sure your lineup is set!</p><a href="https://sfglgolf.com" style="display:inline-block;padding:10px 24px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#ffffff;text-decoration:none;font-weight:600;font-size:13px;font-family:${FONT_STACK};letter-spacing:0.5px;">Set Lineup →</a>`);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -547,6 +620,20 @@ async function handleWaivers(res) {
   // else. This mirrors the client's useRoster hook / AddDropPlayerModal
   // availability logic and the manual handleProcessAll() path (buildRoster), so
   // the auto-processor can never disagree with what managers see on-screen.
+  //
+  // ⚠ KEEP IN SYNC with buildEffectiveRoster in src/utils/sharedHelpers.js —
+  // api/ is a separate deploy target and can't import from src/. Same rules:
+  // resolve each transaction's position from its STABLE tournament name
+  // (falling back to the stored positional index for legacy rows), replay in
+  // chronological order, count only processed/completed.
+  const txPosition = (tx) => {
+    const name = tx.tournament ?? tx.tournamentName;
+    if (name) {
+      const idx = tournamentsForWaivers.findIndex(t => t && t.name === name);
+      if (idx !== -1) return idx;
+    }
+    return tx.tournamentIndex ?? Number.MAX_SAFE_INTEGER;
+  };
   const effectiveRoster = (t) => {
     let names = (t.roster || []).map(p => p.name);
     allTx
@@ -555,8 +642,9 @@ async function handleWaivers(res) {
         tx.type !== 'mulligan' &&
         tx.type !== 'swing_winner' &&
         (tx.status === 'processed' || tx.status === 'completed'))
-      .sort((a, b) => (a.tournamentIndex ?? 0) - (b.tournamentIndex ?? 0))
-      .forEach(tx => {
+      .map(tx => ({ tx, pos: txPosition(tx) }))
+      .sort((a, b) => a.pos - b.pos)
+      .forEach(({ tx }) => {
         if (tx.droppedPlayer) names = names.filter(n => n !== tx.droppedPlayer);
         if (tx.player && !names.includes(tx.player)) names.push(tx.player);
       });
@@ -834,8 +922,17 @@ async function handleLineupReminder(res) {
 // ── Action: notify results ──────────────────────────────────────────────────
 
 async function handleNotifyResults(req, res) {
-  const { tournamentName, teamResults, swingWinnerInfo, seasonStandings } = req.body || {};
-  if (!tournamentName || !teamResults?.length) return res.status(400).json({ error: 'Missing tournamentName or teamResults' });
+  const { tournamentName: rawName, teamResults, swingWinnerInfo, seasonStandings } = req.body || {};
+  if (!rawName || !teamResults?.length) return res.status(400).json({ error: 'Missing tournamentName or teamResults' });
+
+  // The whole email is built from this request body. The body itself is
+  // HTML-escaped at render time (see esc()), but the subject line is a mail
+  // HEADER — strip control characters so a newline can't inject additional
+  // headers, and bound the length.
+  const tournamentName = String(rawName)
+    .split('').filter(ch => { const c = ch.charCodeAt(0); return c >= 32 && c !== 127; }).join('')
+    .slice(0, 120).trim();
+  if (!tournamentName) return res.status(400).json({ error: 'Invalid tournamentName' });
 
   const settings = await loadSettings();
   const teams = await loadTeams();
@@ -1086,7 +1183,7 @@ async function handleProcessResults(res) {
   const txSnap = await db.collection('transactions').get();
   const allTransactions = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const swingSegment = getSegmentForTournamentServer(newTournaments[ti]);
-  const autoAward = maybeAutoAwardSwingServer(swingSegment, newTournaments, updatedTeams, allTransactions);
+  const autoAward = maybeAutoAwardSwingServer(swingSegment, newTournaments, updatedTeams, allTransactions, settings);
   const finalTeams = autoAward?.updatedTeams || updatedTeams;
 
   // Write everything to Firebase
@@ -2036,19 +2133,59 @@ async function handleResyncLegacyTournaments(res) {
   return res.json({ updated: tournaments.length });
 }
 
+// ── Auth ────────────────────────────────────────────────────────────────────
+// Two classes of caller, two credentials:
+//
+//   SCHEDULER actions  — pinged by cron-job.org. Require Bearer CRON_SECRET.
+//   COMMISSIONER actions — invoked from the commish panel in the browser.
+//     Require a Firebase ID token whose `commissioner` custom claim is true
+//     (the same claim the app's own commish gate reads). Bearer CRON_SECRET is
+//     also accepted so curl-based ops/runbooks keep working.
+//
+// These four used to be in a NO_AUTH_ACTIONS set and ran with NO authentication
+// whatsoever. That let anyone on the internet POST to notify-results and email
+// every manager from the league's domain with attacker-supplied content,
+// rewrite the cron-job.org schedules via sync-cron-schedule, force Firestore
+// writes via resync-legacy-tournaments, and burn scrape budget via pgat-stats.
+const COMMISSIONER_ACTIONS = new Set([
+  'notify-results', 'pgat-stats', 'sync-cron-schedule', 'resync-legacy-tournaments',
+]);
+
+// Verify the caller is the commissioner. Returns null when authorized, or an
+// { status, error } object to return to the client. Fails CLOSED on every
+// error path (bad token, expired token, missing claim, verification throw).
+async function requireCommissioner(req) {
+  const header = req.headers.authorization || '';
+  if (!header.startsWith('Bearer ')) {
+    return { status: 401, error: 'Missing bearer token' };
+  }
+  const token = header.slice('Bearer '.length).trim();
+
+  // Ops escape hatch: the shared cron secret is equally privileged.
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && token === cronSecret) return null;
+
+  try {
+    const decoded = await getAuth(getApp()).verifyIdToken(token);
+    if (decoded?.commissioner === true) return null;
+    return { status: 403, error: 'Commissioner access required' };
+  } catch (err) {
+    console.warn('[cron] ID token verification failed:', err?.message || err);
+    return { status: 401, error: 'Invalid or expired token' };
+  }
+}
+
 export default async function handler(req, res) {
-  // Auth check
   const cronSecret = process.env.CRON_SECRET;
   const action = req.query.action || '';
 
-  // Cron actions require auth. Client-callable actions are exempted:
-  //   - notify-results: triggered from AdminView after processing
-  //   - pgat-stats:     triggered from AdminView's Sync button
-  const NO_AUTH_ACTIONS = new Set(['notify-results', 'pgat-stats', 'sync-cron-schedule', 'resync-legacy-tournaments']);
-  // Fail CLOSED: a protected action with no configured CRON_SECRET must be
-  // rejected, not allowed. (Previously the `&& cronSecret` short-circuit meant
-  // an unset secret silently disabled auth entirely.)
-  if (!NO_AUTH_ACTIONS.has(action)) {
+  if (COMMISSIONER_ACTIONS.has(action)) {
+    const denied = await requireCommissioner(req);
+    if (denied) return res.status(denied.status).json({ error: denied.error });
+  } else {
+    // Fail CLOSED: a protected action with no configured CRON_SECRET must be
+    // rejected, not allowed. (Previously the `&& cronSecret` short-circuit meant
+    // an unset secret silently disabled auth entirely.)
     if (!cronSecret) {
       return res.status(503).json({ error: 'CRON_SECRET not configured' });
     }
