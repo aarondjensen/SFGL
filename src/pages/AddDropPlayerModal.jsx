@@ -48,7 +48,17 @@ const FieldToggle = ({ value, setter, disabled = false, width = 84 }) => (
 import {
   getPlayerHeadshot,
   makeHeadshotErrorHandler,
+  mergeHeadshotEntry,
 } from '../utils/headshotUtils';
+
+// Per-name merge so a response carrying only one id can't drop the other.
+const mergeHeadshotMaps = (prev, found) => {
+  const next = { ...(prev || {}) };
+  Object.entries(found || {}).forEach(([name, entry]) => {
+    next[name] = mergeHeadshotEntry(next[name], entry);
+  });
+  return next;
+};
 
 export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, teams,
@@ -143,7 +153,7 @@ export const AddDropPlayerModal = ({
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data?.results) return;
-        setLocalHeadshots(prev => ({ ...prev, ...data.results }));
+        setLocalHeadshots(prev => mergeHeadshotMaps(prev, data.results));
         onHeadshotsFound?.(data.results);
       })
       .catch(() => {});
@@ -164,7 +174,7 @@ export const AddDropPlayerModal = ({
         if (missing.length) {
           fetch(`/api/headshots?names=${missing.map(n => encodeURIComponent(n)).join(',')}`)
             .then(r => r.ok ? r.json() : null)
-            .then(data => { if (data?.results) { setLocalHeadshots(prev => ({ ...prev, ...data.results })); onHeadshotsFound?.(data.results); } })
+            .then(data => { if (data?.results) { setLocalHeadshots(prev => mergeHeadshotMaps(prev, data.results)); onHeadshotsFound?.(data.results); } })
             .catch(() => {});
         }
       } catch { setSearchResults([]); }

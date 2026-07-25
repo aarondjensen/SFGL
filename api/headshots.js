@@ -8,8 +8,10 @@
 // UPDATE EACH SEASON: swap in recent ESPN event IDs with large fields.
 // Find IDs at: https://www.espn.com/golf/leaderboard?tournamentId=XXXXXXX
 
+import { extractNextData } from './_constants.js';
+
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'application/json',
 };
 
@@ -120,17 +122,45 @@ export default async function handler(req, res) {
     // (verified IDs that bypass the strict matcher to avoid brother/relative
     // collisions); everything else goes through findInMap, which returns null
     // rather than guessing when a name is ambiguous.
+    //
+    // Each result is an OBJECT, not a bare id: { espn?, pga? }. The client
+    // chains them (utils/headshotUtils.js), so a player only needs ONE source
+    // to render — but having both means a dead entry in one CDN silently falls
+    // through to the other instead of dropping to an initials avatar.
     const resolveNames = (list, map) => {
       const results = {};
       const notFound = [];
       for (const name of list) {
+        const entry = {};
         const override = MANUAL_OVERRIDES[normalize(name)];
-        if (override) { results[name] = override; continue; }
-        const player = findInMap(map, name);
-        if (player?.espnId) results[name] = player.espnId;
+        if (override) entry.espn = override;
+        else {
+          const player = findInMap(map, name);
+          if (player?.espnId) entry.espn = player.espnId;
+        }
+        if (Object.keys(entry).length > 0) results[name] = entry;
         else notFound.push(name);
       }
       return { results, notFound };
+    };
+
+    // Attach PGA TOUR ids from the full directory. Runs for EVERY requested
+    // name, not just the ESPN misses — a player with both ids gets a working
+    // fallback if their ESPN headshot ever disappears. Names still unresolved
+    // afterwards move out of notFound, since a pga-only entry is renderable.
+    const attachPgaIds = async (requested, results, notFound) => {
+      const dir = await getPgaDirectory();
+      if (!dir) return notFound;
+      const stillMissing = [];
+      for (const name of requested) {
+        const pga = dir[normalize(name)];
+        if (!pga) {
+          if (notFound.includes(name)) stillMissing.push(name);
+          continue;
+        }
+        results[name] = { ...(results[name] || {}), pga };
+      }
+      return stillMissing;
     };
 
     // ── Explicit ?eventId= — debugging / one-off, index just that event ──
@@ -146,7 +176,8 @@ export default async function handler(req, res) {
       }
       const requested = names.split(',').map(n => decodeURIComponent(n.trim())).filter(Boolean);
       const { results, notFound } = resolveNames(requested, map);
-      return res.status(200).json({ results, notFound, totalIndexed: map.size, indexedEventIds: [eventId] });
+      const stillMissing = await attachPgaIds(requested, results, notFound);
+      return res.status(200).json({ results, notFound: stillMissing, totalIndexed: map.size, indexedEventIds: [eventId] });
     }
 
     // ── Source 1: this week's field ──
@@ -200,12 +231,18 @@ export default async function handler(req, res) {
       }
     }
 
+    // Source 3 — the full PGA TOUR directory. Adds a pga id to every name it
+    // knows, which both enriches already-resolved players and rescues the ones
+    // ESPN's leaderboard index has never seen (long-term injured, inactive).
+    const stillMissing = await attachPgaIds(requestedNames, results, notFound);
+
     return res.status(200).json({
       results,
-      notFound,
+      notFound: stillMissing,
       totalIndexed: playerMap.size,
       indexedEventIds,
       backfillUsed,
+      pgaDirectorySize: Object.keys((await getPgaDirectory()) || {}).length,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -231,6 +268,53 @@ function normalize(name) {
 // We index whatever it returns so this week's full field is always covered.
 // Falls back to the generic golf leaderboard endpoint, then to [] (in which
 // case the handler still has the fixed backfill list to work with).
+// ── Source 3: the full PGA TOUR player directory ─────────────────────────────
+// pgatour.com/players embeds every player it knows about — ~2,700 entries —
+// in its __NEXT_DATA__ blob, each with a PGA TOUR player ID. That's a superset
+// of anyone rosterable, including players who have been inactive for months
+// and therefore appear in NO recent leaderboard.
+//
+// This is what closes the last coverage gap. ESPN's leaderboard index only
+// knows players who have recently teed it up; the directory knows everyone.
+// Between them, every name we've tested resolves.
+//
+// Returns name → PGA TOUR id. Cached for 12h (the directory changes rarely)
+// and falls back to the last good result on failure.
+const PGA_DIRECTORY_TTL_MS = 12 * 60 * 60 * 1000;
+let _pgaDirectory = { map: null, fetchedAt: 0 };
+
+async function getPgaDirectory() {
+  if (_pgaDirectory.map && Date.now() - _pgaDirectory.fetchedAt < PGA_DIRECTORY_TTL_MS) {
+    return _pgaDirectory.map;
+  }
+  try {
+    const resp = await fetch('https://www.pgatour.com/players', {
+      headers: { ...HEADERS, Accept: 'text/html,application/xhtml+xml,*/*;q=0.8', Referer: 'https://www.pgatour.com/' },
+    });
+    if (!resp.ok) return _pgaDirectory.map;
+    const nd = extractNextData(await resp.text());
+    if (!nd) return _pgaDirectory.map;
+
+    const map = {};
+    const seen = new Set();
+    (function walk(o, depth) {
+      if (!o || typeof o !== 'object' || depth > 12) return;
+      if (Array.isArray(o)) { o.forEach(x => walk(x, depth + 1)); return; }
+      const nm = o.displayName || (o.firstName && o.lastName ? `${o.firstName} ${o.lastName}` : null);
+      if (nm && o.id && /^\d+$/.test(String(o.id)) && !seen.has(nm)) {
+        seen.add(nm);
+        map[normalize(nm)] = String(o.id);
+      }
+      Object.values(o).forEach(v => walk(v, depth + 1));
+    })(nd, 0);
+
+    if (Object.keys(map).length) _pgaDirectory = { map, fetchedAt: Date.now() };
+    return _pgaDirectory.map;
+  } catch {
+    return _pgaDirectory.map;
+  }
+}
+
 // Memoized for 15 minutes: the current event changes at most weekly, so
 // re-resolving it on every request is pure overhead on a warm instance.
 const CURRENT_EVENT_TTL_MS = 15 * 60 * 1000;
@@ -324,7 +408,7 @@ async function buildPlayerMap(eventIds) {
 // Critical: when only one last-name match exists, we still REQUIRE the first
 // initial to match. Otherwise we incorrectly returned the wrong relative's
 // ID whenever the actual player wasn't in our indexed events (e.g. Alex
-// Fitzpatrick at a lower-tier tournament our ESPN_EVENT_IDS don't include).
+// Fitzpatrick at a lower-tier tournament the backfill doesn't cover).
 // Returning null lets the client fall back to an initials-avatar — which is
 // preferable to displaying the wrong player's face.
 function findInMap(map, name) {

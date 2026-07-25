@@ -51,9 +51,10 @@ const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView')
 
 import { useLeague }       from './hooks';
 import { theme, colors, fonts, fontSize } from './theme.js';
-import { STORAGE_KEYS, INITIAL_TEAMS, PGA_TOUR_IDS } from './constants';
+import { STORAGE_KEYS, INITIAL_TEAMS } from './constants';
 import { tournamentResultsApi } from './api/firebase';
 import { managerActivityApi } from './api/managerActivity';
+import { mergeHeadshotEntry } from './utils/headshotUtils';
 import AuthGate from './pages/AuthGate';
 import { watchAuth, subscribeClaims, teamIdForUid, claimTeam, signOutUser } from './api/authApi';
 
@@ -252,7 +253,6 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   // Eligibility to enter commish mode comes from the Firebase ID-token custom
   // claim (stamped once via the Admin SDK), not a client-writable team flag.
   const taggedCommissioner = isCommissionerClaim;
-  const resolvedHeadshots = Object.keys(safeHeadshots).length > 0 ? safeHeadshots : PGA_TOUR_IDS;
   const currentTournament = safeTournaments.find(t => t.playing);
 
   // ── Google Fonts is now loaded statically from index.html (Wave 1 cleanup) ──
@@ -445,12 +445,10 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
     )].filter(Boolean);
     if (!allRostered.length) return;
 
-    // Skip names with a static PGA_TOUR_IDS fallback (hard-coded, never wrong)
-    // and names attempted within the retry window. CACHED entries get
+    // Skip only names attempted within the retry window. CACHED entries get
     // refreshed after the TTL so wrong mappings can self-heal.
     const now = Date.now();
     const toFetch = allRostered.filter(n => {
-      if (PGA_TOUR_IDS[n]) return false;
       const lastAttempt = fetchAttemptsRef.current.get(n);
       if (lastAttempt && (now - lastAttempt) < HEADSHOT_RETRY_MS) return false;
       return true;
@@ -472,13 +470,26 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           // with a wrong relative's ID; if the player can't be uniquely
           // identified, they're absent from results (preserving any
           // existing value, but at least not making it worse).
-          updateHeadshots(prev => ({ ...(prev || {}), ...data.results }));
+          // Merge PER NAME. A response carrying only an `espn` id must not
+          // clobber a stored `url` pin or an already-known `pga` id — losing a
+          // source would silently drop that player back to an initials avatar.
+          updateHeadshots(prev => {
+            const next = { ...(prev || {}) };
+            Object.entries(data.results).forEach(([name, entry]) => {
+              next[name] = mergeHeadshotEntry(next[name], entry);
+            });
+            return next;
+          });
           const found = Object.keys(data.results).length;
           const notFound = toFetch.length - found;
           console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found (will retry in ${HEADSHOT_RETRY_MS / 1000}s if still missing)`);
           // Persist to player documents for future loads
           import('./api/firebase').then(({ playersApi }) => {
-            const toSave = Object.entries(data.results).map(([name, espnId]) => ({ name, espnId }));
+            const toSave = Object.entries(data.results).map(([name, entry]) => ({
+              name,
+              espnId: entry?.espn,
+              pgaId:  entry?.pga,
+            }));
             if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
           }).catch(() => {});
         }
@@ -621,7 +632,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
               loggedInTeamId={loggedInTeamId}
               isCommissioner={isCommissioner}
               globalPlayerStats={globalPlayerStats}
-              headshots={resolvedHeadshots}
+              headshots={safeHeadshots}
               updateHeadshots={updateHeadshots}
             />
           )}
@@ -668,7 +679,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                 setAllPlayers={setAllPlayers}
                 globalPlayerStats={globalPlayerStats}
                 setGlobalPlayerStats={updateGlobalStats}
-                headshots={resolvedHeadshots}
+                headshots={safeHeadshots}
                 setHeadshots={updateHeadshots}
                 updateRankings={updateRankings}
                 rankingsLastUpdated={rankingsLastUpdated}

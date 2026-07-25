@@ -71,81 +71,23 @@ export const INITIAL_TEAMS = [
 // ============================================================================
 // PLAYER DATA
 // ============================================================================
-// Static ESPN athlete IDs. These are the HIGHEST-precedence headshot source:
-// App.jsx skips any name present here when auto-fetching from /api/headshots,
-// so a wrong ID here can never self-heal. Two invariants matter:
-//   1. Every ID must be unique — two names sharing one ID means one of them
-//      permanently renders the other player's face. 'Nick Taylor' and
-//      'Kevin Streelman' both carried 25493 and were removed rather than
-//      guessed at; /api/headshots resolves them dynamically now (and falls
-//      back to an initials avatar rather than a wrong face when ambiguous).
-//   2. Only add an ID you have verified at
-//      https://www.espn.com/golf/player/_/id/{ID}
-// assertUniqueEspnIds() below enforces (1) in dev.
-export const PGA_TOUR_IDS = {
-  'Scottie Scheffler': '46046', 'Rory McIlroy': '28237', 'Xander Schauffele': '48081',
-  'Viktor Hovland': '46717', 'Brooks Koepka': '36689', 'Tommy Fleetwood': '30911',
-  'Ludvig Aberg': '52955', 'Patrick Cantlay': '35450', 'Wyndham Clark': '47128',
-  'Collin Morikawa': '50525', 'Max Homa': '39977', 'Tony Finau': '29725',
-  'Sahith Theegala': '51634', 'Keegan Bradley': '33141', 'Sam Burns': '47504',
-  'Hideki Matsuyama': '32839', 'Jordan Spieth': '34046', 'Justin Thomas': '33448',
-  'Matt Fitzpatrick': '40098', 'Russell Henley': '34098', 'Shane Lowry': '33204',
-  'Robert MacIntyre': '50264', 'Corey Conners': '39971', 'Jason Day': '28089',
-  'Si Woo Kim': '32791', 'Akshay Bhatia': '56630', 'Cameron Young': '57362',
-  'Brian Harman': '34021', 'Sepp Straka': '49960', 'Sungjae Im': '49298',
-  'Justin Rose': '22405', 'Tom Kim': '55182', 'Aaron Rai': '46414',
-  'Billy Horschel': '28679', 'Adam Scott': '24502', 'Min Woo Lee': '54591',
-  'Byeong Hun An': '32058', 'Denny McCarthy': '47856', 'Taylor Pendrith': '48867',
-  'Christiaan Bezuidenhout': '51349', 'Eric Cole': '39546', 'Chris Kirk': '29478',
-  'Adam Hadwin': '33399', 'Alex Noren': '27349', 'Tom Hoge': '35532',
-  'J.T. Poston': '34306', 'Max Greyserman': '52375',
-  'Maverick McNealy': '49766', 'Harris English': '30925',
-  'Patrick Rodgers': '36699', 'Stephan Jaeger': '35421', 'Davis Thompson': '56441',
-  'Justin Lower': '49964', 'Nick Dunlap': '59442', 'Luke Clanton': '60529',
-  'Austin Eckroat': '53165', 'Ben Griffin': '50095', 'Nico Echavarria': '52440',
-  'Andrew Novak': '51997', 'Keith Mitchell': '40009', 'Jake Knapp': '47420',
-  'Harry Hall': '51890', 'Michael Thorbjornsen': '57366', 'Cam Davis': '45526',
-  'Matt Kuchar': '22371', 'Taylor Moore': '49771', 'J.J. Spaun': '39324',
-  'Mark Hubbard': '40068', 'Ryan Fox': '33419', 'Gary Woodland': '31323',
-  'Emiliano Grillo': '32640', 'Peter Malnati': '29926', 'Adam Svensson': '47347',
-  'Doug Ghim': '53236', 'Ben Kohles': '50128', 'Ryo Hisatsune': '51287',
-  'Mac Meissner': '57371', 'Kevin Yu': '52372', 'Joel Dahmen': '34076',
-  'Lucas Glover': '24361', 'Matt Wallace': '48153', 'Thorbjorn Olesen': '34255',
-  'Lee Hodges': '52164', 'Ryan Palmer': '25364', 'Zac Blair': '37380',
-  'Sam Stevens': '56449', 'Rasmus Hojgaard': '55895', 'Nicolai Hojgaard': '55894',
-  'Rickie Fowler': '32102', 'Webb Simpson': '25804', 'Will Zalatoris': '57975',
-  'Brendon Todd': '30978', 'Kevin Kisner': '29908', 'Scott Stallings': '30692',
-  'Andrew Putnam': '33486', 'Charley Hoffman': '21528', 'Nick Hardy': '49768',
-  'Zach Johnson': '20766', 'Sam Ryder': '49959', 'Nate Lashley': '28775',
-  'Chad Ramey': '50048', 'Martin Laird': '25632',
-  'Brandon Wu': '54825', 'Pierceson Coody': '55898', 'Chris Gotterup': '59095',
-  'Rico Hoey': '52366', 'Will Gordon': '50395', 'Hayden Springer': '58168',
-  'Davis Riley': '51070', 'Austin Smotherman': '53197', 'Karl Vilips': '59820',
-  'Aldrich Potgieter': '60192', 'Michael Brennan': '58440', 'Seamus Power': '34213',
-  'Matt McCarty': '57359', 'Matthieu Pavon': '50893', 'Erik van Rooyen': '46611',
-  'Thomas Detry': '46402', 'Alex Smalley': '52443', 'Gordon Sargent': '57376',
-  'Garrick Higgo': '55909', 'Camilo Villegas': '25198', 'Hayden Buckley': '52163',
-  'Joe Highsmith': '57373', 'Mackenzie Hughes': '35506', 'Luke List': '30927',
-  'David Lipsky': '33408', 'Isaiah Salinda': '53193', 'Steven Fisk': '51066',
-  'Doc Redman': '48117', 'Wilson Furr': '55905', 'Bryson DeChambeau': '47959',
-  'Cameron Smith': '34360', 'Tyrrell Hatton': '34363',
-};
-
-// Dev-only guard for invariant (1) above. Runs once at module load, costs a
-// single pass over ~135 entries, and is stripped from production builds by the
-// import.meta.env.DEV check. Catches a duplicate the moment it's pasted in,
-// instead of months later when someone notices the wrong face on a roster.
-if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
-  const seen = new Map();
-  const dupes = [];
-  Object.entries(PGA_TOUR_IDS).forEach(([name, id]) => {
-    if (seen.has(id)) dupes.push(`${id}: ${seen.get(id)} / ${name}`);
-    else seen.set(id, name);
-  });
-  if (dupes.length) {
-    console.error('[constants] Duplicate ESPN IDs in PGA_TOUR_IDS — one of each pair will show the wrong headshot:\n  ' + dupes.join('\n  '));
-  }
-}
+// No hardcoded headshot IDs live here any more.
+//
+// There were two attempts at one. The first (PGA_TOUR_IDS) held PGA TOUR
+// player IDs but was consumed as if they were ESPN athlete IDs, so all 134
+// entries 404'd. The second was a hand-verified PGA seed — correct, but only
+// 105 names, and already carrying stale IDs for players whose PGA id had
+// changed (Davis Thompson, Ben Kohles, Michael Brennan and 26 others were
+// dead on arrival).
+//
+// Both are superseded by pgatour.com's own player directory, which
+// /api/headshots now indexes: ~2,700 players, always current, no annual
+// maintenance, and it resolved every name the static seed could not —
+// including the three the seed left on initials avatars. See getPgaDirectory
+// in api/headshots.js.
+//
+// The lesson worth keeping: a hardcoded ID map cannot tell you when it has
+// gone stale. It just quietly serves 404s.
 
 export const PLAYER_NAME_ALIASES = {
   'samuel stevens': 'Sam Stevens', 'john keefer': 'Johnny Keefer',

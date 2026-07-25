@@ -1,76 +1,149 @@
 // utils/headshotUtils.js
-// Shared headshot helpers used by RostersView, AddDropPlayerModal, and any
-// other component that renders player avatar images.
+// Shared headshot helpers used by RostersView, AddDropPlayerModal, WaiverQueue,
+// and any other component that renders a player avatar.
 //
-// Stored headshot values are ESPN athlete IDs (numeric strings) or full URLs.
-// ESPN headshot URL: https://a.espncdn.com/i/headshots/golf/players/full/{espnId}.png
-// Fallback: ui-avatars.com initials avatar.
+// ── THE PROBLEM THIS SOLVES ─────────────────────────────────────────────────
+// There is no single source that has a photo of every golfer. ESPN's CDN
+// covers anyone who has played a recent indexed event; PGA Tour's CDN covers a
+// different (overlapping but not identical) set, including players who have
+// been inactive or injured for months. Neither alone is complete:
+//
+//     ESPN only ......... 125 / 134 rostered-player sample
+//     PGA Tour only ..... 105 / 134
+//     both, chained ..... 131 / 134
+//
+// So instead of picking one, we return an ORDERED LIST of candidate URLs and
+// let the browser walk it: makeHeadshotErrorHandler advances to the next URL
+// on each failed load. A miss costs one failed request; it can never show the
+// wrong player's face, because each URL is keyed to that player in its own
+// namespace.
+//
+// ── ID NAMESPACES (do not mix these up) ────────────────────────────────────
+//   ESPN athlete ID  -> a.espncdn.com/i/headshots/golf/players/full/{id}.png
+//   PGA TOUR player ID -> pga-tour-res.cloudinary.com/.../headshots_{id}.png
+// They are unrelated numbering systems. Feeding a PGA Tour ID to ESPN's CDN
+// (which this app did for 134 players) 404s every time.
 
 const ESPN_BASE = 'https://a.espncdn.com/i/headshots/golf/players/full';
+const PGA_BASE  = 'https://pga-tour-res.cloudinary.com/image/upload/c_fill,g_face:center,h_294,w_220';
+
+const espnUrl = (id) => `${ESPN_BASE}/${id}.png`;
+const pgaUrl  = (id) => `${PGA_BASE}/headshots_${id}.png`;
 
 // ── Manual overrides ─────────────────────────────────────────────────────
-// Hard-coded ESPN athlete IDs that take precedence over whatever's in the
-// headshotMap. Used for names where the indexed-event lookup can't reliably
-// disambiguate brothers, cousins, Jr/Sr pairs, etc.
-//
-// CLIENT-SIDE override is the most reliable layer — it applies regardless
-// of what the api/headshots endpoint returned, what's in Firestore, or
-// what's in the constants PGA_TOUR_IDS fallback. Even if the API serves
-// the wrong ID (stale Vercel CDN cache, old deploy, etc.), the display
-// will still resolve to the correct face.
+// Hard-coded, verified ESPN athlete IDs for names the indexed-event matcher
+// can't reliably disambiguate — brothers, cousins, Jr/Sr pairs. Placed FIRST
+// in the chain rather than short-circuiting it, so a stale override still
+// falls through to the other sources instead of dead-ending.
 //
 // Verify each ID at https://www.espn.com/golf/player/_/id/{ID}
 //
-// To add a player here: find their ESPN profile URL, copy the numeric ID
-// from /id/{ID}, add an entry with the exact display name (case-sensitive)
-// the app uses. Both display and any uses of `headshotMap[player.name]`
-// will hit this map first.
+// ⚠ Mirrored in api/headshots.js MANUAL_OVERRIDES (separate deploy target,
+// can't share a module). Keep the two in sync.
 const MANUAL_OVERRIDES = {
   'Alex Fitzpatrick': '4364865', // .../id/4364865/alex-fitzpatrick — Matt's brother
 };
 
 /**
- * Returns an ordered array of image URLs to try for a player.
- * Falls back gracefully if no entry in the headshotMap.
+ * Ordered list of candidate image URLs for a player, best first.
  *
- * Lookup order:
- *   1. MANUAL_OVERRIDES (hard-coded, verified IDs — bulletproof against
- *      bad data anywhere upstream).
- *   2. headshotMap (from /api/headshots fetch / Firestore).
- *   3. Empty array → caller falls back to initials avatar.
+ * A headshot-map value is either:
+ *   • an object  { url?, espn?, pga? }  — the current shape, from
+ *     /api/headshots and /players/{name}, or
+ *   • a bare string — the legacy shape: an explicit URL, or an ESPN athlete ID.
+ * Both are accepted so nothing already persisted in Firestore needs migrating.
+ *
+ * Order:
+ *   1. Explicit URL (a commish pin written to /players/{name}.headshot_url)
+ *   2. Manual override (verified ESPN ID, for names the matcher can't
+ *      disambiguate)
+ *   3. ESPN athlete ID
+ *   4. PGA TOUR player ID
+ *
+ * Returns [] when nothing is known — callers fall back to the initials avatar.
  */
 export const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
-  const override = MANUAL_OVERRIDES[playerName];
-  if (override) return [`${ESPN_BASE}/${override}.png`];
+  const urls = [];
+  const push = (u) => { if (u && !urls.includes(u)) urls.push(u); };
 
-  const val = headshotMap[playerName];
-  if (!val) return [];
-  if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) return [val];
-  return [`${ESPN_BASE}/${val}.png`];
+  const val = headshotMap?.[playerName];
+  const entry = (val && typeof val === 'object') ? val
+    : (typeof val === 'string' && val)
+      // Legacy bare string: a URL, or an ESPN id.
+      ? ((val.startsWith('http') || val.startsWith('/')) ? { url: val } : { espn: val })
+      : {};
+
+  if (entry.url) push(entry.url);
+
+  const override = MANUAL_OVERRIDES[playerName];
+  if (override) push(espnUrl(override));
+
+  if (entry.espn) push(espnUrl(entry.espn));
+  if (entry.pga)  push(pgaUrl(entry.pga));
+
+  return urls;
 };
 
 /**
- * Returns the fallback initials-avatar URL for a player.
+ * Merge a freshly-resolved entry into whatever is already known for a player,
+ * without discarding fields the new result doesn't carry. Used when merging
+ * /api/headshots responses into the headshots map — a response that only has
+ * an `espn` id must not wipe a stored `url` pin or a previously-known `pga` id.
+ */
+export const mergeHeadshotEntry = (prev, next) => {
+  const norm = (v) => (v && typeof v === 'object') ? v
+    : (typeof v === 'string' && v)
+      ? ((v.startsWith('http') || v.startsWith('/')) ? { url: v } : { espn: v })
+      : {};
+  return { ...norm(prev), ...norm(next) };
+};
+
+// ── Initials fallback ────────────────────────────────────────────────────
+// Rendered as an inline SVG data URI rather than fetched from ui-avatars.com.
+// This is the one layer that must NEVER fail: it is what stands between a
+// player with no photo and a broken-image icon. A third-party request can be
+// slow, rate-limited, blocked, or offline; a data URI is none of those, costs
+// no network round trip, and renders identically every time.
+const initialsOf = (name) => {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+/**
+ * Initials-avatar data URI for a player.
  * @param {string}  playerName
- * @param {boolean} isLimited  — uses gold background for limited-slot players
+ * @param {boolean} isLimited  — gold background for limited-slot players,
+ *                               matching the gold border used on their row
  */
 export const getPlayerHeadshotFallback = (playerName, isLimited = false) => {
-  const bg = isLimited ? '8B6914' : '1c3a5e';
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(playerName)}&background=${bg}&color=ffffff&size=96&bold=true&font-size=0.38`;
+  const bg = isLimited ? '#8B6914' : '#1c3a5e';
+  const initials = initialsOf(playerName)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">` +
+    `<rect width="96" height="96" fill="${bg}"/>` +
+    `<text x="48" y="49" fill="#ffffff" font-family="Raleway,Helvetica,Arial,sans-serif" ` +
+    `font-size="36" font-weight="700" text-anchor="middle" dominant-baseline="central">${initials}</text>` +
+    `</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 };
 
 /**
- * Returns the primary headshot URL for a player (first in the list, or fallback).
+ * Primary headshot URL for a player (first candidate, or the initials avatar).
  */
 export const getPlayerHeadshot = (playerName, headshotMap = {}, isLimited = false) => {
   const urls = getPlayerHeadshotUrls(playerName, headshotMap);
-  if (urls.length > 0) return urls[0];
-  return getPlayerHeadshotFallback(playerName, isLimited);
+  return urls.length > 0 ? urls[0] : getPlayerHeadshotFallback(playerName, isLimited);
 };
 
 /**
- * Returns an onError handler that walks through fallback URLs before
- * settling on the initials avatar.
+ * onError handler that walks the remaining candidate URLs before settling on
+ * the initials avatar. Attach alongside a src from getPlayerHeadshot():
+ *
+ *   <img src={getPlayerHeadshot(name, map, limited)}
+ *        onError={makeHeadshotErrorHandler(name, map, limited)} />
  */
 export const makeHeadshotErrorHandler = (playerName, headshotMap = {}, isLimited = false) => {
   const urls = getPlayerHeadshotUrls(playerName, headshotMap);
@@ -81,6 +154,8 @@ export const makeHeadshotErrorHandler = (playerName, headshotMap = {}, isLimited
       e.target.src = urls[attempt];
       e.target.onerror = handler;
     } else {
+      // Detach first — a data URI can't fail, but a self-referencing onerror
+      // would loop forever if it ever did.
       e.target.onerror = null;
       e.target.src = getPlayerHeadshotFallback(playerName, isLimited);
     }

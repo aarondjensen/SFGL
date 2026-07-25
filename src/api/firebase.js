@@ -257,6 +257,7 @@ export const playersApi = {
         const row = { name: canonicalName };
         if (p.worldRank   !== undefined) row.world_rank   = p.worldRank ?? null;
         if (p.espnId      !== undefined && p.espnId !== null) row.espn_id = p.espnId;
+        if (p.pgaId       !== undefined && p.pgaId  !== null) row.pga_id  = p.pgaId;
         if (p.headshotUrl !== undefined) row.headshot_url = p.headshotUrl ?? null;
         if (p.stats       !== undefined) row.career_stats = p.stats ?? {};
         if (p.isLiv       !== undefined) row.is_liv       = p.isLiv ?? false;
@@ -319,6 +320,7 @@ export const playersApi = {
     const updateData = {};
     if (updates.worldRank  !== undefined) updateData.world_rank   = updates.worldRank;
     if (updates.espnId  !== undefined) updateData.espn_id  = updates.espnId;
+    if (updates.pgaId   !== undefined) updateData.pga_id   = updates.pgaId;
     if (updates.headshotUrl !== undefined) updateData.headshot_url = updates.headshotUrl;
     if (updates.stats      !== undefined) updateData.career_stats  = updates.stats;
     if (updates.isLiv      !== undefined) updateData.is_liv        = updates.isLiv;
@@ -331,22 +333,28 @@ export const playersApi = {
     return players.map(p => ({
       name:        p.name,
       worldRank:   p.world_rank,
-      espnId:   p.espn_id,
+      espnId:      p.espn_id,
+      pgaId:       p.pga_id,
       headshotUrl: p.headshot_url,
       stats:       p.career_stats,
       isLiv:       p.is_liv,
     }));
   },
 
+  // name -> { url?, espn?, pga? } — the shape utils/headshotUtils.js chains.
+  // Previously returned a bare string (url OR espn id, whichever existed),
+  // which meant a player could carry only one source and had nothing to fall
+  // back to when that CDN 404'd. headshotUtils still accepts the old string
+  // form, so nothing already persisted needs migrating.
   async getHeadshotsMap() {
     const players = await this.getAll();
     const map = {};
     players.forEach(p => {
-      if (p.headshot_url) {
-        map[p.name] = p.headshot_url;
-      } else if (p.espn_id) {
-        map[p.name] = String(p.espn_id);
-      }
+      const entry = {};
+      if (p.headshot_url) entry.url  = p.headshot_url;
+      if (p.espn_id)      entry.espn = String(p.espn_id);
+      if (p.pga_id)       entry.pga  = String(p.pga_id);
+      if (Object.keys(entry).length > 0) map[p.name] = entry;
     });
     return map;
   },
@@ -429,14 +437,20 @@ export const headshotsApi = {
   async setAll(map) {
     if (!map) return;
     let entries;
+    // Accepts an array of { name, espnId, pgaId } or a map of
+    // name -> { espn?, pga?, url? } | legacy bare espn-id string.
     if (Array.isArray(map)) {
       entries = map
-        .filter(p => p && p.name && p.espnId)
-        .map(p => ({ name: p.name, espnId: p.espnId }));
+        .filter(p => p && p.name && (p.espnId || p.pgaId))
+        .map(p => ({ name: p.name, espnId: p.espnId, pgaId: p.pgaId }));
     } else if (typeof map === 'object') {
       entries = Object.entries(map)
-        .filter(([name, espnId]) => name && espnId)
-        .map(([name, espnId]) => ({ name, espnId }));
+        .map(([name, v]) => {
+          if (!name || !v) return null;
+          if (typeof v === 'string') return { name, espnId: v };
+          return { name, espnId: v.espn, pgaId: v.pga };
+        })
+        .filter(e => e && (e.espnId || e.pgaId));
     } else {
       return;
     }

@@ -23,7 +23,7 @@ import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, nor
 import {
   getPlayerHeadshot as _getPlayerHeadshot,
   makeHeadshotErrorHandler as _makeHeadshotErrorHandler,
-  getPlayerHeadshotFallback,
+  mergeHeadshotEntry,
 } from '../utils/headshotUtils';
 
 const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) =>
@@ -1166,7 +1166,11 @@ export const RostersView = ({
                             <img
                               src={getPlayerHeadshot(backupPlayer.name, backupPlayer.limited, headshots)}
                               alt={backupPlayer.name}
-                              onError={(e) => { e.currentTarget.src = getPlayerHeadshotFallback(backupPlayer.name, backupPlayer.limited); }}
+                              // Use the shared chain handler like every other
+                              // avatar — this used to jump straight to the
+                              // initials fallback, skipping the PGA Tour
+                              // source entirely for the backup slot.
+                              onError={makeHeadshotErrorHandler(backupPlayer.name, backupPlayer.limited, headshots)}
                               style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block' }}
                             />
                           </div>
@@ -1679,7 +1683,13 @@ export const RostersView = ({
         tournamentField={tournamentField}
         allPlayers={allPlayers}
         leagueSettings={resolvedSettings}
-        onHeadshotsFound={found => updateHeadshots && updateHeadshots(prev => ({ ...(prev || {}), ...found }))}
+        onHeadshotsFound={found => updateHeadshots && updateHeadshots(prev => {
+          const next = { ...(prev || {}) };
+          Object.entries(found || {}).forEach(([name, entry]) => {
+            next[name] = mergeHeadshotEntry(next[name], entry);
+          });
+          return next;
+        })}
       />
     </div>
   );

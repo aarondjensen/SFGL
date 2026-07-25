@@ -2,7 +2,7 @@
 // Single hub for all PGA Tour tournament data this week.
 // Fetches field page → extracts players, player IDs, tee times, and odds in one pass.
 //
-// GET /api/field          → { players, playerIds, teeTimes, odds, tournament, count, source }
+// GET /api/field          → { players, pgaIds, espnIds, photos, teeTimes, odds, tournament, count, source }
 // GET /api/field?debug=1  → diagnostic info
 
 const HEADERS = {
@@ -148,9 +148,17 @@ async function getUpcomingTournament() {
 }
 
 // ── Parse field page — players, IDs, tee times, odds all in one pass ──────────
+// IDs are kept in SEPARATE, NAMESPACE-PURE maps. They used to share one
+// `playerIdMap` that mixed three different things — PGA TOUR player IDs from
+// this parser, ESPN athlete IDs merged in from the ESPN fallback, and direct
+// photo URLs under `__photo_`-prefixed keys. Any consumer that treated that
+// map as "PGA IDs" could take an ESPN ID and build a PGA Tour CDN URL from it,
+// which does not 404 — it can resolve to a DIFFERENT REAL GOLFER's photo.
+// Wrong faces are worse than missing ones, so the namespaces stay separate.
 function parseFieldPage(nd) {
   const playerNames = new Set();
-  const playerIdMap = {};   // name → pga tour id
+  const pgaIds      = {};   // name → PGA TOUR player id
+  const photos      = {};   // name → direct headshot URL (when the page has one)
   const teeTimeMap  = {};   // name → "8:24 AM"
   const teeTimeISOMap = {}; // name → ISO string (internal — used to compare across rounds)
   const oddsMap     = {};   // name → "+700"
@@ -166,11 +174,11 @@ function parseFieldPage(nd) {
     if (name?.includes(' ')) {
       playerNames.add(canonicalName(name) || name);
       // Store player ID (field page uses 'id')
-      if (obj.id) playerIdMap[canonicalName(name) || name] = String(obj.id);
+      if (obj.id) pgaIds[canonicalName(name) || name] = String(obj.id);
       // Capture photo URL if present directly on player object
       const photo = obj.photo || obj.headshot || obj.photoUrl || obj.imageUrl || obj.headShotUrl || obj.headshotUrl;
       if (photo && typeof photo === 'string' && photo.startsWith('http')) {
-        playerIdMap[`__photo_${canonicalName(name) || name}`] = photo;
+        photos[canonicalName(name) || name] = photo;
       }
       // Individual tee time on player object
       const tt = obj.teeTime || obj.teeTimeLocal || obj.startTime;
@@ -188,7 +196,7 @@ function parseFieldPage(nd) {
             || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
           if (pn) {
             setTeeTime(canonicalName(pn) || pn, ttIso);
-            if (p.id) playerIdMap[canonicalName(pn) || pn] = String(p.id);
+            if (p.id) pgaIds[canonicalName(pn) || pn] = String(p.id);
           }
         });
       }
@@ -197,11 +205,11 @@ function parseFieldPage(nd) {
     // Odds object: { oddsToWinId, players: [{ id, odds }] }
     if (obj.oddsToWinId && Array.isArray(obj.players) && obj.players.length) {
       obj.players.forEach(p => {
-        // Resolve name via playerIdMap (built above) or direct name fields
+        // Resolve name via pgaIds (built above) or direct name fields
         const pn = p.displayName?.trim() || p.playerName?.trim();
         const raw = p.odds ?? p.currentOdds ?? p.americanOdds;
         if (raw != null) {
-          const nameToUse = pn || Object.keys(playerIdMap).find(n => playerIdMap[n] === String(p.playerId || p.id));
+          const nameToUse = pn || Object.keys(pgaIds).find(n => pgaIds[n] === String(p.playerId || p.id));
           if (nameToUse) {
             if (typeof raw === 'string' && (raw.startsWith('+') || raw.startsWith('-'))) {
               oddsMap[nameToUse] = raw;
@@ -223,7 +231,7 @@ function parseFieldPage(nd) {
     return first ? !playerNames.has(`${first} ${last}`) : true;
   });
 
-  return { players, playerIdMap, teeTimeMap, oddsMap };
+  return { players, pgaIds, photos, teeTimeMap, oddsMap };
 }
 
 // ── ESPN fallback for field + tee times ───────────────────────────────────────
@@ -246,7 +254,7 @@ async function fetchFromESPN() {
 
     const players = [];
     const teeTimes = [];
-    const playerIdMap = {};
+    const espnIds = {};
 
     competitors.forEach(c => {
       const name = c.athlete?.displayName || c.athlete?.fullName || '';
@@ -254,7 +262,7 @@ async function fetchFromESPN() {
       const canonical = canonicalName(name) || name;
       players.push(canonical);
       // ESPN athlete ID doubles as the headshot ID
-      if (c.athlete?.id) playerIdMap[canonical] = String(c.athlete.id);
+      if (c.athlete?.id) espnIds[canonical] = String(c.athlete.id);
       const ttRaw = c.teeTime || c.status?.teeTime || c.startTime;
       if (ttRaw) {
         const tt = formatTeeTime(ttRaw);
@@ -262,7 +270,7 @@ async function fetchFromESPN() {
       }
     });
 
-    if (players.length) return { players, playerIdMap, teeTimes, oddsMap: {}, tournament: event.name, source: 'espn' };
+    if (players.length) return { players, espnIds, teeTimes, oddsMap: {}, tournament: event.name, source: 'espn' };
   }
   throw new Error('No field found via ESPN');
 }
@@ -289,7 +297,8 @@ export default async function handler(req, res) {
     if (fieldResp.ok) {
       const fieldNd = extractNextData(await fieldResp.text());
       if (fieldNd) {
-        const { players, playerIdMap, teeTimeMap, oddsMap } = parseFieldPage(fieldNd);
+        const { players, pgaIds, photos, teeTimeMap, oddsMap } = parseFieldPage(fieldNd);
+        const espnIds = {}; // filled only from the ESPN supplement below
 
         // If no tee times from field page, try dedicated tee-times page
         let finalTeeTimes = joinPlayersToTeeTimes(players, teeTimeMap);
@@ -299,10 +308,11 @@ export default async function handler(req, res) {
             if (ttResp.ok) {
               const ttNd = extractNextData(await ttResp.text());
               if (ttNd) {
-                const { teeTimeMap: ttMap2, playerIdMap: pidMap2 } = parseFieldPage(ttNd);
+                const { teeTimeMap: ttMap2, pgaIds: pgaIds2, photos: photos2 } = parseFieldPage(ttNd);
                 finalTeeTimes = joinPlayersToTeeTimes(players, ttMap2);
-                // Merge any new IDs from tee-times page
-                Object.assign(playerIdMap, pidMap2);
+                // Merge any new PGA ids / photos from the tee-times page
+                Object.assign(pgaIds, pgaIds2);
+                Object.assign(photos, photos2);
               }
             }
           } catch (_) {}
@@ -316,10 +326,9 @@ export default async function handler(req, res) {
               const normalize = s => s.toLowerCase().replace(/[^a-z ]/g, '').trim();
               const espnMap = {};
               espn.teeTimes.forEach(({ name, teeTime }) => { espnMap[normalize(name)] = teeTime; });
-              // Also grab ESPN IDs for players we don't have IDs for
-              Object.entries(espn.playerIdMap).forEach(([name, id]) => {
-                if (!playerIdMap[name]) playerIdMap[name] = id;
-              });
+              // ESPN ids go in their OWN map — merging them into pgaIds is
+              // what made the combined map unsafe to build PGA URLs from.
+              Object.assign(espnIds, espn.espnIds || {});
               finalTeeTimes = players
                 .filter(n => espnMap[normalize(n)])
                 .map(n => ({ name: n, teeTime: espnMap[normalize(n)] }));
@@ -343,7 +352,7 @@ export default async function handler(req, res) {
                 });
                 if (oddsObj) {
                   oddsObj.players.forEach(p => {
-                    const name = Object.keys(playerIdMap).find(n => playerIdMap[n] === String(p.playerId));
+                    const name = Object.keys(pgaIds).find(n => pgaIds[n] === String(p.playerId));
                     const raw = p.odds ?? p.currentOdds;
                     if (name && raw != null) {
                       if (typeof raw === 'string' && (raw.startsWith('+') || raw.startsWith('-'))) {
@@ -363,7 +372,9 @@ export default async function handler(req, res) {
         if (players.length) {
           result = {
             players,
-            playerIds: playerIdMap,
+            pgaIds,
+            espnIds,
+            photos,
             teeTimes: finalTeeTimes,
             odds: finalOdds,
             tournament: tournament.name,
@@ -378,7 +389,7 @@ export default async function handler(req, res) {
   if (!result?.players?.length) {
     try {
       const espn = await fetchFromESPN();
-      result = { ...espn, odds: [] };
+      result = { ...espn, pgaIds: {}, photos: {}, odds: [] };
     } catch (e) { errors.push(`espn: ${e.message}`); }
   }
 
@@ -387,27 +398,33 @@ export default async function handler(req, res) {
   }
 
   if (isDebug) {
-    const photoEntries = Object.entries(result.playerIds || {}).filter(([k]) => k.startsWith('__photo_'));
     return res.status(200).json({
       source: result.source,
       tournament: result.tournament,
       playerCount: result.players.length,
       teeTimeCount: result.teeTimes?.length || 0,
       oddsCount: result.odds?.length || 0,
-      playerIdCount: Object.keys(result.playerIds || {}).filter(k => !k.startsWith('__photo_')).length,
-      photoUrlCount: photoEntries.length,
+      pgaIdCount: Object.keys(result.pgaIds || {}).length,
+      espnIdCount: Object.keys(result.espnIds || {}).length,
+      photoUrlCount: Object.keys(result.photos || {}).length,
       samplePlayers: result.players.slice(0, 5),
       sampleTeeTimes: result.teeTimes?.slice(0, 3),
       sampleOdds: result.odds?.slice(0, 3),
-      sampleIds: Object.entries(result.playerIds || {}).filter(([k]) => !k.startsWith('__photo_')).slice(0, 5),
-      samplePhotos: photoEntries.slice(0, 3),
+      samplePgaIds: Object.entries(result.pgaIds || {}).slice(0, 5),
+      sampleEspnIds: Object.entries(result.espnIds || {}).slice(0, 5),
+      samplePhotos: Object.entries(result.photos || {}).slice(0, 3),
       errors,
     });
   }
 
   return res.status(200).json({
     players: result.players,
-    playerIds: result.playerIds || {},
+    // Namespace-pure ID maps. `playerIds` (a single map that mixed PGA ids,
+    // ESPN ids and __photo_ URLs) is gone — building a PGA Tour CDN URL from an
+    // ESPN id can surface a different real golfer's photo.
+    pgaIds:  result.pgaIds  || {},
+    espnIds: result.espnIds || {},
+    photos:  result.photos  || {},
     teeTimes: result.teeTimes || [],
     odds: result.odds || [],
     tournament: result.tournament,
