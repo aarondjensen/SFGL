@@ -495,6 +495,34 @@ export const RostersView = ({
   // Ownership is the immutable uid→team claim, never the editable owner name.
   const isOwnTeam     = (!!loggedInTeamId && team?.id === loggedInTeamId) || isCommissioner;
 
+  // Soft-warn before slotting a player who isn't in this week's field — but
+  // ONLY once the app has actually learned the field. Before it's known (e.g. a
+  // Monday-morning lineup set before the field is published) we stay silent so
+  // early setters aren't nagged by a false alarm; the tournamentField?.size > 0
+  // check is that "field known" gate, mirroring the ⛳ flag + field-only filter
+  // elsewhere in this view. Always a confirm, never a hard block: a manager may
+  // knowingly slot someone the source hasn't listed yet, and field data can lag
+  // reality. Returns true when the caller should proceed.
+  //
+  // Shared by the starter and backup paths — a backup who isn't playing can't
+  // cover a withdrawal, which is the entire reason the slot exists, so it earns
+  // the same warning with its own copy.
+  const confirmOutOfField = useCallback(async (player, role) => {
+    if (!(tournamentField?.size > 0)) return true;
+    if (tournamentField.has(normalizeNordic(player.name))) return true;
+    return await dialog.showConfirm(
+      "Not in this week's field",
+      role === 'backup'
+        ? `${player.name} isn't listed in this week's tournament field. If they've withdrawn or aren't playing, they can't cover a starter. Set as backup anyway?`
+        : `${player.name} isn't listed in this week's tournament field. If they've withdrawn or aren't playing, they'll score nothing this week. Add to your lineup anyway?`,
+      {
+        type: 'warning',
+        confirmText: role === 'backup' ? 'Set anyway' : 'Add anyway',
+        cancelText: 'Cancel',
+      }
+    );
+  }, [tournamentField, dialog]);
+
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
     const isInLineup = (team.lineup || []).includes(player.name);
@@ -524,6 +552,11 @@ export const RostersView = ({
         dialog.showToast('Backup selection cancelled', 'info', { position: 'top' });
         return;
       }
+
+      // Same field warning the starter path gets. A player already in the
+      // lineup is exempt: they're being MOVED, not newly slotted, and if they
+      // were out of field the manager was already warned when they were added.
+      if (!isInLineup && !(await confirmOutOfField(player, 'backup'))) return;
 
       // If they tapped a player who's currently a starter, move them out of
       // starters and into the backup slot. (Avoids a player being in both.)
@@ -577,6 +610,8 @@ export const RostersView = ({
         // Limited start limit check ONLY applies when they'd actually start.
         // As a backup they sit on the bench; only counts if commish promotes
         // them, which happens via team.lineup → covered by the starter path.
+        // The field warning DOES apply — an out-of-field backup is no cover.
+        if (!(await confirmOutOfField(player, 'backup'))) return;
         const newTeams = teams.map(t =>
           t.id !== team.id ? t : { ...t, backup: player.name }
         );
@@ -598,22 +633,10 @@ export const RostersView = ({
       return;
     }
 
-    // Soft-warn when adding a starter who isn't in this week's field — but ONLY
-    // once the app has actually learned the field (tournamentField populated).
-    // Before the field is known (e.g. a Monday-morning lineup set before the
-    // field is published) we stay silent so early setters aren't nagged by a
-    // false alarm — the tournamentField?.size > 0 guard is the "field known"
-    // gate, mirroring the ⛳ flag + field-only filter elsewhere in this view.
-    // This is a confirm, not a hard block: a manager may knowingly roster
-    // someone the source hasn't listed yet, and field data can lag reality.
-    if (tournamentField?.size > 0 && !tournamentField.has(normalizeNordic(player.name))) {
-      const proceed = await dialog.showConfirm(
-        "Not in this week's field",
-        `${player.name} isn't listed in this week's tournament field. If they've withdrawn or aren't playing, they'll score nothing this week. Add to your lineup anyway?`,
-        { type: 'warning', confirmText: 'Add anyway', cancelText: 'Cancel' }
-      );
-      if (!proceed) return;
-    }
+    // Soft-warn when adding a starter who isn't in this week's field. See
+    // confirmOutOfField for the field-known gate and why this is a confirm
+    // rather than a hard block.
+    if (!(await confirmOutOfField(player, 'starter'))) return;
 
     const newTeams = teams.map(t =>
       t.id !== team.id ? t : { ...t, lineup: [...(t.lineup || []), player.name] }
@@ -623,7 +646,7 @@ export const RostersView = ({
     // `activeTournament` was listed here but is never read in this callback —
     // it only forced needless re-creation on every tournament-object identity
     // change (and blocked the React compiler from preserving the memo).
-  }, [team, teams, updateTeams, dialog, currentRoster, LINEUP_SIZE, MAX_LIMITED_STARTS, pickingBackup, backupAllowed, tournamentField]);
+  }, [team, teams, updateTeams, dialog, currentRoster, LINEUP_SIZE, MAX_LIMITED_STARTS, pickingBackup, backupAllowed, confirmOutOfField]);
 
 
   const pendingWaivers = useMemo(() => {

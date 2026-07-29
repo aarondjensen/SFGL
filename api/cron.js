@@ -554,6 +554,45 @@ async function getEmailMap(settings, teams) {
 
 // ── Action: process waivers ─────────────────────────────────────────────────
 
+// ── Effective roster ────────────────────────────────────────────────────────
+// A team's stored `roster` array with every processed/completed add & drop
+// replayed on top. Callers must use THIS, never the raw stored array, because
+// the stored array can lag reality (e.g. a player netted out by a processed
+// drop that never got written back into it).
+//
+// ⚠ KEEP IN SYNC with buildEffectiveRoster in src/utils/sharedHelpers.js —
+// api/ is a separate deploy target and can't import from src/. Same rules:
+// resolve each transaction's position from its STABLE tournament name (falling
+// back to the stored positional index for legacy rows), replay in chronological
+// order, count only processed/completed.
+//
+// Returns an array of player NAMES.
+function buildEffectiveRosterServer(team, allTx, tournaments) {
+  const txPosition = (tx) => {
+    const name = tx.tournament ?? tx.tournamentName;
+    if (name) {
+      const idx = (tournaments || []).findIndex(t => t && t.name === name);
+      if (idx !== -1) return idx;
+    }
+    return tx.tournamentIndex ?? Number.MAX_SAFE_INTEGER;
+  };
+
+  let names = (team.roster || []).map(p => p.name);
+  (allTx || [])
+    .filter(tx =>
+      tx.team === team.name &&
+      tx.type !== 'mulligan' &&
+      tx.type !== 'swing_winner' &&
+      (tx.status === 'processed' || tx.status === 'completed'))
+    .map(tx => ({ tx, pos: txPosition(tx) }))
+    .sort((a, b) => a.pos - b.pos)
+    .forEach(({ tx }) => {
+      if (tx.droppedPlayer) names = names.filter(n => n !== tx.droppedPlayer);
+      if (tx.player && !names.includes(tx.player)) names.push(tx.player);
+    });
+  return names;
+}
+
 async function handleWaivers(res) {
   const settings = await loadSettings();
 
@@ -609,46 +648,15 @@ async function handleWaivers(res) {
   pending.forEach(w => { if (!byTeam[w.team]) byTeam[w.team] = []; byTeam[w.team].push(w); });
   Object.values(byTeam).forEach(c => c.sort((a, b) => (a.priority || 999) - (b.priority || 999)));
 
-  // "Already rostered" must be judged against each team's EFFECTIVE roster —
-  // the stored base roster with every processed/completed add & drop replayed on
-  // top — NOT the raw stored `team.roster` array. The stored array can lag the
-  // effective roster (e.g. a player netted out by a processed drop that never
-  // got written back into the array), and when it does, a genuine free agent
-  // gets wrongly failed as "already rostered." That is exactly the bug that
-  // blocked a valid Denny McCarthy claim while he showed as available everywhere
-  // else. This mirrors the client's useRoster hook / AddDropPlayerModal
-  // availability logic and the manual handleProcessAll() path (buildRoster), so
-  // the auto-processor can never disagree with what managers see on-screen.
-  //
-  // ⚠ KEEP IN SYNC with buildEffectiveRoster in src/utils/sharedHelpers.js —
-  // api/ is a separate deploy target and can't import from src/. Same rules:
-  // resolve each transaction's position from its STABLE tournament name
-  // (falling back to the stored positional index for legacy rows), replay in
-  // chronological order, count only processed/completed.
-  const txPosition = (tx) => {
-    const name = tx.tournament ?? tx.tournamentName;
-    if (name) {
-      const idx = tournamentsForWaivers.findIndex(t => t && t.name === name);
-      if (idx !== -1) return idx;
-    }
-    return tx.tournamentIndex ?? Number.MAX_SAFE_INTEGER;
-  };
-  const effectiveRoster = (t) => {
-    let names = (t.roster || []).map(p => p.name);
-    allTx
-      .filter(tx =>
-        tx.team === t.name &&
-        tx.type !== 'mulligan' &&
-        tx.type !== 'swing_winner' &&
-        (tx.status === 'processed' || tx.status === 'completed'))
-      .map(tx => ({ tx, pos: txPosition(tx) }))
-      .sort((a, b) => a.pos - b.pos)
-      .forEach(({ tx }) => {
-        if (tx.droppedPlayer) names = names.filter(n => n !== tx.droppedPlayer);
-        if (tx.player && !names.includes(tx.player)) names.push(tx.player);
-      });
-    return names;
-  };
+  // "Already rostered" must be judged against each team's EFFECTIVE roster, not
+  // the raw stored `team.roster` array — when the stored array lags, a genuine
+  // free agent gets wrongly failed as "already rostered." That is exactly the
+  // bug that blocked a valid Denny McCarthy claim while he showed as available
+  // everywhere else. buildEffectiveRosterServer mirrors the client's useRoster
+  // hook / AddDropPlayerModal availability logic and the manual
+  // handleProcessAll() path (buildRoster), so the auto-processor can never
+  // disagree with what managers see on-screen.
+  const effectiveRoster = (t) => buildEffectiveRosterServer(t, allTx, tournamentsForWaivers);
 
   const allRostered = new Set();
   teams.forEach(t => effectiveRoster(t).forEach(n => allRostered.add(n)));
@@ -1823,6 +1831,21 @@ async function handleLeadWatch(res) {
 //       wrong about who's actually playing; and
 //   (2) a rostered starter who WITHDREW after the lineup was set.
 //
+// Also checks the BACKUP slot on weeks it's enabled (see backupSpotEnabled) —
+// an out-of-field backup can't cover a withdrawal, which defeats the point of
+// naming one, and nothing else in the app tells the manager that.
+//
+// Roster gate: only lineup names the team ACTUALLY OWNS are considered, judged
+// against the effective roster (buildEffectiveRosterServer), not the raw stored
+// array. team.lineup isn't scrubbed when a player leaves the roster — a drop
+// processed by Wednesday's waiver run leaves the name sitting in the lineup
+// until the manager next edits it — and an unowned name that happens to be out
+// of field would otherwise produce a push blaming the FIELD for what is really
+// a roster problem. The client already ignores these names (RostersView derives
+// activeLineupCount from currentRoster), so they're invisible on-screen; a push
+// naming a player the manager no longer has would be pure confusion. Skipped
+// names are reported as `offRoster` in the JSON for diagnosis.
+//
 // Cadence: driven by the commish-set schedule (SeasonSettingsPanel → "Field
 // Check Schedule", synced to the cron-job.org field-check job via
 // sync-cron-schedule). This handler mirrors handleLineupReminder's day/hour/
@@ -1961,41 +1984,102 @@ async function handleFieldCheck(res) {
   }
 
   const teams = await loadTeams();
+
+  // Transactions power the effective-roster replay below — a lineup name the
+  // team no longer owns must not be blamed on the field.
+  let allTx = [];
+  try {
+    const txSnap = await db.collection('transactions').get();
+    allTx = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    // Fail SAFE: without transactions we can't tell an owned starter from a
+    // stale one, and guessing risks naming players managers no longer have.
+    return res.json({ status: 'tx_fetch_failed', error: err.message });
+  }
+
+  // Does the backup slot even exist this week? Mirrors isBackupSpotEnabled in
+  // src/utils/sharedHelpers.js — without this gate a stale `backup` left over
+  // from a previous Major would draw a warning about a slot that isn't in play.
+  const backupSpotEnabled =
+    activeTourney.isMajor     ? (settings?.backupSpotMajor     ?? true)
+    : activeTourney.isSignature ? (settings?.backupSpotSignature ?? false)
+    : (settings?.backupSpotRegular ?? false);
+
   const newSig = { ...lastSig };
   const results = [];
 
   for (const team of teams) {
-    const starters = team.lineup || [];
+    const rostered = new Set(buildEffectiveRosterServer(team, allTx, tournaments));
+    const lineup = team.lineup || [];
+    const starters = lineup.filter(name => rostered.has(name));
+    const offRoster = lineup.filter(name => !rostered.has(name));
+
     const outOfField = starters.filter(name => !fieldSet.has(norm(name)));
-    const signature = [...outOfField].sort().join('|');
+
+    // The backup only matters on weeks the slot is enabled, and only if the
+    // team still owns them. Unlike a starter they score nothing either way —
+    // the loss is that they can't COVER a withdrawal, so the copy differs.
+    const backupName = team.backup || null;
+    const backupOut = Boolean(
+      backupSpotEnabled &&
+      backupName &&
+      rostered.has(backupName) &&
+      !fieldSet.has(norm(backupName))
+    );
+
+    // Signature spans both slots so fixing one while breaking the other still
+    // re-notifies. Built from RAW names (display abbreviates) so it stays
+    // stable, and namespaced so a starter can never collide with a backup.
+    // Changing this FORMAT invalidates stored signatures, costing at most one
+    // duplicate push per affected team on the first run after the change.
+    const signature = [
+      ...[...outOfField].sort().map(n => `S:${n}`),
+      ...(backupOut ? [`B:${backupName}`] : []),
+    ].join('|');
 
     // Nothing out of field → clear any stored signature so a future break
     // re-notifies, and move on.
     if (!signature) {
       if (newSig[team.id]) delete newSig[team.id];
-      results.push({ team: team.name, outOfField: [] });
+      results.push({ team: team.name, outOfField: [], offRoster });
       continue;
     }
 
     // Same out-of-field set we already notified about → don't nag.
     if (lastSig[team.id] === signature) {
-      results.push({ team: team.name, outOfField, skipped: 'already_notified' });
+      results.push({ team: team.name, outOfField, backupOut, offRoster, skipped: 'already_notified' });
       continue;
     }
 
     // New / changed out-of-field set → push. Names shown as "F. Last" to match
     // the leaderboard/roster rendering.
     const names = outOfField.map(abbreviateName);
+    const shortBackup = backupOut ? abbreviateName(backupName) : null;
     const list = names.length <= 2
       ? names.join(' and ')
       : `${names.slice(0, -1).join(', ')}, and ${names.slice(-1)}`;
     const isPlural = outOfField.length > 1;
-    const title = isPlural
-      ? `⛳ ${outOfField.length} starters not in the field`
-      : `⛳ ${names[0]} isn't in the field`;
-    const body = isPlural
-      ? `${list} aren't in ${tournamentName}'s field — they'll score nothing. Tap to fix your lineup.`
-      : `${names[0]} isn't in ${tournamentName}'s field — they'll score nothing. Tap to fix your lineup.`;
+
+    // Title leads with the starters when there are any — that's the costlier
+    // problem — and falls back to the backup when it's the only thing wrong.
+    const title = outOfField.length === 0
+      ? `⛳ Your backup isn't in the field`
+      : isPlural
+        ? `⛳ ${outOfField.length} starters not in the field`
+        : `⛳ ${names[0]} isn't in the field`;
+
+    const sentences = [];
+    if (outOfField.length) {
+      sentences.push(isPlural
+        ? `${list} aren't in ${tournamentName}'s field — they'll score nothing.`
+        : `${names[0]} isn't in ${tournamentName}'s field — they'll score nothing.`);
+    }
+    if (backupOut) {
+      sentences.push(outOfField.length
+        ? `${shortBackup}, your backup, isn't in the field either — no cover if someone withdraws.`
+        : `${shortBackup} is your backup and isn't in ${tournamentName}'s field — no cover if someone withdraws.`);
+    }
+    const body = `${sentences.join(' ')} Tap to fix your lineup.`;
 
     try {
       const pushResult = await sendPushToTeam({
@@ -2006,9 +2090,9 @@ async function handleFieldCheck(res) {
         deepLink: '#rosters',
       });
       newSig[team.id] = signature;
-      results.push({ team: team.name, outOfField, sent: pushResult.sent, failed: pushResult.failed });
+      results.push({ team: team.name, outOfField, backupOut, offRoster, sent: pushResult.sent, failed: pushResult.failed });
     } catch (err) {
-      results.push({ team: team.name, outOfField, error: err.message });
+      results.push({ team: team.name, outOfField, backupOut, offRoster, error: err.message });
     }
   }
 
