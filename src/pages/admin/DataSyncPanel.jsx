@@ -74,14 +74,32 @@ export const DataSyncPanel = ({
       });
       await playersApi.upsertMany(fetched.map(({ name, worldRank }) => ({ name, worldRank })));
 
-      // Also fetch ESPN IDs for all rostered players (for headshots).
+      // Also fetch headshot IDs for all rostered players.
+      //
+      // /api/headshots returns an OBJECT per player — { espn?, pga? } — not a
+      // bare id string. This used to destructure the value as `espnId` and hand
+      // it straight to upsertMany, which wrote the whole object into
+      // `espn_id`; getHeadshotsMap then did String(espn_id) and produced the
+      // literal "[object Object]" as the id, so every rostered player's
+      // headshot URL 404'd and fell back to an initials avatar. Because this
+      // sync loops over EVERY rostered player, one run took out the whole
+      // league at once.
+      //
+      // Unpack both ids explicitly, exactly as the client-side auto-fetch in
+      // App.jsx does. Saving `pga` as well as `espn` also restores the second
+      // candidate in the headshot chain, so a dead ESPN entry falls through to
+      // the PGA TOUR CDN instead of dropping to initials.
       try {
         const allRostered = [...new Set(teams.flatMap(t => (t.roster || []).map(p => p.name)))];
         if (allRostered.length) {
           const hsResp = await fetch(`/api/headshots?names=${allRostered.map(n => encodeURIComponent(n)).join(',')}`);
           if (hsResp.ok) {
             const hsData = await hsResp.json();
-            const toSave = Object.entries(hsData.results || {}).map(([name, espnId]) => ({ name, espnId }));
+            const toSave = Object.entries(hsData.results || {}).map(([name, entry]) => ({
+              name,
+              espnId: entry?.espn,
+              pgaId:  entry?.pga,
+            }));
             if (toSave.length) await playersApi.upsertMany(toSave);
           }
         }
