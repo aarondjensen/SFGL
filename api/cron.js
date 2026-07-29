@@ -11,7 +11,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
-import { DEFAULTS_ON, dedupeTokenDocs, extractNextData } from './_constants.js';
+import { isEventEnabled, dedupeTokenDocs, extractNextData } from './_constants.js';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
 
@@ -42,16 +42,14 @@ const messaging = getMessaging(getApp());
 //
 // Skip behavior:
 //   • teamId not found → silent skip
-//   • team has prefs map AND the specific event key is false → silent skip
-//   • team has no prefs map at all → fall through to defaults (DEFAULTS_ON)
-//   • event not in DEFAULTS_ON → require explicit opt-in (no batch 4 events
-//     are in this category — all current events default ON)
+//   • the team's pref for this event resolves to false on the push channel →
+//     silent skip (see isEventEnabled for the three stored pref shapes)
 //   • no subscribed devices → silent skip
 //
 // Returns { sent, failed, skipped, cleanedUp } per push attempt.
 
-// DEFAULTS_ON is imported from ./_constants.js (shared with api/push.js) so the
-// default-on notification set lives in exactly one place.
+// isEventEnabled (and the DEFAULTS_ON set behind it) lives in ./_constants.js,
+// shared with api/push.js, so both senders resolve preferences identically.
 
 async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
   if (!teamId || !event) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
@@ -62,11 +60,12 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
     const teamSnap = await db.collection('teams').doc(teamId).get();
     if (!teamSnap.exists) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
     const prefs = teamSnap.data()?.notificationPrefs;
-    if (prefs && typeof prefs[event] === 'boolean') {
-      if (prefs[event] === false) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
-    } else {
-      // No explicit pref — fall through to default
-      if (!DEFAULTS_ON.has(event)) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+    // isEventEnabled understands all three stored shapes — { push, email }
+    // object, legacy bare boolean, and unset (→ DEFAULTS_ON). Testing for a
+    // bare boolean here directly, as this used to, treated an object-shaped
+    // opt-out as "no preference" and sent anyway.
+    if (!isEventEnabled(prefs, event, 'push')) {
+      return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
     }
   } catch (err) {
     console.warn(`[push] prefs check failed for team ${teamId}:`, err.message);
@@ -1839,7 +1838,10 @@ async function handleLeadWatch(res) {
 //
 // Field-known gate: if /api/field returns no players we bail (status
 // 'field_unknown') and never warn — exactly like the in-app RostersView
-// warning, which stays silent until tournamentField is populated.
+// warning, which stays silent until tournamentField is populated. A field that
+// parsed only PARTIALLY is caught separately by the field-integrity gate below
+// ('field_too_small' / 'field_partial'), since a short field would otherwise
+// flag half the league's starters as missing.
 async function handleFieldCheck(res) {
   const settings = await loadSettings();
   if (settings?.fieldCheckEnabled === false) {
@@ -1911,6 +1913,53 @@ async function handleFieldCheck(res) {
   const sameTournament = prevState.tournamentName === tournamentName;
   const lastSig = sameTournament ? (prevState.lastNotified || {}) : {};
 
+  // ── Field-integrity gate ───────────────────────────────────────────────────
+  // A HALF-SCRAPED field is worse than no field: every starter the parser
+  // missed reads as "not in the field", so a single upstream markup change
+  // blasts a false ⛳ alert to every team at once — and the signature dedup
+  // then RECORDS those false alerts, so the corrected run re-pushes.
+  // /api/field itself can't tell us it parsed partially (it returns whatever
+  // it found across its espn → pgatour fallbacks), so we sanity-check the count
+  // here before trusting it.
+  //
+  // A fixed floor won't do, because small fields are legitimate: the TOUR
+  // Championship is 30, Hero World Challenge ~20, match play 64. Those are
+  // real fields, and they're exactly the weeks this notification matters most
+  // (most rostered players genuinely aren't playing). So we use two gates:
+  //
+  //   1. Absolute floor — catches the catastrophic parse (a handful of names)
+  //      while clearing every real limited field. Overridable via settings
+  //      (fieldCheckMinField) if a smaller invitational ever shows up.
+  //   2. Relative drop — compare against the largest count we've already seen
+  //      FOR THIS SAME TOURNAMENT (high-water mark, stored below and reset
+  //      whenever the tournament changes). A field that shrinks by 40%+ mid-week
+  //      is a parse regression, not 60 withdrawals.
+  //
+  // Gate 2 can't help on a tournament's first run — there's no baseline yet —
+  // which is why gate 1 stands on its own. It can also trip when /api/field
+  // falls back between sources and the fallback returns a shorter list; that
+  // errs toward silence rather than a false blast, which is the safe direction.
+  // Both bail BEFORE any state write, so a suspect count never becomes the
+  // baseline and never records a signature.
+  const minField = settings?.fieldCheckMinField ?? 16;
+  if (fieldPlayers.length < minField) {
+    return res.json({
+      status: 'field_too_small',
+      fieldCount: fieldPlayers.length,
+      minField,
+      source: fieldData.source || null,
+    });
+  }
+  const knownCount = sameTournament ? (prevState.fieldCount || 0) : 0;
+  if (knownCount && fieldPlayers.length < Math.ceil(knownCount * 0.6)) {
+    return res.json({
+      status: 'field_partial',
+      fieldCount: fieldPlayers.length,
+      knownCount,
+      source: fieldData.source || null,
+    });
+  }
+
   const teams = await loadTeams();
   const newSig = { ...lastSig };
   const results = [];
@@ -1963,9 +2012,18 @@ async function handleFieldCheck(res) {
     }
   }
 
+  // fieldCount is the HIGH-WATER mark for this tournament, not the latest count
+  // — a field that legitimately shrinks (withdrawals) must not walk the
+  // baseline down and thereby blind the relative gate to a later partial parse.
+  // It resets with everything else when the tournament changes.
   await stateRef.set({
     key: 'fieldCheck',
-    value: { tournamentName, lastNotified: newSig },
+    value: {
+      tournamentName,
+      lastNotified: newSig,
+      fieldCount: Math.max(knownCount, fieldPlayers.length),
+      fieldSource: fieldData.source || null,
+    },
   });
 
   return res.json({ status: 'sent', tournament: tournamentName, fieldCount: fieldPlayers.length, results });

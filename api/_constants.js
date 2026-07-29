@@ -66,6 +66,37 @@ export const DEFAULTS_ON = new Set([
   'waivers', 'lineupLock', 'freeAgent', 'results', 'commishModified', 'leadChange', 'fieldCheck',
 ]);
 
+// Resolve one team's preference for one event on one channel. This is the
+// SINGLE place either sender decides "does this go out?" — cron.js
+// (sendPushToTeam) and push.js (token filter) both call it.
+//
+// A stored pref value comes in one of three shapes, and every sender must
+// understand all three:
+//   • { push, email } object → per-channel (the shape the client now WRITES via
+//     buildChannelPrefUpdate). A missing channel key inside the object falls
+//     back to the event default, matching getEventChannelPrefs client-side.
+//   • bare boolean           → legacy single switch; both channels inherit it.
+//   • missing / unset        → DEFAULTS_ON decides.
+//
+// Why this exists: both senders previously tested `typeof prefs[event] ===
+// 'boolean'` and fell through to DEFAULTS_ON for anything else — so an
+// object-shaped pref with push:false was read as "no explicit preference" and
+// the push WENT OUT ANYWAY, silently overriding an opt-out. Keep this mirroring
+// getEventChannelPrefs in src/api/pushNotifications.js (separate deploy target,
+// can't be imported here).
+//
+// Note the email channel is accepted but no server path sends event email yet;
+// it's here so the two stay symmetric when one does.
+export function isEventEnabled(prefs, event, channel = 'push') {
+  const stored = prefs?.[event];
+  if (stored && typeof stored === 'object') {
+    const value = stored[channel];
+    return typeof value === 'boolean' ? value : DEFAULTS_ON.has(event);
+  }
+  if (typeof stored === 'boolean') return stored;
+  return DEFAULTS_ON.has(event);
+}
+
 // ── Push-token de-duplication ───────────────────────────────────────────────
 // A single physical device can end up with MORE THAN ONE deliverable pushTokens
 // doc, which makes that device receive the same push twice. Two causes:
