@@ -3,6 +3,7 @@ import { storage } from '../api';
 import { playerRankingsApi } from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
 import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, buildEffectiveRoster, hydratePlayer } from '../utils/sharedHelpers';
+import { mergeHeadshotEntry } from '../utils/headshotUtils';
 
 // ============================================================================
 // useLeague — central state manager for all league data
@@ -232,8 +233,40 @@ export const useLeague = (STORAGE_KEYS) => {
           }
 
           if (firebaseHeadshots && Object.keys(firebaseHeadshots).length > 0) {
-            setHeadshots(firebaseHeadshots);
-            console.log(`✓ Loaded ${Object.keys(firebaseHeadshots).length} headshots from Firebase`);
+            // MERGE, never replace.
+            //
+            // This is Tier 2 — deliberately NOT awaited — so it lands a second
+            // or two AFTER App.jsx's headshot effect has resolved every
+            // rostered player through /api/headshots and merged the ids into
+            // state. A wholesale setHeadshots(firebaseHeadshots) threw all of
+            // that away, and any player whose /players/{name} doc doesn't
+            // carry an id yet simply VANISHED from the map (getHeadshotsMap
+            // omits players with no id fields at all) — an initials avatar for
+            // the rest of the session.
+            //
+            // Which side wins the race depends on how the app was opened, and
+            // that is exactly why this looked intermittent:
+            //   • cold open (empty localStorage) — `loading` starts true, so
+            //     the headshot fetch doesn't start until Tier 1 resolves and
+            //     usually lands LAST. Headshots work.
+            //   • warm open (returning visitor, teams seeded from
+            //     localStorage) — `loading` starts false, so the headshot
+            //     fetch fires at mount and returns from the CDN in
+            //     milliseconds, while Tier 2 is still reading ~600 player docs.
+            //     Tier 2 lands last and wipes the map. Headshots gone, and
+            //     nothing re-populates them.
+            //
+            // Firestore still wins field-by-field wherever it HAS a value (it
+            // holds the commish's headshot_url pin); anything it is silent
+            // about keeps whatever we already resolved.
+            setHeadshots(prev => {
+              const next = { ...(prev || {}) };
+              Object.entries(firebaseHeadshots).forEach(([name, entry]) => {
+                next[name] = mergeHeadshotEntry(next[name], entry);
+              });
+              return next;
+            });
+            console.log(`✓ Merged ${Object.keys(firebaseHeadshots).length} headshots from Firebase`);
           }
 
           if (firebaseRankings?.length > 0) {

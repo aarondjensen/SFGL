@@ -128,6 +128,25 @@ async function _getAllOrdered(collectionName, field, dir = 'asc') {
   return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
 }
 
+// Rank for sorting: a finite number (accepting numeric strings, which some
+// older docs carry), or null for "unranked".
+function _rankOf(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Sort comparator for player docs — ranked ascending, UNRANKED LAST (never
+// dropped), ties broken by name so the order is stable across loads.
+function _byWorldRank(a, b) {
+  const ra = _rankOf(a?.world_rank), rb = _rankOf(b?.world_rank);
+  const nameA = String(a?.name || a?._id || ''), nameB = String(b?.name || b?._id || '');
+  if (ra !== null && rb !== null) return (ra - rb) || nameA.localeCompare(nameB);
+  if (ra !== null) return -1;
+  if (rb !== null) return 1;
+  return nameA.localeCompare(nameB);
+}
+
 /**
  * Wave-A subscribe helper: attaches an onSnapshot listener with consistent
  * error handling. Returns the unsubscribe function. Errors during snapshot
@@ -174,8 +193,23 @@ function _dedupeTransactions(rows) {
 // PLAYERS API
 // ============================================================================
 export const playersApi = {
+  // Unordered fetch + JS sort by world_rank. NEVER orderBy('world_rank'): a
+  // Firestore orderBy silently EXCLUDES every document that does not carry the
+  // field, and player docs routinely don't —
+  //   • headshotsApi.setAll -> upsertMany creates docs with only
+  //     { name, espn_id, pga_id } when it first resolves a player;
+  //   • DataSyncPanel's manual add deliberately leaves the rank to OWGR;
+  //   • the OWGR sync only ranks the top ~600, so fringe/qualifier golfers
+  //     who are very much rosterable never get one.
+  // Every such doc was invisible to this query, so getHeadshotsMap() had no
+  // entry for those players and they rendered as initials avatars no matter
+  // how many times their ids were resolved and persisted. Same trap that was
+  // already fixed for tournaments (see tournamentsApi.getAll / _byStartDate)
+  // and in api/cron.js loadTournaments. Unranked players now sort last —
+  // visible, never dropped.
   async getAll() {
-    return _getAllOrdered('players', 'world_rank');
+    const snap = await getDocs(collection(db, 'players'));
+    return snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(_byWorldRank);
   },
 
   async getByName(name) {
