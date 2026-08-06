@@ -138,12 +138,61 @@ export const getPlayerHeadshot = (playerName, headshotMap = {}, isLimited = fals
   return urls.length > 0 ? urls[0] : getPlayerHeadshotFallback(playerName, isLimited);
 };
 
+// ── Avatar framing ─────────────────────────────────────────────────────────
+// The two CDNs return differently-composed images, so the SAME square avatar
+// box frames them differently:
+//
+//   • ESPN — a WIDE chest-up portrait. Dropped into a square with
+//     object-fit:cover, the taller dimension is the one that fits, so the full
+//     height of the source is shown and NOTHING is cropped vertically. The
+//     head therefore sits in the upper third of the circle with shoulders
+//     filling the bottom half — the "photo isn't centered" complaint. No
+//     object-position value can fix this: with no vertical overflow there is
+//     nothing for it to shift. The image has to be zoomed.
+//
+//   • PGA TOUR — the URL already asks Cloudinary for a face-centred portrait
+//     crop (c_fill,g_face:center,h_294,w_220), so it arrives correctly framed
+//     and must NOT be zoomed again.
+//
+//   • A commish's pinned headshot_url, or the initials data URI — unknown or
+//     already-square composition. Left alone.
+//
+// The zoom is anchored to the TOP edge (transform-origin 50% 0%) rather than
+// the centre, which makes it self-limiting: the crown of the head can never be
+// clipped no matter how far off the constant is, because the top edge doesn't
+// move. Overshooting only trims shoulders.
+//
+// ⚠ This is a single tunable number. Raise it to push the face further toward
+// the middle of the circle, lower it to show more of the player.
+export const ESPN_FACE_ZOOM = 1.5;
+
+const ESPN_FRAME = { transform: `scale(${ESPN_FACE_ZOOM})`, transformOrigin: '50% 0%' };
+const NO_FRAME   = { transform: 'none', transformOrigin: '50% 50%' };
+
+/**
+ * Framing corrections for one candidate URL, as inline-style properties.
+ * Requires the avatar's wrapper to clip (overflow: hidden) — a transform is
+ * not contained by the image's own border-radius.
+ */
+export const getHeadshotFrame = (url) =>
+  (typeof url === 'string' && url.startsWith(ESPN_BASE)) ? ESPN_FRAME : NO_FRAME;
+
+const applyFrame = (el, url) => {
+  const frame = getHeadshotFrame(url);
+  el.style.transform = frame.transform;
+  el.style.transformOrigin = frame.transformOrigin;
+};
+
 /**
  * onError handler that walks the remaining candidate URLs before settling on
  * the initials avatar. Attach alongside a src from getPlayerHeadshot():
  *
  *   <img src={getPlayerHeadshot(name, map, limited)}
  *        onError={makeHeadshotErrorHandler(name, map, limited)} />
+ *
+ * Framing is re-applied on every hop: the candidates come from different CDNs
+ * with different compositions, so falling through from ESPN to PGA TOUR has to
+ * drop ESPN's zoom or the PGA image lands cropped through the chin.
  */
 export const makeHeadshotErrorHandler = (playerName, headshotMap = {}, isLimited = false) => {
   const urls = getPlayerHeadshotUrls(playerName, headshotMap);
@@ -152,12 +201,14 @@ export const makeHeadshotErrorHandler = (playerName, headshotMap = {}, isLimited
     attempt++;
     if (attempt < urls.length) {
       e.target.src = urls[attempt];
+      applyFrame(e.target, urls[attempt]);
       e.target.onerror = handler;
     } else {
       // Detach first — a data URI can't fail, but a self-referencing onerror
       // would loop forever if it ever did.
       e.target.onerror = null;
       e.target.src = getPlayerHeadshotFallback(playerName, isLimited);
+      applyFrame(e.target, null);
     }
   };
 };

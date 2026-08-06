@@ -45,11 +45,8 @@ const FieldToggle = ({ value, setter, disabled = false, width = 84 }) => (
 );
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
-import {
-  getPlayerHeadshot,
-  makeHeadshotErrorHandler,
-  mergeHeadshotEntry,
-} from '../utils/headshotUtils';
+import { mergeHeadshotEntry } from '../utils/headshotUtils';
+import { PlayerAvatar } from '../components/PlayerAvatar';
 
 // Per-name merge so a response carrying only one id can't drop the other.
 const mergeHeadshotMaps = (prev, found) => {
@@ -756,15 +753,11 @@ export const AddDropPlayerModal = ({
                   onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; } }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <img
-                      src={getPlayerHeadshot(player.name, mergedHeadshots)}
-                      onError={makeHeadshotErrorHandler(player.name, mergedHeadshots)}
-                      alt=""
-                      style={{
-                        width: 28, height: 28, borderRadius: '50%', objectFit: 'cover',
-                        border: `1px solid ${colors.borderSubtle}`,
-                        flexShrink: 0,
-                      }}
+                    <PlayerAvatar
+                      name={player.name}
+                      headshots={mergedHeadshots}
+                      size={28}
+                      border={`1px solid ${colors.borderSubtle}`}
                     />
                     <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 500, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
                       {player.name}

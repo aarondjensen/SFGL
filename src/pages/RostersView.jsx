@@ -17,20 +17,11 @@ import { theme, colors, fonts, fontSize } from '../theme.js';
 import { STORAGE_KEYS } from '../constants';
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, normalizeNordic } from '../utils/sharedHelpers';
 
-// ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
-// Thin wrappers preserve the (name, isLimited, headshotMap) call signature
-// used throughout this file — headshotUtils uses (name, headshotMap, isLimited).
-import {
-  getPlayerHeadshot as _getPlayerHeadshot,
-  makeHeadshotErrorHandler as _makeHeadshotErrorHandler,
-  mergeHeadshotEntry,
-} from '../utils/headshotUtils';
-
-const getPlayerHeadshot = (playerName, isLimited = false, headshotMap = {}) =>
-  _getPlayerHeadshot(playerName, headshotMap, isLimited);
-
-const makeHeadshotErrorHandler = (playerName, isLimited, headshotMap) =>
-  _makeHeadshotErrorHandler(playerName, headshotMap, isLimited);
+// Every avatar in this file renders through the shared PlayerAvatar, so the
+// local (name, isLimited, headshotMap) wrappers around the headshotUtils
+// helpers are gone — that argument-order flip was its own hazard.
+import { mergeHeadshotEntry } from '../utils/headshotUtils';
+import { PlayerAvatar } from '../components/PlayerAvatar';
 
 // ── Border color by player type ───────────────────────────────────────────────
 const playerBorderColor = (player) =>
@@ -248,15 +239,11 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
                     color: index === pendingWaivers.length - 1 ? colors.textMuted : 'rgba(220,200,80,0.8)', fontSize: fontSize.md, padding: '6px 10px', lineHeight: 1 }}>▼</button>
               </div>
             )}
-            <img
-              src={getPlayerHeadshot(waiver.player, false, headshots)}
-              onError={makeHeadshotErrorHandler(waiver.player, false, headshots)}
-              alt=""
-              style={{
-                width: 32, height: 32, borderRadius: '50%', objectFit: 'cover',
-                flexShrink: 0, background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.10)',
-              }}
+            <PlayerAvatar
+              name={waiver.player}
+              headshots={headshots}
+              size={32}
+              border="1px solid rgba(255,255,255,0.10)"
             />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: colors.success, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 500 }}>Add: {abbreviateName(waiver.player)}</div>
@@ -339,7 +326,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
   return (
     <div
       ref={containerRef}
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, overflow: 'visible' }}
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, flexShrink: 0, overflow: 'visible' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setTapped(false); }}
       onClick={(e) => {
@@ -352,13 +339,13 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
       }}
     >
       <div style={{ position: 'relative', width: 44, height: 44, overflow: 'visible' }}>
-        <img
-          src={getPlayerHeadshot(player.name, player.limited, headshots)}
-          onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
-          alt=""
+        <PlayerAvatar
+          name={player.name}
+          headshots={headshots}
+          isLimited={player.limited}
+          size={44}
+          border={`2px solid ${playerBorderColor(player)}`}
           style={{
-            width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
-            border: `2px solid ${playerBorderColor(player)}`,
             transition: 'opacity 0.15s',
             opacity: showRemove ? 0.55 : 1,
           }}
@@ -1163,15 +1150,14 @@ export const RostersView = ({
                             }}
                             title={canEditLineup ? `Remove ${backupPlayer.name} as backup` : backupPlayer.name}
                           >
-                            <img
-                              src={getPlayerHeadshot(backupPlayer.name, backupPlayer.limited, headshots)}
+                            {/* Fills the dotted-border wrapper above, which
+                                already owns the size and the padding. */}
+                            <PlayerAvatar
+                              name={backupPlayer.name}
+                              headshots={headshots}
+                              isLimited={backupPlayer.limited}
                               alt={backupPlayer.name}
-                              // Use the shared chain handler like every other
-                              // avatar — this used to jump straight to the
-                              // initials fallback, skipping the PGA Tour
-                              // source entirely for the backup slot.
-                              onError={makeHeadshotErrorHandler(backupPlayer.name, backupPlayer.limited, headshots)}
-                              style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block' }}
+                              background="transparent"
                             />
                           </div>
                           <div style={{
@@ -1392,20 +1378,20 @@ export const RostersView = ({
                           }}
                           style={{ position: 'relative', background: 'none', border: 'none', cursor: (canEditLineup && isOwnTeam) ? 'pointer' : 'default', padding: 0, width: 30, height: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
-                          <img
-                            src={getPlayerHeadshot(player.name, player.limited, headshots)}
-                            onError={makeHeadshotErrorHandler(player.name, player.limited, headshots)}
-                            alt=""
+                          <PlayerAvatar
+                            name={player.name}
+                            headshots={headshots}
+                            isLimited={player.limited}
+                            size={30}
+                            border={isEditing
+                              ? isInLineup
+                                ? `3px solid ${playerBorderColor(player)}`
+                                : `2px solid ${colors.borderSubtle}`
+                              : isInLineup
+                                ? `2px solid ${playerBorderColor(player)}`
+                                : `1px solid ${colors.borderSubtle}`}
                             style={{
-                              width: 30, height: 30, borderRadius: '50%', objectFit: 'cover',
                               opacity: pickingBackup ? 1 : isBenched ? 0.5 : isEditing && !isInLineup && !canAddToLineup ? 0.25 : isEditing && !isInLineup ? 0.55 : 1,
-                              border: isEditing
-                                ? isInLineup
-                                  ? `3px solid ${playerBorderColor(player)}`
-                                  : `2px solid ${colors.borderSubtle}`
-                                : isInLineup
-                                  ? `2px solid ${playerBorderColor(player)}`
-                                  : `1px solid ${colors.borderSubtle}`,
                               transition: 'all 0.15s',
                             }}
                           />
