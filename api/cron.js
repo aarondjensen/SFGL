@@ -634,6 +634,24 @@ async function handleWaivers(res) {
     }
     return tx.tournamentIndex ?? Number.MAX_SAFE_INTEGER;
   };
+  // When a transaction happened, in ms, or null. Tournament position alone is
+  // not a sufficient sort key: two moves made in the SAME event tie, and a
+  // stable sort then replays them in whatever order they were read, so an
+  // add-then-flip inside one free-agent window can resurrect the flipped
+  // player. See the worked example in sharedHelpers.buildEffectiveRoster.
+  const txTimeMs = (tx) => {
+    const t = tx?.timestamp;
+    if (typeof t === 'number') return Number.isFinite(t) ? t : null;
+    if (t) {
+      const ms = new Date(t).getTime();
+      if (Number.isFinite(ms)) return ms;
+    }
+    if (tx?.date) {
+      const ms = new Date(tx.date).getTime();
+      if (Number.isFinite(ms)) return ms;
+    }
+    return null;
+  };
   const effectiveRoster = (t) => {
     let names = (t.roster || []).map(p => p.name);
     allTx
@@ -642,8 +660,15 @@ async function handleWaivers(res) {
         tx.type !== 'mulligan' &&
         tx.type !== 'swing_winner' &&
         (tx.status === 'processed' || tx.status === 'completed'))
-      .map(tx => ({ tx, pos: txPosition(tx) }))
-      .sort((a, b) => a.pos - b.pos)
+      .map(tx => ({ tx, pos: txPosition(tx), ms: txTimeMs(tx) }))
+      .sort((a, b) => {
+        if (a.pos !== b.pos) return a.pos - b.pos;
+        if (a.ms !== null && b.ms !== null) return a.ms - b.ms;
+        // Undated rows predate the timestamp field, so they are older.
+        if (a.ms === null && b.ms !== null) return -1;
+        if (a.ms !== null && b.ms === null) return 1;
+        return 0;
+      })
       .forEach(({ tx }) => {
         if (tx.droppedPlayer) names = names.filter(n => n !== tx.droppedPlayer);
         if (tx.player && !names.includes(tx.player)) names.push(tx.player);

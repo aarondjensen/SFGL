@@ -235,6 +235,24 @@ export const getSwingPot = (transactions, tournaments, segment, settings) => {
 // (resolveTxTournamentIndex), so a schedule reorder can't misalign them
 // either; legacy rows carrying only a positional index still work.
 //
+// Sorting by tournament position ALONE did not finish the job: two moves in
+// the SAME event tie, Array.prototype.sort is stable, and the input is
+// newest-first — so same-week history still replayed backwards. A manager who
+// picked a player up and then flipped him for someone else in one week ended
+// up holding BOTH of them:
+//
+//   3M Open: add J. Poston, drop A. Smalley   (happened first)
+//   3M Open: add L. Glover,  drop J. Poston   (happened second)
+//
+// Replayed newest-first, the Glover move's drop hit a Poston who was not on
+// the roster yet — a silent no-op — and the Poston move then added him right
+// back. Net: Glover AND Poston, with Smalley correctly gone. A same-event
+// add-then-flip is completely ordinary (it is one free-agent window), so this
+// was not an edge case.
+//
+// The tiebreaker is `timestamp`, which every transaction written by
+// AddDropPlayerModal / AddTransactionModal carries.
+//
 // Options:
 //   asArray: true            — return an ordered array of player objects
 //                              (hydrated from team.roster) instead of a Set.
@@ -243,6 +261,29 @@ export const getSwingPot = (transactions, tournaments, segment, settings) => {
 //                              stood for event n". Omit for the current roster.
 //
 // Returns a Set<string> of player names by default.
+
+// When a transaction happened, in ms, or null if it carries nothing usable.
+// `timestamp` is a Date.now() number on everything written since the field was
+// introduced; older rows may hold an ISO string, and older ones still only a
+// `date` (day resolution — good enough to order across days, useless within
+// one, which is why it is the fallback and not the key).
+//
+// ⚠ KEEP IN SYNC with the same helper in api/cron.js (separate deploy target,
+// can't import from src/).
+const txTimeMs = (tx) => {
+  const t = tx?.timestamp;
+  if (typeof t === 'number') return Number.isFinite(t) ? t : null;
+  if (t) {
+    const ms = new Date(t).getTime();
+    if (Number.isFinite(ms)) return ms;
+  }
+  if (tx?.date) {
+    const ms = new Date(tx.date).getTime();
+    if (Number.isFinite(ms)) return ms;
+  }
+  return null;
+};
+
 export const buildEffectiveRoster = (team, transactions, opts = {}) => {
   if (!team) return opts.asArray ? [] : new Set();
   const { tournaments = [], upToTournamentIndex } = opts;
@@ -258,12 +299,29 @@ export const buildEffectiveRoster = (team, transactions, opts = {}) => {
       tx.type !== 'swing_winner' &&
       (tx.status === 'processed' || tx.status === 'completed')
     )
-    .map(tx => ({ tx, pos: resolveTxTournamentIndex(tx, tournaments) }))
+    .map((tx, i) => ({ tx, i, pos: resolveTxTournamentIndex(tx, tournaments), ms: txTimeMs(tx) }))
     .filter(({ pos }) =>
       upToTournamentIndex === undefined || (pos !== undefined && pos <= upToTournamentIndex))
-    // Chronological. Transactions with no resolvable position sort last so a
-    // legacy row missing both name and index can't jump ahead of dated ones.
-    .sort((a, b) => (a.pos ?? Number.MAX_SAFE_INTEGER) - (b.pos ?? Number.MAX_SAFE_INTEGER))
+    // Chronological, oldest first:
+    //   1. tournament position — transactions with no resolvable position sort
+    //      last so a legacy row missing both name and index can't jump ahead
+    //      of dated ones;
+    //   2. timestamp — orders two moves made in the SAME event, which is what
+    //      keeps an add-then-flip from resurrecting the flipped player;
+    //   3. reversed input order — the last resort for rows carrying no
+    //      chronological data at all. The input arrives newest-first from
+    //      transactionsApi.getAll, so reversing it is the closest thing to
+    //      oldest-first available. Undated rows predate the timestamp field,
+    //      so they sort ahead of dated ones inside the same event.
+    .sort((a, b) => {
+      const pa = a.pos ?? Number.MAX_SAFE_INTEGER;
+      const pb = b.pos ?? Number.MAX_SAFE_INTEGER;
+      if (pa !== pb) return pa - pb;
+      if (a.ms !== null && b.ms !== null) return (a.ms - b.ms) || (b.i - a.i);
+      if (a.ms === null && b.ms !== null) return -1;
+      if (a.ms !== null && b.ms === null) return 1;
+      return b.i - a.i;
+    })
     .forEach(({ tx }) => {
       if (tx.droppedPlayer) rosterSet.delete(tx.droppedPlayer);
       if (tx.player) rosterSet.add(tx.player);
