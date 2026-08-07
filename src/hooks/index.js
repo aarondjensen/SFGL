@@ -102,6 +102,14 @@ export const useLeague = (STORAGE_KEYS) => {
       // ── Tier 1: first-paint-critical collections + registry, in parallel ──
       // Each call has .catch that logs and returns null. If a call hangs we
       // wait; if it rejects we fall through to the fallbacks below.
+      //
+      // On the INITIAL load these four read from the device's Firestore cache
+      // when it has a copy, and the realtime subscriptions attached below
+      // deliver whatever changed since — so a relaunch pays for the delta
+      // instead of re-downloading every team, tournament and transaction. A
+      // REFETCH (pull-to-refresh, or the subscription-failure recovery below)
+      // forces the server, because a manual refresh should mean what it says.
+      const read = { fromServer: isRefetch };
       const [
         firebaseTeams,
         firebaseTournaments,
@@ -109,10 +117,10 @@ export const useLeague = (STORAGE_KEYS) => {
         firebaseSettings,
         firebaseRegistry,
       ] = await Promise.all([
-        teamsApi.getAll().catch((e)        => { console.error('[useLeague] teams:', e);        errors.push('teams');        return null; }),
-        tournamentsApi.getAll().catch((e)  => { console.error('[useLeague] tournaments:', e);  errors.push('tournaments');  return null; }),
-        transactionsApi.getAll().catch((e) => { console.error('[useLeague] transactions:', e); errors.push('transactions'); return null; }),
-        settingsApi.getAll().catch((e)     => { console.error('[useLeague] settings:', e);     errors.push('settings');     return null; }),
+        teamsApi.getAll(read).catch((e)        => { console.error('[useLeague] teams:', e);        errors.push('teams');        return null; }),
+        tournamentsApi.getAll(read).catch((e)  => { console.error('[useLeague] tournaments:', e);  errors.push('tournaments');  return null; }),
+        transactionsApi.getAll(read).catch((e) => { console.error('[useLeague] transactions:', e); errors.push('transactions'); return null; }),
+        settingsApi.getAll(read).catch((e)     => { console.error('[useLeague] settings:', e);     errors.push('settings');     return null; }),
         playerRegistryApi.get().catch(()   => null),
       ]);
 
@@ -365,6 +373,11 @@ export const useLeague = (STORAGE_KEYS) => {
         console.log('[useLeague] ✓ Real-time subscriptions active');
       } catch (e) {
         console.error('[useLeague] subscription setup failed:', e);
+        // The Tier-1 load above may have painted from this device's Firestore
+        // cache on the understanding that these listeners would immediately
+        // reconcile it. They didn't attach, so nothing is going to — go back to
+        // the server once rather than sit on a snapshot of unknown age.
+        if (!cancelled) loadFromFirebase(true).catch(() => {});
       }
     })();
 
@@ -372,7 +385,7 @@ export const useLeague = (STORAGE_KEYS) => {
       cancelled = true;
       unsubs.forEach(u => { try { u && u(); } catch {} });
     };
-  }, [loading]);
+  }, [loading, loadFromFirebase]);
 
   // ── Refs for stable updater dependencies ──────────────────────────────
   const teamsRef        = useRef(teams);

@@ -33,6 +33,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromCache,
   setDoc,
   addDoc,
   updateDoc,
@@ -116,9 +117,46 @@ function recoverIds(p) {
   };
 }
 
-async function _getAllOrdered(collectionName, field, dir = 'asc') {
+// ── Cache-first reads ────────────────────────────────────────────────────────
+// Firestore's persistent cache (see api/_init.js) makes a re-attached listener
+// cheap — it resumes from a stored token and the server sends only what
+// changed. It does NOT help a plain getDocs, which always goes to the server
+// and is billed for every document it returns. So the four collections behind
+// the app's load path were being paid for TWICE on every launch: once by
+// getAll(), and again a moment later when useLeague attached its listener.
+//
+// This helper serves those reads from the on-disk copy when there is one. It is
+// only safe for a collection with a LIVE onSnapshot listener behind it, because
+// the listener is what makes the data correct — it lands within a second and
+// reconciles anything that changed while this device was away. Do not use it
+// for a one-shot read nobody is watching.
+//
+// Two escape hatches keep it honest:
+//   • An empty cache falls through to the server, so a first-ever launch, a
+//     cleared cache, or a browser with persistence unavailable all behave
+//     exactly as before.
+//   • Callers pass { fromServer: true } to opt out. Pull-to-refresh does (a
+//     manual refresh should mean what it says), and so does useLeague if its
+//     subscriptions fail to attach — which is the one path where nothing would
+//     otherwise arrive to correct a stale cache. Note this means "ask the
+//     server", not "fail without one": a plain getDocs still answers from the
+//     cache when the device is offline, so pull-to-refresh out of signal range
+//     shows the league rather than an error.
+async function _getDocsCacheFirst(q, { fromServer = false } = {}) {
+  if (!fromServer) {
+    try {
+      const cached = await getDocsFromCache(q);
+      if (!cached.empty) return cached;
+    } catch (_) {
+      // No local copy yet, or the cache is unavailable — fall through.
+    }
+  }
+  return getDocs(q);
+}
+
+async function _getAllOrdered(collectionName, field, dir = 'asc', opts = {}) {
   const q = query(collection(db, collectionName), orderBy(field, dir));
-  const snap = await getDocs(q);
+  const snap = await _getDocsCacheFirst(q, opts);
   return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
 }
 
@@ -615,8 +653,10 @@ export const playerStatsApi = {
 // TEAMS API
 // ============================================================================
 export const teamsApi = {
-  async getAll() {
-    const teams = await _getAllOrdered('teams', 'name');
+  // Cache-first (see _getDocsCacheFirst) — teamsApi.subscribe() below is the
+  // live listener that keeps it honest. Pass { fromServer: true } to force it.
+  async getAll(opts = {}) {
+    const teams = await _getAllOrdered('teams', 'name', 'asc', opts);
     // Ensure every team has a lineup array — older documents may not have one
     return teams.map(t => ({ ...t, lineup: t.lineup || [] }));
   },
@@ -726,9 +766,10 @@ const _ensureStartDates = (arr) => {
 };
 
 export const tournamentsApi = {
-  async getAll() {
+  // Cache-first — tournamentsApi.subscribe() is the live listener behind it.
+  async getAll(opts = {}) {
     // Unordered fetch + JS sort (see _byStartDate). Never orderBy('start_date').
-    const snap = await getDocs(collection(db, 'tournaments'));
+    const snap = await _getDocsCacheFirst(collection(db, 'tournaments'), opts);
     const docs = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
     // GUARD: if any doc lacks start_date, a JS sort would fall back to
     // alphabetical and scramble the schedule — which corrupts activeTournamentIndex
@@ -833,12 +874,15 @@ const _txTimeMs = (tx) => {
 const _byTimestampDesc = (a, b) => _txTimeMs(b) - _txTimeMs(a);
 
 export const transactionsApi = {
-  async getAll() {
+  // Cache-first — transactionsApi.subscribe() is the live listener behind it.
+  // This is the collection that benefits most: it only grows across the season,
+  // and it was being read in full twice on every launch.
+  async getAll(opts = {}) {
     // Unordered fetch + JS sort. Never orderBy('timestamp'): Firestore orderBy
     // silently omits docs missing the ordered field, so legacy rows without a
     // timestamp would vanish from every read (same failure mode as the
     // start_date incident — see tournamentsApi.getAll and utils/swingAward.js).
-    const snap = await getDocs(collection(db, 'transactions'));
+    const snap = await _getDocsCacheFirst(collection(db, 'transactions'), opts);
     const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     return _dedupeTransactions(data.sort(_byTimestampDesc));
   },
@@ -1001,8 +1045,9 @@ export const settingsApi = {
     return [{ key, value }];
   },
 
-  async getAll() {
-    const snap = await getDocs(collection(db, 'league_settings'));
+  // Cache-first — settingsApi.subscribe() is the live listener behind it.
+  async getAll(opts = {}) {
+    const snap = await _getDocsCacheFirst(collection(db, 'league_settings'), opts);
     const settings = {};
     snap.docs.forEach(d => { settings[d.data().key] = d.data().value; });
     return settings;
