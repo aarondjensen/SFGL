@@ -28,9 +28,7 @@
  * ============================================================================
  */
 
-import { initializeApp, getApps } from 'firebase/app';
 import {
-  getFirestore,
   collection,
   doc,
   getDoc,
@@ -48,20 +46,16 @@ import {
   deleteField,
 } from 'firebase/firestore';
 
-// ── Firebase config — values come from environment variables ─────────────────
-// Vite exposes env vars prefixed with VITE_
-const firebaseConfig = {
-  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
-};
-
-// Avoid re-initialising on hot reload
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// ── Firestore handle ─────────────────────────────────────────────────────────
+// This file used to initialise its own app + Firestore instance alongside the
+// one in _init.js. Both resolved to the same underlying instance, so it looked
+// harmless — but it stopped being harmless the moment _init.js started asking
+// for an on-disk cache: whichever module imported first won, and if this one
+// won, initializeFirestore over there threw and persistence silently turned
+// itself off. _init.js is the single owner now, exactly as its header always
+// claimed. Re-exported so `import { db } from './firebase'` keeps working.
+import { db } from './_init';
+export { db };
 
 // ── Alias cache — maps alternate player names to canonical doc IDs ────────────
 // Populated lazily from player docs that have an 'aliases' array field.
@@ -275,11 +269,20 @@ export const playersApi = {
     snapRaw.docs.forEach(addDoc);
     snapCap.docs.forEach(addDoc);
 
-    // Also search all ranked players client-side for substring/last-name matches
+    // Then a client-side substring/last-name pass over the SHARED players
+    // snapshot (localStorage, 24h). This used to be getTopRanked(700) — a fresh
+    // ~700-document read on every search, i.e. every time a manager typed a
+    // name into add/drop on waiver day. The prefix queries above still run
+    // against the server, so a player added to the collection since this
+    // device's snapshot was built is still findable by first-name prefix.
     try {
-      const allRanked = await this.getTopRanked(700);
+      const allRanked = await playerRankingsApi.getAll();
       const lower = searchTerm.toLowerCase();
-      allRanked.forEach(p => {
+      (allRanked || []).forEach(p => {
+        // Same rosterability filter getTopRanked applied, so this pass can't
+        // start surfacing LIV players or junk name rows that it never did.
+        if (!p?.name || p.isLiv) return;
+        if (/^\d+$/.test(p.name.trim()) || !p.name.includes(' ')) return;
         if (!seen.has(p.name) && p.name.toLowerCase().includes(lower)) {
           seen.add(p.name);
           results.push(p);
@@ -412,6 +415,13 @@ export const playersApi = {
     });
   },
 
+  // NOTE: the app no longer reads headshots or stats through these two
+  // methods — both now build their map from the shared, localStorage-cached
+  // players snapshot (see headshotsApi.getAll / playerStatsApi.getAll), because
+  // each call here is a full read of the ~700-document collection. They are
+  // kept as the raw-document implementations for one-off/admin use; if you are
+  // fixing headshot behaviour, fix it in headshotsApi.getAll, not here.
+
   // name -> { url?, espn?, pga? } — the shape utils/headshotUtils.js chains.
   // Previously returned a bare string (url OR espn id, whichever existed),
   // which meant a player could carry only one source and had nothing to fall
@@ -473,7 +483,20 @@ import { resolveAlias } from '../constants/nameAliases.js';
 const PLAYER_CACHE_KEY = 'sfgl-player-cache';
 const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
+// In-flight de-dupe for the players snapshot. useLeague's Tier-2 load asks for
+// rankings, headshots and stats in the SAME Promise.all — all three now resolve
+// through getAll() below, and on a cold cache all three would find nothing in
+// localStorage and each fire their own ~700-document query before the first one
+// finished writing the cache. Sharing the promise makes concurrent callers ride
+// a single query. Cleared as soon as it settles, so it never serves stale data.
+let _playersInFlight = null;
+
 export const playerRankingsApi = {
+  // The one place the whole players collection is read. It is ~700 documents,
+  // so it is cached in localStorage for 24 hours and shared by every consumer
+  // (rankings, headshots, stats, add/drop search). Admin paths that change
+  // player docs — the OWGR sync and the manual add in DataSyncPanel — call
+  // invalidateCache() so their edits are visible immediately.
   async getAll() {
     // Try localStorage cache first — avoids 10k Firestore reads on every load
     try {
@@ -486,12 +509,19 @@ export const playerRankingsApi = {
       }
     } catch (_) {}
 
-    // Cache miss or expired — fetch from Firestore
-    const players = await playersApi.getAllForApp();
-    try {
-      localStorage.setItem(PLAYER_CACHE_KEY, JSON.stringify({ players, timestamp: Date.now() }));
-    } catch (_) {}
-    return players;
+    // Cache miss or expired — fetch from Firestore (one query, however many
+    // callers are waiting on it).
+    if (!_playersInFlight) {
+      _playersInFlight = playersApi.getAllForApp()
+        .then(players => {
+          try {
+            localStorage.setItem(PLAYER_CACHE_KEY, JSON.stringify({ players, timestamp: Date.now() }));
+          } catch (_) {}
+          return players;
+        })
+        .finally(() => { _playersInFlight = null; });
+    }
+    return _playersInFlight;
   },
   async invalidateCache() {
     try { localStorage.removeItem(PLAYER_CACHE_KEY); } catch (_) {}
@@ -502,7 +532,32 @@ export const playerRankingsApi = {
 };
 
 export const headshotsApi = {
-  async getAll() { return playersApi.getHeadshotsMap(); },
+  // Built from the SHARED players snapshot (localStorage, 24h) rather than its
+  // own full read of the collection. This used to call getHeadshotsMap(), which
+  // re-read all ~700 player documents — and it ran in the same Promise.all as
+  // the stats map, which did the same thing, and the rankings load, which did
+  // it a third time. Three full reads of one collection on every cold start.
+  //
+  // Staleness is a non-issue here specifically: App.jsx re-resolves every
+  // rostered player through /api/headshots on each launch and merges the ids
+  // over whatever this returns, so a newly-resolved id shows up immediately
+  // regardless of the cache, and the commissioner's headshot_url pins land via
+  // DataSyncPanel, which invalidates the cache when it writes.
+  async getAll() {
+    const players = await playerRankingsApi.getAll();
+    const map = {};
+    (players || []).forEach(p => {
+      if (!p?.name) return;
+      const entry = {};
+      // espnId/pgaId arrive already scrubbed by getAllForApp -> recoverIds, so
+      // a corrupt object-valued id can't reach a CDN URL as "[object Object]".
+      if (typeof p.headshotUrl === 'string' && p.headshotUrl.trim()) entry.url = p.headshotUrl.trim();
+      if (p.espnId) entry.espn = p.espnId;
+      if (p.pgaId)  entry.pga  = p.pgaId;
+      if (Object.keys(entry).length > 0) map[p.name] = entry;
+    });
+    return map;
+  },
 
   /**
    * Wave A fix: previously a deprecated no-op that just `console.warn`-ed.
@@ -541,7 +596,17 @@ export const headshotsApi = {
 };
 
 export const playerStatsApi = {
-  async getAll()              { return playersApi.getStatsMap(); },
+  // Also built from the shared players snapshot — see headshotsApi.getAll.
+  // career_stats is written by admin tooling only, never during normal play, so
+  // reading it from a snapshot up to a day old changes nothing on screen.
+  async getAll() {
+    const players = await playerRankingsApi.getAll();
+    const map = {};
+    (players || []).forEach(p => {
+      if (p?.name && p.stats && Object.keys(p.stats).length > 0) map[p.name] = p.stats;
+    });
+    return map;
+  },
   async set(playerName, stats){ return playersApi.update(playerName, { stats }); },
   async setAll(_obj)          { console.warn('playerStatsApi.setAll is deprecated'); },
 };
