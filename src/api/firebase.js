@@ -1020,6 +1020,24 @@ export const transactionsApi = {
       collection(db, 'transactions'),
       (snap) => {
         try {
+          // Ignore an empty snapshot that is NOT server-confirmed.
+          //
+          // Honest note on why this is written the way it is. The listeners for
+          // teams/tournaments/settings in useLeague carry a blunt length>0
+          // guard, against a reconnect emitting a spurious empty snapshot. That
+          // was never reproduced here: across a cold cache, three
+          // disconnect/reconnect cycles and a visibility change, this listener
+          // handed the app nothing but the real row count. So treat this line
+          // as insurance, not as a fix for an observed bug.
+          //
+          // What it must NOT do is copy that blunt guard, because transactions
+          // are the one collection that can legitimately be empty — a new
+          // season, or an undo of the season's only waiver. Keying on
+          // metadata.fromCache means a real, server-confirmed deletion still
+          // propagates to everyone else's screen; only an unconfirmed empty is
+          // dropped. A length>0 guard would leave a deleted row showing on
+          // every other manager's phone, which is worse than what it prevents.
+          if (snap.empty && snap.metadata.fromCache) return;
           const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
           callback(_dedupeTransactions(data.sort(_byTimestampDesc)));
         } catch (e) {

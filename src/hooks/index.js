@@ -359,6 +359,13 @@ export const useLeague = (STORAGE_KEYS) => {
         }));
 
         unsubs.push(transactionsApi.subscribe(next => {
+          // No length guard here, unlike the three around it. Transactions are
+          // the one collection that can legitimately BE empty — at the start of
+          // a season, or when the season's only transaction is undone — and
+          // swallowing that would leave a deleted row on everyone else's
+          // screen. The meaningless-empty case (a reconnect blip, or a device
+          // whose cache hasn't filled yet) is filtered inside
+          // transactionsApi.subscribe, which can tell the two apart.
           if (Array.isArray(next)) setTransactions(next);
         }));
 
