@@ -18,27 +18,28 @@
 // ============================================================================
 
 import { getSegmentForTournament } from './index.js';
+import { nameKey } from '../../api/_playerNames.js';
 
-// ── Name normalization (Nordic + diacritics + hyphens) ───────────────────────
-// Normalizes Nordic and other diacritics, plus hyphens and whitespace, so
-// roster names match field/leaderboard names regardless of source format.
-//   • Diacritics: NFD decompose + strip combining marks (Höjgaard → Hojgaard)
-//   • Nordic special letters: ø/Ø → o/O, æ/Æ → ae/Ae, ß → ss
-//   • Hyphens to spaces ("Si-Woo Kim" → "Si Woo Kim")
-//   • Collapse whitespace so the hyphen→space replacement doesn't leave
-//     double spaces.
+// ── Name normalization ───────────────────────────────────────────────────────
+// Delegates to nameKey() in api/_playerNames.js, the single source of truth.
 //
-// IMPORTANT: api/field.js has its own copy of this function (different deploy
-// target). When you change this, mirror the changes there.
-export const normalizeNordic = (s) => (s || '')
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/ø/g, 'o').replace(/Ø/g, 'O')
-  .replace(/æ/g, 'ae').replace(/Æ/g, 'Ae')
-  .replace(/ß/g, 'ss')
-  .replace(/-/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
+// The old hand-rolled body folded diacritics and Nordic letters and turned
+// hyphens into spaces, but did NOT lowercase and did NOT strip periods or
+// apostrophes — so 'C.T. Pan' vs 'CT Pan' and "O'Toole" vs "OToole" were
+// different keys, and api/field.js carried a near-copy that disagreed about
+// which letters to fold. nameKey covers all of that, plus "Last, First" order,
+// OWGR's "(Am)" qualifiers and Jr/III suffixes — and there is now exactly one
+// copy of it across both deploy targets.
+//
+// ⚠ This is an EXACT-key normalizer. Comparing two normalizeNordic() values
+// answers "are these the same string, modulo formatting?" — NOT "are these the
+// same golfer?". It cannot see that 'Nico Echavarria' and 'Nicolas Echavarria'
+// are one player, because that equivalence lives in the variant tiers, not in
+// the key. For field membership, tee times, odds, live scores and earnings use
+// NameSet / NameMap / namesMatch from api/_playerNames.js, which compare
+// equivalence classes. Reaching for a bare key comparison in those places is
+// precisely the bug this refactor fixed.
+export const normalizeNordic = nameKey;
 
 // ── ET timezone helpers ──────────────────────────────────────────────────────
 // Returns a Date object set to the current Eastern Time wall clock.

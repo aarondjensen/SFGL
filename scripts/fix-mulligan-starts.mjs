@@ -36,6 +36,7 @@
 import { readFileSync } from 'node:fs';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { NameSet } from '../api/_playerNames.js';
 
 const args = process.argv.slice(2);
 const APPLY = args.includes('--apply');
@@ -44,7 +45,8 @@ const EVENT_FILTER = (args.find(a => a.startsWith('--event=')) || '').split('=')
 
 const REGISTRY_DOC = 'sfgl_data/player-registry';
 
-const normalizeName = (n) => (n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+// Registry lookups go through NameSet so this script resolves a player the
+// same way the app does — see api/_playerNames.js.
 
 async function main() {
   const saRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -86,7 +88,7 @@ async function main() {
   // Find the registry key matching a display name (registry is keyed by name).
   const regKeyFor = (name) => {
     if (registry[name] !== undefined) return name;
-    return Object.keys(registry).find(k => normalizeName(k) === normalizeName(name)) || null;
+    return new NameSet(Object.keys(registry)).resolve(name);
   };
 
   // Accumulate per-team roster edits and registry overrides.

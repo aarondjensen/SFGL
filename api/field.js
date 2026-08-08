@@ -12,6 +12,7 @@ const HEADERS = {
 };
 
 import { extractNextData, nameToSlug } from './_constants.js';
+import { NameMap, NameSet, resolveAlias } from './_playerNames.js';
 
 function walkAll(obj, fn) {
   if (!obj || typeof obj !== 'object') return;
@@ -77,49 +78,40 @@ function makeTeeTimeRecorder(teeTimeMap, teeTimeISOMap) {
   };
 }
 
-// ── Known name aliases — maps API name variants to canonical names ──────────────
+// ── Name identity ─────────────────────────────────────────────────────────
 //
-// ⚠ KEEP IN SYNC with `src/constants/nameAliases.js` — that file is the source
-// of truth for client-side alias resolution; this is a copy because serverless
-// functions can't import client-side code.
+// This file used to carry its OWN copy of the alias table and its OWN
+// normalizer (normName), under a "⚠ KEEP IN SYNC with src/constants/
+// nameAliases.js" comment. The two drifted, as duplicated tables do: this copy
+// stripped combining marks but not ø/æ, while the client's copy stripped ø/æ
+// but never lowercased.
 //
-// Format: alternate (API/PGA Tour form) → canonical (SFGL roster form)
-const NAME_ALIASES = {
-  'Samuel Stevens':        'Sam Stevens',
-  'Vincent Whaley':        'Vince Whaley',
-  'Rafa Cabrera Bello':    'Rafael Cabrera Bello',
-  'Si-Woo Kim':            'Si Woo Kim',
-  'Byeong Hun An':         'Byeong-Hun An',
-  'Nico Echavarria':       'Nicolas Echavarria',
-  'K.H. Lee':              'Kyoung-Hoon Lee',
-  'S.H. Kim':              'Sung-Hyun Kim',
-};
-function canonicalName(name) {
-  return NAME_ALIASES[name?.trim()] || name?.trim();
-}
+// Worse, the alias table was applied HERE — rewriting the tour's name to the
+// SFGL canonical spelling — and the client then compared the result to roster
+// names RAW. So the rewrite only helped when the roster already held the
+// canonical spelling. When a roster held 'Nico Echavarria' and this endpoint
+// emitted 'Nicolas Echavarria', that player silently vanished from the ⛳ flag,
+// the "Playing" filter, tee times, odds and live scores.
+//
+// Both copies are gone. api/_playerNames.js is imported directly by this
+// serverless function AND by the browser bundle, and matching is by
+// equivalence class on both sides, so it no longer matters which spelling a
+// given source uses.
+//
+// canonicalName() survives only to give the response ONE spelling per player
+// when pgatour.com's own page sections disagree — the id/photo/tee-time maps
+// below are keyed by name and need a stable key. It is no longer load-bearing
+// for matching.
+const canonicalName = (name) => resolveAlias(name);
 
-// Strip diacritics, hyphens, whitespace, lowercase — for robust name matching
-// across PGA Tour data sections that may render the same player differently
-// (e.g. "Si-Woo Kim" vs "Si Woo Kim", "Højgaard" vs "Hojgaard").
-function normName(s) {
-  return (s || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/-/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-// Build tee-time list from a players array + teeTimeMap with two-pass matching:
-// (1) exact canonical key match, (2) fall back to normalized match. This catches
-// cases where canonicalName didn't unify the variants because no alias exists.
+// Build the tee-time list by player IDENTITY rather than by string key.
+// Replaces a two-pass exact-then-normalized lookup that still missed any
+// rendering difference the old normalizer did not happen to cover.
 function joinPlayersToTeeTimes(players, teeTimeMap) {
-  const normalizedTtMap = {};
-  Object.entries(teeTimeMap).forEach(([k, v]) => { normalizedTtMap[normName(k)] = v; });
+  const lookup = new NameMap(Object.entries(teeTimeMap));
   const out = [];
   for (const n of players) {
-    const tt = teeTimeMap[n] || normalizedTtMap[normName(n)];
+    const tt = lookup.get(n);
     if (tt) out.push({ name: n, teeTime: tt });
   }
   return out;
@@ -223,13 +215,14 @@ function parseFieldPage(nd) {
     }
   });
 
-  // Deduplicate "Last, First" vs "First Last"
-  const allNames = [...playerNames];
-  const players = allNames.filter(name => {
-    if (!name.includes(',')) return true;
-    const [last, first] = name.split(',').map(s => s.trim());
-    return first ? !playerNames.has(`${first} ${last}`) : true;
-  });
+  // Deduplicate the same golfer appearing under two renderings. The old
+  // version only handled the literal "Last, First" vs "First Last" pair by
+  // string-rebuilding the name; NameSet's grouping also collapses hyphen,
+  // accent, punctuation and nickname differences between page sections, and
+  // prefers the first spelling seen. "First Last" entries are added to the
+  // set before comma-form ones below so they win as the representative.
+  const ordered = [...playerNames].sort((a, b) => Number(a.includes(',')) - Number(b.includes(',')));
+  const players = new NameSet(ordered).groups.map((group) => group[0]);
 
   return { players, pgaIds, photos, teeTimeMap, oddsMap };
 }
@@ -323,15 +316,19 @@ export default async function handler(req, res) {
           try {
             const espn = await fetchFromESPN();
             if (espn.teeTimes?.length) {
-              const normalize = s => s.toLowerCase().replace(/[^a-z ]/g, '').trim();
-              const espnMap = {};
-              espn.teeTimes.forEach(({ name, teeTime }) => { espnMap[normalize(name)] = teeTime; });
+              // Joining PGA Tour names to ESPN names is the highest-variance
+              // match in this file — two independent editorial styles. The
+              // previous normalizer here stripped every non-[a-z ] character,
+              // which folded accents to NOTHING rather than to their base
+              // letter ('Muñoz' → 'muoz'), so accented players lost their tee
+              // time on this path. NameMap handles it by identity.
+              const espnMap = new NameMap(espn.teeTimes.map(({ name, teeTime }) => [name, teeTime]));
               // ESPN ids go in their OWN map — merging them into pgaIds is
               // what made the combined map unsafe to build PGA URLs from.
               Object.assign(espnIds, espn.espnIds || {});
               finalTeeTimes = players
-                .filter(n => espnMap[normalize(n)])
-                .map(n => ({ name: n, teeTime: espnMap[normalize(n)] }));
+                .filter(n => espnMap.has(n))
+                .map(n => ({ name: n, teeTime: espnMap.get(n) }));
             }
           } catch (_) {}
         }

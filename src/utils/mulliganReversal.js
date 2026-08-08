@@ -17,19 +17,14 @@
 // kept standalone here rather than refactoring the core processing path
 // mid-flight; matchPlayerName is a small pure mirror of the one there.
 // ============================================================================
-import { normalizePlayerName } from './index.js';
+import { namesMatch } from '../../api/_playerNames.js';
 import { getPlayerRegistry } from './sharedHelpers';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../constants/index.js';
 
-// Mirror of processTournamentData.matchPlayerName (word-set match).
-const matchPlayerName = (a, b) => {
-  const na = normalizePlayerName(a), nb = normalizePlayerName(b);
-  if (!na || !nb) return false;
-  if (na === nb) return true;
-  const wa = na.split(' '), wb = nb.split(' ');
-  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
-  return false;
-};
+// Was a hand-copied "mirror of processTournamentData.matchPlayerName" — the
+// two now share one implementation, so a reversal can no longer disagree with
+// the processing run it is reversing about which lineup slot a round leader is.
+const matchPlayerName = namesMatch;
 
 const lookupEarnings = (name, earningsMap) => {
   if (earningsMap[name] !== undefined) return earningsMap[name] || 0;
@@ -51,7 +46,7 @@ export const recomputeTeamTournamentResult = (lineup, earningsMap, roundLeaders,
       : (roundLeaders?.[round] ? [roundLeaders[round]] : []);
     leaders.forEach(leaderName => {
       if (!leaderName) return;
-      const actual = (lineup || []).find(pn => normalizePlayerName(pn) === normalizePlayerName(leaderName));
+      const actual = (lineup || []).find(pn => matchPlayerName(pn, leaderName));
       if (actual) {
         bonusEarnings[round] = bonuses[round];
         totalEarnings += bonuses[round];

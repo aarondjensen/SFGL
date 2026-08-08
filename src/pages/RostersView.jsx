@@ -15,7 +15,8 @@ import {
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts, fontSize } from '../theme.js';
 import { STORAGE_KEYS } from '../constants';
-import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, normalizeNordic } from '../utils/sharedHelpers';
+import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament } from '../utils/sharedHelpers';
+import { NameSet, NameMap } from '../../api/_playerNames.js';
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
 // Thin wrappers preserve the (name, isLimited, headshotMap) call signature
@@ -446,10 +447,18 @@ export const RostersView = ({
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
-  const [tournamentField,   setTournamentField]   = useState(null);
-  const [teeTimeMap,        setTeeTimeMap]        = useState({}); // { playerName: '8:04 AM' }
+  // Field / tee time / odds lookups are keyed by player IDENTITY, not by
+  // string. They were plain Set/object keyed on normalizeNordic(name), which
+  // meant a roster entry spelled differently from the field payload — 'Nico
+  // Echavarria' vs 'Nicolas Echavarria' — silently missed on every one of
+  // them at once: no ⛳, hidden by the "Playing" filter, no tee time, no odds,
+  // no live score, plus a bogus "not in this week's field" warning when the
+  // manager tried to start them. NameSet/NameMap compare equivalence classes,
+  // so .has()/.get() take the RAW roster name and do the matching themselves.
+  const [tournamentField,   setTournamentField]   = useState(null); // NameSet
+  const [teeTimeMap,        setTeeTimeMap]        = useState(() => new NameMap()); // → '8:04 AM'
   const [fieldPlayerIds,    setFieldPlayerIds]    = useState({}); // { playerName: espnId }
-  const [oddsMap,           setOddsMap]           = useState({}); // { playerName: '+2000' }
+  const [oddsMap,           setOddsMap]           = useState(() => new NameMap()); // → '+2000'
   const [liveData,          setLiveData]          = useState(null); // { players, round, state } from /api/live
   const dialog = useDialog();
 
@@ -606,7 +615,7 @@ export const RostersView = ({
     // gate, mirroring the ⛳ flag + field-only filter elsewhere in this view.
     // This is a confirm, not a hard block: a manager may knowingly roster
     // someone the source hasn't listed yet, and field data can lag reality.
-    if (tournamentField?.size > 0 && !tournamentField.has(normalizeNordic(player.name))) {
+    if (tournamentField?.size > 0 && !tournamentField.has(player.name)) {
       const proceed = await dialog.showConfirm(
         "Not in this week's field",
         `${player.name} isn't listed in this week's tournament field. If they've withdrawn or aren't playing, they'll score nothing this week. Add to your lineup anyway?`,
@@ -749,9 +758,8 @@ export const RostersView = ({
   useEffect(() => {
     if (!_fieldTournamentName) return;
     // Don't re-run if we already have tee times for this tournament
-    if (_lastFetchedTournament.current === _fieldTournamentName && Object.keys(teeTimeMap).length > 0) return;
+    if (_lastFetchedTournament.current === _fieldTournamentName && teeTimeMap.size > 0) return;
     let cancelled = false;
-    const normalize = normalizeNordic;
 
     const fetchField = () => {
       fetch('/api/field?t=' + Date.now())
@@ -759,19 +767,18 @@ export const RostersView = ({
         .then(data => {
           if (cancelled || !data?.players?.length) return;
           _lastFetchedTournament.current = _fieldTournamentName;
-          setTournamentField(new Set(data.players.map(normalize)));
+          // Names go in as the source spelled them. NameSet/NameMap index every
+          // equivalent rendering, so lookups below pass the roster's spelling
+          // straight through — no normalizer for a call site to forget.
+          setTournamentField(new NameSet(data.players));
           if (data.teeTimes?.length) {
-            const ttMap = {};
-            data.teeTimes.forEach(({ name, teeTime }) => { ttMap[normalize(name)] = teeTime; });
-            setTeeTimeMap(ttMap);
+            setTeeTimeMap(new NameMap(data.teeTimes.map(({ name, teeTime }) => [name, teeTime])));
           }
           if (data.playerIds && Object.keys(data.playerIds).length) {
             setFieldPlayerIds(data.playerIds);
           }
           if (data.odds?.length) {
-            const oMap = {};
-            data.odds.forEach(({ name, odds }) => { oMap[normalize(name)] = odds; });
-            setOddsMap(oMap);
+            setOddsMap(new NameMap(data.odds.map(({ name, odds }) => [name, odds])));
           }
         })
         .catch(() => {});
@@ -871,6 +878,16 @@ export const RostersView = ({
     return () => { cancelled = true; clearInterval(interval); };
   }, [activeTournament?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Leaderboard row lookup, keyed by player identity. Built once per poll
+  // rather than re-scanning liveData.players inside every roster row — and,
+  // more importantly, built ONCE so the Score column and the Position column
+  // cannot resolve the same roster entry to two different leaderboard rows,
+  // which the two separate fuzzy cascades they used to run could do.
+  const liveByName = React.useMemo(
+    () => new NameMap((liveData?.players || []).map(p => [p.name, p])),
+    [liveData],
+  );
+
   // Build a name->worldRank lookup from allPlayers for the OWGR stats column.
   // Declared before sortedRoster so the OWGR sort case can read from it.
   const worldRankMap = React.useMemo(() => {
@@ -892,22 +909,19 @@ export const RostersView = ({
 
   const sortedRoster = React.useMemo(() => {
     const baseRoster = rosterView === 'playing'
-      ? getSortedRoster(currentRoster).filter(p => tournamentField?.has(
-          normalizeNordic(p.name)
-        ))
+      ? getSortedRoster(currentRoster).filter(p => tournamentField?.has(p.name))
       : getSortedRoster(currentRoster);
     const roster = baseRoster;
     if (!sortCol) return roster;
-    const normalize = normalizeNordic;
     return [...roster].sort((a, b) => {
       let av, bv, aHasData = true, bHasData = true;
       if (sortCol === 'teeTime') {
-        const rawA = teeTimeMap[normalize(a.name)]; const rawB = teeTimeMap[normalize(b.name)];
+        const rawA = teeTimeMap.get(a.name); const rawB = teeTimeMap.get(b.name);
         aHasData = !!rawA; bHasData = !!rawB;
         const toMin = t => { if (!t) return 0; const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 0; let h = parseInt(m[1]); if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12; if (m[3].toUpperCase() === 'AM' && h === 12) h = 0; return h * 60 + parseInt(m[2]); };
         av = toMin(rawA); bv = toMin(rawB);
       } else if (sortCol === 'odds') {
-        const rawA = oddsMap[normalize(a.name)]; const rawB = oddsMap[normalize(b.name)];
+        const rawA = oddsMap.get(a.name); const rawB = oddsMap.get(b.name);
         aHasData = !!rawA; bHasData = !!rawB;
         const toNum = o => { if (!o) return 0; const n = parseInt(String(o).replace('+',''), 10); return isNaN(n) ? 0 : n; };
         av = toNum(rawA); bv = toNum(rawB);
@@ -1457,7 +1471,7 @@ export const RostersView = ({
                             }}>
                               {displayName(player.name, isMobile)}
                             </span>
-                            {tournamentField?.has(normalizeNordic(player.name)) && (
+                            {tournamentField?.has(player.name) && (
                               <span title="In this week's field" style={{ fontSize: fontSize.sm, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
                             )}
                             {player.limited && (
@@ -1488,41 +1502,30 @@ export const RostersView = ({
 
                     {/* ── Info columns: Tee Time/Score + Odds + empty Earnings ── */}
                     {infoView === 'info' && (() => {
-                      const normalize = normalizeNordic;
-                      const normName = normalize(player.name);
-                      const playerOdds = oddsMap[normName];
-                      const inField = tournamentField?.has(normName);
+                      const playerOdds = oddsMap.get(player.name);
+                      const inField = tournamentField?.has(player.name);
 
                       // Col 1: Score (live) → Tee Time → ⛳ in field → —
                       let col1;
                       if (liveData?.players?.length) {
-                        // Multi-strategy name matching from golfUtils pattern
-                        const buildInitialsKey = (name) => {
-                          const parts = normalize(name).split(' ');
-                          if (parts.length < 2) return null;
-                          const initials = parts.slice(0, -1).map(p => p[0]).join('');
-                          return `${initials} ${parts[parts.length - 1]}`;
-                        };
-                        const rosterLast = normName.split(' ').slice(-1)[0];
-                        const rosterInitialsKey = buildInitialsKey(player.name);
-                        // Only match roster players who are actually in this week's
-                        // field (i.e. those that earn the ⛳ flag). A non-field
-                        // player must never pick up a leaderboard entry via the
-                        // fuzzy last-name / substring fallbacks below — that caused
-                        // a benched "B. Brown" who isn't playing to inherit another
-                        // Brown's CUT status from the live leaderboard.
-                        const live = !inField ? null : (
-                          liveData.players.find(p => normalize(p.name) === normName)
-                          || liveData.players.find(p => {
-                            const ln = normalize(p.name).split(' ').slice(-1)[0];
-                            return ln === rosterLast && rosterLast.length > 3;
-                          })
-                          || liveData.players.find(p => {
-                            const ln = normalize(p.name);
-                            return ln.includes(normName) || normName.includes(ln);
-                          })
-                          || (rosterInitialsKey ? liveData.players.find(p => buildInitialsKey(p.name) === rosterInitialsKey) : null)
-                        );
+                        // Leaderboard lookup by player identity. This replaces a
+                        // four-stage fuzzy cascade — exact, then surname-only,
+                        // then SUBSTRING, then initials — whose fallbacks were
+                        // each capable of handing a player another golfer's
+                        // score:
+                        //   • surname-only matched the Coody brothers to each
+                        //     other, whichever the leaderboard listed first;
+                        //   • substring matched 'Tom Kim' into 'Tom Kimura'.
+                        // Both were gated on inField, which bounded the blast
+                        // radius to players actually teeing it up but did not
+                        // prevent the mix-up. NameMap resolves the abbreviated
+                        // 'V. Hovland' rendering those fallbacks were really
+                        // there for, and returns nothing when a name is
+                        // genuinely ambiguous.
+                        //
+                        // The inField gate stays: a benched player who is not
+                        // in the field must never pick up a leaderboard row.
+                        const live = !inField ? null : (liveByName.get(player.name) || null);
 
                         // Determine display mode from thru field (golfUtils pattern):
                         // "F" or numeric → player has started, show score
@@ -1547,11 +1550,11 @@ export const RostersView = ({
                           );
                         } else {
                           // Not started — show tee time from live data or teeTimeMap
-                          const tt = live?.thru || teeTimeMap[normName];
+                          const tt = live?.thru || teeTimeMap.get(player.name);
                           col1 = <td style={{ padding: '7px 4px', textAlign: isMobile ? 'right' : 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (tt ? colors.textPrimary : colors.textMuted) }}>{tt ? tt.replace(' AM', 'a').replace(' PM', 'p') : <span style={{ opacity: 0.25 }}>—</span>}</td>;
                         }
                       } else {
-                        const teeTime = teeTimeMap[normName];
+                        const teeTime = teeTimeMap.get(player.name);
                         col1 = (
                           <td style={{ padding: '7px 4px', textAlign: isMobile ? 'right' : 'center', fontFamily: fonts.mono, fontSize: isMobile ? 12 : 14, color: isBenched ? dimColor : (teeTime ? colors.textPrimary : inField ? colors.textSecondary : 'transparent') }}>
                             {teeTime ? teeTime.replace(' AM', 'a').replace(' PM', 'p') : inField ? 'TBD' : '—'}
@@ -1578,15 +1581,13 @@ export const RostersView = ({
                       // thing to show. (Once processed, the processedAt gate
                       // in the /api/live effect suppresses liveData entirely.)
                       if (liveData?.state === 'in' || liveData?.state === 'post') {
-                        // Re-find live entry (same field-gated match logic as col1)
-                        const rosterLast = normName.split(' ').slice(-1)[0];
-                        const live = !inField ? null : (
-                          liveData.players.find(p => normalize(p.name) === normName)
-                          || liveData.players.find(p => {
-                            const ln = normalize(p.name).split(' ').slice(-1)[0];
-                            return ln === rosterLast && rosterLast.length > 3;
-                          })
-                        );
+                        // Re-find the live entry through the same identity
+                        // lookup col1 uses, so Score and Position can never
+                        // disagree about which leaderboard row is this player.
+                        // (The old code re-implemented a SHORTER fuzzy cascade
+                        // here than in col1, so the two columns could resolve
+                        // to different golfers for the same row.)
+                        const live = !inField ? null : (liveByName.get(player.name) || null);
                         if (live && !live.isCut && !live.isWD) {
                           const thruNum = live.thru ? parseInt(live.thru, 10) : NaN;
                           const isFinished = live.thru === 'F';

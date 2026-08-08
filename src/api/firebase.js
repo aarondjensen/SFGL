@@ -79,7 +79,35 @@ async function getAliasMap() {
     return map;
   } catch (_) { return {}; }
 }
-function invalidateAliasCache() { _aliasCache = null; }
+
+// ── Existing-player index — resolves a name onto the doc that already
+// represents that golfer ────────────────────────────────────────────────────
+// Mirrors the same step in api/cron.js's OWGR sync, and exists for the same
+// reason: writing a ranking under a spelling that differs from the existing
+// doc ID creates a SECOND doc for one player. That is how the league ended up
+// holding both 'Nico Echavarria' and 'Nicolas Echavarria' — one carrying the
+// world rank and headshot, the other sitting on a roster, with nothing tying
+// them together.
+//
+// The aliases arrays are hand-maintained through Merge Players, so they only
+// ever covered spellings someone had already noticed. NameSet resolves the
+// rest by identity, automatically.
+//
+// Cached like the alias map (and invalidated with it) so the extra collection
+// read costs one round trip per session, not one per upsert.
+let _playerIndexCache = null;
+async function getPlayerIndex() {
+  if (_playerIndexCache) return _playerIndexCache;
+  try {
+    const snap = await getDocs(collection(db, 'players'));
+    _playerIndexCache = new NameSet(snap.docs.map(d => d.id));
+  } catch (_) {
+    _playerIndexCache = new NameSet([]);
+  }
+  return _playerIndexCache;
+}
+
+function invalidateAliasCache() { _aliasCache = null; _playerIndexCache = null; }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -312,14 +340,18 @@ export const playersApi = {
 
   async upsertMany(players) {
     const timestamp = Date.now();
-    // Check alias map — if a player name is an alias for a canonical doc, use that doc ID
-    const aliasMap = await getAliasMap();
+    // Resolve each incoming name onto the doc that already represents that
+    // golfer, so a sync updates the existing player instead of minting a
+    // duplicate under a different spelling. Precedence:
+    //   1. explicit aliases array  — a deliberate commissioner decision
+    //   2. identity match on an existing doc ID  — automatic
+    //   3. the static alias groups — for a player with no doc yet
+    const [aliasMap, playerIndex] = await Promise.all([getAliasMap(), getPlayerIndex()]);
     const BATCH_SIZE = 499;
     for (let i = 0; i < players.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       players.slice(i, i + BATCH_SIZE).forEach(p => {
-        // Resolve via static aliases first, then dynamic Firebase aliases
-        const canonicalName = aliasMap[p.name] || resolveAlias(p.name);
+        const canonicalName = aliasMap[p.name] || playerIndex.resolve(p.name) || resolveAlias(p.name);
         const row = { name: canonicalName };
         if (p.worldRank   !== undefined) row.world_rank   = p.worldRank ?? null;
         if (p.espnId      !== undefined && p.espnId !== null) row.espn_id = p.espnId;
@@ -357,12 +389,12 @@ export const playersApi = {
     // `aliasMap` that only exists inside upsertMany's scope, so every call
     // threw a ReferenceError before writing anything (i.e. the admin
     // "Rebuild Headshots" repair path silently never worked).
-    const aliasMap = await getAliasMap();
+    const [aliasMap, playerIndex] = await Promise.all([getAliasMap(), getPlayerIndex()]);
     const BATCH_SIZE = 250;
     for (let i = 0; i < names.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       names.slice(i, i + BATCH_SIZE).forEach(name => {
-        const canonicalName = aliasMap[name] || resolveAlias(name);
+        const canonicalName = aliasMap[name] || playerIndex.resolve(name) || resolveAlias(name);
         batch.set(doc(db, 'players', canonicalName), { espn_id: null }, { merge: true });
       });
       await batch.commit();
@@ -467,7 +499,7 @@ export const playersApi = {
 // ============================================================================
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
-import { resolveAlias } from '../constants/nameAliases.js';
+import { resolveAlias, NameSet } from '../../api/_playerNames.js';
 
 
 const PLAYER_CACHE_KEY = 'sfgl-player-cache';

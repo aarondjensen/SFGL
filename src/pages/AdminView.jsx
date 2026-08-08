@@ -4,6 +4,8 @@ import { theme, colors, fonts, SWINGS, fontSize } from '../theme.js';
 import { getTournamentStartDate, getETNow } from '../utils';
 import { computeSwingAward } from '../utils/swingAward';
 import { buildEffectiveRoster } from '../utils/sharedHelpers';
+import { sfglDataApi } from '../api/firebase';
+import { NameSet } from '../../api/_playerNames.js';
 
 // Panel imports — each becomes a drillable section in the new architecture.
 import { S, M, disabledBtn } from './admin/adminStyles';
@@ -11,6 +13,7 @@ import { DataSyncPanel } from './admin/DataSyncPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
 import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
 import { MergePlayersPanel } from './admin/MergePlayersPanel';
+import { NameAuditPanel } from './admin/NameAuditPanel';
 import { ScheduleImportPanel } from './admin/ScheduleImportPanel';
 import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
 import { TournamentResultsPanel } from './admin/TournamentResultsPanel';
@@ -287,20 +290,44 @@ export const AdminView = ({
 
   // 8. LIV-flagged players still on rosters
   const livOnRosters = useMemo(() => {
-    const livNames = new Set(
-      (allPlayers || []).filter(p => p.isLiv).map(p => p.name.toLowerCase())
-    );
+    // Matched by player identity rather than lowercased string equality. A
+    // roster entry spelled differently from the flagged player doc — the
+    // 'Byeong Hun An' / 'Byeong-Hun An' shape — used to slip past this check
+    // entirely, leaving an ineligible player sitting on a roster with no
+    // warning anywhere.
+    const livNames = new NameSet((allPlayers || []).filter(p => p.isLiv).map(p => p.name));
     if (livNames.size === 0) return [];
     const offenders = [];
     (teams || []).forEach(team => {
       (team.roster || []).forEach(p => {
-        if (p?.name && livNames.has(p.name.toLowerCase())) {
+        if (p?.name && livNames.has(p.name)) {
           offenders.push({ team: team.name, player: p.name });
         }
       });
     });
     return offenders;
   }, [teams, allPlayers]);
+
+  // 9. Player names our data sources didn't recognise.
+  //
+  // Written by the weekly field check (api/cron.js -> writeNameAudit) and by
+  // the on-demand audit in NameAuditPanel. Surfaced here so an unrecognised
+  // name reaches the commissioner on the dashboard, rather than waiting for
+  // someone to open the panel — the whole point is that managers shouldn't be
+  // the ones who discover it.
+  const [nameAuditFindings, setNameAuditFindings] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    sfglDataApi.get('nameAudit')
+      .then((stored) => {
+        if (cancelled || !stored) return;
+        const fromSections = (stored.sections || [])
+          .reduce((n, sec) => n + (sec.unmatched?.length || 0), 0);
+        setNameAuditFindings(fromSections || (stored.suspectedMismatches?.length || 0));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Build the flat alerts list, priority-ordered top→bottom.
   const alerts = [];
@@ -339,6 +366,13 @@ export const AdminView = ({
         text: `"${t.name}" ready to mark complete`,
         jump: 'results',
       });
+    });
+  }
+  if (nameAuditFindings > 0) {
+    alerts.push({
+      level: 'warn',
+      text: `${nameAuditFindings} player name${nameAuditFindings === 1 ? '' : 's'} not recognised by our data sources`,
+      jump: 'name_audit',
     });
   }
   if (livOnRosters.length > 0) {
@@ -421,6 +455,15 @@ export const AdminView = ({
         {
           id: 'merge', icon: '🔀', label: 'Merge Players',
           desc: 'Resolve duplicate name records',
+        },
+        {
+          id: 'name_audit', icon: '🔍', label: 'Name Audit',
+          desc: nameAuditFindings > 0
+            ? `${nameAuditFindings} name${nameAuditFindings === 1 ? '' : 's'} need review`
+            : 'Check names against data sources',
+          badge: nameAuditFindings > 0
+            ? { count: nameAuditFindings, level: 'warn' }
+            : null,
         },
       ],
     },
@@ -507,6 +550,13 @@ export const AdminView = ({
           <>
             <BackBar label="LIV Ineligible Players" onBack={back} />
             <LivIneligiblePanel allPlayers={allPlayers} setAllPlayers={setAllPlayers} settings={settings} setSettings={setSettings} />
+          </>
+        );
+      case 'name_audit':
+        return (
+          <>
+            <BackBar label="Name Audit" onBack={back} />
+            <NameAuditPanel teams={teams} />
           </>
         );
       case 'merge':

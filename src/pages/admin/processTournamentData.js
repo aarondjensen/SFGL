@@ -4,18 +4,21 @@
 // Used by both the "Process" and "Reprocess" flows.
 // ============================================================================
 
-import { normalizePlayerName } from '../../utils';
+import { namesMatch } from '../../../api/_playerNames.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../../constants';
 
-// Match two player names accounting for normalization variants.
-export const matchPlayerName = (a, b) => {
-  const na = normalizePlayerName(a);
-  const nb = normalizePlayerName(b);
-  if (na === nb) return true;
-  const wa = na.split(' '); const wb = nb.split(' ');
-  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
-  return false;
-};
+// Are these two strings the same golfer? Delegates to the shared identity
+// module (api/_playerNames.js), which is what /api/field, /api/cron and the
+// roster page all use — so a player's earnings and their ⛳ flag can never
+// disagree about who they are.
+//
+// The previous body compared normalizePlayerName keys and fell back to an
+// any-order word-set match. That handled 'Kim Si Woo' vs 'Si Woo Kim' (still
+// handled) but could not see that 'Nico Echavarria' and 'Nicolas Echavarria'
+// are one player. This function decides how much a lineup earns: a starter
+// whose roster spelling differed from the results feed's scored $0 for the
+// week, silently, with no error anywhere.
+export const matchPlayerName = namesMatch;
 
 // REMOVED: getRosterForTournament — a sixth hand-rolled roster replay. It was
 // exported but had no callers (only a stale mention in a sharedHelpers
@@ -163,7 +166,7 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
           : (tournamentData.roundLeaders[round] ? [tournamentData.roundLeaders[round]] : []);
         leaders.forEach(leaderName => {
           if (!leaderName) return;
-          const actual = effectiveLineup.find(pn => normalizePlayerName(pn) === normalizePlayerName(leaderName));
+          const actual = effectiveLineup.find(pn => matchPlayerName(pn, leaderName));
           if (actual) {
             bonusEarnings[round] = bonuses[round];
             totalEarnings += bonuses[round];

@@ -67,6 +67,7 @@
 import { readFileSync } from 'node:fs';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { namesMatch } from '../api/_playerNames.js';
 
 // ── CLI / env ───────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -80,18 +81,14 @@ const SFGL_BASE = (process.env.SFGL_BASE || 'https://www.sfglgolf.com').replace(
 const BONUSES_REG = { round1: 20000, round2: 40000, round3: 60000 };
 const BONUSES_MAJ = { round1: 40000, round2: 80000, round3: 120000 };
 
-// ── Name helpers (mirror api/cron.js normalizeName / matchName) ───────────────
-const normalizeName = (name) =>
-  (name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-
-const matchName = (a, b) => {
-  const na = normalizeName(a), nb = normalizeName(b);
-  if (!na || !nb) return false;
-  if (na === nb) return true;
-  const wa = na.split(' '), wb = nb.split(' ');
-  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
-  return false;
-};
+// ── Name helpers ─────────────────────────────────────────────────────────────
+// Imported from api/_playerNames.js rather than re-implemented. This block used
+// to be a hand-copied "mirror of api/cron.js normalizeName / matchName" — and
+// the original it mirrored has since been replaced, which is exactly how a
+// maintenance script drifts into disagreeing with production about which
+// lineup slot a round leader occupies. This script decides mulligan bonus
+// money, so that disagreement is expensive.
+const matchName = namesMatch;
 
 const lookupEarnings = (name, earningsMap) => {
   if (earningsMap[name] !== undefined) return earningsMap[name] || 0;
@@ -126,7 +123,7 @@ const recomputeTeamResult = (lineup, earningsMap, roundLeaders, isMajor, roster)
       : (roundLeaders?.[round] ? [roundLeaders[round]] : []);
     leaders.forEach(leaderName => {
       if (!leaderName) return;
-      const actual = (lineup || []).find(pn => normalizeName(pn) === normalizeName(leaderName));
+      const actual = (lineup || []).find(pn => matchName(pn, leaderName));
       if (actual) {
         bonusEarnings[round] = bonuses[round];
         totalEarnings += bonuses[round];
