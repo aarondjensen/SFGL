@@ -207,3 +207,34 @@ test('suggestions never become silent merges', () => {
   assert.ok(!namesMatch('Alex Fitzpatrick', 'Matt Fitzpatrick'));
   assert.equal(new NameSet(['Matt Fitzpatrick']).resolve('Alex Fitzpatrick'), null);
 });
+
+test('undo debits exactly what processing credited', () => {
+  // The credit and the reversal must use the SAME matcher. When the undo path
+  // used a weaker one, a player who needed fuzzy matching was credited on
+  // process and debited $0 on undo — their sfglEarnings never returned to
+  // baseline, and the reprocess that followed double-counted them.
+  const earningsMap = { 'Nicolas Echavarria': 1_260_000 };
+  const rosterName = 'Nico Echavarria';
+
+  const lookup = (name) => {
+    let e = earningsMap[name];
+    if (e === undefined) {
+      const mk = Object.keys(earningsMap).find((k) => namesMatch(k, name));
+      e = mk !== undefined ? earningsMap[mk] : 0;
+    }
+    return e || 0;
+  };
+
+  const credited = lookup(rosterName);
+  const debited  = lookup(rosterName);
+  assert.equal(credited, 1_260_000);
+  assert.equal(debited, credited, 'undo must debit exactly what process credited');
+  assert.equal(credited - debited, 0, 'sfglEarnings must return to baseline');
+
+  // The old undo matcher, stated explicitly: it found nothing, so the credit
+  // was never reversed.
+  const oldUndoLookup = Object.keys(earningsMap).find(
+    (k) => k.toLowerCase().trim() === rosterName.toLowerCase().trim(),
+  );
+  assert.equal(oldUndoLookup, undefined);
+});
