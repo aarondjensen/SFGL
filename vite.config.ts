@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
+import { SEASON } from './api/_league.js'
 
 // `npm run analyze` (= `vite build --mode analyze`) writes a treemap of the
 // bundle to dist/stats.html and auto-opens it. After the Wave I refactor the
@@ -19,6 +20,16 @@ import { visualizer } from 'rollup-plugin-visualizer'
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
+    // Substitute %SFGL_SEASON% in index.html from the single SEASON constant.
+    // index.html is static and can't import a module, so before this it carried
+    // its own copy of the year — the last of the eleven hardcoded 2026s. Doing
+    // it at build time rather than assigning document.title at runtime avoids a
+    // frame of the stale year in the tab.
+    {
+      name: 'sfgl-html-season',
+      transformIndexHtml: (html: string) =>
+        html.replace(/%SFGL_SEASON%/g, String(SEASON)),
+    },
     mode === 'analyze' && visualizer({
       filename: 'dist/stats.html',
       open: true,         // auto-open the report in the default browser

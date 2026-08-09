@@ -14,7 +14,8 @@ import {
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts, fontSize } from '../theme.js';
-import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament } from '../utils/sharedHelpers';
+import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, getETClock } from '../utils/sharedHelpers';
+import { waiverCutoff, fmtWaiverCutoff } from '../../api/_league.js';
 import { NameSet, NameMap } from '../../api/_playerNames.js';
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
@@ -47,13 +48,6 @@ const useIsMobile = () => {
     return () => window.removeEventListener('resize', handler);
   }, []);
   return isMobile;
-};
-
-const displayName = (fullName, isMobile) => {
-  if (!isMobile || !fullName) return fullName;
-  const parts = fullName.trim().split(' ');
-  if (parts.length < 2) return fullName;
-  return parts[0][0] + '. ' + parts[parts.length - 1];
 };
 
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
@@ -193,20 +187,16 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 
   if (pendingWaivers.length === 0) return null;
 
-  // Build dynamic waiver cutoff label from settings
-  const wDay  = settings?.waiverDay    ?? 2;
-  const wHour = settings?.waiverHour   ?? 20;
-  const wMin  = settings?.waiverMinute ?? 0;
-  const dayAbbrs = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const hr12 = wHour % 12 || 12;
-  const ampm = wHour < 12 ? 'am' : 'pm';
-  const minStr = wMin > 0 ? `:${String(wMin).padStart(2, '0')}` : '';
-  const cutoffLabel = `${dayAbbrs[wDay]} ${hr12}${minStr}${ampm}`;
+  // Waiver cutoff label + "have we passed it yet" status. This block used to
+  // hand-roll all three of: the day-abbreviation array, the cutoff formatter,
+  // and an ET clock — the last of which was the toLocaleString round-trip
+  // variant, so this panel could disagree with the rest of the app about what
+  // day it was. All three now come from the shared helpers.
+  const { day: wDay, hour: wHour, minute: wMin } = waiverCutoff(settings);
+  const cutoffLabel = fmtWaiverCutoff(settings);
 
   const waiverStatusLabel = (() => {
-    const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-    const d = et.getDay();
-    const t = et.getHours() * 60 + et.getMinutes();
+    const { day: d, totalMinutes: t } = getETClock();
     const cutoffMinutes = wHour * 60 + wMin;
     if (d < wDay || (d === wDay && t < cutoffMinutes)) return `${cutoffLabel} ET`;
     return 'Pending commish processing';
@@ -1476,7 +1466,7 @@ export const RostersView = ({
                                   ? (isBenched ? 'rgba(100,140,220,0.4)' : 'rgba(100,140,220,0.9)')
                                   : (isBenched ? dimColor : colors.textPrimary),
                             }}>
-                              {displayName(player.name, isMobile)}
+                              {isMobile ? abbreviateName(player.name) : player.name}
                             </span>
                             {tournamentField?.has(player.name) && (
                               <span title="In this week's field" style={{ fontSize: fontSize.sm, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>

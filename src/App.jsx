@@ -52,6 +52,7 @@ const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView')
 import { useLeague }       from './hooks';
 import { fontSize } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS } from './constants';
+import { SEASON } from '../api/_league.js';
 import { tournamentResultsApi } from './api/firebase';
 import { managerActivityApi } from './api/managerActivity';
 import { mergeHeadshotEntry, getPlayerHeadshotUrls } from './utils/headshotUtils';
@@ -86,7 +87,7 @@ const LoadingScreen = () => (
       <span className="sfgl-dot" />
       <span className="sfgl-dot" />
     </div>
-    <div style={{ fontSize: fontSize.sm, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading 2026 League</div>
+    <div style={{ fontSize: fontSize.sm, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading {SEASON} League</div>
   </div>
 );
 

@@ -14,6 +14,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
 import { DEFAULTS_ON, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
+import { SEASON, swingForMonth, getETNow, abbreviateName, waiverCutoff } from './_league.js';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
 
@@ -197,7 +198,7 @@ function esc(s) {
 const FONT_STACK = `'Raleway','Helvetica Neue',Arial,sans-serif`;
 const FONT_LINK  = `<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700&display=swap" rel="stylesheet">`;
 
-const HEADER = `<div style="background:#0a1628;padding:22px 24px 18px;border-bottom:1px solid rgba(245,197,24,0.35);"><h1 style="font-family:${FONT_STACK};font-size:24px;font-weight:600;color:#ffffff;margin:0;letter-spacing:6px;">SFGL</h1><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.45);margin:4px 0 0;letter-spacing:3px;text-transform:uppercase;font-weight:400;">2026 Season</p></div>`;
+const HEADER = `<div style="background:#0a1628;padding:22px 24px 18px;border-bottom:1px solid rgba(245,197,24,0.35);"><h1 style="font-family:${FONT_STACK};font-size:24px;font-weight:600;color:#ffffff;margin:0;letter-spacing:6px;">SFGL</h1><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.45);margin:4px 0 0;letter-spacing:3px;text-transform:uppercase;font-weight:400;">${SEASON} Season</p></div>`;
 const FOOTER = `<div style="padding:16px 24px;border-top:1px solid rgba(255,255,255,0.08);text-align:center;"><a href="https://sfglgolf.com" style="font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.7);text-decoration:none;letter-spacing:1px;">sfglgolf.com</a><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.3);margin:6px 0 0;font-weight:300;">You're receiving this because you're a manager in the SFGL fantasy golf league.</p></div>`;
 
 function wrap(body) {
@@ -222,27 +223,28 @@ function buildWaiverResultsEmail(processed, recipientTeam) {
 // Resolve a tournament's segment. Prefer the explicit segment field, then the
 // legacy `swing` field, then date-derived inference.
 //
-// ⚠ KEEP IN SYNC with getSegmentForTournament / getSegmentByDate in
-// src/utils/index.js — api/ is a separate deploy target and can't import from
-// src/. The canonical SFGL model is four swings, three months each:
+// The month → swing mapping is NO LONGER duplicated here. It comes from
+// swingForMonth in ./_league.js, which src/utils/index.js's getSegmentByDate
+// also calls, so both deploy targets now derive the answer from one array.
 //
-//   Jan–Mar  West Coast Swing
-//   Apr–Jun  Spring Swing
-//   Jul–Sep  Summer Swing
-//   Oct–Dec  Fall Finish
+// This used to carry a "⚠ KEEP IN SYNC with src/utils/index.js — api/ is a
+// separate deploy target and can't import from src/" warning above a
+// hand-written month map. The premise was half right: api/ genuinely cannot
+// import from src/, but src/ CAN import from api/, which is why _league.js
+// lives there. The sync hazard the warning described was real — this function
+// once mapped Jan–Mar to 'Spring Swing', June to 'Summer Swing', Aug–Sep to a
+// phantom 'Fall Swing' that exists nowhere else in the codebase, and returned
+// null for Oct–Dec entirely, so every server-side pot calculation and
+// auto-award keyed off wrong segments. Sharing the source removes the hazard
+// rather than restating it.
 //
-// This function previously disagreed with the client on nearly every month:
-// it mapped Jan–Mar to 'Spring Swing', June to 'Summer Swing', and Aug–Sep to
-// 'Fall Swing' — a segment name that exists nowhere else in the codebase (no
-// constant, no theme color, no filter option) — and returned null for Oct–Dec
-// entirely. Every server-side pot calculation and auto-award keyed off those
-// wrong or phantom segments.
-const MONTH_TO_SEGMENT = {
-  jan: 'West Coast Swing', feb: 'West Coast Swing', mar: 'West Coast Swing',
-  apr: 'Spring Swing',     may: 'Spring Swing',     jun: 'Spring Swing',
-  jul: 'Summer Swing',     aug: 'Summer Swing',     sep: 'Summer Swing',
-  oct: 'Fall Finish',      nov: 'Fall Finish',      dec: 'Fall Finish',
-};
+// Still duplicated below, and still carrying real KEEP IN SYNC warnings:
+// getTransactionFeeServer, computeSwingPotServer, maybeAutoAwardSwingServer,
+// and the inline effective-roster replay in handleWaivers.
+// Month abbreviation → 1-12, only for parsing the display `dates` string.
+// The month → swing mapping itself comes from swingForMonth in _league.js, so
+// the swing NAMES are no longer spelled out a second time here.
+const MONTH_ABBRS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 
 function getSegmentForTournamentServer(t) {
   if (t?.segment) return t.segment;
@@ -252,16 +254,15 @@ function getSegmentForTournamentServer(t) {
   const iso = t?.start_date || t?.startDate;
   if (typeof iso === 'string' && /^\d{4}-\d{2}/.test(iso)) {
     const monthNum = parseInt(iso.slice(5, 7), 10);
-    const key = Object.keys(MONTH_TO_SEGMENT)[monthNum - 1];
-    if (key) return MONTH_TO_SEGMENT[key];
+    const seg = swingForMonth(monthNum);
+    if (seg) return seg;
   }
 
   // Fall back to parsing a month name out of the display `dates` string
   // (e.g. "May 7-10").
   const d = String(t?.dates || '').toLowerCase();
-  for (const [abbr, segment] of Object.entries(MONTH_TO_SEGMENT)) {
-    if (d.includes(abbr)) return segment;
-  }
+  const idx = MONTH_ABBRS.findIndex(abbr => d.includes(abbr));
+  if (idx !== -1) return swingForMonth(idx + 1);
   return null;
 }
 
@@ -491,10 +492,6 @@ function buildLineupReminderEmail(tournamentName, lockTime, _recipientTeam) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function getETNow() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-}
-
 async function loadSettings() {
   const snap = await db.collection('league_settings').get();
   const s = {};
@@ -564,9 +561,7 @@ async function handleWaivers(res) {
   const et = getETNow();
   const day = et.getDay();
   const timeVal = et.getHours() * 60 + et.getMinutes();
-  const wDay = settings?.waiverDay ?? 2;
-  const wHour = settings?.waiverHour ?? 20;
-  const wMin = settings?.waiverMinute ?? 0;
+  const { day: wDay, hour: wHour, minute: wMin } = waiverCutoff(settings);
   if (!(day === wDay && timeVal >= (wHour * 60 + wMin))) {
     return res.json({ status: 'not_yet', message: 'Not past waiver cutoff time' });
   }
@@ -1005,16 +1000,6 @@ async function handleNotifyResults(req, res) {
 // concerned. Its call sites now use matchName (below), which asks the right
 // question — "same golfer?" rather than "same string?".
 
-// "First Last" → "F. Last". Mirrors abbreviateName() in src/utils/index.js —
-// keep the two in sync. Single-word names returned unchanged. Used by the
-// lead-watch push to match the leaderboard's "V. Hovland" rendering.
-function abbreviateName(name) {
-  if (!name) return '';
-  const parts = name.trim().split(' ');
-  if (parts.length < 2) return name;
-  return parts[0][0] + '. ' + parts[parts.length - 1];
-}
-
 // Are these two strings the same golfer? Delegates to the shared module.
 //
 // The previous body compared normalized keys and then fell back to an
@@ -1065,7 +1050,7 @@ async function handleProcessResults(res) {
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : 'https://www.sfglgolf.com';
-  const params = new URLSearchParams({ name: tournament.name, year: '2026' });
+  const params = new URLSearchParams({ name: tournament.name, year: String(SEASON) });
 
   let pgaData;
   try {

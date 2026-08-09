@@ -533,8 +533,13 @@ export const cardLiftHandlers = ({ disabled = false } = {}) => ({
   },
 });
 
-// ── Swing names + accent colors (single source of truth) ────────────────
-export const SWINGS = ['West Coast Swing', 'Spring Swing', 'Summer Swing', 'Fall Finish'];
+// ── Swing accent colors ─────────────────────────────────────────────────
+// SWINGS itself is league data, not visual data, so it lives in
+// api/_league.js — the one module both deploy targets can import. It is
+// re-exported here because every view that wants the swing list also wants
+// these colors, and splitting the import would just move the papercut.
+// This file previously declared its own identical copy of the array.
+export { SWINGS } from '../api/_league.js';
 
 export const SWING_COLORS = {
   'West Coast Swing': 'rgba(220,190,100,0.85)',

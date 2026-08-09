@@ -42,32 +42,25 @@ import { nameKey } from '../../api/_playerNames.js';
 export const normalizeNordic = nameKey;
 
 // ── ET timezone helpers ──────────────────────────────────────────────────────
-// Returns a Date object set to the current Eastern Time wall clock.
-// Uses the Intl API so it correctly handles DST (EST=-5, EDT=-4) automatically.
-// The previous hand-rolled `etOffset = -4` math was wrong for ~half the year.
-export const getETDate = () => {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-};
-
-// Returns { day: 0-6, hour: 0-23, minute: 0-59, totalMinutes: 0-1439 } for now in ET.
-export const getETClock = () => {
-  const et = getETDate();
-  const day = et.getDay();
-  const hour = et.getHours();
-  const minute = et.getMinutes();
-  return { day, hour, minute, totalMinutes: hour * 60 + minute };
-};
-
-// Format a 24h hour + minute as "h:mm AM/PM" — e.g. fmtETTime(20, 0) → "8:00 PM"
-export const fmtETTime = (hour, minute = 0) => {
-  const hr = hour % 12 || 12;
-  const ampm = hour < 12 ? 'AM' : 'PM';
-  const min = String(minute).padStart(2, '0');
-  return `${hr}:${min} ${ampm}`;
-};
-
-export const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-export const DAY_ABBRS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+// All re-exported from api/_league.js, the one module src/ and api/ can both
+// import. This file used to own second implementations of getETDate and
+// getETClock built on `new Date(new Date().toLocaleString('en-US', { timeZone
+// }))` — a formatted-string round trip whose parseability the spec does not
+// guarantee — while src/utils/index.js owned an Intl.formatToParts version of
+// the same thing. Two algorithms, both live, answering "what time is it in ET"
+// for different halves of the app; the cron used the fragile one to process the
+// very waiver windows the client evaluated with the robust one.
+//
+// getETDate is kept as a name so existing call sites don't churn, but it is now
+// the same function as getETNow.
+export {
+  getETNow,
+  getETNow as getETDate,
+  getETClock,
+  fmtETTime,
+  DAY_NAMES,
+  DAY_ABBRS,
+} from '../../api/_league.js';
 
 // ── Backup lineup spot (optional 6th player) eligibility ─────────────────────
 // The commish can enable the optional 6th "backup" lineup slot per event type

@@ -20,6 +20,7 @@ import { sendCommishPush } from '../../api/pushNotifications';
 import { processTournamentData, matchPlayerName } from './processTournamentData';
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { M, disabledBtn } from './adminStyles';
+import { SEASON } from '../../../api/_league.js';
 import { STORAGE_KEYS } from '../../constants';
 
 // ── Round-leader dropdown (uses stored tournament lineups + R3 mulligan additions) ──
@@ -163,7 +164,7 @@ export const TournamentResultsPanel = ({
   const handleFetchPGAResults = async () => {
     if (!selectedTourney) { dialog.showToast('Select a tournament first', 'error'); return; }
     const t = tournaments.find(t => t.name === selectedTourney);
-    const params = new URLSearchParams({ name: t.name, year: '2026' });
+    const params = new URLSearchParams({ name: t.name, year: String(SEASON) });
 
     setPgaFetching(true);
     try {

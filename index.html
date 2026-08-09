@@ -31,7 +31,11 @@
     <!-- (ui-avatars.com prefetch removed — the initials fallback is now an
          inline SVG data URI with no network dependency.) -->
 
-    <title>SFGL 2026</title>
+    <!-- %SFGL_SEASON% is substituted at build time from SEASON in
+         api/_league.js — see the sfgl-html-season plugin in vite.config.ts.
+         Static HTML can't import the constant, and this was the last place
+         the year stayed hardcoded. -->
+    <title>SFGL %SFGL_SEASON%</title>
   </head>
   <body>
     <div id="root"></div>

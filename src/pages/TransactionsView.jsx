@@ -4,7 +4,7 @@ import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
 import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament } from '../utils/sharedHelpers';
-import { theme, colors, fonts, getSwingColor } from '../theme.js';
+import { theme, colors, fonts, getSwingColor, SWINGS } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 import { AddTransactionModal } from './AddTransactionModal';
 
@@ -655,10 +655,9 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
                 <option value="all">All Swings</option>
-                <option value="West Coast Swing">West Coast Swing</option>
-                <option value="Spring Swing">Spring Swing</option>
-                <option value="Summer Swing">Summer Swing</option>
-                <option value="Fall Finish">Fall Finish</option>
+                {/* Rendered from SWINGS rather than spelled out, so renaming or
+                    reordering a swing can't leave this filter behind. */}
+                {SWINGS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               <select
                 value={filterTeam}

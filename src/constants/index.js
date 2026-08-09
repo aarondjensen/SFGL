@@ -30,19 +30,24 @@ export const TRANSACTION_FEE_WAIVER     = 2;
 export const DEFAULT_MULLIGANS = { signatureMajor: 1, regular: 1 };
 
 // ============================================================================
-// SWINGS / SEGMENTS
+// SWINGS / SEGMENTS  +  SEASON  —  moved out
 // ============================================================================
-// SFGL canonical: 4 swings, evenly distributed across the year.
-// Wave 7: removed 'Florida Swing' which was an outlier in this file but never
-// actually used by any month-to-segment mapping in the codebase. The 4-swing
-// model matches theme.js, AdminView, ResultsView, TransactionsView, and (after
-// Wave 7) utils/getSegmentByDate.
-export const SWINGS = [
-  'West Coast Swing',
-  'Spring Swing',
-  'Summer Swing',
-  'Fall Finish',
-];
+// Both now live in api/_league.js, the one module src/ and api/ can both
+// import (see the header there for why it has to sit under api/).
+//
+// SWINGS used to be declared HERE and in theme.js with identical contents, so
+// "the canonical list" depended on which file a given view imported from. It
+// was also spelled out a third time as <option> literals in the TransactionsView
+// filter and encoded a fourth time as a month map in api/cron.js.
+//
+// Deliberately NOT re-exported from this file. Every consumer of SWINGS wants
+// the swing COLORS alongside it, so they all import it from theme.js — and
+// re-exporting it here as well would put two import paths back in front of one
+// definition, which is most of what made the original duplication confusing.
+// One symbol, one place to import it from:
+//
+//   SWINGS  → src/theme.js        (paired with SWING_COLORS / getSwingColor)
+//   SEASON  → api/_league.js      (shared with the serverless functions)
 
 // ============================================================================
 // TEAM DATA

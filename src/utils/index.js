@@ -1,5 +1,13 @@
 import { TEAM_ABBREVIATIONS } from '../constants';
 import { nameKey } from '../../api/_playerNames.js';
+import {
+  SEASON,
+  swingForMonth,
+  getETNow as _getETNow,
+  fmtWaiverCutoff,
+  waiverCutoff,
+  abbreviateName as _abbreviateName,
+} from '../../api/_league.js';
 
 // ============================================================================
 // PLAYER / NAME UTILITIES
@@ -56,13 +64,12 @@ export const shortName = (fullName) => {
  * "First Last" → "F. Last"
  * Used by TransactionsView and RostersView (mobile) to abbreviate player names.
  * Single-word names are returned unchanged.
+ *
+ * Implementation lives in api/_league.js so the cron's email builder can share
+ * it; RostersView also carried a byte-identical private copy called
+ * `displayName`, now gone.
  */
-export const abbreviateName = (name) => {
-  if (!name) return '';
-  const parts = name.trim().split(' ');
-  if (parts.length < 2) return name;
-  return parts[0][0] + '. ' + parts[parts.length - 1];
-};
+export const abbreviateName = _abbreviateName;
 
 export const getSortedRoster = (roster) => {
   const limited   = roster.filter(p => p.limited);
@@ -93,23 +100,14 @@ export const compactTeamName = (name) =>
 /**
  * Returns the current wall-clock time expressed as a Date object whose
  * year/month/day/hour/minute fields reflect Eastern Time (handles DST).
- * Uses Intl.DateTimeFormat formatToParts for reliability across environments.
+ *
+ * Re-exported from api/_league.js, which is now the only implementation. There
+ * were four: this one (Intl.formatToParts) plus three that round-tripped
+ * through `new Date(new Date().toLocaleString('en-US', { timeZone }))` — in
+ * sharedHelpers, inline in RostersView, and in api/cron.js. See the note in
+ * _league.js for why the parsing variant is the one that had to go.
  */
-export const getETNow = () => {
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric', month: 'numeric', day: 'numeric',
-    hour: 'numeric', minute: 'numeric', second: 'numeric',
-    hour12: false,
-  }).formatToParts(now);
-
-  const get = (type) => parseInt(parts.find(p => p.type === type)?.value ?? '0', 10);
-  // hour12:false can return 24 for midnight — normalise
-  const hour = get('hour') === 24 ? 0 : get('hour');
-
-  return new Date(get('year'), get('month') - 1, get('day'), hour, get('minute'), get('second'));
-};
+export const getETNow = _getETNow;
 
 // ============================================================================
 // SEGMENT — CANONICAL 4-SWING MAPPING (Wave 7)
@@ -134,13 +132,8 @@ export const getETNow = () => {
  * resolve the segment for a specific tournament start date rather than
  * relying on the current wall-clock month.
  */
-export const getSegmentByDate = (date) => {
-  const month = (date || new Date()).getMonth() + 1;
-  if (month >= 1  && month <= 3)  return 'West Coast Swing';
-  if (month >= 4  && month <= 6)  return 'Spring Swing';
-  if (month >= 7  && month <= 9)  return 'Summer Swing';
-  return 'Fall Finish';
-};
+export const getSegmentByDate = (date) =>
+  swingForMonth((date || new Date()).getMonth() + 1);
 
 /**
  * Returns the segment for a tournament. Honors an explicit `tournament.segment`
@@ -163,7 +156,10 @@ export const getSegmentForTournament = (tournament) => {
       const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
       const mo = months[m[1]];
       if (mo !== undefined) {
-        return getSegmentByDate(new Date(new Date().getFullYear(), mo, parseInt(m[2])));
+        // Only the month affects the answer, but use SEASON rather than the
+        // wall-clock year so this agrees with getTournamentStartDate below,
+        // which parses the same year-less `dates` string.
+        return getSegmentByDate(new Date(SEASON, mo, parseInt(m[2])));
       }
     }
   }
@@ -210,7 +206,8 @@ export const getTournamentStartDate = (tournament) => {
   const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
   const month = months[match[1]];
   if (month === undefined) return null;
-  return new Date(2026, month, parseInt(match[2]));
+  // The `dates` string carries no year ("Apr 6-12"), so the season supplies it.
+  return new Date(SEASON, month, parseInt(match[2]));
 };
 
 /** Locks at first-tee Thursday morning (adjusted per local timezone). */
@@ -248,9 +245,7 @@ export const isFreeAgentWindowOpen = (tournament, settings) => {
   if (isTournamentLocked(tournament)) return false;
 
   // Free agency opens after waiver cutoff (when waiver period ends) through Thursday lock
-  const wDay  = settings?.waiverDay    ?? 2;  // default Tue
-  const wHour = settings?.waiverHour   ?? 20; // default 8pm
-  const wMin  = settings?.waiverMinute ?? 0;
+  const { day: wDay, hour: wHour, minute: wMin } = waiverCutoff(settings);
   const cutoff = wDay * 24 * 60 + wHour * 60 + wMin;
   const et      = getETNow();
   const day     = et.getDay();
@@ -268,9 +263,7 @@ export const isFreeAgentWindowOpen = (tournament, settings) => {
 export const isWaiverWindowOpen = (tournament, settings) => {
   if (!tournament) return false;
   // Waiver window: tournament start through configurable cutoff (default Tue 8pm ET)
-  const wDay  = settings?.waiverDay    ?? 2;  // default Tue
-  const wHour = settings?.waiverHour   ?? 20; // default 8pm
-  const wMin  = settings?.waiverMinute ?? 0;
+  const { day: wDay, hour: wHour, minute: wMin } = waiverCutoff(settings);
   const et      = getETNow();
   const day     = et.getDay();
   const timeVal = et.getHours() * 60 + et.getMinutes();
@@ -369,17 +362,6 @@ export const getLineupStatus = (tournament) => {
     return { open: true, label: `🟢 until Thu ${lockStr(h)} ET` };
   }
   return { open: false, label: '🔴 until Sun 9pm ET' };
-};
-
-const DAY_ABBRS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const fmtWaiverCutoff = (settings) => {
-  const d = settings?.waiverDay ?? 2;
-  const h = settings?.waiverHour ?? 20;
-  const m = settings?.waiverMinute ?? 0;
-  const hr = h % 12 || 12;
-  const ampm = h < 12 ? 'am' : 'pm';
-  const min = m > 0 ? `:${String(m).padStart(2, '0')}` : '';
-  return `${DAY_ABBRS[d]} ${hr}${min}${ampm}`;
 };
 
 export const getFreeAgentWindowStatus = (tournament, settings) => {

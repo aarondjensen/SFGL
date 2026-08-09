@@ -542,6 +542,7 @@ export const playersApi = {
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
 import { resolveAlias, NameSet } from '../../api/_playerNames.js';
+import { SEASON } from '../../api/_league.js';
 
 
 const PLAYER_CACHE_KEY = 'sfgl-player-cache';
@@ -1055,7 +1056,7 @@ const _resultDocId = (tournamentName, season) =>
   `${tournamentName}__${season}`.replace(/[/]/g, '_');
 
 export const tournamentResultsApi = {
-  async save({ tournamentName, season = 2026, teamResults, earningsMap, roundLeaders, fullLineups = {}, rosterSnapshots = {}, isManualEntry = false }) {
+  async save({ tournamentName, season = SEASON, teamResults, earningsMap, roundLeaders, fullLineups = {}, rosterSnapshots = {}, isManualEntry = false }) {
     const earningsObj = earningsMap instanceof Map
       ? Object.fromEntries(earningsMap)
       : (earningsMap || {});
@@ -1076,7 +1077,7 @@ export const tournamentResultsApi = {
     return data;
   },
 
-  async getByName(tournamentName, season = 2026) {
+  async getByName(tournamentName, season = SEASON) {
     const snap = await getDoc(doc(db, 'tournament_results', _resultDocId(tournamentName, season)));
     if (!snap.exists()) return null;
     const d = snap.data();
@@ -1093,7 +1094,7 @@ export const tournamentResultsApi = {
     };
   },
 
-  async getAllForSeason(season = 2026) {
+  async getAllForSeason(season = SEASON) {
     const q = query(
       collection(db, 'tournament_results'),
       where('season', '==', season),
@@ -1118,11 +1119,11 @@ export const tournamentResultsApi = {
     });
   },
 
-  async deleteByName(tournamentName, season = 2026) {
+  async deleteByName(tournamentName, season = SEASON) {
     await deleteDoc(doc(db, 'tournament_results', _resultDocId(tournamentName, season)));
   },
 
-  async deleteAllForSeason(season = 2026) {
+  async deleteAllForSeason(season = SEASON) {
     const q = query(
       collection(db, 'tournament_results'),
       where('season', '==', season)
