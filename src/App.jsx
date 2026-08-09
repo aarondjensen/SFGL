@@ -879,7 +879,6 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                     : 'rgba(255,255,255,0.55)',
                   cursor: 'pointer',
                   transition: 'color 0.18s',
-                  outline: 'none',
                 }}
               >
                 <tab.Icon style={{ width: 20, height: 20 }} />
@@ -914,7 +913,6 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                 color: showMoreMenu ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.55)',
                 cursor: 'pointer',
                 transition: 'color 0.18s',
-                outline: 'none',
               }}
             >
               <MoreHorizontal style={{ width: 20, height: 20 }} />
@@ -1022,7 +1020,6 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                     cursor: 'pointer',
                     position: 'relative',
                     transition: 'background 0.18s, border-color 0.18s',
-                    outline: 'none',
                   }}
                 >
                   <span

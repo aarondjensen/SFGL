@@ -909,7 +909,7 @@ export const TournamentsView = ({
                       background: 'transparent',
                       border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
                       width: '100%', fontFamily: fonts.sans, fontSize: fontSize.base,
-                      color: colors.textPrimary, outline: 'none', padding: '2px 0',
+                      color: colors.textPrimary, padding: '2px 0',
                     }}
                   />
                 </td>
@@ -923,7 +923,7 @@ export const TournamentsView = ({
                       background: 'transparent',
                       border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
                       width: '100%', fontFamily: fonts.sans, fontSize: fontSize.base,
-                      color: colors.textPrimary, outline: 'none', padding: '2px 0',
+                      color: colors.textPrimary, padding: '2px 0',
                     }}
                   />
                 </td>
@@ -937,7 +937,7 @@ export const TournamentsView = ({
                       background: 'transparent',
                       border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
                       width: '100%', fontFamily: fonts.sans, fontSize: fontSize.base,
-                      color: colors.textPrimary, outline: 'none', padding: '2px 0',
+                      color: colors.textPrimary, padding: '2px 0',
                     }}
                     placeholder="Location"
                   />
@@ -948,7 +948,7 @@ export const TournamentsView = ({
                       background: 'transparent',
                       border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
                       width: '100%', fontFamily: fonts.sans, fontSize: fontSize.sm,
-                      color: colors.textSecondary, outline: 'none', padding: '2px 0',
+                      color: colors.textSecondary, padding: '2px 0',
                       marginTop: 2,
                     }}
                     placeholder="Course"

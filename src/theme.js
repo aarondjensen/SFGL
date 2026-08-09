@@ -301,6 +301,23 @@ export const theme = {
   },
 
   // ── Inputs ──
+  //
+  // fontSize.lg (16px) is deliberate on both, for two reasons that happen to
+  // agree:
+  //
+  //   1. The scale above already assigns lg the role "form inputs, selects" —
+  //      these two were the only places that documented a token and then
+  //      hardcoded a different raw value (13).
+  //   2. iOS Safari force-zooms the viewport when a focused control computes
+  //      to under 16px, and does not zoom back out. Every text input and
+  //      select in the app did that on every tap. StandingsView had already
+  //      hit this and worked around it locally ("≥16px to prevent iOS zoom")
+  //      — the fix just never reached the shared token.
+  //
+  // No `outline: 'none'` here. It suppressed the focus ring on every input and
+  // select in the app, and app-global.css supplies a styled :focus-visible ring
+  // in its place — visible to keyboard and switch-control users, invisible to
+  // mouse users, which is what the bare outline reset was reaching for.
   input: {
     width: '100%',
     background: colors.inputBg,
@@ -308,9 +325,8 @@ export const theme = {
     borderRadius: shape.inputRadius,
     padding: '10px 14px',
     fontFamily: fonts.sans,
-    fontSize: 13,
+    fontSize: fontSize.lg,
     color: colors.textPrimary,
-    outline: 'none',
     transition: 'border-color 0.2s, background 0.2s',
     caretColor: colors.textGold,
   },
@@ -322,9 +338,8 @@ export const theme = {
     borderRadius: shape.inputRadius,
     padding: '9px 14px',
     fontFamily: fonts.sans,
-    fontSize: 13,
+    fontSize: fontSize.lg,
     color: colors.textPrimary,
-    outline: 'none',
     cursor: 'pointer',
     colorScheme: 'dark',
   },

@@ -94,10 +94,64 @@ select option:hover {
   .sfgl-leader-desktop { display: inline; }
 }
 
-/* ── Tab focus-visible for keyboard accessibility ── */
+/* ============================================================================
+ * KEYBOARD FOCUS
+ * ============================================================================
+ * Every interactive surface gets a visible ring when focused via keyboard or
+ * switch control. :focus-visible (not :focus) means mouse and touch users
+ * never see it, which is what the `outline: 'none'` scattered through the
+ * inline styles was actually reaching for — it just removed the ring for
+ * everyone instead, leaving no way to tell where focus was.
+ *
+ * Worth knowing if you ever add `outline: 'none'` to an inline style again:
+ * inline styles beat stylesheet rules, so doing that silently disables these
+ * rules for that element. That is exactly how the .sfgl-tab rule below spent
+ * its whole life doing nothing — the bottom-nav buttons it targets each
+ * carried their own inline outline reset.
+ */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[role="switch"]:focus-visible,
+[role="menuitem"]:focus-visible {
+  outline: 2px solid rgba(245,197,24,0.85);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Nav tabs sit flush against the bar edges, so their ring is inset and white
+   rather than gold — gold on the commish-mode gold bar has no contrast. */
 .sfgl-tab:focus-visible {
-  outline: 2px solid rgba(255,255,255,0.55);
+  outline: 2px solid rgba(255,255,255,0.75);
   outline-offset: -2px;
+}
+
+/* ── iOS zoom backstop for controls that override the theme font size ──
+   theme.input / theme.select are 16px (see theme.js), which is what stops
+   iOS Safari force-zooming on focus. But ~20 call sites spread those tokens
+   and then set their own smaller fontSize inline — the schedule editor, the
+   transaction filters, several admin panels — and inline styles win, so each
+   one re-opens the zoom. Rather than chase all twenty individually (and have
+   the next one regress), this pins them on touch devices only. Desktop is
+   untouched and keeps whatever size the call site asked for.
+
+   !important is required here specifically because the values being corrected
+   are inline styles; there is no lower-specificity way to reach them.
+
+   Note this pins to exactly 16px rather than raising a floor. CSS has no way
+   to express "the larger of 16px and whatever the inline style asked for":
+   `max(16px, 1em)` looks like it should, but em in a font-size resolves
+   against the PARENT, so it would resize controls based on their container
+   instead of their own declared size. A flat 16px is safe today — every form
+   control in the app is authored between 10px and 16px. If one is ever
+   authored larger, it will need to opt out of this rule. */
+@media (pointer: coarse) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }
 
 /* ── Body scroll lock — applied by modals when open ── */

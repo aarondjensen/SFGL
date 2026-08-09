@@ -191,7 +191,6 @@ export const AccountModal = ({
                   border: '1px solid rgba(255,255,255,0.12)',
                   color: colors.textPrimary,
                   fontFamily: fonts.sans, fontSize: 15, fontWeight: 600,
-                  outline: 'none',
                 }}
               />
               <button

@@ -717,7 +717,6 @@ export const AddDropPlayerModal = ({
                 color: colors.textPrimary,
                 fontFamily: fonts.sans,
                 fontSize: 16, // prevent iOS zoom
-                outline: 'none',
                 transition: 'background 0.15s, border-color 0.15s',
               }}
               onFocus={e => { e.target.style.borderColor = 'rgba(255,255,255,0.25)'; e.target.style.background = 'rgba(255,255,255,0.04)'; }}
