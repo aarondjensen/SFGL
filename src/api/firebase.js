@@ -63,17 +63,58 @@ const firebaseConfig = {
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
+// ── Players collection: one read, many projections ───────────────────────────
+// /players is the widest collection in the app (~700 docs) and five different
+// things want to read all of it: the rankings list, the headshot map, the
+// career-stats map, the duplicate-name index, and the alias map.
+//
+// They used to each issue their own getDocs(). Because useLeague's Tier-2
+// loader fires the first three inside one Promise.all, a cold open read the
+// whole collection THREE TIMES CONCURRENTLY — ~2,100 document reads and 3x the
+// payload to build three views of identical data. upsertMany added a fourth
+// and fifth read for the index + alias map, also concurrently.
+//
+// This is a single-flight coalescer, deliberately NOT a TTL cache. While a
+// fetch is in flight, every additional caller joins it; the moment it settles
+// the slot is cleared, so the next call after that goes to the network again.
+// That collapses concurrent fan-out (the actual problem) without introducing
+// any window in which a caller can be served stale data — which matters here,
+// because App.jsx's headshot flow writes espn_ids via upsertMany and a
+// subsequent getHeadshotsMap() must see them.
+//
+// Callers get their own array (slice) so an in-place sort/splice by one can't
+// corrupt another's view. The element objects are shared and treated as
+// read-only by every projection below.
+let _playersInFlight = null;
+async function _fetchAllPlayers() {
+  const snap = await getDocs(collection(db, 'players'));
+  return snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(_byWorldRank);
+}
+function readAllPlayers() {
+  if (!_playersInFlight) {
+    _playersInFlight = _fetchAllPlayers().finally(() => { _playersInFlight = null; });
+  }
+  return _playersInFlight.then(rows => rows.slice());
+}
+
 // ── Alias cache — maps alternate player names to canonical doc IDs ────────────
 // Populated lazily from player docs that have an 'aliases' array field.
 // Invalidated whenever aliases are written or a player is deleted.
+//
+// Derived from the shared read rather than its own where('aliases','!=',null)
+// query: its only callers (upsertMany, clearEspnIds) resolve it in a
+// Promise.all alongside getPlayerIndex, which needs the full collection
+// anyway — so the filtered query was a second round trip for a subset of data
+// the other half of the same Promise.all was already fetching. Same result:
+// a doc with no aliases field contributes no entries either way.
 let _aliasCache = null;
 async function getAliasMap() {
   if (_aliasCache) return _aliasCache;
   try {
-    const snap = await getDocs(query(collection(db, 'players'), where('aliases', '!=', null)));
+    const players = await readAllPlayers();
     const map = {};
-    snap.docs.forEach(d => {
-      (d.data().aliases || []).forEach(alias => { map[alias] = d.id; });
+    players.forEach(p => {
+      (p.aliases || []).forEach(alias => { map[alias] = p._id; });
     });
     _aliasCache = map;
     return map;
@@ -99,8 +140,8 @@ let _playerIndexCache = null;
 async function getPlayerIndex() {
   if (_playerIndexCache) return _playerIndexCache;
   try {
-    const snap = await getDocs(collection(db, 'players'));
-    _playerIndexCache = new NameSet(snap.docs.map(d => d.id));
+    const players = await readAllPlayers();
+    _playerIndexCache = new NameSet(players.map(p => p._id));
   } catch (_) {
     _playerIndexCache = new NameSet([]);
   }
@@ -235,9 +276,11 @@ export const playersApi = {
   // already fixed for tournaments (see tournamentsApi.getAll / _byStartDate)
   // and in api/cron.js loadTournaments. Unranked players now sort last —
   // visible, never dropped.
+  // Goes through readAllPlayers() so the three projections below —
+  // getAllForApp / getHeadshotsMap / getStatsMap, which useLeague resolves in
+  // one Promise.all — share a single collection read instead of issuing three.
   async getAll() {
-    const snap = await getDocs(collection(db, 'players'));
-    return snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(_byWorldRank);
+    return readAllPlayers();
   },
 
   async getByName(name) {

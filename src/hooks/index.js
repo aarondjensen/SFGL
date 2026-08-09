@@ -219,6 +219,12 @@ export const useLeague = (STORAGE_KEYS) => {
       // fall back to the seeded localStorage values already in state.
       (async () => {
         try {
+          // All three of these are projections of the SAME /players collection
+          // (stats map, headshot map, rankings list). Issued together on
+          // purpose: playersApi.getAll() single-flights the underlying read, so
+          // this Promise.all costs one collection read, not three. Keep them in
+          // one Promise.all — awaiting them in sequence would defeat the
+          // coalescing and go back to three round trips.
           const [firebaseStats, firebaseHeadshots, firebaseRankings] = await Promise.all([
             playerStatsApi.getAll().catch((e) => { console.error('[useLeague] stats:', e);     return null; }),
             headshotsApi.getAll().catch((e)   => { console.error('[useLeague] headshots:', e); return null; }),
