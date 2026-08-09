@@ -10,7 +10,7 @@
 // identity/team/session only.
 // ============================================================================
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { X, LogOut } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
 import { colors, fonts } from '../theme.js';

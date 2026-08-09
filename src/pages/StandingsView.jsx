@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { theme, colors, fonts, fontSize, rowHoverHandlers, SWINGS, SWING_COLORS, getSwingColorAt } from '../theme.js';
 import { getSegmentForTournament } from '../utils';
 import { TeamName } from '../components/TeamName';

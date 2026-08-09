@@ -1,5 +1,6 @@
 import js from '@eslint/js'
 import globals from 'globals'
+import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
@@ -44,6 +45,14 @@ export default defineConfig([
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],
+    // main.tsx renders <App /> in JSX, so it needs the same jsx-uses-vars
+    // treatment as the .jsx tree — without it, `App` and `StrictMode` read as
+    // unused imports here too.
+    plugins: { react },
+    settings: { react: { version: 'detect' } },
+    rules: {
+      'react/jsx-uses-vars': 'error',
+    },
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
@@ -60,6 +69,12 @@ export default defineConfig([
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],
+    // eslint-plugin-react is registered for exactly ONE rule: jsx-uses-vars.
+    // We deliberately do NOT extend its `recommended` config — that adds
+    // prop-types/display-name/etc., which this codebase doesn't use and which
+    // would bury real findings under a new pile of noise. See the rules block.
+    plugins: { react },
+    settings: { react: { version: 'detect' } },
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
@@ -72,6 +87,20 @@ export default defineConfig([
       },
     },
     rules: {
+      // ── Why this rule is load-bearing ──────────────────────────────────
+      // ecmaFeatures.jsx only lets ESLint *parse* JSX. Core `no-unused-vars`
+      // walks the scope graph and never counts a JSXIdentifier as a
+      // reference, so without this rule every component and icon imported
+      // solely for use in markup reads as unused: StandingsView, RostersView,
+      // LoadingScreen, App itself, and every lucide-react icon — ~130 false
+      // positives that made `npm run lint` useless for finding the ~15
+      // genuinely dead symbols mixed in with them.
+      //
+      // The previous config tried to solve this with `ignoreRestSiblings`
+      // (see the no-unused-vars options below). That option governs object
+      // REST DESTRUCTURING (`const { a, ...rest } = obj`) and has nothing to
+      // do with JSX; it never suppressed a single one of those warnings.
+      'react/jsx-uses-vars': 'error',
       // Don't fail builds on warnings during the initial rollout — flip to
       // 'error' once the codebase is clean and you want the linter to enforce
       // these strictly going forward.
@@ -88,8 +117,14 @@ export default defineConfig([
       'no-unused-vars': ['warn', {
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',
-        // React lint quirk: components imported only as JSX usage are flagged
-        // unless we tell it to ignore PascalCase identifiers.
+        // ESLint 9 defaults caughtErrors to 'all', so the codebase-wide
+        // `catch (_) {}` idiom was reported as an unused variable — the one
+        // pattern varsIgnorePattern does NOT cover.
+        caughtErrorsIgnorePattern: '^_',
+        // Allows `const { failReason, ...rest } = tx` — the omit-a-field
+        // idiom used in TransactionsView's re-queue path — without flagging
+        // the omitted binding. (JSX usage is handled by react/jsx-uses-vars
+        // above, NOT by this option.)
         ignoreRestSiblings: true,
       }],
       'no-empty': ['warn', { allowEmptyCatch: true }],
@@ -117,6 +152,10 @@ export default defineConfig([
       'no-unused-vars': ['warn', {
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',
+        // ESLint 9 defaults caughtErrors to 'all', so the codebase-wide
+        // `catch (_) {}` idiom was reported as an unused variable — the one
+        // pattern varsIgnorePattern does NOT cover.
+        caughtErrorsIgnorePattern: '^_',
         ignoreRestSiblings: true,
       }],
       'no-empty': ['warn', { allowEmptyCatch: true }],

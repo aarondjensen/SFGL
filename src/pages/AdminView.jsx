@@ -1,6 +1,5 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { useDialog } from './DialogContext';
-import { theme, colors, fonts, SWINGS, fontSize } from '../theme.js';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { colors, fonts, SWINGS, fontSize } from '../theme.js';
 import { getTournamentStartDate, getETNow } from '../utils';
 import { computeSwingAward } from '../utils/swingAward';
 import { buildEffectiveRoster } from '../utils/sharedHelpers';
@@ -8,7 +7,6 @@ import { sfglDataApi } from '../api/firebase';
 import { NameSet } from '../../api/_playerNames.js';
 
 // Panel imports — each becomes a drillable section in the new architecture.
-import { S, M, disabledBtn } from './admin/adminStyles';
 import { DataSyncPanel } from './admin/DataSyncPanel';
 import { LivIneligiblePanel } from './admin/LivIneligiblePanel';
 import { ManagerAccountsPanel } from './admin/ManagerAccountsPanel';
@@ -143,7 +141,6 @@ export const AdminView = ({
   updateRankings, rankingsLastUpdated,
   loggedInUser,
 }) => {
-  const dialog = useDialog();
 
   // The currently-drilled-in section. null = dashboard landing view.
   const [section, setSection] = useState(null);

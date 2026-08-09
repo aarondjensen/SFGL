@@ -485,7 +485,7 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
   return wrap(`<h2 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">🏆 ${esc(tournamentName)}</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Tournament Results</p>${standingsCard}${swingBanner}${tournamentHeader}${rows}${legend}`);
 }
 
-function buildLineupReminderEmail(tournamentName, lockTime, recipientTeam) {
+function buildLineupReminderEmail(tournamentName, lockTime, _recipientTeam) {
   return wrap(`<h2 style="font-family:${FONT_STACK};font-size:18px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">⛳ Lineups Lock Tomorrow</h2><p style="font-family:${FONT_STACK};font-size:13px;color:rgba(255,255,255,0.85);margin:0 0 8px;font-weight:500;">${esc(tournamentName)}</p><p style="font-family:${FONT_STACK};font-size:12px;color:rgba(255,255,255,0.55);margin:0 0 20px;font-weight:400;">Lineups lock <strong style="color:#ffffff;font-weight:600;">Thursday at ${esc(lockTime)} ET</strong>. Make sure your lineup is set!</p><a href="https://sfglgolf.com" style="display:inline-block;padding:10px 24px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.3);border-radius:4px;color:#ffffff;text-decoration:none;font-weight:600;font-size:13px;font-family:${FONT_STACK};letter-spacing:0.5px;">Set Lineup →</a>`);
 }
 

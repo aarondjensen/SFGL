@@ -2,7 +2,6 @@
 // Shared S/M (Signature/Major) badge component used across ResultsView and TournamentsView.
 // Replaces ~5 sites of inlined identical JSX.
 
-import React from 'react';
 
 const baseStyle = {
   width: 20, height: 20,

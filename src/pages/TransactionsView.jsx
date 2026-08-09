@@ -1,10 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
 import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament } from '../utils/sharedHelpers';
-import { STORAGE_KEYS } from '../constants/index.js';
 import { theme, colors, fonts, getSwingColor } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 import { AddTransactionModal } from './AddTransactionModal';
@@ -261,7 +260,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                 >
                   — None —
                 </div>
-                {currentRoster.filter(p => !p.limited || p.name === tx.droppedPlayer).map(p => {
+                {droppableRoster.map(p => {
                   const sel = editDrop === p.name;
                   return (
                     <div
@@ -531,13 +530,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
     if (type === 'swing_winner') return 'swing winner';
     if (type === 'fa') return 'free agent';
     return type;
-  };
-
-  const statusColor = (status) => {
-    if (status === 'pending')   return 'rgba(220,200,80,0.75)';
-    if (status === 'failed')    return colors.danger;
-    if (status === 'processed') return colors.success;
-    return colors.textMuted;
   };
 
   // Find the real index in the full transactions array for a filtered tx

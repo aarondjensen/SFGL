@@ -339,7 +339,6 @@ export const playersApi = {
   },
 
   async upsertMany(players) {
-    const timestamp = Date.now();
     // Resolve each incoming name onto the doc that already represents that
     // golfer, so a sync updates the existing player instead of minting a
     // duplicate under a different spelling. Precedence:

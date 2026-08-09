@@ -19,7 +19,7 @@ import { cronFetch } from '../../api/cronApi';
 import { sendCommishPush } from '../../api/pushNotifications';
 import { processTournamentData, matchPlayerName } from './processTournamentData';
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
-import { S, M, disabledBtn } from './adminStyles';
+import { M, disabledBtn } from './adminStyles';
 import { STORAGE_KEYS } from '../../constants';
 
 // ── Round-leader dropdown (uses stored tournament lineups + R3 mulligan additions) ──

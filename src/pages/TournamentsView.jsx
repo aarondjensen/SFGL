@@ -322,14 +322,6 @@ export const TournamentsView = ({
   }, [liveData]);
 
   // ── Schedule editing logic (existing) ─────────────────────────────────────
-  const formatTeeTime = (date) => {
-    if (!date) return '';
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const hours = date.getHours(); const minutes = date.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    return `${days[date.getDay()]} ${hours % 12 || 12}:${minutes.toString().padStart(2, '0')} ${ampm} ET`;
-  };
-
   // Format a timestamp as "X min ago" / "just now" — used in the active
   // tournament expansion footer to surface freshness of live scoreboard data.
   // Granularity: under-a-minute → "just now"; < 1h → "Nm ago"; ≥1h → "Nh ago".
@@ -351,8 +343,6 @@ export const TournamentsView = ({
     const diffHr = Math.floor(diffMin / 60);
     return `${diffHr}h ago`;
   };
-
-  const activeTournament = localTournaments.find(t => t.playing && !t.completed);
 
   const saveChanges = async () => {
     setTournaments(localTournaments);
@@ -578,7 +568,6 @@ export const TournamentsView = ({
     const enrichForActive = (playerName) => {
       const tMap = mulliganMap[tIdx];
       const isMullIn = !!tMap?.ins[playerName];
-      const isMullOut = !!tMap?.outs[playerName];
       // For active tournaments we want to display whoever IS currently in
       // the lineup, not the original. Lineup is the source of truth.
       const flags = rosterFlagMap[playerName] || { limited: false, unlimited: false };

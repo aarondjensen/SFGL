@@ -21,7 +21,6 @@
 // tweaks (the abbreviation is forced nowrap by the global rule regardless).
 // ============================================================================
 
-import React from 'react';
 import { getTeamAbbreviation } from '../utils';
 
 export const TeamName = ({ name, className = '', style }) => {

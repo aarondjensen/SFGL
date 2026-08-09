@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   } else if (name) {
     try {
       pastResultsUrl = await lookupFromSchedule(name, resolvedYear);
-    } catch (err) {
+    } catch (_) {
       return res.status(404).json({ error: `Could not find "${name}" on PGA Tour schedule. Try providing the past-results URL directly.` });
     }
   } else {
@@ -38,7 +38,6 @@ export default async function handler(req, res) {
     // ── Debug mode ──────────────────────────────────────────────────────────
     if (debug === '1') {
       const nd = extractNextData(html);
-      const ndSize = nd ? JSON.stringify(nd).length : 0;
 
       // Search for round leader patterns in the HTML
       const leaderSearchTerms = [
@@ -61,11 +60,6 @@ export default async function handler(req, res) {
             .slice(0, 500);
         }
       }
-
-      // Also grab the __NEXT_DATA__ keys at top level to see what's there
-      const ndKeys = nd ? Object.keys(nd) : [];
-      const ndPropsKeys = nd?.props ? Object.keys(nd.props) : [];
-      const ndPagePropsKeys = nd?.props?.pageProps ? Object.keys(nd.props.pageProps) : [];
 
       const { players, roundLeaders } = parseResults(html);
 

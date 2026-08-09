@@ -14,7 +14,6 @@ import {
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts, fontSize } from '../theme.js';
-import { STORAGE_KEYS } from '../constants';
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament } from '../utils/sharedHelpers';
 import { NameSet, NameMap } from '../../api/_playerNames.js';
 
@@ -446,7 +445,6 @@ export const RostersView = ({
   const [pickingBackup,     setPickingBackup]     = useState(false);
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
-  const [pendingAddPlayer,  setPendingAddPlayer]  = useState(null);
   // Field / tee time / odds lookups are keyed by player IDENTITY, not by
   // string. They were plain Set/object keyed on normalizeNordic(name), which
   // meant a roster entry spelled differently from the field payload — 'Nico
@@ -1369,7 +1367,6 @@ export const RostersView = ({
                 const tournamentActive = !!(firstTeeTime || lineupOpen);
                 const isBenched      = tournamentActive && hasLineup && !isInLineup && !isEditing;
                 const dimColor       = 'rgba(255,255,255,0.45)';
-                const rowClickable   = isEditing && isOwnTeam && (isInLineup || canAddToLineup);
 
                 return (
                   <tr key={player.name}
@@ -1666,7 +1663,7 @@ export const RostersView = ({
       {/* ── Modals ── */}
       <AddDropPlayerModal
         isOpen={showAddDropModal}
-        onClose={() => { setShowAddDropModal(false); setEditingWaiverData(null); setPendingAddPlayer(null); }}
+        onClose={() => { setShowAddDropModal(false); setEditingWaiverData(null); }}
         team={team}
         currentRoster={currentRoster}
         teams={teams}

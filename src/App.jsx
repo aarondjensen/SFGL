@@ -50,7 +50,7 @@ const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 
 import { useLeague }       from './hooks';
-import { theme, colors, fonts, fontSize } from './theme.js';
+import { fontSize } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS } from './constants';
 import { tournamentResultsApi } from './api/firebase';
 import { managerActivityApi } from './api/managerActivity';

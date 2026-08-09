@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { X, Check, AlertCircle, Clock } from 'lucide-react';
 import { theme, colors, fonts } from '../theme.js';
 

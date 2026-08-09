@@ -11,7 +11,7 @@
 // + per-event preferences) and the commish-mode toggle for tagged managers.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { X } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
 import { colors, fonts } from '../theme.js';
@@ -56,14 +56,6 @@ const GROUP_CARD = {
   border: '1px solid rgba(255,255,255,0.06)',
   borderRadius: 14,
   overflow: 'hidden',
-};
-const GROUP_LABEL = {
-  fontFamily: fonts.sans,
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: '1.5px',
-  textTransform: 'uppercase',
-  color: colors.textMuted,
 };
 const ROW_BASE = {
   display: 'flex',
@@ -146,30 +138,6 @@ export const UserSettingsModal = ({
   const [pushPermission, setPushPermission] = useState('default');
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushBusy,       setPushBusy]       = useState(false);
-
-  // Whether the Notifications section is expanded. Persisted in localStorage
-  // so the user's preference sticks across modal opens. Defaults to expanded
-  // for new users so the subscribe button is discoverable.
-  // The section now has 6 event toggles. Expanded is still the default —
-  // the user may want to flip a toggle and the click cost of opening
-  // outweighs the visual cost of seeing the toggles by default. If we add
-  // many more events later, flipping to collapsed-by-default may become
-  // appropriate.
-  const NOTIFS_EXPAND_KEY = 'sfgl.userSettings.notifsExpanded';
-  const [notifsExpanded, setNotifsExpanded] = useState(() => {
-    try {
-      const stored = localStorage.getItem(NOTIFS_EXPAND_KEY);
-      // If not set yet, default to true. Otherwise honor the stored value.
-      return stored === null ? true : stored === 'true';
-    } catch { return true; }
-  });
-  const toggleNotifsExpanded = () => {
-    setNotifsExpanded(prev => {
-      const next = !prev;
-      try { localStorage.setItem(NOTIFS_EXPAND_KEY, String(next)); } catch {}
-      return next;
-    });
-  };
 
   // Re-check status whenever the modal opens (subscription state can change
   // between opens — e.g. user denied permission externally, or revoked

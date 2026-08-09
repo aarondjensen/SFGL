@@ -22,7 +22,7 @@
 //     just silently fails on browsers where push isn't supported.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { initializeApp, getApps } from 'firebase/app';
+import { getApps } from 'firebase/app';
 import { getMessaging, getToken, onMessage, isSupported, deleteToken } from 'firebase/messaging';
 import { doc, setDoc, deleteDoc, getDocs, query, where, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';

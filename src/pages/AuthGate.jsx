@@ -10,7 +10,7 @@
 // uid lives in App's auth state.
 // ============================================================================
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { fonts, fontSize } from '../theme.js';
 import { signInWithGoogle, signInWithApple } from '../api/authApi';
 

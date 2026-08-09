@@ -208,9 +208,6 @@ async function main() {
 
   const settings = {};
   settingsSnap.docs.forEach(d => { settings[d.id] = d.data().value ?? d.data(); });
-  const bonusFor = (isMajor) => (isMajor
-    ? { round1: settings.bonusR1Major ?? BONUSES_MAJ.round1, round2: settings.bonusR2Major ?? BONUSES_MAJ.round2, round3: settings.bonusR3Major ?? BONUSES_MAJ.round3 }
-    : { round1: settings.bonusR1Regular ?? BONUSES_REG.round1, round2: settings.bonusR2Regular ?? BONUSES_REG.round2, round3: settings.bonusR3Regular ?? BONUSES_REG.round3 });
 
   const mulligans = txSnap.docs
     .map(d => ({ id: d.id, ...d.data() }))
@@ -245,7 +242,7 @@ async function main() {
     return;
   }
 
-  let affectedCount = 0, fixedCount = 0, inconclusiveCount = 0, cleanCount = 0;
+  let affectedCount = 0, inconclusiveCount = 0, cleanCount = 0;
   const pendingWrites = []; // { tournament, teamUpdates:Map, resultsPatch }
 
   for (const [tourneyName, muls] of byTourney) {
@@ -365,7 +362,6 @@ async function main() {
             .filter(([, d]) => Math.abs(d) > 0.5)
         );
       }
-      fixedCount++;
     }
 
     if (APPLY && Object.keys(resultsTeamsPatch).length) {
