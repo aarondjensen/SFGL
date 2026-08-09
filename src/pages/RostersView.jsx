@@ -760,7 +760,17 @@ export const RostersView = ({
     let cancelled = false;
 
     const fetchField = () => {
-      fetch('/api/field?t=' + Date.now())
+      // No cache-buster. /api/field sets `s-maxage=300, stale-while-revalidate=600`
+      // so Vercel's CDN can serve the whole league from one origin hit, and the
+      // origin is an HTML scrape of pgatour.com — the most expensive request the
+      // app makes. Appending `?t=${Date.now()}` made every request a unique URL,
+      // which meant that cache never once produced a hit: every manager, on every
+      // poll, re-scraped pgatour.com.
+      //
+      // Nothing is lost by dropping it. This poll runs every 30 minutes, so the
+      // CDN's 5-minute freshness window is already six times tighter than the
+      // cadence it feeds — the buster was buying staleness we never had.
+      fetch('/api/field')
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (cancelled || !data?.players?.length) return;
