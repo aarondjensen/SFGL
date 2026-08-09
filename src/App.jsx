@@ -134,10 +134,33 @@ const getTabFromHash = () => {
   return VALID_TAB_IDS.has(raw) ? raw : null;
 };
 
-// How long a rostered player's headshot lookup is considered fresh. Bounds
-// both the per-name retry of a failed/unresolved lookup and the self-heal
-// sweep below, so neither can turn into a request loop.
+// How long a rostered player's headshot lookup is considered fresh. Also the
+// tick interval of the self-heal sweep below, and the FIRST step of the
+// per-name retry backoff.
 const HEADSHOT_RETRY_MS = 60 * 1000;
+
+// Ceiling for that backoff. Some golfers are resolvable by neither source —
+// they aren't in any ESPN event index and aren't in the PGA Tour directory —
+// and for those the answer is "no" every single time. At a flat 60s retry the
+// sweep asked again once a minute for as long as the tab stayed open, forever,
+// which is not a self-heal loop so much as a polling loop that never converges.
+//
+// Backoff doubles per consecutive miss (1m, 2m, 4m, 8m, 16m, then 30m), which
+// cuts the steady-state request rate for a permanently-unresolvable roster by
+// ~30x while still retrying often enough that a player who becomes resolvable
+// mid-session — a new event gets indexed, a transient 5xx clears — is picked up
+// within half an hour. There is deliberately no give-up-forever threshold:
+// capping is enough to make the cost negligible, and abandoning a name outright
+// would reintroduce the "stuck on initials until a full reload" failure the
+// sweep exists to prevent.
+const HEADSHOT_MAX_RETRY_MS = 30 * 60 * 1000;
+
+// Delay before a name is eligible again, given how many consecutive attempts
+// have come back unresolved. 0 misses (never tried, or last try succeeded)
+// yields the base window, so a resolved-but-WRONG id can still self-correct at
+// the original cadence.
+const headshotRetryDelay = (misses = 0) =>
+  Math.min(HEADSHOT_RETRY_MS * 2 ** Math.max(0, misses - 1), HEADSHOT_MAX_RETRY_MS);
 
 // ── App shell ───────────────────────────────────────────────────────────────
 const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
@@ -452,24 +475,47 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   // ids. Shared by both triggers below; the per-name TTL stamp lives in
   // fetchAttemptsRef, so two triggers can never double-request the same name.
   const resolveHeadshots = useCallback((names) => {
-    // Skip only names attempted within the retry window. CACHED entries get
-    // refreshed after the TTL so wrong mappings can self-heal.
+    // Skip names still inside their retry window. That window widens with each
+    // consecutive miss (see headshotRetryDelay), so a name nothing can resolve
+    // backs off instead of being asked about once a minute forever. CACHED
+    // entries sit at the base window so wrong mappings can still self-heal.
     const now = Date.now();
     const toFetch = names.filter(n => {
-      const lastAttempt = fetchAttemptsRef.current.get(n);
-      if (lastAttempt && (now - lastAttempt) < HEADSHOT_RETRY_MS) return false;
-      return true;
+      const prev = fetchAttemptsRef.current.get(n);
+      if (!prev) return true;
+      return (now - prev.at) >= headshotRetryDelay(prev.misses);
     });
     if (!toFetch.length) return;
 
     // Stamp attempt time BEFORE the fetch so a quick second roster change
-    // doesn't trigger a duplicate in-flight request for the same names.
-    toFetch.forEach(n => fetchAttemptsRef.current.set(n, now));
+    // doesn't trigger a duplicate in-flight request for the same names. Miss
+    // counts carry over untouched until the response tells us the outcome.
+    toFetch.forEach(n => {
+      const prev = fetchAttemptsRef.current.get(n);
+      fetchAttemptsRef.current.set(n, { at: now, misses: prev?.misses ?? 0 });
+    });
+
+    // Record the outcome for every name in this batch: resolved clears the
+    // backoff, anything else advances it. Runs on empty results and on network
+    // failure too — a name we asked about and got nothing back for is a miss
+    // regardless of which layer produced the nothing, and an endpoint that is
+    // down deserves backoff every bit as much as an unknown golfer does.
+    const recordOutcome = (resolvedNames) => {
+      const resolved = new Set(resolvedNames);
+      toFetch.forEach(n => {
+        const prev = fetchAttemptsRef.current.get(n);
+        fetchAttemptsRef.current.set(n, {
+          at: prev?.at ?? now,
+          misses: resolved.has(n) ? 0 : (prev?.misses ?? 0) + 1,
+        });
+      });
+    };
 
     const encoded = toFetch.map(n => encodeURIComponent(n)).join(',');
     fetch(`/api/headshots?names=${encoded}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
+        recordOutcome(Object.keys(data?.results || {}));
         if (data?.results && Object.keys(data.results).length > 0) {
           // CRITICAL: merge into headshots map — this OVERWRITES any stale
           // wrong values with the freshly-fetched correct ID. The
@@ -489,7 +535,18 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           });
           const found = Object.keys(data.results).length;
           const notFound = toFetch.length - found;
-          console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found (will retry in ${HEADSHOT_RETRY_MS / 1000}s if still missing)`);
+          if (notFound > 0) {
+            // Report the SHORTEST delay any unresolved name in this batch is
+            // now sitting on, so the message describes when something will
+            // actually happen next rather than a fixed number that stopped
+            // being true after the first miss.
+            const nextMs = Math.min(...toFetch
+              .filter(n => !(n in data.results))
+              .map(n => headshotRetryDelay(fetchAttemptsRef.current.get(n)?.misses)));
+            console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found (next retry in ${Math.round(nextMs / 1000)}s)`);
+          } else {
+            console.log(`✓ Auto-fetched ${found} headshot IDs`);
+          }
           // Persist to player documents for future loads
           import('./api/firebase').then(({ playersApi }) => {
             const toSave = Object.entries(data.results).map(([name, entry]) => ({
@@ -501,7 +558,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           }).catch(() => {});
         }
       })
-      .catch(() => {});
+      .catch(() => recordOutcome([]));
   }, [updateHeadshots]);
 
   const rosteredNames = useMemo(() => [...new Set(
@@ -525,8 +582,15 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   // short of a full reload. (That is precisely how the Tier-2 headshot load in
   // useLeague used to blank every avatar on a warm open — see the comment
   // there.) This pass re-resolves ONLY the rostered players that currently
-  // have no candidate URL at all, at the same TTL cadence, and goes quiet on
-  // its own as soon as everyone resolves.
+  // have no candidate URL at all.
+  //
+  // The tick stays at HEADSHOT_RETRY_MS; the per-name backoff in
+  // resolveHeadshots decides whether a tick actually issues a request. So the
+  // sweep goes quiet when everyone resolves (nothing unresolved to sweep) AND
+  // when nobody can be resolved (every candidate is inside its widening retry
+  // window) — the second case is the one that used to poll forever. Note the
+  // whole unresolved set goes out as ONE batched request, so the cost of a
+  // firing tick is a single call no matter how many players are missing.
   const headshotsMapRef = useRef(safeHeadshots);
   useEffect(() => { headshotsMapRef.current = safeHeadshots; }, [safeHeadshots]);
   useEffect(() => {
