@@ -1,4 +1,8 @@
-import { TEAM_ABBREVIATIONS } from '../constants';
+// Explicit /index.js rather than the bare directory: Vite resolves both, but
+// Node's ESM loader does not do directory resolution, and that difference was
+// enough to make this whole module chain — utils, sharedHelpers, and every
+// piece of league math in it — impossible to import from a test script.
+import { TEAM_ABBREVIATIONS } from '../constants/index.js';
 import { nameKey } from '../../api/_playerNames.js';
 import {
   SEASON,

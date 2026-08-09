@@ -166,16 +166,29 @@ export const getTransactionFee = (type, settings, status) => {
 // different totals for the same swing. The completion gate is enforced
 // independently inside computeSwingAward (at lines 38-42), so dropping it
 // here doesn't break the award eligibility logic.
-export const getSwingPot = (transactions, tournaments, segment, settings) => {
-  if (!segment) return 0;
-  // Build the set of swing tournament indexes — all in-segment events,
-  // regardless of completion. Exclude alternates to match the
-  // computeSwingAward gate (alternate-tournament fees are tracked
-  // separately in the season-level totals but not in the swing pot).
-  // Build BOTH a name set and an index set for in-segment, non-alternate
-  // events. New transactions carry a stable `tournament` name (reorder-proof);
-  // legacy ones only have a positional `tournamentIndex`, so match by name when
-  // present and fall back to the index otherwise.
+// The fee a transaction actually contributes. Trusts a stored fee when present
+// (preserving any custom amount a commissioner entered), else derives it from
+// the type — which recovers legacy rows saved with fee 0 by the old
+// FA type-string mismatch so they still count.
+export const effectiveTransactionFee = (tx, settings) => {
+  const stored = tx?.fee || 0;
+  return stored > 0 ? stored : getTransactionFee(tx?.type, settings, tx?.status);
+};
+
+// Does this transaction contribute a fee at all? Failed claims were never
+// charged, and swing_winner rows carry a payout in `amount`, not a fee.
+const isFeeBearing = (tx) => !!tx && tx.status !== 'failed' && tx.type !== 'swing_winner';
+
+// Returns a predicate: "does this transaction belong to `segment`?"
+//
+// Builds BOTH a name set and an index set for in-segment, non-alternate events.
+// New transactions carry a stable `tournament` name (reorder-proof); legacy ones
+// only have a positional `tournamentIndex`, so match by name when present and
+// fall back to the index, then to the row's own `segment` tag.
+//
+// Alternates are excluded to match the computeSwingAward gate — alternate-event
+// fees count toward season totals but not the swing pot.
+export const makeSwingMembership = (tournaments, segment) => {
   const swingNames = new Set();
   const swingIndexes = new Set();
   (tournaments || []).forEach((t, i) => {
@@ -184,27 +197,55 @@ export const getSwingPot = (transactions, tournaments, segment, settings) => {
       swingIndexes.add(i);
     }
   });
-  const inSwing = (tx) => {
+  return (tx) => {
     if (tx.tournament) return swingNames.has(tx.tournament);
     if (tx.tournamentIndex !== undefined) return swingIndexes.has(tx.tournamentIndex);
     return tx.segment === segment;
   };
-  // Effective fee: trust a stored fee when present (preserves any custom
-  // amount), else derive from type — recovers legacy rows saved with fee 0 by
-  // the old FA type-string mismatch so they count toward the pot.
-  const effFee = (tx) => {
-    const stored = tx.fee || 0;
-    return stored > 0 ? stored : getTransactionFee(tx.type, settings, tx.status);
-  };
-  return (transactions || [])
-    .filter(tx => {
-      if (tx.status === 'failed') return false;
-      if (tx.type === 'swing_winner') return false;
-      if (effFee(tx) <= 0) return false;
-      return inSwing(tx);
-    })
-    .reduce((sum, tx) => sum + effFee(tx), 0);
 };
+
+// { teamName: feesOwedThisSwing }. The per-team breakdown behind both the
+// TransactionsView fee panel and the swing pot, so the cards and the pot can no
+// longer disagree — the pot is literally the sum of the cards.
+//
+// NOTE keyed by team NAME, because that is what transactions store in tx.team.
+export const getSwingFeesByTeam = (transactions, tournaments, segment, settings) => {
+  if (!segment) return {};
+  const inSwing = makeSwingMembership(tournaments, segment);
+  const byTeam = {};
+  (transactions || []).forEach(tx => {
+    if (!isFeeBearing(tx)) return;
+    const fee = effectiveTransactionFee(tx, settings);
+    if (fee <= 0) return;
+    if (!inSwing(tx)) return;
+    byTeam[tx.team] = (byTeam[tx.team] || 0) + fee;
+  });
+  return byTeam;
+};
+
+// { teamName: feesOwedAllSeason } — every fee-bearing transaction regardless of
+// segment or alternate status.
+export const getSeasonFeesByTeam = (transactions, settings) => {
+  const byTeam = {};
+  (transactions || []).forEach(tx => {
+    if (!isFeeBearing(tx)) return;
+    const fee = effectiveTransactionFee(tx, settings);
+    if (fee <= 0) return;
+    byTeam[tx.team] = (byTeam[tx.team] || 0) + fee;
+  });
+  return byTeam;
+};
+
+// Total swing-fee pot for a segment — what the swing winner is paid.
+//
+// Now derived from getSwingFeesByTeam rather than re-walking the transactions
+// with its own copy of the membership test and fee derivation. TransactionsView
+// had a separate implementation of exactly this walk for its fee panel; the two
+// had already drifted once (see the Wave J note above) and were the reason the
+// panel and the pot could show different totals for the same swing.
+export const getSwingPot = (transactions, tournaments, segment, settings) =>
+  Object.values(getSwingFeesByTeam(transactions, tournaments, segment, settings))
+    .reduce((sum, n) => sum + n, 0);
 
 // ── Effective roster ─────────────────────────────────────────────────────────
 // Given a base team.roster and the global transactions array, replays all

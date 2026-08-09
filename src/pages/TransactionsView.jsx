@@ -3,7 +3,9 @@ import { X, Edit2 } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
-import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament } from '../utils/sharedHelpers';
+import { buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament,
+         getSeasonFeesByTeam, getSwingFeesByTeam, getSwingPot,
+         effectiveTransactionFee } from '../utils/sharedHelpers';
 import { theme, colors, fonts, getSwingColor, SWINGS } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 import { AddTransactionModal } from './AddTransactionModal';
@@ -345,64 +347,54 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   // which is more robust. Aliased here to avoid touching every call site.
   const getSegForTourney = getSegmentForTournament;
 
-  const teamFees = useMemo(() => {
-    // Determine current swing for the fee counter:
-    // 1. Find the swing of the last completed tournament
-    // 2. If that swing has been awarded (swing_winner tx exists), advance to the
-    //    next swing — the one containing the next upcoming non-alternate tournament
-    // 3. This resets the counter to $0 as soon as the commish awards the pot
+  // Which swing the fee counter is currently reporting on:
+  //   1. the swing of the last completed tournament, then
+  //   2. if that swing has already been awarded, advance to the swing holding
+  //      the next upcoming non-alternate event — which resets the counter to $0
+  //      the moment the commish awards the pot.
+  const currentSwing = useMemo(() => {
     const lastCompleted = [...(tournaments || [])].reverse().find(t => t.completed && t.results?.teams);
     const lastSeg = lastCompleted ? getSegForTourney(lastCompleted) : getSegmentByDate();
-    const lastSwingAwarded = visibleTransactions.some(tx => tx.type === 'swing_winner' && tx.segment === lastSeg);
+    const awarded = visibleTransactions.some(tx => tx.type === 'swing_winner' && tx.segment === lastSeg);
+    if (!awarded) return lastSeg;
+    const nextTourney = (tournaments || []).find(t => !t.completed && !t.isAlternate);
+    return nextTourney ? (getSegForTourney(nextTourney) || lastSeg) : lastSeg;
+  }, [tournaments, visibleTransactions, getSegForTourney]);
 
-    let currentSwing = lastSeg;
-    if (lastSwingAwarded) {
-      // Advance to next swing: find first non-alternate upcoming tournament
-      const nextTourney = (tournaments || []).find(t => !t.completed && !t.isAlternate);
-      currentSwing = nextTourney ? (getSegForTourney(nextTourney) || lastSeg) : lastSeg;
-    }
+  // Per-team fee tallies.
+  //
+  // The season and swing sums come from sharedHelpers now. This memo used to
+  // carry its own copy of the whole calculation — the in-segment name/index
+  // sets, the alternate exclusion, the failed/swing_winner skips and the
+  // stored-else-derived fee rule — duplicating getSwingPot line for line. The
+  // two had already drifted once (getSwingPot was dropping fees from
+  // in-progress events, so this panel and the swing pot showed different
+  // totals for the same swing), and a second copy meant a second chance to
+  // drift again. getSwingPot is now defined AS the sum of getSwingFeesByTeam,
+  // the same map that feeds these cards, so the pot and the cards cannot
+  // disagree by construction.
+  const teamFees = useMemo(() => {
+    const seasonByTeam = getSeasonFeesByTeam(visibleTransactions, settings);
+    const swingByTeam = getSwingFeesByTeam(visibleTransactions, tournaments, currentSwing, settings);
+    return teams
+      .map(t => ({
+        teamId: t.id,
+        teamName: t.name,
+        currentSwing,
+        seasonTotal: seasonByTeam[t.name] || 0,
+        swingTotal: swingByTeam[t.name] || 0,
+      }))
+      .sort((a, b) => b.seasonTotal - a.seasonTotal);
+  }, [teams, visibleTransactions, tournaments, currentSwing, settings]);
 
-    const fees = {};
-    teams.forEach(t => { fees[t.name] = { seasonTotal: 0, swingTotal: 0, currentSwing, teamId: t.id, teamName: t.name }; });
-
-    // Build the set of tournamentIndexes that belong to the current swing.
-    // Excludes alternates — per league rule, alternates are ignored from all
-    // swing math (earnings, completion gates, AND fee pots). This keeps the
-    // panel total aligned with getSwingPot() in sharedHelpers, which is the
-    // authoritative pot calculation used by SwingWinnerPanel + the auto-award
-    // logic in computeSwingAward.
-    const currentSwingNames = new Set();
-    const currentSwingIndexes = new Set();
-    (tournaments || []).forEach((t, i) => {
-      if (getSegForTourney(t) === currentSwing && !t.isAlternate) {
-        if (t?.name) currentSwingNames.add(t.name);
-        currentSwingIndexes.add(i);
-      }
-    });
-
-    visibleTransactions.forEach(tx => {
-      // swing_winner uses tx.amount not tx.fee — don't count it in season/swing fees
-      if (tx.type === 'swing_winner') return;
-      if (tx.status === 'failed') return; // blocked waivers have no fee
-      // Effective fee: stored when present, else derived from type — so legacy
-      // rows saved $0 by the old FA type-string bug count correctly. Matches
-      // getSwingPot() so the panel total and swing pot agree.
-      const fee = (tx.fee || 0) > 0 ? tx.fee : getTransactionFee(tx.type, settings, tx.status);
-      if (fees[tx.team] && fee > 0) {
-        fees[tx.team].seasonTotal += fee;
-        // Count toward current swing if the transaction's tournament is in this
-        // swing — prefer the stable name (reorder-proof), fall back to the
-        // legacy positional index, then to the segment tag for old records.
-        const inCurrentSwing = tx.tournament
-          ? currentSwingNames.has(tx.tournament)
-          : tx.tournamentIndex !== undefined
-            ? currentSwingIndexes.has(tx.tournamentIndex)
-            : tx.segment === currentSwing;
-        if (inCurrentSwing) fees[tx.team].swingTotal += fee;
-      }
-    });
-    return Object.values(fees).sort((a, b) => b.seasonTotal - a.seasonTotal);
-  }, [teams, visibleTransactions, tournaments]);
+  // The headline pot, taken from the authoritative helper rather than by
+  // re-summing the cards. Identical in the normal case; where they differ it is
+  // because a transaction's tx.team no longer matches any current team name,
+  // and this is the figure the swing winner is actually paid.
+  const swingPot = useMemo(
+    () => getSwingPot(visibleTransactions, tournaments, currentSwing, settings),
+    [visibleTransactions, tournaments, currentSwing, settings]
+  );
 
   const TYPE_ORDER = { 'waiver': 0, 'fa': 1, 'free agent': 1, 'drop': 2, 'mulligan': 3, 'swing_winner': 99 };
   // Build a map of segment → last tournamentIndex for sorting swing_winner records.
@@ -576,7 +568,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
             <h2 style={{ ...theme.sectionTitle, margin: 0 }}>Transaction Fees</h2>
             {teamFees[0]?.currentSwing && (() => {
               const swingColor = getSwingColor(teamFees[0].currentSwing);
-              const swingPot = teamFees.reduce((sum, t) => sum + (t.swingTotal || 0), 0);
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.3px', color: swingColor }}>
@@ -750,9 +741,10 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     ) : (
                       <span style={{
                         ...theme.statNum, fontSize: 13, fontWeight: 600,
-                        color: tx.status === 'failed' ? colors.textMuted : (((tx.fee || 0) > 0 ? tx.fee : getTransactionFee(tx.type, settings, tx.status)) > 0 ? colors.earningsGreen : colors.textMuted),
+                        color: tx.status === 'failed' ? colors.textMuted
+                          : (effectiveTransactionFee(tx, settings) > 0 ? colors.earningsGreen : colors.textMuted),
                       }}>
-                        {tx.status === 'failed' ? '—' : `$${(tx.fee || 0) > 0 ? tx.fee : getTransactionFee(tx.type, settings, tx.status)}`}
+                        {tx.status === 'failed' ? '—' : `$${effectiveTransactionFee(tx, settings)}`}
                       </span>
                     )}
 

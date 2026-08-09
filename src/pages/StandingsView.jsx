@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { theme, colors, fonts, fontSize, rowHoverHandlers, SWINGS, SWING_COLORS, getSwingColorAt } from '../theme.js';
 import { getSegmentForTournament } from '../utils';
+import { getSeasonEarningsByTeam, getSwingEarningsByTeam } from '../utils/sharedHelpers';
 import { TeamName } from '../components/TeamName';
 
 // Row height enforced via the .sfgl-row-hero class defined in app-global.css.
@@ -333,17 +334,16 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
   };
 
   // ── Overall card ──────────────────────────────────────────────────────────
-  const seasonTotals = useMemo(() => {
-    const totals = {};
-    teams.forEach(t => { totals[t.id] = 0; });
-    tournaments.forEach(t => {
-      if (!t.completed || !t.results?.teams) return;
-      Object.entries(t.results.teams).forEach(([teamId, result]) => {
-        if (totals[teamId] !== undefined) totals[teamId] += (result.totalEarnings || 0);
-      });
-    });
-    return totals;
-  }, [teams, tournaments]);
+  // getSeasonEarningsByTeam is documented in sharedHelpers as THE authoritative
+  // season-earnings derivation — the one the cron's waiver tie-breaker and the
+  // commish's manual waiver panel both use. This view, which is where managers
+  // actually READ the season standings, used to re-implement the same summation
+  // inline, so the headline number and the number that decides waiver priority
+  // came from two separate pieces of code.
+  //
+  // Teams absent from the map (no completed results yet) fall through to 0 in
+  // the row mapping below, which is what the old `totals[t.id] = 0` prefill did.
+  const seasonTotals = useMemo(() => getSeasonEarningsByTeam(tournaments), [tournaments]);
 
   const lastCompletedOverall = useMemo(
     () => [...tournaments].reverse().find(t => t.completed && t.results?.teams) || null,
@@ -391,18 +391,14 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
     [lastCompletedSwing]
   );
 
-  const swingTotals = useMemo(() => {
-    if (!selectedSwing) return {};
-    const totals = {};
-    teams.forEach(t => { totals[t.id] = 0; });
-    tournaments.forEach(t => {
-      if (getSegmentForTournament(t) !== selectedSwing || !t.completed || !t.results?.teams) return;
-      Object.entries(t.results.teams).forEach(([teamId, result]) => {
-        if (totals[teamId] !== undefined) totals[teamId] += (result.totalEarnings || 0);
-      });
-    });
-    return totals;
-  }, [selectedSwing, teams, tournaments]);
+  // Same story as seasonTotals: getSwingEarningsByTeam already existed and is
+  // what getSwingLeader (and therefore the swing award) runs on, but this card
+  // summed the swing itself. The award and the table it is displayed above were
+  // two implementations of one number.
+  const swingTotals = useMemo(
+    () => (selectedSwing ? getSwingEarningsByTeam(tournaments, selectedSwing) : {}),
+    [selectedSwing, tournaments]
+  );
 
   const swingRows = useMemo(() => {
     if (!selectedSwing) return [];
