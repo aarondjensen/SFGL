@@ -784,8 +784,6 @@ export const RostersView = ({
   const _lastFetchedTournament = React.useRef(null);
   useEffect(() => {
     if (!_fieldTournamentName) return;
-    // Don't re-run if we already have tee times for this tournament
-    if (_lastFetchedTournament.current === _fieldTournamentName && teeTimeMap.size > 0) return;
     let cancelled = false;
 
     const fetchField = () => {
@@ -821,7 +819,21 @@ export const RostersView = ({
         .catch(() => {});
     };
 
-    fetchField();
+    // Skip only the IMMEDIATE fetch when this tournament's data is already
+    // loaded — never the poll.
+    //
+    // This guard used to sit above, as an early return before the interval was
+    // created, which quietly conflated "we already have this data" with "stop
+    // refreshing it". The effect re-runs when the field tournament changes, so
+    // the sequence that trips it is A → B → A with B's fetch failing or coming
+    // back empty: `_lastFetchedTournament` is still A and teeTimeMap still
+    // holds A's tee times, so returning to A takes the early return and no
+    // interval is ever installed. Tee times and live field membership then stop
+    // updating for the rest of the session, with nothing on screen to say so —
+    // the table just keeps showing whatever it last had.
+    const alreadyLoaded =
+      _lastFetchedTournament.current === _fieldTournamentName && teeTimeMap.size > 0;
+    if (!alreadyLoaded) fetchField();
     const interval = setInterval(fetchField, 30 * 60 * 1000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [_fieldTournamentName]); // eslint-disable-line react-hooks/exhaustive-deps
