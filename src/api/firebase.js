@@ -90,6 +90,38 @@ async function _getAll(collectionName) {
 }
 
 /** Return all documents ordered by a field. */
+// ── Headshot id reading ─────────────────────────────────────────────────────
+// A player doc's espn_id / pga_id must be a scalar the app can drop into a CDN
+// URL. Two things can put something else there, and both render a URL that is
+// syntactically fine and 404s for every player at once:
+//   • an object — /api/headshots returns { espn, pga } per player, and a caller
+//     that saved the whole response object instead of unpacking it wrote that
+//     object into espn_id (see the note in admin/DataSyncPanel.jsx).
+//   • the string "[object Object]" — the same corruption after a round trip
+//     through a String() that has since been removed.
+// readId returns null for both, so a corrupt doc reads as "no id known" and the
+// client's /api/headshots auto-fetch refills it, rather than the app confidently
+// requesting a broken URL forever.
+function readId(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : null;
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  return (t && t !== '[object Object]') ? t : null;
+}
+
+// Pull usable { espn, pga } ids off a player doc, salvaging the real ids from
+// docs whose espn_id holds the whole { espn, pga } response object — the real
+// ids are sitting right there, so recovering them restores those players on the
+// next load instead of making them wait for a rewrite.
+function recoverIds(p) {
+  const wrapped = (p?.espn_id && typeof p.espn_id === 'object') ? p.espn_id : null;
+  return {
+    espn: readId(wrapped ? wrapped.espn : p?.espn_id),
+    pga:  readId(wrapped ? wrapped.pga  : p?.pga_id) || readId(p?.pga_id),
+  };
+}
+
 async function _getAllOrdered(collectionName, field, dir = 'asc') {
   const q = query(collection(db, collectionName), orderBy(field, dir));
   const snap = await getDocs(q);
@@ -330,15 +362,20 @@ export const playersApi = {
 
   async getAllForApp() {
     const players = await this.getAll();
-    return players.map(p => ({
-      name:        p.name,
-      worldRank:   p.world_rank,
-      espnId:      p.espn_id,
-      pgaId:       p.pga_id,
-      headshotUrl: p.headshot_url,
-      stats:       p.career_stats,
-      isLiv:       p.is_liv,
-    }));
+    return players.map(p => {
+      // Same scalar-only read as getHeadshotsMap — a corrupt object-valued id
+      // must not reach an admin field or a CDN URL as "[object Object]".
+      const { espn, pga } = recoverIds(p);
+      return {
+        name:        p.name,
+        worldRank:   p.world_rank,
+        espnId:      espn,
+        pgaId:       pga,
+        headshotUrl: p.headshot_url,
+        stats:       p.career_stats,
+        isLiv:       p.is_liv,
+      };
+    });
   },
 
   // name -> { url?, espn?, pga? } — the shape utils/headshotUtils.js chains.
@@ -351,9 +388,19 @@ export const playersApi = {
     const map = {};
     players.forEach(p => {
       const entry = {};
-      if (p.headshot_url) entry.url  = p.headshot_url;
-      if (p.espn_id)      entry.espn = String(p.espn_id);
-      if (p.pga_id)       entry.pga  = String(p.pga_id);
+      if (typeof p.headshot_url === 'string' && p.headshot_url.trim()) {
+        entry.url = p.headshot_url.trim();
+      }
+      // espn_id / pga_id must be SCALARS. This used to be a bare
+      // String(p.espn_id), which silently turned a malformed object-valued id
+      // into the string "[object Object]" — a perfectly well-formed CDN URL
+      // that 404s for every player. readId rejects anything that isn't a
+      // usable scalar, and recoverIds salvages the real ids out of docs the
+      // old DataSyncPanel corrupted, so those players resolve on the next load
+      // instead of waiting to be rewritten.
+      const { espn, pga } = recoverIds(p);
+      if (espn) entry.espn = espn;
+      if (pga)  entry.pga  = pga;
       if (Object.keys(entry).length > 0) map[p.name] = entry;
     });
     return map;
