@@ -1056,7 +1056,6 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
         loggedInUser={loggedInUser}
         loggedInTeamId={loggedInTeamId}
         teams={resolvedTeams}
-        updateTeams={updateTeams}
       />
 
       <UserSettingsModal

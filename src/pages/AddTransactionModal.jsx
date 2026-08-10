@@ -23,7 +23,7 @@ import { useModalBehavior } from '../utils/modalUtils';
 import { sendCommishPush } from '../api/pushNotifications';
 import { getCurrentTournamentIndex } from '../utils/index.js';
 import { compactTeamName } from '../utils/index.js';
-import { getTransactionFee, buildEffectiveRoster } from '../utils/sharedHelpers';
+import { getTransactionFee, buildEffectiveRoster, txBelongsToTeam } from '../utils/sharedHelpers';
 import { recomputeTeamTournamentResult } from '../utils/mulliganReversal';
 import { colors, fonts } from '../theme.js';
 import { M, disabledBtn } from './admin/adminStyles';
@@ -181,9 +181,14 @@ export const AddTransactionModal = ({
 
       // Count this team's existing non-failed mulligans of the same event type.
       // Failed mulligans don't consume the allowance.
+      // `team` here is the selected team NAME (the dropdown's value); resolve it
+      // to the team object so the match can use the stable teamId on rows that
+      // carry one. A rename would otherwise make this undercount the team's used
+      // mulligans and hand out a second allowance.
+      const teamForMatch = teams.find(t => t.name === team);
       const existing = transactions.filter(tx => {
         if (tx.type !== 'mulligan') return false;
-        if (tx.team !== team) return false;
+        if (!txBelongsToTeam(tx, teamForMatch)) return false;
         if (tx.status === 'failed') return false;
         const txT = tx.tournamentIndex != null ? tournaments[tx.tournamentIndex] : null;
         const txIsSigOrMajor = !!(txT && (txT.isSignature || txT.isMajor));
@@ -235,6 +240,9 @@ export const AddTransactionModal = ({
     const newTx = {
       txId: `manual-${team}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team,
+      // teamId is the STABLE key. `team` (the name) is manager-editable, and
+      // matching history by name is what a rename used to break.
+      teamId: teams.find(t => t.name === team)?.id || team,
       // Canonicalize the persisted free-agent type. This modal's dropdown value
       // is 'fa', but the main add/drop flow (AddDropPlayerModal) writes
       // 'free agent'. Store ONE form so readers never have to check both. The

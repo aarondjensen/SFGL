@@ -14,7 +14,7 @@ import {
 } from '../utils';
 // MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
 import { theme, colors, fonts, fontSize } from '../theme.js';
-import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, getETClock } from '../utils/sharedHelpers';
+import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, getETClock, txBelongsToTeam } from '../utils/sharedHelpers';
 import { waiverCutoff, fmtWaiverCutoff } from '../../api/_league.js';
 import { NameSet, NameMap } from '../../api/_playerNames.js';
 
@@ -160,7 +160,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
     // Match by fields to find the right transaction regardless of index shifts
     let removedTx = null;
     const newTx = current.filter(tx => {
-      if (!removedTx && tx.team === team.name && tx.player === waiver.player && tx.droppedPlayer === waiver.droppedPlayer && tx.status === 'pending' && tx.type === 'waiver') {
+      if (!removedTx && txBelongsToTeam(tx, team) && tx.player === waiver.player && tx.droppedPlayer === waiver.droppedPlayer && tx.status === 'pending' && tx.type === 'waiver') {
         removedTx = tx;
         return false;
       }
@@ -627,7 +627,7 @@ export const RostersView = ({
     if (!team) return [];
     return transactions
       .map((t, idx) => ({ ...t, _txIdx: idx }))
-      .filter(t => t.team === team.name && t.type === 'waiver' && t.status === 'pending')
+      .filter(t => txBelongsToTeam(t, team) && t.type === 'waiver' && t.status === 'pending')
       .sort((a, b) => (a.priority || 999) - (b.priority || 999));
   }, [team, transactions]);
 
@@ -723,7 +723,7 @@ export const RostersView = ({
     let regular = 0, signatureMajor = 0;
     transactions.forEach(tx => {
       if (tx.type !== 'mulligan') return;
-      if (tx.team !== team.name) return;
+      if (!txBelongsToTeam(tx, team)) return;
       if (tx.status === 'failed') return;
       const t = resolveTxTournament(tx, tournaments);
       const isSigOrMajor = !!(t && (t.isSignature || t.isMajor));

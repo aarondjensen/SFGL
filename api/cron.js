@@ -14,7 +14,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
 import { DEFAULTS_ON, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
-import { SEASON, swingForMonth, getETNow, abbreviateName, waiverCutoff } from './_league.js';
+import { SEASON, swingForMonth, getETNow, abbreviateName, waiverCutoff, txBelongsToTeam } from './_league.js';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
 
@@ -359,6 +359,9 @@ function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transaction
   const newSwingTx = {
     txId: `swing-${swingSegment}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     team: winnerTeam.name,
+    // Stable key alongside the editable name — mirrors the client's
+    // computeSwingAward (src/utils/swingAward.js). See txBelongsToTeam.
+    teamId: winnerTeam.id || winnerTeam.name,
     type: 'swing_winner',
     player: winnerTeam.owner,
     fee: 0,
@@ -653,7 +656,7 @@ async function handleWaivers(res) {
     let names = (t.roster || []).map(p => p.name);
     allTx
       .filter(tx =>
-        tx.team === t.name &&
+        txBelongsToTeam(tx, t) &&
         tx.type !== 'mulligan' &&
         tx.type !== 'swing_winner' &&
         (tx.status === 'processed' || tx.status === 'completed'))

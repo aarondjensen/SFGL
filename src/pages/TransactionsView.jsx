@@ -4,8 +4,8 @@ import { useDialog } from './DialogContext';
 import { getSegmentByDate, getSegmentForTournament, getTeamAbbreviation, abbreviateName as shortName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
 import { buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament,
-         getSeasonFeesByTeam, getSwingFeesByTeam, getSwingPot,
-         effectiveTransactionFee } from '../utils/sharedHelpers';
+         getSeasonFeesForTeam, getSwingFeesForTeam, getSwingPot,
+         effectiveTransactionFee, txBelongsToTeam, resolveTxTeam } from '../utils/sharedHelpers';
 import { theme, colors, fonts, getSwingColor, SWINGS } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 import { AddTransactionModal } from './AddTransactionModal';
@@ -88,9 +88,14 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
       onClose();
       return;
     }
+    // Reassigning the team must move teamId as well. txBelongsToTeam PREFERS
+    // teamId over the name, so leaving a stale id behind would make the row
+    // keep counting against the old team no matter what the name says — the
+    // inverse of the rename bug, and just as silent.
+    const newTeamId = teams.find(t => t.name === newTeam)?.id || newTeam;
     const updatedTx = transactions.map((t, i) =>
       isTarget(t, i)
-        ? { ...t, team: newTeam, player: newAdd, droppedPlayer: newDrop || undefined, tournamentIndex: newTourneyIdx, tournament: tournaments[newTourneyIdx]?.name ?? t.tournament, segment: tournaments[newTourneyIdx]?.segment || t.segment }
+        ? { ...t, team: newTeam, teamId: newTeamId, player: newAdd, droppedPlayer: newDrop || undefined, tournamentIndex: newTourneyIdx, tournament: tournaments[newTourneyIdx]?.name ?? t.tournament, segment: tournaments[newTourneyIdx]?.segment || t.segment }
         : t
     );
 
@@ -373,19 +378,21 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   // drift again. getSwingPot is now defined AS the sum of getSwingFeesByTeam,
   // the same map that feeds these cards, so the pot and the cards cannot
   // disagree by construction.
-  const teamFees = useMemo(() => {
-    const seasonByTeam = getSeasonFeesByTeam(visibleTransactions, settings);
-    const swingByTeam = getSwingFeesByTeam(visibleTransactions, tournaments, currentSwing, settings);
-    return teams
+  const teamFees = useMemo(() =>
+    teams
       .map(t => ({
         teamId: t.id,
         teamName: t.name,
         currentSwing,
-        seasonTotal: seasonByTeam[t.name] || 0,
-        swingTotal: swingByTeam[t.name] || 0,
+        // Resolved per team via txBelongsToTeam rather than bucketed by the
+        // tx.team string, so a row carrying a stable teamId lands on the right
+        // card even if its name field is momentarily out of step (a rename
+        // whose re-key has not finished, say).
+        seasonTotal: getSeasonFeesForTeam(visibleTransactions, settings, t),
+        swingTotal: getSwingFeesForTeam(visibleTransactions, tournaments, currentSwing, settings, t),
       }))
-      .sort((a, b) => b.seasonTotal - a.seasonTotal);
-  }, [teams, visibleTransactions, tournaments, currentSwing, settings]);
+      .sort((a, b) => b.seasonTotal - a.seasonTotal),
+    [teams, visibleTransactions, tournaments, currentSwing, settings]);
 
   // The headline pot, taken from the authoritative helper rather than by
   // re-summing the cards. Identical in the normal case; where they differ it is
@@ -444,7 +451,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
   };
 
   const filteredTransactions = sortedTransactions
-    .filter(tx => filterTeam === 'all' || tx.team === filterTeam)
+    .filter(tx => {
+      if (filterTeam === 'all') return true;
+      const t = teams.find(x => x.name === filterTeam);
+      return t ? txBelongsToTeam(tx, t) : tx.team === filterTeam;
+    })
     .filter(tx => {
       if (filterSwing === 'all') return true;
       return getTxSegment(tx) === filterSwing;
@@ -460,7 +471,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
       );
       if (!ok) return;
     }
-    const team = teams.find(t => t.name === tx.team);
+    const team = resolveTxTeam(tx, teams);
     if (!team) return;
 
     // Remove the added player from the roster (filters all instances — defensive

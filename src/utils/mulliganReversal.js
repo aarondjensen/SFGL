@@ -18,7 +18,7 @@
 // mid-flight; matchPlayerName is a small pure mirror of the one there.
 // ============================================================================
 import { namesMatch } from '../../api/_playerNames.js';
-import { getPlayerRegistry } from './sharedHelpers';
+import { getPlayerRegistry, resolveTxTeam } from './sharedHelpers';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../constants/index.js';
 
 // Was a hand-copied "mirror of processTournamentData.matchPlayerName" — the
@@ -71,7 +71,7 @@ export const recomputeTeamTournamentResult = (lineup, earningsMap, roundLeaders,
 // Returns { newTeams, newTournaments, registryOverrides, processed, summary }
 // or { error } if it can't be reversed safely.
 export const computeMulliganReversal = (tx, teams, tournaments) => {
-  const team = teams.find(t => t.name === tx.team);
+  const team = resolveTxTeam(tx, teams);
   if (!team) return { error: `Team "${tx.team}" not found.` };
   const playerIn = tx.player;         // wrongly added — remove its credit
   const playerOut = tx.droppedPlayer;  // real starter — restore its credit

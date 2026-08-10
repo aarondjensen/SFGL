@@ -6,6 +6,7 @@
 
 import { namesMatch } from '../../../api/_playerNames.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../../constants';
+import { txBelongsToTeam } from '../../utils/sharedHelpers';
 
 // Are these two strings the same golfer? Delegates to the shared identity
 // module (api/_playerNames.js), which is what /api/field, /api/cron and the
@@ -115,7 +116,7 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     let effectiveLineup = [...team.lineup];
     const teamMulligans = (transactions || []).filter(tx =>
       tx.type === 'mulligan' &&
-      tx.team === team.name &&
+      txBelongsToTeam(tx, team) &&
       tx.status !== 'pending' &&
       tx.status !== 'failed' &&
       tx.player &&            // IN player

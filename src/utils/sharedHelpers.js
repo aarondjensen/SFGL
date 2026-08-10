@@ -19,6 +19,7 @@
 
 import { getSegmentForTournament } from './index.js';
 import { nameKey } from '../../api/_playerNames.js';
+import { txBelongsToTeam } from '../../api/_league.js';
 
 // ── Name normalization ───────────────────────────────────────────────────────
 // Delegates to nameKey() in api/_playerNames.js, the single source of truth.
@@ -166,6 +167,25 @@ export const getTransactionFee = (type, settings, status) => {
 // different totals for the same swing. The completion gate is enforced
 // independently inside computeSwingAward (at lines 38-42), so dropping it
 // here doesn't break the award eligibility logic.
+// ── Transaction → team matching ──────────────────────────────────────────────
+// Transactions identify their team by NAME (tx.team). Managers can rename their
+// own team, which used to sever a team from its entire transaction history —
+// roster replay, fees, the swing pot and pending waivers all match on that
+// string. teamsApi.rename now re-keys the existing rows, and every transaction
+// written from here on also carries a stable `teamId`.
+//
+// This matcher prefers the id and falls back to the name. The fallback is
+// EXACTLY the old comparison, so rows written before teamId existed behave
+// identically — there is no migration to wait for and no half-migrated state.
+//
+// Pass the team object (it needs both id and name).
+// Implementation lives in api/_league.js so api/cron.js — which does this same
+// match when processing waivers — shares the rule rather than mirroring it.
+// Imported as well as re-exported: `export ... from` forwards the binding
+// without introducing it into this module's scope, and buildEffectiveRoster and
+// the per-team fee helpers below call it directly.
+export { txBelongsToTeam, resolveTxTeam } from '../../api/_league.js';
+
 // The fee a transaction actually contributes. Trusts a stored fee when present
 // (preserving any custom amount a commissioner entered), else derives it from
 // the type — which recovers legacy rows saved with fee 0 by the old
@@ -221,6 +241,25 @@ export const getSwingFeesByTeam = (transactions, tournaments, segment, settings)
     byTeam[tx.team] = (byTeam[tx.team] || 0) + fee;
   });
   return byTeam;
+};
+
+/** Fees owed by ONE team this swing, matched by stable id where available. */
+export const getSwingFeesForTeam = (transactions, tournaments, segment, settings, team) => {
+  if (!segment || !team) return 0;
+  const inSwing = makeSwingMembership(tournaments, segment);
+  return (transactions || []).reduce((sum, tx) => {
+    if (!isFeeBearing(tx) || !txBelongsToTeam(tx, team) || !inSwing(tx)) return sum;
+    return sum + effectiveTransactionFee(tx, settings);
+  }, 0);
+};
+
+/** Fees owed by ONE team all season, matched by stable id where available. */
+export const getSeasonFeesForTeam = (transactions, settings, team) => {
+  if (!team) return 0;
+  return (transactions || []).reduce((sum, tx) => {
+    if (!isFeeBearing(tx) || !txBelongsToTeam(tx, team)) return sum;
+    return sum + effectiveTransactionFee(tx, settings);
+  }, 0);
 };
 
 // { teamName: feesOwedAllSeason } — every fee-bearing transaction regardless of
@@ -326,7 +365,7 @@ export const buildEffectiveRoster = (team, transactions, opts = {}) => {
 
   (transactions || [])
     .filter(tx =>
-      tx.team === team.name &&
+      txBelongsToTeam(tx, team) &&
       tx.type !== 'mulligan' &&
       // swing_winner.player is the MANAGER's owner name, not a golfer —
       // replaying it would inject the manager's name into the roster set.

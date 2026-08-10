@@ -1,8 +1,9 @@
 // src/components/AccountModal.jsx
 // ============================================================================
 // Account panel (opened from the More menu). Three things:
-//   • Team name — manager-editable; saving cascades app-wide via updateTeams
-//     (the realtime teams subscription repaints standings/rosters/dropdowns).
+//   • Team name — manager-editable; saving goes through teamsApi.rename,
+//     which also re-keys the team's transactions (they reference the team by
+//     NAME). The realtime teams subscription repaints the rest of the app.
 //   • Sign-in methods — link Google + Apple so either button resolves to the
 //     same Firebase uid / team (see authApi linkAppleAccount/linkGoogleAccount).
 //   • Sign out — guarded by a confirmation dialog.
@@ -16,6 +17,7 @@ import { useDialog } from '../pages/DialogContext';
 import { colors, fonts } from '../theme.js';
 import { useModalBehavior } from '../utils/modalUtils';
 import { linkAppleAccount, linkGoogleAccount, getLinkedProviders } from '../api/authApi';
+import { teamsApi } from '../api/firebase';
 
 export const AccountModal = ({
   isOpen,
@@ -24,7 +26,6 @@ export const AccountModal = ({
   loggedInUser,
   loggedInTeamId,
   teams,
-  updateTeams,
 }) => {
   const dialog = useDialog();
   useModalBehavior(isOpen, onClose);
@@ -51,11 +52,25 @@ export const AccountModal = ({
     if (!userTeam || !nameChanged || savingName) return;
     setSavingName(true);
     try {
-      // Single source of truth: write the new name onto the team and persist
-      // the whole array. The teams subscription repaints the rest of the app.
-      const newTeams = teams.map(t => (t.id === userTeam.id ? { ...t, name: trimmedName } : t));
-      await updateTeams(newTeams);
-      dialog.showToast('\u2713 Team name updated', 'success');
+      // Goes through teamsApi.rename, NOT a plain team-doc write.
+      //
+      // Transactions identify their team by name (tx.team), so writing the new
+      // name onto the team alone \u2014 which is what this used to do \u2014 cut the team
+      // loose from its entire history: roster replay stopped applying its
+      // add/drops, its fees dropped out of the swing pot, and its pending
+      // waiver claims disappeared from both the Rosters page and the commish's
+      // waiver panel. Silently, and only for the team that renamed.
+      //
+      // rename() re-keys those rows in the same operation and rejects a name
+      // already taken by another team. The realtime teams subscription repaints
+      // the app once it lands.
+      const { transactionsUpdated } = await teamsApi.rename(userTeam.id, trimmedName);
+      dialog.showToast(
+        transactionsUpdated > 0
+          ? `\u2713 Team renamed \u00b7 ${transactionsUpdated} transaction${transactionsUpdated === 1 ? '' : 's'} updated`
+          : '\u2713 Team name updated',
+        'success'
+      );
     } catch (e) {
       dialog.showToast('Could not update team name: ' + (e?.message || 'error'), 'error');
     } finally {

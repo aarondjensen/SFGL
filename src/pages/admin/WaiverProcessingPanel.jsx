@@ -14,7 +14,7 @@ import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { M } from './adminStyles';
-import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam, buildEffectiveRoster, buildPlayerAttributeIndex, hydratePlayer } from '../../utils/sharedHelpers';
+import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam, buildEffectiveRoster, buildPlayerAttributeIndex, hydratePlayer, resolveTxTeam } from '../../utils/sharedHelpers';
 
 // Roster membership for waiver processing uses the CANONICAL buildEffectiveRoster
 // from sharedHelpers — the same builder behind useRoster, so the manual processor
@@ -82,7 +82,7 @@ export const WaiverProcessingPanel = ({
       setTransactions(tx2); sfglDataApi.set(STORAGE_KEYS.TRANSACTIONS, tx2).catch(() => {});
       dialog.showToast(w.player + ' already rostered', 'error'); return;
     }
-    const claimTeam = teams.find(t => t.name === w.team);
+    const claimTeam = resolveTxTeam(w, teams);
     if (w.droppedPlayer && !(claimTeam && buildEffectiveRoster(claimTeam, transactions, { tournaments }).has(w.droppedPlayer))) {
       const tx2 = transactions.map((tx, i) => i === w._idx
         ? { ...tx, status: 'failed', failReason: w.droppedPlayer + ' already dropped', processedDate: new Date().toLocaleDateString() }
@@ -93,7 +93,8 @@ export const WaiverProcessingPanel = ({
 
     const competing = transactions
       .map((tx, i) => ({ ...tx, _idx: i }))
-      .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.player === w.player && tx.team !== w.team);
+      .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.player === w.player
+                    && resolveTxTeam(tx, teams) !== claimTeam);
     // Tie-breaker = YTD earnings derived from results (see handleProcessAll).
     const seasonByTeam = getSeasonEarningsByTeam(tournaments);
     const earningsMap = {}; teams.forEach(t => { earningsMap[t.name] = seasonByTeam[t.id] || 0; });

@@ -188,6 +188,33 @@ export const fmtWaiverCutoff = (settings) => {
   return `${DAY_ABBRS[day]} ${hr}${min}${ampm}`;
 };
 
+// ── Transaction → team matching ──────────────────────────────────────────────
+// Transactions identify their team by NAME (tx.team). Managers can rename their
+// own team from the Account sheet, and before teamsApi.rename existed that cut
+// a team loose from its entire history: roster replay stopped applying its
+// add/drops, its fees dropped out of the swing pot, and its pending waiver
+// claims vanished from the Rosters page AND from the cron that processes them.
+//
+// Every transaction written from here on also carries a stable `teamId`. This
+// matcher prefers that id and falls back to the name, and the fallback is
+// EXACTLY the comparison it replaced — so rows written before teamId existed
+// behave identically. There is no migration to wait on and no half-migrated
+// state.
+//
+// Lives here rather than in src/utils so api/cron.js can use the same rule as
+// the client; its waiver processing does this match too.
+export const txBelongsToTeam = (tx, team) => {
+  if (!tx || !team) return false;
+  const teamId = team.id || team.name;
+  if (tx.teamId) return tx.teamId === teamId;
+  return tx.team === team.name;
+};
+
+// The inverse: which team does this transaction belong to? Returns null when
+// nothing matches (an orphan predating teamsApi.rename, or a deleted team).
+export const resolveTxTeam = (tx, teams) =>
+  (teams || []).find(t => txBelongsToTeam(tx, t)) || null;
+
 // ── Name display ─────────────────────────────────────────────────────────────
 /**
  * "Rory McIlroy" → "R. McIlroy". Single-word names pass through unchanged.

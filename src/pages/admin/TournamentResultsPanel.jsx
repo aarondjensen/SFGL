@@ -21,6 +21,7 @@ import { processTournamentData, matchPlayerName } from './processTournamentData'
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { M, disabledBtn } from './adminStyles';
 import { SEASON } from '../../../api/_league.js';
+import { txBelongsToTeam } from '../../utils/sharedHelpers';
 import { STORAGE_KEYS } from '../../constants';
 
 // ── Round-leader dropdown (uses stored tournament lineups + R3 mulligan additions) ──
@@ -39,7 +40,7 @@ const RoundLeaderSelect = ({
     let names = [...lineup];
     if (round >= 3) {
       tourneyMulligans
-        .filter(tx => tx.team === team.name && tx.player)
+        .filter(tx => txBelongsToTeam(tx, team) && tx.player)
         .forEach(tx => { if (!names.includes(tx.player)) names.push(tx.player); });
     }
     return names.map(name => ({ name, team: team.name }));

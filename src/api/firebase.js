@@ -686,6 +686,75 @@ export const teamsApi = {
   },
 
   /**
+   * Rename a team AND re-key every transaction that referenced it by name.
+   *
+   * ── Why this can't be a plain field update ──────────────────────────────
+   * Transactions identify their team by NAME (`tx.team`), not by id. Managers
+   * can rename their own team from the Account sheet. Before this existed, a
+   * rename was written as an ordinary team-doc patch, which silently cut that
+   * team loose from its entire history:
+   *
+   *   • buildEffectiveRoster filters `tx.team === team.name`, so every
+   *     add/drop the team had ever made stopped replaying — dropped players
+   *     came back and added players disappeared from the roster;
+   *   • the fee panel, the swing pot and the swing award stopped counting
+   *     their fees;
+   *   • pending waiver claims vanished from the Rosters page, and the
+   *     commish's waiver panel could no longer resolve the claiming team;
+   *   • the cron's waiver processing (which does the same name match) skipped
+   *     them entirely.
+   *
+   * All of that failed silently, and only for the team that renamed.
+   *
+   * ── Ordering ────────────────────────────────────────────────────────────
+   * Transactions are re-keyed FIRST, the team doc LAST. Firestore batches are
+   * atomic individually but a >500-op rename needs several, so the failure
+   * mode matters: if a transaction batch fails, the team still carries its old
+   * name and the rows already rewritten are the orphans. Renaming the team
+   * first would orphan EVERY not-yet-rewritten row instead. Either way the
+   * write is retried by the caller; this ordering just makes a partial failure
+   * as small as possible.
+   *
+   * Belt and braces: new transactions also carry a stable `teamId` (see
+   * txBelongsToTeam in sharedHelpers), so rows written from here on are
+   * rename-proof even if this re-key never runs.
+   */
+  async rename(teamId, newName) {
+    const trimmed = String(newName || '').trim();
+    if (!trimmed) throw new Error('Team name cannot be empty.');
+
+    const teamsSnap = await getDocs(collection(db, 'teams'));
+    const teams = teamsSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
+    const target = teams.find(t => (t.id || t._id) === teamId);
+    if (!target) throw new Error(`Unknown team "${teamId}".`);
+
+    const oldName = target.name;
+    if (oldName === trimmed) return { transactionsUpdated: 0 };
+
+    // A duplicate name is worse than the rename it replaces: every
+    // `teams.find(t => t.name === ...)` in the app would resolve to whichever
+    // team happens to come first, and the two teams' transactions would merge.
+    const collision = teams.find(t => (t.id || t._id) !== teamId && t.name === trimmed);
+    if (collision) throw new Error(`Another team is already called "${trimmed}".`);
+
+    const txSnap = await getDocs(query(collection(db, 'transactions'), where('team', '==', oldName)));
+    const targets = txSnap.docs;
+
+    const BATCH_SIZE = 499;
+    for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      targets.slice(i, i + BATCH_SIZE).forEach(d => {
+        // Stamp teamId while we're here so this row never needs re-keying again.
+        batch.update(d.ref, { team: trimmed, teamId });
+      });
+      await batch.commit();
+    }
+
+    await setDoc(doc(db, 'teams', teamId), { name: trimmed }, { merge: true });
+    return { transactionsUpdated: targets.length };
+  },
+
+  /**
    * Wave A fix: real-time subscription. useLeague has been calling this
    * since the Wave 8 changes, but no implementation existed — every call
    * threw silently and the subscription block in useLeague was a no-op.
@@ -896,7 +965,11 @@ export const transactionsApi = {
     // during sync, causing swing_winner rows to display +$0 instead of the
     // actual pot amount. Adding them is backwards-compatible — older rows
     // without these fields aren't affected.
-    const validCols = ['team','type','player','droppedPlayer','status','fee','segment',
+    // 'teamId' is the stable companion to 'team'. Transactions identify their
+    // team by NAME, which managers can change; teamId is the immutable key, and
+    // omitting it from this list would have sync() silently strip it back off
+    // every row it touched.
+    const validCols = ['team','teamId','type','player','droppedPlayer','status','fee','segment',
                        'priority','timestamp','processedDate','failReason','txId',
                        'tournamentIndex','tournament','date','amount','note'];
 

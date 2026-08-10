@@ -4,7 +4,7 @@ import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, isWaiverWindowOpen, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
-import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, buildEffectiveRoster } from '../utils/sharedHelpers';
+import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, buildEffectiveRoster, txBelongsToTeam } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
@@ -234,7 +234,7 @@ export const AddDropPlayerModal = ({
   // Hide players this team already has a pending waiver claim for
   const thisTeamPendingClaims = new Set(
     transactions
-      .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && tx.team === team.name && tx.player)
+      .filter(tx => tx.status === 'pending' && tx.type === 'waiver' && txBelongsToTeam(tx, team) && tx.player)
       .map(tx => normalizePlayerName(tx.player))
   );
 
@@ -274,7 +274,7 @@ export const AddDropPlayerModal = ({
   // Players already listed as the drop in another pending waiver for this team
   const pendingDropNames = new Set(
     transactions
-      .filter(tx => tx.team === team.name && tx.type === 'waiver' && tx.status === 'pending' && tx.droppedPlayer)
+      .filter(tx => txBelongsToTeam(tx, team) && tx.type === 'waiver' && tx.status === 'pending' && tx.droppedPlayer)
       .map(tx => tx.droppedPlayer)
   );
   const needsDrop    = rosterFull && selectedPlayerToAdd;
@@ -310,6 +310,9 @@ export const AddDropPlayerModal = ({
       // churn and defeating txId-based dedup.
       txId: `${treatAsWaiver ? 'waiver' : 'fa'}-${team.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       team:            team.name,
+      // teamId is the STABLE key. `team` (the name) is manager-editable, and
+      // matching history by name is what a rename used to break.
+      teamId:          team.id || team.name,
       type:            treatAsWaiver ? 'waiver' : 'free agent',
       player:          selectedPlayerToAdd.name,
       droppedPlayer:   selectedPlayerToDrop?.name || null,
@@ -322,7 +325,7 @@ export const AddDropPlayerModal = ({
       tournament: tournaments?.[nextTournamentIndex ?? activeTournamentIndex]?.name || undefined,
       status:          treatAsWaiver ? 'pending' : 'processed',
       priority: treatAsWaiver
-        ? (transactions.filter(tx => tx.team === team.name && tx.type === 'waiver' && tx.status === 'pending').length + 1)
+        ? (transactions.filter(tx => txBelongsToTeam(tx, team) && tx.type === 'waiver' && tx.status === 'pending').length + 1)
         : undefined,
       timestamp: Date.now(),
     };
@@ -350,7 +353,7 @@ export const AddDropPlayerModal = ({
         if (replacedClaim) return true;
         const match = origId != null
           ? t.id === origId
-          : (t.team === team.name && t.type === 'waiver' && t.status === 'pending'
+          : (txBelongsToTeam(t, team) && t.type === 'waiver' && t.status === 'pending'
              && t.player === editingWaiverData.player
              && (t.droppedPlayer || null) === (editingWaiverData.droppedPlayer || null));
         if (match) { replacedClaim = t; return false; }

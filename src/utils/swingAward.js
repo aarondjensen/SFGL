@@ -71,6 +71,8 @@ export const computeSwingAward = ({ segment, allTournaments, transactions, teams
   const newTx = {
     txId: `swing-${segment}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     team: winnerTeam.name,
+    // Stable key alongside the editable name — see txBelongsToTeam.
+    teamId: winnerTeam.id || winnerTeam.name,
     type: 'swing_winner',
     player: winnerTeam.owner,
     fee: 0,
