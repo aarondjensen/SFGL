@@ -28,13 +28,12 @@
  * ============================================================================
  */
 
-import { initializeApp, getApps } from 'firebase/app';
 import {
-  getFirestore,
   collection,
   doc,
   getDoc,
   getDocs,
+  getDocsFromCache,
   setDoc,
   addDoc,
   updateDoc,
@@ -48,20 +47,16 @@ import {
   deleteField,
 } from 'firebase/firestore';
 
-// ── Firebase config — values come from environment variables ─────────────────
-// Vite exposes env vars prefixed with VITE_
-const firebaseConfig = {
-  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
-};
-
-// Avoid re-initialising on hot reload
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// ── Firestore handle ─────────────────────────────────────────────────────────
+// This file used to initialise its own app + Firestore instance alongside the
+// one in _init.js. Both resolved to the same underlying instance, so it looked
+// harmless — but it stopped being harmless the moment _init.js started asking
+// for an on-disk cache: whichever module imported first won, and if this one
+// won, initializeFirestore over there threw and persistence silently turned
+// itself off. _init.js is the single owner now, exactly as its header always
+// claimed. Re-exported so `import { db } from './firebase'` keeps working.
+import { db } from './_init';
+export { db };
 
 // ── Alias cache — maps alternate player names to canonical doc IDs ────────────
 // Populated lazily from player docs that have an 'aliases' array field.
@@ -79,7 +74,35 @@ async function getAliasMap() {
     return map;
   } catch (_) { return {}; }
 }
-function invalidateAliasCache() { _aliasCache = null; }
+
+// ── Existing-player index — resolves a name onto the doc that already
+// represents that golfer ────────────────────────────────────────────────────
+// Mirrors the same step in api/cron.js's OWGR sync, and exists for the same
+// reason: writing a ranking under a spelling that differs from the existing
+// doc ID creates a SECOND doc for one player. That is how the league ended up
+// holding both 'Nico Echavarria' and 'Nicolas Echavarria' — one carrying the
+// world rank and headshot, the other sitting on a roster, with nothing tying
+// them together.
+//
+// The aliases arrays are hand-maintained through Merge Players, so they only
+// ever covered spellings someone had already noticed. NameSet resolves the
+// rest by identity, automatically.
+//
+// Cached like the alias map (and invalidated with it) so the extra collection
+// read costs one round trip per session, not one per upsert.
+let _playerIndexCache = null;
+async function getPlayerIndex() {
+  if (_playerIndexCache) return _playerIndexCache;
+  try {
+    const snap = await getDocs(collection(db, 'players'));
+    _playerIndexCache = new NameSet(snap.docs.map(d => d.id));
+  } catch (_) {
+    _playerIndexCache = new NameSet([]);
+  }
+  return _playerIndexCache;
+}
+
+function invalidateAliasCache() { _aliasCache = null; _playerIndexCache = null; }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -122,10 +145,66 @@ function recoverIds(p) {
   };
 }
 
-async function _getAllOrdered(collectionName, field, dir = 'asc') {
+// ── Cache-first reads ────────────────────────────────────────────────────────
+// Firestore's persistent cache (see api/_init.js) makes a re-attached listener
+// cheap — it resumes from a stored token and the server sends only what
+// changed. It does NOT help a plain getDocs, which always goes to the server
+// and is billed for every document it returns. So the four collections behind
+// the app's load path were being paid for TWICE on every launch: once by
+// getAll(), and again a moment later when useLeague attached its listener.
+//
+// This helper serves those reads from the on-disk copy when there is one. It is
+// only safe for a collection with a LIVE onSnapshot listener behind it, because
+// the listener is what makes the data correct — it lands within a second and
+// reconciles anything that changed while this device was away. Do not use it
+// for a one-shot read nobody is watching.
+//
+// Two escape hatches keep it honest:
+//   • An empty cache falls through to the server, so a first-ever launch, a
+//     cleared cache, or a browser with persistence unavailable all behave
+//     exactly as before.
+//   • Callers pass { fromServer: true } to opt out. Pull-to-refresh does (a
+//     manual refresh should mean what it says), and so does useLeague if its
+//     subscriptions fail to attach — which is the one path where nothing would
+//     otherwise arrive to correct a stale cache. Note this means "ask the
+//     server", not "fail without one": a plain getDocs still answers from the
+//     cache when the device is offline, so pull-to-refresh out of signal range
+//     shows the league rather than an error.
+async function _getDocsCacheFirst(q, { fromServer = false } = {}) {
+  if (!fromServer) {
+    try {
+      const cached = await getDocsFromCache(q);
+      if (!cached.empty) return cached;
+    } catch (_) {
+      // No local copy yet, or the cache is unavailable — fall through.
+    }
+  }
+  return getDocs(q);
+}
+
+async function _getAllOrdered(collectionName, field, dir = 'asc', opts = {}) {
   const q = query(collection(db, collectionName), orderBy(field, dir));
-  const snap = await getDocs(q);
+  const snap = await _getDocsCacheFirst(q, opts);
   return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+}
+
+// Rank for sorting: a finite number (accepting numeric strings, which some
+// older docs carry), or null for "unranked".
+function _rankOf(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Sort comparator for player docs — ranked ascending, UNRANKED LAST (never
+// dropped), ties broken by name so the order is stable across loads.
+function _byWorldRank(a, b) {
+  const ra = _rankOf(a?.world_rank), rb = _rankOf(b?.world_rank);
+  const nameA = String(a?.name || a?._id || ''), nameB = String(b?.name || b?._id || '');
+  if (ra !== null && rb !== null) return (ra - rb) || nameA.localeCompare(nameB);
+  if (ra !== null) return -1;
+  if (rb !== null) return 1;
+  return nameA.localeCompare(nameB);
 }
 
 /**
@@ -174,8 +253,23 @@ function _dedupeTransactions(rows) {
 // PLAYERS API
 // ============================================================================
 export const playersApi = {
+  // Unordered fetch + JS sort by world_rank. NEVER orderBy('world_rank'): a
+  // Firestore orderBy silently EXCLUDES every document that does not carry the
+  // field, and player docs routinely don't —
+  //   • headshotsApi.setAll -> upsertMany creates docs with only
+  //     { name, espn_id, pga_id } when it first resolves a player;
+  //   • DataSyncPanel's manual add deliberately leaves the rank to OWGR;
+  //   • the OWGR sync only ranks the top ~600, so fringe/qualifier golfers
+  //     who are very much rosterable never get one.
+  // Every such doc was invisible to this query, so getHeadshotsMap() had no
+  // entry for those players and they rendered as initials avatars no matter
+  // how many times their ids were resolved and persisted. Same trap that was
+  // already fixed for tournaments (see tournamentsApi.getAll / _byStartDate)
+  // and in api/cron.js loadTournaments. Unranked players now sort last —
+  // visible, never dropped.
   async getAll() {
-    return _getAllOrdered('players', 'world_rank');
+    const snap = await getDocs(collection(db, 'players'));
+    return snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(_byWorldRank);
   },
 
   async getByName(name) {
@@ -241,11 +335,20 @@ export const playersApi = {
     snapRaw.docs.forEach(addDoc);
     snapCap.docs.forEach(addDoc);
 
-    // Also search all ranked players client-side for substring/last-name matches
+    // Then a client-side substring/last-name pass over the SHARED players
+    // snapshot (localStorage, 24h). This used to be getTopRanked(700) — a fresh
+    // ~700-document read on every search, i.e. every time a manager typed a
+    // name into add/drop on waiver day. The prefix queries above still run
+    // against the server, so a player added to the collection since this
+    // device's snapshot was built is still findable by first-name prefix.
     try {
-      const allRanked = await this.getTopRanked(700);
+      const allRanked = await playerRankingsApi.getAll();
       const lower = searchTerm.toLowerCase();
-      allRanked.forEach(p => {
+      (allRanked || []).forEach(p => {
+        // Same rosterability filter getTopRanked applied, so this pass can't
+        // start surfacing LIV players or junk name rows that it never did.
+        if (!p?.name || p.isLiv) return;
+        if (/^\d+$/.test(p.name.trim()) || !p.name.includes(' ')) return;
         if (!seen.has(p.name) && p.name.toLowerCase().includes(lower)) {
           seen.add(p.name);
           results.push(p);
@@ -278,14 +381,18 @@ export const playersApi = {
 
   async upsertMany(players) {
     const timestamp = Date.now();
-    // Check alias map — if a player name is an alias for a canonical doc, use that doc ID
-    const aliasMap = await getAliasMap();
+    // Resolve each incoming name onto the doc that already represents that
+    // golfer, so a sync updates the existing player instead of minting a
+    // duplicate under a different spelling. Precedence:
+    //   1. explicit aliases array  — a deliberate commissioner decision
+    //   2. identity match on an existing doc ID  — automatic
+    //   3. the static alias groups — for a player with no doc yet
+    const [aliasMap, playerIndex] = await Promise.all([getAliasMap(), getPlayerIndex()]);
     const BATCH_SIZE = 499;
     for (let i = 0; i < players.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       players.slice(i, i + BATCH_SIZE).forEach(p => {
-        // Resolve via static aliases first, then dynamic Firebase aliases
-        const canonicalName = aliasMap[p.name] || resolveAlias(p.name);
+        const canonicalName = aliasMap[p.name] || playerIndex.resolve(p.name) || resolveAlias(p.name);
         const row = { name: canonicalName };
         if (p.worldRank   !== undefined) row.world_rank   = p.worldRank ?? null;
         if (p.espnId      !== undefined && p.espnId !== null) row.espn_id = p.espnId;
@@ -323,12 +430,12 @@ export const playersApi = {
     // `aliasMap` that only exists inside upsertMany's scope, so every call
     // threw a ReferenceError before writing anything (i.e. the admin
     // "Rebuild Headshots" repair path silently never worked).
-    const aliasMap = await getAliasMap();
+    const [aliasMap, playerIndex] = await Promise.all([getAliasMap(), getPlayerIndex()]);
     const BATCH_SIZE = 250;
     for (let i = 0; i < names.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       names.slice(i, i + BATCH_SIZE).forEach(name => {
-        const canonicalName = aliasMap[name] || resolveAlias(name);
+        const canonicalName = aliasMap[name] || playerIndex.resolve(name) || resolveAlias(name);
         batch.set(doc(db, 'players', canonicalName), { espn_id: null }, { merge: true });
       });
       await batch.commit();
@@ -377,6 +484,13 @@ export const playersApi = {
       };
     });
   },
+
+  // NOTE: the app no longer reads headshots or stats through these two
+  // methods — both now build their map from the shared, localStorage-cached
+  // players snapshot (see headshotsApi.getAll / playerStatsApi.getAll), because
+  // each call here is a full read of the ~700-document collection. They are
+  // kept as the raw-document implementations for one-off/admin use; if you are
+  // fixing headshot behaviour, fix it in headshotsApi.getAll, not here.
 
   // name -> { url?, espn?, pga? } — the shape utils/headshotUtils.js chains.
   // Previously returned a bare string (url OR espn id, whichever existed),
@@ -433,13 +547,26 @@ export const playersApi = {
 // ============================================================================
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
-import { resolveAlias } from '../constants/nameAliases.js';
+import { resolveAlias, NameSet } from '../../api/_playerNames.js';
 
 
 const PLAYER_CACHE_KEY = 'sfgl-player-cache';
 const PLAYER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
+// In-flight de-dupe for the players snapshot. useLeague's Tier-2 load asks for
+// rankings, headshots and stats in the SAME Promise.all — all three now resolve
+// through getAll() below, and on a cold cache all three would find nothing in
+// localStorage and each fire their own ~700-document query before the first one
+// finished writing the cache. Sharing the promise makes concurrent callers ride
+// a single query. Cleared as soon as it settles, so it never serves stale data.
+let _playersInFlight = null;
+
 export const playerRankingsApi = {
+  // The one place the whole players collection is read. It is ~700 documents,
+  // so it is cached in localStorage for 24 hours and shared by every consumer
+  // (rankings, headshots, stats, add/drop search). Admin paths that change
+  // player docs — the OWGR sync and the manual add in DataSyncPanel — call
+  // invalidateCache() so their edits are visible immediately.
   async getAll() {
     // Try localStorage cache first — avoids 10k Firestore reads on every load
     try {
@@ -452,12 +579,19 @@ export const playerRankingsApi = {
       }
     } catch (_) {}
 
-    // Cache miss or expired — fetch from Firestore
-    const players = await playersApi.getAllForApp();
-    try {
-      localStorage.setItem(PLAYER_CACHE_KEY, JSON.stringify({ players, timestamp: Date.now() }));
-    } catch (_) {}
-    return players;
+    // Cache miss or expired — fetch from Firestore (one query, however many
+    // callers are waiting on it).
+    if (!_playersInFlight) {
+      _playersInFlight = playersApi.getAllForApp()
+        .then(players => {
+          try {
+            localStorage.setItem(PLAYER_CACHE_KEY, JSON.stringify({ players, timestamp: Date.now() }));
+          } catch (_) {}
+          return players;
+        })
+        .finally(() => { _playersInFlight = null; });
+    }
+    return _playersInFlight;
   },
   async invalidateCache() {
     try { localStorage.removeItem(PLAYER_CACHE_KEY); } catch (_) {}
@@ -468,7 +602,32 @@ export const playerRankingsApi = {
 };
 
 export const headshotsApi = {
-  async getAll() { return playersApi.getHeadshotsMap(); },
+  // Built from the SHARED players snapshot (localStorage, 24h) rather than its
+  // own full read of the collection. This used to call getHeadshotsMap(), which
+  // re-read all ~700 player documents — and it ran in the same Promise.all as
+  // the stats map, which did the same thing, and the rankings load, which did
+  // it a third time. Three full reads of one collection on every cold start.
+  //
+  // Staleness is a non-issue here specifically: App.jsx re-resolves every
+  // rostered player through /api/headshots on each launch and merges the ids
+  // over whatever this returns, so a newly-resolved id shows up immediately
+  // regardless of the cache, and the commissioner's headshot_url pins land via
+  // DataSyncPanel, which invalidates the cache when it writes.
+  async getAll() {
+    const players = await playerRankingsApi.getAll();
+    const map = {};
+    (players || []).forEach(p => {
+      if (!p?.name) return;
+      const entry = {};
+      // espnId/pgaId arrive already scrubbed by getAllForApp -> recoverIds, so
+      // a corrupt object-valued id can't reach a CDN URL as "[object Object]".
+      if (typeof p.headshotUrl === 'string' && p.headshotUrl.trim()) entry.url = p.headshotUrl.trim();
+      if (p.espnId) entry.espn = p.espnId;
+      if (p.pgaId)  entry.pga  = p.pgaId;
+      if (Object.keys(entry).length > 0) map[p.name] = entry;
+    });
+    return map;
+  },
 
   /**
    * Wave A fix: previously a deprecated no-op that just `console.warn`-ed.
@@ -507,7 +666,17 @@ export const headshotsApi = {
 };
 
 export const playerStatsApi = {
-  async getAll()              { return playersApi.getStatsMap(); },
+  // Also built from the shared players snapshot — see headshotsApi.getAll.
+  // career_stats is written by admin tooling only, never during normal play, so
+  // reading it from a snapshot up to a day old changes nothing on screen.
+  async getAll() {
+    const players = await playerRankingsApi.getAll();
+    const map = {};
+    (players || []).forEach(p => {
+      if (p?.name && p.stats && Object.keys(p.stats).length > 0) map[p.name] = p.stats;
+    });
+    return map;
+  },
   async set(playerName, stats){ return playersApi.update(playerName, { stats }); },
   async setAll(_obj)          { console.warn('playerStatsApi.setAll is deprecated'); },
 };
@@ -516,8 +685,10 @@ export const playerStatsApi = {
 // TEAMS API
 // ============================================================================
 export const teamsApi = {
-  async getAll() {
-    const teams = await _getAllOrdered('teams', 'name');
+  // Cache-first (see _getDocsCacheFirst) — teamsApi.subscribe() below is the
+  // live listener that keeps it honest. Pass { fromServer: true } to force it.
+  async getAll(opts = {}) {
+    const teams = await _getAllOrdered('teams', 'name', 'asc', opts);
     // Ensure every team has a lineup array — older documents may not have one
     return teams.map(t => ({ ...t, lineup: t.lineup || [] }));
   },
@@ -627,9 +798,10 @@ const _ensureStartDates = (arr) => {
 };
 
 export const tournamentsApi = {
-  async getAll() {
+  // Cache-first — tournamentsApi.subscribe() is the live listener behind it.
+  async getAll(opts = {}) {
     // Unordered fetch + JS sort (see _byStartDate). Never orderBy('start_date').
-    const snap = await getDocs(collection(db, 'tournaments'));
+    const snap = await _getDocsCacheFirst(collection(db, 'tournaments'), opts);
     const docs = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
     // GUARD: if any doc lacks start_date, a JS sort would fall back to
     // alphabetical and scramble the schedule — which corrupts activeTournamentIndex
@@ -734,12 +906,15 @@ const _txTimeMs = (tx) => {
 const _byTimestampDesc = (a, b) => _txTimeMs(b) - _txTimeMs(a);
 
 export const transactionsApi = {
-  async getAll() {
+  // Cache-first — transactionsApi.subscribe() is the live listener behind it.
+  // This is the collection that benefits most: it only grows across the season,
+  // and it was being read in full twice on every launch.
+  async getAll(opts = {}) {
     // Unordered fetch + JS sort. Never orderBy('timestamp'): Firestore orderBy
     // silently omits docs missing the ordered field, so legacy rows without a
     // timestamp would vanish from every read (same failure mode as the
     // start_date incident — see tournamentsApi.getAll and utils/swingAward.js).
-    const snap = await getDocs(collection(db, 'transactions'));
+    const snap = await _getDocsCacheFirst(collection(db, 'transactions'), opts);
     const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     return _dedupeTransactions(data.sort(_byTimestampDesc));
   },
@@ -877,6 +1052,24 @@ export const transactionsApi = {
       collection(db, 'transactions'),
       (snap) => {
         try {
+          // Ignore an empty snapshot that is NOT server-confirmed.
+          //
+          // Honest note on why this is written the way it is. The listeners for
+          // teams/tournaments/settings in useLeague carry a blunt length>0
+          // guard, against a reconnect emitting a spurious empty snapshot. That
+          // was never reproduced here: across a cold cache, three
+          // disconnect/reconnect cycles and a visibility change, this listener
+          // handed the app nothing but the real row count. So treat this line
+          // as insurance, not as a fix for an observed bug.
+          //
+          // What it must NOT do is copy that blunt guard, because transactions
+          // are the one collection that can legitimately be empty — a new
+          // season, or an undo of the season's only waiver. Keying on
+          // metadata.fromCache means a real, server-confirmed deletion still
+          // propagates to everyone else's screen; only an unconfirmed empty is
+          // dropped. A length>0 guard would leave a deleted row showing on
+          // every other manager's phone, which is worse than what it prevents.
+          if (snap.empty && snap.metadata.fromCache) return;
           const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
           callback(_dedupeTransactions(data.sort(_byTimestampDesc)));
         } catch (e) {
@@ -902,8 +1095,9 @@ export const settingsApi = {
     return [{ key, value }];
   },
 
-  async getAll() {
-    const snap = await getDocs(collection(db, 'league_settings'));
+  // Cache-first — settingsApi.subscribe() is the live listener behind it.
+  async getAll(opts = {}) {
+    const snap = await _getDocsCacheFirst(collection(db, 'league_settings'), opts);
     const settings = {};
     snap.docs.forEach(d => { settings[d.data().key] = d.data().value; });
     return settings;

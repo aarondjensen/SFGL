@@ -3,6 +3,7 @@ import { storage } from '../api';
 import { playerRankingsApi } from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
 import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, buildEffectiveRoster, hydratePlayer } from '../utils/sharedHelpers';
+import { mergeHeadshotEntry } from '../utils/headshotUtils';
 
 // ============================================================================
 // useLeague — central state manager for all league data
@@ -101,6 +102,14 @@ export const useLeague = (STORAGE_KEYS) => {
       // ── Tier 1: first-paint-critical collections + registry, in parallel ──
       // Each call has .catch that logs and returns null. If a call hangs we
       // wait; if it rejects we fall through to the fallbacks below.
+      //
+      // On the INITIAL load these four read from the device's Firestore cache
+      // when it has a copy, and the realtime subscriptions attached below
+      // deliver whatever changed since — so a relaunch pays for the delta
+      // instead of re-downloading every team, tournament and transaction. A
+      // REFETCH (pull-to-refresh, or the subscription-failure recovery below)
+      // forces the server, because a manual refresh should mean what it says.
+      const read = { fromServer: isRefetch };
       const [
         firebaseTeams,
         firebaseTournaments,
@@ -108,10 +117,10 @@ export const useLeague = (STORAGE_KEYS) => {
         firebaseSettings,
         firebaseRegistry,
       ] = await Promise.all([
-        teamsApi.getAll().catch((e)        => { console.error('[useLeague] teams:', e);        errors.push('teams');        return null; }),
-        tournamentsApi.getAll().catch((e)  => { console.error('[useLeague] tournaments:', e);  errors.push('tournaments');  return null; }),
-        transactionsApi.getAll().catch((e) => { console.error('[useLeague] transactions:', e); errors.push('transactions'); return null; }),
-        settingsApi.getAll().catch((e)     => { console.error('[useLeague] settings:', e);     errors.push('settings');     return null; }),
+        teamsApi.getAll(read).catch((e)        => { console.error('[useLeague] teams:', e);        errors.push('teams');        return null; }),
+        tournamentsApi.getAll(read).catch((e)  => { console.error('[useLeague] tournaments:', e);  errors.push('tournaments');  return null; }),
+        transactionsApi.getAll(read).catch((e) => { console.error('[useLeague] transactions:', e); errors.push('transactions'); return null; }),
+        settingsApi.getAll(read).catch((e)     => { console.error('[useLeague] settings:', e);     errors.push('settings');     return null; }),
         playerRegistryApi.get().catch(()   => null),
       ]);
 
@@ -232,8 +241,40 @@ export const useLeague = (STORAGE_KEYS) => {
           }
 
           if (firebaseHeadshots && Object.keys(firebaseHeadshots).length > 0) {
-            setHeadshots(firebaseHeadshots);
-            console.log(`✓ Loaded ${Object.keys(firebaseHeadshots).length} headshots from Firebase`);
+            // MERGE, never replace.
+            //
+            // This is Tier 2 — deliberately NOT awaited — so it lands a second
+            // or two AFTER App.jsx's headshot effect has resolved every
+            // rostered player through /api/headshots and merged the ids into
+            // state. A wholesale setHeadshots(firebaseHeadshots) threw all of
+            // that away, and any player whose /players/{name} doc doesn't
+            // carry an id yet simply VANISHED from the map (getHeadshotsMap
+            // omits players with no id fields at all) — an initials avatar for
+            // the rest of the session.
+            //
+            // Which side wins the race depends on how the app was opened, and
+            // that is exactly why this looked intermittent:
+            //   • cold open (empty localStorage) — `loading` starts true, so
+            //     the headshot fetch doesn't start until Tier 1 resolves and
+            //     usually lands LAST. Headshots work.
+            //   • warm open (returning visitor, teams seeded from
+            //     localStorage) — `loading` starts false, so the headshot
+            //     fetch fires at mount and returns from the CDN in
+            //     milliseconds, while Tier 2 is still reading ~600 player docs.
+            //     Tier 2 lands last and wipes the map. Headshots gone, and
+            //     nothing re-populates them.
+            //
+            // Firestore still wins field-by-field wherever it HAS a value (it
+            // holds the commish's headshot_url pin); anything it is silent
+            // about keeps whatever we already resolved.
+            setHeadshots(prev => {
+              const next = { ...(prev || {}) };
+              Object.entries(firebaseHeadshots).forEach(([name, entry]) => {
+                next[name] = mergeHeadshotEntry(next[name], entry);
+              });
+              return next;
+            });
+            console.log(`✓ Merged ${Object.keys(firebaseHeadshots).length} headshots from Firebase`);
           }
 
           if (firebaseRankings?.length > 0) {
@@ -318,6 +359,13 @@ export const useLeague = (STORAGE_KEYS) => {
         }));
 
         unsubs.push(transactionsApi.subscribe(next => {
+          // No length guard here, unlike the three around it. Transactions are
+          // the one collection that can legitimately BE empty — at the start of
+          // a season, or when the season's only transaction is undone — and
+          // swallowing that would leave a deleted row on everyone else's
+          // screen. The meaningless-empty case (a reconnect blip, or a device
+          // whose cache hasn't filled yet) is filtered inside
+          // transactionsApi.subscribe, which can tell the two apart.
           if (Array.isArray(next)) setTransactions(next);
         }));
 
@@ -332,6 +380,11 @@ export const useLeague = (STORAGE_KEYS) => {
         console.log('[useLeague] ✓ Real-time subscriptions active');
       } catch (e) {
         console.error('[useLeague] subscription setup failed:', e);
+        // The Tier-1 load above may have painted from this device's Firestore
+        // cache on the understanding that these listeners would immediately
+        // reconcile it. They didn't attach, so nothing is going to — go back to
+        // the server once rather than sit on a snapshot of unknown age.
+        if (!cancelled) loadFromFirebase(true).catch(() => {});
       }
     })();
 
@@ -339,7 +392,7 @@ export const useLeague = (STORAGE_KEYS) => {
       cancelled = true;
       unsubs.forEach(u => { try { u && u(); } catch {} });
     };
-  }, [loading]);
+  }, [loading, loadFromFirebase]);
 
   // ── Refs for stable updater dependencies ──────────────────────────────
   const teamsRef        = useRef(teams);

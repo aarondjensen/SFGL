@@ -10,6 +10,7 @@
 import React from 'react';
 import { useDialog } from '../DialogContext';
 import { colors, fonts } from '../../theme.js';
+import { NameSet } from '../../../api/_playerNames.js';
 import { playersApi } from '../../api/firebase';
 import { LIV_GOLF_ROSTER } from '../../constants';
 import { M, SyncStatusBanner, LastSyncedLine, disabledBtn } from './adminStyles';
@@ -82,13 +83,19 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
     setLivSyncStatus('fetching');
     setLivSyncSummary('');
     try {
-      const livRosterLower = new Set(LIV_GOLF_ROSTER.map(n => n.toLowerCase()));
-      const toFlag = LIV_GOLF_ROSTER.filter(name =>
-        !allPlayers.find(p => p.name.toLowerCase() === name.toLowerCase())?.isLiv
-      );
-      const toUnflag = allPlayers.filter(p =>
-        p.isLiv && !livRosterLower.has(p.name.toLowerCase())
-      );
+      // Matched by player identity, not lowercased string equality. The LIV
+      // roster below is hand-maintained from livgolf.com, so its spellings
+      // come from a THIRD source — 'Byeong Hun An' there vs 'Byeong-Hun An' in
+      // /players. Under string equality that player was neither flagged nor
+      // unflagged: the sync reported success while leaving an ineligible
+      // golfer draftable.
+      const livRosterSet = new NameSet(LIV_GOLF_ROSTER);
+      const playerIndex  = new NameSet(allPlayers.map(p => p.name));
+      const toFlag = LIV_GOLF_ROSTER.filter(name => {
+        const existing = playerIndex.resolve(name);
+        return !allPlayers.find(p => p.name === existing)?.isLiv;
+      });
+      const toUnflag = allPlayers.filter(p => p.isLiv && !livRosterSet.has(p.name));
       if (toFlag.length === 0 && toUnflag.length === 0) {
         setLivSyncStatus('done');
         setLivSyncSummary('✓ LIV roster already matches DB — no changes needed');
@@ -102,7 +109,8 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
       setAllPlayers(prev => {
         const updated = [...prev];
         toFlag.forEach(name => {
-          const idx = updated.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+          const existing = playerIndex.resolve(name);
+          const idx = updated.findIndex(p => p.name === existing);
           if (idx >= 0) updated[idx] = { ...updated[idx], isLiv: true };
           else updated.push({ name, isLiv: true, worldRank: null });
         });

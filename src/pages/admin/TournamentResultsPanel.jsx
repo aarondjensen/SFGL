@@ -17,7 +17,7 @@ import { compactTeamName } from '../../utils/index.js';
 import { sfglDataApi } from '../../api/firebase';
 import { cronFetch } from '../../api/cronApi';
 import { sendCommishPush } from '../../api/pushNotifications';
-import { processTournamentData } from './processTournamentData';
+import { processTournamentData, matchPlayerName } from './processTournamentData';
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { S, M, disabledBtn } from './adminStyles';
 import { STORAGE_KEYS } from '../../constants';
@@ -691,10 +691,14 @@ export const TournamentResultsPanel = ({
           if (!restoreLineup.includes(player.name)) return player;
           let pe = earningsMap[player.name];
           if (pe === undefined) {
-            // Fuzzy match — same approach as processTournamentData's matchPlayerName
-            const mk = Object.keys(earningsMap).find(k =>
-              k.toLowerCase().trim() === player.name.toLowerCase().trim()
-            );
+            // Must use the SAME matcher processTournamentData credited with.
+            // The comment above this line claimed it did, but the code was a
+            // bare lowercase-and-trim compare — strictly weaker than the
+            // matcher on the crediting side. Any player who needed fuzzy
+            // matching was therefore CREDITED on process and debited $0 on
+            // undo, so their sfglEarnings never returned to baseline and a
+            // subsequent reprocess double-counted them.
+            const mk = Object.keys(earningsMap).find(k => matchPlayerName(k, player.name));
             pe = mk !== undefined ? earningsMap[mk] : 0;
           }
           return {

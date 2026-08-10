@@ -65,6 +65,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { nameKey } from '../api/_playerNames.js';
 
 const args = process.argv.slice(2);
 const APPLY  = args.includes('--apply');
@@ -79,12 +80,12 @@ const PGA_CDN  = 'https://pga-tour-res.cloudinary.com/image/upload/c_fill,g_face
 
 const BATCH_LIMIT = 400; // under Firestore's 500-op cap, with headroom
 
-// Same normalization the endpoint's matcher uses: lowercase, strip accents,
-// hyphens → spaces, collapse whitespace.
-export const normalize = (s) => (s || '')
-  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  .replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/ß/g, 'ss')
-  .replace(/-/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+// Same normalization the endpoint's matcher uses — literally the same
+// function now, imported from api/_playerNames.js rather than re-typed. The
+// "same normalization as" comment above this line used to be a promise nobody
+// could check; api/headshots.js's copy had already drifted to strip a
+// different character set than this one.
+export const normalize = nameKey;
 
 // ── Source 1: ESPN leaderboard index ────────────────────────────────────────
 export async function buildEspnIndex(season) {

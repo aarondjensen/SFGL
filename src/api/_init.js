@@ -21,7 +21,12 @@
 // ============================================================================
 
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
@@ -61,7 +66,49 @@ if (typeof window !== 'undefined' && import.meta.env.VITE_FIREBASE_APPCHECK_SITE
   }
 }
 
-export const db = getFirestore(app);
+// ── Firestore, with an ON-DISK cache ─────────────────────────────────────────
+// The default `getFirestore(app)` gives an IN-MEMORY cache: it lives exactly as
+// long as the page does and is thrown away on every reload. That is the wrong
+// default for this app, because:
+//
+//   • Managers use it on phones, which cold-start constantly — the screen
+//     locks, iOS evicts the tab, somebody takes a call and comes back. Every
+//     one of those relaunches re-downloads the whole league from the server.
+//   • The subscriptions in useLeague are scoped to WHOLE COLLECTIONS
+//     (transactions especially, which only grows all season). Without a
+//     persisted resume token, every relaunch re-reads every document in them.
+//
+// With a persistent cache the listener resumes from the token stored on disk,
+// so the server sends only what CHANGED since this phone last looked. Documents
+// already on disk are neither re-sent nor re-billed, and a relaunch out of
+// signal range paints from disk instead of showing an empty leaderboard.
+//
+// Three details, each deliberate — please don't "simplify" them away:
+//
+//   1. This MUST run before any other Firestore access on this app instance.
+//      initializeFirestore throws if the instance already exists, which is why
+//      api/firebase.js imports `db` from here instead of calling getFirestore
+//      itself. Two call sites racing to create it is exactly how persistence
+//      silently ends up off.
+//   2. The multi-tab manager is NOT optional. Without it, persistence is
+//      claimed by one tab and every OTHER tab fails to initialise its cache.
+//      Standings open on a laptop plus a second tab for a roster edit is
+//      ordinary here, and the failure looks like the app being broken in
+//      whichever tab lost the race.
+//   3. The fallback is NOT optional either. IndexedDB is unavailable in Safari
+//      private browsing, some locked-down WebViews, and browsers with storage
+//      disabled. Failing to load the league because we couldn't open a *cache*
+//      would be a terrible trade for the saving.
+export const db = (() => {
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  } catch (err) {
+    console.warn('[firestore] persistent cache unavailable; falling back to in-memory:', err?.message || err);
+    return getFirestore(app);
+  }
+})();
 
 // ── Firebase Authentication ──────────────────────────────────────────────────
 // Single auth instance for the app. Identity is the immutable Firebase UID;

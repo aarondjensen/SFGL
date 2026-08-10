@@ -9,6 +9,7 @@
 // Find IDs at: https://www.espn.com/golf/leaderboard?tournamentId=XXXXXXX
 
 import { extractNextData } from './_constants.js';
+import { nameKey } from './_playerNames.js';
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
@@ -249,18 +250,19 @@ export default async function handler(req, res) {
   }
 }
 
-// ── Nordic / diacritics normalization ────────────────────────────────────────
-function normalize(name) {
-  return (name || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[øØ]/g, 'o')
-    .replace(/[æÆ]/g, 'ae')
-    .replace(/[ß]/g, 'ss')
-    .replace(/[^a-z0-9\s]/gi, '')
-    .toLowerCase()
-    .trim();
-}
+// ── Name normalization ───────────────────────────────────────────────────────
+// Delegates to nameKey() in api/_playerNames.js — one implementation shared by
+// every name comparison in the app. The local version this replaces folded a
+// hand-listed set of letters and dropped punctuation, but did not handle
+// "Last, First" order or Jr/III suffixes, both of which appear in the ESPN and
+// PGA TOUR directories this file indexes.
+//
+// Note this stays an EXACT-KEY normalizer here, deliberately. Headshots are
+// the one place where a wrong match is worse than no match — the codebase has
+// already been burned by Alex Fitzpatrick wearing his brother's face — so the
+// directory lookups below key on nameKey() rather than resolving through
+// NameSet's nickname and initials equivalence.
+const normalize = nameKey;
 
 // ── Resolve the current PGA event ID(s) ─────────────────────────────────────
 // ESPN's PGA scoreboard returns the current week's event(s) with their IDs and

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
 import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, User } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
@@ -54,7 +54,7 @@ import { theme, colors, fonts, fontSize } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS } from './constants';
 import { tournamentResultsApi } from './api/firebase';
 import { managerActivityApi } from './api/managerActivity';
-import { mergeHeadshotEntry } from './utils/headshotUtils';
+import { mergeHeadshotEntry, changedHeadshotIds, getPlayerHeadshotUrls } from './utils/headshotUtils';
 import AuthGate from './pages/AuthGate';
 import { watchAuth, subscribeClaims, teamIdForUid, claimTeam, signOutUser } from './api/authApi';
 
@@ -133,6 +133,11 @@ const getTabFromHash = () => {
   const raw = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
   return VALID_TAB_IDS.has(raw) ? raw : null;
 };
+
+// How long a rostered player's headshot lookup is considered fresh. Bounds
+// both the per-name retry of a failed/unresolved lookup and the self-heal
+// sweep below, so neither can turn into a request loop.
+const HEADSHOT_RETRY_MS = 60 * 1000;
 
 // ── App shell ───────────────────────────────────────────────────────────────
 const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
@@ -241,7 +246,12 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   const safeTeams        = Array.isArray(teams)        ? teams        : [];
   const safeTournaments  = Array.isArray(tournaments)  ? tournaments  : [];
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
-  const safeHeadshots    = headshots && typeof headshots === 'object' ? headshots : {};
+  // Memoized so the identity only changes when `headshots` does — the
+  // self-heal sweep below keys a ref-sync effect off it.
+  const safeHeadshots    = useMemo(
+    () => (headshots && typeof headshots === 'object' ? headshots : {}),
+    [headshots]
+  );
 
   const resolvedTeams     = safeTeams.length > 0 ? safeTeams : INITIAL_TEAMS;
 
@@ -374,7 +384,10 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
     }
     console.log('[App] tournaments empty after load — recovering from Firebase');
     import('./api/firebase').then(({ tournamentsApi }) => {
-      tournamentsApi.getAll().then(remote => {
+      // fromServer: this is the recovery path — the normal load already came
+      // back with nothing, so asking the device's cache again would just
+      // return the same nothing.
+      tournamentsApi.getAll({ fromServer: true }).then(remote => {
         if (remote && remote.length > 0) {
           console.log(`[App] recovered ${remote.length} tournaments from Firebase`);
           setTournaments(remote);
@@ -421,7 +434,6 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   // now, so every rostered player resolves through /api/headshots and is
   // persisted to /players/{name}.espn_id.
   const fetchAttemptsRef = useRef(new Map()); // name → timestamp of last attempt
-  const HEADSHOT_RETRY_MS = 60 * 1000;
 
   // ── Publish sticky-header height as --sfgl-header-h ──────────────────
   // Lets sticky descendants (e.g. the RostersView lineup card) pin flush
@@ -438,17 +450,21 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
     ro.observe(el);
     return () => ro.disconnect();
   }, [loading]);
-  useEffect(() => {
-    if (loading) return;
-    const allRostered = [...new Set(
-      resolvedTeams.flatMap(t => (t.roster || []).map(p => p.name))
-    )].filter(Boolean);
-    if (!allRostered.length) return;
 
+  // Live mirror of the headshots map, so callbacks can read the current map
+  // without taking it as a dependency (which would re-create them on every
+  // headshot merge). Declared here because resolveHeadshots below reads it too.
+  const headshotsMapRef = useRef(safeHeadshots);
+  useEffect(() => { headshotsMapRef.current = safeHeadshots; }, [safeHeadshots]);
+
+  // Resolve a batch of names through /api/headshots and merge + persist the
+  // ids. Shared by both triggers below; the per-name TTL stamp lives in
+  // fetchAttemptsRef, so two triggers can never double-request the same name.
+  const resolveHeadshots = useCallback((names) => {
     // Skip only names attempted within the retry window. CACHED entries get
     // refreshed after the TTL so wrong mappings can self-heal.
     const now = Date.now();
-    const toFetch = allRostered.filter(n => {
+    const toFetch = names.filter(n => {
       const lastAttempt = fetchAttemptsRef.current.get(n);
       if (lastAttempt && (now - lastAttempt) < HEADSHOT_RETRY_MS) return false;
       return true;
@@ -483,19 +499,56 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           const found = Object.keys(data.results).length;
           const notFound = toFetch.length - found;
           console.log(`✓ Auto-fetched ${found} headshot IDs, ${notFound} not found (will retry in ${HEADSHOT_RETRY_MS / 1000}s if still missing)`);
-          // Persist to player documents for future loads
+          // Persist to player documents for future loads — but ONLY the ids
+          // that actually changed (see changedHeadshotIds). Trigger 1 re-runs
+          // over the whole roster on every launch, so writing back every result
+          // meant rewriting ~75 player docs per launch with the values they
+          // already held.
           import('./api/firebase').then(({ playersApi }) => {
-            const toSave = Object.entries(data.results).map(([name, entry]) => ({
-              name,
-              espnId: entry?.espn,
-              pgaId:  entry?.pga,
-            }));
+            const toSave = changedHeadshotIds(headshotsMapRef.current, data.results);
             if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
           }).catch(() => {});
         }
       })
       .catch(() => {});
-  }, [loading, resolvedTeams]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [updateHeadshots]);
+
+  const rosteredNames = useMemo(() => [...new Set(
+    resolvedTeams.flatMap(t => (t.roster || []).map(p => p.name))
+  )].filter(Boolean), [resolvedTeams]);
+
+  // Trigger 1 — the roster set changed (or the app just loaded): re-resolve
+  // EVERY rostered player, so a stale or wrong id can correct itself.
+  useEffect(() => {
+    if (loading) return;
+    if (!rosteredNames.length) return;
+    resolveHeadshots(rosteredNames);
+  }, [loading, rosteredNames, resolveHeadshots]);
+
+  // Trigger 2 — self-heal, and the reason the console message above has always
+  // promised a retry that never actually happened.
+  //
+  // Trigger 1 is keyed on the roster set, so it does not re-run on a timer.
+  // Anything that emptied the map AFTER it ran therefore stuck for the rest of
+  // the session: a player with no candidate URL had no path back to a photo
+  // short of a full reload. (That is precisely how the Tier-2 headshot load in
+  // useLeague used to blank every avatar on a warm open — see the comment
+  // there.) This pass re-resolves ONLY the rostered players that currently
+  // have no candidate URL at all, at the same TTL cadence, and goes quiet on
+  // its own as soon as everyone resolves. (headshotsMapRef is declared above,
+  // next to resolveHeadshots, which reads it too.)
+  useEffect(() => {
+    if (loading) return;
+    if (!rosteredNames.length) return;
+    const sweep = () => {
+      const unresolved = rosteredNames.filter(
+        n => getPlayerHeadshotUrls(n, headshotsMapRef.current).length === 0
+      );
+      if (unresolved.length) resolveHeadshots(unresolved);
+    };
+    const id = setInterval(sweep, HEADSHOT_RETRY_MS);
+    return () => clearInterval(id);
+  }, [loading, rosteredNames, resolveHeadshots]);
 
 
   // ── Wave 7: surface Firebase load failures to user via toast ──────────────

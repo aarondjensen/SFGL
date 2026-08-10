@@ -1,48 +1,29 @@
 // src/constants/nameAliases.js
 //
 // ── Player name aliases ─────────────────────────────────────────────────────
-// Maps "alternate" name (as seen in OWGR or PGA Tour data) → "canonical" name
-// (the doc ID we want to keep on /players/{name}).
+// This file no longer OWNS any alias data. The single source of truth for
+// player-name identity — normalization, nickname/initials equivalence, and the
+// explicit alias groups — is `api/_playerNames.js`, which both the browser
+// bundle and the serverless functions import directly.
 //
-// SOURCE OF TRUTH at runtime is Firestore: /players/{canonical}.aliases array.
-// Aliases get added to Firestore via the AdminView "Merge Players" feature.
-// The static map below is *fallback only* — used when an alias hasn't been
-// seeded into Firestore yet, so OWGR/PGA writes still land on the right doc.
+// It used to hold its own NAME_ALIASES map with a "⚠ KEEP IN SYNC with
+// api/field.js" comment, while `src/constants/index.js` held a SECOND map
+// (PLAYER_NAME_ALIASES) that pointed the opposite way for two of the same
+// players. Whichever table a given code path happened to consult decided which
+// spelling won, so the app disagreed with itself about who a player was.
+// Both maps are now rows in ALIAS_GROUPS.
 //
-// To migrate static → dynamic, the commish runs the "Sync Static Aliases"
-// button in AdminView, which calls seedAliasesToFirestore(). That writes
-// each entry to the matching player doc's aliases array. Idempotent.
+// More importantly, aliases are no longer a REWRITE applied to one side of a
+// comparison — the design that hid Nico Echavarria from the "who's playing"
+// data. Names are compared as equivalence classes (see NameSet / namesMatch),
+// so it no longer matters which spelling is stored where.
 //
-// To add a NEW alias going forward: use AdminView's Merge Players feature,
-// not this file. New entries here only matter if you want to permanently
-// hard-code the alias as a fallback (rare — the dynamic system covers most
-// cases).
-//
-// OWGR bracket suffixes like "Jackson Koivun(Am)" or "Daniel Brown(Oct1994)"
-// are stripped by cleanName() in AdminView before any alias lookup, so they
-// no longer need entries here.
-//
-// ⚠ KEEP IN SYNC with `api/field.js` NAME_ALIASES — the serverless function
-// can't import this file (different deploy target), so it has its own copy.
-// When you edit this file, mirror the changes there too.
+// This module remains as the alias-related Firestore plumbing plus a
+// re-export, so existing import sites keep working.
 
-export const NAME_ALIASES = {
-  // Format: alternate (OWGR/PGA form) → canonical (roster form)
-  'Samuel Stevens':        'Sam Stevens',
-  'Vincent Whaley':        'Vince Whaley',
-  'Rafa Cabrera Bello':    'Rafael Cabrera Bello',
-  'Si-Woo Kim':            'Si Woo Kim',
-  'Byeong Hun An':         'Byeong-Hun An',
-  'Nico Echavarria':       'Nicolas Echavarria',
-  'K.H. Lee':              'Kyoung-Hoon Lee',
-  'S.H. Kim':              'Sung-Hyun Kim',
-};
+export { NAME_ALIASES, ALIAS_GROUPS, resolveAlias } from '../../api/_playerNames.js';
 
-// Resolve an alternate name to its canonical form. Used as a fallback when
-// the dynamic Firestore alias map doesn't have the entry.
-export function resolveAlias(name) {
-  return NAME_ALIASES[name?.trim()] || name?.trim();
-}
+import { NAME_ALIASES } from '../../api/_playerNames.js';
 
 // ── Seed: copy static aliases into Firestore ─────────────────────────────────
 // One-shot migration. For each entry, ensures the alias is on the canonical
@@ -52,6 +33,10 @@ export function resolveAlias(name) {
 // Idempotent: re-checks current state before writing, and skips silently
 // when the canonical doc doesn't exist yet (run OWGR sync first, or do a
 // full merge via AdminView for that player).
+//
+// NOTE: seeding is now a convenience for keeping the /players/{name}.aliases
+// arrays tidy, not a correctness requirement. Matching works off ALIAS_GROUPS
+// and the derivation rules whether or not Firestore has been seeded.
 export async function seedAliasesToFirestore(playersApi) {
   const results = { added: 0, alreadyPresent: 0, skipped: 0, errors: [] };
   for (const [alternate, canonical] of Object.entries(NAME_ALIASES)) {

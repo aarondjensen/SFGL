@@ -4,6 +4,7 @@ import { useDialog } from './DialogContext';
 
 import { theme, colors, fonts, fontSize, SWINGS, getSwingColor, getSwingColorAt } from '../theme.js';
 import { getSegmentForTournament, shortName } from '../utils';
+import { NameMap } from '../../api/_playerNames.js';
 import { TeamName } from '../components/TeamName';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
@@ -304,47 +305,20 @@ export const TournamentsView = ({
     };
   }, [activeTournamentForLive?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Normalize player name for fuzzy-matching against live data. Mirrors the
-  // pattern in RostersView (lowercase, strip diacritics, hyphens→spaces).
-  const normalize = (s) => (s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/ß/g, 'ss')
-    .replace(/-/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  // Build a name-keyed live-player map once per liveData update so the
-  // active-tournament expansion doesn't re-scan the players array per row.
-  // Tries exact match first, then last-name match (≥4 chars to avoid false
-  // positives), then substring match.
+  // Leaderboard row lookup, keyed by player identity (api/_playerNames.js).
+  //
+  // This replaces a local normalizer plus a three-stage fuzzy cascade — exact,
+  // then LAST NAME ONLY (any surname ≥4 characters), then SUBSTRING. Unlike
+  // the equivalent in RostersView, this one had no in-field gate, so any
+  // rostered player could inherit a same-surname leaderboard row: with both
+  // Coody brothers entered, whichever the board listed first was handed to
+  // both. NameMap resolves the abbreviated 'V. Hovland' rendering those
+  // fallbacks were actually for, and returns null when a name is genuinely
+  // ambiguous rather than picking the first hit.
   const liveByName = useMemo(() => {
     if (!liveData?.players?.length) return null;
-    const exact = new Map();
-    const lastName = new Map();
-    liveData.players.forEach(lp => {
-      const n = normalize(lp.name);
-      exact.set(n, lp);
-      const ln = n.split(' ').slice(-1)[0];
-      if (ln && ln.length >= 4 && !lastName.has(ln)) lastName.set(ln, lp);
-    });
-    const find = (rosterName) => {
-      const n = normalize(rosterName);
-      const e = exact.get(n);
-      if (e) return e;
-      const ln = n.split(' ').slice(-1)[0];
-      if (ln && ln.length >= 4) {
-        const byLast = lastName.get(ln);
-        if (byLast) return byLast;
-      }
-      // Last resort: substring scan (rare path, only when no last-name match)
-      return liveData.players.find(lp => {
-        const ln2 = normalize(lp.name);
-        return ln2.includes(n) || n.includes(ln2);
-      }) || null;
-    };
-    return { find };
+    const map = new NameMap(liveData.players.map(lp => [lp.name, lp]));
+    return { find: (rosterName) => map.get(rosterName) ?? null };
   }, [liveData]);
 
   // ── Schedule editing logic (existing) ─────────────────────────────────────

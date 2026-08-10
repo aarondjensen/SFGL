@@ -90,12 +90,47 @@ export const getPlayerHeadshotUrls = (playerName, headshotMap = {}) => {
  * /api/headshots responses into the headshots map — a response that only has
  * an `espn` id must not wipe a stored `url` pin or a previously-known `pga` id.
  */
-export const mergeHeadshotEntry = (prev, next) => {
-  const norm = (v) => (v && typeof v === 'object') ? v
-    : (typeof v === 'string' && v)
-      ? ((v.startsWith('http') || v.startsWith('/')) ? { url: v } : { espn: v })
-      : {};
-  return { ...norm(prev), ...norm(next) };
+const normEntry = (v) => (v && typeof v === 'object') ? v
+  : (typeof v === 'string' && v)
+    ? ((v.startsWith('http') || v.startsWith('/')) ? { url: v } : { espn: v })
+    : {};
+
+export const mergeHeadshotEntry = (prev, next) => ({ ...normEntry(prev), ...normEntry(next) });
+
+/**
+ * Given the headshot ids we already hold and a fresh /api/headshots response,
+ * return only the players whose ids are NEW or DIFFERENT — i.e. the ones worth
+ * writing back to Firestore.
+ *
+ * The app re-resolves every rostered player on every launch, deliberately: it
+ * is how a wrong id (the Alex/Matt Fitzpatrick case) heals itself. But the
+ * answer is normally the same one we already have, and persisting it anyway
+ * rewrote ~75 player documents per launch with values identical to what was
+ * already there — plus the alias-map lookup and the players_last_updated stamp
+ * that every upsertMany does. This is what makes the steady state free while
+ * leaving the self-healing intact.
+ *
+ * A response that is SILENT about a source never counts as a change: absent
+ * means "couldn't resolve it", not "clear it". That asymmetry is the whole
+ * reason mergeHeadshotEntry exists, and it has to hold here too.
+ *
+ * @param  {Object} known    name -> entry ({url?,espn?,pga?} or legacy string)
+ * @param  {Object} results  name -> entry, straight from /api/headshots
+ * @return {Array}  [{ name, espnId, pgaId }] — ready for playersApi.upsertMany
+ */
+export const changedHeadshotIds = (known, results) => {
+  return Object.entries(results || {})
+    .filter(([name, entry]) => {
+      const cur  = normEntry((known || {})[name]);
+      const next = normEntry(entry);
+      if (next.espn && next.espn !== cur.espn) return true;
+      if (next.pga  && next.pga  !== cur.pga)  return true;
+      return false;
+    })
+    .map(([name, entry]) => {
+      const next = normEntry(entry);
+      return { name, espnId: next.espn, pgaId: next.pga };
+    });
 };
 
 // ── Initials fallback ────────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 //   ?action=waivers          — auto-process pending waivers
 //   ?action=lineup-reminder  — send lineup reminders to managers without lineups
 //   ?action=notify-results   — send tournament results emails (POST with body)
+//   ?action=name-audit       — cross-reference league names against data sources
 //
 // This consolidates what would be 5 separate functions into 1 to stay under
 // Vercel Hobby plan's 12 serverless function limit.
@@ -12,6 +13,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
 import { isEventEnabled, dedupeTokenDocs, extractNextData } from './_constants.js';
+import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
 
@@ -577,6 +579,25 @@ function buildEffectiveRosterServer(team, allTx, tournaments) {
     return tx.tournamentIndex ?? Number.MAX_SAFE_INTEGER;
   };
 
+  // When a transaction happened, in ms, or null. Tournament position alone is
+  // not a sufficient sort key: two moves made in the SAME event tie, and a
+  // stable sort then replays them in whatever order they were read, so an
+  // add-then-flip inside one free-agent window can resurrect the flipped
+  // player. See the worked example in sharedHelpers.buildEffectiveRoster.
+  const txTimeMs = (tx) => {
+    const t = tx?.timestamp;
+    if (typeof t === 'number') return Number.isFinite(t) ? t : null;
+    if (t) {
+      const ms = new Date(t).getTime();
+      if (Number.isFinite(ms)) return ms;
+    }
+    if (tx?.date) {
+      const ms = new Date(tx.date).getTime();
+      if (Number.isFinite(ms)) return ms;
+    }
+    return null;
+  };
+
   let names = (team.roster || []).map(p => p.name);
   (allTx || [])
     .filter(tx =>
@@ -584,8 +605,15 @@ function buildEffectiveRosterServer(team, allTx, tournaments) {
       tx.type !== 'mulligan' &&
       tx.type !== 'swing_winner' &&
       (tx.status === 'processed' || tx.status === 'completed'))
-    .map(tx => ({ tx, pos: txPosition(tx) }))
-    .sort((a, b) => a.pos - b.pos)
+    .map(tx => ({ tx, pos: txPosition(tx), ms: txTimeMs(tx) }))
+    .sort((a, b) => {
+      if (a.pos !== b.pos) return a.pos - b.pos;
+      if (a.ms !== null && b.ms !== null) return a.ms - b.ms;
+      // Undated rows predate the timestamp field, so they are older.
+      if (a.ms === null && b.ms !== null) return -1;
+      if (a.ms !== null && b.ms === null) return 1;
+      return 0;
+    })
     .forEach(({ tx }) => {
       if (tx.droppedPlayer) names = names.filter(n => n !== tx.droppedPlayer);
       if (tx.player && !names.includes(tx.player)) names.push(tx.player);
@@ -979,10 +1007,11 @@ async function handleNotifyResults(req, res) {
 
 // ── Action: auto-process tournament results ─────────────────────────────────
 
-// Name normalization for fuzzy matching (strip accents, lowercase)
-function normalizeName(name) {
-  return (name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-}
+// REMOVED: normalizeName — a local "strip accents + lowercase" normalizer.
+// It did not handle hyphens, periods or "Last, First" order, so 'Si-Woo Kim'
+// and 'Si Woo Kim' were different players as far as results processing was
+// concerned. Its call sites now use matchName (below), which asks the right
+// question — "same golfer?" rather than "same string?".
 
 // "First Last" → "F. Last". Mirrors abbreviateName() in src/utils/index.js —
 // keep the two in sync. Single-word names returned unchanged. Used by the
@@ -994,13 +1023,14 @@ function abbreviateName(name) {
   return parts[0][0] + '. ' + parts[parts.length - 1];
 }
 
-function matchName(a, b) {
-  const na = normalizeName(a), nb = normalizeName(b);
-  if (na === nb) return true;
-  const wa = na.split(' '), wb = nb.split(' ');
-  if (wa.length === wb.length) return wa.every(w => wb.includes(w));
-  return false;
-}
+// Are these two strings the same golfer? Delegates to the shared module.
+//
+// The previous body compared normalized keys and then fell back to an
+// any-order word-set match. That fallback treated 'Kim Si Woo' and 'Si Woo
+// Kim' as one player (correct, and still handled) but ALSO could not see that
+// 'Nico Echavarria' and 'Nicolas Echavarria' are one player — so a lineup
+// holding one spelling scored $0 against an earnings map keyed with the other.
+const matchName = namesMatch;
 
 async function handleProcessResults(res) {
   const settings = await loadSettings();
@@ -1129,7 +1159,7 @@ async function handleProcessResults(res) {
       const leaders = Array.isArray(roundLeaders[round]) ? roundLeaders[round] : (roundLeaders[round] ? [roundLeaders[round]] : []);
       leaders.forEach(leaderName => {
         if (!leaderName) return;
-        const actual = team.lineup.find(pn => normalizeName(pn) === normalizeName(leaderName));
+        const actual = team.lineup.find(pn => matchName(pn, leaderName));
         if (actual) {
           bonusEarnings[round] = bonuses[round];
           totalEarnings += bonuses[round];
@@ -1556,22 +1586,35 @@ async function handleOwgrRankings(res) {
     return res.status(502).json({ status: 'no_rankings_returned' });
   }
 
-  // Resolve aliases — some players are stored under a canonical name (e.g.
-  // Nico Echavarria) that differs from what OWGR returns ("Nicolas
-  // Echavarria"). Without this, the alias-having player's ranking never
-  // updates via cron. Client upsertMany does the same resolution; we
-  // duplicate it here because cron can't reach the client helpers.
+  // Resolve each OWGR name onto the player doc that ALREADY represents that
+  // golfer, so a ranking lands on the existing doc instead of creating a
+  // second one under a different spelling.
+  //
+  // This is where the league's duplicate-spelling problem was manufactured.
+  // The previous version consulted only the explicit /players/{name}.aliases
+  // arrays — which are populated by hand, through Merge Players — so any
+  // spelling difference nobody had merged yet produced a NEW doc. The league
+  // then held both 'Nico Echavarria' and 'Nicolas Echavarria': one with a
+  // world rank and headshot, one on somebody's roster, and no connection
+  // between them.
+  //
+  // Matching against the existing doc IDs by identity closes that loop: the
+  // alias/nickname/initials rules resolve the spelling automatically, and the
+  // hand-maintained aliases arrays remain as an override for the cases no rule
+  // can derive.
   const aliasMap = {};
+  let existingDocs = new NameSet([]);
   try {
-    const aliasSnap = await db.collection('players').where('aliases', '!=', null).get();
-    aliasSnap.docs.forEach(d => {
+    const snap = await db.collection('players').get();
+    existingDocs = new NameSet(snap.docs.map(d => d.id));
+    snap.docs.forEach(d => {
       const data = d.data();
       const canonical = data.name || d.id;
       const aliases = Array.isArray(data.aliases) ? data.aliases : [];
       aliases.forEach(a => { aliasMap[a] = canonical; });
     });
   } catch (err) {
-    console.warn('[owgr-sync] alias map load failed; proceeding without:', err.message);
+    console.warn('[owgr-sync] player index load failed; proceeding without:', err.message);
   }
 
   // Batch-upsert player docs. Firestore batches cap at 500 ops per commit,
@@ -1581,7 +1624,9 @@ async function handleOwgrRankings(res) {
   for (let i = 0; i < fetched.length; i += BATCH_SIZE) {
     const batch = db.batch();
     fetched.slice(i, i + BATCH_SIZE).forEach(({ name, worldRank }) => {
-      const canonicalName = aliasMap[name] || name;
+      // Explicit alias array wins (a deliberate commissioner decision), then
+      // identity match against an existing doc, then the name as OWGR gave it.
+      const canonicalName = aliasMap[name] || existingDocs.resolve(name) || name;
       batch.set(
         db.collection('players').doc(canonicalName),
         { name: canonicalName, world_rank: worldRank },
@@ -1609,6 +1654,7 @@ async function handleOwgrRankings(res) {
     status: 'sent',
     upserted,
     aliasesApplied: Object.keys(aliasMap).length,
+    existingDocsIndexed: existingDocs.size,
     timestamp: ts,
   });
 }
@@ -1753,16 +1799,15 @@ async function handleLeadWatch(res) {
   const sends = [];
 
   for (const leaderName of newLeaders) {
-    const leaderNorm = normalizeName(leaderName);
     // Determine the leader's score string for the push body (e.g. "-12").
-    const leaderPlayer = liveData.players.find(p => normalizeName(p.name) === leaderNorm);
+    const leaderPlayer = liveData.players.find(p => matchName(p.name, leaderName));
     const scoreStr = leaderPlayer?.score || '';
     const thruStr  = leaderPlayer?.thru  || '';
     const isCoLeader = currentLeaderSet.length > 1;
 
     for (const team of teams) {
       const lineup = team.lineup || [];
-      const inLineup = lineup.some(n => normalizeName(n) === leaderNorm);
+      const inLineup = lineup.some(n => matchName(n, leaderName));
       if (!inLineup) continue;
 
       const rateKey = `${team.id}:${leaderName}`;
@@ -1865,6 +1910,170 @@ async function handleLeadWatch(res) {
 // parsed only PARTIALLY is caught separately by the field-integrity gate below
 // ('field_too_small' / 'field_partial'), since a short field would otherwise
 // flag half the league's starters as missing.
+// ── Name-mismatch detection ─────────────────────────────────────────────────
+//
+// The matching layers in _playerNames.js resolve every mismatch we know how to
+// describe. This is the safety net for the ones we don't: it makes an unknown
+// mismatch VISIBLE to the commissioner before a manager notices their player
+// missing, instead of letting it render silently as "not playing".
+//
+// classifyUnmatched answers: "this starter isn't in the field — is that
+// because they aren't playing, or because we don't recognise the spelling?"
+// A close namesake IN the field is evidence of the latter.
+//
+// SUSPECTED_MISMATCH_SCORE is tuned so this fires on a given-name rendering we
+// lack (the Echavarria shape) and on surname typos, but NOT on two members of
+// the same golfing family — a roster holding Alex Fitzpatrick while Matt is in
+// the field is a real "not playing", and that manager must still be told.
+//
+// Returns null when the name looks genuinely absent.
+const MISMATCH_SCORE_THRESHOLD = SUSPECTED_MISMATCH_SCORE;
+
+function classifyUnmatched(name, fieldPlayers) {
+  const suggestions = suggestMatches(name, fieldPlayers, 3);
+  const best = suggestions[0];
+  if (!best || best.score < MISMATCH_SCORE_THRESHOLD) return null;
+  return { name, suggestions };
+}
+
+// Persist the latest audit to sfgl_data/nameAudit. AdminView's Name Audit
+// panel subscribes to this doc, so a mismatch found by the weekly field check
+// is waiting for the commissioner whether or not anyone was watching the cron
+// logs when it ran.
+async function writeNameAudit(payload) {
+  try {
+    await db.collection('sfgl_data').doc('nameAudit').set({
+      key: 'nameAudit',
+      value: { ...payload, checkedAt: new Date().toISOString() },
+    });
+  } catch (err) {
+    // Never let audit bookkeeping fail the operation that produced it.
+    console.warn('[name-audit] write failed:', err?.message || err);
+  }
+}
+
+// ── Action: name-audit ──────────────────────────────────────────────────────
+//
+// On-demand, full cross-reference of every name the league holds against every
+// name our data sources use. Commissioner-only; driven by the AdminView panel.
+//
+// Checks, in order of how much a mismatch costs a manager:
+//   rosters → this week's field    — drives ⛳, "Playing", tee times, odds,
+//                                    live scores and the Wednesday push
+//   rosters → /players/{name}      — drives world rank and headshots
+//   rosters → live leaderboard     — drives in-tournament scores/positions
+//
+// Reports only names that FAILED to match, each with ranked suggestions, plus
+// any ambiguous initials keys the index had to drop. Nothing is changed —
+// applying a fix is a deliberate commissioner action through Merge Players.
+async function handleNameAudit(res) {
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : 'https://www.sfglgolf.com';
+
+  const teams = await loadTeams();
+  const rosterNames = [...new Set(
+    teams.flatMap((t) => [
+      ...(t.roster || []).map((p) => p?.name).filter(Boolean),
+      ...(t.lineup || []),
+    ]),
+  )];
+  const lineupNames = new Set(teams.flatMap((t) => t.lineup || []));
+
+  const sections = [];
+
+  // 1. Roster vs this week's field.
+  let fieldPlayers = [];
+  let tournamentName = '';
+  try {
+    const resp = await fetch(`${baseUrl}/api/field`, { headers: { 'Cache-Control': 'no-cache' } });
+    if (resp.ok) {
+      const data = await resp.json();
+      fieldPlayers = data?.players || [];
+      tournamentName = data?.tournament || '';
+    }
+  } catch (err) {
+    sections.push({ check: 'field', error: err.message });
+  }
+  if (fieldPlayers.length) {
+    const audit = auditNames({ names: rosterNames, reference: fieldPlayers });
+    sections.push({
+      check: 'field',
+      label: `Rostered players vs ${tournamentName || 'this week'}'s field`,
+      referenceCount: fieldPlayers.length,
+      ...audit,
+      // A roster player who simply isn't entered this week is normal and not
+      // worth the commissioner's attention. Only flag the ones that look like
+      // a spelling problem, and mark whether a lineup depends on them.
+      unmatched: audit.unmatched
+        .filter((u) => u.suggestions.length && u.suggestions[0].score >= MISMATCH_SCORE_THRESHOLD)
+        .map((u) => ({ ...u, inLineup: lineupNames.has(u.name) })),
+    });
+  }
+
+  // 2. Roster vs the /players directory. A roster name with no player doc gets
+  //    no world rank and no headshot, and an OWGR sync writing the other
+  //    spelling creates a SECOND doc rather than updating the first.
+  try {
+    const snap = await db.collection('players').get();
+    const playerDocs = snap.docs.map((d) => d.id);
+    if (playerDocs.length) {
+      const audit = auditNames({ names: rosterNames, reference: playerDocs });
+      sections.push({
+        check: 'players',
+        label: 'Rostered players vs the /players directory',
+        referenceCount: playerDocs.length,
+        ...audit,
+        // Here EVERY unmatched name matters — a rostered player should always
+        // have a doc — so unmatched is passed through as-is.
+      });
+    }
+  } catch (err) {
+    sections.push({ check: 'players', error: err.message });
+  }
+
+  // 3. Roster vs the live leaderboard, when an event is under way.
+  try {
+    const resp = await fetch(`${baseUrl}/api/live`);
+    if (resp.ok) {
+      const data = await resp.json();
+      const livePlayers = (data?.players || []).map((p) => p.name).filter(Boolean);
+      if (livePlayers.length) {
+        const audit = auditNames({ names: [...lineupNames], reference: livePlayers });
+        sections.push({
+          check: 'live',
+          label: `Starting lineups vs the ${data.tournamentName || 'live'} leaderboard`,
+          referenceCount: livePlayers.length,
+          ...audit,
+          unmatched: audit.unmatched
+            .filter((u) => u.suggestions.length && u.suggestions[0].score >= MISMATCH_SCORE_THRESHOLD),
+        });
+      }
+    }
+  } catch (err) {
+    sections.push({ check: 'live', error: err.message });
+  }
+
+  const suspectedMismatches = sections.flatMap((sec) =>
+    (sec.unmatched || []).map((u) => ({ check: sec.check, ...u })));
+
+  await writeNameAudit({
+    source: 'name-audit',
+    tournamentName,
+    fieldCount: fieldPlayers.length,
+    sections,
+    suspectedMismatches,
+  });
+
+  return res.json({
+    status: 'ok',
+    rosterCount: rosterNames.length,
+    tournamentName,
+    sections,
+    suspectedMismatches,
+  });
+}
+
 async function handleFieldCheck(res) {
   const settings = await loadSettings();
   if (settings?.fieldCheckEnabled === false) {
@@ -1909,23 +2118,18 @@ async function handleFieldCheck(res) {
   const fieldPlayers = fieldData?.players || [];
   if (!fieldPlayers.length) return res.json({ status: 'field_unknown' });
 
-  // Normalize identically to the client's normalizeNordic (Nordic letters +
-  // diacritics + hyphens + whitespace) PLUS lowercase on both sides for extra
-  // case-robustness, so server-side membership matches the ⛳ flag the manager
-  // sees. Applying the same transform to both the field and the lineup names
-  // can only make matching MORE lenient on case — it never turns an in-field
-  // player into a false "not in field".
-  const norm = (s) => (s || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/ø/g, 'o').replace(/Ø/g, 'O')
-    .replace(/æ/g, 'ae').replace(/Æ/g, 'Ae')
-    .replace(/ß/g, 'ss')
-    .replace(/-/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-  const fieldSet = new Set(fieldPlayers.map(norm));
+  // Field membership by player IDENTITY — the same NameSet the app builds for
+  // the ⛳ flag, from the same endpoint, so this push and the roster page can
+  // never disagree about who is playing.
+  //
+  // This used to be a hand-inlined copy of the client's old normalizeNordic
+  // plus a lowercase, keyed into a plain Set. It carried the client's bug
+  // exactly: a starter stored under a different spelling than the field
+  // payload used ('Nico Echavarria' vs 'Nicolas Echavarria') read as NOT in
+  // the field, so the manager got a push telling them to bench a player who
+  // was in fact teeing off Thursday morning. That is worse than saying
+  // nothing — it actively destroys trust in the alert.
+  const fieldSet = new NameSet(fieldPlayers);
 
   const tournamentName = fieldData.tournament || activeTourney.name || '';
 
@@ -2008,24 +2212,50 @@ async function handleFieldCheck(res) {
   const newSig = { ...lastSig };
   const results = [];
 
+  // League-wide collection of starters we could not match to the field but
+  // that look like a NAME problem rather than a genuine absence — see
+  // classifyUnmatched.
+  const suspectedMismatches = [];
+
   for (const team of teams) {
-    const rostered = new Set(buildEffectiveRosterServer(team, allTx, tournaments));
+    // Match the lineup against the roster by IDENTITY, not string equality.
+    // The two lists are written at different times, so a spelling corrected on
+    // the roster (a Merge Players fix, say) can leave the lineup holding the
+    // old rendering — and an exact-match Set would then read a legitimate
+    // starter as unowned and silently skip warning that manager, which is the
+    // opposite of what this handler is for.
+    const rostered = new NameSet(buildEffectiveRosterServer(team, allTx, tournaments));
     const lineup = team.lineup || [];
     const starters = lineup.filter(name => rostered.has(name));
     const offRoster = lineup.filter(name => !rostered.has(name));
 
-    const outOfField = starters.filter(name => !fieldSet.has(norm(name)));
+    const unmatched = starters.filter(name => !fieldSet.has(name));
+
+    // Split "genuinely not in the field" from "we probably just don't
+    // recognise this spelling". A starter missing from the field who has a
+    // very close namesake IN the field is far more likely to be a data problem
+    // on our end than a withdrawal, so we do NOT tell the manager to bench
+    // them. Those go to the commissioner instead, through the nameAudit doc
+    // written at the end of this handler.
+    const outOfField = [];
+    for (const name of unmatched) {
+      const suspect = classifyUnmatched(name, fieldPlayers);
+      if (suspect) suspectedMismatches.push({ team: team.name, ...suspect });
+      else outOfField.push(name);
+    }
 
     // The backup only matters on weeks the slot is enabled, and only if the
     // team still owns them. Unlike a starter they score nothing either way —
     // the loss is that they can't COVER a withdrawal, so the copy differs.
+    // The same mismatch split applies: an unrecognised spelling must reach the
+    // commissioner as an audit row, never the manager as a warning.
     const backupName = team.backup || null;
-    const backupOut = Boolean(
-      backupSpotEnabled &&
-      backupName &&
-      rostered.has(backupName) &&
-      !fieldSet.has(norm(backupName))
-    );
+    let backupOut = false;
+    if (backupSpotEnabled && backupName && rostered.has(backupName) && !fieldSet.has(backupName)) {
+      const suspect = classifyUnmatched(backupName, fieldPlayers);
+      if (suspect) suspectedMismatches.push({ team: team.name, ...suspect });
+      else backupOut = true;
+    }
 
     // Signature spans both slots so fixing one while breaking the other still
     // re-notifies. Built from RAW names (display abbreviates) so it stays
@@ -2110,7 +2340,24 @@ async function handleFieldCheck(res) {
     },
   });
 
-  return res.json({ status: 'sent', tournament: tournamentName, fieldCount: fieldPlayers.length, results });
+  // Persist anything that looked like a name mismatch, so the commissioner
+  // sees it in AdminView → Name Audit rather than finding out when a manager
+  // asks why their player shows as not playing.
+  await writeNameAudit({
+    source: 'field-check',
+    tournamentName,
+    fieldCount: fieldPlayers.length,
+    suspectedMismatches,
+    ambiguous: [...fieldSet.ambiguous].map(([key, names]) => ({ key, names })),
+  });
+
+  return res.json({
+    status: 'sent',
+    tournament: tournamentName,
+    fieldCount: fieldPlayers.length,
+    results,
+    suspectedMismatches,
+  });
 }
 
 // ── Cron-job.org schedule sync ─────────────────────────────────────────
@@ -2291,6 +2538,7 @@ async function handleResyncLegacyTournaments(res) {
 // writes via resync-legacy-tournaments, and burn scrape budget via pgat-stats.
 const COMMISSIONER_ACTIONS = new Set([
   'notify-results', 'pgat-stats', 'sync-cron-schedule', 'resync-legacy-tournaments',
+  'name-audit',
 ]);
 
 // Verify the caller is the commissioner. Returns null when authorized, or an
@@ -2345,11 +2593,12 @@ export default async function handler(req, res) {
       case 'pgat-stats':        return await handlePgatStats(res);
       case 'lead-watch':        return await handleLeadWatch(res);
       case 'field-check':       return await handleFieldCheck(res);
+      case 'name-audit':        return await handleNameAudit(res);
       case 'owgr-rankings':     return await handleOwgrRankings(res);
       case 'sync-cron-schedule': return await handleSyncCronSchedule(req, res);
       case 'resync-legacy-tournaments': return await handleResyncLegacyTournaments(res);
       case 'stamp-commissioner': return await handleStampCommissioner(req, res);
-      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|field-check|owgr-rankings|sync-cron-schedule|resync-legacy-tournaments' });
+      default:                  return res.status(400).json({ error: 'Unknown action. Use ?action=waivers|lineup-reminder|process-results|notify-results|pgat-stats|lead-watch|field-check|name-audit|owgr-rankings|sync-cron-schedule|resync-legacy-tournaments' });
     }
   } catch (err) {
     console.error(`[cron] ${action} error:`, err);

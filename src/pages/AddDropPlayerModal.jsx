@@ -4,7 +4,7 @@ import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, isWaiverWindowOpen, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
 import { TeamName } from '../components/TeamName';
-import { getTransactionFee, normalizeNordic, buildPlayerAttributeIndex, hydratePlayer, buildEffectiveRoster } from '../utils/sharedHelpers';
+import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, buildEffectiveRoster } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
@@ -245,7 +245,7 @@ export const AddDropPlayerModal = ({
     if (p.isLiv || LIV_PLAYERS.has(p.name)) return false;
     if (thisTeamPendingClaims.has(normalizePlayerName(p.name))) return false;
     // "Playing in current tourney" toggle — restrict to this week's field
-    if (fieldOnly && tournamentField && !tournamentField.has(normalizeNordic(p.name))) return false;
+    if (fieldOnly && tournamentField && !tournamentField.has(p.name)) return false;
     return true;
   });
 
@@ -658,7 +658,7 @@ export const AddDropPlayerModal = ({
                       }}>
                         {player.name}
                       </span>
-                      {tournamentField?.has(normalizeNordic(player.name)) && (
+                      {tournamentField?.has(player.name) && (
                         <span title="In this week's field" style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>⛳</span>
                       )}
                     </div>
@@ -769,7 +769,7 @@ export const AddDropPlayerModal = ({
                     <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 500, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
                       {player.name}
                     </span>
-                    {tournamentField?.has(normalizeNordic(player.name)) && (
+                    {tournamentField?.has(player.name) && (
                       <span title="In this week's field" style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>⛳</span>
                     )}
                     {player.worldRank && !isRostered && (

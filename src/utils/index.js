@@ -1,4 +1,5 @@
-import { CHAR_MAP, PLAYER_NAME_ALIASES, TEAM_ABBREVIATIONS } from '../constants';
+import { TEAM_ABBREVIATIONS } from '../constants';
+import { nameKey } from '../../api/_playerNames.js';
 
 // ============================================================================
 // PLAYER / NAME UTILITIES
@@ -17,41 +18,33 @@ export const makePlayer = (name, limited = false, stars = 0, unlimited = false, 
   headshot: '',
 });
 
-export const normalizePlayerName = (name) => {
-  if (!name) return '';
-  let normalized = name.toLowerCase().trim();
-  Object.keys(CHAR_MAP).forEach(char => {
-    normalized = normalized.replace(new RegExp(char, 'g'), CHAR_MAP[char]);
-  });
-  return normalized.replace(/[.-]/g, ' ').replace(/\s+/g, ' ').trim();
-};
+/**
+ * Normalize a player name to its match key.
+ *
+ * Delegates to nameKey() in api/_playerNames.js — the single source of truth.
+ * The previous hand-rolled body lowercased, folded a hand-listed CHAR_MAP of
+ * accents, and turned `.` and `-` into spaces. nameKey does all of that plus
+ * the cases this one missed: æ/ø/ł/ð folding, apostrophes, "Last, First"
+ * order, OWGR's "(Am)" qualifiers, and Jr/III suffixes.
+ *
+ * ⚠ For "are these the same golfer?", prefer namesMatch / NameSet from
+ * api/_playerNames.js. Comparing two nameKey() values is an EXACT-key test —
+ * it cannot see that 'Nico Echavarria' and 'Nicolas Echavarria' are one
+ * player, because that equivalence lives in the variant tiers, not the key.
+ * Key equality is fine for deduping and for map lookups you built yourself.
+ */
+export const normalizePlayerName = nameKey;
 
-export const resolvePlayerName = (owgrName, knownNames) => {
-  if (!owgrName) return null;
-  const lower = owgrName.toLowerCase().trim();
-  if (PLAYER_NAME_ALIASES[lower]) return PLAYER_NAME_ALIASES[lower];
-
-  const exact = knownNames.find(n => n.toLowerCase() === lower);
-  if (exact) return exact;
-
-  const normOwgr = normalizePlayerName(owgrName);
-  const normMatch = knownNames.find(n => normalizePlayerName(n) === normOwgr);
-  if (normMatch) return normMatch;
-
-  // Last-name + first-initial fuzzy match — only if unique to avoid false positives
-  const parts = lower.split(/\s+/);
-  if (parts.length >= 2) {
-    const lastName    = parts[parts.length - 1];
-    const firstInitial = parts[0][0];
-    const candidates = knownNames.filter(n => {
-      const np = n.toLowerCase().split(/\s+/);
-      return np[np.length - 1] === lastName && np[0][0] === firstInitial;
-    });
-    if (candidates.length === 1) return candidates[0];
-    // Multiple matches → ambiguous, don't guess
-  }
-  return null;
-};
+// REMOVED: resolvePlayerName — an OWGR-name → roster-name resolver with zero
+// call sites in the codebase. It was the only consumer of the contradictory
+// PLAYER_NAME_ALIASES table (see the note in src/constants/index.js), and its
+// last-name + first-initial fallback is the kind of fuzzy guess that pairs
+// 'Alex Fitzpatrick' with 'Matt Fitzpatrick'.
+//
+// Use NameSet from api/_playerNames.js to resolve a name against a known list:
+//   new NameSet(knownNames).resolve(owgrName)   // → matched name, or null
+// It applies the same alias/nickname/initials equivalence used everywhere
+// else, and returns null on ambiguity rather than picking a candidate.
 
 export const shortName = (fullName) => {
   if (!fullName) return '';

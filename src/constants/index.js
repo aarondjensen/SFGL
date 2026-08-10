@@ -89,37 +89,34 @@ export const INITIAL_TEAMS = [
 // The lesson worth keeping: a hardcoded ID map cannot tell you when it has
 // gone stale. It just quietly serves 404s.
 
-export const PLAYER_NAME_ALIASES = {
-  'samuel stevens': 'Sam Stevens', 'john keefer': 'Johnny Keefer',
-  'si woo kim': 'Si Woo Kim', 'byeong hun an': 'Byeong Hun An',
-  'sung-jae im': 'Sungjae Im', 'sungjae im': 'Sungjae Im',
-  'seung-jae im': 'Sungjae Im', 'kyoung-hoon lee': 'K.H. Lee',
-  'k.h. lee': 'K.H. Lee', 'min-woo lee': 'Min Woo Lee',
-  'c.t. pan': 'C.T. Pan', 'ct pan': 'C.T. Pan',
-  'matthew fitzpatrick': 'Matt Fitzpatrick', 'matthew kuchar': 'Matt Kuchar',
-  'matthew wallace': 'Matt Wallace', 'matthew mccarty': 'Matt McCarty',
-  'william zalatoris': 'Will Zalatoris', 'william gordon': 'Will Gordon',
-  'william chandler': 'Will Chandler', 'benjamin griffin': 'Ben Griffin',
-  'benjamin kohles': 'Ben Kohles', 'benjamin silverman': 'Ben Silverman',
-  'benjamin martin': 'Ben Martin', 'nicholas dunlap': 'Nick Dunlap',
-  'nicholas taylor': 'Nick Taylor', 'nicholas hardy': 'Nick Hardy',
-  'joseph highsmith': 'Joe Highsmith', 'alexander noren': 'Alex Noren',
-  'alexander smalley': 'Alex Smalley', 'cameron young': 'Cameron Young',
-  'cameron davis': 'Cam Davis', 'cameron percy': 'Cam Percy',
-  'christopher kirk': 'Chris Kirk', 'christopher gotterup': 'Chris Gotterup',
-  'douglas ghim': 'Doug Ghim', 'robert macintyre': 'Robert MacIntyre',
-  'mackenzie hughes': 'Mackenzie Hughes', 'edward cole': 'Eric Cole',
-  'francisco molinari': 'Francesco Molinari', 'haotong li': 'Haotong Li',
-};
-
-export const CHAR_MAP = {
-  'ø':'o','ö':'o','ó':'o','ô':'o','õ':'o',
-  'å':'a','ä':'a','á':'a','à':'a','â':'a','ã':'a',
-  'ü':'u','ú':'u','ù':'u','û':'u',
-  'é':'e','è':'e','ê':'e','ë':'e',
-  'í':'i','ì':'i','î':'i','ï':'i',
-  'ñ':'n','ç':'c','ß':'ss',
-};
+// ── REMOVED: PLAYER_NAME_ALIASES and CHAR_MAP ───────────────────────────────
+//
+// PLAYER_NAME_ALIASES was a second alias table that CONTRADICTED the one in
+// src/constants/nameAliases.js on two players:
+//
+//     this file          'kyoung-hoon lee' → 'K.H. Lee'
+//     nameAliases.js     'K.H. Lee'        → 'Kyoung-Hoon Lee'
+//     this file          'byeong hun an'   → 'Byeong Hun An'
+//     nameAliases.js     'Byeong Hun An'   → 'Byeong-Hun An'
+//
+// so "the canonical spelling" depended on which table a code path consulted.
+// Its only consumer was resolvePlayerName() in src/utils/index.js, which had
+// no call sites at all — dead code carrying a live contradiction.
+//
+// Every entry it held is now covered by api/_playerNames.js, most of them
+// without needing to be named at all: 'matthew'→'matt', 'william'→'will',
+// 'benjamin'→'ben', 'nicholas'→'nick', 'cameron'→'cam' and friends are
+// GIVEN_NAME_GROUPS rows, so they generalize to players nobody has listed yet.
+// The handful that no rule can derive — Eric/Edward Cole, Francesco/Francisco
+// Molinari — are ALIAS_GROUPS rows.
+//
+// CHAR_MAP was the diacritic-folding table behind normalizePlayerName. It
+// covered a hand-listed subset of accented characters and missed æ, ð, ł and
+// friends; nameKey() in api/_playerNames.js folds those explicitly and then
+// NFD-strips every remaining combining mark, so it needs no character list.
+//
+// Import from api/_playerNames.js instead:
+//   nameKey / namesMatch / NameSet / NameMap / resolveAlias
 
 // ============================================================================
 // LIV GOLF ROSTER (2026 Season)
