@@ -211,6 +211,34 @@ html { scrollbar-gutter: stable; }
   to   { transform: scale(1);    opacity: 1; }
 }
 
+/* ── Pull-to-refresh spinner (pages/PullToRefresh.jsx) ──
+   Was a component-local <style> tag, on the reasoning that it kept the file
+   self-contained. It was also the last runtime style injection left in the
+   app, so the rule this stylesheet's header states — static CSS is parsed
+   before React renders, injected CSS forces a restyle after first paint —
+   now holds without exception. */
+@keyframes sfgl-ptr-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes sfgl-ptr-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+/* ── Bottom-sheet entrance (components/BottomSheet.jsx) ──
+   Previously defined twice, as byte-identical inline <style> tags inside
+   AccountModal and UserSettingsModal — runtime style injection of exactly the
+   kind the header of this file says was consolidated away. */
+@keyframes sfgl-sheet-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes sfgl-sheet-up {
+  from { transform: translateY(26px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
 /* ============================================================================
  * LOADING SCREEN (was: inline <style> tag in App.jsx — Wave 1 cleanup)
  * ============================================================================ */

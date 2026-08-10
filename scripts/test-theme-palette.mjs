@@ -70,9 +70,19 @@ const walk = (dir, out = []) => {
   }
   return out;
 };
+// Comments are prose, not styling. This file's own header quotes the literals
+// it replaced, and so do several of the notes left behind in src/ explaining
+// what a value used to be — those are documentation, and flagging them would
+// train people to delete the explanation rather than the duplication.
+const stripComments = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, '')                    // block comments
+  .split('\n')
+  .filter(l => !/^\s*(\/\/|\*)/.test(l))                 // whole-line comments
+  .join('\n');
+
 const offenders = [];
 for (const file of walk('src')) {
-  const src = readFileSync(file, 'utf8');
+  const src = stripComments(readFileSync(file, 'utf8'));
   for (const m of src.matchAll(/rgba\(\s*(\d+\s*,\s*\d+\s*,\s*\d+)\s*,\s*[0-9.]+\)/g)) {
     const rgb = m[1].replace(/\s/g, '');
     if (!PALETTE.has(rgb)) continue;
@@ -102,7 +112,7 @@ const ALLOWED_RAW = new Set([9, 15, 18]);
 const rawSizes = [];
 for (const file of walk('src')) {
   if (file.endsWith('theme.js')) continue;
-  const src = readFileSync(file, 'utf8');
+  const src = stripComments(readFileSync(file, 'utf8'));
   for (const m of src.matchAll(/fontSize: ([0-9.]+)/g)) {
     if (!ALLOWED_RAW.has(Number(m[1]))) {
       rawSizes.push(`${file}:${src.slice(0, m.index).split('\n').length} ${m[0]}`);

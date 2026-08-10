@@ -1058,19 +1058,16 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
         teams={resolvedTeams}
       />
 
+      {/* Notifications only. The commish toggle and sign-out that used to live
+          here moved to the More menu and AccountModal respectively; the six
+          props that fed them were still being passed long after. */}
       <UserSettingsModal
         isOpen={showUserSettings}
         onClose={() => setShowUserSettings(false)}
-        onLogout={handleLogout}
         loggedInUser={loggedInUser}
         loggedInTeamId={loggedInTeamId}
         teams={resolvedTeams}
         updateTeams={updateTeams}
-        isCommissioner={isCommissioner}
-        setIsCommissioner={setIsCommissioner}
-        taggedCommissioner={taggedCommissioner}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
       />
     </>
   );

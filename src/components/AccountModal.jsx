@@ -11,11 +11,12 @@
 // identity/team/session only.
 // ============================================================================
 
-import { useState, useEffect, useMemo } from 'react';
-import { X, LogOut } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { LogOut } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
 import { colors, fonts, gold, white, black, red, fontSize } from '../theme.js';
-import { useModalBehavior } from '../utils/modalUtils';
+import { BottomSheet, SheetBody } from './BottomSheet';
+import { useUserTeam } from '../hooks/useUserTeam';
 import { linkAppleAccount, linkGoogleAccount, getLinkedProviders } from '../api/authApi';
 import { teamsApi } from '../api/firebase';
 
@@ -28,15 +29,8 @@ export const AccountModal = ({
   teams,
 }) => {
   const dialog = useDialog();
-  useModalBehavior(isOpen, onClose);
-
-  const userTeam = useMemo(
-    () =>
-      (loggedInTeamId && teams.find(t => t.id === loggedInTeamId)) ||
-      teams.find(t => t.owner === loggedInUser) ||
-      null,
-    [teams, loggedInTeamId, loggedInUser]
-  );
+  // Scroll lock + Escape now come from BottomSheet.
+  const userTeam = useUserTeam(teams, loggedInTeamId);
 
   // ── Team name editing ───────────────────────────────────────────────────
   const [nameDraft, setNameDraft] = useState('');
@@ -108,85 +102,20 @@ export const AccountModal = ({
     if (ok) { onClose(); onLogout(); }
   };
 
-  if (!isOpen) return null;
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-
   const labelStyle = {
     fontSize: fontSize.sm, fontWeight: 700, color: colors.textMuted,
     letterSpacing: '0.4px', marginBottom: 8, textTransform: 'uppercase',
   };
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(4,9,22,0.86)',
-        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-        display: 'flex',
-        alignItems: isMobile ? 'flex-end' : 'center',
-        justifyContent: 'center',
-        padding: isMobile ? 0 : 16,
-        zIndex: 60,
-        animation: 'sfglSheetFade 0.2s ease',
-      }}
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
+      variant="sheet"
+      title={loggedInUser || 'Account'}
+      subtitle={userTeam?.name}
     >
-      <style>{`@keyframes sfglSheetFade{from{opacity:0}to{opacity:1}}@keyframes sfglSheetUp{from{transform:translateY(26px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'linear-gradient(180deg, #14233f 0%, #0f1b31 100%)',
-          border: `1px solid ${white(0.07)}`,
-          borderRadius: isMobile ? '22px 22px 0 0' : 18,
-          width: '100%', maxWidth: isMobile ? '100%' : 440,
-          maxHeight: isMobile ? '92vh' : '84vh',
-          display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-          boxShadow: `0 -8px 40px ${black(0.5)}`,
-          paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0,
-          animation: 'sfglSheetUp 0.3s cubic-bezier(0.32,0.72,0,1)',
-        }}
-      >
-        {isMobile && (
-          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8, flexShrink: 0 }}>
-            <div style={{ width: 40, height: 5, borderRadius: 3, background: white(0.18) }} />
-          </div>
-        )}
-
-        <div style={{
-          padding: isMobile ? '10px 20px 10px' : '16px 20px 12px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 12, flexShrink: 0,
-        }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{
-              fontFamily: fonts.sans, fontSize: 18, fontWeight: 600,
-              color: colors.textPrimary, letterSpacing: '0.2px',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>
-              {loggedInUser || 'Account'}
-            </div>
-            {userTeam && (
-              <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted, marginTop: 2 }}>
-                {userTeam.name}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              flexShrink: 0, width: 34, height: 34, borderRadius: '50%',
-              background: white(0.06), border: 'none', cursor: 'pointer',
-              color: colors.textSecondary,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <X style={{ width: 18, height: 18 }} />
-          </button>
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: '4px 20px 20px', WebkitOverflowScrolling: 'touch' }}>
+      <SheetBody>
 
           {/* Team name — manager-editable, cascades app-wide on save. */}
           {userTeam && (
@@ -291,9 +220,8 @@ export const AccountModal = ({
             Sign out
           </button>
 
-        </div>
-      </div>
-    </div>
+      </SheetBody>
+    </BottomSheet>
   );
 };
 

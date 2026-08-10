@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { X, MinusCircle } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { getSegmentByDate, isTournamentLocked, isWaiverWindowOpen, getTeamAbbreviation, normalizePlayerName } from '../utils/index.js';
@@ -8,9 +7,9 @@ import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, buildEffec
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
-import { theme, colors, fonts, amber, gold, green, greenMuted, red, white, blueBright, scrim, fontSize } from '../theme.js';
+import { theme, colors, fonts, amber, gold, green, greenMuted, red, white, blueBright, fontSize } from '../theme.js';
 import { LIV_GOLF_ROSTER } from '../constants';
-import { useModalBehavior } from '../utils/modalUtils';
+import { BottomSheet } from '../components/BottomSheet';
 
 // Use shared LIV roster from constants instead of local duplicate
 const LIV_PLAYERS = new Set(LIV_GOLF_ROSTER);
@@ -112,7 +111,6 @@ export const AddDropPlayerModal = ({
   }, [isOpen, allPlayers]);
 
   // ── Escape key + body scroll lock (shared) ─────────────────────────────────
-  useModalBehavior(isOpen, onClose);
 
   // Pre-populate when editing an existing waiver claim
   useEffect(() => {
@@ -461,32 +459,14 @@ export const AddDropPlayerModal = ({
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
-  // Portal to <body> so the fixed overlay escapes ancestor transforms (e.g.
-  // PullToRefresh's translateY wrapper), which otherwise rebase position:fixed
-  // onto the transformed ancestor and break the modal's scroll container.
-  return createPortal(
-    <div style={{
-      position: 'fixed', inset: 0,
-      background: scrim(0.85), backdropFilter: 'blur(4px)',
-      display: 'flex',
-      alignItems: isMobile ? 'flex-end' : 'center',
-      justifyContent: 'center',
-      padding: isMobile ? 0 : 16,
-      zIndex: 60,
-    }}>
-      <div style={{
-        background: '#0f1d35',
-        border: `1px solid ${colors.borderSubtle}`,
-        // Mode accent lives as a thin top stripe instead of a heavy 2px
-        // border all the way around — same indicator, lighter chrome.
-        borderTop: `2px solid ${isWaiverMode ? colors.warning : colors.success}`,
-        borderRadius: isMobile ? '12px 12px 0 0' : 10,
-        width: '100%', maxWidth: isMobile ? '100%' : 480,
-        height: isMobile ? '90vh' : 'auto',
-        maxHeight: isMobile ? '90vh' : '82vh',
-        display: 'flex', flexDirection: 'column',
-        overflow: 'hidden',
-      }}>
+  return (
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
+      variant="panel"
+      accent={isWaiverMode ? colors.warning : colors.success}
+      label={isWaiverMode ? 'Submit waiver claim' : 'Add or drop a player'}
+    >
 
         {/* ── Header ── */}
         <div style={{
@@ -875,8 +855,6 @@ export const AddDropPlayerModal = ({
             <ConfirmBtn compact />
           </div>
         )}
-      </div>
-    </div>,
-    document.body
+    </BottomSheet>
   );
 };

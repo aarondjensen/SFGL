@@ -6,8 +6,8 @@ import { TeamName } from '../components/TeamName';
 import { buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament,
          getSeasonFeesForTeam, getSwingFeesForTeam, getSwingPot,
          effectiveTransactionFee, txBelongsToTeam, resolveTxTeam } from '../utils/sharedHelpers';
-import { theme, colors, fonts, getSwingColor, SWINGS, blue, green, greenMuted, red, white, scrim, fontSize } from '../theme.js';
-import { useModalBehaviorAlways } from '../utils/modalUtils';
+import { theme, colors, fonts, getSwingColor, SWINGS, blue, green, greenMuted, red, white, fontSize } from '../theme.js';
+import { BottomSheet } from '../components/BottomSheet';
 import { AddTransactionModal } from './AddTransactionModal';
 
 // shortName imported from utils (see abbreviateName)
@@ -17,7 +17,6 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
   const dialog = useDialog();
 
   // ── Escape key + body scroll lock (shared) ────────────────────────────────
-  useModalBehaviorAlways(onClose);
 
   // Derive initial values from the transaction
   const [editTeam,   setEditTeam]   = useState(tx.team);
@@ -143,18 +142,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
   };
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0,
-      background: scrim(0.85), backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 16, zIndex: 60,
-    }}>
-      <div style={{
-        background: '#0f1d35',
-        border: `2px solid ${blue(0.5)}`,
-        borderRadius: 4, width: '100%', maxWidth: 460,
-        maxHeight: '80vh', display: 'flex', flexDirection: 'column',
-      }}>
+    <BottomSheet isOpen onClose={onClose} variant="panel" accent={blue(0.5)} label="Edit transaction">
         {/* Header */}
         <div style={{
           padding: '14px 18px',
@@ -315,8 +303,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
-      </div>
-    </div>
+    </BottomSheet>
   );
 };
 

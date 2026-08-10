@@ -5,17 +5,19 @@
 // — that one-tap toggle is now an option inside this modal, alongside push
 // notification subscription controls and per-event toggles.
 //
-// Why a single modal: SFGL had two distinct user-level actions (toggle
-// commish mode, plus push subscription) and they live better grouped
-// together. The modal contains a Notifications group (master device toggle
-// + per-event preferences) and the commish-mode toggle for tagged managers.
+// Scope note: this modal used to also host the commish-mode toggle and a sign
+// out button. Both moved — commish mode to the More menu, sign out to
+// AccountModal — but the props feeding them (onLogout, isCommissioner,
+// setIsCommissioner, taggedCommissioner, activeTab, setActiveTab) stayed on
+// the signature and were still being passed from App.jsx, describing a
+// component that no longer existed. This is now notifications only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useMemo } from 'react';
-import { X } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
 import { colors, fonts, green, white, black, fontSize } from '../theme.js';
-import { useModalBehavior } from '../utils/modalUtils';
+import { BottomSheet, SheetBody } from './BottomSheet';
+import { useUserTeam } from '../hooks/useUserTeam';
 import {
   isPushSupported,
   getNotificationPermission,
@@ -73,30 +75,14 @@ const ROW_BASE = {
 export const UserSettingsModal = ({
   isOpen,
   onClose,
-  onLogout,
   loggedInUser,
   loggedInTeamId,
   teams,
   updateTeams,
-  isCommissioner,
-  setIsCommissioner,
-  taggedCommissioner,
-  activeTab,
-  setActiveTab,
 }) => {
   const dialog = useDialog();
-  useModalBehavior(isOpen, onClose);
-
-  // Resolve the current user's team. We do this even though loggedInUser is
-  // a string — the team identity is required to subscribe pushes to the
-  // correct teamId in Firestore.
-  const userTeam = useMemo(
-    () =>
-      (loggedInTeamId && teams.find(t => t.id === loggedInTeamId)) ||
-      teams.find(t => t.owner === loggedInUser) ||
-      null,
-    [teams, loggedInTeamId, loggedInUser]
-  );
+  // Team identity is required to subscribe pushes against the right teamId.
+  const userTeam = useUserTeam(teams, loggedInTeamId);
 
   // Effective per-event prefs for this team (stored values + defaults).
   // Recomputed when the team list or loggedInUser changes.
@@ -200,81 +186,15 @@ export const UserSettingsModal = ({
     }
   };
 
-  if (!isOpen) return null;
-
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(4,9,22,0.86)',
-        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-        display: 'flex',
-        alignItems: isMobile ? 'flex-end' : 'center',
-        justifyContent: 'center',
-        padding: isMobile ? 0 : 16,
-        zIndex: 60,
-        animation: 'sfglSheetFade 0.2s ease',
-      }}
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
+      variant="sheet"
+      title={loggedInUser || 'Account'}
+      subtitle={userTeam?.name}
     >
-      <style>{`@keyframes sfglSheetFade{from{opacity:0}to{opacity:1}}@keyframes sfglSheetUp{from{transform:translateY(26px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'linear-gradient(180deg, #14233f 0%, #0f1b31 100%)',
-          border: `1px solid ${white(0.07)}`,
-          borderRadius: isMobile ? '22px 22px 0 0' : 18,
-          width: '100%', maxWidth: isMobile ? '100%' : 440,
-          maxHeight: isMobile ? '92vh' : '84vh',
-          display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-          boxShadow: `0 -8px 40px ${black(0.5)}`,
-          paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0,
-          animation: 'sfglSheetUp 0.3s cubic-bezier(0.32,0.72,0,1)',
-        }}
-      >
-        {isMobile && (
-          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8, flexShrink: 0 }}>
-            <div style={{ width: 40, height: 5, borderRadius: 3, background: white(0.18) }} />
-          </div>
-        )}
-
-        <div style={{
-          padding: isMobile ? '10px 20px 10px' : '16px 20px 12px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 12, flexShrink: 0,
-        }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{
-              fontFamily: fonts.sans, fontSize: 18, fontWeight: 600,
-              color: colors.textPrimary, letterSpacing: '0.2px',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>
-              {loggedInUser || 'Account'}
-            </div>
-            {userTeam && (
-              <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted, marginTop: 2 }}>
-                {userTeam.name}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              flexShrink: 0, width: 34, height: 34, borderRadius: '50%',
-              background: white(0.06), border: 'none', cursor: 'pointer',
-              color: colors.textSecondary,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <X style={{ width: 18, height: 18 }} />
-          </button>
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: '4px 20px 20px', WebkitOverflowScrolling: 'touch' }}>
+      <SheetBody>
 
           <div style={{ marginBottom: 14 }}>
                 {(() => {
@@ -349,8 +269,7 @@ export const UserSettingsModal = ({
                   </div>
                 )}
           </div>
-        </div>
-      </div>
-    </div>
+      </SheetBody>
+    </BottomSheet>
   );
 };

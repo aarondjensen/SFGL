@@ -19,19 +19,6 @@ import { navy, white, fontSize } from '../theme.js';
 const THRESHOLD = 80;
 const REFRESH_HEIGHT = 64; // height of the indicator bar while refreshing
 
-// Local keyframes — scoped to this component so the file is self-contained
-// (no app-global.css edit required to ship this animation).
-const KEYFRAMES = `
-@keyframes sfgl-ptr-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-@keyframes sfgl-ptr-pulse {
-  0%, 100% { opacity: 0.55; }
-  50%      { opacity: 1; }
-}
-`;
-
 // Generic circular spinner — a thin 270° arc stroke. When `spinning`, a CSS
 // keyframe rotates it indefinitely; otherwise rotation tracks the `rotation`
 // prop (mapped to pull progress). Stroke color brightens once past the
@@ -140,9 +127,6 @@ export const PullToRefresh = ({ children, onRefresh }) => {
       onTouchEnd={onTouchEnd}
       style={{ position: 'relative' }}
     >
-      {/* Inject keyframes (idempotent — duplicates dedupe in the DOM) */}
-      <style>{KEYFRAMES}</style>
-
       {/* Pull indicator */}
       {(pullY > 0 || refreshing) && (
         <div style={{

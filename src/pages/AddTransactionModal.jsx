@@ -19,13 +19,13 @@
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useDialog } from './DialogContext';
-import { useModalBehavior } from '../utils/modalUtils';
+import { BottomSheet } from '../components/BottomSheet';
 import { sendCommishPush } from '../api/pushNotifications';
 import { getCurrentTournamentIndex } from '../utils/index.js';
 import { compactTeamName } from '../utils/index.js';
 import { getTransactionFee, buildEffectiveRoster, txBelongsToTeam } from '../utils/sharedHelpers';
 import { recomputeTeamTournamentResult } from '../utils/mulliganReversal';
-import { colors, fonts, gold, green, red, white, scrim, fontSize } from '../theme.js';
+import { colors, fonts, gold, green, red, white, fontSize } from '../theme.js';
 import { M, disabledBtn } from './admin/adminStyles';
 import { LIV_GOLF_ROSTER } from '../constants';
 
@@ -116,10 +116,8 @@ export const AddTransactionModal = ({
 
   // Mobile sniff is recomputed on each render — the modal opens infrequently
   // enough that this is cheap. Mirrors AddDropPlayerModal pattern.
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   // Escape + body scroll lock. The hook is a no-op when isOpen is false.
-  useModalBehavior(isOpen, onClose);
 
   // Default the tournament dropdown when the modal opens or the type changes.
   // For mulligan, prefer the currently-playing tournament; for everything else,
@@ -500,36 +498,16 @@ export const AddTransactionModal = ({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0,
-        background: scrim(0.85),
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: isMobile ? 'flex-end' : 'center',
-        justifyContent: 'center',
-        padding: isMobile ? 0 : 16,
-        zIndex: 60,
-      }}
-      onClick={onClose}
+    // Gold accent signals commissioner-only — lighter weight than
+    // AddDropPlayerModal's green/orange, since this is an admin workflow
+    // rather than a manager's destructive action.
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
+      variant="panel"
+      accent={gold(0.6)}
+      label="Add a transaction"
     >
-      <div
-        style={{
-          background: '#0f1d35',
-          border: `1px solid ${colors.borderSubtle}`,
-          // Gold accent stripe signals commissioner-only. Lighter weight than
-          // AddDropPlayerModal's green/orange stripes since this isn't a
-          // manager destructive action — it's an admin workflow.
-          borderTop: `2px solid ${gold(0.6)}`,
-          borderRadius: isMobile ? '12px 12px 0 0' : 10,
-          width: '100%', maxWidth: isMobile ? '100%' : 480,
-          height: isMobile ? '90vh' : 'auto',
-          maxHeight: isMobile ? '90vh' : '82vh',
-          display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
 
         {/* ── Header ── */}
         <div style={{
@@ -1023,7 +1001,6 @@ export const AddTransactionModal = ({
           </button>
         </div>
 
-      </div>
-    </div>
+    </BottomSheet>
   );
 };
