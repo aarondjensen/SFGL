@@ -4,8 +4,8 @@ import { getSegmentForTournament } from '../utils';
 import { getSeasonEarningsByTeam, getSwingEarningsByTeam } from '../utils/sharedHelpers';
 import { TeamName } from '../components/TeamName';
 
-// Row height enforced via the .sfgl-row-hero class defined in app-global.css.
-// (Hero tier = 56px desktop / 52px mobile, single-line content.)
+// Row height comes from the .sfgl-row-hero class in app-global.css
+// (56px desktop / 52px mobile, single-line content).
 
 const ALL_SWINGS = SWINGS;
 const SWING_ACCENT = SWING_COLORS;

@@ -255,18 +255,21 @@ export const theme = {
   },
 
   // ── Table ──
-  // Two row-density tiers used across the app:
+  // HERO tier → tableCell (12px padding) + .sfgl-row-hero (56/52px height),
+  // defined in app-global.css. Standings is the only table using it: few rows,
+  // single-line content, comfortable spacing.
   //
-  //   HERO tier  → tableCell (12px padding) + .sfgl-row-hero (56/52px height)
-  //                Standings — single-line content, comfortable spacing.
+  // This comment used to describe a second LIST tier — tableCellList paired
+  // with a .sfgl-row-list class — for Rosters, Tournaments and Transactions.
+  // Neither the class nor the token was ever applied anywhere; the class did
+  // not exist in the stylesheet at all, and the token had no importers. The
+  // two-tier system was real only in this comment, while .sfgl-row-hero itself
+  // was broken (the stylesheet spelled it .sfgl-standings-row), so even the
+  // tier that IS used was not enforcing its height.
   //
-  //   LIST tier  → tableCellList (8px padding) + .sfgl-row-list (44/40px min-height)
-  //                Rosters, Tournaments, Results, Transactions — many rows,
-  //                multi-line content tolerant.
-  //
-  // Both row classes live in app-global.css. Apply the matching cell padding
-  // from theme.tableCell or theme.tableCellList here, and the row class on
-  // the <tr> (or <div> row) — that keeps row height predictable across views.
+  // Those three views still hand-roll their own row padding and do not agree
+  // with each other. Unifying them is a genuine change to three views and
+  // belongs in its own piece of work — not smuggled in under a comment fix.
   tableHeaderCell: {
     padding: '8px 16px',
     fontSize: fontSize.sm,
@@ -282,16 +285,6 @@ export const theme = {
   // Hero-tier cell — used by Standings.
   tableCell: {
     padding: '12px 16px',
-    borderBottom: `1px solid ${colors.borderSubtle}`,
-  },
-
-  // List-tier cell — for dense, scannable tables (Rosters, Tournaments,
-  // Results, Transactions). 8px vertical padding pairs with .sfgl-row-list
-  // for a consistent ~44px row height across all list-style views.
-  // Horizontal 14px matches the existing rhythm in TournamentsView and
-  // ResultsView headers — switching them to this token is a no-op there.
-  tableCellList: {
-    padding: '8px 14px',
     borderBottom: `1px solid ${colors.borderSubtle}`,
   },
 

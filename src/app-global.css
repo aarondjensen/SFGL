@@ -38,20 +38,14 @@ body {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-/* ── Tab responsive styles (was: sfgl-tab-styles in App.jsx) ── */
-.sfgl-nav-row { justify-content: space-between; }
+/* ── Bottom nav tabs ──
+   .sfgl-tab is the only survivor of the old sfgl-tab-styles block. The rest of
+   it — .sfgl-nav-row, .sfgl-tab-label, .sfgl-tournament-desktop and
+   .sfgl-tournament-mobile, each with a 640px counterpart — described a nav that
+   no longer exists: the labels are always rendered now and the tournament name
+   moved into the header. Nothing in src/ has referenced any of them for some
+   time; they were dead rules being shipped and parsed on every load. */
 .sfgl-tab { flex: 1; }
-.sfgl-tab-label { display: none; }
-.sfgl-tournament-desktop { display: none !important; }
-.sfgl-tournament-mobile { display: flex !important; }
-
-@media (min-width: 640px) {
-  .sfgl-nav-row { justify-content: flex-start; }
-  .sfgl-tab { flex: 1; }
-  .sfgl-tab-label { display: inline; }
-  .sfgl-tournament-desktop { display: flex !important; }
-  .sfgl-tournament-mobile { display: none !important; }
-}
 
 /* ── Responsive team-name display (TeamName.jsx) ─────────────────────────────
    Full team name normally; canonical abbreviation when the layout width is
@@ -75,23 +69,26 @@ select option:hover {
   background: #243660;
 }
 
-/* ── Standings row styles (was: sfgl-standings-styles in StandingsView.jsx) ── */
-.sfgl-standings-row { height: 56px; }
-.sfgl-standings-cell { vertical-align: middle !important; }
-.sfgl-owner { display: inline; }
+/* ── Row density: HERO tier ──────────────────────────────────────────────────
+   Pairs with theme.tableCell (12px vertical padding). Standings is the only
+   hero-tier table: few rows, single-line content, comfortable spacing.
 
-/* Leader marker: "—" on tight mobile screens, 🏆 on desktop where there's space (Wave 3) */
-.sfgl-leader-mobile  { display: inline; }
-.sfgl-leader-desktop { display: none; }
+   This rule was previously named .sfgl-standings-row while the JSX applied
+   .sfgl-row-hero, so it matched nothing — Standings rows have been sizing
+   themselves from cell padding alone, and the documented 56/52px height was
+   never actually enforced. Renaming the rule to what the markup asks for is
+   what "restoring" it means here; the values are unchanged.
+
+   (There is no .sfgl-row-list. theme.js used to document a second LIST tier
+   pairing .sfgl-row-list with theme.tableCellList — neither the class nor the
+   cell token was ever applied anywhere, so the two-tier system existed only in
+   the comment. Rosters, Tournaments and Transactions each still hand-roll their
+   own row padding; unifying them is a real change to three views and wants to
+   be its own piece of work, not a silent side effect of deleting a dead rule.) */
+.sfgl-row-hero { height: 56px; }
 
 @media (max-width: 639px) {
-  .sfgl-standings-row { height: 52px; }
-  .sfgl-owner { display: none; }
-}
-
-@media (min-width: 640px) {
-  .sfgl-leader-mobile  { display: none; }
-  .sfgl-leader-desktop { display: inline; }
+  .sfgl-row-hero { height: 52px; }
 }
 
 /* ============================================================================
