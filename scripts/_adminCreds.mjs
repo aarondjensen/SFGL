@@ -24,9 +24,72 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+// ── .env loading ─────────────────────────────────────────────────────────────
+// Vite loads these for the app; a plain `node scripts/...` does not, which left
+// the credentials to be passed on the command line — and that line is different
+// on every shell. `VAR=value node ...` is a bashism; PowerShell needs
+// `$env:VAR = ...` on a separate line, which is exactly the kind of paper cut
+// that makes a maintenance script feel broken.
+//
+// So the script reads the file itself. Real environment variables always win,
+// so CI and `vercel env pull` piping still behave as before.
+//
+// Deliberately minimal: this is not a dotenv replacement. It handles KEY=VALUE,
+// optional surrounding quotes, comments and blank lines, and stops there.
+//
+// One shape it will NOT read: a value spanning multiple lines. `vercel env
+// pull` writes the service account as one line with \n escaped inside the
+// JSON, which is what this expects. A hand-pasted multi-line key parses as
+// truncated JSON and fails on the JSON.parse below with a message saying so —
+// wrong, but not silently wrong.
+const ENV_FILES = ['.env.local', '.env.production.local', '.env.production', '.env'];
+
+const parseEnvFile = (text) => {
+  const out = {};
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    // Strip one matching pair of surrounding quotes, if present.
+    if (value.length >= 2 && ((value[0] === '"' && value.endsWith('"')) ||
+                              (value[0] === "'" && value.endsWith("'")))) {
+      value = value.slice(1, -1);
+    }
+    if (key) out[key] = value;
+  }
+  return out;
+};
+
+let _loadedFrom = null;
+const loadEnvFiles = () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  for (const name of ENV_FILES) {
+    const path = join(root, name);
+    if (!existsSync(path)) continue;
+    let parsed;
+    try {
+      parsed = parseEnvFile(readFileSync(path, 'utf8'));
+    } catch {
+      continue;
+    }
+    for (const [k, v] of Object.entries(parsed)) {
+      // A real env var beats the file — never clobber what the caller set.
+      if (process.env[k] === undefined) process.env[k] = v;
+    }
+    if (!_loadedFrom) _loadedFrom = name;
+  }
+  return _loadedFrom;
+};
 
 const HELP = `
-Set ONE of the following:
+Provide ONE of the following:
 
   FIREBASE_SERVICE_ACCOUNT   the service-account JSON as a single string
                              (the same variable Vercel holds for /api/cron)
@@ -36,10 +99,19 @@ Set ONE of the following:
   FIREBASE_CLIENT_EMAIL
   FIREBASE_PRIVATE_KEY
 
-A .env.local is not read automatically — export them in your shell, or prefix
-the command:
+Easiest: put it in .env.local at the repo root — this reads that file, and
+${ENV_FILES.slice(1).join(', ')}, automatically.
 
-  FIREBASE_SERVICE_ACCOUNT="$(cat service-account.json)" node scripts/<script>
+  FIREBASE_SERVICE_ACCOUNT={"type":"service_account", ... }
+
+Or pull everything from Vercel in one go:
+
+  vercel env pull .env.local
+
+Or set it in the shell you are already in:
+
+  PowerShell   $env:FIREBASE_SERVICE_ACCOUNT = Get-Content service-account.json -Raw
+  bash/zsh     export FIREBASE_SERVICE_ACCOUNT="$(cat service-account.json)"
 `;
 
 /**
@@ -48,6 +120,9 @@ the command:
  */
 export function adminDb() {
   if (getApps().length) return getFirestore();
+
+  const from = loadEnvFiles();
+  if (from) console.log(`[creds] loaded ${from}`);
 
   const blob = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (blob) {

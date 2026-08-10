@@ -74,12 +74,24 @@ for f in scripts/test-*.mjs; do node "$f"; done
 
 Two scripts talk to production and need Firebase Admin credentials — either
 `FIREBASE_SERVICE_ACCOUNT` (the JSON blob Vercel already holds for `/api/cron`)
-or the three fields separately; see `scripts/_adminCreds.mjs`. They are not read
-from `.env.local`, so pass them on the command line:
+or the three fields separately. They read `.env.local` (and `.env.production`,
+`.env`) from the repo root themselves, so the simplest setup is:
 
 ```bash
-FIREBASE_SERVICE_ACCOUNT="$(cat service-account.json)" \
-  node scripts/backfill-transaction-teamid.mjs
+vercel env pull .env.local
+node scripts/backfill-transaction-teamid.mjs
+```
+
+A real environment variable always wins over the file, so CI is unaffected. To
+set one for a single shell instead:
+
+```powershell
+# PowerShell — -Raw matters, or you get an array of lines rather than one string
+$env:FIREBASE_SERVICE_ACCOUNT = Get-Content service-account.json -Raw
+```
+```bash
+# bash / zsh
+export FIREBASE_SERVICE_ACCOUNT="$(cat service-account.json)"
 ```
 
 `audit-tournament-results.mjs` is read-only. `backfill-transaction-teamid.mjs`
