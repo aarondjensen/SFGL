@@ -12,12 +12,12 @@
 // itself can all go, and results will have exactly one home.
 //
 // Usage:  node scripts/audit-tournament-results.mjs [--season 2026]
-// Needs the same service-account credentials as the cron:
-//   FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
+// Needs Firebase Admin credentials — see scripts/_adminCreds.mjs. Either
+// FIREBASE_SERVICE_ACCOUNT (the JSON blob Vercel already holds for /api/cron)
+// or the three separate fields.
 // Read-only — it never writes.
 
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { adminDb } from './_adminCreds.mjs';
 import { SEASON } from '../api/_league.js';
 
 const arg = (flag, fallback) => {
@@ -26,21 +26,7 @@ const arg = (flag, fallback) => {
 };
 const season = Number(arg('--season', SEASON));
 
-const { FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY } = process.env;
-if (!FIREBASE_PROJECT_ID || !FIREBASE_CLIENT_EMAIL || !FIREBASE_PRIVATE_KEY) {
-  console.error('Missing FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY.');
-  process.exit(2);
-}
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: FIREBASE_PROJECT_ID,
-      clientEmail: FIREBASE_CLIENT_EMAIL,
-      privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const db = getFirestore();
+const db = adminDb();
 
 const teamsOf = (results) => Object.keys(results?.teams || {}).sort();
 const totalOf = (results) =>

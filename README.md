@@ -72,10 +72,18 @@ for f in scripts/test-*.mjs; do node "$f"; done
 
 `scripts/test-bundle-budget.mjs` reads `dist/`, so run `npm run build` first.
 
-Two scripts talk to production and need the cron's service-account credentials
-(`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`):
-`audit-tournament-results.mjs` is read-only, and
-`backfill-transaction-teamid.mjs` is a dry run unless given `--apply`.
+Two scripts talk to production and need Firebase Admin credentials — either
+`FIREBASE_SERVICE_ACCOUNT` (the JSON blob Vercel already holds for `/api/cron`)
+or the three fields separately; see `scripts/_adminCreds.mjs`. They are not read
+from `.env.local`, so pass them on the command line:
+
+```bash
+FIREBASE_SERVICE_ACCOUNT="$(cat service-account.json)" \
+  node scripts/backfill-transaction-teamid.mjs
+```
+
+`audit-tournament-results.mjs` is read-only. `backfill-transaction-teamid.mjs`
+is a dry run unless given `--apply`.
 
 Several of these are **consistency guards** rather than unit tests — they read
 the source and fail when two places that must agree stop agreeing (the colour

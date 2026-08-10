@@ -24,29 +24,14 @@
 //   node scripts/backfill-transaction-teamid.mjs            # dry run (default)
 //   node scripts/backfill-transaction-teamid.mjs --apply    # write
 //
-// Needs the same service-account credentials as the cron:
-//   FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
+// Needs Firebase Admin credentials — see scripts/_adminCreds.mjs. Either
+// FIREBASE_SERVICE_ACCOUNT (the JSON blob Vercel already holds for /api/cron)
+// or the three separate fields.
 
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { adminDb } from './_adminCreds.mjs';
 
 const APPLY = process.argv.includes('--apply');
-
-const { FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY } = process.env;
-if (!FIREBASE_PROJECT_ID || !FIREBASE_CLIENT_EMAIL || !FIREBASE_PRIVATE_KEY) {
-  console.error('Missing FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY.');
-  process.exit(2);
-}
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: FIREBASE_PROJECT_ID,
-      clientEmail: FIREBASE_CLIENT_EMAIL,
-      privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const db = getFirestore();
+const db = adminDb();
 
 console.log(`\n=== transactions.teamId back-fill — ${APPLY ? 'APPLY' : 'DRY RUN'} ===\n`);
 
