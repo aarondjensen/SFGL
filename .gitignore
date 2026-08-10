@@ -25,6 +25,11 @@ dist-ssr
 .env
 .env.local
 .env*.local
+
+# `vercel link` writes the linked org/project IDs here. Not secret, but it is
+# per-developer machine state, and a stale copy silently points `vercel env
+# pull` at the wrong project.
+.vercel
 # Firebase Admin SDK / service-account keys — NEVER commit.
 # These are server secrets and belong only in Vercel env vars
 # (FIREBASE_SERVICE_ACCOUNT). This pattern would have caught the
