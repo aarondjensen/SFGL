@@ -19,6 +19,7 @@ import { BottomSheet, SheetBody } from './BottomSheet';
 import { useUserTeam } from '../hooks/useUserTeam';
 import { linkAppleAccount, linkGoogleAccount, getLinkedProviders } from '../api/authApi';
 import { teamsApi } from '../api/firebase';
+import { getTeamAbbreviation } from '../utils';
 
 export const AccountModal = ({
   isOpen,
@@ -36,14 +37,31 @@ export const AccountModal = ({
   const [nameDraft, setNameDraft] = useState('');
   const [savingName, setSavingName] = useState(false);
   useEffect(() => {
-    if (isOpen) setNameDraft(userTeam?.name || '');
+    if (isOpen) {
+      setNameDraft(userTeam?.name || '');
+      // Seeded from the stored value only. Showing the FALLBACK here would make
+      // an unset abbreviation look set, and saving it would freeze today's
+      // auto-initials onto the document.
+      setAbbrDraft(userTeam?.abbr || '');
+    }
   }, [isOpen, userTeam]);
 
+  // Abbreviation, saved alongside the name. It lives on the team document
+  // rather than in a lookup table keyed by name — a table like that loses the
+  // curated abbreviation the moment a team renames, and silently falls back to
+  // initials of the new name.
+  const [abbrDraft, setAbbrDraft] = useState('');
+
   const trimmedName = nameDraft.trim();
+  const trimmedAbbr = abbrDraft.trim();
   const nameChanged = !!userTeam && !!trimmedName && trimmedName !== userTeam.name;
+  // Blank clears it, which is a real change if one was set — so compare against
+  // the stored value rather than testing for emptiness.
+  const abbrChanged = !!userTeam && trimmedAbbr !== (userTeam.abbr || '');
+  const canSave = nameChanged || abbrChanged;
 
   const handleSaveName = async () => {
-    if (!userTeam || !nameChanged || savingName) return;
+    if (!userTeam || !canSave || savingName) return;
     setSavingName(true);
     try {
       // Goes through teamsApi.rename, NOT a plain team-doc write.
@@ -58,15 +76,26 @@ export const AccountModal = ({
       // rename() re-keys those rows in the same operation and rejects a name
       // already taken by another team. The realtime teams subscription repaints
       // the app once it lands.
-      const { transactionsUpdated } = await teamsApi.rename(userTeam.id, trimmedName);
+      let transactionsUpdated = 0;
+      if (nameChanged) {
+        ({ transactionsUpdated } = await teamsApi.rename(userTeam.id, trimmedName));
+      }
+      // The abbreviation is an ordinary field patch — it is display-only and
+      // nothing keys off it, so it does not need rename()'s transaction
+      // re-keying. Sent second so a failed rename doesn't leave the two out of
+      // step. undefined clears the field (teamsApi.update maps it to
+      // deleteField), which is what an emptied input should mean.
+      if (abbrChanged) {
+        await teamsApi.update(userTeam.id, { abbr: trimmedAbbr || undefined });
+      }
       dialog.showToast(
         transactionsUpdated > 0
           ? `\u2713 Team renamed \u00b7 ${transactionsUpdated} transaction${transactionsUpdated === 1 ? '' : 's'} updated`
-          : '\u2713 Team name updated',
+          : nameChanged ? '\u2713 Team name updated' : '\u2713 Abbreviation updated',
         'success'
       );
     } catch (e) {
-      dialog.showToast('Could not update team name: ' + (e?.message || 'error'), 'error');
+      dialog.showToast('Could not save changes: ' + (e?.message || 'error'), 'error');
     } finally {
       setSavingName(false);
     }
@@ -137,16 +166,40 @@ export const AccountModal = ({
                   fontFamily: fonts.sans, fontSize: 15, fontWeight: 600,
                 }}
               />
+              <div style={{ ...labelStyle, marginTop: 14 }}>Short name</div>
+              <input
+                type="text"
+                value={abbrDraft}
+                onChange={e => setAbbrDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); }}
+                maxLength={5}
+                placeholder={getTeamAbbreviation(userTeam)}
+                style={{
+                  width: 120, boxSizing: 'border-box',
+                  padding: '12px 14px', borderRadius: 12,
+                  background: white(0.05),
+                  border: `1px solid ${white(0.12)}`,
+                  color: colors.textPrimary,
+                  fontFamily: fonts.sans, fontSize: 15, fontWeight: 600,
+                }}
+              />
+              <div style={{
+                fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted,
+                marginTop: 6, lineHeight: 1.4,
+              }}>
+                Used where the full name will not fit. Leave blank to derive it
+                from your team name.
+              </div>
               <button
                 onClick={handleSaveName}
-                disabled={!nameChanged || savingName}
+                disabled={!canSave || savingName}
                 style={{
-                  marginTop: 8, padding: '9px 16px', borderRadius: 10,
-                  background: nameChanged ? gold(0.16) : white(0.05),
-                  border: `1px solid ${nameChanged ? gold(0.40) : white(0.10)}`,
-                  color: nameChanged ? '#f5d97a' : colors.textMuted,
+                  marginTop: 10, padding: '9px 16px', borderRadius: 10,
+                  background: canSave ? gold(0.16) : white(0.05),
+                  border: `1px solid ${canSave ? gold(0.40) : white(0.10)}`,
+                  color: canSave ? '#f5d97a' : colors.textMuted,
                   fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 600,
-                  cursor: nameChanged && !savingName ? 'pointer' : 'default',
+                  cursor: canSave && !savingName ? 'pointer' : 'default',
                 }}
               >
                 {savingName ? 'Saving\u2026' : 'Save'}

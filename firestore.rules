@@ -70,7 +70,7 @@ service cloud.firestore {
     // api/push.js does read teams/{id}.isCommissioner, so leaving it writable
     // would be a privilege-escalation path).
     function managerEditableTeamFields() {
-      return ['name', 'roster', 'lineup', 'backup', 'notificationPrefs',
+      return ['name', 'abbr', 'roster', 'lineup', 'backup', 'notificationPrefs',
               'email', 'displayName', 'allowance', 'registryOverrides'];
     }
 
@@ -94,26 +94,22 @@ service cloud.firestore {
     // Any manager may add a row (a waiver claim or free-agent move) and edit or
     // withdraw their own pending one.
     //
-    // ── The teamId / team split ─────────────────────────────────────────────
-    // `teamId` is stable; `team` is the display NAME, which managers can edit.
-    // Ownership must key off the id — that is the whole point of the column —
-    // but it only became a written field recently, so rows predating it carry
-    // only the name. txTeamKey mirrors what txBelongsToTeam does in the app:
-    // prefer teamId, fall back to the name.
+    // Ownership keys on `teamId` and nothing else. `team` holds the display
+    // NAME, which managers can edit from the Account sheet — keying on it would
+    // mean a rename silently handing a team's history to nobody, which is the
+    // bug the id column was added to fix.
     //
-    // ⚠ The fallback resolves only when a team's document ID equals its name,
-    // which is the case for every team created without an explicit id
-    // (teamsApi.upsertMany keys on `team.id || team.name`). Rules cannot query
-    // a collection by field, so a team with a distinct id and a legacy
-    // name-only transaction cannot be matched here at all.
+    // An earlier draft of these rules fell back to the name for rows written
+    // before that column existed. That fallback was removed once
+    // scripts/backfill-transaction-teamid.mjs reported every transaction
+    // resolving to a live team. It could not have worked on this data anyway:
+    // rules cannot query a collection by field, so the fallback had to assume a
+    // team's document id equals its name, and in this league the ids are short
+    // codes (db, hh, w1, pops, drc) while the names are not.
     //
-    // Run `node scripts/backfill-transaction-teamid.mjs` before deploying.
-    // Once it reports every transaction resolving to a live team, delete the
-    // fallback and key on `resource.data.teamId` alone.
-    function txTeamKey(data) {
-      return data.teamId != null ? data.teamId : data.team;
-    }
-
+    // A row with no teamId is therefore denied to managers outright. That is
+    // the intended behaviour post-migration — it fails closed, and the
+    // commissioner can still reach it.
     match /transactions/{txId} {
       allow read: if signedIn();
 
@@ -124,19 +120,19 @@ service cloud.firestore {
       allow create: if isCommish()
                     || (signedIn()
                         && request.resource.data.status == 'pending'
-                        && ownsTeam(txTeamKey(request.resource.data)));
+                        && ownsTeam(request.resource.data.teamId));
 
       // Editing or withdrawing your own claim, while it is still pending, and
       // without moving it out of pending. The team may not change hands either:
       // reassigning a transaction to another team is a commissioner action.
       allow update: if isCommish()
-                    || (ownsTeam(txTeamKey(resource.data))
+                    || (ownsTeam(resource.data.teamId)
                         && resource.data.status == 'pending'
                         && request.resource.data.status == 'pending'
-                        && txTeamKey(request.resource.data) == txTeamKey(resource.data));
+                        && request.resource.data.teamId == resource.data.teamId);
 
       allow delete: if isCommish()
-                    || (ownsTeam(txTeamKey(resource.data))
+                    || (ownsTeam(resource.data.teamId)
                         && resource.data.status == 'pending');
     }
 

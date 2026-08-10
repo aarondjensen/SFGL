@@ -52,12 +52,22 @@ export const DEFAULT_MULLIGANS = { signatureMajor: 1, regular: 1 };
 // ============================================================================
 // TEAM DATA
 // ============================================================================
+// Seed abbreviations, keyed by team ID.
+//
+// These used to be keyed by team NAME, which is manager-editable — so renaming
+// a team silently lost its curated abbreviation and fell back to auto-initials
+// of the new name. Same class of bug as transactions keying on `tx.team`: an
+// editable display string used as an identity key.
+//
+// The live value is `team.abbr` on the team document, which a manager sets
+// alongside their name. This table is only the fallback for a team that has
+// never set one.
 export const TEAM_ABBREVIATIONS = {
-  'Detroit Rock City': 'DRC',
-  'Dirty Bird(ies)':   'DBs',
-  'Hip Happens':       'HH',
-  'World #1':          'W#1',
-  'POPS, LLC':         'POP',
+  drc:  'DRC',
+  db:   'DBs',
+  hh:   'HH',
+  w1:   'W#1',
+  pops: 'POP',
 };
 
 export const INITIAL_TEAMS = [

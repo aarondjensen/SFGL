@@ -20,7 +20,7 @@ import {
   sfglDataApi,
   playerRegistryApi,
 } from '../api/firebase';
-import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
+import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen, setTeamRegistry } from '../utils';
 import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, buildEffectiveRoster, hydratePlayer } from '../utils/sharedHelpers';
 import { mergeHeadshotEntry } from '../utils/headshotUtils';
 import { deepEqual, changedFields as diffFields } from '../utils/deepEqual';
@@ -418,6 +418,11 @@ export const useLeague = (STORAGE_KEYS) => {
     // clearLoadError is a stable useCallback with no deps — listed so the
     // linter can see it, not because it can change and re-attach the listeners.
   }, [loading, loadFromFirebase, clearLoadError]);
+
+  // Keep the team-abbreviation registry pointed at the current teams. Display
+  // abbreviations resolve name -> team -> team.abbr, so a rename has to be
+  // visible here or the label reverts to auto-initials until the next reload.
+  useEffect(() => { setTeamRegistry(teams); }, [teams]);
 
   // ── Refs for stable updater dependencies ──────────────────────────────
   const teamsRef        = useRef(teams);

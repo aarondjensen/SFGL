@@ -83,9 +83,48 @@ export const getSortedRoster = (roster) => {
 // ============================================================================
 // TEAM UTILITIES
 // ============================================================================
-export const getTeamAbbreviation = (teamName) =>
-  TEAM_ABBREVIATIONS[teamName] ||
-  teamName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase();
+// ── Team abbreviations ───────────────────────────────────────────────────────
+// Every call site has a team NAME to hand, not an id — TeamName renders from a
+// name, the ownership map is keyed by name, the transactions table stores one.
+// Threading ids through all of them to look up an abbreviation would be a large
+// change for a display string.
+//
+// So the teams array is registered once (useLeague does it on every teams
+// update) and the lookup resolves name -> team -> abbreviation. Same singleton
+// pattern as setPlayerRegistry in sharedHelpers.js, and for the same reason.
+//
+// The point is that the ANSWER no longer depends on the name: it comes from
+// `team.abbr` on the document, or from the id-keyed seed table. A rename
+// carries the abbreviation with it instead of dropping it.
+let _teamRegistry = [];
+export const setTeamRegistry = (teams) => { _teamRegistry = Array.isArray(teams) ? teams : []; };
+export const getTeamRegistry = () => _teamRegistry;
+
+// Initials of the name, for a team that has no abbreviation from either source.
+const initialsOf = (teamName) =>
+  String(teamName || '').split(/\s+/).filter(Boolean)
+    .map(w => w[0]).join('').slice(0, 3).toUpperCase();
+
+/**
+ * Display abbreviation for a team, given its name (or the team object).
+ *
+ * Resolution order:
+ *   1. `team.abbr` — what the manager set
+ *   2. TEAM_ABBREVIATIONS[team.id] — the seed, for teams that never set one
+ *   3. initials of the current name
+ */
+export const getTeamAbbreviation = (teamOrName) => {
+  const isObject = teamOrName && typeof teamOrName === 'object';
+  const name = isObject ? teamOrName.name : teamOrName;
+  const team = isObject
+    ? teamOrName
+    : _teamRegistry.find(t => t?.name === name);
+
+  const abbr = team?.abbr?.trim();
+  if (abbr) return abbr;
+  if (team?.id && TEAM_ABBREVIATIONS[team.id]) return TEAM_ABBREVIATIONS[team.id];
+  return initialsOf(name);
+};
 
 // JS counterpart to the .sfgl-team-full/.sfgl-team-abbr CSS swap, for places
 // CSS can't reach the text — native <select><option> labels. Non-reactive
