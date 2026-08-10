@@ -1,0 +1,146 @@
+rules_version = '2';
+
+// ============================================================================
+// SFGL Firestore security rules
+//
+// ⚠ THIS FILE IS A RECONSTRUCTION, NOT A MIRROR OF PRODUCTION.
+//
+// The repository has no firebase.json and no .firebaserc — the Firebase project
+// is not deployed from here, and these rules were written by reading the app's
+// access patterns, not by exporting what is live. Before you deploy anything
+// from this file:
+//
+//   1. Open Firebase console → Firestore → Rules and read what is deployed now.
+//   2. Diff it against this file and reconcile the differences deliberately.
+//   3. Use the Rules Playground on a real document from each collection.
+//
+// Deploying this blind can lock every manager out of the league, or open data
+// the console currently protects. It is checked in so the intended model is
+// reviewable and versioned — that was the gap — not so it can be shipped
+// unread.
+//
+// ── The model these rules encode ────────────────────────────────────────────
+//
+// Identity is Firebase Auth. Commissioner authority is a CUSTOM CLAIM
+// (token.commissioner === true), stamped server-side by api/cron.js via
+// setCustomUserClaims — never a client-writable field. src/api/authApi.js reads
+// it back off the ID token and fails closed when the token read fails.
+//
+// A manager owns exactly one team, identified by teams/{id}.uid matching their
+// auth uid (see claimTeam / teamIdForUid in src/api/authApi.js).
+//
+// Everything the league displays is readable by any signed-in member. The
+// interesting question is who may WRITE, and the app has three answers:
+//
+//   commissioner only   the schedule, league settings, results, the player
+//                       database, the sfgl_data backups
+//   your own team       roster, lineup, notification prefs, team name
+//   any manager         transactions (add/drop and waiver claims are how the
+//                       league is played; the fee/pot maths is derived, and
+//                       the commissioner can edit or reverse any row)
+//
+// Two collections are written ONLY by trusted server code (api/cron.js and
+// api/push.js use firebase-admin, which bypasses rules entirely), so the client
+// is denied write access to them outright.
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isCommish() {
+      return signedIn() && request.auth.token.commissioner == true;
+    }
+
+    // The team document this request's user owns, if any.
+    function ownsTeam(teamId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/teams/$(teamId))
+        && get(/databases/$(database)/documents/teams/$(teamId)).data.uid == request.auth.uid;
+    }
+
+    // Fields on a team document a manager may change about their OWN team.
+    // Deliberately excludes `uid` (claiming/reassigning a team is a
+    // commissioner action, and self-service reassignment would let a manager
+    // take over another team) and `isCommissioner` (authority comes from the
+    // token claim; a self-set flag on a document must never grant anything —
+    // api/push.js does read teams/{id}.isCommissioner, so leaving it writable
+    // would be a privilege-escalation path).
+    function managerEditableTeamFields() {
+      return ['name', 'roster', 'lineup', 'backup', 'notificationPrefs',
+              'email', 'displayName', 'allowance', 'registryOverrides'];
+    }
+
+    function onlyChanges(allowed) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
+
+    // ── Teams ───────────────────────────────────────────────────────────────
+    // Any member can see every roster — that is the whole point of the app.
+    // Writes are the commissioner, or the owning manager on a bounded set of
+    // fields. Deletes are commissioner-only: useLeague.updateTeams refuses to
+    // delete outside explicit bulk mode, and this backs that up server-side.
+    match /teams/{teamId} {
+      allow read:   if signedIn();
+      allow create, delete: if isCommish();
+      allow update: if isCommish()
+                    || (ownsTeam(teamId) && onlyChanges(managerEditableTeamFields()));
+    }
+
+    // ── Transactions ────────────────────────────────────────────────────────
+    // Any manager may add a row (a waiver claim or free-agent move) and edit or
+    // withdraw their own pending one. `status` is what the cron and the
+    // commissioner act on, so a manager may not set it to anything but
+    // 'pending' — self-approving a waiver claim would otherwise be a single
+    // field write.
+    //
+    // ⚠ These rules key off `teamId`, which only became a written column
+    // recently (it was added to transactionsApi.sync's validCols alongside the
+    // rename fix). Rows created before that carry only `team` — the editable
+    // NAME — so ownsTeam(resource.data.teamId) is false for them and a manager
+    // could not edit their own history. Back-fill teamId on the collection
+    // before enforcing this, or widen the check to accept the name for rows
+    // with no id. Verify against real data in the Rules Playground first.
+    match /transactions/{txId} {
+      allow read: if signedIn();
+      allow create: if isCommish()
+                    || (signedIn()
+                        && request.resource.data.status == 'pending'
+                        && ownsTeam(request.resource.data.teamId));
+      allow update, delete: if isCommish()
+                            || (ownsTeam(resource.data.teamId)
+                                && resource.data.status == 'pending'
+                                && request.resource.data.status == 'pending');
+    }
+
+    // ── Commissioner-owned league data ──────────────────────────────────────
+    // The schedule, the rules, the results archive, the player database and the
+    // sfgl_data backups. Everyone reads; only the commissioner writes.
+    match /tournaments/{doc}        { allow read: if signedIn(); allow write: if isCommish(); }
+    match /league_settings/{doc}    { allow read: if signedIn(); allow write: if isCommish(); }
+    match /tournament_results/{doc} { allow read: if signedIn(); allow write: if isCommish(); }
+    match /players/{doc}            { allow read: if signedIn(); allow write: if isCommish(); }
+    match /sfgl_data/{doc}          { allow read: if signedIn(); allow write: if isCommish(); }
+    match /app_metadata/{doc}       { allow read: if signedIn(); allow write: if isCommish(); }
+
+    // ── Push tokens ─────────────────────────────────────────────────────────
+    // Doc ID is the FCM token itself. A device registers and unregisters its
+    // own token; nobody reads the collection from the browser — api/push.js
+    // does that with admin credentials, which bypass these rules.
+    match /pushTokens/{token} {
+      allow read: if isCommish();
+      allow create, update: if signedIn() && ownsTeam(request.resource.data.teamId);
+      allow delete:         if signedIn() && ownsTeam(resource.data.teamId);
+    }
+
+    // ── Anything not named above ────────────────────────────────────────────
+    // Default deny. A new collection is invisible and unwritable until someone
+    // adds a rule for it on purpose — which is the failure mode you want.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

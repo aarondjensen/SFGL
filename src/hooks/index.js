@@ -23,6 +23,7 @@ import {
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
 import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, buildEffectiveRoster, hydratePlayer } from '../utils/sharedHelpers';
 import { mergeHeadshotEntry } from '../utils/headshotUtils';
+import { deepEqual, changedFields as diffFields } from '../utils/deepEqual';
 
 // ============================================================================
 // useLeague — central state manager for all league data
@@ -477,7 +478,7 @@ export const useLeague = (STORAGE_KEYS) => {
         const baseByKey = new Map(base.map(t => [t.id || t.name, t]));
         const changed = resolved.filter(t => {
           const prev = baseByKey.get(t.id || t.name);
-          return !prev || JSON.stringify(prev) !== JSON.stringify(t);
+          return !prev || !deepEqual(prev, t);
         });
         if (resolved.length < base.length) {
           console.warn('[useLeague] updateTeams: team removal detected — deletions are skipped outside bulk mode');
@@ -519,11 +520,8 @@ export const useLeague = (STORAGE_KEYS) => {
         // set+merge can't delete fields — replace the whole doc instead.
         await teamsApi.upsertMany([updatedTeam]);
       } else {
-        const changedFields = {};
-        for (const k of Object.keys(updatedTeam)) {
-          if (JSON.stringify(updatedTeam[k]) !== JSON.stringify(prev[k])) changedFields[k] = updatedTeam[k];
-        }
-        if (Object.keys(changedFields).length) await teamsApi.update(teamId, changedFields);
+        const changed = diffFields(prev, updatedTeam);
+        if (Object.keys(changed).length) await teamsApi.update(teamId, changed);
       }
     } catch (e) {
       console.error('[useLeague] team write failed:', e);
@@ -574,9 +572,17 @@ export const useLeague = (STORAGE_KEYS) => {
     settingsRef.current = resolved; // sync now — see updateTeams
     setSettings(resolved);
     try {
-      for (const [key, value] of Object.entries(resolved)) {
-        await settingsApi.set(key, value);
-      }
+      // One batch. This used to loop `await settingsApi.set(key, value)` over
+      // every key — roughly twenty sequential round trips to flip one
+      // checkbox, and because league_settings has a live onSnapshot listener,
+      // twenty separate emissions of the whole settings object back into the
+      // app. A batch commits once and emits once.
+      //
+      // Every key is still written, not just the changed ones: rewriting the
+      // whole object is what restores a settings doc that is missing on the
+      // server but present in local state, and dropping that repair to save a
+      // few document writes is not a trade worth making a few times a season.
+      await settingsApi.setMany(resolved);
       await storage.set(STORAGE_KEYS.SETTINGS, resolved);
     } catch (e) {
       console.error('[useLeague] settings write failed:', e);

@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { colors, fonts, SWINGS, fontSize, blue, green, white } from '../theme.js';
-import { getTournamentStartDate, getETNow } from '../utils';
+import { resolveTournamentStart, getETNow } from '../utils';
 import { computeSwingAward } from '../utils/swingAward';
 import { buildEffectiveRoster } from '../utils/sharedHelpers';
 import { sfglDataApi } from '../api/firebase';
@@ -191,15 +191,14 @@ export const AdminView = ({
   //     the threshold mid-event.
   //
   // Now it uses the same anchoring as every other lock/window calculation in the
-  // app: resolve the start via getTournamentStartDate (startDate → parsed
-  // `dates` string), walk forward to that week's Thursday, and treat the event
-  // as finished once the following MONDAY begins in ET. Raw `start_date` is only
-  // consulted as a last resort, when there's nothing better to go on.
+  // app: resolveTournamentStart (real date → parsed `dates` string → the raw
+  // ordering field only as a last resort), walk forward to that week's
+  // Thursday, and treat the event as finished once the following MONDAY begins
+  // in ET.
   const tournamentsReadyToComplete = useMemo(() => {
     const isTournamentWeekOver = (t) => {
-      const start = getTournamentStartDate(t)
-        || (t.start_date ? new Date(`${t.start_date}T12:00:00Z`) : null);
-      if (!start || isNaN(start.getTime())) return false;
+      const start = resolveTournamentStart(t);
+      if (!start) return false;
       // Thursday of the tournament week (same walk as isTournamentLocked).
       const thursday = new Date(start);
       while (thursday.getDay() !== 4) thursday.setDate(thursday.getDate() + 1);
@@ -237,15 +236,18 @@ export const AdminView = ({
   }, [tournaments, transactions, teams, settings]);
 
   // 5. Lineup not set — teams missing lineup for the next imminent event.
-  //    Imminent = startDate within 7 days. Only surfaces non-alternate events.
+  //    Imminent = start within 7 days. Only surfaces non-alternate events.
   const teamsWithoutLineup = useMemo(() => {
     const nextEvent = (tournaments || []).find(t => !t.completed && !t.isAlternate);
     if (!nextEvent) return { count: 0, eventName: null };
-    const start = nextEvent.start_date || nextEvent.startDate;
-    if (!start) return { count: 0, eventName: null };
-    const sd = new Date(start + 'T12:00:00Z');
-    const now = new Date();
-    const daysToStart = (sd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    // Same resolution as tournamentsReadyToComplete above — this used to reach
+    // for the raw ordering field FIRST, so for any event whose start_date was
+    // back-filled synthetically the "within 7 days" test was measured against a
+    // date the tournament is not played on. And it measured from the machine's
+    // local clock while every other window in the app measures from ET.
+    const sd = resolveTournamentStart(nextEvent);
+    if (!sd) return { count: 0, eventName: null };
+    const daysToStart = (sd.getTime() - getETNow().getTime()) / (1000 * 60 * 60 * 24);
     if (daysToStart < -1 || daysToStart > 7) return { count: 0, eventName: null };
     const missing = (teams || []).filter(t => !Array.isArray(t.lineup) || t.lineup.length === 0).length;
     return { count: missing, eventName: nextEvent.name };

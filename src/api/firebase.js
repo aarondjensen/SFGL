@@ -150,7 +150,40 @@ async function getPlayerIndex() {
 
 function invalidateAliasCache() { _aliasCache = null; _playerIndexCache = null; }
 
+// Record doc IDs this session has just created or written, so the index stays
+// truthful for the rest of the session.
+//
+// Without this, the index was a snapshot of the collection as it looked the
+// first time anything asked — and upsertMany CREATES documents. The sequence
+// that reintroduced the duplicate-player bug the index exists to prevent:
+//
+//   1. an OWGR sync upserts 'Nicolas Echavarria', creating the doc
+//   2. the index still holds the pre-sync ID list, which has no Echavarria
+//   3. the headshot flow later upserts 'Nico Echavarria' in the same session
+//   4. resolve() misses, so a SECOND doc is minted for the same golfer
+//
+// Extending beats invalidating: dropping the cache would make the next upsert
+// re-read all ~700 docs, and we already know exactly which names were written.
+// A null cache is left null — it will be built from the collection, which by
+// then includes these writes anyway.
+function noteWrittenPlayerDocs(names) {
+  if (!_playerIndexCache || !names.length) return;
+  const known = _playerIndexCache.toArray();
+  const fresh = names.filter(n => !_playerIndexCache.has(n));
+  if (fresh.length) _playerIndexCache = new NameSet([...known, ...fresh]);
+}
+
 // ── Internal helpers ─────────────────────────────────────────────────────────
+
+// Firestore rejects an undefined field value outright ("Unsupported field
+// value: undefined"). Where a write REPLACES a document, an undefined value and
+// an absent key mean the same thing, so dropping it is exact — not lossy.
+// Merge writes are different and use deleteField() instead; see teamsApi.update.
+const _withoutUndefined = (obj) => {
+  const out = {};
+  for (const [k, v] of Object.entries(obj || {})) if (v !== undefined) out[k] = v;
+  return out;
+};
 
 /** Return all documents from a collection as an array of plain objects. */
 async function _getAll(collectionName) {
@@ -389,11 +422,13 @@ export const playersApi = {
     //   2. identity match on an existing doc ID  — automatic
     //   3. the static alias groups — for a player with no doc yet
     const [aliasMap, playerIndex] = await Promise.all([getAliasMap(), getPlayerIndex()]);
+    const written = [];
     const BATCH_SIZE = 499;
     for (let i = 0; i < players.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       players.slice(i, i + BATCH_SIZE).forEach(p => {
         const canonicalName = aliasMap[p.name] || playerIndex.resolve(p.name) || resolveAlias(p.name);
+        written.push(canonicalName);
         const row = { name: canonicalName };
         if (p.worldRank   !== undefined) row.world_rank   = p.worldRank ?? null;
         if (p.espnId      !== undefined && p.espnId !== null) row.espn_id = p.espnId;
@@ -409,6 +444,10 @@ export const playersApi = {
       doc(db, 'app_metadata', 'players_last_updated'),
       { key: 'players_last_updated', value: Date.now().toString() }
     );
+    // Docs this call may have created are now known to the index — see
+    // noteWrittenPlayerDocs. Skipping this is what let a second upsert in the
+    // same session mint a duplicate under an alternate spelling.
+    noteWrittenPlayerDocs(written);
     return players;
   },
 
@@ -432,15 +471,20 @@ export const playersApi = {
     // threw a ReferenceError before writing anything (i.e. the admin
     // "Rebuild Headshots" repair path silently never worked).
     const [aliasMap, playerIndex] = await Promise.all([getAliasMap(), getPlayerIndex()]);
+    const written = [];
     const BATCH_SIZE = 250;
     for (let i = 0; i < names.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       names.slice(i, i + BATCH_SIZE).forEach(name => {
         const canonicalName = aliasMap[name] || playerIndex.resolve(name) || resolveAlias(name);
+        written.push(canonicalName);
         batch.set(doc(db, 'players', canonicalName), { espn_id: null }, { merge: true });
       });
       await batch.commit();
     }
+    // set+merge on an unresolved name creates a doc here too, so the index has
+    // to hear about it for the same reason it does in upsertMany.
+    noteWrittenPlayerDocs(written);
   },
 
   // Add an alias to a player doc — e.g. addAlias('Nicolas Echavarria', 'Nico Echavarria')
@@ -645,7 +689,11 @@ export const teamsApi = {
       const batch = writeBatch(db);
       teams.slice(i, i + BATCH_SIZE).forEach(team => {
         const id = team.id || team.name;
-        batch.set(doc(db, 'teams', id), { ...team });
+        // set() without merge replaces the document, so a key the caller
+        // dropped is already gone. An undefined VALUE means the same thing —
+        // and Firestore rejects it outright — so it is stripped rather than
+        // sent.
+        batch.set(doc(db, 'teams', id), _withoutUndefined(team));
       });
       await batch.commit();
     }
@@ -681,7 +729,17 @@ export const teamsApi = {
   // set+merge (not updateDoc) so a patch also succeeds if the doc is missing
   // (e.g. a team created on another device that hasn't synced here yet).
   async update(teamId, updates) {
-    await setDoc(doc(db, 'teams', teamId), updates, { merge: true });
+    // A merge write cannot express "remove this field" by omission — omission
+    // is exactly what merge preserves. The app clears a field by setting it to
+    // undefined (`backup: picked || undefined`), which Firestore refuses as a
+    // value, so it is translated to the deleteField sentinel that means it.
+    // Before this, useLeague's change detection dropped those keys before they
+    // reached here, so the clear only ever happened in local state.
+    const payload = {};
+    for (const [k, v] of Object.entries(updates || {})) {
+      payload[k] = v === undefined ? deleteField() : v;
+    }
+    await setDoc(doc(db, 'teams', teamId), payload, { merge: true });
     return updates;
   },
 
@@ -1082,6 +1140,32 @@ export const settingsApi = {
   async set(key, value) {
     await setDoc(doc(db, 'league_settings', key), { key, value });
     return [{ key, value }];
+  },
+
+  /**
+   * Write several settings in one atomic batch.
+   *
+   * useLeague used to loop `await set(key, value)` over the WHOLE settings
+   * object on every save — roughly twenty sequential round trips to change one
+   * checkbox, each one landing separately. The collection has a live
+   * onSnapshot subscription, so every one of those writes also emitted a fresh
+   * settings object to the whole app: twenty renders, and twenty chances for a
+   * reader to observe a half-applied save. A batch commits once and emits once.
+   *
+   * @param {Object} entries {key: value} — only the keys you intend to write
+   */
+  async setMany(entries) {
+    const pairs = Object.entries(entries || {});
+    if (!pairs.length) return [];
+    const BATCH_SIZE = 499;
+    for (let i = 0; i < pairs.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      pairs.slice(i, i + BATCH_SIZE).forEach(([key, value]) => {
+        batch.set(doc(db, 'league_settings', key), { key, value });
+      });
+      await batch.commit();
+    }
+    return pairs.map(([key, value]) => ({ key, value }));
   },
 
   async getAll() {
