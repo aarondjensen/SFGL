@@ -14,7 +14,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts } from '../../theme.js';
+import { colors, fonts, blue, green, white, amber } from '../../theme.js';
 import { M, disabledBtn } from './adminStyles';
 import { DAY_NAMES, fmtETTime } from '../../utils/sharedHelpers';
 import { cronFetch } from '../../api/cronApi';
@@ -418,7 +418,7 @@ export const SeasonSettingsPanel = ({
             appearance: 'textfield',
             MozAppearance: 'textfield',
             border: isEditing
-              ? '1px solid rgba(220,170,60,0.5)'
+              ? `1px solid ${amber(0.5)}`
               : `1px solid ${colors.borderSubtle}`,
           }}
         />
@@ -443,8 +443,8 @@ export const SeasonSettingsPanel = ({
           width: '100%',
           textAlign: 'left',
           padding: '10px 12px',
-          background: 'rgba(255,255,255,0.02)',
-          border: `1px solid ${on ? 'rgba(80,195,120,0.45)' : colors.borderSubtle}`,
+          background: white(0.02),
+          border: `1px solid ${on ? green(0.45) : colors.borderSubtle}`,
           borderRadius: 6,
           cursor: 'pointer',
           transition: 'background 0.15s, border-color 0.15s',
@@ -457,7 +457,7 @@ export const SeasonSettingsPanel = ({
           height: 22,
           borderRadius: 999,
           flexShrink: 0,
-          background: on ? 'rgba(80,195,120,0.55)' : 'rgba(255,255,255,0.12)',
+          background: on ? green(0.55) : white(0.12),
           transition: 'background 0.15s',
         }}>
           <span style={{
@@ -721,15 +721,15 @@ export const SeasonSettingsPanel = ({
           of a tinted card with bold strong tag. */}
       <div style={{
         padding: '10px 12px',
-        background: 'rgba(100,160,255,0.04)',
-        border: '1px solid rgba(100,160,255,0.2)',
+        background: blue(0.04),
+        border: `1px solid ${blue(0.2)}`,
         borderRadius: 6,
         fontFamily: fonts.sans,
         fontSize: 11,
         color: colors.textSecondary,
         lineHeight: 1.55,
       }}>
-        <strong style={{ color: 'rgba(100,160,255,0.95)' }}>How timing works:</strong> the times above act as gates inside the scheduled cron job — cron-job.org must be pinging the SFGL URL at-or-before your configured time for the action to fire then. If the ping schedule is sparser, the action runs at the next ping after your configured time rather than exactly at it.
+        <strong style={{ color: blue(0.95) }}>How timing works:</strong> the times above act as gates inside the scheduled cron job — cron-job.org must be pinging the SFGL URL at-or-before your configured time for the action to fire then. If the ping schedule is sparser, the action runs at the next ping after your configured time rather than exactly at it.
       </div>
     </div>
   );

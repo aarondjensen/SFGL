@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { X, Check, AlertCircle, Clock } from 'lucide-react';
-import { theme, colors, fonts } from '../theme.js';
+import { theme, colors, fonts, blue, greenMuted, steel, black, scrim } from '../theme.js';
 
 const DialogContext = createContext(null);
 export const useDialog = () => useContext(DialogContext);
@@ -51,10 +51,10 @@ export const DialogProvider = ({ children }) => {
 
   // Toast accent colors
   const toastAccent = (type) => {
-    if (type === 'success') return { bg: 'rgba(40,100,60,0.95)',  border: 'rgba(80,180,120,0.4)',  icon: colors.success };
+    if (type === 'success') return { bg: 'rgba(40,100,60,0.95)',  border: greenMuted(0.4),  icon: colors.success };
     if (type === 'error')   return { bg: 'rgba(100,30,30,0.95)',  border: 'rgba(200,70,70,0.4)',   icon: colors.danger  };
     if (type === 'warning') return { bg: 'rgba(100,80,20,0.95)',  border: 'rgba(200,170,60,0.4)',  icon: colors.warning };
-    return                         { bg: 'rgba(20,40,90,0.95)',   border: 'rgba(100,140,220,0.4)', icon: 'rgba(100,160,255,0.9)' };
+    return                         { bg: 'rgba(20,40,90,0.95)',   border: steel(0.4), icon: blue(0.9) };
   };
 
   const ToastIcon = (type) => type === 'success' ? Check : type === 'error' ? AlertCircle : Clock;
@@ -99,7 +99,7 @@ export const DialogProvider = ({ children }) => {
                   display: 'flex', alignItems: 'center', gap: 10,
                   maxWidth: 340,
                   pointerEvents: 'auto',
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                  boxShadow: `0 8px 32px ${black(0.4)}`,
                   backdropFilter: 'blur(8px)',
                   animation: stackPos === 'top' ? 'sfgl-slideDown 0.25s ease-out' : 'sfgl-slideUp 0.25s ease-out',
                 }}>
@@ -127,7 +127,7 @@ export const DialogProvider = ({ children }) => {
         <div
           style={{
             position: 'fixed', inset: 0,
-            background: 'rgba(5,10,25,0.82)', backdropFilter: 'blur(4px)',
+            background: scrim(0.82), backdropFilter: 'blur(4px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             zIndex: 100, padding: 16,
           }}
@@ -142,7 +142,7 @@ export const DialogProvider = ({ children }) => {
                 colors.border
               }`,
               borderRadius: 3,
-              boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+              boxShadow: `0 24px 80px ${black(0.6)}`,
               maxWidth: 420, width: '100%',
               padding: '24px 26px',
               animation: 'sfgl-scaleIn 0.18s ease-out',

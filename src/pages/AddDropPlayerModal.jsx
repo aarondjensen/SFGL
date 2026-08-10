@@ -8,7 +8,7 @@ import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, buildEffec
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
-import { theme, colors, fonts } from '../theme.js';
+import { theme, colors, fonts, amber, gold, green, greenMuted, red, white, blueBright, scrim } from '../theme.js';
 import { LIV_GOLF_ROSTER } from '../constants';
 import { useModalBehavior } from '../utils/modalUtils';
 
@@ -16,26 +16,26 @@ import { useModalBehavior } from '../utils/modalUtils';
 const LIV_PLAYERS = new Set(LIV_GOLF_ROSTER);
 
 const accentColor   = (waiver) => waiver ? colors.warning              : colors.earningsGreen;
-const accentBg      = (waiver) => waiver ? 'rgba(220,170,60,0.08)'      : 'rgba(80,195,120,0.08)';
-const accentBorder  = (waiver) => waiver ? 'rgba(220,170,60,0.35)'      : 'rgba(80,195,120,0.35)';
+const accentBg      = (waiver) => waiver ? amber(0.08)      : green(0.08);
+const accentBorder  = (waiver) => waiver ? amber(0.35)      : green(0.35);
 
 // ── "Playing in current tourney" toggle — mirrors the All / ⛳ slider in
 // RostersView. Boolean-backed: value=true means "field only". ─────────────────
 const FieldToggle = ({ value, setter, disabled = false, width = 84 }) => (
   <div style={{ opacity: disabled ? 0.3 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity 0.18s', flexShrink: 0 }}>
-    <div style={{ display: 'flex', gap: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 10, padding: 3, width }}>
-      {[['all', 'All', 'rgba(100,180,255,0.95)'], ['field', '⛳', 'rgba(80,180,120,0.95)']].map(([val, label, color]) => {
+    <div style={{ display: 'flex', gap: 2, background: white(0.04), border: `1px solid ${white(0.10)}`, borderRadius: 10, padding: 3, width }}>
+      {[['all', 'All', blueBright(0.95)], ['field', '⛳', greenMuted(0.95)]].map(([val, label, color]) => {
         const active = (value ? 'field' : 'all') === val;
         return (
           <button key={val} type="button" onClick={() => setter(val === 'field')} style={{
             flex: 1, padding: '8px 0', borderRadius: 8,
-            background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
-            border: active ? '1px solid rgba(255,255,255,0.18)' : '1px solid transparent',
+            background: active ? white(0.08) : 'transparent',
+            border: active ? `1px solid ${white(0.18)}` : '1px solid transparent',
             fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
             color: active ? color : colors.textMuted,
             cursor: 'pointer', transition: 'all 0.15s',
           }}
-          onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+          onMouseEnter={e => { if (!active) e.currentTarget.style.background = white(0.05); }}
           onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
           >{label}</button>
         );
@@ -444,11 +444,11 @@ export const AddDropPlayerModal = ({
         padding: compact ? '7px 16px' : '12px 22px',
         borderRadius: 6,
         border: `1px solid ${canConfirm
-          ? (isWaiverMode ? 'rgba(220,170,60,0.45)' : 'rgba(80,195,120,0.45)')
+          ? (isWaiverMode ? amber(0.45) : green(0.45))
           : colors.borderSubtle}`,
         background: canConfirm
-          ? (isWaiverMode ? 'rgba(220,170,60,0.14)' : 'rgba(80,195,120,0.14)')
-          : 'rgba(255,255,255,0.03)',
+          ? (isWaiverMode ? amber(0.14) : green(0.14))
+          : white(0.03),
         color: canConfirm ? accentColor(isWaiverMode) : colors.textMuted,
         cursor: canConfirm && !saving ? 'pointer' : 'not-allowed',
         transition: 'background 0.15s, border-color 0.15s, transform 0.1s',
@@ -467,7 +467,7 @@ export const AddDropPlayerModal = ({
   return createPortal(
     <div style={{
       position: 'fixed', inset: 0,
-      background: 'rgba(5,10,25,0.85)', backdropFilter: 'blur(4px)',
+      background: scrim(0.85), backdropFilter: 'blur(4px)',
       display: 'flex',
       alignItems: isMobile ? 'flex-end' : 'center',
       justifyContent: 'center',
@@ -544,8 +544,8 @@ export const AddDropPlayerModal = ({
             {/* Adding tile */}
             <div style={{
               flex: 1, padding: '10px 12px',
-              background: 'rgba(80,195,120,0.08)',
-              border: '1px solid rgba(80,195,120,0.3)',
+              background: green(0.08),
+              border: `1px solid ${green(0.3)}`,
               borderRadius: 6,
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
@@ -561,19 +561,19 @@ export const AddDropPlayerModal = ({
                 onClick={() => { setSelectedPlayerToAdd(null); setSelectedPlayerToDrop(null); }}
                 title="Remove selection"
                 style={{
-                  background: 'rgba(220,80,80,0.08)',
-                  border: `1px solid rgba(220,80,80,0.3)`,
+                  background: red(0.08),
+                  border: `1px solid ${red(0.3)}`,
                   borderRadius: 6,
                   width: 26, height: 26,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer',
-                  color: 'rgba(230,90,90,0.8)',
+                  color: red(0.8),
                   fontSize: 13, lineHeight: 1, fontWeight: 700,
                   flexShrink: 0,
                   transition: 'all 0.15s',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,80,80,0.18)'; e.currentTarget.style.borderColor = 'rgba(220,80,80,0.5)'; e.currentTarget.style.color = 'rgba(240,100,100,1)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,80,80,0.08)'; e.currentTarget.style.borderColor = 'rgba(220,80,80,0.3)'; e.currentTarget.style.color = 'rgba(230,90,90,0.8)'; }}
+                onMouseEnter={e => { e.currentTarget.style.background = red(0.18); e.currentTarget.style.borderColor = red(0.5); e.currentTarget.style.color = 'rgba(240,100,100,1)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = red(0.08); e.currentTarget.style.borderColor = red(0.3); e.currentTarget.style.color = red(0.8); }}
               >
                 ✕
               </button>
@@ -583,8 +583,8 @@ export const AddDropPlayerModal = ({
             {rosterFull && (
               <div style={{
                 flex: 1, padding: '10px 12px',
-                background: selectedPlayerToDrop ? 'rgba(220,80,80,0.06)' : 'rgba(255,255,255,0.02)',
-                border: `1px solid ${selectedPlayerToDrop ? 'rgba(220,80,80,0.3)' : colors.borderSubtle}`,
+                background: selectedPlayerToDrop ? red(0.06) : white(0.02),
+                border: `1px solid ${selectedPlayerToDrop ? red(0.3) : colors.borderSubtle}`,
                 borderRadius: 6,
                 display: 'flex', alignItems: 'center', gap: 8,
               }}>
@@ -601,11 +601,11 @@ export const AddDropPlayerModal = ({
                     onClick={() => setSelectedPlayerToDrop(null)}
                     title="Clear drop selection"
                     style={{
-                      background: 'rgba(220,80,80,0.08)',
-                      border: '1px solid rgba(220,80,80,0.3)',
+                      background: red(0.08),
+                      border: `1px solid ${red(0.3)}`,
                       borderRadius: 6, width: 26, height: 26,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      cursor: 'pointer', color: 'rgba(230,90,90,0.8)',
+                      cursor: 'pointer', color: red(0.8),
                       fontSize: 13, lineHeight: 1, fontWeight: 700, flexShrink: 0,
                     }}
                   >✕</button>
@@ -642,18 +642,18 @@ export const AddDropPlayerModal = ({
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '12px 14px', marginBottom: 6, borderRadius: 6,
-                      background: isSelected ? 'rgba(220,80,80,0.08)' : 'rgba(255,255,255,0.02)',
-                      border: `1px solid ${isSelected ? 'rgba(220,80,80,0.35)' : colors.borderSubtle}`,
+                      background: isSelected ? red(0.08) : white(0.02),
+                      border: `1px solid ${isSelected ? red(0.35) : colors.borderSubtle}`,
                       cursor: 'pointer',
                       transition: 'all 0.15s',
                     }}
-                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(220,80,80,0.04)'; }}
-                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = red(0.04); }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = white(0.02); }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <MinusCircle style={{
                         width: 15, height: 15, flexShrink: 0,
-                        color: isSelected ? 'rgba(240,90,90,0.95)' : 'rgba(230,85,85,0.6)',
+                        color: isSelected ? 'rgba(240,90,90,0.95)' : red(0.6),
                       }} />
                       <span style={{
                         fontFamily: fonts.sans, fontSize: 13,
@@ -670,8 +670,8 @@ export const AddDropPlayerModal = ({
                         <span style={{
                           fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
                           letterSpacing: 0.6, textTransform: 'uppercase',
-                          color: 'rgba(220,170,60,0.85)',
-                          border: '1px solid rgba(220,170,60,0.35)',
+                          color: amber(0.85),
+                          border: `1px solid ${amber(0.35)}`,
                           borderRadius: 6, padding: '2px 6px', flexShrink: 0,
                         }}>
                           in waiver
@@ -694,7 +694,7 @@ export const AddDropPlayerModal = ({
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '10px 14px', marginBottom: 16,
-              background: 'rgba(255,255,255,0.02)', border: `1px solid ${colors.borderSubtle}`, borderRadius: 6,
+              background: white(0.02), border: `1px solid ${colors.borderSubtle}`, borderRadius: 6,
               fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary,
             }}>
               <span>Fee: <span style={{ color: '#f5c518' }}>${fee.toLocaleString()}</span> · <span style={{ color: accentColor(isWaiverMode) }}>{isWaiverMode ? 'Waiver (pending)' : 'Immediate'}</span></span>
@@ -714,7 +714,7 @@ export const AddDropPlayerModal = ({
                 flex: 1,
                 minWidth: 0,
                 padding: '10px 12px',
-                background: 'rgba(255,255,255,0.02)',
+                background: white(0.02),
                 border: `1px solid ${colors.borderSubtle}`,
                 borderRadius: 6,
                 color: colors.textPrimary,
@@ -722,8 +722,8 @@ export const AddDropPlayerModal = ({
                 fontSize: 16, // prevent iOS zoom
                 transition: 'background 0.15s, border-color 0.15s',
               }}
-              onFocus={e => { e.target.style.borderColor = 'rgba(255,255,255,0.25)'; e.target.style.background = 'rgba(255,255,255,0.04)'; }}
-              onBlur={e => { e.target.style.borderColor = colors.borderSubtle; e.target.style.background = 'rgba(255,255,255,0.02)'; }}
+              onFocus={e => { e.target.style.borderColor = white(0.25); e.target.style.background = white(0.04); }}
+              onBlur={e => { e.target.style.borderColor = colors.borderSubtle; e.target.style.background = white(0.02); }}
             />
             <FieldToggle value={fieldOnly} setter={setFieldOnly} disabled={!tournamentField?.size} />
           </div>
@@ -748,14 +748,14 @@ export const AddDropPlayerModal = ({
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '12px 14px', marginBottom: 6, borderRadius: 6,
-                    background: isCurrentlySelected ? accentBg(isWaiverMode) : 'rgba(255,255,255,0.02)',
+                    background: isCurrentlySelected ? accentBg(isWaiverMode) : white(0.02),
                     border: `1px solid ${isCurrentlySelected ? accentBorder(isWaiverMode) : colors.borderSubtle}`,
                     transition: 'all 0.15s',
                     cursor: (isLimbo || isRostered || tournamentIsLocked) ? 'default' : 'pointer',
                   }}
                   onClick={() => { if (!isLimbo && !isRostered && !tournamentIsLocked) selectPlayerToAdd(player); }}
-                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; } }}
-                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; } }}
+                  onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = white(0.04); } }}
+                  onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = white(0.02); } }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <img
@@ -790,8 +790,8 @@ export const AddDropPlayerModal = ({
                       fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
                       padding: '5px 10px', borderRadius: 6,
                       letterSpacing: '0.5px',
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid rgba(255,255,255,0.12)',
+                      background: white(0.04),
+                      border: `1px solid ${white(0.12)}`,
                       color: colors.textSecondary,
                       flexShrink: 0,
                     }}>
@@ -802,8 +802,8 @@ export const AddDropPlayerModal = ({
                       fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
                       padding: '5px 0', borderRadius: 6,
                       width: 96, textAlign: 'center', flexShrink: 0,
-                      background: 'rgba(245,197,24,0.08)',
-                      border: '1px solid rgba(245,197,24,0.3)',
+                      background: gold(0.08),
+                      border: `1px solid ${gold(0.3)}`,
                       color: colors.textGold,
                       letterSpacing: '0.3px',
                       display: 'inline-block',
@@ -815,7 +815,7 @@ export const AddDropPlayerModal = ({
                       fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
                       padding: '5px 0', borderRadius: 6,
                       width: 96, textAlign: 'center', flexShrink: 0,
-                      background: 'rgba(255,255,255,0.03)',
+                      background: white(0.03),
                       border: `1px solid ${colors.borderSubtle}`,
                       color: colors.textMuted,
                       letterSpacing: '0.3px',
@@ -831,8 +831,8 @@ export const AddDropPlayerModal = ({
                         padding: '6px 0', borderRadius: 6, cursor: 'pointer',
                         width: 96, textAlign: 'center', flexShrink: 0,
                         transition: 'all 0.15s',
-                        background: isCurrentlySelected ? 'rgba(80,195,120,0.2)' : 'rgba(80,195,120,0.08)',
-                        border: `1px solid ${isCurrentlySelected ? 'rgba(80,195,120,0.6)' : 'rgba(80,195,120,0.3)'}`,
+                        background: isCurrentlySelected ? green(0.2) : green(0.08),
+                        border: `1px solid ${isCurrentlySelected ? green(0.6) : green(0.3)}`,
                         color: colors.earningsGreen,
                       }}
                     >
@@ -850,7 +850,7 @@ export const AddDropPlayerModal = ({
           <div style={{
             padding: '10px 18px',
             borderTop: `1px solid ${colors.borderSubtle}`,
-            background: 'rgba(220,80,80,0.04)',
+            background: red(0.04),
             flexShrink: 0,
             fontFamily: fonts.sans, fontSize: 11, color: colors.danger,
             textAlign: 'center',
@@ -863,7 +863,7 @@ export const AddDropPlayerModal = ({
         {needsDrop && selectedPlayerToDrop && (
           <div style={{
             padding: '10px 18px', borderTop: `1px solid ${colors.borderSubtle}`,
-            background: 'rgba(220,80,80,0.04)', flexShrink: 0,
+            background: red(0.04), flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             fontFamily: fonts.sans, fontSize: 11,
           }}>

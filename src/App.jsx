@@ -50,7 +50,7 @@ const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 
 import { useLeague }       from './hooks';
-import { fontSize } from './theme.js';
+import { fontSize, gold, white, black, brass } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS } from './constants';
 import { SEASON } from '../api/_league.js';
 import { tournamentResultsApi } from './api/firebase';
@@ -65,7 +65,7 @@ const LazyFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
     <div style={{
       fontSize: fontSize.sm, letterSpacing: 3, textTransform: 'uppercase',
-      color: 'rgba(255,255,255,0.2)', fontWeight: 400,
+      color: white(0.2), fontWeight: 400,
       fontFamily: "'Raleway', system-ui, sans-serif",
     }}>
       Loading…
@@ -81,13 +81,13 @@ const LazyFallback = () => (
 const LoadingScreen = () => (
   <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, background: '#111d2e', fontFamily: "'Raleway', system-ui, sans-serif" }}>
     {/* Loading-screen animations live in app-global.css (Wave 1 cleanup) */}
-    <div className="sfgl-logo-load" style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: 'rgba(255,255,255,0.93)', userSelect: 'none' }}>SFGL</div>
+    <div className="sfgl-logo-load" style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: white(0.93), userSelect: 'none' }}>SFGL</div>
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
       <span className="sfgl-dot" />
       <span className="sfgl-dot" />
       <span className="sfgl-dot" />
     </div>
-    <div style={{ fontSize: fontSize.sm, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', fontWeight: 400 }}>Loading {SEASON} League</div>
+    <div style={{ fontSize: fontSize.sm, letterSpacing: 3, textTransform: 'uppercase', color: white(0.2), fontWeight: 400 }}>Loading {SEASON} League</div>
   </div>
 );
 
@@ -116,7 +116,7 @@ const MORE_MENU_ITEM_STYLE = {
   background: 'transparent',
   border: 'none',
   borderRadius: 7,
-  color: 'rgba(255,255,255,0.88)',
+  color: white(0.88),
   fontFamily: "'Raleway', system-ui, sans-serif",
   fontSize: 15,
   fontWeight: 500,
@@ -686,8 +686,8 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           : 'rgba(8, 18, 40, 0.97)',
         backdropFilter: 'blur(12px)',
         borderBottom: isCommissioner
-          ? '1px solid rgba(245,197,24,0.55)'
-          : '1px solid rgba(180,160,100,0.15)',
+          ? `1px solid ${gold(0.55)}`
+          : `1px solid ${brass(0.15)}`,
         transition: 'background 0.25s, border-color 0.25s',
       }}>
 
@@ -697,7 +697,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
 
               {/* SFGL wordmark — the centered anchor */}
-              <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: 'rgba(255,255,255,0.93)', whiteSpace: 'nowrap', userSelect: 'none' }}>SFGL</span>
+              <span style={{ fontFamily: "'Raleway', system-ui, sans-serif", fontSize: fontSize.xl, fontWeight: 600, letterSpacing: 5, color: white(0.93), whiteSpace: 'nowrap', userSelect: 'none' }}>SFGL</span>
 
               {/* Current tournament — centered beneath the wordmark; wraps centered for long names */}
               {currentTournament && (
@@ -710,7 +710,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
 
             {/* Sync indicator — absolutely placed so it never nudges the centered stack */}
             {isSyncing && (
-              <span style={{ position: 'absolute', top: 16, right: 16, fontSize: fontSize.sm, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }} className="sfgl-text-pulse">
+              <span style={{ position: 'absolute', top: 16, right: 16, fontSize: fontSize.sm, color: white(0.25), letterSpacing: 1 }} className="sfgl-text-pulse">
                 Saving…
               </span>
             )}
@@ -831,8 +831,8 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
           borderTop: isCommissioner
-            ? '1px solid rgba(245,197,24,0.55)'
-            : '1px solid rgba(180,160,100,0.15)',
+            ? `1px solid ${gold(0.55)}`
+            : `1px solid ${brass(0.15)}`,
           paddingTop: 6,
           paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
           transition: 'background 0.25s, border-color 0.25s',
@@ -876,8 +876,8 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                   background: 'transparent',
                   borderRadius: 6,
                   color: isActive
-                    ? (tab.id === 'admin' ? '#f5c518' : 'rgba(255,255,255,0.98)')
-                    : 'rgba(255,255,255,0.55)',
+                    ? (tab.id === 'admin' ? '#f5c518' : white(0.98))
+                    : white(0.55),
                   cursor: 'pointer',
                   transition: 'color 0.18s',
                 }}
@@ -911,7 +911,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                 minHeight: 48,
                 background: 'transparent',
                 borderRadius: 6,
-                color: showMoreMenu ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.55)',
+                color: showMoreMenu ? white(0.98) : white(0.55),
                 cursor: 'pointer',
                 transition: 'color 0.18s',
               }}
@@ -947,9 +947,9 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
               background: 'rgba(12, 24, 48, 0.98)',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
-              border: '1px solid rgba(180,160,100,0.22)',
+              border: `1px solid ${brass(0.22)}`,
               borderRadius: 10,
-              boxShadow: '0 8px 28px rgba(0,0,0,0.45)',
+              boxShadow: `0 8px 28px ${black(0.45)}`,
               overflow: 'hidden',
               padding: 4,
             }}
@@ -1015,9 +1015,9 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                     width: 40,
                     height: 24,
                     padding: 0,
-                    border: '1px solid ' + (isCommissioner ? 'rgba(245,197,24,0.6)' : 'rgba(255,255,255,0.18)'),
+                    border: '1px solid ' + (isCommissioner ? gold(0.6) : white(0.18)),
                     borderRadius: 999,
-                    background: isCommissioner ? 'rgba(245,197,24,0.28)' : 'rgba(255,255,255,0.06)',
+                    background: isCommissioner ? gold(0.28) : white(0.06),
                     cursor: 'pointer',
                     position: 'relative',
                     transition: 'background 0.18s, border-color 0.18s',
@@ -1033,9 +1033,9 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
                       width: 18,
                       height: 18,
                       borderRadius: '50%',
-                      background: isCommissioner ? '#f5c518' : 'rgba(255,255,255,0.65)',
+                      background: isCommissioner ? '#f5c518' : white(0.65),
                       transition: 'left 0.18s, background 0.18s',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
+                      boxShadow: `0 1px 2px ${black(0.4)}`,
                     }}
                   />
                 </button>

@@ -14,7 +14,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, LogOut } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
-import { colors, fonts } from '../theme.js';
+import { colors, fonts, gold, white, black, red } from '../theme.js';
 import { useModalBehavior } from '../utils/modalUtils';
 import { linkAppleAccount, linkGoogleAccount, getLinkedProviders } from '../api/authApi';
 import { teamsApi } from '../api/firebase';
@@ -136,20 +136,20 @@ export const AccountModal = ({
         onClick={e => e.stopPropagation()}
         style={{
           background: 'linear-gradient(180deg, #14233f 0%, #0f1b31 100%)',
-          border: '1px solid rgba(255,255,255,0.07)',
+          border: `1px solid ${white(0.07)}`,
           borderRadius: isMobile ? '22px 22px 0 0' : 18,
           width: '100%', maxWidth: isMobile ? '100%' : 440,
           maxHeight: isMobile ? '92vh' : '84vh',
           display: 'flex', flexDirection: 'column',
           overflow: 'hidden',
-          boxShadow: '0 -8px 40px rgba(0,0,0,0.5)',
+          boxShadow: `0 -8px 40px ${black(0.5)}`,
           paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0,
           animation: 'sfglSheetUp 0.3s cubic-bezier(0.32,0.72,0,1)',
         }}
       >
         {isMobile && (
           <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8, flexShrink: 0 }}>
-            <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.18)' }} />
+            <div style={{ width: 40, height: 5, borderRadius: 3, background: white(0.18) }} />
           </div>
         )}
 
@@ -177,7 +177,7 @@ export const AccountModal = ({
             aria-label="Close"
             style={{
               flexShrink: 0, width: 34, height: 34, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer',
+              background: white(0.06), border: 'none', cursor: 'pointer',
               color: colors.textSecondary,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
@@ -202,8 +202,8 @@ export const AccountModal = ({
                 style={{
                   width: '100%', boxSizing: 'border-box',
                   padding: '12px 14px', borderRadius: 12,
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: white(0.05),
+                  border: `1px solid ${white(0.12)}`,
                   color: colors.textPrimary,
                   fontFamily: fonts.sans, fontSize: 15, fontWeight: 600,
                 }}
@@ -213,8 +213,8 @@ export const AccountModal = ({
                 disabled={!nameChanged || savingName}
                 style={{
                   marginTop: 8, padding: '9px 16px', borderRadius: 10,
-                  background: nameChanged ? 'rgba(245,197,24,0.16)' : 'rgba(255,255,255,0.05)',
-                  border: `1px solid ${nameChanged ? 'rgba(245,197,24,0.40)' : 'rgba(255,255,255,0.10)'}`,
+                  background: nameChanged ? gold(0.16) : white(0.05),
+                  border: `1px solid ${nameChanged ? gold(0.40) : white(0.10)}`,
                   color: nameChanged ? '#f5d97a' : colors.textMuted,
                   fontFamily: fonts.sans, fontSize: 14, fontWeight: 600,
                   cursor: nameChanged && !savingName ? 'pointer' : 'default',
@@ -237,8 +237,8 @@ export const AccountModal = ({
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '12px 14px',
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(255,255,255,0.08)',
+                    background: white(0.04),
+                    border: `1px solid ${white(0.08)}`,
                     borderRadius: 12,
                     marginTop: idx === 0 ? 0 : 8,
                   }}
@@ -252,8 +252,8 @@ export const AccountModal = ({
                       disabled={!!linkBusy}
                       style={{
                         padding: '7px 14px', borderRadius: 9,
-                        background: 'rgba(255,255,255,0.10)',
-                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: white(0.10),
+                        border: `1px solid ${white(0.16)}`,
                         color: colors.textPrimary,
                         fontFamily: fonts.sans, fontSize: 13, fontWeight: 600,
                         cursor: linkBusy ? 'default' : 'pointer', opacity: linkBusy ? 0.6 : 1,
@@ -278,7 +278,7 @@ export const AccountModal = ({
               width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               padding: '14px', minHeight: 50,
               background: 'rgba(200,70,70,0.10)',
-              border: '1px solid rgba(220,90,90,0.28)',
+              border: `1px solid ${red(0.28)}`,
               borderRadius: 14,
               color: 'rgba(240,140,140,0.95)',
               fontFamily: fonts.sans, fontSize: 14.5, fontWeight: 600, letterSpacing: '0.2px',

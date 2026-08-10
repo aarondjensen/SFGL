@@ -10,7 +10,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts } from '../../theme.js';
+import { colors, fonts, white, black } from '../../theme.js';
 import { sfglDataApi, playersApi, teamsApi } from '../../api/firebase';
 import { STORAGE_KEYS } from '../../constants';
 import { M, disabledBtn } from './adminStyles';
@@ -63,7 +63,7 @@ export const MergePlayersPanel = ({
     background: '#0f1d35',
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
-    boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+    boxShadow: `0 8px 24px ${black(0.5)}`,
     overflow: 'hidden',
   };
 
@@ -145,7 +145,7 @@ export const MergePlayersPanel = ({
                 key={n}
                 onClick={() => { setSelectedPlayer(n); setSearch(n); }}
                 style={oStyle}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
+                onMouseEnter={e => e.currentTarget.style.background = white(0.07)}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
                 {n}

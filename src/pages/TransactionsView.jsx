@@ -6,7 +6,7 @@ import { TeamName } from '../components/TeamName';
 import { buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament,
          getSeasonFeesForTeam, getSwingFeesForTeam, getSwingPot,
          effectiveTransactionFee, txBelongsToTeam, resolveTxTeam } from '../utils/sharedHelpers';
-import { theme, colors, fonts, getSwingColor, SWINGS } from '../theme.js';
+import { theme, colors, fonts, getSwingColor, SWINGS, blue, green, greenMuted, red, white, scrim } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 import { AddTransactionModal } from './AddTransactionModal';
 
@@ -145,20 +145,20 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
   return (
     <div style={{
       position: 'fixed', inset: 0,
-      background: 'rgba(5,10,25,0.85)', backdropFilter: 'blur(4px)',
+      background: scrim(0.85), backdropFilter: 'blur(4px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: 16, zIndex: 60,
     }}>
       <div style={{
         background: '#0f1d35',
-        border: `2px solid rgba(100,160,255,0.5)`,
+        border: `2px solid ${blue(0.5)}`,
         borderRadius: 4, width: '100%', maxWidth: 460,
         maxHeight: '80vh', display: 'flex', flexDirection: 'column',
       }}>
         {/* Header */}
         <div style={{
           padding: '14px 18px',
-          background: 'rgba(100,160,255,0.08)',
+          background: blue(0.08),
           borderBottom: `1px solid ${colors.borderSubtle}`,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           flexShrink: 0,
@@ -232,14 +232,14 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                     onClick={() => setEditAdd(p.name)}
                     style={{
                       padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
-                      background: sel ? 'rgba(80,180,120,0.15)' : 'rgba(255,255,255,0.03)',
-                      border: `1px solid ${sel ? 'rgba(80,180,120,0.4)' : colors.borderSubtle}`,
+                      background: sel ? greenMuted(0.15) : white(0.03),
+                      border: `1px solid ${sel ? greenMuted(0.4) : colors.borderSubtle}`,
                       fontFamily: fonts.serif, fontSize: 12,
                       color: sel ? colors.success : colors.textPrimary,
                       transition: 'all 0.1s',
                     }}
-                    onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'rgba(255,255,255,0.055)'; }}
-                    onMouseLeave={e => { if (!sel) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+                    onMouseEnter={e => { if (!sel) e.currentTarget.style.background = white(0.055); }}
+                    onMouseLeave={e => { if (!sel) e.currentTarget.style.background = white(0.03); }}
                   >
                     {p.name}
                   </div>
@@ -260,7 +260,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                   onClick={() => setEditDrop('')}
                   style={{
                     padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
-                    background: !editDrop ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+                    background: !editDrop ? white(0.06) : white(0.03),
                     border: `1px solid ${!editDrop ? colors.borderInput : colors.borderSubtle}`,
                     fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
                   }}
@@ -275,14 +275,14 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                       onClick={() => setEditDrop(p.name)}
                       style={{
                         padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
-                        background: sel ? colors.dangerBg : 'rgba(255,255,255,0.03)',
+                        background: sel ? colors.dangerBg : white(0.03),
                         border: `1px solid ${sel ? colors.dangerBorder : colors.borderSubtle}`,
                         fontFamily: fonts.serif, fontSize: 12,
                         color: sel ? colors.danger : colors.textPrimary,
                         transition: 'all 0.1s',
                       }}
                       onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'rgba(180,60,60,0.07)'; }}
-                      onMouseLeave={e => { if (!sel) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+                      onMouseLeave={e => { if (!sel) e.currentTarget.style.background = white(0.03); }}
                     >
                       {p.name}
                     </div>
@@ -306,8 +306,8 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
             disabled={saving || !canSave}
             style={{
               ...theme.btnPrimary, flex: 2, padding: '9px 0',
-              background: canSave ? 'rgba(100,160,255,0.18)' : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${canSave ? 'rgba(100,160,255,0.45)' : colors.borderSubtle}`,
+              background: canSave ? blue(0.18) : white(0.04),
+              border: `1px solid ${canSave ? blue(0.45) : colors.borderSubtle}`,
               color: canSave ? 'rgba(150,190,255,0.9)' : colors.textMuted,
               cursor: canSave && !saving ? 'pointer' : 'not-allowed',
             }}
@@ -600,7 +600,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                 return (
                   <div key={team.teamId} style={{
                     flex: 1,
-                    background: 'rgba(255,255,255,0.03)',
+                    background: white(0.03),
                     border: `1px solid ${colors.borderSubtle}`,
                     borderRadius: 10, padding: '8px 6px', textAlign: 'center', minWidth: 0,
                   }}>
@@ -633,14 +633,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
                     cursor: 'pointer',
                     transition: 'background 0.15s',
-                    background: 'rgba(80,195,120,0.1)',
-                    border: '1px solid rgba(80,195,120,0.4)',
+                    background: green(0.1),
+                    border: `1px solid ${green(0.4)}`,
                     color: colors.earningsGreen,
                     letterSpacing: '0.2px',
                     lineHeight: 1,
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(80,195,120,0.2)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(80,195,120,0.1)'; }}
+                  onMouseEnter={e => { e.currentTarget.style.background = green(0.2); }}
+                  onMouseLeave={e => { e.currentTarget.style.background = green(0.1); }}
                   title="Add manual transaction"
                 >
                   <span style={{ fontSize: 13, fontWeight: 800 }}>+</span>
@@ -700,14 +700,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                         // swing_winner: show swing name; others: show tournament name
                         if (tx.type === 'swing_winner') {
                           return tx.segment
-                            ? <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>{tx.segment}</span>
+                            ? <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: white(0.45) }}>{tx.segment}</span>
                             : null;
                         }
                         const t = resolveTxTournament(tx, tournaments);
                         const name = t?.name || tx.tournament || null;
                         if (!name) return null;
                         return (
-                          <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: 'rgba(255,255,255,0.45)' }}>
+                          <span style={{ fontFamily: fonts.sans, fontSize: 'clamp(10px, 0.8vw, 12px)', color: white(0.45) }}>
                             {name}
                           </span>
                         );
@@ -769,13 +769,13 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             title="Edit transaction"
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
-                              color: 'rgba(100,160,255,0.65)',
+                              color: blue(0.65),
                               padding: '3px 4px', borderRadius: 2,
                               display: 'flex', alignItems: 'center',
                               transition: 'color 0.15s',
                             }}
                             onMouseEnter={e => { e.currentTarget.style.color = 'rgba(150,190,255,0.9)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(100,160,255,0.65)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = blue(0.65); }}
                           >
                             <Edit2 style={{ width: 13, height: 13 }} />
                           </button>
@@ -874,13 +874,13 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                           title="Delete transaction"
                           style={{
                             background: 'none', border: 'none', cursor: 'pointer',
-                            color: 'rgba(220,80,80,0.6)',
+                            color: red(0.6),
                             padding: '3px 4px', borderRadius: 2,
                             display: 'flex', alignItems: 'center',
                             transition: 'color 0.15s',
                           }}
                           onMouseEnter={e => { e.currentTarget.style.color = 'rgba(240,100,100,0.95)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(220,80,80,0.6)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = red(0.6); }}
                         >
                           <X style={{ width: 14, height: 14 }} />
                         </button>

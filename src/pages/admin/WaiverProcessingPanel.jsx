@@ -11,7 +11,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts } from '../../theme.js';
+import { colors, fonts, amber, green, white } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { M } from './adminStyles';
 import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam, buildEffectiveRoster, buildPlayerAttributeIndex, hydratePlayer, resolveTxTeam } from '../../utils/sharedHelpers';
@@ -229,8 +229,8 @@ export const WaiverProcessingPanel = ({
         </div>
         <div style={{
           ...M.statusRow,
-          background: 'rgba(80,195,120,0.06)',
-          borderColor: 'rgba(80,195,120,0.3)',
+          background: green(0.06),
+          borderColor: green(0.3),
           gap: 10,
         }}>
           <div style={M.statusDot(colors.earningsGreen)} />
@@ -253,8 +253,8 @@ export const WaiverProcessingPanel = ({
       {isReadyToProcess && (
         <div style={{
           ...M.statusRow,
-          background: 'rgba(220,170,60,0.08)',
-          borderColor: 'rgba(220,170,60,0.4)',
+          background: amber(0.08),
+          borderColor: amber(0.4),
           gap: 10,
         }}>
           <span style={{ fontSize: 14 }}>⏰</span>
@@ -273,9 +273,9 @@ export const WaiverProcessingPanel = ({
             fontWeight: 700,
             letterSpacing: '0.5px',
             textTransform: 'uppercase',
-            color: 'rgba(220,170,60,0.95)',
-            background: 'rgba(220,170,60,0.08)',
-            border: '1px solid rgba(220,170,60,0.3)',
+            color: amber(0.95),
+            background: amber(0.08),
+            border: `1px solid ${amber(0.3)}`,
             padding: '2px 8px',
             borderRadius: 10,
           }}>
@@ -299,8 +299,8 @@ export const WaiverProcessingPanel = ({
                 >
                   <div style={{
                     width: 20, height: 20, borderRadius: '50%',
-                    background: 'rgba(220,170,60,0.1)',
-                    border: '1px solid rgba(220,170,60,0.3)',
+                    background: amber(0.1),
+                    border: `1px solid ${amber(0.3)}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 10, fontWeight: 700, color: colors.warning,
                     flexShrink: 0,
@@ -328,7 +328,7 @@ export const WaiverProcessingPanel = ({
                     ...M.btnWarning,
                     fontSize: 13,
                     fontWeight: 700,
-                    boxShadow: '0 0 12px rgba(220,170,60,0.18)',
+                    boxShadow: `0 0 12px ${amber(0.18)}`,
                   }
                 : M.btnSecondary
               }
@@ -359,8 +359,8 @@ export const WaiverProcessingPanel = ({
                 >
                   <div style={{
                     width: 22, height: 22, borderRadius: '50%',
-                    background: 'rgba(220,170,60,0.1)',
-                    border: '1px solid rgba(220,170,60,0.3)',
+                    background: amber(0.1),
+                    border: `1px solid ${amber(0.3)}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 10, fontWeight: 700, color: colors.warning,
                     flexShrink: 0,
@@ -459,7 +459,7 @@ const ConflictSummary = ({ pending, teams }) => {
             <div
               key={player}
               style={{
-                background: 'rgba(255,255,255,0.03)',
+                background: white(0.03),
                 border: `1px solid ${colors.borderSubtle}`,
                 borderRadius: 6,
                 padding: '8px 10px',

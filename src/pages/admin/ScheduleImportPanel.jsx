@@ -28,7 +28,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useDialog } from '../DialogContext';
-import { theme, colors, fonts, SWINGS } from '../../theme.js';
+import { theme, colors, fonts, SWINGS, green, purple, red, white } from '../../theme.js';
 import { tournamentsApi } from '../../api/firebase';
 import { M, disabledBtn } from './adminStyles';
 
@@ -196,8 +196,8 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
       {fetchError && (
         <div style={{
           padding: '10px 12px',
-          background: 'rgba(220,80,80,0.06)',
-          border: '1px solid rgba(220,80,80,0.3)',
+          background: red(0.06),
+          border: `1px solid ${red(0.3)}`,
           borderRadius: 6,
           fontFamily: fonts.sans,
           fontSize: 12,
@@ -222,8 +222,8 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
           {/* Summary bar with select-all / clear-all controls */}
           <div style={{
             ...M.statusRow,
-            background: 'rgba(80,195,120,0.06)',
-            borderColor: 'rgba(80,195,120,0.3)',
+            background: green(0.06),
+            borderColor: green(0.3),
             justifyContent: 'space-between',
             gap: 10,
           }}>
@@ -282,11 +282,11 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
             overflowY: 'auto',
             border: `1px solid ${colors.borderSubtle}`,
             borderRadius: 6,
-            background: 'rgba(255,255,255,0.02)',
+            background: white(0.02),
           }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fonts.sans, fontSize: 12 }}>
               <thead>
-                <tr style={{ background: 'rgba(255,255,255,0.03)', position: 'sticky', top: 0, zIndex: 1 }}>
+                <tr style={{ background: white(0.03), position: 'sticky', top: 0, zIndex: 1 }}>
                   <th style={{ ...theme.tableHeaderCell, padding: '8px 4px', width: 32 }}>✓</th>
                   <th style={{ ...theme.tableHeaderCell, padding: '8px 6px', textAlign: 'left' }}>Tournament</th>
                   <th style={{ ...theme.tableHeaderCell, padding: '8px 6px', textAlign: 'left', width: 110 }}>Dates</th>
@@ -304,7 +304,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                     <React.Fragment key={i}>
                       <tr style={{
                         borderTop: i === 0 ? 'none' : `1px solid ${colors.borderSubtle}`,
-                        background: row.include ? 'transparent' : 'rgba(255,255,255,0.02)',
+                        background: row.include ? 'transparent' : white(0.02),
                         opacity: row.include ? 1 : 0.5,
                       }}>
                         <td style={{ padding: '6px 4px', textAlign: 'center' }}>
@@ -322,7 +322,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                           {row.dates || <span style={{ color: 'rgba(220,170,40,0.95)' }}>—</span>}
                         </td>
                         {[
-                          { key: 'isSignature', label: 'S',   active: 'rgba(130,80,200,0.8)' },
+                          { key: 'isSignature', label: 'S',   active: purple(0.8) },
                           { key: 'isMajor',     label: 'M',   active: colors.textGold },
                           { key: 'isAlternate', label: 'Alt', active: colors.danger },
                         ].map(({ key, label, active }) => (
@@ -332,7 +332,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                                 width: 24, height: 24, borderRadius: 4,
                                 fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
                                 cursor: 'pointer',
-                                background: row[key] ? 'rgba(255,255,255,0.05)' : 'transparent',
+                                background: row[key] ? white(0.05) : 'transparent',
                                 border: `1px solid ${row[key] ? active : colors.borderSubtle}`,
                                 color: row[key] ? active : colors.textMuted,
                                 transition: 'background 0.15s, border-color 0.15s',
@@ -349,7 +349,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                         </td>
                       </tr>
                       {isExpanded && (
-                        <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
+                        <tr style={{ background: white(0.02) }}>
                           <td colSpan={7} style={{ padding: '12px 14px' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                               <label style={{ fontSize: 11, color: colors.textMuted }}>
@@ -408,7 +408,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                               <div style={{ marginTop: 8, fontSize: 11, color: colors.textMuted }}>
                                 Purse from PGA Tour: ${row.purse.toLocaleString()}
                                 {row.purse >= 20_000_000 && !row.isMajor && (
-                                  <span style={{ marginLeft: 6, color: 'rgba(130,80,200,0.95)' }}>
+                                  <span style={{ marginLeft: 6, color: purple(0.95) }}>
                                     (auto-flagged as Signature)
                                   </span>
                                 )}

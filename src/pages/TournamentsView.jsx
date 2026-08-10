@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Trophy, Edit2, Save, ChevronDown, ChevronRight } from 'lucide-react';
 import { useDialog } from './DialogContext';
 
-import { theme, colors, fonts, fontSize, SWINGS, getSwingColor, getSwingColorAt } from '../theme.js';
+import { theme, colors, fonts, fontSize, SWINGS, getSwingColor, getSwingColorAt, black, brass, gold, purple, white, blueBright } from '../theme.js';
 import { getSegmentForTournament, shortName } from '../utils';
 import { NameMap } from '../../api/_playerNames.js';
 import { TeamName } from '../components/TeamName';
@@ -24,9 +24,9 @@ const isAlternate = (t) => !!t.isAlternate;
 
 // ── Result rendering helpers (merged in from former ResultsView) ─────────────
 const GOLD_BRIGHT = '#f5c518';
-const GOLD_DIM    = 'rgba(245,197,24,0.35)';
-const BLUE_BRIGHT = 'rgba(100,180,255,0.95)';
-const BLUE_DIM    = 'rgba(100,180,255,0.35)';
+const GOLD_DIM    = gold(0.35);
+const BLUE_BRIGHT = blueBright(0.95);
+const BLUE_DIM    = blueBright(0.35);
 
 // (swingColorsForCard helper and swing summary card rendering were removed
 // when completed events moved to the same table format as upcoming events.
@@ -45,7 +45,7 @@ const playerNameColor = (p, showEarnings) => {
 const playerTierColor = (p) => {
   if (p.limited)   return GOLD_BRIGHT;
   if (p.unlimited) return BLUE_BRIGHT;
-  return 'rgba(255,255,255,0.28)';
+  return white(0.28);
 };
 
 // Canonical lineup ordering: Limited first, then Unlimited, then regular;
@@ -667,11 +667,11 @@ export const TournamentsView = ({
               style={{
                 padding: '6px 14px',
                 borderBottom: `1px solid ${colors.borderSubtle}`,
-                background: isLeader ? 'rgba(180,160,100,0.04)' : 'transparent',
+                background: isLeader ? brass(0.04) : 'transparent',
                 transition: 'background 0.15s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = isLeader ? 'rgba(180,160,100,0.07)' : 'rgba(255,255,255,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = isLeader ? 'rgba(180,160,100,0.04)' : 'transparent'; }}
+              onMouseEnter={e => { e.currentTarget.style.background = isLeader ? brass(0.07) : white(0.04); }}
+              onMouseLeave={e => { e.currentTarget.style.background = isLeader ? brass(0.04) : 'transparent'; }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 {/* Rank number only renders once the tournament has started.
@@ -786,11 +786,11 @@ export const TournamentsView = ({
               style={{
                 padding: '6px 14px',
                 borderBottom: `1px solid ${colors.borderSubtle}`,
-                background: rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent',
+                background: rank === 0 ? brass(0.04) : 'transparent',
                 transition: 'background 0.15s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.07)' : 'rgba(255,255,255,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? 'rgba(180,160,100,0.04)' : 'transparent'; }}
+              onMouseEnter={e => { e.currentTarget.style.background = rank === 0 ? brass(0.07) : white(0.04); }}
+              onMouseLeave={e => { e.currentTarget.style.background = rank === 0 ? brass(0.04) : 'transparent'; }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 <span style={{
@@ -876,7 +876,7 @@ export const TournamentsView = ({
                 <td style={{ padding: '8px 8px' }}>
                   <div style={{ display: 'flex', gap: 4 }}>
                     {[
-                      { badge: 'S', key: 'isSignature', activeColor: 'rgba(130,80,200,0.8)', activeBorder: 'rgba(130,80,200,0.5)' },
+                      { badge: 'S', key: 'isSignature', activeColor: purple(0.8), activeBorder: purple(0.5) },
                       { badge: 'M', key: 'isMajor',     activeColor: colors.textGold,         activeBorder: colors.border },
                       { badge: 'Alt', key: 'isAlternate', activeColor: colors.danger,           activeBorder: colors.dangerBorder },
                     ].map(({ badge, key, activeColor, activeBorder }) => {
@@ -888,7 +888,7 @@ export const TournamentsView = ({
                             borderRadius: 2, fontFamily: fonts.sans,
                             fontSize: fontSize.xs, fontWeight: 700, cursor: 'pointer',
                             transition: 'all 0.15s',
-                            background: active ? `rgba(${activeColor}, 0.15)` : 'rgba(255,255,255,0.04)',
+                            background: active ? `rgba(${activeColor}, 0.15)` : white(0.04),
                             border: `1px solid ${active ? activeBorder : colors.borderSubtle}`,
                             color: active ? activeColor : colors.textMuted,
                           }}
@@ -1044,11 +1044,11 @@ export const TournamentsView = ({
                 opacity: alt ? 0.45 : 1,
                 transition: 'background 0.15s',
                 cursor: isExpandable ? 'pointer' : 'default',
-                background: isExpanded ? 'rgba(255,255,255,0.04)' : 'transparent',
+                background: isExpanded ? white(0.04) : 'transparent',
               }}
               onClick={isExpandable ? () => toggleExpansion(t.name) : undefined}
-              onMouseEnter={e => { e.currentTarget.style.background = isExpanded ? 'rgba(255,255,255,0.06)' : colors.rowHover; }}
-              onMouseLeave={e => { e.currentTarget.style.background = isExpanded ? 'rgba(255,255,255,0.04)' : 'transparent'; }}
+              onMouseEnter={e => { e.currentTarget.style.background = isExpanded ? white(0.06) : colors.rowHover; }}
+              onMouseLeave={e => { e.currentTarget.style.background = isExpanded ? white(0.04) : 'transparent'; }}
             >
               {/* Badge column — uses shared TournamentBadges (sm = 18×18 to fit row height) */}
               <td style={{ padding: '8px 2px 8px 8px', verticalAlign: 'middle' }}>
@@ -1121,7 +1121,7 @@ export const TournamentsView = ({
                 renderer (shows earnings). */}
             {isExpanded && (
               <tr>
-                <td colSpan={4} style={{ padding: 0, background: 'rgba(0,0,0,0.15)', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                <td colSpan={4} style={{ padding: 0, background: black(0.15), borderBottom: `1px solid ${colors.borderSubtle}` }}>
                   {isActive ? renderActiveTournamentExpansion(t) : renderTournamentExpansion(t)}
                 </td>
               </tr>

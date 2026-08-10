@@ -27,7 +27,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts } from '../../theme.js';
+import { colors, fonts, green, white, red } from '../../theme.js';
 import { TeamName } from '../../components/TeamName';
 import { compactTeamName } from '../../utils/index.js';
 import { M, disabledBtn } from './adminStyles';
@@ -211,8 +211,8 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
                     textTransform: 'uppercase',
                     padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap',
                     color: claimed ? colors.earningsGreen : colors.textMuted,
-                    background: claimed ? 'rgba(80,195,120,0.08)' : 'rgba(255,255,255,0.04)',
-                    border: `1px solid ${claimed ? 'rgba(80,195,120,0.3)' : colors.borderSubtle}`,
+                    background: claimed ? green(0.08) : white(0.04),
+                    border: `1px solid ${claimed ? green(0.3) : colors.borderSubtle}`,
                   }}
                 >
                   {claimed ? 'Claimed' : 'Unclaimed'}
@@ -263,7 +263,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
                   <code style={{
                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                     fontSize: 11, color: colors.textMuted,
-                    background: 'rgba(255,255,255,0.04)',
+                    background: white(0.04),
                     border: `1px solid ${colors.borderSubtle}`,
                     borderRadius: 5, padding: '2px 7px',
                   }}>
@@ -285,7 +285,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
                     style={{
                       fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
                       color: 'rgba(230,120,120,0.95)', background: 'transparent',
-                      border: '1px solid rgba(220,80,80,0.35)', borderRadius: 5,
+                      border: `1px solid ${red(0.35)}`, borderRadius: 5,
                       padding: '3px 9px', cursor: 'pointer',
                     }}
                   >

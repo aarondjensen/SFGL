@@ -25,7 +25,7 @@ import { getCurrentTournamentIndex } from '../utils/index.js';
 import { compactTeamName } from '../utils/index.js';
 import { getTransactionFee, buildEffectiveRoster, txBelongsToTeam } from '../utils/sharedHelpers';
 import { recomputeTeamTournamentResult } from '../utils/mulliganReversal';
-import { colors, fonts } from '../theme.js';
+import { colors, fonts, gold, green, red, white, scrim } from '../theme.js';
 import { M, disabledBtn } from './admin/adminStyles';
 import { LIV_GOLF_ROSTER } from '../constants';
 
@@ -503,7 +503,7 @@ export const AddTransactionModal = ({
     <div
       style={{
         position: 'fixed', inset: 0,
-        background: 'rgba(5,10,25,0.85)',
+        background: scrim(0.85),
         backdropFilter: 'blur(4px)',
         display: 'flex',
         alignItems: isMobile ? 'flex-end' : 'center',
@@ -520,7 +520,7 @@ export const AddTransactionModal = ({
           // Gold accent stripe signals commissioner-only. Lighter weight than
           // AddDropPlayerModal's green/orange stripes since this isn't a
           // manager destructive action — it's an admin workflow.
-          borderTop: '2px solid rgba(245,197,24,0.6)',
+          borderTop: `2px solid ${gold(0.6)}`,
           borderRadius: isMobile ? '12px 12px 0 0' : 10,
           width: '100%', maxWidth: isMobile ? '100%' : 480,
           height: isMobile ? '90vh' : 'auto',
@@ -548,7 +548,7 @@ export const AddTransactionModal = ({
               fontWeight: 700,
               letterSpacing: '1.8px',
               textTransform: 'uppercase',
-              color: 'rgba(245,197,24,0.95)',
+              color: gold(0.95),
             }}>
               👑 Commissioner
             </div>
@@ -657,8 +657,8 @@ export const AddTransactionModal = ({
                       fontFamily: fonts.sans,
                       fontWeight: 600,
                       cursor: 'pointer',
-                      background: isActive ? 'rgba(245,197,24,0.08)' : 'rgba(255,255,255,0.02)',
-                      border: `1px solid ${isActive ? 'rgba(245,197,24,0.35)' : colors.borderSubtle}`,
+                      background: isActive ? gold(0.08) : white(0.02),
+                      border: `1px solid ${isActive ? gold(0.35) : colors.borderSubtle}`,
                       color: isActive ? colors.textGold : colors.textSecondary,
                       transition: 'background 0.15s, border-color 0.15s',
                     }}
@@ -743,8 +743,8 @@ export const AddTransactionModal = ({
                     justifyContent: 'space-between',
                     padding: '10px 12px',
                     borderRadius: 6,
-                    background: 'rgba(80,195,120,0.08)',
-                    border: '1px solid rgba(80,195,120,0.3)',
+                    background: green(0.08),
+                    border: `1px solid ${green(0.3)}`,
                   }}>
                     <span style={{
                       fontFamily: fonts.sans,
@@ -757,8 +757,8 @@ export const AddTransactionModal = ({
                     <button
                       onClick={() => { setPlayerIn(null); setSearchIn(''); }}
                       style={{
-                        background: 'rgba(220,80,80,0.08)',
-                        border: '1px solid rgba(220,80,80,0.3)',
+                        background: red(0.08),
+                        border: `1px solid ${red(0.3)}`,
                         borderRadius: 6,
                         width: 24,
                         height: 24,
@@ -766,7 +766,7 @@ export const AddTransactionModal = ({
                         alignItems: 'center',
                         justifyContent: 'center',
                         cursor: 'pointer',
-                        color: 'rgba(230,90,90,0.8)',
+                        color: red(0.8),
                         fontSize: 12,
                         lineHeight: 1,
                       }}
@@ -790,7 +790,7 @@ export const AddTransactionModal = ({
                         overflowY: 'auto',
                         border: `1px solid ${colors.borderSubtle}`,
                         borderRadius: 6,
-                        background: 'rgba(255,255,255,0.02)',
+                        background: white(0.02),
                         marginTop: 4,
                       }}>
                         {filtered.slice(0, 20).map(p => {
@@ -808,7 +808,7 @@ export const AddTransactionModal = ({
                                 gap: 8,
                                 transition: 'background 0.12s',
                               }}
-                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                              onMouseEnter={e => { e.currentTarget.style.background = white(0.04); }}
                               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                             >
                               {p.worldRank && (
@@ -907,8 +907,8 @@ export const AddTransactionModal = ({
                     justifyContent: 'space-between',
                     padding: '10px 12px',
                     borderRadius: 6,
-                    background: 'rgba(220,80,80,0.06)',
-                    border: '1px solid rgba(220,80,80,0.3)',
+                    background: red(0.06),
+                    border: `1px solid ${red(0.3)}`,
                   }}>
                     <span style={{
                       fontFamily: fonts.sans,
@@ -921,8 +921,8 @@ export const AddTransactionModal = ({
                     <button
                       onClick={() => { setPlayerOut(null); setSearchOut(''); }}
                       style={{
-                        background: 'rgba(220,80,80,0.08)',
-                        border: '1px solid rgba(220,80,80,0.3)',
+                        background: red(0.08),
+                        border: `1px solid ${red(0.3)}`,
                         borderRadius: 6,
                         width: 24,
                         height: 24,
@@ -930,7 +930,7 @@ export const AddTransactionModal = ({
                         alignItems: 'center',
                         justifyContent: 'center',
                         cursor: 'pointer',
-                        color: 'rgba(230,90,90,0.8)',
+                        color: red(0.8),
                         fontSize: 12,
                         lineHeight: 1,
                       }}
@@ -954,7 +954,7 @@ export const AddTransactionModal = ({
                         overflowY: 'auto',
                         border: `1px solid ${colors.borderSubtle}`,
                         borderRadius: 6,
-                        background: 'rgba(255,255,255,0.02)',
+                        background: white(0.02),
                         marginTop: 4,
                       }}>
                         {filtered.slice(0, 20).map(p => {
@@ -972,7 +972,7 @@ export const AddTransactionModal = ({
                                 gap: 8,
                                 transition: 'background 0.12s',
                               }}
-                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                              onMouseEnter={e => { e.currentTarget.style.background = white(0.04); }}
                               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                             >
                               <span style={{
@@ -1010,7 +1010,7 @@ export const AddTransactionModal = ({
         <div style={{
           padding: '12px 18px',
           borderTop: `1px solid ${colors.borderSubtle}`,
-          background: 'rgba(255,255,255,0.02)',
+          background: white(0.02),
           flexShrink: 0,
         }}>
           <button

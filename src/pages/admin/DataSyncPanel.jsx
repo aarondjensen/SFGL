@@ -23,7 +23,7 @@
 
 import React from 'react';
 import { playersApi, playerRankingsApi } from '../../api/firebase';
-import { colors, fonts } from '../../theme.js';
+import { colors, fonts, white } from '../../theme.js';
 import { M, SyncStatusBanner, LastSyncedLine, disabledBtn } from './adminStyles';
 import { useDialog } from '../DialogContext';
 
@@ -305,7 +305,7 @@ export const DataSyncPanel = ({
                 borderRadius: '50%',
                 overflow: 'hidden',
                 border: `1px solid ${colors.borderSubtle}`,
-                background: 'rgba(255,255,255,0.03)',
+                background: white(0.03),
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

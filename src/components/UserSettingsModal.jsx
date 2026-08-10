@@ -14,7 +14,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
-import { colors, fonts } from '../theme.js';
+import { colors, fonts, green, white, black } from '../theme.js';
 import { useModalBehavior } from '../utils/modalUtils';
 import {
   isPushSupported,
@@ -27,14 +27,14 @@ import {
 } from '../api/pushNotifications';
 
 // Reusable iOS-style toggle pill (visual only — the row button handles clicks).
-const Toggle = ({ on, accent = 'rgba(80,195,120,0.95)', disabled = false }) => (
+const Toggle = ({ on, accent = green(0.95), disabled = false }) => (
   <div
     aria-hidden="true"
     style={{
       position: 'relative',
       width: 46, height: 28, borderRadius: 14,
-      background: on ? accent : 'rgba(255,255,255,0.13)',
-      boxShadow: on ? ('inset 0 0 0 1px ' + accent) : 'inset 0 0 0 1px rgba(255,255,255,0.16)',
+      background: on ? accent : white(0.13),
+      boxShadow: on ? ('inset 0 0 0 1px ' + accent) : `inset 0 0 0 1px ${white(0.16)}`,
       opacity: disabled ? 0.45 : 1,
       transition: 'background 0.22s, box-shadow 0.22s, opacity 0.2s',
       flexShrink: 0,
@@ -44,7 +44,7 @@ const Toggle = ({ on, accent = 'rgba(80,195,120,0.95)', disabled = false }) => (
       position: 'absolute', top: 2, left: 2,
       width: 24, height: 24, borderRadius: '50%',
       background: '#fff',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+      boxShadow: `0 1px 3px ${black(0.4)}`,
       transform: on ? 'translateX(18px)' : 'translateX(0)',
       transition: 'transform 0.22s cubic-bezier(0.32,0.72,0,1)',
     }} />
@@ -52,8 +52,8 @@ const Toggle = ({ on, accent = 'rgba(80,195,120,0.95)', disabled = false }) => (
 );
 
 const GROUP_CARD = {
-  background: 'rgba(255,255,255,0.035)',
-  border: '1px solid rgba(255,255,255,0.06)',
+  background: white(0.035),
+  border: `1px solid ${white(0.06)}`,
   borderRadius: 14,
   overflow: 'hidden',
 };
@@ -224,20 +224,20 @@ export const UserSettingsModal = ({
         onClick={e => e.stopPropagation()}
         style={{
           background: 'linear-gradient(180deg, #14233f 0%, #0f1b31 100%)',
-          border: '1px solid rgba(255,255,255,0.07)',
+          border: `1px solid ${white(0.07)}`,
           borderRadius: isMobile ? '22px 22px 0 0' : 18,
           width: '100%', maxWidth: isMobile ? '100%' : 440,
           maxHeight: isMobile ? '92vh' : '84vh',
           display: 'flex', flexDirection: 'column',
           overflow: 'hidden',
-          boxShadow: '0 -8px 40px rgba(0,0,0,0.5)',
+          boxShadow: `0 -8px 40px ${black(0.5)}`,
           paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0,
           animation: 'sfglSheetUp 0.3s cubic-bezier(0.32,0.72,0,1)',
         }}
       >
         {isMobile && (
           <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8, flexShrink: 0 }}>
-            <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.18)' }} />
+            <div style={{ width: 40, height: 5, borderRadius: 3, background: white(0.18) }} />
           </div>
         )}
 
@@ -265,7 +265,7 @@ export const UserSettingsModal = ({
             aria-label="Close"
             style={{
               flexShrink: 0, width: 34, height: 34, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer',
+              background: white(0.06), border: 'none', cursor: 'pointer',
               color: colors.textSecondary,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
@@ -335,7 +335,7 @@ export const UserSettingsModal = ({
                             onClick={() => handleToggleEventPref(evt.key)}
                             style={{
                               ...ROW_BASE,
-                              borderTop: idx === 0 ? 'none' : '1px solid rgba(255,255,255,0.06)',
+                              borderTop: idx === 0 ? 'none' : `1px solid ${white(0.06)}`,
                               cursor: saving ? 'wait' : 'pointer',
                               opacity: saving ? 0.5 : 1,
                             }}

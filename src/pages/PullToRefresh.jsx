@@ -14,6 +14,7 @@
 // threshold to signal "ready to release".
 
 import React from 'react';
+import { navy, white } from '../theme.js';
 
 const THRESHOLD = 80;
 const REFRESH_HEIGHT = 64; // height of the indicator bar while refreshing
@@ -39,7 +40,7 @@ const Spinner = ({ size = 24, spinning = false, rotation = 0, active = false }) 
   // viewBox 32x32, stroke ~3px gives a clean medium-weight ring on retina
   // displays. The arc spans 270° (gap = 90°), so partial rotation reads
   // as a chase rather than a static circle.
-  const stroke = active || spinning ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.55)';
+  const stroke = active || spinning ? white(0.95) : white(0.55);
   return (
     <div style={{
       width: size, height: size,
@@ -152,11 +153,11 @@ export const PullToRefresh = ({ children, onRefresh }) => {
           height: Math.max(pullY, refreshing ? REFRESH_HEIGHT : 0),
           transition: pulling ? 'none' : 'height 0.25s ease',
           zIndex: 9999, overflow: 'hidden',
-          background: 'rgba(10,22,40,0.97)',
+          background: navy(0.97),
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
           borderBottom: past || refreshing
-            ? '1px solid rgba(255,255,255,0.3)'
+            ? `1px solid ${white(0.3)}`
             : '1px solid transparent',
           transitionProperty: pulling ? 'border-color' : 'height, border-color',
         }}>
@@ -173,8 +174,8 @@ export const PullToRefresh = ({ children, onRefresh }) => {
             letterSpacing: 2.5,
             textTransform: 'uppercase',
             color: past || refreshing
-              ? 'rgba(255,255,255,0.95)'
-              : 'rgba(255,255,255,0.5)',
+              ? white(0.95)
+              : white(0.5),
             transition: 'color 0.15s',
             // Soft pulse on the refreshing label so the static text doesn't
             // feel frozen alongside the spinning ball.

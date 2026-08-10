@@ -12,7 +12,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts } from '../../theme.js';
+import { colors, fonts, red } from '../../theme.js';
 import { compactTeamName } from '../../utils/index.js';
 import { sfglDataApi } from '../../api/firebase';
 import { cronFetch } from '../../api/cronApi';
@@ -63,8 +63,8 @@ const RoundLeaderSelect = ({
             <button
               onClick={() => onChange(leaders.filter((_, i) => i !== idx))}
               style={{
-                background: 'rgba(220,80,80,0.08)',
-                border: '1px solid rgba(220,80,80,0.3)',
+                background: red(0.08),
+                border: `1px solid ${red(0.3)}`,
                 color: colors.danger,
                 borderRadius: 6,
                 padding: '4px 8px',

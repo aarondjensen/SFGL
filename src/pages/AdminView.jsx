@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { colors, fonts, SWINGS, fontSize } from '../theme.js';
+import { colors, fonts, SWINGS, fontSize, blue, green, white } from '../theme.js';
 import { getTournamentStartDate, getETNow } from '../utils';
 import { computeSwingAward } from '../utils/swingAward';
 import { buildEffectiveRoster } from '../utils/sharedHelpers';
@@ -96,7 +96,7 @@ const BackBar = ({ label, onBack }) => {
       <button
         onClick={onBack}
         style={{
-          background: 'rgba(255,255,255,0.05)',
+          background: white(0.05),
           border: `1px solid ${colors.borderSubtle}`,
           borderRadius: 4,
           color: colors.textPrimary,
@@ -614,17 +614,17 @@ export const AdminView = ({
   const levelColor = (level) =>
     level === 'action' ? colors.earningsGreen :
     level === 'warn'   ? colors.warning :
-                         'rgba(100,160,255,0.85)';
+                         blue(0.85);
 
   const levelBgTint = (level) =>
-    level === 'action' ? 'rgba(80,195,120,0.06)' :
+    level === 'action' ? green(0.06) :
     level === 'warn'   ? colors.warningBg :
-                         'rgba(100,160,255,0.06)';
+                         blue(0.06);
 
   const levelBorder = (level) =>
-    level === 'action' ? 'rgba(80,195,120,0.3)' :
+    level === 'action' ? green(0.3) :
     level === 'warn'   ? colors.warningBorder :
-                         'rgba(100,160,255,0.3)';
+                         blue(0.3);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 40 }}>
@@ -688,8 +688,8 @@ export const AdminView = ({
       ) : (
         <div style={{
           padding: '14px 16px',
-          background: 'rgba(80,195,120,0.05)',
-          border: '1px solid rgba(80,195,120,0.2)',
+          background: green(0.05),
+          border: `1px solid ${green(0.2)}`,
           borderRadius: 6,
           fontFamily: fonts.sans,
           fontSize: fontSize.base,
@@ -737,7 +737,7 @@ export const AdminView = ({
                 }}
                 onMouseEnter={e => {
                   e.currentTarget.style.background = colors.cardBgHover;
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)';
+                  e.currentTarget.style.borderColor = white(0.18);
                 }}
                 onMouseLeave={e => {
                   e.currentTarget.style.background = colors.cardBg;

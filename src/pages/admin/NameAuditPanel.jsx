@@ -25,7 +25,7 @@
 // ============================================================================
 
 import React from 'react';
-import { colors, fonts } from '../../theme.js';
+import { colors, fonts, green, white } from '../../theme.js';
 import { cronFetch } from '../../api/cronApi';
 import { sfglDataApi } from '../../api/firebase';
 import { M, disabledBtn } from './adminStyles';
@@ -136,7 +136,7 @@ export const NameAuditPanel = ({ teams }) => {
       {audit && totalFindings === 0 && (
         <div style={{
           fontFamily: fonts.sans, fontSize: 13, color: colors.earningsGreen,
-          background: 'rgba(80,195,120,0.08)', border: '1px solid rgba(80,195,120,0.25)',
+          background: green(0.08), border: `1px solid ${green(0.25)}`,
           borderRadius: 6, padding: '12px 14px',
         }}>
           ✓ No name mismatches found. Every rostered player resolves to the sources we checked.
@@ -203,7 +203,7 @@ const Finding = ({ finding }) => {
   return (
     <div style={{
       border: `1px solid ${confident ? 'rgba(220,150,50,0.35)' : colors.borderSubtle}`,
-      background: confident ? 'rgba(220,150,50,0.06)' : 'rgba(255,255,255,0.02)',
+      background: confident ? 'rgba(220,150,50,0.06)' : white(0.02),
       borderRadius: 6,
       padding: '10px 12px',
     }}>

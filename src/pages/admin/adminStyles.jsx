@@ -12,7 +12,7 @@
 // automatically once .js is gone.
 // ============================================================================
 
-import { theme, colors, fonts } from '../../theme.js';
+import { theme, colors, fonts, green, red, white } from '../../theme.js';
 
 export const S = {
   section: {
@@ -154,7 +154,7 @@ export const M = {
   select: {
     width: '100%',
     padding: '10px 12px',
-    background: 'rgba(255,255,255,0.02)',
+    background: white(0.02),
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
     color: colors.textPrimary,
@@ -167,7 +167,7 @@ export const M = {
   input: {
     width: '100%',
     padding: '10px 12px',
-    background: 'rgba(255,255,255,0.02)',
+    background: white(0.02),
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
     color: colors.textPrimary,
@@ -182,8 +182,8 @@ export const M = {
   btnPrimary: {
     width: '100%',
     padding: '12px 16px',
-    background: 'rgba(80,195,120,0.12)',
-    border: '1px solid rgba(80,195,120,0.35)',
+    background: green(0.12),
+    border: `1px solid ${green(0.35)}`,
     borderRadius: 6,
     color: colors.earningsGreen,
     fontSize: 13,
@@ -197,7 +197,7 @@ export const M = {
   btnSecondary: {
     width: '100%',
     padding: '10px 14px',
-    background: 'rgba(255,255,255,0.03)',
+    background: white(0.03),
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
     color: colors.textSecondary,
@@ -228,8 +228,8 @@ export const M = {
   btnDanger: {
     width: '100%',
     padding: '12px 16px',
-    background: 'rgba(220,80,80,0.08)',
-    border: '1px solid rgba(220,80,80,0.35)',
+    background: red(0.08),
+    border: `1px solid ${red(0.35)}`,
     borderRadius: 6,
     color: colors.danger,
     fontSize: 13,
@@ -246,7 +246,7 @@ export const M = {
     alignItems: 'center',
     gap: 10,
     padding: '10px 12px',
-    background: 'rgba(255,255,255,0.02)',
+    background: white(0.02),
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
     cursor: 'pointer',
@@ -261,7 +261,7 @@ export const M = {
     alignItems: 'center',
     gap: 10,
     padding: '10px 12px',
-    background: 'rgba(255,255,255,0.02)',
+    background: white(0.02),
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
   },
@@ -296,8 +296,8 @@ export const SyncStatusBanner = ({ status, summary }) => {
       fontFamily: fonts.sans,
       whiteSpace: 'pre-wrap',
       lineHeight: 1.5,
-      background: isError ? 'rgba(220,80,80,0.06)' : 'rgba(80,195,120,0.06)',
-      border: `1px solid ${isError ? 'rgba(220,80,80,0.3)' : 'rgba(80,195,120,0.3)'}`,
+      background: isError ? red(0.06) : green(0.06),
+      border: `1px solid ${isError ? red(0.3) : green(0.3)}`,
       color: isError ? colors.danger : colors.earningsGreen,
     }}>
       {summary}

@@ -6,51 +6,110 @@
  * ============================================================================
  */
 
+// ── Hue palette ──────────────────────────────────────────────────────────────
+// Every colour in the app is one of these hues at some alpha. The RGB triples
+// below are the ONLY place a hue is written down; the tokens beneath and the
+// call sites throughout src/ all go through the helpers.
+//
+// Before this existed, colours were authored as literal rgba() strings wherever
+// they were needed — 454 of them, spelling out ~70 distinct hues to serve about
+// eight semantic roles. Fifteen different reds, twelve golds, eight blues, five
+// purples. Most were within a couple of points of each other and plainly meant
+// to be the same colour; they drifted because there was nothing to drift from.
+//
+// Alpha stays free-form on purpose. The thing worth pinning is the HUE — that a
+// destructive action is always THIS red — while opacity legitimately varies by
+// context (a 6% fill, a 30% border, an 85% label). Naming forty
+// hue+alpha combinations would have been a worse trade.
+const HUES = {
+  white:      '255,255,255',
+  black:      '0,0,0',
+  navy:       '17,29,46',    // page-background family (#111d2e)
+  gold:       '245,197,24',  // the SFGL accent
+  brass:      '180,160,100', // muted gold — borders, medals, card edges
+  amber:      '220,170,60',  // warnings
+  green:      '80,195,120',  // earnings, success fills
+  greenMuted: '80,180,120',  // the softer green used for success text/badges
+  red:        '220,80,80',   // destructive / danger
+  blue:       '100,160,255', // informational accents, admin section headers
+  blueBright: '100,180,255', // the lighter blue used on stats toggles + OWGR
+  steel:      '100,140,220', // "unlimited" player tier
+  purple:     '130,80,200',  // mulligan markers
+  yellow:     '220,200,80',  // pending / awaiting-action states (waiver queue)
+  scrim:      '5,10,25',     // modal backdrops
+};
+
+/** Compose any palette hue with an alpha: withAlpha(HUES.gold, 0.4). */
+export const withAlpha = (hue, a) => `rgba(${hue},${a})`;
+
+// Per-hue shorthands. `white(0.04)` reads better than rgba(255,255,255,0.04)
+// and, more to the point, cannot be typed as a slightly different white.
+export const white      = (a) => withAlpha(HUES.white, a);
+export const black      = (a) => withAlpha(HUES.black, a);
+export const navy       = (a) => withAlpha(HUES.navy, a);
+export const gold       = (a) => withAlpha(HUES.gold, a);
+export const brass      = (a) => withAlpha(HUES.brass, a);
+export const amber      = (a) => withAlpha(HUES.amber, a);
+export const green      = (a) => withAlpha(HUES.green, a);
+export const greenMuted = (a) => withAlpha(HUES.greenMuted, a);
+export const red        = (a) => withAlpha(HUES.red, a);
+export const blue       = (a) => withAlpha(HUES.blue, a);
+export const blueBright = (a) => withAlpha(HUES.blueBright, a);
+export const steel      = (a) => withAlpha(HUES.steel, a);
+export const purple     = (a) => withAlpha(HUES.purple, a);
+export const yellow     = (a) => withAlpha(HUES.yellow, a);
+export const scrim      = (a) => withAlpha(HUES.scrim, a);
+
 // ── Color tokens ─────────────────────────────────────────────────────────────
 export const colors = {
   // Backgrounds
   pageBg:        '#111d2e',
-  cardBg:        'rgba(255,255,255,0.03)',
-  cardBgHover:   'rgba(255,255,255,0.055)',
-  rowHover:      'rgba(255,255,255,0.04)',
+  cardBg:        white(0.03),
+  cardBgHover:   white(0.055),
+  rowHover:      white(0.04),
   headerBg:      'linear-gradient(90deg, rgba(16,40,72,0.5) 0%, transparent 100%)',
-  inputBg:       'rgba(255,255,255,0.04)',
-  inputBgFocus:  'rgba(255,255,255,0.07)',
+  inputBg:       white(0.04),
+  inputBgFocus:  white(0.07),
   buttonNavy:    '#1c3a5e',
   buttonNavyHover: '#22456e',
-  sectionHeaderBlue: 'rgba(100,160,255,0.90)',   // bright blue for AdminView section headers
-  actionButtonBlue:  '#163253',                  // darker navy for action buttons inside sections
+  sectionHeaderBlue: blue(0.90),   // bright blue for AdminView section headers
+  actionButtonBlue:  '#163253',    // darker navy for action buttons inside sections
 
   // Borders
-  border:        'rgba(180,160,100,0.15)',
-  borderSubtle:  'rgba(255,255,255,0.06)',
-  borderInput:   'rgba(255,255,255,0.1)',
-  borderFocus:   'rgba(180,160,100,0.5)',
+  border:        brass(0.15),
+  borderSubtle:  white(0.06),
+  borderInput:   white(0.1),
+  borderFocus:   brass(0.5),
 
   // Text
-  textPrimary:   'rgba(255,255,255,0.9)',
-  textSecondary: 'rgba(255,255,255,0.4)',
-  textMuted:     'rgba(255,255,255,0.32)',   // bumped from 0.2 — em-dashes / empty-state were near-invisible in sunlight
-  textLabel:     'rgba(255,255,255,0.25)',
+  textPrimary:   white(0.9),
+  textSecondary: white(0.4),
+  textMuted:     white(0.32),   // bumped from 0.2 — em-dashes / empty-state were near-invisible in sunlight
+  textLabel:     white(0.25),
   textGold:      '#f5c518',
-  textGoldDim:   'rgba(245,197,24,0.45)',
+  textGoldDim:   gold(0.45),
 
   // Semantic
-  success:       'rgba(80,180,120,0.85)',
-  earningsGreen:      'rgba(80,195,120,0.95)',   // season earnings — full green
-  earningsGreenLight: 'rgba(100,210,150,0.65)',  // swing earnings — softer green
-  danger:        'rgba(220,80,80,0.85)',
-  dangerBg:      'rgba(180,60,60,0.12)',
-  dangerBorder:  'rgba(180,60,60,0.3)',
-  warning:       'rgba(220,170,60,0.85)',
-  warningBg:     'rgba(220,170,60,0.1)',
-  warningBorder: 'rgba(220,170,60,0.4)',
+  success:       greenMuted(0.85),
+  earningsGreen:      green(0.95),        // season earnings — full green
+  earningsGreenLight: 'rgba(100,210,150,0.65)',  // swing earnings — deliberately lighter than `green`
+  danger:        red(0.85),
+  // dangerBg/dangerBorder were authored on rgba(180,60,60) while `danger`
+  // itself is rgba(220,80,80) — the same role wearing two different reds, far
+  // enough apart (dE ~12) to see when a danger fill sits next to danger text.
+  // Both now use the one red; at 12% and 30% alpha over navy the shift is
+  // barely perceptible, and it is the only way the family stays coherent.
+  dangerBg:      red(0.12),
+  dangerBorder:  red(0.3),
+  warning:       amber(0.85),
+  warningBg:     amber(0.1),
+  warningBorder: amber(0.4),
 
   // Medal positions
-  medal1:        { bg: 'rgba(180,160,100,0.9)',  text: '#111d2e' },
+  medal1:        { bg: brass(0.9),               text: '#111d2e' },
   medal2:        { bg: 'rgba(180,180,190,0.75)', text: '#111d2e' },
   medal3:        { bg: 'rgba(160,110,60,0.8)',   text: '#fff'    },
-  medalDefault:  { bg: 'rgba(255,255,255,0.06)', text: 'rgba(255,255,255,0.4)' },
+  medalDefault:  { bg: white(0.06),              text: white(0.4) },
 };
 
 // ── Typography ────────────────────────────────────────────────────────────────
@@ -161,7 +220,7 @@ export const theme = {
     // (This key was previously declared twice — 32 then 36 — each with its own
     // comment claiming to be the standard. 36 was the one taking effect.)
     minHeight: 36,
-    background: 'linear-gradient(90deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
+    background: `linear-gradient(90deg, ${white(0.12)} 0%, ${white(0.04)} 60%, transparent 100%)`,
     borderBottom: `1px solid ${colors.borderSubtle}`,
     display: 'flex',
     alignItems: 'center',
@@ -279,7 +338,7 @@ export const theme = {
     color: colors.textLabel,
     fontFamily: fonts.sans,
     borderBottom: `1px solid ${colors.borderSubtle}`,
-    background: 'rgba(255,255,255,0.02)',
+    background: white(0.02),
   },
 
   // Hero-tier cell — used by Standings.
@@ -423,8 +482,8 @@ export const theme = {
   },
 
   badgeGold: {
-    background: 'rgba(180,160,100,0.12)',
-    border: '1px solid rgba(180,160,100,0.25)',
+    background: brass(0.12),
+    border: `1px solid ${brass(0.25)}`,
     color: colors.textGold,
   },
 
@@ -441,26 +500,26 @@ export const theme = {
   },
 
   badgeSuccess: {
-    background: 'rgba(80,180,120,0.1)',
-    border: '1px solid rgba(80,180,120,0.25)',
+    background: greenMuted(0.1),
+    border: `1px solid ${greenMuted(0.25)}`,
     color: colors.success,
   },
 
   badgeInProgress: {
-    background: 'rgba(80,200,120,0.15)',
-    border: '1px solid rgba(80,200,120,0.4)',
-    color: 'rgba(80,200,120,0.9)',
+    background: green(0.15),
+    border: `1px solid ${green(0.4)}`,
+    color: green(0.9),
   },
 
   badgeCut: {
-    background: 'rgba(220,80,80,0.1)',
-    border: '1px solid rgba(220,80,80,0.25)',
+    background: red(0.1),
+    border: `1px solid ${red(0.25)}`,
     color: colors.danger,
   },
 
   badgeWarning: {
-    background: 'rgba(220,170,60,0.1)',
-    border: '1px solid rgba(220,170,60,0.25)',
+    background: amber(0.1),
+    border: `1px solid ${amber(0.25)}`,
     color: colors.warning,
   },
 
@@ -501,7 +560,7 @@ export const getMedalStyle = (index) => {
 // ── Helper: row hover handlers ────────────────────────────────────────────────
 export const rowHoverHandlers = (isHighlighted = false) => ({
   onMouseEnter: (e) => { e.currentTarget.style.background = colors.rowHover; },
-  onMouseLeave: (e) => { e.currentTarget.style.background = isHighlighted ? 'rgba(180,160,100,0.04)' : 'transparent'; },
+  onMouseLeave: (e) => { e.currentTarget.style.background = isHighlighted ? brass(0.04) : 'transparent'; },
 });
 
 // ── Helper: earnings color ────────────────────────────────────────────────────
@@ -516,13 +575,13 @@ export const cardLiftHandlers = ({ disabled = false } = {}) => ({
   onMouseEnter: (e) => {
     if (disabled) return;
     e.currentTarget.style.transform = 'translateY(-2px)';
-    e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
-    e.currentTarget.style.borderColor = 'rgba(180,160,100,0.3)';
+    e.currentTarget.style.boxShadow = `0 8px 32px ${black(0.3)}`;
+    e.currentTarget.style.borderColor = brass(0.3);
   },
   onMouseLeave: (e) => {
     e.currentTarget.style.transform = 'translateY(0)';
     e.currentTarget.style.boxShadow = 'none';
-    e.currentTarget.style.borderColor = 'rgba(180,160,100,0.15)';
+    e.currentTarget.style.borderColor = brass(0.15);
   },
 });
 
@@ -536,7 +595,7 @@ export { SWINGS } from '../api/_league.js';
 
 export const SWING_COLORS = {
   'West Coast Swing': 'rgba(220,190,100,0.85)',
-  'Spring Swing':     'rgba(80,200,120,0.85)',
+  'Spring Swing':     `${green(0.85)}`,
   'Summer Swing':     'rgba(120,180,255,0.85)',
   'Fall Finish':      'rgba(230,150,80,0.85)',
 };

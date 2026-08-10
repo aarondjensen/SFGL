@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts } from '../../theme.js';
+import { colors, fonts, greenMuted, red } from '../../theme.js';
 import { NameSet } from '../../../api/_playerNames.js';
 import { playersApi } from '../../api/firebase';
 import { LIV_GOLF_ROSTER } from '../../constants';
@@ -182,8 +182,8 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
                 key={p.name}
                 style={{
                   ...M.statusRow,
-                  background: 'rgba(80,180,120,0.04)',
-                  borderColor: 'rgba(80,180,120,0.2)',
+                  background: greenMuted(0.04),
+                  borderColor: greenMuted(0.2),
                   gap: 8,
                 }}
               >
@@ -208,8 +208,8 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
                     fontFamily: fonts.sans,
                     fontSize: 11,
                     padding: '5px 10px',
-                    background: 'rgba(220,80,80,0.08)',
-                    border: '1px solid rgba(220,80,80,0.35)',
+                    background: red(0.08),
+                    border: `1px solid ${red(0.35)}`,
                     color: colors.danger,
                     borderRadius: 6,
                     cursor: livSaving[p.name] ? 'wait' : 'pointer',
@@ -251,7 +251,7 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
             border: `1px solid ${colors.borderSubtle}`,
             borderRadius: 8,
             overflow: 'hidden',
-            background: 'rgba(220,80,80,0.02)',
+            background: red(0.02),
           }}>
             {livPlayers.map((p, idx) => (
               <div
@@ -284,8 +284,8 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
                     width: 28,
                     height: 28,
                     borderRadius: 6,
-                    background: 'rgba(220,80,80,0.06)',
-                    border: '1px solid rgba(220,80,80,0.25)',
+                    background: red(0.06),
+                    border: `1px solid ${red(0.25)}`,
                     color: 'rgba(220,100,80,0.85)',
                     cursor: livSaving[p.name] ? 'wait' : 'pointer',
                     display: 'flex',
@@ -299,12 +299,12 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
                   }}
                   onMouseEnter={e => {
                     if (livSaving[p.name]) return;
-                    e.currentTarget.style.background = 'rgba(220,80,80,0.14)';
-                    e.currentTarget.style.borderColor = 'rgba(220,80,80,0.4)';
+                    e.currentTarget.style.background = red(0.14);
+                    e.currentTarget.style.borderColor = red(0.4);
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.background = 'rgba(220,80,80,0.06)';
-                    e.currentTarget.style.borderColor = 'rgba(220,80,80,0.25)';
+                    e.currentTarget.style.background = red(0.06);
+                    e.currentTarget.style.borderColor = red(0.25);
                   }}
                 >
                   {livSaving[p.name] ? '…' : '✕'}

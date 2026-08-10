@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { theme, colors, fonts, fontSize, rowHoverHandlers, SWINGS, SWING_COLORS, getSwingColorAt } from '../theme.js';
+import { theme, colors, fonts, fontSize, rowHoverHandlers, SWINGS, SWING_COLORS, getSwingColorAt, gold, white, brass } from '../theme.js';
 import { getSegmentForTournament } from '../utils';
 import { getSeasonEarningsByTeam, getSwingEarningsByTeam } from '../utils/sharedHelpers';
 import { TeamName } from '../components/TeamName';
@@ -45,7 +45,7 @@ const PositionBadge = ({ position, isWinner, swingAccent }) => {
 
   let bg, fg, border;
   if (isWinner) {
-    bg     = swingAccent ? getSwingColorAt(swingAccent, 0.15) : 'rgba(245,197,24,0.15)';
+    bg     = swingAccent ? getSwingColorAt(swingAccent, 0.15) : gold(0.15);
     fg     = swingAccent ? getSwingColorAt(swingAccent, 1)    : colors.textGold;
     border = swingAccent ? `1px solid ${getSwingColorAt(swingAccent, 0.4)}` : `1px solid ${colors.textGold}`;
   } else if (isFirst) {
@@ -57,7 +57,7 @@ const PositionBadge = ({ position, isWinner, swingAccent }) => {
     border = 'none';
   } else {
     // Neutral muted — no medal coloring for 2nd/3rd
-    bg     = 'rgba(255,255,255,0.06)';
+    bg     = white(0.06);
     fg     = colors.textSecondary;
     border = 'none';
   }
@@ -80,8 +80,8 @@ const MetricToggle = ({ value, onChange, accentColor }) => (
   <div style={{
     display: 'inline-flex',
     position: 'relative',
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid rgba(180,160,100,0.2)',
+    background: white(0.04),
+    border: `1px solid ${brass(0.2)}`,
     borderRadius: 10,
     padding: 3,
     width: 150,
@@ -94,8 +94,8 @@ const MetricToggle = ({ value, onChange, accentColor }) => (
       left: value === 'behind' ? 'calc(50% + 1px)' : 3,
       width: 'calc(50% - 4px)',
       borderRadius: 8,
-      background: accentColor ? getSwingColorAt(accentColor, 0.18) : 'rgba(255,255,255,0.1)',
-      border: `1px solid ${accentColor ? getSwingColorAt(accentColor, 0.45) : 'rgba(255,255,255,0.3)'}`,
+      background: accentColor ? getSwingColorAt(accentColor, 0.18) : white(0.1),
+      border: `1px solid ${accentColor ? getSwingColorAt(accentColor, 0.45) : white(0.3)}`,
       transition: 'left 0.22s cubic-bezier(0.4,0,0.2,1)',
       pointerEvents: 'none',
     }} />
@@ -197,7 +197,7 @@ const StandingsCard = ({
               const rowBg    = isWinner
                 ? getSwingColorAt(accentColor, 0.08)
                 : isTop
-                  ? 'rgba(245,197,24,0.04)'   // very subtle gold tint for #1
+                  ? gold(0.04)   // very subtle gold tint for #1
                   : 'transparent';
 
               return (

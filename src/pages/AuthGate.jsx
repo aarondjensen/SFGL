@@ -11,15 +11,15 @@
 // ============================================================================
 
 import { useState } from 'react';
-import { fonts, fontSize } from '../theme.js';
+import { fonts, fontSize, white } from '../theme.js';
 import { signInWithGoogle, signInWithApple } from '../api/authApi';
 
 const NAVY_TOP = '#0b1521';
 const NAVY_BOT = '#111d2e';
 const GOLD = '#f5c518';
-const WHITE = 'rgba(255,255,255,0.93)';
-const MUTED = 'rgba(255,255,255,0.45)';
-const LINE = 'rgba(255,255,255,0.12)';
+const WHITE = white(0.93);
+const MUTED = white(0.45);
+const LINE = white(0.12);
 // Apple's HIG requires the button text use the system font (SF Pro on Apple
 // platforms); the same stack is fine for Google.
 const SYSTEM_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
@@ -218,7 +218,7 @@ const S = {
     padding: '12px 16px',
     borderRadius: 8,
     border: `1px solid ${LINE}`,
-    background: 'rgba(255,255,255,0.06)',
+    background: white(0.06),
     color: WHITE,
     fontFamily: fonts.sans,
     fontSize: fontSize.base || 13,
