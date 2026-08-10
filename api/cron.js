@@ -14,7 +14,11 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
 import { DEFAULTS_ON, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
-import { SEASON, swingForMonth, getETNow, abbreviateName, waiverCutoff, txBelongsToTeam } from './_league.js';
+import { SEASON, getETNow, abbreviateName, waiverCutoff } from './_league.js';
+import {
+  getSegmentForTournament, computeSwingAward, buildEffectiveRoster,
+  getSeasonEarningsByTeam, bonusesFor,
+} from './_rules.js';
 
 // ── Firebase Admin init ─────────────────────────────────────────────────────
 
@@ -223,170 +227,13 @@ function buildWaiverResultsEmail(processed, recipientTeam) {
 // Resolve a tournament's segment. Prefer the explicit segment field, then the
 // legacy `swing` field, then date-derived inference.
 //
-// The month → swing mapping is NO LONGER duplicated here. It comes from
-// swingForMonth in ./_league.js, which src/utils/index.js's getSegmentByDate
-// also calls, so both deploy targets now derive the answer from one array.
-//
-// This used to carry a "⚠ KEEP IN SYNC with src/utils/index.js — api/ is a
-// separate deploy target and can't import from src/" warning above a
-// hand-written month map. The premise was half right: api/ genuinely cannot
-// import from src/, but src/ CAN import from api/, which is why _league.js
-// lives there. The sync hazard the warning described was real — this function
-// once mapped Jan–Mar to 'Spring Swing', June to 'Summer Swing', Aug–Sep to a
-// phantom 'Fall Swing' that exists nowhere else in the codebase, and returned
-// null for Oct–Dec entirely, so every server-side pot calculation and
-// auto-award keyed off wrong segments. Sharing the source removes the hazard
-// rather than restating it.
-//
-// Still duplicated below, and still carrying real KEEP IN SYNC warnings:
-// getTransactionFeeServer, computeSwingPotServer, maybeAutoAwardSwingServer,
-// and the inline effective-roster replay in handleWaivers.
-// Month abbreviation → 1-12, only for parsing the display `dates` string.
-// The month → swing mapping itself comes from swingForMonth in _league.js, so
-// the swing NAMES are no longer spelled out a second time here.
-const MONTH_ABBRS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-
-function getSegmentForTournamentServer(t) {
-  if (t?.segment) return t.segment;
-  if (t?.swing)   return t.swing;
-
-  // Prefer the ordering date (ISO 'YYYY-MM-DD') when present — unambiguous.
-  const iso = t?.start_date || t?.startDate;
-  if (typeof iso === 'string' && /^\d{4}-\d{2}/.test(iso)) {
-    const monthNum = parseInt(iso.slice(5, 7), 10);
-    const seg = swingForMonth(monthNum);
-    if (seg) return seg;
-  }
-
-  // Fall back to parsing a month name out of the display `dates` string
-  // (e.g. "May 7-10").
-  const d = String(t?.dates || '').toLowerCase();
-  const idx = MONTH_ABBRS.findIndex(abbr => d.includes(abbr));
-  if (idx !== -1) return swingForMonth(idx + 1);
-  return null;
-}
-
-// Fee owed by a transaction, derived from its type + league settings.
-// ⚠ KEEP IN SYNC with getTransactionFee in src/utils/sharedHelpers.js.
-// The free-agent type is stored as BOTH 'fa' and 'free agent' depending on
-// which UI created it, so both spellings are normalized here.
-function getTransactionFeeServer(type, settings, status) {
-  if (status === 'failed') return 0;
-  const t = String(type || '').trim().toLowerCase();
-  if (t === 'waiver') return settings?.feeWaiver ?? 2;
-  if (t === 'fa' || t === 'free agent') return settings?.feeFA ?? 1;
-  return 0;
-}
-
-// Compute the fee pot for a swing.
-// ⚠ KEEP IN SYNC with getSwingPot in src/utils/sharedHelpers.js. This copy
-// previously diverged in two ways that made the server's pot differ from the
-// figure managers see in the app:
-//   1. it did NOT exclude alternate events, so alternate-week fees inflated it;
-//   2. it summed the raw stored `tx.fee` only, so legacy rows saved with fee 0
-//      by the old FA type-string mismatch were silently dropped.
-function computeSwingPotServer(transactions, tournaments, swingSegment, settings) {
-  if (!swingSegment) return 0;
-  const swingNames = new Set();
-  const swingIndexes = new Set();
-  (tournaments || []).forEach((t, i) => {
-    if (getSegmentForTournamentServer(t) === swingSegment && !t.isAlternate) {
-      if (t?.name) swingNames.add(t.name);
-      swingIndexes.add(i);
-    }
-  });
-  const inSwing = (tx) => {
-    if (tx.tournament) return swingNames.has(tx.tournament);
-    if (tx.tournamentIndex !== undefined) return swingIndexes.has(tx.tournamentIndex);
-    return tx.segment === swingSegment;
-  };
-  // Trust a stored fee when present (preserves custom amounts), else derive
-  // from type — recovers the legacy fee-0 rows.
-  const effFee = (tx) => {
-    const stored = tx.fee || 0;
-    return stored > 0 ? stored : getTransactionFeeServer(tx.type, settings, tx.status);
-  };
-  return (transactions || [])
-    .filter(tx => {
-      if (tx.status === 'failed') return false;
-      if (tx.type === 'swing_winner') return false;
-      if (effFee(tx) <= 0) return false;
-      return inSwing(tx);
-    })
-    .reduce((sum, tx) => sum + effFee(tx), 0);
-}
-
-// Auto-award helper for server-side processing. Same conditions as the
-// client-side maybeAutoAwardSwing in AdminView. Returns { updatedTeams,
-// newSwingTx, summary } when an award should fire, or null otherwise.
-function maybeAutoAwardSwingServer(swingSegment, tournaments, teams, transactions, settings) {
-  if (!swingSegment) return null;
-  if (transactions.some(tx => tx.type === 'swing_winner' && tx.segment === swingSegment)) return null;
-
-  // Exclude alternate events from the completion gate — they are optional
-  // and may never be marked completed, which would otherwise permanently
-  // block the auto-award. Mirrors the client-side computeSwingAward, which
-  // filters `!t.isAlternate`. (Previously the server included alternates,
-  // diverging from the client and leaving such swings recoverable only via
-  // the manual Swing Winner panel.)
-  const swingTournaments = (tournaments || []).filter(t => getSegmentForTournamentServer(t) === swingSegment && !t.isAlternate);
-  if (swingTournaments.length === 0) return null;
-  if (!swingTournaments.every(t => t.completed)) return null;
-
-  const rankedTournaments = swingTournaments.filter(t => t.results?.teams);
-  if (rankedTournaments.length === 0) return null;
-
-  const byTeam = {};
-  rankedTournaments.forEach(t => {
-    Object.entries(t.results.teams).forEach(([id, tr]) => {
-      byTeam[id] = (byTeam[id] || 0) + (tr.totalEarnings || 0);
-    });
-  });
-  const winnerEntry = Object.entries(byTeam).sort((a, b) => b[1] - a[1])[0];
-  if (!winnerEntry) return null;
-  const [winnerId] = winnerEntry;
-  const winnerTeam = (teams || []).find(t => t.id === winnerId);
-  if (!winnerTeam) return null;
-
-  const pot = computeSwingPotServer(transactions, tournaments, swingSegment, settings);
-  if (pot === 0) return null;
-
-  const lastSegTourney = rankedTournaments.reduce((last, tt) => {
-    const idx = tournaments.indexOf(tt);
-    return idx > (last?.idx ?? -1) ? { t: tt, idx } : last;
-  }, null);
-
-  const newSwingTx = {
-    txId: `swing-${swingSegment}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    team: winnerTeam.name,
-    // Stable key alongside the editable name — mirrors the client's
-    // computeSwingAward (src/utils/swingAward.js). See txBelongsToTeam.
-    teamId: winnerTeam.id || winnerTeam.name,
-    type: 'swing_winner',
-    player: winnerTeam.owner,
-    fee: 0,
-    amount: pot,
-    segment: swingSegment,
-    date: new Date().toLocaleDateString(),
-    timestamp: Date.now(),
-    status: 'completed',
-    tournamentIndex: lastSegTourney?.idx ?? undefined,
-    tournament: lastSegTourney?.t?.name ?? undefined,
-    note: swingSegment + ' winner pot (auto-awarded by cron)',
-  };
-
-  // Pot is a side-prize tracked in transactions only — does NOT add to
-  // team.earnings, so standings (which derive from tournament.results)
-  // remain unaffected. The client's computeSwingAward now matches this
-  // (it used to ADD the pot to team.earnings, so a team's stored total
-  // depended on whether cron or the commish's browser awarded the swing).
-  return {
-    updatedTeams: teams,
-    newSwingTx,
-    pot,
-    winnerTeamName: winnerTeam.name,
-  };
-}
+// Segment, fee, pot and swing-award all come from ./_rules.js now. This file
+// used to define getSegmentForTournamentServer, getTransactionFeeServer,
+// computeSwingPotServer and maybeAutoAwardSwingServer, each under a
+// "⚠ KEEP IN SYNC with src/utils/..." comment. Every one of them had drifted
+// from the client at some point — wrong month→swing mapping, alternates
+// counted in the pot, a different roster-replay order — and each drift showed
+// up as the cron quietly disagreeing with what managers saw on screen.
 
 function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam, swingWinnerInfo, seasonStandings) {
   // Defensive: handleNotifyResults takes teamResults from the client body, so
@@ -594,14 +441,7 @@ async function handleWaivers(res) {
   // Derive each team's current season earnings from tournament.results so
   // waiver priority isn't affected by drift in the stored team.earnings
   // field. Mirrors the client-side fix in handleProcessAll.
-  const derivedEarnings = {};
-  teams.forEach(t => { derivedEarnings[t.id] = 0; });
-  tournamentsForWaivers.forEach(t => {
-    if (!t.completed || !t.results?.teams) return;
-    Object.entries(t.results.teams).forEach(([teamId, result]) => {
-      if (derivedEarnings[teamId] !== undefined) derivedEarnings[teamId] += (result.totalEarnings || 0);
-    });
-  });
+  const derivedEarnings = getSeasonEarningsByTeam(tournamentsForWaivers);
   const em = {}; teams.forEach(t => { em[t.name] = derivedEarnings[t.id] || 0; });
   const pm = {}; [...teams].sort((a, b) => (derivedEarnings[a.id] || 0) - (derivedEarnings[b.id] || 0)).forEach((t, i) => { pm[t.name] = i; });
   let nextLastPlace = teams.length;
@@ -621,63 +461,15 @@ async function handleWaivers(res) {
   // availability logic and the manual handleProcessAll() path (buildRoster), so
   // the auto-processor can never disagree with what managers see on-screen.
   //
-  // ⚠ KEEP IN SYNC with buildEffectiveRoster in src/utils/sharedHelpers.js —
-  // api/ is a separate deploy target and can't import from src/. Same rules:
-  // resolve each transaction's position from its STABLE tournament name
-  // (falling back to the stored positional index for legacy rows), replay in
-  // chronological order, count only processed/completed.
-  const txPosition = (tx) => {
-    const name = tx.tournament ?? tx.tournamentName;
-    if (name) {
-      const idx = tournamentsForWaivers.findIndex(t => t && t.name === name);
-      if (idx !== -1) return idx;
-    }
-    return tx.tournamentIndex ?? Number.MAX_SAFE_INTEGER;
-  };
-  // When a transaction happened, in ms, or null. Tournament position alone is
-  // not a sufficient sort key: two moves made in the SAME event tie, and a
-  // stable sort then replays them in whatever order they were read, so an
-  // add-then-flip inside one free-agent window can resurrect the flipped
-  // player. See the worked example in sharedHelpers.buildEffectiveRoster.
-  const txTimeMs = (tx) => {
-    const t = tx?.timestamp;
-    if (typeof t === 'number') return Number.isFinite(t) ? t : null;
-    if (t) {
-      const ms = new Date(t).getTime();
-      if (Number.isFinite(ms)) return ms;
-    }
-    if (tx?.date) {
-      const ms = new Date(tx.date).getTime();
-      if (Number.isFinite(ms)) return ms;
-    }
-    return null;
-  };
-  const effectiveRoster = (t) => {
-    let names = (t.roster || []).map(p => p.name);
-    allTx
-      .filter(tx =>
-        txBelongsToTeam(tx, t) &&
-        tx.type !== 'mulligan' &&
-        tx.type !== 'swing_winner' &&
-        (tx.status === 'processed' || tx.status === 'completed'))
-      .map(tx => ({ tx, pos: txPosition(tx), ms: txTimeMs(tx) }))
-      .sort((a, b) => {
-        if (a.pos !== b.pos) return a.pos - b.pos;
-        if (a.ms !== null && b.ms !== null) return a.ms - b.ms;
-        // Undated rows predate the timestamp field, so they are older.
-        if (a.ms === null && b.ms !== null) return -1;
-        if (a.ms !== null && b.ms === null) return 1;
-        return 0;
-      })
-      .forEach(({ tx }) => {
-        if (tx.droppedPlayer) names = names.filter(n => n !== tx.droppedPlayer);
-        if (tx.player && !names.includes(tx.player)) names.push(tx.player);
-      });
-    return names;
-  };
-
+  // Shared with the client: buildEffectiveRoster in ./_rules.js is the same
+  // function the roster page, the add/drop modal and the commish's manual
+  // waiver panel run. This used to be an inline copy under a KEEP IN SYNC
+  // comment, and it had already drifted on ordering — the tiebreaker that stops
+  // a same-week add-then-flip leaving BOTH players on the roster was fixed on
+  // the client first.
   const allRostered = new Set();
-  teams.forEach(t => effectiveRoster(t).forEach(n => allRostered.add(n)));
+  teams.forEach(t => buildEffectiveRoster(t, allTx, { tournaments: tournamentsForWaivers })
+    .forEach(n => allRostered.add(n)));
 
   const dropped = new Set(), done = new Set(), failed = new Set(), applied = [];
   const processedResults = [];
@@ -970,14 +762,7 @@ async function handleNotifyResults(req, res) {
   let standings = Array.isArray(seasonStandings) && seasonStandings.length ? seasonStandings : null;
   if (!standings) {
     const tournaments = await loadTournaments();
-    const totals = {};
-    teams.forEach(t => { totals[t.id] = 0; });
-    tournaments.forEach(tt => {
-      if (!tt.completed || !tt.results?.teams) return;
-      Object.entries(tt.results.teams).forEach(([tid, r]) => {
-        if (totals[tid] !== undefined) totals[tid] += (r.totalEarnings || 0);
-      });
-    });
+    const totals = getSeasonEarningsByTeam(tournaments);
     standings = teams
       .map(t => ({ team: t.name, totalEarnings: totals[t.id] || 0 }))
       .sort((a, b) => b.totalEarnings - a.totalEarnings);
@@ -1094,12 +879,9 @@ async function handleProcessResults(res) {
     round3: normLeaders(rl?.round3),
   };
 
-  // Build bonus amounts from settings
-  const BONUSES_REG = { round1: 20000, round2: 40000, round3: 60000 };
-  const BONUSES_MAJ = { round1: 40000, round2: 80000, round3: 120000 };
-  const bonuses = tournament.isMajor
-    ? { round1: settings.bonusR1Major ?? BONUSES_MAJ.round1, round2: settings.bonusR2Major ?? BONUSES_MAJ.round2, round3: settings.bonusR3Major ?? BONUSES_MAJ.round3 }
-    : { round1: settings.bonusR1Regular ?? BONUSES_REG.round1, round2: settings.bonusR2Regular ?? BONUSES_REG.round2, round3: settings.bonusR3Regular ?? BONUSES_REG.round3 };
+  // Bonus amounts, honouring the commish's per-round overrides. The tables
+  // were declared inline here AND in src/constants — same numbers, twice.
+  const bonuses = bonusesFor(tournament, settings);
 
   // Process each team — mirrors processTournamentData exactly
   const resultsData = { teams: {}, earningsMap: { ...earningsMap }, roundLeaders, roundLeadersAll, fullLineups: {} };
@@ -1195,12 +977,27 @@ async function handleProcessResults(res) {
 
   // ── Auto-award swing winner if this was the final event of its swing ──
   // Mirrors the client-side handleManualEntry path. Loads transactions so
-  // computeSwingPotServer has fee totals and so we can append the new
-  // swing_winner tx to Firestore.
+  // getSwingPot needs the full transactions list, and we append the new
+  // swing_winner tx to Firestore below.
   const txSnap = await db.collection('transactions').get();
   const allTransactions = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const swingSegment = getSegmentForTournamentServer(newTournaments[ti]);
-  const autoAward = maybeAutoAwardSwingServer(swingSegment, newTournaments, updatedTeams, allTransactions, settings);
+  const swingSegment = getSegmentForTournament(newTournaments[ti]);
+  // Shared with the commissioner's in-app award path — same eligibility gate,
+  // same pot, same winner. Only the note differs, so the transaction log says
+  // which side actually fired it.
+  const award = computeSwingAward({
+    segment: swingSegment,
+    allTournaments: newTournaments,
+    transactions: allTransactions,
+    teams: updatedTeams,
+    settings,
+  });
+  const autoAward = award && {
+    updatedTeams: award.updatedTeams,
+    newSwingTx: { ...award.newTx, note: `${swingSegment} winner pot (auto-awarded by cron)` },
+    pot: award.pot,
+    winnerTeamName: award.winnerTeam.name,
+  };
   const finalTeams = autoAward?.updatedTeams || updatedTeams;
 
   // Write everything to Firebase
@@ -1279,14 +1076,7 @@ async function handleProcessResults(res) {
   // source the in-app StandingsView uses — so the email matches what
   // managers see when they next open the app.
   const seasonStandingsForEmail = (() => {
-    const totals = {};
-    teams.forEach(t => { totals[t.id] = 0; });
-    newTournaments.forEach(tt => {
-      if (!tt.completed || !tt.results?.teams) return;
-      Object.entries(tt.results.teams).forEach(([tid, r]) => {
-        if (totals[tid] !== undefined) totals[tid] += (r.totalEarnings || 0);
-      });
-    });
+    const totals = getSeasonEarningsByTeam(newTournaments);
     return teams
       .map(t => ({ team: t.name, totalEarnings: totals[t.id] || 0 }))
       .sort((a, b) => b.totalEarnings - a.totalEarnings);

@@ -6,7 +6,6 @@ import { TEAM_ABBREVIATIONS } from '../constants/index.js';
 import { nameKey } from '../../api/_playerNames.js';
 import {
   SEASON,
-  swingForMonth,
   getETNow as _getETNow,
   fmtWaiverCutoff,
   waiverCutoff,
@@ -113,62 +112,12 @@ export const compactTeamName = (name) =>
  */
 export const getETNow = _getETNow;
 
-// ============================================================================
-// SEGMENT — CANONICAL 4-SWING MAPPING (Wave 7)
-// ============================================================================
-// SFGL uses 4 swings, evenly distributed across the year:
-//   West Coast Swing  Jan – Mar
-//   Spring Swing      Apr – Jun
-//   Summer Swing      Jul – Sep
-//   Fall Finish       Oct – Dec
-//
-// Previously this codebase had SIX competing month-to-segment helpers that
-// disagreed about whether May was "Florida Swing" or "Spring Swing" and about
-// whether SWINGS was a 4-element or 5-element array. This is now the single
-// source of truth — all consumers (AdminView, StandingsView, ResultsView,
-// TransactionsView, App.jsx, etc.) import getSegmentByDate / getSegmentForTournament
-// from here.
-// ============================================================================
-
-/**
- * Returns the segment name for a given date (defaults to today).
- * Accepts an optional Date object so callers like StandingsView can
- * resolve the segment for a specific tournament start date rather than
- * relying on the current wall-clock month.
- */
-export const getSegmentByDate = (date) =>
-  swingForMonth((date || new Date()).getMonth() + 1);
-
-/**
- * Returns the segment for a tournament. Honors an explicit `tournament.segment`
- * field (set by AdminView when uploading the schedule) and falls back to
- * date-based inference. Replaces the local copies in AdminView, ResultsView,
- * TransactionsView, and StandingsView.
- */
-export const getSegmentForTournament = (tournament) => {
-  if (!tournament) return null;
-  if (tournament.segment) return tournament.segment;
-  if (tournament.swing)   return tournament.swing;
-  // Try startDate first
-  if (tournament.startDate) {
-    return getSegmentByDate(new Date(tournament.startDate));
-  }
-  // Fall back to parsing dates string ("Apr 6-12")
-  if (tournament.dates) {
-    const m = tournament.dates.match(/^([A-Za-z]+)\s+(\d+)/);
-    if (m) {
-      const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
-      const mo = months[m[1]];
-      if (mo !== undefined) {
-        // Only the month affects the answer, but use SEASON rather than the
-        // wall-clock year so this agrees with getTournamentStartDate below,
-        // which parses the same year-less `dates` string.
-        return getSegmentByDate(new Date(SEASON, mo, parseInt(m[2])));
-      }
-    }
-  }
-  return null;
-};
+// ── Segment resolution ───────────────────────────────────────────────────────
+// Moved to api/_rules.js so api/cron.js runs this code rather than its own
+// getSegmentForTournamentServer, which had at one point mapped Jan-Mar to
+// 'Spring Swing' and Aug-Sep to a 'Fall Swing' that exists nowhere else in the
+// codebase. Re-exported so existing importers are unchanged.
+export { getSegmentByDate, getSegmentForTournament } from '../../api/_rules.js';
 
 // ============================================================================
 // TOURNAMENT TIMEZONE / LOCK LOGIC
