@@ -9,9 +9,14 @@
 // was inside them — which is precisely the shape `vercel env pull` writes a
 // service account in, so the fix for one shell broke on the real file.
 //
-// The fixture below is built by serialising a service-account object the way
-// the Vercel CLI does, rather than by hand, so it cannot drift into testing a
-// format nobody produces.
+// The fixtures cover BOTH escaping depths seen in real pulled files, because
+// assuming one of them is how this broke the second time:
+//
+//   singly escaped   \"type\": … \"private_key\":\"…\nMII…\n…\"
+//   doubly escaped   \"type\": … \"private_key\":\"…\\nMII…\\n…\"
+//
+// Which one you get depends on the CLI version and on whether a human pasted
+// the JSON into the Vercel dashboard. Both must yield the same key.
 //
 //   node scripts/test-env-parsing.mjs
 // ============================================================================
@@ -33,30 +38,49 @@ const SA = {
   private_key: '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\nkqhkiG9w0BAQ==\n-----END PRIVATE KEY-----\n',
   client_email: 'firebase-adminsdk-fbsvc@sfgl-ad892.iam.gserviceaccount.com',
 };
-// Exactly what `vercel env pull` writes: JSON.stringify the object, then quote
-// and escape that string as an env value.
-const vercelLine = `FIREBASE_SERVICE_ACCOUNT=${JSON.stringify(JSON.stringify(SA))}`;
+// The JSON text of the service account, with its private key carrying the \n
+// escapes JSON itself defines.
+const SA_JSON = JSON.stringify(SA);
+
+// DOUBLY escaped: JSON.stringify again, so every \ and " in SA_JSON is escaped
+// once more. This is what a strict serialiser produces.
+const doublyEscaped = `FIREBASE_SERVICE_ACCOUNT=${JSON.stringify(SA_JSON)}`;
+
+// SINGLY escaped: quotes escaped, backslashes left as they were. This is what
+// the file on a real machine turned out to contain, and what broke the first
+// attempt at this parser.
+const singlyEscaped =
+  `FIREBASE_SERVICE_ACCOUNT="${SA_JSON.replace(/"/g, '\\"')}"`;
 
 console.log('\n.env parsing — the vercel env pull format');
 
-test('the fixture really is escaped, or it tests nothing', () => {
-  assert.ok(vercelLine.includes('\\"type\\"'), 'fixture is not backslash-escaped');
-  assert.ok(vercelLine.includes('\\\\n'), 'fixture private key is not doubly escaped');
+test('the fixtures really are escaped, and differently, or they test nothing', () => {
+  assert.ok(doublyEscaped.includes('\\"type\\"'), 'doubly-escaped fixture is not escaped');
+  assert.ok(doublyEscaped.includes('\\\\n'), 'doubly-escaped fixture has no \\\\n');
+  assert.ok(singlyEscaped.includes('\\"type\\"'), 'singly-escaped fixture is not escaped');
+  assert.ok(!singlyEscaped.includes('\\\\n'), 'singly-escaped fixture should have no \\\\n');
 });
 
-test('a service account survives the round trip and parses', () => {
-  const env = parseEnvFile(['# Created by Vercel CLI', vercelLine].join('\n'));
-  const parsed = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);   // the step that failed
-  assert.deepEqual(parsed, SA);
+test('a DOUBLY escaped service account parses', () => {
+  const env = parseEnvFile(['# Created by Vercel CLI', doublyEscaped].join('\n'));
+  assert.deepEqual(JSON.parse(env.FIREBASE_SERVICE_ACCOUNT), SA);
 });
 
-test('the private key keeps its real newlines', () => {
+test('a SINGLY escaped service account parses', () => {
+  // The shape that produced "Bad control character in string literal" when the
+  // parser converted the inner \n to a real newline.
+  const env = parseEnvFile(['# Created by Vercel CLI', singlyEscaped].join('\n'));
+  assert.deepEqual(JSON.parse(env.FIREBASE_SERVICE_ACCOUNT), SA);
+});
+
+test('both escaping depths yield the identical private key', () => {
   // cert() rejects a key whose newlines got flattened, with an error that says
   // nothing useful about why.
-  const env = parseEnvFile(vercelLine);
-  const { private_key: key } = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
-  assert.equal(key, SA.private_key);
-  assert.equal(key.split('\n').length - 1, 4);
+  const a = JSON.parse(parseEnvFile(doublyEscaped).FIREBASE_SERVICE_ACCOUNT).private_key;
+  const b = JSON.parse(parseEnvFile(singlyEscaped).FIREBASE_SERVICE_ACCOUNT).private_key;
+  assert.equal(a, SA.private_key);
+  assert.equal(b, SA.private_key);
+  assert.equal(a.split('\n').length - 1, 4);
 });
 
 test('the three-field form unescapes to a usable key too', () => {
@@ -83,7 +107,22 @@ test('single quotes are literal — no unescaping', () => {
   // The usual dotenv convention, and the reason the two quote styles are
   // handled by different branches.
   assert.equal(parseEnvFile(`X='a\\nb'`).X, 'a\\nb');
-  assert.equal(parseEnvFile('X="a\\nb"').X, 'a\nb');
+});
+
+test('\\n is preserved, not turned into a newline', () => {
+  // The deviation from dotenv that makes an embedded JSON value survive.
+  assert.equal(parseEnvFile('X="a\\nb"').X, 'a\\nb');
+  assert.ok(!parseEnvFile('X="a\\nb"').X.includes('\n'), 'a real newline crept in');
+});
+
+test('escaped quotes and backslashes ARE unescaped', () => {
+  assert.equal(parseEnvFile('X="say \\"hi\\""').X, 'say "hi"');
+  assert.equal(parseEnvFile('X="a\\\\b"').X, 'a\\b');
+});
+
+test('an unrecognised escape keeps its backslash', () => {
+  // Dropping it silently would corrupt a Windows path or a regex.
+  assert.equal(parseEnvFile('X="C:\\dev\\sfgl"').X, 'C:\\dev\\sfgl');
 });
 
 test('comments and blank lines are skipped', () => {

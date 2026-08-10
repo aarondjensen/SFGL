@@ -48,24 +48,32 @@ import { dirname, join } from 'node:path';
 // wrong, but not silently wrong.
 const ENV_FILES = ['.env.local', '.env.production.local', '.env.production', '.env'];
 
-// Undo the backslash escaping inside a DOUBLE-quoted value. Single-quoted
-// values are literal, which is the usual dotenv convention.
+// Undo the ENV-LEVEL escaping inside a double-quoted value, and nothing more.
+// Single-quoted values are literal, the usual dotenv convention.
 //
-// This is the part that matters for the service account. `vercel env pull`
-// writes it as one double-quoted line with every inner quote escaped:
+// Only \\ and \" and \' are unescaped. \n, \r and \t are deliberately left
+// ALONE — which is a deviation from dotenv, and the only thing that makes this
+// work on a real file.
 //
-//   FIREBASE_SERVICE_ACCOUNT="{\"type\":\"service_account\", … }"
+// The reason is that the value we care about is itself JSON. `vercel env pull`
+// writes a service account as one double-quoted line, and its private key
+// carries \n escapes that belong to the INNER JSON — JSON.parse is what turns
+// those into newlines, one step later. Converting them here produces literal
+// newlines inside a JSON string literal, which is a syntax error ("Bad control
+// character in string literal").
 //
-// Stripping the outer quotes without unescaping leaves {\"type\": … , which
-// fails JSON.parse at position 1 on the backslash. The doubled \\n inside the
-// private key must survive as a literal backslash-n, because JSON.parse is what
-// turns THAT into a real newline a line later — so \\ is handled before \n and
-// the order of these cases is load-bearing.
-const unescape = (v) => v.replace(/\\(.)/g, (_, c) => (
-  c === 'n' ? '\n' :
-  c === 'r' ? '\r' :
-  c === 't' ? '\t' :
-  c            // covers \\ and \" and anything else: emit the char as-is
+// It also makes the rule indifferent to how many layers of escaping the file
+// actually has, which varies by Vercel CLI version and by whether a human
+// pasted the JSON:
+//
+//   \"  ->  "     env-level quote escaping, always undone
+//   \n  ->  \n    left intact, JSON.parse handles it
+//   \\n ->  \n    the \\ collapses, same result
+//
+// Both shapes therefore land on the same correct string. An unrecognised
+// escape keeps its backslash rather than silently losing it.
+const unescape = (v) => v.replace(/\\(.)/g, (match, c) => (
+  c === '\\' || c === '"' || c === "'" ? c : match
 ));
 
 // Exported for scripts/test-env-parsing.mjs. This has been wrong twice — first
@@ -157,6 +165,19 @@ export function adminDb() {
     } catch (err) {
       console.error(`\nFIREBASE_SERVICE_ACCOUNT is set but is not valid JSON: ${err.message}`);
       console.error('It should be the entire service-account file, quoted as one string.\n');
+      // A shape summary, not the value. Escaping depth varies between files and
+      // is exactly what determines whether the parser above handled it — but
+      // the value is a private key, so none of it is printed. Counts and
+      // booleans only.
+      const count = (re) => (blob.match(re) || []).length;
+      console.error('What was actually read (no secret material below):');
+      console.error(`  length                 ${blob.length}`);
+      console.error(`  starts with {          ${blob.trimStart().startsWith('{')}`);
+      console.error(`  contains real newlines ${/[\n\r]/.test(blob)}   <- must be false`);
+      console.error(`  \\" sequences           ${count(/\\"/g)}`);
+      console.error(`  \\n sequences           ${count(/(?<!\\)\\n/g)}`);
+      console.error(`  \\\\n sequences          ${count(/\\\\n/g)}`);
+      console.error('');
       process.exit(2);
     }
     initializeApp({ credential: cert(parsed) });
