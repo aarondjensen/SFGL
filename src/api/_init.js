@@ -26,7 +26,6 @@
 //   league_settings    → /league_settings/{key}
 //   draft_state        → /draft_state/default
 //   draft_picks        → /draft_picks/{autoId}
-//   tournament_results → /tournament_results/{tournamentName}_{season}
 //   sfgl_data          → /sfgl_data/{key}
 // ============================================================================
 

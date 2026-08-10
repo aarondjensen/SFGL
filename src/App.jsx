@@ -60,7 +60,7 @@ import { useLeague }       from './hooks';
 import { colors, fonts, fontSize, amber, gold, white, black, brass } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS } from './constants';
 import { SEASON } from '../api/_league.js';
-import { tournamentResultsApi, tournamentsApi, playersApi } from './api/firebase';
+import { tournamentsApi, playersApi } from './api/firebase';
 import { managerActivityApi } from './api/managerActivity';
 import { mergeHeadshotEntry, changedHeadshotIds, getPlayerHeadshotUrls } from './utils/headshotUtils';
 import AuthGate from './pages/AuthGate';
@@ -385,18 +385,17 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   //
   // One effect, one latch, and the two steps in the order they depend on.
   //
-  // Step 2 reads /tournament_results, which is a FROZEN ARCHIVE: nothing has
-  // written to it since tournamentResultsApi.save lost its last caller. Both
-  // the client and the cron now write results onto the tournament document
-  // itself (/tournaments/{name}.results), which carries the same payload —
-  // teams, earningsMap, roundLeaders, fullLineups, rosterSnapshots. The archive
-  // is kept in the read path only as a one-way backstop for events whose
-  // embedded copy was lost before that changed, and it can only ever FILL A
-  // GAP: a tournament that already has results is never overwritten.
+  // It also used to read /tournament_results as a second step, filling result
+  // gaps from an archive that nothing had written to since
+  // tournamentResultsApi.save lost its last caller. Results live on the
+  // tournament document itself (/tournaments/{name}.results), written by both
+  // the client and the cron.
   //
-  // scripts/audit-tournament-results.mjs answers whether the archive still
-  // holds anything the canonical collection does not. If it does not, this
-  // step and the collection can both go.
+  // scripts/audit-tournament-results.mjs was written to answer whether the
+  // archive still held anything the canonical collection did not. Run against
+  // production it reported CLEAN — 0 archive-only, 0 disagreeing, 0 orphaned,
+  // and in fact 0 documents at all for the season — so the read, the API and
+  // the collection are gone. Results now have exactly one home.
   const [recoveryDone, setRecoveryDone] = useState(false);
   useEffect(() => {
     if (loading || recoveryDone) return;
@@ -411,34 +410,16 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
         // fromServer: this is the recovery path — the normal load already came
         // back with nothing, so asking the device's Firestore cache again would
         // just return the same nothing.
-        let list = tournaments;
-        if (list.length === 0) {
+        if (tournaments.length === 0) {
           console.log('[App] tournaments empty after load — recovering from Firebase');
           const remote = await tournamentsApi.getAll({ fromServer: true });
           if (cancelled) return;
           if (remote?.length > 0) {
             console.log(`[App] recovered ${remote.length} tournaments from Firebase`);
             setTournaments(remote);
-            list = remote;
           } else {
             console.warn('[App] Firebase tournaments fetch returned empty — data may be missing');
           }
-        }
-
-        // Nothing to hydrate against; leave the latch open so a later
-        // subscription snapshot gets the same treatment.
-        if (list.length === 0) return;
-
-        // Step 2 — fill result gaps from the frozen archive.
-        const archived = await tournamentResultsApi.getAllForSeason();
-        if (cancelled) return;
-        if (archived?.length) {
-          const byName = new Map(archived.map(r => [r.tournamentName, r]));
-          setTournaments(prev => prev.map(t => {
-            if (t.results) return t;                 // canonical wins, always
-            const found = byName.get(t.name);
-            return found ? { ...t, completed: true, results: found.results } : t;
-          }));
         }
       } catch (e) {
         console.warn('[App] tournament recovery skipped:', e?.message || e);

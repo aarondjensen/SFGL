@@ -21,7 +21,6 @@
  *   league_settings    → /league_settings/{key}
  *   draft_state        → /draft_state/default
  *   draft_picks        → /draft_picks/{autoId}
- *   tournament_results → /tournament_results/{tournamentName}_{season}
  *   sfgl_data          → /sfgl_data/{key}
  *
  * DEPRECATED: /liv_roster/ — LIV status now lives on /players/{name}.is_liv.
@@ -47,7 +46,6 @@ import {
   deleteField,
 } from 'firebase/firestore';
 
-// ── Firestore handle ─────────────────────────────────────────────────────────
 // ── Firestore handle ─────────────────────────────────────────────────────────
 // Imported from ./_init.js, which is the one place the SDK is initialized —
 // and which said so in its own header while this file quietly did it again.
@@ -649,7 +647,6 @@ export const playersApi = {
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
 import { resolveAlias, NameSet } from '../../api/_playerNames.js';
-import { SEASON } from '../../api/_league.js';
 
 
 const PLAYER_CACHE_KEY = 'sfgl-player-cache';
@@ -1379,32 +1376,17 @@ export const settingsApi = {
 // scripts/audit-tournament-results.mjs reports whether the archive still holds
 // anything /tournaments does not. Once it reports clean, this API and the
 // recovery step in App.jsx can both go, and results will have exactly one home.
-export const tournamentResultsApi = {
-  async getAllForSeason(season = SEASON) {
-    const q = query(
-      collection(db, 'tournament_results'),
-      where('season', '==', season),
-      orderBy('processed_at')
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map(d => {
-      const row = d.data();
-      return {
-        tournamentName: row.tournament_name,
-        season:         row.season,
-        processedAt:    row.processed_at,
-        isManualEntry:  row.is_manual_entry,
-        results: {
-          teams:           row.team_results,
-          earningsMap:     row.earnings_map,
-          roundLeaders:    row.round_leaders,
-          fullLineups:     row.full_lineups     || {},
-          rosterSnapshots: row.roster_snapshots || {},
-        },
-      };
-    });
-  },
-};
+// tournament_results — REMOVED.
+//
+// A frozen archive with no writer: tournamentResultsApi.save lost its last
+// caller some time ago, and results live on the tournament document itself
+// (/tournaments/{name}.results). App.jsx read this collection once at load as
+// a one-way backstop for events whose embedded copy predated that change.
+//
+// scripts/audit-tournament-results.mjs compared the two against production and
+// reported CLEAN: no archive-only results, none disagreeing, none orphaned —
+// zero documents for the season at all. So the read and this API are gone, and
+// results have exactly one home.
 
 // ============================================================================
 // SFGL DATA API  (generic key-value store — replaces sfgl_data table)

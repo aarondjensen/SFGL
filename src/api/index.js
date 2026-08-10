@@ -15,5 +15,4 @@ export {
   sfglDataApi,
   globalPlayerStatsApi,
   playerRegistryApi,
-  tournamentResultsApi,
 } from './firebase';

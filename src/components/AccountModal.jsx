@@ -14,7 +14,7 @@
 import { useState, useEffect } from 'react';
 import { LogOut } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
-import { colors, fonts, gold, white, black, red, fontSize } from '../theme.js';
+import { colors, fonts, gold, white, red, fontSize } from '../theme.js';
 import { BottomSheet, SheetBody } from './BottomSheet';
 import { useUserTeam } from '../hooks/useUserTeam';
 import { linkAppleAccount, linkGoogleAccount, getLinkedProviders } from '../api/authApi';
