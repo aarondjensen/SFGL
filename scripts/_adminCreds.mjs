@@ -76,6 +76,87 @@ const unescape = (v) => v.replace(/\\(.)/g, (match, c) => (
   c === '\\' || c === '"' || c === "'" ? c : match
 ));
 
+// ── Decoding a service account ───────────────────────────────────────────────
+// The env-level unescape above is not enough on its own, because \n inside this
+// particular value is genuinely ambiguous. A real pulled file looks like:
+//
+//   FIREBASE_SERVICE_ACCOUNT="{\n  "type": "service_account",\n  "private_key":
+//     "-----BEGIN PRIVATE KEY-----\nMIIEv…\n-----END PRIVATE KEY-----\n"}"
+//
+// The JSON was pretty-printed and its real newlines escaped, but its quotes were
+// left bare. So \n now means two different things in one string:
+//
+//   between tokens   structural whitespace — must become a real newline, or
+//                    JSON.parse hits a backslash where it wants a property name
+//   inside a string  the private key's own line breaks — must STAY \n, or
+//                    JSON.parse reports a bad control character in a string
+//
+// No uniform substitution satisfies both; applying either one breaks the other,
+// which is precisely what the two previous attempts at this did, in opposite
+// directions. Telling them apart needs one bit of state — are we inside a
+// string — so that is what this tracks.
+const unescapeStructuralWhitespace = (text) => {
+  let out = '';
+  let inString = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (c === '\\' && i + 1 < text.length) {
+      const n = text[i + 1];
+      if (!inString && (n === 'n' || n === 'r' || n === 't')) {
+        out += n === 'n' ? '\n' : n === 'r' ? '\r' : '\t';
+        i += 1;
+        continue;
+      }
+      // Inside a string, or not a whitespace escape: keep the pair verbatim
+      // and let JSON.parse deal with it. Consuming both characters is also
+      // what stops an escaped quote from toggling inString.
+      out += c + n;
+      i += 1;
+      continue;
+    }
+    if (c === '"') inString = !inString;
+    out += c;
+  }
+  return out;
+};
+
+/**
+ * Turn the FIREBASE_SERVICE_ACCOUNT value into an object, or null.
+ *
+ * Deliberately try-then-verify rather than one clever rule. How the value is
+ * escaped varies with the Vercel CLI version, with whether the JSON was
+ * pretty-printed before it was stored, and with whether a human pasted it into
+ * the dashboard — and each variation needs a different decoding. Since the
+ * result is checkable, the honest approach is to attempt each and keep the one
+ * that produces a usable credential, instead of inferring the format and being
+ * wrong about it.
+ *
+ * The check is deliberately more than "did JSON.parse succeed": a decoding can
+ * produce valid JSON that is not a service account, and cert() would then fail
+ * later with something far less obvious.
+ */
+export const decodeServiceAccount = (raw) => {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const candidates = [
+    raw,                                                    // already clean JSON
+    unescapeStructuralWhitespace(raw),                      // pretty-printed, newlines escaped
+    unescape(raw),                                          // env-level \" escaping left over
+    unescapeStructuralWhitespace(unescape(raw)),            // both at once
+  ];
+  for (const candidate of candidates) {
+    let parsed;
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    if (parsed && typeof parsed === 'object' && parsed.private_key && parsed.client_email) {
+      return parsed;
+    }
+  }
+  return null;
+};
+
 // Exported for scripts/test-env-parsing.mjs. This has been wrong twice — first
 // not reading .env at all, then stripping quotes without unescaping — and both
 // times the symptom was a maintenance script that looked broken.
@@ -159,11 +240,10 @@ export function adminDb() {
 
   const blob = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (blob) {
-    let parsed;
-    try {
-      parsed = JSON.parse(blob);
-    } catch (err) {
-      console.error(`\nFIREBASE_SERVICE_ACCOUNT is set but is not valid JSON: ${err.message}`);
+    const parsed = decodeServiceAccount(blob);
+    if (!parsed) {
+      console.error('\nFIREBASE_SERVICE_ACCOUNT is set but could not be decoded as a');
+      console.error('service account. Every known escaping of it was tried.');
       console.error('It should be the entire service-account file, quoted as one string.\n');
       // A shape summary, not the value. Escaping depth varies between files and
       // is exactly what determines whether the parser above handled it — but
@@ -180,7 +260,19 @@ export function adminDb() {
       console.error('');
       process.exit(2);
     }
-    initializeApp({ credential: cert(parsed) });
+    try {
+      initializeApp({ credential: cert(parsed) });
+    } catch (err) {
+      // Decoding succeeded, so the JSON was fine and the key itself is not.
+      // Left uncaught this is a raw ASN.1 stack trace, which reads like the
+      // script is broken rather than the credential.
+      console.error(`\nThe service account decoded, but Firebase rejected it: ${err.message}`);
+      console.error('\nUsually one of:');
+      console.error('  • the private key was truncated or had its newlines flattened');
+      console.error('  • the key was revoked in Firebase console → Service accounts');
+      console.error('  • the JSON is from a different Firebase project\n');
+      process.exit(2);
+    }
     return getFirestore();
   }
 

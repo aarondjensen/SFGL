@@ -22,7 +22,7 @@
 // ============================================================================
 
 import assert from 'node:assert/strict';
-import { parseEnvFile } from './_adminCreds.mjs';
+import { parseEnvFile, decodeServiceAccount } from './_adminCreds.mjs';
 
 let passed = 0;
 const test = (name, fn) => {
@@ -88,6 +88,63 @@ test('the three-field form unescapes to a usable key too', () => {
   const env = parseEnvFile(line);
   // _adminCreds applies this same replace before handing it to cert().
   assert.equal(env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'), SA.private_key);
+});
+
+console.log('\nservice account — every escaping seen in a real file');
+
+// Each entry is the VALUE as it sits in the .env line, after the surrounding
+// quotes come off. All four must decode to the identical credential.
+const SHAPES = {
+  // The JSON straight out of the console, unmodified.
+  'clean JSON': JSON.stringify(SA),
+
+  // Pretty-printed, then only the real newlines escaped — quotes left bare.
+  // This is what an actual `vercel env pull` produced, and the shape that
+  // broke both earlier attempts: \n means structural whitespace in some
+  // places and a private-key line break in others.
+  'pretty-printed, newlines escaped': JSON.stringify(SA, null, 2).replace(/\n/g, '\\n'),
+
+  // Quotes escaped, backslashes not.
+  'quotes escaped': JSON.stringify(SA).replace(/"/g, '\\"'),
+
+  // Fully re-serialised, so everything is escaped twice.
+  'doubly escaped': JSON.stringify(JSON.stringify(SA)).slice(1, -1),
+};
+
+for (const [label, value] of Object.entries(SHAPES)) {
+  test(`decodes: ${label}`, () => {
+    const decoded = decodeServiceAccount(value);
+    assert.ok(decoded, 'returned null');
+    assert.deepEqual(decoded, SA);
+    // The one field that silently ruins a credential if it is mangled.
+    assert.equal(decoded.private_key, SA.private_key);
+    assert.equal(decoded.private_key.split('\n').length - 1, 4);
+  });
+}
+
+test('the four shapes really are four different strings', () => {
+  const values = Object.values(SHAPES);
+  assert.equal(new Set(values).size, values.length,
+    'two fixtures are identical — one of them is testing nothing');
+});
+
+test('refuses valid JSON that is not a service account', () => {
+  // A decoding can succeed and still be wrong; cert() would then fail later
+  // with something far less obvious than this.
+  assert.equal(decodeServiceAccount('{"hello":"world"}'), null);
+  assert.equal(decodeServiceAccount('[1,2,3]'), null);
+  assert.equal(decodeServiceAccount('"a string"'), null);
+});
+
+test('refuses empty and non-string input', () => {
+  assert.equal(decodeServiceAccount(''), null);
+  assert.equal(decodeServiceAccount('   '), null);
+  assert.equal(decodeServiceAccount(undefined), null);
+  assert.equal(decodeServiceAccount(null), null);
+});
+
+test('undecodable input returns null rather than throwing', () => {
+  assert.equal(decodeServiceAccount('{not json at all'), null);
 });
 
 console.log('\n.env parsing — ordinary lines');
