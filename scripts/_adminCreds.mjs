@@ -48,7 +48,30 @@ import { dirname, join } from 'node:path';
 // wrong, but not silently wrong.
 const ENV_FILES = ['.env.local', '.env.production.local', '.env.production', '.env'];
 
-const parseEnvFile = (text) => {
+// Undo the backslash escaping inside a DOUBLE-quoted value. Single-quoted
+// values are literal, which is the usual dotenv convention.
+//
+// This is the part that matters for the service account. `vercel env pull`
+// writes it as one double-quoted line with every inner quote escaped:
+//
+//   FIREBASE_SERVICE_ACCOUNT="{\"type\":\"service_account\", … }"
+//
+// Stripping the outer quotes without unescaping leaves {\"type\": … , which
+// fails JSON.parse at position 1 on the backslash. The doubled \\n inside the
+// private key must survive as a literal backslash-n, because JSON.parse is what
+// turns THAT into a real newline a line later — so \\ is handled before \n and
+// the order of these cases is load-bearing.
+const unescape = (v) => v.replace(/\\(.)/g, (_, c) => (
+  c === 'n' ? '\n' :
+  c === 'r' ? '\r' :
+  c === 't' ? '\t' :
+  c            // covers \\ and \" and anything else: emit the char as-is
+));
+
+// Exported for scripts/test-env-parsing.mjs. This has been wrong twice — first
+// not reading .env at all, then stripping quotes without unescaping — and both
+// times the symptom was a maintenance script that looked broken.
+export const parseEnvFile = (text) => {
   const out = {};
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -57,9 +80,9 @@ const parseEnvFile = (text) => {
     if (eq === -1) continue;
     const key = trimmed.slice(0, eq).trim();
     let value = trimmed.slice(eq + 1).trim();
-    // Strip one matching pair of surrounding quotes, if present.
-    if (value.length >= 2 && ((value[0] === '"' && value.endsWith('"')) ||
-                              (value[0] === "'" && value.endsWith("'")))) {
+    if (value.length >= 2 && value[0] === '"' && value.endsWith('"')) {
+      value = unescape(value.slice(1, -1));
+    } else if (value.length >= 2 && value[0] === "'" && value.endsWith("'")) {
       value = value.slice(1, -1);
     }
     if (key) out[key] = value;
