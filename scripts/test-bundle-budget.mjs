@@ -79,10 +79,19 @@ test('the deferred chunks stayed deferred', () => {
   }
 });
 
-test('first load stays under 250 kB gzipped', () => {
+test('first load stays under 265 kB gzipped', () => {
   // Headroom over the current figure, not a target to grow into. If a genuine
   // feature needs more, move the number deliberately rather than by accident.
-  assert.ok(gz < 250 * 1024, `first load is ${(gz / 1024).toFixed(1)} kB gzipped`);
+  //
+  // Moved from 250 when _init.js switched Firestore to a persistent on-disk
+  // cache (initializeFirestore + persistentLocalCache). That pulls the
+  // IndexedDB persistence layer of the SDK into vendor-firebase: +22.6 kB
+  // gzipped on first load, in exchange for relaunches resuming from a stored
+  // token instead of re-reading whole collections. For a phone-first app that
+  // cold-starts constantly it pays for itself on the second launch — a
+  // deliberate trade, recorded here because this guard is what made it visible
+  // at all.
+  assert.ok(gz < 265 * 1024, `first load is ${(gz / 1024).toFixed(1)} kB gzipped`);
 });
 
 console.log(`${passed} assertions passed${process.exitCode ? ' (with failures)' : ''}\n`);

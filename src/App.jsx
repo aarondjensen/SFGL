@@ -62,7 +62,7 @@ import { STORAGE_KEYS, INITIAL_TEAMS } from './constants';
 import { SEASON } from '../api/_league.js';
 import { tournamentResultsApi, tournamentsApi, playersApi } from './api/firebase';
 import { managerActivityApi } from './api/managerActivity';
-import { mergeHeadshotEntry, getPlayerHeadshotUrls } from './utils/headshotUtils';
+import { mergeHeadshotEntry, changedHeadshotIds, getPlayerHeadshotUrls } from './utils/headshotUtils';
 import AuthGate from './pages/AuthGate';
 import { watchAuth, subscribeClaims, teamIdForUid, claimTeam, signOutUser } from './api/authApi';
 
@@ -407,10 +407,14 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
 
         // Step 1 — the array is empty after the full cascade (Firebase →
         // sfgl_data → localStorage). Try the canonical collection once more.
+        //
+        // fromServer: this is the recovery path — the normal load already came
+        // back with nothing, so asking the device's Firestore cache again would
+        // just return the same nothing.
         let list = tournaments;
         if (list.length === 0) {
           console.log('[App] tournaments empty after load — recovering from Firebase');
-          const remote = await tournamentsApi.getAll();
+          const remote = await tournamentsApi.getAll({ fromServer: true });
           if (cancelled) return;
           if (remote?.length > 0) {
             console.log(`[App] recovered ${remote.length} tournaments from Firebase`);
@@ -492,6 +496,12 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
     return () => ro.disconnect();
   }, [loading]);
 
+  // Live mirror of the headshots map, so callbacks can read the current map
+  // without taking it as a dependency (which would re-create them on every
+  // headshot merge). Declared here because resolveHeadshots below reads it too.
+  const headshotsMapRef = useRef(safeHeadshots);
+  useEffect(() => { headshotsMapRef.current = safeHeadshots; }, [safeHeadshots]);
+
   // Resolve a batch of names through /api/headshots and merge + persist the
   // ids. Shared by both triggers below; the per-name TTL stamp lives in
   // fetchAttemptsRef, so two triggers can never double-request the same name.
@@ -568,12 +578,12 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           } else {
             console.log(`✓ Auto-fetched ${found} headshot IDs`);
           }
-          // Persist to player documents for future loads
-          const toSave = Object.entries(data.results).map(([name, entry]) => ({
-            name,
-            espnId: entry?.espn,
-            pgaId:  entry?.pga,
-          }));
+          // Persist to player documents for future loads — but ONLY the ids
+          // that actually changed (see changedHeadshotIds). Trigger 1 re-runs
+          // over the whole roster on every launch, so writing back every result
+          // meant rewriting ~75 player docs per launch with the values they
+          // already held.
+          const toSave = changedHeadshotIds(headshotsMapRef.current, data.results);
           if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
         }
       })
@@ -610,8 +620,9 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   // window) — the second case is the one that used to poll forever. Note the
   // whole unresolved set goes out as ONE batched request, so the cost of a
   // firing tick is a single call no matter how many players are missing.
-  const headshotsMapRef = useRef(safeHeadshots);
-  useEffect(() => { headshotsMapRef.current = safeHeadshots; }, [safeHeadshots]);
+  //
+  // headshotsMapRef is declared above, next to resolveHeadshots, which reads it
+  // too.
   useEffect(() => {
     if (loading) return;
     if (!rosteredNames.length) return;

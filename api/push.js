@@ -33,7 +33,7 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
-import { DEFAULTS_ON, dedupeTokenDocs } from './_constants.js';
+import { isEventEnabled, dedupeTokenDocs } from './_constants.js';
 
 // ── Firebase Admin init (mirrors api/cron.js pattern) ───────────────────────
 function getApp() {
@@ -165,16 +165,16 @@ export default async function handler(req, res) {
   //
   // Special cases:
   //   • event='test' → bypass prefs entirely (diagnostic must always deliver)
-  //   • event in DEFAULTS_ON → fire unless explicit prefs[event] === false
-  //   • event not in DEFAULTS_ON → require explicit opt-in (default OFF)
-  //     [all current events are in DEFAULTS_ON; this branch is reserved for
-  //      future event types if we add any default-OFF ones]
+  //   • everything else → isEventEnabled decides, which understands the
+  //     { push, email } object shape, the legacy bare boolean, and unset
+  //     (→ DEFAULTS_ON). It is the same resolver cron.js uses, so a manager's
+  //     opt-out means the same thing no matter which sender fires.
   //
   // We batch-load all relevant team docs once instead of one Firestore read
   // per token, since multiple tokens from the same team would otherwise
   // duplicate the lookup.
   //
-  // DEFAULTS_ON is imported from ./_constants.js (shared with api/cron.js).
+  // isEventEnabled is imported from ./_constants.js (shared with api/cron.js).
   // The client mirror is src/api/pushNotifications.js NOTIFICATION_EVENTS;
   // keep that one in sync when adding a new default-on event.
   let skipped = 0;
@@ -194,12 +194,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'prefs lookup failed', details: err.message });
     }
     const before = tokenDocs.length;
-    tokenDocs = tokenDocs.filter(t => {
-      const prefs = teamPrefs[t.teamId];
-      if (!prefs) return DEFAULTS_ON.has(event);  // no prefs map → defaults
-      if (typeof prefs[event] === 'boolean') return prefs[event];
-      return DEFAULTS_ON.has(event);  // unset key → defaults
-    });
+    tokenDocs = tokenDocs.filter(t => isEventEnabled(teamPrefs[t.teamId], event, 'push'));
     skipped = before - tokenDocs.length;
   }
 

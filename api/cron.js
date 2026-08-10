@@ -12,7 +12,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
-import { DEFAULTS_ON, dedupeTokenDocs, extractNextData } from './_constants.js';
+import { isEventEnabled, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
 import { SEASON, getETNow, abbreviateName, waiverCutoff } from './_league.js';
 import {
@@ -49,16 +49,14 @@ const messaging = getMessaging(getApp());
 //
 // Skip behavior:
 //   • teamId not found → silent skip
-//   • team has prefs map AND the specific event key is false → silent skip
-//   • team has no prefs map at all → fall through to defaults (DEFAULTS_ON)
-//   • event not in DEFAULTS_ON → require explicit opt-in (no batch 4 events
-//     are in this category — all current events default ON)
+//   • the team's pref for this event resolves to false on the push channel →
+//     silent skip (see isEventEnabled for the three stored pref shapes)
 //   • no subscribed devices → silent skip
 //
 // Returns { sent, failed, skipped, cleanedUp } per push attempt.
 
-// DEFAULTS_ON is imported from ./_constants.js (shared with api/push.js) so the
-// default-on notification set lives in exactly one place.
+// isEventEnabled (and the DEFAULTS_ON set behind it) lives in ./_constants.js,
+// shared with api/push.js, so both senders resolve preferences identically.
 
 async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
   if (!teamId || !event) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
@@ -69,11 +67,12 @@ async function sendPushToTeam({ teamId, event, title, body, deepLink }) {
     const teamSnap = await db.collection('teams').doc(teamId).get();
     if (!teamSnap.exists) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
     const prefs = teamSnap.data()?.notificationPrefs;
-    if (prefs && typeof prefs[event] === 'boolean') {
-      if (prefs[event] === false) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
-    } else {
-      // No explicit pref — fall through to default
-      if (!DEFAULTS_ON.has(event)) return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
+    // isEventEnabled understands all three stored shapes — { push, email }
+    // object, legacy bare boolean, and unset (→ DEFAULTS_ON). Testing for a
+    // bare boolean here directly, as this used to, treated an object-shaped
+    // opt-out as "no preference" and sent anyway.
+    if (!isEventEnabled(prefs, event, 'push')) {
+      return { sent: 0, failed: 0, skipped: 1, cleanedUp: 0 };
     }
   } catch (err) {
     console.warn(`[push] prefs check failed for team ${teamId}:`, err.message);
@@ -403,6 +402,7 @@ async function getEmailMap(settings, teams) {
 }
 
 // ── Action: process waivers ─────────────────────────────────────────────────
+
 
 async function handleWaivers(res) {
   const settings = await loadSettings();
@@ -1646,6 +1646,21 @@ async function handleLeadWatch(res) {
 //       wrong about who's actually playing; and
 //   (2) a rostered starter who WITHDREW after the lineup was set.
 //
+// Also checks the BACKUP slot on weeks it's enabled (see backupSpotEnabled) —
+// an out-of-field backup can't cover a withdrawal, which defeats the point of
+// naming one, and nothing else in the app tells the manager that.
+//
+// Roster gate: only lineup names the team ACTUALLY OWNS are considered, judged
+// against the effective roster (buildEffectiveRoster in ./_rules.js), not the raw stored
+// array. team.lineup isn't scrubbed when a player leaves the roster — a drop
+// processed by Wednesday's waiver run leaves the name sitting in the lineup
+// until the manager next edits it — and an unowned name that happens to be out
+// of field would otherwise produce a push blaming the FIELD for what is really
+// a roster problem. The client already ignores these names (RostersView derives
+// activeLineupCount from currentRoster), so they're invisible on-screen; a push
+// naming a player the manager no longer has would be pure confusion. Skipped
+// names are reported as `offRoster` in the JSON for diagnosis.
+//
 // Cadence: driven by the commish-set schedule (SeasonSettingsPanel → "Field
 // Check Schedule", synced to the cron-job.org field-check job via
 // sync-cron-schedule). This handler mirrors handleLineupReminder's day/hour/
@@ -1661,7 +1676,10 @@ async function handleLeadWatch(res) {
 //
 // Field-known gate: if /api/field returns no players we bail (status
 // 'field_unknown') and never warn — exactly like the in-app RostersView
-// warning, which stays silent until tournamentField is populated.
+// warning, which stays silent until tournamentField is populated. A field that
+// parsed only PARTIALLY is caught separately by the field-integrity gate below
+// ('field_too_small' / 'field_partial'), since a short field would otherwise
+// flag half the league's starters as missing.
 // ── Name-mismatch detection ─────────────────────────────────────────────────
 //
 // The matching layers in _playerNames.js resolve every mismatch we know how to
@@ -1892,7 +1910,75 @@ async function handleFieldCheck(res) {
   const sameTournament = prevState.tournamentName === tournamentName;
   const lastSig = sameTournament ? (prevState.lastNotified || {}) : {};
 
+  // ── Field-integrity gate ───────────────────────────────────────────────────
+  // A HALF-SCRAPED field is worse than no field: every starter the parser
+  // missed reads as "not in the field", so a single upstream markup change
+  // blasts a false ⛳ alert to every team at once — and the signature dedup
+  // then RECORDS those false alerts, so the corrected run re-pushes.
+  // /api/field itself can't tell us it parsed partially (it returns whatever
+  // it found across its espn → pgatour fallbacks), so we sanity-check the count
+  // here before trusting it.
+  //
+  // A fixed floor won't do, because small fields are legitimate: the TOUR
+  // Championship is 30, Hero World Challenge ~20, match play 64. Those are
+  // real fields, and they're exactly the weeks this notification matters most
+  // (most rostered players genuinely aren't playing). So we use two gates:
+  //
+  //   1. Absolute floor — catches the catastrophic parse (a handful of names)
+  //      while clearing every real limited field. Overridable via settings
+  //      (fieldCheckMinField) if a smaller invitational ever shows up.
+  //   2. Relative drop — compare against the largest count we've already seen
+  //      FOR THIS SAME TOURNAMENT (high-water mark, stored below and reset
+  //      whenever the tournament changes). A field that shrinks by 40%+ mid-week
+  //      is a parse regression, not 60 withdrawals.
+  //
+  // Gate 2 can't help on a tournament's first run — there's no baseline yet —
+  // which is why gate 1 stands on its own. It can also trip when /api/field
+  // falls back between sources and the fallback returns a shorter list; that
+  // errs toward silence rather than a false blast, which is the safe direction.
+  // Both bail BEFORE any state write, so a suspect count never becomes the
+  // baseline and never records a signature.
+  const minField = settings?.fieldCheckMinField ?? 16;
+  if (fieldPlayers.length < minField) {
+    return res.json({
+      status: 'field_too_small',
+      fieldCount: fieldPlayers.length,
+      minField,
+      source: fieldData.source || null,
+    });
+  }
+  const knownCount = sameTournament ? (prevState.fieldCount || 0) : 0;
+  if (knownCount && fieldPlayers.length < Math.ceil(knownCount * 0.6)) {
+    return res.json({
+      status: 'field_partial',
+      fieldCount: fieldPlayers.length,
+      knownCount,
+      source: fieldData.source || null,
+    });
+  }
+
   const teams = await loadTeams();
+
+  // Transactions power the effective-roster replay below — a lineup name the
+  // team no longer owns must not be blamed on the field.
+  let allTx = [];
+  try {
+    const txSnap = await db.collection('transactions').get();
+    allTx = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    // Fail SAFE: without transactions we can't tell an owned starter from a
+    // stale one, and guessing risks naming players managers no longer have.
+    return res.json({ status: 'tx_fetch_failed', error: err.message });
+  }
+
+  // Does the backup slot even exist this week? Mirrors isBackupSpotEnabled in
+  // src/utils/sharedHelpers.js — without this gate a stale `backup` left over
+  // from a previous Major would draw a warning about a slot that isn't in play.
+  const backupSpotEnabled =
+    activeTourney.isMajor     ? (settings?.backupSpotMajor     ?? true)
+    : activeTourney.isSignature ? (settings?.backupSpotSignature ?? false)
+    : (settings?.backupSpotRegular ?? false);
+
   const newSig = { ...lastSig };
   const results = [];
 
@@ -1902,7 +1988,17 @@ async function handleFieldCheck(res) {
   const suspectedMismatches = [];
 
   for (const team of teams) {
-    const starters = team.lineup || [];
+    // Match the lineup against the roster by IDENTITY, not string equality.
+    // The two lists are written at different times, so a spelling corrected on
+    // the roster (a Merge Players fix, say) can leave the lineup holding the
+    // old rendering — and an exact-match Set would then read a legitimate
+    // starter as unowned and silently skip warning that manager, which is the
+    // opposite of what this handler is for.
+    const rostered = new NameSet(buildEffectiveRoster(team, allTx, { tournaments }));
+    const lineup = team.lineup || [];
+    const starters = lineup.filter(name => rostered.has(name));
+    const offRoster = lineup.filter(name => !rostered.has(name));
+
     const unmatched = starters.filter(name => !fieldSet.has(name));
 
     // Split "genuinely not in the field" from "we probably just don't
@@ -1918,35 +2014,72 @@ async function handleFieldCheck(res) {
       else outOfField.push(name);
     }
 
-    const signature = [...outOfField].sort().join('|');
+    // The backup only matters on weeks the slot is enabled, and only if the
+    // team still owns them. Unlike a starter they score nothing either way —
+    // the loss is that they can't COVER a withdrawal, so the copy differs.
+    // The same mismatch split applies: an unrecognised spelling must reach the
+    // commissioner as an audit row, never the manager as a warning.
+    const backupName = team.backup || null;
+    let backupOut = false;
+    if (backupSpotEnabled && backupName && rostered.has(backupName) && !fieldSet.has(backupName)) {
+      const suspect = classifyUnmatched(backupName, fieldPlayers);
+      if (suspect) suspectedMismatches.push({ team: team.name, ...suspect });
+      else backupOut = true;
+    }
+
+    // Signature spans both slots so fixing one while breaking the other still
+    // re-notifies. Built from RAW names (display abbreviates) so it stays
+    // stable, and namespaced so a starter can never collide with a backup.
+    // Changing this FORMAT invalidates stored signatures, costing at most one
+    // duplicate push per affected team on the first run after the change.
+    const signature = [
+      ...[...outOfField].sort().map(n => `S:${n}`),
+      ...(backupOut ? [`B:${backupName}`] : []),
+    ].join('|');
 
     // Nothing out of field → clear any stored signature so a future break
     // re-notifies, and move on.
     if (!signature) {
       if (newSig[team.id]) delete newSig[team.id];
-      results.push({ team: team.name, outOfField: [] });
+      results.push({ team: team.name, outOfField: [], offRoster });
       continue;
     }
 
     // Same out-of-field set we already notified about → don't nag.
     if (lastSig[team.id] === signature) {
-      results.push({ team: team.name, outOfField, skipped: 'already_notified' });
+      results.push({ team: team.name, outOfField, backupOut, offRoster, skipped: 'already_notified' });
       continue;
     }
 
     // New / changed out-of-field set → push. Names shown as "F. Last" to match
     // the leaderboard/roster rendering.
     const names = outOfField.map(abbreviateName);
+    const shortBackup = backupOut ? abbreviateName(backupName) : null;
     const list = names.length <= 2
       ? names.join(' and ')
       : `${names.slice(0, -1).join(', ')}, and ${names.slice(-1)}`;
     const isPlural = outOfField.length > 1;
-    const title = isPlural
-      ? `⛳ ${outOfField.length} starters not in the field`
-      : `⛳ ${names[0]} isn't in the field`;
-    const body = isPlural
-      ? `${list} aren't in ${tournamentName}'s field — they'll score nothing. Tap to fix your lineup.`
-      : `${names[0]} isn't in ${tournamentName}'s field — they'll score nothing. Tap to fix your lineup.`;
+
+    // Title leads with the starters when there are any — that's the costlier
+    // problem — and falls back to the backup when it's the only thing wrong.
+    const title = outOfField.length === 0
+      ? `⛳ Your backup isn't in the field`
+      : isPlural
+        ? `⛳ ${outOfField.length} starters not in the field`
+        : `⛳ ${names[0]} isn't in the field`;
+
+    const sentences = [];
+    if (outOfField.length) {
+      sentences.push(isPlural
+        ? `${list} aren't in ${tournamentName}'s field — they'll score nothing.`
+        : `${names[0]} isn't in ${tournamentName}'s field — they'll score nothing.`);
+    }
+    if (backupOut) {
+      sentences.push(outOfField.length
+        ? `${shortBackup}, your backup, isn't in the field either — no cover if someone withdraws.`
+        : `${shortBackup} is your backup and isn't in ${tournamentName}'s field — no cover if someone withdraws.`);
+    }
+    const body = `${sentences.join(' ')} Tap to fix your lineup.`;
 
     try {
       const pushResult = await sendPushToTeam({
@@ -1957,15 +2090,24 @@ async function handleFieldCheck(res) {
         deepLink: '#rosters',
       });
       newSig[team.id] = signature;
-      results.push({ team: team.name, outOfField, sent: pushResult.sent, failed: pushResult.failed });
+      results.push({ team: team.name, outOfField, backupOut, offRoster, sent: pushResult.sent, failed: pushResult.failed });
     } catch (err) {
-      results.push({ team: team.name, outOfField, error: err.message });
+      results.push({ team: team.name, outOfField, backupOut, offRoster, error: err.message });
     }
   }
 
+  // fieldCount is the HIGH-WATER mark for this tournament, not the latest count
+  // — a field that legitimately shrinks (withdrawals) must not walk the
+  // baseline down and thereby blind the relative gate to a later partial parse.
+  // It resets with everything else when the tournament changes.
   await stateRef.set({
     key: 'fieldCheck',
-    value: { tournamentName, lastNotified: newSig },
+    value: {
+      tournamentName,
+      lastNotified: newSig,
+      fieldCount: Math.max(knownCount, fieldPlayers.length),
+      fieldSource: fieldData.source || null,
+    },
   });
 
   // Persist anything that looked like a name mismatch, so the commissioner
