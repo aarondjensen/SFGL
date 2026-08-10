@@ -67,9 +67,9 @@ const parseEnvFile = (text) => {
   return out;
 };
 
-let _loadedFrom = null;
 const loadEnvFiles = () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const loaded = [];
   for (const name of ENV_FILES) {
     const path = join(root, name);
     if (!existsSync(path)) continue;
@@ -80,12 +80,13 @@ const loadEnvFiles = () => {
       continue;
     }
     for (const [k, v] of Object.entries(parsed)) {
-      // A real env var beats the file — never clobber what the caller set.
+      // A real env var beats the file, and an earlier file beats a later one —
+      // same precedence Vite applies, so .env.local overrides .env.
       if (process.env[k] === undefined) process.env[k] = v;
     }
-    if (!_loadedFrom) _loadedFrom = name;
+    loaded.push(name);
   }
-  return _loadedFrom;
+  return loaded;
 };
 
 const HELP = `
@@ -121,8 +122,9 @@ Or set it in the shell you are already in:
 export function adminDb() {
   if (getApps().length) return getFirestore();
 
-  const from = loadEnvFiles();
-  if (from) console.log(`[creds] loaded ${from}`);
+  // Kept for the error path below: "loaded .env" followed by "no credentials
+  // found" reads as a contradiction unless the two are connected explicitly.
+  const envFilesRead = loadEnvFiles();
 
   const blob = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (blob) {
@@ -152,6 +154,13 @@ export function adminDb() {
   }
 
   console.error('\nNo Firebase Admin credentials found.');
+  if (envFilesRead.length) {
+    console.error(`Read ${envFilesRead.join(', ')} — none of them set FIREBASE_SERVICE_ACCOUNT`);
+    console.error('or the three separate fields. Those are SERVER credentials; a .env holding');
+    console.error('only VITE_* values is the browser config and cannot authenticate here.');
+  } else {
+    console.error('No .env file found at the repo root.');
+  }
   console.error(HELP);
   process.exit(2);
 }
