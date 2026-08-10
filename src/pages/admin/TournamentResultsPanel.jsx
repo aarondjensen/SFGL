@@ -16,7 +16,7 @@ import { colors, fonts, red, fontSize } from '../../theme.js';
 import { compactTeamName } from '../../utils/index.js';
 import { sfglDataApi } from '../../api/firebase';
 import { cronFetch } from '../../api/cronApi';
-import { sendCommishPush } from '../../api/pushNotifications';
+import { sendCommishPush } from '../../api/pushSend';
 import { processTournamentData, matchPlayerName } from './processTournamentData';
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { M, disabledBtn } from './adminStyles';

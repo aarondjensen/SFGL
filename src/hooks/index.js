@@ -1,6 +1,25 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { storage } from '../api';
-import { playerRankingsApi } from '../api/firebase';
+// Firebase API surface, imported statically and on purpose.
+//
+// Ten of the functions below used to `await import('../api/firebase')` on every
+// call, which read as deliberate code-splitting and was not: this same file
+// imports playerRankingsApi statically, so the module was already in the entry
+// chunk and every one of those awaits resolved an already-evaluated module.
+// The build even warned about it. useLeague fetches from Firestore on mount, so
+// there is nothing to defer — the pretence just made ten call sites async for
+// no reason and hid the fact that Firebase is genuinely on the critical path.
+import {
+  teamsApi,
+  tournamentsApi,
+  transactionsApi,
+  settingsApi,
+  playerStatsApi,
+  headshotsApi,
+  playerRankingsApi,
+  sfglDataApi,
+  playerRegistryApi,
+} from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen } from '../utils';
 import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, buildEffectiveRoster, hydratePlayer } from '../utils/sharedHelpers';
 import { mergeHeadshotEntry } from '../utils/headshotUtils';
@@ -85,18 +104,6 @@ export const useLeague = (STORAGE_KEYS) => {
   const loadFromFirebase = useCallback(async (isRefetch = false) => {
     const errors = [];
     try {
-      const {
-        teamsApi,
-        tournamentsApi,
-        transactionsApi,
-        settingsApi,
-        playerStatsApi,
-        headshotsApi,
-        playerRankingsApi: prApi,
-        sfglDataApi,
-        playerRegistryApi,
-      } = await import('../api/firebase');
-
       console.log(`[useLeague] ${isRefetch ? 'Refetching' : 'Loading'} from Firebase...`);
 
       // ── Tier 1: first-paint-critical collections + registry, in parallel ──
@@ -228,7 +235,7 @@ export const useLeague = (STORAGE_KEYS) => {
           const [firebaseStats, firebaseHeadshots, firebaseRankings] = await Promise.all([
             playerStatsApi.getAll().catch((e) => { console.error('[useLeague] stats:', e);     return null; }),
             headshotsApi.getAll().catch((e)   => { console.error('[useLeague] headshots:', e); return null; }),
-            prApi.getAll().catch((e)          => { console.error('[useLeague] rankings:', e);  return null; }),
+            playerRankingsApi.getAll().catch((e)          => { console.error('[useLeague] rankings:', e);  return null; }),
           ]);
 
           if (firebaseStats && Object.keys(firebaseStats).length > 0) {
@@ -277,7 +284,7 @@ export const useLeague = (STORAGE_KEYS) => {
 
           if (firebaseRankings?.length > 0) {
             setAllPlayers(firebaseRankings);
-            const lastUpdated = await prApi.getLastUpdated().catch(() => null);
+            const lastUpdated = await playerRankingsApi.getLastUpdated().catch(() => null);
             setRankingsLastUpdated(lastUpdated);
             console.log(`✓ Loaded ${firebaseRankings.length} players from Firebase`);
           }
@@ -356,7 +363,6 @@ export const useLeague = (STORAGE_KEYS) => {
 
     (async () => {
       try {
-        const { teamsApi, transactionsApi, tournamentsApi, settingsApi } = await import('../api/firebase');
         if (cancelled) return;
 
         unsubs.push(teamsApi.subscribe(next => {
@@ -442,7 +448,6 @@ export const useLeague = (STORAGE_KEYS) => {
         }
       }
       setPlayerRegistry(merged);
-      const { playerRegistryApi } = await import('../api/firebase');
       playerRegistryApi.set(merged).catch(() => {});
     } catch (e) {
       console.warn('[useLeague] registry upkeep skipped:', e);
@@ -465,7 +470,6 @@ export const useLeague = (STORAGE_KEYS) => {
     }
     try {
       setIsSyncing(true);
-      const { teamsApi } = await import('../api/firebase');
       if (options.bulk) {
         // Explicit commissioner bulk replace — the only path that may delete.
         await teamsApi.setAll(resolved);
@@ -510,7 +514,6 @@ export const useLeague = (STORAGE_KEYS) => {
     }
     try {
       setIsSyncing(true);
-      const { teamsApi } = await import('../api/firebase');
       const removedField = Object.keys(prev).some(k => !(k in updatedTeam));
       if (removedField) {
         // set+merge can't delete fields — replace the whole doc instead.
@@ -535,7 +538,6 @@ export const useLeague = (STORAGE_KEYS) => {
     setTournaments(resolved);
     try {
       setIsSyncing(true);
-      const { tournamentsApi } = await import('../api/firebase');
       await tournamentsApi.setAll(resolved);
       await storage.set(STORAGE_KEYS.TOURNAMENTS, resolved);
     } catch (e) {
@@ -555,7 +557,6 @@ export const useLeague = (STORAGE_KEYS) => {
     transactionsRef.current = resolved; // sync now — see updateTeams
     setTransactions(resolved);
     try {
-      const { transactionsApi } = await import('../api/firebase');
       if (opts.deleted && opts.deleted.length > 0) {
         await transactionsApi.delete(opts.deleted);
       }
@@ -573,7 +574,6 @@ export const useLeague = (STORAGE_KEYS) => {
     settingsRef.current = resolved; // sync now — see updateTeams
     setSettings(resolved);
     try {
-      const { settingsApi } = await import('../api/firebase');
       for (const [key, value] of Object.entries(resolved)) {
         await settingsApi.set(key, value);
       }
@@ -589,7 +589,6 @@ export const useLeague = (STORAGE_KEYS) => {
     statsRef.current = resolved; // sync now — see updateTeams
     setGlobalPlayerStats(resolved);
     try {
-      const { playerStatsApi } = await import('../api/firebase');
       await playerStatsApi.setAll(resolved);
       await storage.set(STORAGE_KEYS.GLOBAL_PLAYER_STATS, resolved);
     } catch (e) {
@@ -603,7 +602,6 @@ export const useLeague = (STORAGE_KEYS) => {
     headshotsRef.current = resolved; // sync now — see updateTeams
     setHeadshots(resolved);
     try {
-      const { headshotsApi } = await import('../api/firebase');
       await headshotsApi.setAll(resolved);
       await storage.set(STORAGE_KEYS.HEADSHOTS, resolved);
     } catch (e) {

@@ -21,7 +21,7 @@ import { X } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { BottomSheet } from '../components/BottomSheet';
 import { activatable } from '../utils/a11y';
-import { sendCommishPush } from '../api/pushNotifications';
+import { sendCommishPush } from '../api/pushSend';
 import { getCurrentTournamentIndex } from '../utils/index.js';
 import { compactTeamName } from '../utils/index.js';
 import { getTransactionFee, buildEffectiveRoster, txBelongsToTeam } from '../utils/sharedHelpers';

@@ -32,8 +32,6 @@ if (typeof window !== 'undefined') {
 import { DialogProvider } from './pages/DialogContext';
 import { ErrorBoundary, addGlobalErrorReporters }  from './pages/ErrorBoundary';
 import { PullToRefresh }  from './pages/PullToRefresh';
-import { UserSettingsModal } from './components/UserSettingsModal';
-import { AccountModal } from './components/AccountModal';
 
 // ── Eagerly loaded views (shown on first visit / lightweight) ──────────────
 import { StandingsView }  from './pages/StandingsView';
@@ -49,11 +47,20 @@ import { TournamentsView }  from './pages/TournamentsView';
 const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m => ({ default: m.AdminView })));
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 
+// Account and Notifications are opened from the More menu and are closed on
+// every load until someone opens them. UserSettingsModal is also the app's only
+// consumer of firebase/messaging, so importing it eagerly put the FCM SDK and
+// its installations dependency on the critical path of a first paint that never
+// touches either. Both render null when closed, so they are mounted only while
+// open — nothing is deferred that was previously visible.
+const LazyAccountModal      = React.lazy(() => import('./components/AccountModal').then(m => ({ default: m.AccountModal })));
+const LazyUserSettingsModal = React.lazy(() => import('./components/UserSettingsModal').then(m => ({ default: m.UserSettingsModal })));
+
 import { useLeague }       from './hooks';
 import { colors, fonts, fontSize, amber, gold, white, black, brass } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS } from './constants';
 import { SEASON } from '../api/_league.js';
-import { tournamentResultsApi } from './api/firebase';
+import { tournamentResultsApi, tournamentsApi, playersApi } from './api/firebase';
 import { managerActivityApi } from './api/managerActivity';
 import { mergeHeadshotEntry, getPlayerHeadshotUrls } from './utils/headshotUtils';
 import AuthGate from './pages/AuthGate';
@@ -397,7 +404,6 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
 
     (async () => {
       try {
-        const { tournamentsApi } = await import('./api/firebase');
 
         // Step 1 — the array is empty after the full cascade (Firebase →
         // sfgl_data → localStorage). Try the canonical collection once more.
@@ -563,14 +569,12 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
             console.log(`✓ Auto-fetched ${found} headshot IDs`);
           }
           // Persist to player documents for future loads
-          import('./api/firebase').then(({ playersApi }) => {
-            const toSave = Object.entries(data.results).map(([name, entry]) => ({
-              name,
-              espnId: entry?.espn,
-              pgaId:  entry?.pga,
-            }));
-            if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
-          }).catch(() => {});
+          const toSave = Object.entries(data.results).map(([name, entry]) => ({
+            name,
+            espnId: entry?.espn,
+            pgaId:  entry?.pga,
+          }));
+          if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
         }
       })
       .catch(() => recordOutcome([]));
@@ -1117,26 +1121,34 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
       {/* Opened by tapping the user's name in the header. Replaces the
           previous tap-to-toggle-commish behavior — that toggle is now an
           option inside the modal, alongside push notifications. */}
-      <AccountModal
-        isOpen={showAccount}
-        onClose={() => setShowAccount(false)}
-        onLogout={handleLogout}
-        loggedInUser={loggedInUser}
-        loggedInTeamId={loggedInTeamId}
-        teams={resolvedTeams}
-      />
+      {showAccount && (
+        <Suspense fallback={null}>
+          <LazyAccountModal
+            isOpen
+            onClose={() => setShowAccount(false)}
+            onLogout={handleLogout}
+            loggedInUser={loggedInUser}
+            loggedInTeamId={loggedInTeamId}
+            teams={resolvedTeams}
+          />
+        </Suspense>
+      )}
 
       {/* Notifications only. The commish toggle and sign-out that used to live
           here moved to the More menu and AccountModal respectively; the six
           props that fed them were still being passed long after. */}
-      <UserSettingsModal
-        isOpen={showUserSettings}
-        onClose={() => setShowUserSettings(false)}
-        loggedInUser={loggedInUser}
-        loggedInTeamId={loggedInTeamId}
-        teams={resolvedTeams}
-        updateTeams={updateTeams}
-      />
+      {showUserSettings && (
+        <Suspense fallback={null}>
+          <LazyUserSettingsModal
+            isOpen
+            onClose={() => setShowUserSettings(false)}
+            loggedInUser={loggedInUser}
+            loggedInTeamId={loggedInTeamId}
+            teams={resolvedTeams}
+            updateTeams={updateTeams}
+          />
+        </Suspense>
+      )}
     </>
   );
 };

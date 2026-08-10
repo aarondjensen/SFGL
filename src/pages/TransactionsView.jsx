@@ -7,6 +7,11 @@ import { buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament,
          getSeasonFeesForTeam, getSwingFeesForTeam, getSwingPot,
          effectiveTransactionFee, txBelongsToTeam, resolveTxTeam } from '../utils/sharedHelpers';
 import { theme, colors, fonts, getSwingColor, SWINGS, blue, green, greenMuted, red, white, fontSize } from '../theme.js';
+import { transactionsApi } from '../api/firebase';
+// Statically imported: AddTransactionModal — which this file imports at the
+// top — already pulls mulliganReversal into this chunk, so the `await import`
+// that used to sit at the call site deferred nothing and the build said so.
+import { computeMulliganReversal } from '../utils/mulliganReversal';
 import { BottomSheet } from '../components/BottomSheet';
 import { activatable } from '../utils/a11y';
 import { AddTransactionModal } from './AddTransactionModal';
@@ -783,7 +788,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             let liveTx = tx;
                             if (tx.id && tx.type !== 'mulligan' && tx.type !== 'swing_winner') {
                               try {
-                                const { transactionsApi } = await import('../api/firebase');
                                 const fresh = await transactionsApi.getById?.(tx.id);
                                 if (fresh) liveTx = { ...tx, ...fresh };
                               } catch (e) {
@@ -816,7 +820,6 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                             // drops out of the pot automatically).
                             if (isMulligan) {
                               try {
-                                const { computeMulliganReversal } = await import('../utils/mulliganReversal');
                                 const r = computeMulliganReversal(liveTx, teams, tournaments);
                                 if (r.error) { dialog.showToast(`Cannot reverse mulligan: ${r.error}`, 'error'); return; }
                                 if (r.processed) setTournaments(r.newTournaments);

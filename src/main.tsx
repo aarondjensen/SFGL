@@ -36,3 +36,31 @@ if ('serviceWorker' in navigator) {
     setTimeout(() => { registerMessagingSW(); }, 100);
   });
 }
+
+// ── Foreground push handler ────────────────────────────────────────────────
+// api/pushNotifications.js binds an onMessage handler as a side effect of being
+// imported — when the app is open and focused, FCM fires onMessage instead of
+// showing anything, so without that handler an opted-in user sees nothing while
+// they have the tab up.
+//
+// It used to be imported at boot by the two modals that only wanted to TRIGGER
+// a push, which meant every visitor downloaded firebase/messaging to bind a
+// handler most of them could never receive a message for. Those modals now
+// import api/pushSend.js instead, so this is the one place that still needs the
+// FCM SDK early — and only for people who have actually granted permission.
+//
+// Everyone else loads it the first time they open Notifications, which is also
+// the only moment it can do anything for them.
+if (
+  typeof Notification !== 'undefined' &&
+  Notification.permission === 'granted' &&
+  'serviceWorker' in navigator
+) {
+  const bind = () => { import('./api/pushNotifications').catch(() => {}); };
+  // After first paint, and after the SW registration above — this is the least
+  // urgent thing the app does at boot.
+  window.addEventListener('load', () => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(bind, { timeout: 4000 });
+    else setTimeout(bind, 1500);
+  });
+}

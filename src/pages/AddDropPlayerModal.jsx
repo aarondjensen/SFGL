@@ -6,7 +6,7 @@ import { TeamName } from '../components/TeamName';
 import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, buildEffectiveRoster, txBelongsToTeam } from '../utils/sharedHelpers';
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
-import { sendManagerPush } from '../api/pushNotifications';
+import { sendManagerPush } from '../api/pushSend';
 import { theme, colors, fonts, amber, gold, green, greenMuted, red, white, blueBright, fontSize } from '../theme.js';
 import { LIV_GOLF_ROSTER } from '../constants';
 import { BottomSheet } from '../components/BottomSheet';

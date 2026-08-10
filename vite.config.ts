@@ -49,7 +49,37 @@ export default defineConfig(({ mode }) => ({
         // which submodules the app code imports.
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('/firebase/') || id.includes('@firebase/')) {
+            // Capacitor first, and deliberately so: @capacitor-firebase/* are
+            // native bridges FOR Firebase, and they used to fall through to
+            // vendor-misc while idb — a Firebase runtime dependency — landed
+            // there too. That made the two chunks import each other
+            // (vendor-firebase → idb → vendor-misc → @capacitor-firebase →
+            // vendor-firebase) and rollup warned on every build. Splitting the
+            // native bridges out and pulling idb in with the SDK it belongs to
+            // leaves one direction of travel: capacitor → firebase.
+            // ── Deliberately unassigned ──
+            // These two are reached ONLY through dynamic imports: the native
+            // Capacitor bridges from authApi/pushNotifications on iOS and
+            // Android, and firebase/messaging from api/pushNotifications, which
+            // now loads when the Notifications modal opens rather than at boot.
+            //
+            // Returning undefined hands them to rollup's own dynamic-import
+            // splitting, which puts them in the chunk fetched at the moment
+            // they are needed. Naming them here would defeat the point: a
+            // manual chunk becomes a static dependency of the chunk that
+            // references it, so both were downloaded on every first paint —
+            // measured, not assumed. The web build never executes either one.
+            if (
+              id.includes('@capacitor-firebase') ||
+              id.includes('@firebase/messaging') ||
+              id.includes('/firebase/messaging/')
+            ) {
+              return;
+            }
+            if (id.includes('@capacitor')) {
+              return 'vendor-capacitor';
+            }
+            if (id.includes('/firebase/') || id.includes('@firebase/') || id.includes('/idb/')) {
               return 'vendor-firebase';
             }
             if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
