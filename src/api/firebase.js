@@ -1122,51 +1122,30 @@ export const settingsApi = {
 // the draft UI is rebuilt for a future season, restore these from git history.
 
 // ============================================================================
-// TOURNAMENT RESULTS API
+// TOURNAMENT RESULTS API — FROZEN ARCHIVE, READ ONLY
 // Document ID: `${tournamentName}__${season}`  (double-underscore separator)
 // ============================================================================
-const _resultDocId = (tournamentName, season) =>
-  `${tournamentName}__${season}`.replace(/[/]/g, '_');
-
+// Nothing writes this collection. `save` lost its last caller some time ago,
+// and both the client (TournamentResultsPanel) and the cron
+// (handleProcessResults) now write results onto the tournament document
+// itself — /tournaments/{name}.results — which carries the same payload:
+// teams, earningsMap, roundLeaders, fullLineups, rosterSnapshots.
+//
+// So this is not a second source of truth so much as a fossil of one. It is
+// still read, once, by App.jsx's recovery pass, purely to fill a gap for any
+// event whose embedded results were lost before the write moved. It can never
+// overwrite a tournament that already has results.
+//
+// The dead half of the surface — save, getByName, deleteByName,
+// deleteAllForSeason — has been removed. Leaving a `save` nobody calls sitting
+// next to a `getAllForSeason` everybody calls is what makes a frozen
+// collection look live, and invites the next person to write to it again and
+// re-create the split.
+//
+// scripts/audit-tournament-results.mjs reports whether the archive still holds
+// anything /tournaments does not. Once it reports clean, this API and the
+// recovery step in App.jsx can both go, and results will have exactly one home.
 export const tournamentResultsApi = {
-  async save({ tournamentName, season = SEASON, teamResults, earningsMap, roundLeaders, fullLineups = {}, rosterSnapshots = {}, isManualEntry = false }) {
-    const earningsObj = earningsMap instanceof Map
-      ? Object.fromEntries(earningsMap)
-      : (earningsMap || {});
-
-    const id   = _resultDocId(tournamentName, season);
-    const data = {
-      tournament_name:  tournamentName,
-      season,
-      processed_at:     new Date().toISOString(),
-      is_manual_entry:  isManualEntry,
-      team_results:     teamResults || {},
-      earnings_map:     earningsObj,
-      round_leaders:    roundLeaders || {},
-      full_lineups:     fullLineups,
-      roster_snapshots: rosterSnapshots,
-    };
-    await setDoc(doc(db, 'tournament_results', id), data);
-    return data;
-  },
-
-  async getByName(tournamentName, season = SEASON) {
-    const snap = await getDoc(doc(db, 'tournament_results', _resultDocId(tournamentName, season)));
-    if (!snap.exists()) return null;
-    const d = snap.data();
-    return {
-      tournamentName:  d.tournament_name,
-      season:          d.season,
-      processedAt:     d.processed_at,
-      isManualEntry:   d.is_manual_entry,
-      teamResults:     d.team_results,
-      earningsMap:     d.earnings_map,
-      roundLeaders:    d.round_leaders,
-      fullLineups:     d.full_lineups     || {},
-      rosterSnapshots: d.roster_snapshots || {},
-    };
-  },
-
   async getAllForSeason(season = SEASON) {
     const q = query(
       collection(db, 'tournament_results'),
@@ -1190,21 +1169,6 @@ export const tournamentResultsApi = {
         },
       };
     });
-  },
-
-  async deleteByName(tournamentName, season = SEASON) {
-    await deleteDoc(doc(db, 'tournament_results', _resultDocId(tournamentName, season)));
-  },
-
-  async deleteAllForSeason(season = SEASON) {
-    const q = query(
-      collection(db, 'tournament_results'),
-      where('season', '==', season)
-    );
-    const snap = await getDocs(q);
-    const batch = writeBatch(db);
-    snap.docs.forEach(d => batch.delete(d.ref));
-    await batch.commit();
   },
 };
 

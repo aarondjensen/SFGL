@@ -252,7 +252,6 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   const [showMoreMenu,          setShowMoreMenu]          = useState(false);
   // Commish eligibility comes from the Firebase ID-token claim (see App root /
   // taggedCommissioner). Active commish MODE is the user-toggled isCommissioner.
-  const [resultsHydrated,       setResultsHydrated]       = useState(false);
 
   const league = useLeague(STORAGE_KEYS);
 
@@ -356,75 +355,80 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
     }
   }, [loggedInTeamId]);
 
-  // ── Hydrate tournament results from Firebase ──────────────────────────────
-  // Hydrate tournament results from Firebase once after load.
-  // MERGE only — never overwrites a tournament that already has local results.
-  // Remote results win only when the local tournament has none.
+  // ── Tournament recovery, once, after the initial load ────────────────────
   //
-  // Wave 6 hotfix: previously this effect would set `resultsHydrated = true`
-  // even when `tournaments.length === 0` (e.g. when ?reset=1 had cleared
-  // localStorage and the tournament-recovery effect hadn't seeded state yet).
-  // That meant once recovery DID populate tournaments, this effect never
-  // re-ran — leaving every team's earnings at $0 because results were never
-  // merged in. Fix: bail without latching when tournaments is empty.
-  useEffect(() => {
-    if (loading || resultsHydrated) return;
-    if (tournaments.length === 0) return; // wait for tournaments to populate, don't latch
-    tournamentResultsApi.getAllForSeason().then(remoteResults => {
-      if (!remoteResults || remoteResults.length === 0) { setResultsHydrated(true); return; }
-      setTournaments(prev => prev.map(t => {
-        // Keep local results if they already exist — don't overwrite with remote
-        if (t.completed && t.results) return t;
-        const remote = remoteResults.find(r => r.tournamentName === t.name);
-        if (!remote) return t;
-        return { ...t, completed: true, results: remote.results };
-      }));
-      setResultsHydrated(true);
-    }).catch(e => {
-      console.warn('Could not load results from Firebase:', e.message);
-      setResultsHydrated(true);
-    });
-  }, [loading, tournaments.length, resultsHydrated]);
-
-
-  // ── Wave 7-rollback: defensive direct-from-Firebase tournament recovery ──
-  // After useLeague finishes its initial load, if `tournaments` is still
-  // empty we try once more to fetch directly from Firebase. This is a
-  // belt-and-suspenders backup for the case where useLeague's main loader
-  // failed silently. It does NOT use any timeout — it waits as long as the
-  // call needs and applies the result if successful.
+  // This was two effects racing each other into the same state. One refetched
+  // /tournaments when the array came back empty; the other merged archived
+  // results into tournaments that had none. They shared no ordering beyond a
+  // `tournaments.length` dependency — the merge bailed while the array was
+  // empty and re-ran when the refetch happened to fill it — so the sequence
+  // that made them work was implicit, and a Wave 6 hotfix comment records it
+  // going wrong exactly once already (the merge latched on an empty array and
+  // never re-ran, leaving every team on $0 for the session).
   //
-  // This was originally added in Wave 6 to recover mobile from a wedged
-  // state. Wave 7 removed it under the (incorrect) assumption that the
-  // rewritten useLeague would handle the case. After Wave 7's timeouts
-  // proved harmful, we reverted useLeague to its original behaviour and
-  // restored this effect as a safety net.
-  const [tournamentsRecovered, setTournamentsRecovered] = useState(false);
+  // One effect, one latch, and the two steps in the order they depend on.
+  //
+  // Step 2 reads /tournament_results, which is a FROZEN ARCHIVE: nothing has
+  // written to it since tournamentResultsApi.save lost its last caller. Both
+  // the client and the cron now write results onto the tournament document
+  // itself (/tournaments/{name}.results), which carries the same payload —
+  // teams, earningsMap, roundLeaders, fullLineups, rosterSnapshots. The archive
+  // is kept in the read path only as a one-way backstop for events whose
+  // embedded copy was lost before that changed, and it can only ever FILL A
+  // GAP: a tournament that already has results is never overwritten.
+  //
+  // scripts/audit-tournament-results.mjs answers whether the archive still
+  // holds anything the canonical collection does not. If it does not, this
+  // step and the collection can both go.
+  const [recoveryDone, setRecoveryDone] = useState(false);
   useEffect(() => {
-    if (loading || tournamentsRecovered) return;
-    if (tournaments.length > 0) {
-      setTournamentsRecovered(true);
-      return;
-    }
-    console.log('[App] tournaments empty after load — recovering from Firebase');
-    import('./api/firebase').then(({ tournamentsApi }) => {
-      tournamentsApi.getAll().then(remote => {
-        if (remote && remote.length > 0) {
-          console.log(`[App] recovered ${remote.length} tournaments from Firebase`);
-          setTournaments(remote);
-        } else {
-          console.warn('[App] Firebase tournaments fetch returned empty — Firebase data may be missing');
+    if (loading || recoveryDone) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { tournamentsApi } = await import('./api/firebase');
+
+        // Step 1 — the array is empty after the full cascade (Firebase →
+        // sfgl_data → localStorage). Try the canonical collection once more.
+        let list = tournaments;
+        if (list.length === 0) {
+          console.log('[App] tournaments empty after load — recovering from Firebase');
+          const remote = await tournamentsApi.getAll();
+          if (cancelled) return;
+          if (remote?.length > 0) {
+            console.log(`[App] recovered ${remote.length} tournaments from Firebase`);
+            setTournaments(remote);
+            list = remote;
+          } else {
+            console.warn('[App] Firebase tournaments fetch returned empty — data may be missing');
+          }
         }
-        setTournamentsRecovered(true);
-      }).catch(err => {
-        console.error('[App] Firebase tournaments fetch failed:', err);
-        setTournamentsRecovered(true);
-      });
-    }).catch(err => {
-      console.error('[App] Firebase module import failed:', err);
-      setTournamentsRecovered(true);
-    });
-  }, [loading, tournaments.length, tournamentsRecovered]);
+
+        // Nothing to hydrate against; leave the latch open so a later
+        // subscription snapshot gets the same treatment.
+        if (list.length === 0) return;
+
+        // Step 2 — fill result gaps from the frozen archive.
+        const archived = await tournamentResultsApi.getAllForSeason();
+        if (cancelled) return;
+        if (archived?.length) {
+          const byName = new Map(archived.map(r => [r.tournamentName, r]));
+          setTournaments(prev => prev.map(t => {
+            if (t.results) return t;                 // canonical wins, always
+            const found = byName.get(t.name);
+            return found ? { ...t, completed: true, results: found.results } : t;
+          }));
+        }
+      } catch (e) {
+        console.warn('[App] tournament recovery skipped:', e?.message || e);
+      } finally {
+        if (!cancelled) setRecoveryDone(true);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [loading, tournaments.length, recoveryDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // ── Auto-fetch headshots for all rostered players ────────────────────────
