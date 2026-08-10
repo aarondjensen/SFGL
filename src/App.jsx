@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
-import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, User } from 'lucide-react';
+import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, User, AlertTriangle, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
@@ -50,7 +50,7 @@ const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
 
 import { useLeague }       from './hooks';
-import { fontSize, gold, white, black, brass } from './theme.js';
+import { colors, fonts, fontSize, amber, gold, white, black, brass } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS } from './constants';
 import { SEASON } from '../api/_league.js';
 import { tournamentResultsApi } from './api/firebase';
@@ -623,30 +623,37 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
 
 
   // ── Wave 7: surface Firebase load failures to user via toast ──────────────
-  // The previous behavior (silently falling back to localStorage) is the root
-  // cause of the May 2026 mobile-vs-desktop divergence. Now, if any collection
-  // fails to load from Firebase on initial load OR on a refresh, show a toast.
-  // ── Wave 7: Surface load failures so silent Firebase failures stop being silent
-  // useLeague tracks which collections failed to load. We log a warning here
-  // and (in a future wave) will surface a toast via DialogProvider.
-  // The user can pull-to-refresh to retry.
-  const [failureToastShown, setFailureToastShown] = useState(false);
-  useEffect(() => {
-    if (loading) return;
-    if (failureToastShown) return;
-    if (!loadErrors || loadErrors.length === 0) return;
-    // Only mention the user-visible collections — silent failures of
-    // 'rankings' / 'headshots' aren't worth distracting the user with.
-    const userVisible = ['tournaments', 'teams', 'transactions', 'settings'];
-    const visibleFailures = loadErrors.filter(f => userVisible.includes(f));
-    if (visibleFailures.length === 0) {
-      setFailureToastShown(true);
-      return;
-    }
-    setFailureToastShown(true);
-    // Plain console for now; a future wave will route this through DialogContext.
-    console.warn(`[App] Couldn't reach Firebase for: ${visibleFailures.join(', ')}. Pull to refresh to retry.`);
-  }, [loading, loadErrors, failureToastShown]);
+  // ── Stale-data banner ──────────────────────────────────────────────────────
+  // Silently falling back to localStorage is the root cause of the May 2026
+  // mobile-vs-desktop divergence: one device could sit on week-old teams and
+  // transactions, rendered exactly like live data, for as long as the user
+  // never happened to reload. useLeague already tracked which collections
+  // failed — it just went to console.warn, where no manager will ever see it.
+  //
+  // A toast is the wrong shape for this: it auto-dismisses after four seconds
+  // while the condition it describes lasts until the next successful load. The
+  // banner stays until the data is actually fresh, and carries the fix (Retry)
+  // rather than assuming the user knows about pull-to-refresh.
+  //
+  // Only the collections a manager can see are worth interrupting for; a failed
+  // 'rankings' or 'headshots' read degrades quietly and on purpose.
+  const staleCollections = useMemo(() => {
+    const userVisible = ['teams', 'tournaments', 'transactions', 'settings'];
+    return (loadErrors || []).filter(f => userVisible.includes(f));
+  }, [loadErrors]);
+
+  const [staleDismissed, setStaleDismissed] = useState(false);
+  // A dismissal covers the failure the user dismissed, not every future one —
+  // clear it as soon as the data comes back so the NEXT outage is announced.
+  useEffect(() => { if (staleCollections.length === 0) setStaleDismissed(false); }, [staleCollections]);
+
+  const [retrying, setRetrying] = useState(false);
+  const retryLoad = useCallback(async () => {
+    setRetrying(true);
+    try { await refetch(); } finally { setRetrying(false); }
+  }, [refetch]);
+
+  const showStaleBanner = !loading && !staleDismissed && staleCollections.length > 0;
 
 
   // ── Manager login ──────────────────────────────────────────────────────────
@@ -730,6 +737,53 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
             )}
           </div>
         </header>
+
+        {/* ── Stale-data banner ──
+            Lives inside the sticky shell so it travels with the header instead
+            of scrolling away — the warning has to stay true for as long as the
+            data under it is stale. aria-live so a screen reader hears it appear
+            without the focus being stolen mid-task. */}
+        {showStaleBanner && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              maxWidth: 720, margin: '0 auto', padding: '8px 16px 10px',
+              fontFamily: fonts.sans, fontSize: fontSize.base,
+              color: colors.warning,
+            }}
+          >
+            <AlertTriangle style={{ width: 15, height: 15, flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35 }}>
+              Couldn’t reach the league database — showing your last saved data.
+            </span>
+            <button
+              onClick={retryLoad}
+              disabled={retrying}
+              style={{
+                flexShrink: 0, padding: '4px 10px', borderRadius: 4,
+                background: amber(0.12), border: `1px solid ${amber(0.4)}`,
+                color: colors.warning, fontFamily: fonts.sans, fontSize: fontSize.caption,
+                letterSpacing: 0.4, textTransform: 'uppercase',
+                cursor: retrying ? 'default' : 'pointer', opacity: retrying ? 0.5 : 1,
+              }}
+            >
+              {retrying ? 'Retrying…' : 'Retry'}
+            </button>
+            <button
+              onClick={() => setStaleDismissed(true)}
+              aria-label="Dismiss"
+              style={{
+                flexShrink: 0, background: 'none', border: 'none', padding: 2,
+                color: colors.textMuted, cursor: 'pointer',
+                display: 'flex', alignItems: 'center',
+              }}
+            >
+              <X style={{ width: 14, height: 14 }} />
+            </button>
+          </div>
+        )}
 
         {/* Nav moved to fixed bottom bar (see below the <main> element). */}
       </div>{/* end sticky shell */}

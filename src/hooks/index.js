@@ -330,6 +330,16 @@ export const useLeague = (STORAGE_KEYS) => {
   // Manual refetch — for PullToRefresh
   const refetch = useCallback(() => loadFromFirebase(true), [loadFromFirebase]);
 
+  // loadErrors means "this collection is currently stale", not "this collection
+  // failed once at boot" — the UI banner reads it as the former. A subscription
+  // delivering a real snapshot IS a successful load, so it retires the entry;
+  // without this, a load that failed and then quietly self-healed over the
+  // realtime channel would leave a "showing your last saved data" warning up
+  // over data that is in fact live.
+  const clearLoadError = useCallback((name) => {
+    setLoadErrors(prev => (prev.includes(name) ? prev.filter(f => f !== name) : prev));
+  }, []);
+
   // Wave 8: real-time Firestore subscriptions. After initial cascade load
   // completes, attach onSnapshot listeners so any server-side change (cron
   // processing waivers, results processing, settings change from another
@@ -353,19 +363,19 @@ export const useLeague = (STORAGE_KEYS) => {
           // Defensive: only update if next is a non-empty array. Firestore
           // can briefly emit an empty snapshot during reconnect; we don't
           // want that to wipe local state.
-          if (Array.isArray(next) && next.length > 0) setTeams(next);
+          if (Array.isArray(next) && next.length > 0) { setTeams(next); clearLoadError('teams'); }
         }));
 
         unsubs.push(transactionsApi.subscribe(next => {
-          if (Array.isArray(next)) setTransactions(next);
+          if (Array.isArray(next)) { setTransactions(next); clearLoadError('transactions'); }
         }));
 
         unsubs.push(tournamentsApi.subscribe(next => {
-          if (Array.isArray(next) && next.length > 0) setTournaments(next);
+          if (Array.isArray(next) && next.length > 0) { setTournaments(next); clearLoadError('tournaments'); }
         }));
 
         unsubs.push(settingsApi.subscribe(next => {
-          if (next && typeof next === 'object' && Object.keys(next).length > 0) setSettings(next);
+          if (next && typeof next === 'object' && Object.keys(next).length > 0) { setSettings(next); clearLoadError('settings'); }
         }));
 
         console.log('[useLeague] ✓ Real-time subscriptions active');
@@ -378,7 +388,9 @@ export const useLeague = (STORAGE_KEYS) => {
       cancelled = true;
       unsubs.forEach(u => { try { u && u(); } catch {} });
     };
-  }, [loading]);
+    // clearLoadError is a stable useCallback with no deps — listed so the
+    // linter can see it, not because it can change and re-attach the listeners.
+  }, [loading, clearLoadError]);
 
   // ── Refs for stable updater dependencies ──────────────────────────────
   const teamsRef        = useRef(teams);
