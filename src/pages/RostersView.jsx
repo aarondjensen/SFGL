@@ -17,6 +17,7 @@ import { theme, colors, fonts, fontSize, gold, green, greenMuted, navy, red, ste
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, getETClock, txBelongsToTeam } from '../utils/sharedHelpers';
 import { waiverCutoff, fmtWaiverCutoff } from '../../api/_league.js';
 import { NameSet, NameMap } from '../../api/_playerNames.js';
+import { activatable } from '../utils/a11y';
 
 // ── Headshot helpers (shared — single source of truth in headshotUtils.js) ──
 // Thin wrappers preserve the (name, isLimited, headshotMap) call signature
@@ -302,6 +303,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayerIds = {}, canEdit, onRemove }) => {
   const [hovered, setHovered] = React.useState(false);
   const [tapped, setTapped]   = React.useState(false);
+  const [focused, setFocused] = React.useState(false);
   const containerRef = React.useRef(null);
   const isMobileDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
 
@@ -324,14 +326,31 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
 
   // On mobile: first tap reveals the × badge, second tap (on the ×) removes.
   // Tapping elsewhere resets. On desktop: hover reveals ×.
-  const showRemove = canEdit && (hovered || tapped);
+  //
+  // Keyboard gets the same reveal from focus. Without it the × is unreachable
+  // by any route: it only mounts while hovered or tapped, so a keyboard user
+  // could never Tab to a button that does not exist yet. Focusing the tile
+  // mounts it, and the next Tab lands on it.
+  const showRemove = canEdit && (hovered || tapped || focused);
 
   return (
     <div
       ref={containerRef}
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, overflow: 'visible' }}
+      tabIndex={canEdit ? 0 : undefined}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setTapped(false); }}
+      onFocus={() => setFocused(true)}
+      // Focus moving to the × itself is still focus inside this tile — hiding
+      // the button the moment it is focused would unmount it mid-Tab.
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}
+      onKeyDown={(e) => {
+        if (!canEdit || e.target !== e.currentTarget) return;
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        e.stopPropagation();
+        onRemove();
+      }}
       onClick={(e) => {
         e.stopPropagation();
         if (!canEdit) return;
@@ -373,6 +392,7 @@ const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayer
             onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.15)'; }}
             onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
             title={'Remove ' + player.name + ' from lineup'}
+            aria-label={'Remove ' + player.name + ' from lineup'}
           >
             {'\u00D7'}
           </button>
@@ -433,6 +453,25 @@ export const RostersView = ({
   // ANY point — not just after filling all 5 starters (which was the bug
   // in the original implementation).
   const [pickingBackup,     setPickingBackup]     = useState(false);
+  // Lineup mode is exited by clicking anywhere in the background — two wrapper
+  // <div>s carry that handler. Those wrappers are deliberately NOT given a tab
+  // stop: a "click anywhere to cancel" region is not a control, and making the
+  // whole roster card focusable would put a meaningless stop in front of every
+  // real one. Escape is the keyboard's equivalent of clicking away.
+  useEffect(() => {
+    if (!lineupMode) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      // A modal on top owns Escape — closing the Add/Drop sheet should not
+      // also silently discard the lineup edit underneath it.
+      if (document.querySelector('[role="dialog"]')) return;
+      setLineupMode(false);
+      setPickingBackup(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [lineupMode]);
+
   const [isWaiverMode,      setIsWaiverMode]      = useState(false);
   const [editingWaiverData, setEditingWaiverData] = useState(null);
   // Field / tee time / odds lookups are keyed by player IDENTITY, not by
@@ -1121,7 +1160,10 @@ export const RostersView = ({
                     <div
                       key={`empty-${i}`}
                       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 56, cursor: canEditLineup ? 'pointer' : 'default' }}
-                      onClick={(e) => { e.stopPropagation(); if (canEditLineup) setLineupMode(true); }}
+                      {...activatable((e) => { e.stopPropagation(); setLineupMode(true); }, {
+                        disabled: !canEditLineup,
+                        label: 'Empty lineup spot — add a player',
+                      })}
                     >
                       <div style={{
                         width: 44, height: 44, borderRadius: '50%',
@@ -1161,10 +1203,10 @@ export const RostersView = ({
                       {backupPlayer ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48 }}>
                           <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (canEditLineup) togglePlayerInLineup(backupPlayer);
-                            }}
+                            {...activatable((e) => { e.stopPropagation(); togglePlayerInLineup(backupPlayer); }, {
+                              disabled: !canEditLineup,
+                              label: `Remove ${backupPlayer.name} as backup`,
+                            })}
                             style={{
                               width: 38, height: 38, borderRadius: '50%',
                               border: `2px dotted ${gold(0.55)}`,
@@ -1202,16 +1244,19 @@ export const RostersView = ({
                       ) : (
                         <div
                           style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48, cursor: canEditLineup ? 'pointer' : 'default' }}
-                          onClick={(e) => {
+                          {...activatable((e) => {
                             e.stopPropagation();
-                            if (!canEditLineup) return;
                             // Toggle picking-backup mode. Also ensure lineupMode
                             // is on so the roster table renders tap-to-add
                             // affordances (highlights, etc) and the user can
                             // see where to tap next.
                             setLineupMode(true);
                             setPickingBackup(prev => !prev);
-                          }}
+                          }, {
+                            disabled: !canEditLineup,
+                            selected: pickingBackup,
+                            label: 'Empty backup spot — choose a backup',
+                          })}
                         >
                           <div style={{
                             width: 38, height: 38, borderRadius: '50%',

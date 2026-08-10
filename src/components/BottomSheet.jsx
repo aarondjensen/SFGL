@@ -29,6 +29,7 @@
 //           than an extra tap on Cancel. Escape and the close button still work.
 // ============================================================================
 
+import { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { colors, fonts, fontSize, white, black, scrim } from '../theme.js';
@@ -86,9 +87,11 @@ export const BottomSheet = ({
   label,
   children,
 }) => {
-  // Escape + body scroll lock. Called before the early return so the hook
-  // order stays stable across open/closed renders.
-  useModalBehavior(isOpen, onClose);
+  // Escape, body scroll lock, and a Tab focus trap scoped to the dialog. Called
+  // before the early return so the hook order stays stable across open/closed
+  // renders; the ref is populated by the time the effect runs on the open render.
+  const dialogRef = useRef(null);
+  useModalBehavior(isOpen, onClose, dialogRef);
 
   if (!isOpen) return null;
 
@@ -116,10 +119,14 @@ export const BottomSheet = ({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-label={titleId ? undefined : label}
+        // -1 so the dialog can hold focus itself when it has no focusable
+        // children yet (async content) without joining the Tab order.
+        tabIndex={-1}
         onClick={e => e.stopPropagation()}
         style={{
           ...v.surface(accent),

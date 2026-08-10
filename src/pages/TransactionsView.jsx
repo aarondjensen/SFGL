@@ -8,6 +8,7 @@ import { buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament,
          effectiveTransactionFee, txBelongsToTeam, resolveTxTeam } from '../utils/sharedHelpers';
 import { theme, colors, fonts, getSwingColor, SWINGS, blue, green, greenMuted, red, white, fontSize } from '../theme.js';
 import { BottomSheet } from '../components/BottomSheet';
+import { activatable } from '../utils/a11y';
 import { AddTransactionModal } from './AddTransactionModal';
 
 // shortName imported from utils (see abbreviateName)
@@ -217,7 +218,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                 return (
                   <div
                     key={p.name}
-                    onClick={() => setEditAdd(p.name)}
+                    {...activatable(() => setEditAdd(p.name), { selected: sel, label: `Player added: ${p.name}` })}
                     style={{
                       padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                       background: sel ? greenMuted(0.15) : white(0.03),
@@ -245,7 +246,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
               </label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div
-                  onClick={() => setEditDrop('')}
+                  {...activatable(() => setEditDrop(''), { selected: !editDrop, label: 'No player dropped' })}
                   style={{
                     padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                     background: !editDrop ? white(0.06) : white(0.03),
@@ -260,7 +261,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                   return (
                     <div
                       key={p.name}
-                      onClick={() => setEditDrop(p.name)}
+                      {...activatable(() => setEditDrop(p.name), { selected: sel, label: `Player dropped: ${p.name}` })}
                       style={{
                         padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                         background: sel ? colors.dangerBg : white(0.03),

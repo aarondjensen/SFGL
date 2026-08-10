@@ -253,6 +253,16 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   // Commish eligibility comes from the Firebase ID-token claim (see App root /
   // taggedCommissioner). Active commish MODE is the user-toggled isCommissioner.
 
+  // The More menu closes on a tap outside via a transparent backdrop. A pointer
+  // has that escape route; a keyboard had none — the menu items are reachable
+  // by Tab, but nothing dismissed the menu without activating one of them.
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const onKey = (e) => { if (e.key === 'Escape') setShowMoreMenu(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showMoreMenu]);
+
   const league = useLeague(STORAGE_KEYS);
 
   const {

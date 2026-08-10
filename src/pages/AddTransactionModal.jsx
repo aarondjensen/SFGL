@@ -20,6 +20,7 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useDialog } from './DialogContext';
 import { BottomSheet } from '../components/BottomSheet';
+import { activatable } from '../utils/a11y';
 import { sendCommishPush } from '../api/pushNotifications';
 import { getCurrentTournamentIndex } from '../utils/index.js';
 import { compactTeamName } from '../utils/index.js';
@@ -776,7 +777,7 @@ export const AddTransactionModal = ({
                           return (
                             <div
                               key={name}
-                              onClick={() => { setPlayerIn({ name }); setSearchIn(''); }}
+                              {...activatable(() => { setPlayerIn({ name }); setSearchIn(''); }, { label: `Add ${name}` })}
                               style={{
                                 padding: '10px 12px',
                                 cursor: 'pointer',
@@ -940,7 +941,7 @@ export const AddTransactionModal = ({
                           return (
                             <div
                               key={name}
-                              onClick={() => { setPlayerOut({ name }); setSearchOut(''); }}
+                              {...activatable(() => { setPlayerOut({ name }); setSearchOut(''); }, { label: `Drop ${name}` })}
                               style={{
                                 padding: '10px 12px',
                                 cursor: 'pointer',

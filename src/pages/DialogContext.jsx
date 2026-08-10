@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { X, Check, AlertCircle, Clock } from 'lucide-react';
 import { theme, colors, fonts, blue, greenMuted, steel, black, scrim, fontSize } from '../theme.js';
+import { useModalBehavior } from '../utils/modalUtils';
 
 const DialogContext = createContext(null);
 export const useDialog = () => useContext(DialogContext);
@@ -41,13 +42,14 @@ export const DialogProvider = ({ children }) => {
     setConfirm(null);
   }, []);
 
-  // ── Escape key closes confirm dialog ──────────────────────────────────────
-  useEffect(() => {
-    if (!confirm) return;
-    const handler = (e) => { if (e.key === 'Escape') handleResult(false); };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [confirm, handleResult]);
+  // ── Escape, scroll lock and focus trap ────────────────────────────────────
+  // Was a bare Escape listener. The dialog is the app's only confirmation
+  // gate — deleting a team, reversing a transaction — and Tab walked straight
+  // out of it into the page behind, so a keyboard user could be operating the
+  // roster underneath while a "Delete this team?" prompt was still up.
+  const confirmRef = useRef(null);
+  const cancelResult = useCallback(() => handleResult(false), [handleResult]);
+  useModalBehavior(!!confirm, cancelResult, confirmRef);
 
   // Toast accent colors
   const toastAccent = (type) => {
@@ -147,11 +149,16 @@ export const DialogProvider = ({ children }) => {
               padding: '24px 26px',
               animation: 'sfgl-scaleIn 0.18s ease-out',
             }}
+            ref={confirmRef}
             onClick={e => e.stopPropagation()}
             role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="sfgl-confirm-title"
+            aria-describedby="sfgl-confirm-message"
+            tabIndex={-1}
           >
             {/* Title */}
-            <h3 style={{
+            <h3 id="sfgl-confirm-title" style={{
               ...theme.h2,
               marginBottom: 10,
               color:
@@ -163,7 +170,7 @@ export const DialogProvider = ({ children }) => {
             </h3>
 
             {/* Message */}
-            <p style={{
+            <p id="sfgl-confirm-message" style={{
               fontFamily: fonts.sans, fontSize: fontSize.base,
               color: colors.textSecondary,
               lineHeight: 1.6, whiteSpace: 'pre-line',
@@ -184,7 +191,7 @@ export const DialogProvider = ({ children }) => {
               </button>
               <button
                 onClick={() => handleResult(true)}
-                autoFocus
+                data-autofocus
                 style={{
                   ...(
                     confirm.type === 'danger'  ? theme.btnDanger  :

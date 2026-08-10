@@ -1047,6 +1047,18 @@ export const TournamentsView = ({
                 background: isExpanded ? white(0.04) : 'transparent',
               }}
               onClick={isExpandable ? () => toggleExpansion(t.name) : undefined}
+              // Deliberately NOT activatable() from utils/a11y: that helper sets
+              // role="button", which on a <tr> replaces the row role and breaks
+              // the table's grid semantics for a screen reader. A row stays a
+              // row; the tab stop and aria-expanded carry the disclosure.
+              tabIndex={isExpandable ? 0 : undefined}
+              aria-expanded={isExpandable ? isExpanded : undefined}
+              onKeyDown={isExpandable ? (e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                if (e.target !== e.currentTarget) return;   // let nested controls have their key
+                e.preventDefault();
+                toggleExpansion(t.name);
+              } : undefined}
               onMouseEnter={e => { e.currentTarget.style.background = isExpanded ? white(0.06) : colors.rowHover; }}
               onMouseLeave={e => { e.currentTarget.style.background = isExpanded ? white(0.04) : 'transparent'; }}
             >

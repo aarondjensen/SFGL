@@ -10,6 +10,7 @@ import { sendManagerPush } from '../api/pushNotifications';
 import { theme, colors, fonts, amber, gold, green, greenMuted, red, white, blueBright, fontSize } from '../theme.js';
 import { LIV_GOLF_ROSTER } from '../constants';
 import { BottomSheet } from '../components/BottomSheet';
+import { activatable } from '../utils/a11y';
 
 // Use shared LIV roster from constants instead of local duplicate
 const LIV_PLAYERS = new Set(LIV_GOLF_ROSTER);
@@ -618,7 +619,10 @@ export const AddDropPlayerModal = ({
                 return (
                   <div
                     key={player.name}
-                    onClick={() => setSelectedPlayerToDrop(isSelected ? null : player)}
+                    {...activatable(
+                      () => setSelectedPlayerToDrop(isSelected ? null : player),
+                      { selected: isSelected, label: `Drop ${player.name}` },
+                    )}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '12px 14px', marginBottom: 6, borderRadius: 6,
@@ -733,7 +737,11 @@ export const AddDropPlayerModal = ({
                     transition: 'all 0.15s',
                     cursor: (isLimbo || isRostered || tournamentIsLocked) ? 'default' : 'pointer',
                   }}
-                  onClick={() => { if (!isLimbo && !isRostered && !tournamentIsLocked) selectPlayerToAdd(player); }}
+                  {...activatable(() => selectPlayerToAdd(player), {
+                    disabled: isLimbo || isRostered || tournamentIsLocked,
+                    selected: isCurrentlySelected,
+                    label: isRostered ? `${player.name} — unavailable, on ${playerOwner}` : `Add ${player.name}`,
+                  })}
                   onMouseEnter={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = white(0.04); } }}
                   onMouseLeave={e => { if (!isCurrentlySelected && !isMobile && !isLimbo && !isRostered && !tournamentIsLocked) { e.currentTarget.style.background = white(0.02); } }}
                 >
