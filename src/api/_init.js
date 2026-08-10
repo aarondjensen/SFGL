@@ -1,8 +1,18 @@
 // src/api/_init.js
 // ============================================================================
 // Firebase app + Firestore initialization. This is the single place where the
-// Firebase SDK is initialized — every domain file (players.js, teams.js, etc.)
-// imports `db` from here rather than calling initializeApp() themselves.
+// Firebase SDK is initialized — every other module imports `app`, `db` or
+// `auth` from here rather than calling initializeApp() themselves.
+//
+// That was true of this header before it was true of the code: firebase.js
+// carried a byte-identical config block and its own
+// initializeApp/getFirestore, and pushNotifications.js reached for the app
+// through getApps()[0] with a comment explaining it could not import one. Both
+// resolved to the same instance — everything reused getApps()[0] — but only
+// this file sets up App Check, so which module the bundler evaluated first
+// decided whether App Check was live before the first Firestore call. Now the
+// import graph decides it: ES modules evaluate their imports first, so anything
+// that reaches Firestore through db has already run this file.
 //
 // Used to live at the top of firebase.js; extracted in Batch 5 so the domain
 // files can be navigated without scrolling past initialization boilerplate.
@@ -26,8 +36,14 @@ import { getAuth } from 'firebase/auth';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
 // ── Firebase config — values come from environment variables ─────────────────
-// Vite exposes env vars prefixed with VITE_
-const firebaseConfig = {
+// Vite exposes env vars prefixed with VITE_.
+//
+// Exported because the service worker needs the same six values and cannot read
+// import.meta.env from its own context — swRegistration.js passes them on the
+// registration URL. It used to list the keys again itself, which is a third
+// copy of this object in a codebase where the first duplicate already shipped
+// to production carrying unreplaced REPLACE_WITH_* placeholders.
+export const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -36,8 +52,10 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Avoid re-initialising on hot reload
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+// Avoid re-initialising on hot reload. Exported so no other module has to go
+// fishing for it with getApps()[0] — pushNotifications.js did exactly that,
+// which is only safe while something else happens to have initialized first.
+export const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
 // ── Firebase App Check (reCAPTCHA v3) ────────────────────────────────────────
 // Attests that Firestore requests come from THIS app, so the public web config

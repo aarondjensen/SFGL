@@ -28,9 +28,7 @@
  * ============================================================================
  */
 
-import { initializeApp, getApps } from 'firebase/app';
 import {
-  getFirestore,
   collection,
   doc,
   getDoc,
@@ -48,20 +46,25 @@ import {
   deleteField,
 } from 'firebase/firestore';
 
-// ── Firebase config — values come from environment variables ─────────────────
-// Vite exposes env vars prefixed with VITE_
-const firebaseConfig = {
-  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
-};
-
-// Avoid re-initialising on hot reload
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// ── Firestore handle ─────────────────────────────────────────────────────────
+// Imported from ./_init.js, which is the one place the SDK is initialized —
+// and which said so in its own header while this file quietly did it again.
+//
+// Both copies called `getApps().length ? getApps()[0] : initializeApp(config)`,
+// so they did resolve to the same underlying app and the same Firestore
+// instance; nothing was doubly-initialized. What differed is that ONLY _init.js
+// sets up App Check. Whichever module the bundler evaluated first won the
+// initializeApp race, so whether App Check was running before this file's first
+// Firestore call came down to module evaluation order — invisible, and liable
+// to flip on any import change.
+//
+// Importing it makes the order a guarantee: ES modules evaluate their imports
+// first, so _init.js (config, App Check, auth) is fully initialized before a
+// single line of this file runs.
+//
+// Re-exported because a great many modules import `db` from here.
+import { db } from './_init.js';
+export { db };
 
 // ── Players collection: one read, many projections ───────────────────────────
 // /players is the widest collection in the app (~700 docs) and five different

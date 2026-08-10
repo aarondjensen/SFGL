@@ -29,6 +29,12 @@ resolvers.
 
 **All league time is ET.** `getETNow` / `getETClock` from `api/_league.js`.
 
+**Firebase is initialized in exactly one place.** `src/api/_init.js` exports
+`app`, `db` and `auth`, and it is what configures App Check. Never call
+`initializeApp` elsewhere, and never reach for the app via `getApps()[0]` —
+both patterns existed here and both made App Check's presence depend on which
+module the bundler evaluated first.
+
 ## House style
 
 - New modals use `<BottomSheet>`. It portals, traps focus, and locks scroll.

@@ -71,8 +71,11 @@ for f in scripts/test-*.mjs; do node "$f"; done
 ```
 
 `scripts/test-bundle-budget.mjs` reads `dist/`, so run `npm run build` first.
-`scripts/audit-tournament-results.mjs` is a read-only production audit and needs
-`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY`.
+
+Two scripts talk to production and need the cron's service-account credentials
+(`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`):
+`audit-tournament-results.mjs` is read-only, and
+`backfill-transaction-teamid.mjs` is a dry run unless given `--apply`.
 
 Several of these are **consistency guards** rather than unit tests — they read
 the source and fail when two places that must agree stop agreeing (the colour
@@ -200,12 +203,13 @@ to the name for legacy rows.
 **Colours and font sizes come from `theme.js`.** Raw `rgba(...)` literals and
 raw pixel font sizes are caught by `scripts/test-theme-palette.mjs`.
 
-**Two modules initialize Firebase.** `src/api/_init.js` and
-`src/api/firebase.js` each call `initializeApp`/`getFirestore` and each export
-a `db`. They resolve to the same instance — both reuse `getApps()[0]` — but
-only `_init.js` sets up App Check, so which module is evaluated first decides
-whether App Check is running before the first Firestore call. Worth
-consolidating onto one; not yet done.
+**`src/api/_init.js` is the only place Firebase is initialized.** It exports
+`app`, `db` and `auth`, and it is what sets up App Check. `firebase.js` imports
+`db` from it and re-exports it, so importing either gets you the same instance
+with App Check already configured — ES modules evaluate their imports first.
+Never call `initializeApp` or reach for `getApps()[0]` anywhere else; both
+patterns existed here, and both made App Check's presence depend on module
+evaluation order.
 
 ---
 
@@ -231,7 +235,10 @@ Firebase.
 - `firestore.rules` is checked in, but **it is a reconstruction of the intended
   model, not an export of what is deployed**. There is no `firebase.json` here,
   so nothing deploys it automatically. Read its header before touching
-  production.
+  production, and run
+  `node scripts/backfill-transaction-teamid.mjs` first — the transaction
+  ownership rules key on `teamId`, and rows predating that column need it
+  filled in. The script is a dry run unless given `--apply`.
 - Service-account JSON must never be committed; `.gitignore` covers the usual
   filenames.
 - `VITE_*` values are inlined into the browser bundle and are public by design.

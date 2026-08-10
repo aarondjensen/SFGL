@@ -25,19 +25,22 @@
 // the same script under two different URLs would create two registrations.
 // ============================================================================
 
+import { firebaseConfig } from './_init.js';
+
 const SW_PATH = '/firebase-messaging-sw.js';
 
-// Build the registration URL with the Firebase web config as query params.
-// Only the keys the SW actually needs for FCM are included.
+// Build the registration URL from the SAME config object the app initializes
+// with, rather than re-reading the six env vars here. The six keys the SW reads
+// back out (see public/firebase-messaging-sw.js) are exactly the keys of that
+// object, so adding or renaming one now cannot leave the worker behind.
+//
+// Empty-string coercion is kept: URLSearchParams stringifies undefined as the
+// literal "undefined", which would reach the SW as a plausible-looking value
+// instead of an obviously missing one.
 const swUrl = () => {
-  const params = new URLSearchParams({
-    apiKey:            import.meta.env.VITE_FIREBASE_API_KEY            || '',
-    authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN        || '',
-    projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID         || '',
-    storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET     || '',
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-    appId:             import.meta.env.VITE_FIREBASE_APP_ID             || '',
-  });
+  const params = new URLSearchParams(
+    Object.fromEntries(Object.entries(firebaseConfig).map(([k, v]) => [k, v || ''])),
+  );
   return `${SW_PATH}?${params.toString()}`;
 };
 

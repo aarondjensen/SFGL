@@ -23,23 +23,17 @@
 //     just silently fails on browsers where push isn't supported.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getApps } from 'firebase/app';
 import { getMessaging, getToken, onMessage, isSupported, deleteToken } from 'firebase/messaging';
 import { doc, setDoc, deleteDoc, getDocs, query, where, collection, serverTimestamp } from 'firebase/firestore';
+import { app } from './_init.js';
 import { db } from './firebase';
 import { registerMessagingSW } from './swRegistration';
 import { Capacitor } from '@capacitor/core';
 
-// Reuse the same Firebase app instance the rest of the app uses. We can't
-// import `app` directly from firebase.js (it's not exported), but we can
-// retrieve it via getApps()[0] since firebase.js initialized it on load.
-const getApp = () => {
-  const apps = getApps();
-  if (apps.length === 0) {
-    throw new Error('Firebase app not initialized — make sure firebase.js loads before pushNotifications.js');
-  }
-  return apps[0];
-};
+// The app instance, imported rather than retrieved from getApps()[0]. The
+// lookup version threw when nothing else had initialized Firebase yet, which
+// made this module's correctness depend on load order — a real hazard now that
+// it is lazily imported and can be the first Firebase consumer to run.
 
 // Stable per-install device identifier. FCM tokens rotate over time; the
 // userAgent string drifts across browser/OS updates. Neither is a reliable
@@ -79,7 +73,7 @@ const getMessagingInstance = async () => {
   if (_messaging) return _messaging;
   const supported = await isSupported();
   if (!supported) return null;
-  _messaging = getMessaging(getApp());
+  _messaging = getMessaging(app);
   return _messaging;
 };
 

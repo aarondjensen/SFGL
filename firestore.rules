@@ -92,28 +92,52 @@ service cloud.firestore {
 
     // ── Transactions ────────────────────────────────────────────────────────
     // Any manager may add a row (a waiver claim or free-agent move) and edit or
-    // withdraw their own pending one. `status` is what the cron and the
-    // commissioner act on, so a manager may not set it to anything but
-    // 'pending' — self-approving a waiver claim would otherwise be a single
-    // field write.
+    // withdraw their own pending one.
     //
-    // ⚠ These rules key off `teamId`, which only became a written column
-    // recently (it was added to transactionsApi.sync's validCols alongside the
-    // rename fix). Rows created before that carry only `team` — the editable
-    // NAME — so ownsTeam(resource.data.teamId) is false for them and a manager
-    // could not edit their own history. Back-fill teamId on the collection
-    // before enforcing this, or widen the check to accept the name for rows
-    // with no id. Verify against real data in the Rules Playground first.
+    // ── The teamId / team split ─────────────────────────────────────────────
+    // `teamId` is stable; `team` is the display NAME, which managers can edit.
+    // Ownership must key off the id — that is the whole point of the column —
+    // but it only became a written field recently, so rows predating it carry
+    // only the name. txTeamKey mirrors what txBelongsToTeam does in the app:
+    // prefer teamId, fall back to the name.
+    //
+    // ⚠ The fallback resolves only when a team's document ID equals its name,
+    // which is the case for every team created without an explicit id
+    // (teamsApi.upsertMany keys on `team.id || team.name`). Rules cannot query
+    // a collection by field, so a team with a distinct id and a legacy
+    // name-only transaction cannot be matched here at all.
+    //
+    // Run `node scripts/backfill-transaction-teamid.mjs` before deploying.
+    // Once it reports every transaction resolving to a live team, delete the
+    // fallback and key on `resource.data.teamId` alone.
+    function txTeamKey(data) {
+      return data.teamId != null ? data.teamId : data.team;
+    }
+
     match /transactions/{txId} {
       allow read: if signedIn();
+
+      // Any manager may lodge a claim or a free-agent move for their own team.
+      // `status` is what the cron and the commissioner act on, so a manager may
+      // not create anything but a pending row — self-approving a waiver claim
+      // would otherwise be a single field write.
       allow create: if isCommish()
                     || (signedIn()
                         && request.resource.data.status == 'pending'
-                        && ownsTeam(request.resource.data.teamId));
-      allow update, delete: if isCommish()
-                            || (ownsTeam(resource.data.teamId)
-                                && resource.data.status == 'pending'
-                                && request.resource.data.status == 'pending');
+                        && ownsTeam(txTeamKey(request.resource.data)));
+
+      // Editing or withdrawing your own claim, while it is still pending, and
+      // without moving it out of pending. The team may not change hands either:
+      // reassigning a transaction to another team is a commissioner action.
+      allow update: if isCommish()
+                    || (ownsTeam(txTeamKey(resource.data))
+                        && resource.data.status == 'pending'
+                        && request.resource.data.status == 'pending'
+                        && txTeamKey(request.resource.data) == txTeamKey(resource.data));
+
+      allow delete: if isCommish()
+                    || (ownsTeam(txTeamKey(resource.data))
+                        && resource.data.status == 'pending');
     }
 
     // ── Commissioner-owned league data ──────────────────────────────────────
