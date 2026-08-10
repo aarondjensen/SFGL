@@ -19,7 +19,7 @@
 
 import React from 'react';
 import { AlertCircle } from 'lucide-react';
-import { colors, theme, fonts } from '../theme.js';
+import { colors, theme, fonts, fontSize } from '../theme.js';
 
 // ── Session-scoped reporter ─────────────────────────────────────────────────
 // Module-level so the boundary's componentDidCatch and the window handlers in
@@ -293,7 +293,7 @@ export class ErrorBoundary extends React.Component {
           </h3>
           <p style={{
             fontFamily: fonts.sans,
-            fontSize: 13,
+            fontSize: fontSize.base,
             color: colors.textSecondary,
             marginBottom: 16,
           }}>

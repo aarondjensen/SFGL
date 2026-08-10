@@ -27,7 +27,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts, green, white, red } from '../../theme.js';
+import { colors, fonts, green, white, red, fontSize } from '../../theme.js';
 import { TeamName } from '../../components/TeamName';
 import { compactTeamName } from '../../utils/index.js';
 import { M, disabledBtn } from './adminStyles';
@@ -181,7 +181,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
         </div>
 
         {(claimsLoading || loading) ? (
-          <div style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textMuted, padding: '10px 0' }}>
+          <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted, padding: '10px 0' }}>
             Loading…
           </div>
         ) : rows.map((t) => {
@@ -201,13 +201,13 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
             >
               {/* Name + claim status */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <div style={{ fontFamily: fonts.sans, fontSize: 14, fontWeight: 600, color: colors.textPrimary }}>
+                <div style={{ fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 600, color: colors.textPrimary }}>
                   <TeamName name={t.name} />
                 </div>
                 <span
                   style={{
                     flexShrink: 0,
-                    fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.4px',
+                    fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.4px',
                     textTransform: 'uppercase',
                     padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap',
                     color: claimed ? colors.earningsGreen : colors.textMuted,
@@ -220,7 +220,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
               </div>
 
               {/* Owner */}
-              <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary, marginTop: 4 }}>
+              <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 4 }}>
                 {claimed
                   ? <>Claimed by <span style={{ color: colors.textPrimary, fontWeight: 600 }}>{ownerLabel}</span></>
                   : <span style={{ color: colors.textMuted }}>No one has claimed this team yet.</span>}
@@ -229,7 +229,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
               {/* Meta: last login + push */}
               <div
                 title={fullDate(last)}
-                style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, marginTop: 3 }}
+                style={{ fontFamily: fonts.sans, fontSize: fontSize.caption, color: colors.textMuted, marginTop: 3 }}
               >
                 Last login: {timeAgo(last)}
                 {'  ·  '}
@@ -242,7 +242,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
               <div style={{ marginTop: 8 }}>
                 <label style={{
                   display: 'block',
-                  fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                  fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700,
                   letterSpacing: '0.4px', textTransform: 'uppercase',
                   color: colors.textMuted, marginBottom: 4,
                 }}>
@@ -262,7 +262,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
                   <code style={{
                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                    fontSize: 11, color: colors.textMuted,
+                    fontSize: fontSize.caption, color: colors.textMuted,
                     background: white(0.04),
                     border: `1px solid ${colors.borderSubtle}`,
                     borderRadius: 5, padding: '2px 7px',
@@ -272,7 +272,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
                   <button
                     onClick={() => copyUid(c.uid)}
                     style={{
-                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      fontFamily: fonts.sans, fontSize: fontSize.caption, fontWeight: 600,
                       color: colors.textSecondary, background: 'transparent',
                       border: `1px solid ${colors.borderSubtle}`, borderRadius: 5,
                       padding: '3px 9px', cursor: 'pointer',
@@ -283,7 +283,7 @@ export const ManagerAccountsPanel = ({ teams = [] }) => {
                   <button
                     onClick={() => handleRelease(t)}
                     style={{
-                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      fontFamily: fonts.sans, fontSize: fontSize.caption, fontWeight: 600,
                       color: 'rgba(230,120,120,0.95)', background: 'transparent',
                       border: `1px solid ${red(0.35)}`, borderRadius: 5,
                       padding: '3px 9px', cursor: 'pointer',

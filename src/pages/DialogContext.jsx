@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { X, Check, AlertCircle, Clock } from 'lucide-react';
-import { theme, colors, fonts, blue, greenMuted, steel, black, scrim } from '../theme.js';
+import { theme, colors, fonts, blue, greenMuted, steel, black, scrim, fontSize } from '../theme.js';
 
 const DialogContext = createContext(null);
 export const useDialog = () => useContext(DialogContext);
@@ -104,7 +104,7 @@ export const DialogProvider = ({ children }) => {
                   animation: stackPos === 'top' ? 'sfgl-slideDown 0.25s ease-out' : 'sfgl-slideUp 0.25s ease-out',
                 }}>
                   <Icon style={{ width: 14, height: 14, color: accent.icon, flexShrink: 0 }} />
-                  <span style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary, flex: 1 }}>
+                  <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textPrimary, flex: 1 }}>
                     {toast.message}
                   </span>
                   <button onClick={() => removeToast(toast.id)}
@@ -164,7 +164,7 @@ export const DialogProvider = ({ children }) => {
 
             {/* Message */}
             <p style={{
-              fontFamily: fonts.sans, fontSize: 13,
+              fontFamily: fonts.sans, fontSize: fontSize.base,
               color: colors.textSecondary,
               lineHeight: 1.6, whiteSpace: 'pre-line',
               marginBottom: 22,

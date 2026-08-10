@@ -28,7 +28,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useDialog } from '../DialogContext';
-import { theme, colors, fonts, SWINGS, green, purple, red, white } from '../../theme.js';
+import { theme, colors, fonts, SWINGS, green, purple, red, white, fontSize } from '../../theme.js';
 import { tournamentsApi } from '../../api/firebase';
 import { M, disabledBtn } from './adminStyles';
 
@@ -179,7 +179,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
             max="2100"
             value={year}
             onChange={e => setYear(parseInt(e.target.value, 10) || defaultYear)}
-            style={{ ...M.input, width: 110, fontSize: 16, flexShrink: 0 }}
+            style={{ ...M.input, width: 110, fontSize: fontSize.lg, flexShrink: 0 }}
           />
           <button
             onClick={handleFetch}
@@ -200,14 +200,14 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
           border: `1px solid ${red(0.3)}`,
           borderRadius: 6,
           fontFamily: fonts.sans,
-          fontSize: 12,
+          fontSize: fontSize.sm,
           color: 'rgba(255,160,160,0.95)',
           lineHeight: 1.5,
         }}>
           <div style={{ fontWeight: 700, marginBottom: 4 }}>Could not fetch schedule</div>
           <div>{fetchError}</div>
           {fetchWarnings.length > 0 && (
-            <ul style={{ marginTop: 6, paddingLeft: 18, fontSize: 11, color: 'rgba(255,160,160,0.75)' }}>
+            <ul style={{ marginTop: 6, paddingLeft: 18, fontSize: fontSize.caption, color: 'rgba(255,160,160,0.75)' }}>
               {fetchWarnings.map((w, i) => <li key={i}>{w}</li>)}
             </ul>
           )}
@@ -227,7 +227,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
             justifyContent: 'space-between',
             gap: 10,
           }}>
-            <span style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary }}>
+            <span style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textSecondary }}>
               <strong style={{ color: colors.textPrimary }}>{previewRows.length}</strong> found ·
               <strong style={{ color: colors.textPrimary, marginLeft: 4 }}>{includeCount}</strong> selected for import
             </span>
@@ -238,7 +238,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                   ...M.btnSecondary,
                   width: 'auto',
                   padding: '4px 10px',
-                  fontSize: 11,
+                  fontSize: fontSize.caption,
                 }}
                 className="modal-feel-lift"
               >Select all</button>
@@ -248,7 +248,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                   ...M.btnSecondary,
                   width: 'auto',
                   padding: '4px 10px',
-                  fontSize: 11,
+                  fontSize: fontSize.caption,
                 }}
                 className="modal-feel-lift"
               >Clear all</button>
@@ -264,7 +264,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
               border: '1px solid rgba(220,170,40,0.25)',
               borderRadius: 6,
               fontFamily: fonts.sans,
-              fontSize: 11,
+              fontSize: fontSize.caption,
               color: 'rgba(220,200,140,0.9)',
               lineHeight: 1.5,
             }}>
@@ -284,7 +284,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
             borderRadius: 6,
             background: white(0.02),
           }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fonts.sans, fontSize: 12 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: fonts.sans, fontSize: fontSize.sm }}>
               <thead>
                 <tr style={{ background: white(0.03), position: 'sticky', top: 0, zIndex: 1 }}>
                   <th style={{ ...theme.tableHeaderCell, padding: '8px 4px', width: 32 }}>✓</th>
@@ -315,7 +315,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                           {row.name}
                           {hasMissing && (
                             <span title="Some fields missing — expand to review"
-                              style={{ marginLeft: 6, fontSize: 10, color: 'rgba(220,170,40,0.95)' }}>⚠</span>
+                              style={{ marginLeft: 6, fontSize: fontSize.xs, color: 'rgba(220,170,40,0.95)' }}>⚠</span>
                           )}
                         </td>
                         <td style={{ padding: '6px', color: colors.textSecondary, whiteSpace: 'nowrap' }}>
@@ -330,7 +330,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                             <button onClick={() => toggleField(i, key)}
                               style={{
                                 width: 24, height: 24, borderRadius: 4,
-                                fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                                fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700,
                                 cursor: 'pointer',
                                 background: row[key] ? white(0.05) : 'transparent',
                                 border: `1px solid ${row[key] ? active : colors.borderSubtle}`,
@@ -343,7 +343,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                         ))}
                         <td style={{ padding: '6px 4px', textAlign: 'center' }}>
                           <button onClick={() => toggleExpand(i)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textMuted, fontSize: 12 }}>
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textMuted, fontSize: fontSize.sm }}>
                             {isExpanded ? '▲' : '▼'}
                           </button>
                         </td>
@@ -352,50 +352,50 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                         <tr style={{ background: white(0.02) }}>
                           <td colSpan={7} style={{ padding: '12px 14px' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                              <label style={{ fontSize: 11, color: colors.textMuted }}>
+                              <label style={{ fontSize: fontSize.caption, color: colors.textMuted }}>
                                 Name
                                 <input value={row.name || ''} onChange={e => updateField(i, 'name', e.target.value)}
-                                  style={{ ...M.input, marginTop: 2, fontSize: 14 }} />
+                                  style={{ ...M.input, marginTop: 2, fontSize: fontSize.md }} />
                               </label>
-                              <label style={{ fontSize: 11, color: colors.textMuted }}>
+                              <label style={{ fontSize: fontSize.caption, color: colors.textMuted }}>
                                 Dates (display)
                                 <input value={row.dates || ''} onChange={e => updateField(i, 'dates', e.target.value)}
-                                  style={{ ...M.input, marginTop: 2, fontSize: 14 }} />
+                                  style={{ ...M.input, marginTop: 2, fontSize: fontSize.md }} />
                               </label>
-                              <label style={{ fontSize: 11, color: colors.textMuted }}>
+                              <label style={{ fontSize: fontSize.caption, color: colors.textMuted }}>
                                 Location
                                 <input value={row.location || ''} onChange={e => updateField(i, 'location', e.target.value)}
-                                  style={{ ...M.input, marginTop: 2, fontSize: 14 }} />
+                                  style={{ ...M.input, marginTop: 2, fontSize: fontSize.md }} />
                               </label>
-                              <label style={{ fontSize: 11, color: colors.textMuted }}>
+                              <label style={{ fontSize: fontSize.caption, color: colors.textMuted }}>
                                 Course
                                 <input value={row.course || ''} onChange={e => updateField(i, 'course', e.target.value)}
-                                  style={{ ...M.input, marginTop: 2, fontSize: 14 }} />
+                                  style={{ ...M.input, marginTop: 2, fontSize: fontSize.md }} />
                               </label>
-                              <label style={{ fontSize: 11, color: colors.textMuted }}>
+                              <label style={{ fontSize: fontSize.caption, color: colors.textMuted }}>
                                 Start date (ISO)
                                 <input value={row.startDate || ''} onChange={e => updateField(i, 'startDate', e.target.value)}
                                   placeholder="YYYY-MM-DD"
-                                  style={{ ...M.input, marginTop: 2, fontSize: 14 }} />
+                                  style={{ ...M.input, marginTop: 2, fontSize: fontSize.md }} />
                               </label>
-                              <label style={{ fontSize: 11, color: colors.textMuted }}>
+                              <label style={{ fontSize: fontSize.caption, color: colors.textMuted }}>
                                 End date (ISO)
                                 <input value={row.endDate || ''} onChange={e => updateField(i, 'endDate', e.target.value)}
                                   placeholder="YYYY-MM-DD"
-                                  style={{ ...M.input, marginTop: 2, fontSize: 14 }} />
+                                  style={{ ...M.input, marginTop: 2, fontSize: fontSize.md }} />
                               </label>
-                              <label style={{ fontSize: 11, color: colors.textMuted }}>
+                              <label style={{ fontSize: fontSize.caption, color: colors.textMuted }}>
                                 Swing override
                                 <select value={row.segment || ''} onChange={e => updateField(i, 'segment', e.target.value || null)}
-                                  style={{ ...M.select, marginTop: 2, fontSize: 14, padding: '8px 10px' }}>
+                                  style={{ ...M.select, marginTop: 2, fontSize: fontSize.md, padding: '8px 10px' }}>
                                   <option value="">— derived from dates —</option>
                                   {SWINGS.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                               </label>
-                              <label style={{ fontSize: 11, color: colors.textMuted }}>
+                              <label style={{ fontSize: fontSize.caption, color: colors.textMuted }}>
                                 Lock hour (ET)
                                 <select value={row.lockHour ?? 7} onChange={e => updateField(i, 'lockHour', parseInt(e.target.value, 10))}
-                                  style={{ ...M.select, marginTop: 2, fontSize: 14, padding: '8px 10px' }}>
+                                  style={{ ...M.select, marginTop: 2, fontSize: fontSize.md, padding: '8px 10px' }}>
                                   {[7, 8, 9, 10, 11, 12].map(h => (
                                     <option key={h} value={h}>
                                       {h === 12 ? '12:00 PM' : `${h}:00 AM`}{h === 7 ? ' (default)' : ''}
@@ -405,7 +405,7 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                               </label>
                             </div>
                             {row.purse && (
-                              <div style={{ marginTop: 8, fontSize: 11, color: colors.textMuted }}>
+                              <div style={{ marginTop: 8, fontSize: fontSize.caption, color: colors.textMuted }}>
                                 Purse from PGA Tour: ${row.purse.toLocaleString()}
                                 {row.purse >= 20_000_000 && !row.isMajor && (
                                   <span style={{ marginLeft: 6, color: purple(0.95) }}>

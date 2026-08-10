@@ -10,7 +10,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts, white, black } from '../../theme.js';
+import { colors, fonts, white, black, fontSize } from '../../theme.js';
 import { sfglDataApi, playersApi, teamsApi } from '../../api/firebase';
 import { STORAGE_KEYS } from '../../constants';
 import { M, disabledBtn } from './adminStyles';
@@ -75,7 +75,7 @@ export const MergePlayersPanel = ({
     background: 'none',
     border: 'none',
     fontFamily: fonts.sans,
-    fontSize: 13,
+    fontSize: fontSize.base,
     color: colors.textPrimary,
     cursor: 'pointer',
     borderBottom: `1px solid ${colors.borderSubtle}`,
@@ -162,7 +162,7 @@ export const MergePlayersPanel = ({
             background: 'none',
             border: 'none',
             color: colors.textMuted,
-            fontSize: 11,
+            fontSize: fontSize.caption,
             padding: '2px 0',
             cursor: 'pointer',
             fontFamily: fonts.sans,
@@ -199,7 +199,7 @@ export const MergePlayersPanel = ({
         {error && (
           <div style={{
             fontFamily: fonts.sans,
-            fontSize: 11,
+            fontSize: fontSize.caption,
             color: colors.danger,
             padding: '6px 0',
           }}>

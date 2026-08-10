@@ -145,12 +145,18 @@ export const shape = {
 // pixel values anyway. If the app ever needs to scale up on huge screens, this
 // is the single place to reintroduce a media query or container-query rule.)
 export const fontSize = {
-  xs:   10,
-  sm:   12,
-  base: 13,
-  md:   14,
-  lg:   16,
-  xl:   20,
+  xs:      10,
+  // The single most-used size in the app (57 hand-written call sites before
+  // this token existed, 41 of them in the admin panels) and the one the scale
+  // had no name for — so it sat between xs and sm as a raw literal everywhere.
+  // A scale that cannot express its most common size is why 199 font sizes
+  // were authored as bare pixels.
+  caption: 11,
+  sm:      12,
+  base:    13,
+  md:      14,
+  lg:      16,
+  xl:      20,
   // xxl kept for back-compat with any straggler import; rarely used in
   // practice. Major totals should use xl instead.
   xxl:  24,
@@ -164,6 +170,17 @@ export const fontSize = {
   badge:    8,    // overlay pips, tier-letter labels, micro-captions
   tileIcon: 22,   // emoji icons on the admin tile grid
 };
+
+// ── Still off-scale ──────────────────────────────────────────────────────────
+// Thirteen call sites remain on sizes this scale does not name: 9px (5 — tiny
+// pips that are probably `badge`), 15px (4 — menu rows and modal titles, between
+// base and lg) and 18px (4 — modal/error headings, between lg and xl). Each
+// would snap to a neighbouring token with a 1-2px shift.
+//
+// Left alone on purpose. Adding tokens for all three would give the scale
+// 8/9/10/11/12/13/14/15/16/18/20/22/24 — a ruler, not a scale — and snapping
+// them is a visual decision about the app's look rather than a consistency fix.
+// Worth doing, but as a deliberate choice, not as a side effect of this sweep.
 
 // ── Reusable style objects ────────────────────────────────────────────────────
 
@@ -474,7 +491,7 @@ export const theme = {
     alignItems: 'center',
     padding: '2px 8px',
     borderRadius: 2,
-    fontSize: 10,
+    fontSize: fontSize.xs,
     fontWeight: 600,
     letterSpacing: '1px',
     textTransform: 'uppercase',
@@ -544,7 +561,7 @@ export const theme = {
     textAlign: 'center',
     color: colors.textMuted,
     fontFamily: fonts.serif,
-    fontSize: 14,
+    fontSize: fontSize.md,
     letterSpacing: '0.5px',
   },
 };

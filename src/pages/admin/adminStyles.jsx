@@ -12,7 +12,7 @@
 // automatically once .js is gone.
 // ============================================================================
 
-import { theme, colors, fonts, green, red, white } from '../../theme.js';
+import { theme, colors, fonts, green, red, white, fontSize } from '../../theme.js';
 
 export const S = {
   section: {
@@ -24,7 +24,7 @@ export const S = {
   },
   title: {
     fontFamily: fonts.sans,
-    fontSize: 11,
+    fontSize: fontSize.caption,
     fontWeight: 700,
     letterSpacing: '1.8px',
     textTransform: 'uppercase',
@@ -132,7 +132,7 @@ export const M = {
   // primary content.
   eyebrow: {
     fontFamily: fonts.sans,
-    fontSize: 10,
+    fontSize: fontSize.xs,
     fontWeight: 700,
     letterSpacing: '1.8px',
     textTransform: 'uppercase',
@@ -143,7 +143,7 @@ export const M = {
   // Short paragraph of context that sits between eyebrow and content.
   descText: {
     fontFamily: fonts.sans,
-    fontSize: 12,
+    fontSize: fontSize.sm,
     color: colors.textSecondary,
     lineHeight: 1.5,
   },
@@ -158,7 +158,7 @@ export const M = {
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
     color: colors.textPrimary,
-    fontSize: 16,
+    fontSize: fontSize.lg,
     fontFamily: fonts.sans,
     appearance: 'none',
     WebkitAppearance: 'none',
@@ -171,7 +171,7 @@ export const M = {
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
     color: colors.textPrimary,
-    fontSize: 16,
+    fontSize: fontSize.lg,
     fontFamily: fonts.sans,
   },
 
@@ -186,7 +186,7 @@ export const M = {
     border: `1px solid ${green(0.35)}`,
     borderRadius: 6,
     color: colors.earningsGreen,
-    fontSize: 13,
+    fontSize: fontSize.base,
     fontFamily: fonts.sans,
     fontWeight: 600,
     cursor: 'pointer',
@@ -201,7 +201,7 @@ export const M = {
     border: `1px solid ${colors.borderSubtle}`,
     borderRadius: 6,
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: fontSize.sm,
     fontFamily: fonts.sans,
     fontWeight: 600,
     cursor: 'pointer',
@@ -217,7 +217,7 @@ export const M = {
     border: '1px solid rgba(220,150,50,0.35)',
     borderRadius: 6,
     color: 'rgba(220,180,80,0.95)',
-    fontSize: 13,
+    fontSize: fontSize.base,
     fontFamily: fonts.sans,
     fontWeight: 600,
     cursor: 'pointer',
@@ -232,7 +232,7 @@ export const M = {
     border: `1px solid ${red(0.35)}`,
     borderRadius: 6,
     color: colors.danger,
-    fontSize: 13,
+    fontSize: fontSize.base,
     fontFamily: fonts.sans,
     fontWeight: 600,
     cursor: 'pointer',
@@ -292,7 +292,7 @@ export const SyncStatusBanner = ({ status, summary }) => {
       marginTop: 8,
       padding: '10px 12px',
       borderRadius: 6,
-      fontSize: 12,
+      fontSize: fontSize.sm,
       fontFamily: fonts.sans,
       whiteSpace: 'pre-wrap',
       lineHeight: 1.5,
@@ -313,7 +313,7 @@ export const LastSyncedLine = ({ timestamp }) => {
   return (
     <div style={{
       fontFamily: fonts.sans,
-      fontSize: 11,
+      fontSize: fontSize.caption,
       color: colors.textMuted,
       marginTop: -2,
     }}>

@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts, greenMuted, red } from '../../theme.js';
+import { colors, fonts, greenMuted, red, fontSize } from '../../theme.js';
 import { NameSet } from '../../../api/_playerNames.js';
 import { playersApi } from '../../api/firebase';
 import { LIV_GOLF_ROSTER } from '../../constants';
@@ -147,7 +147,7 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
       <div style={M.group}>
         <div style={M.eyebrow}>🔄 Sync from LIV roster</div>
         <div style={M.descText}>
-          Applies the latest <code style={{ fontFamily: 'monospace', fontSize: 11, opacity: 0.9 }}>LIV_GOLF_ROSTER</code> from the codebase. Flags any new defectors and unflags anyone who left LIV. Run after deploying a roster update.
+          Applies the latest <code style={{ fontFamily: 'monospace', fontSize: fontSize.caption, opacity: 0.9 }}>LIV_GOLF_ROSTER</code> from the codebase. Flags any new defectors and unflags anyone who left LIV. Run after deploying a roster update.
         </div>
         <LastSyncedLine timestamp={livLastSynced || settings?.livRosterLastSynced} />
         <button
@@ -190,12 +190,12 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
                 <span style={{
                   flex: 1,
                   fontFamily: fonts.sans,
-                  fontSize: 12,
+                  fontSize: fontSize.sm,
                   color: colors.textPrimary,
                 }}>
                   {p.name}
                   {p.worldRank && (
-                    <span style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>
+                    <span style={{ color: colors.textMuted, fontSize: fontSize.xs, marginLeft: 6 }}>
                       #{p.worldRank}
                     </span>
                   )}
@@ -206,7 +206,7 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
                   className="modal-feel-lift modal-feel-danger"
                   style={{
                     fontFamily: fonts.sans,
-                    fontSize: 11,
+                    fontSize: fontSize.caption,
                     padding: '5px 10px',
                     background: red(0.08),
                     border: `1px solid ${red(0.35)}`,
@@ -266,7 +266,7 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
               >
                 <span style={{
                   flex: 1,
-                  fontSize: 13,
+                  fontSize: fontSize.base,
                   fontWeight: 500,
                   color: colors.textPrimary,
                   overflow: 'hidden',
@@ -291,7 +291,7 @@ export const LivIneligiblePanel = ({ allPlayers, setAllPlayers, settings, setSet
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: 12,
+                    fontSize: fontSize.sm,
                     lineHeight: 1,
                     padding: 0,
                     flexShrink: 0,

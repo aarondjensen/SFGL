@@ -14,7 +14,7 @@
 // threshold to signal "ready to release".
 
 import React from 'react';
-import { navy, white } from '../theme.js';
+import { navy, white, fontSize } from '../theme.js';
 
 const THRESHOLD = 80;
 const REFRESH_HEIGHT = 64; // height of the indicator bar while refreshing
@@ -169,7 +169,7 @@ export const PullToRefresh = ({ children, onRefresh }) => {
           />
           <div style={{
             fontFamily: "'Raleway', system-ui, sans-serif",
-            fontSize: 10,
+            fontSize: fontSize.xs,
             fontWeight: 700,
             letterSpacing: 2.5,
             textTransform: 'uppercase',

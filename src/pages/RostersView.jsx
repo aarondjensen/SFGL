@@ -76,7 +76,7 @@ const TeamDropdown = ({ teams, value, onChange }) => {
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {selected ? <TeamName name={selected.name} /> : '—'}
         </span>
-        <span style={{ fontSize: 11, color: colors.textSecondary, opacity: 0.9, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
+        <span style={{ fontSize: fontSize.caption, color: colors.textSecondary, opacity: 0.9, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
         <div style={{

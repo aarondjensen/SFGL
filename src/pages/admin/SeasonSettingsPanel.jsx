@@ -14,7 +14,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts, blue, green, white, amber } from '../../theme.js';
+import { colors, fonts, blue, green, white, amber, fontSize } from '../../theme.js';
 import { M, disabledBtn } from './adminStyles';
 import { DAY_NAMES, fmtETTime } from '../../utils/sharedHelpers';
 import { cronFetch } from '../../api/cronApi';
@@ -37,13 +37,13 @@ const ScheduleEditor = ({
     <div style={M.descText}>{description}</div>
     <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Day</div>
+        <div style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Day</div>
         <select value={day} onChange={e => setDay(Number(e.target.value))} style={M.select}>
           {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
         </select>
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Hour (ET)</div>
+        <div style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Hour (ET)</div>
         <select value={hour} onChange={e => setHour(Number(e.target.value))} style={M.select}>
           {Array.from({ length: 24 }, (_, i) => (
             <option key={i} value={i}>
@@ -53,7 +53,7 @@ const ScheduleEditor = ({
         </select>
       </div>
       <div style={{ flex: '0 0 90px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ fontFamily: fonts.sans, fontSize: 10, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Minute</div>
+        <div style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, color: colors.textMuted, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Minute</div>
         <select value={minute} onChange={e => setMinute(Number(e.target.value))} style={M.select}>
           {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => (
             <option key={m} value={m}>:{String(m).padStart(2, '0')}</option>
@@ -63,7 +63,7 @@ const ScheduleEditor = ({
     </div>
     <div style={{
       fontFamily: fonts.sans,
-      fontSize: 11,
+      fontSize: fontSize.caption,
       color: colors.textGoldDim,
       marginTop: 2,
     }}>
@@ -378,7 +378,7 @@ export const SeasonSettingsPanel = ({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
       <label style={{
         fontFamily: fonts.sans,
-        fontSize: 10,
+        fontSize: fontSize.xs,
         color: colors.textMuted,
         letterSpacing: '0.5px',
         textTransform: 'uppercase',
@@ -393,7 +393,7 @@ export const SeasonSettingsPanel = ({
             top: '50%',
             transform: 'translateY(-50%)',
             fontFamily: fonts.mono,
-            fontSize: 13,
+            fontSize: fontSize.base,
             color: colors.textMuted,
             pointerEvents: 'none',
           }}>$</span>
@@ -405,7 +405,7 @@ export const SeasonSettingsPanel = ({
           onChange={e => setDraftKey(key, Number(e.target.value))}
           style={{
             ...M.input,
-            fontSize: 13,
+            fontSize: fontSize.base,
             textAlign: dollar ? 'right' : 'center',
             paddingLeft: dollar ? 22 : 12,
             // box-sizing + minWidth:0 keep the native number input from
@@ -472,11 +472,11 @@ export const SeasonSettingsPanel = ({
           }} />
         </span>
         <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-          <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: colors.textPrimary }}>
+          <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600, color: colors.textPrimary }}>
             {label}
           </span>
           {hint && (
-            <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>
+            <span style={{ fontFamily: fonts.sans, fontSize: fontSize.caption, color: colors.textMuted }}>
               {hint}
             </span>
           )}
@@ -505,20 +505,20 @@ export const SeasonSettingsPanel = ({
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 1, textAlign: 'left' }}>
             <div style={{
-              fontFamily: fonts.sans, fontSize: 13, fontWeight: 600,
+              fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600,
               color: colors.textPrimary,
             }}>
               ⚙️ Season Settings
             </div>
             <div style={{
-              fontFamily: fonts.sans, fontSize: 11,
+              fontFamily: fonts.sans, fontSize: fontSize.caption,
               color: colors.textMuted,
             }}>
               Bonuses, fees, and roster rules
             </div>
           </div>
           <span style={{
-            fontFamily: fonts.sans, fontSize: 11,
+            fontFamily: fonts.sans, fontSize: fontSize.caption,
             color: colors.textMuted,
             transform: settingsOpen ? 'rotate(0deg)' : 'rotate(-90deg)',
             transition: 'transform 0.15s',
@@ -536,7 +536,7 @@ export const SeasonSettingsPanel = ({
             <div>
               <div style={{
                 fontFamily: fonts.sans,
-                fontSize: 10,
+                fontSize: fontSize.xs,
                 fontWeight: 700,
                 letterSpacing: '1px',
                 textTransform: 'uppercase',
@@ -560,7 +560,7 @@ export const SeasonSettingsPanel = ({
             <div>
               <div style={{
                 fontFamily: fonts.sans,
-                fontSize: 10,
+                fontSize: fontSize.xs,
                 fontWeight: 700,
                 letterSpacing: '1px',
                 textTransform: 'uppercase',
@@ -578,7 +578,7 @@ export const SeasonSettingsPanel = ({
             <div>
               <div style={{
                 fontFamily: fonts.sans,
-                fontSize: 10,
+                fontSize: fontSize.xs,
                 fontWeight: 700,
                 letterSpacing: '1px',
                 textTransform: 'uppercase',
@@ -597,7 +597,7 @@ export const SeasonSettingsPanel = ({
             <div>
               <div style={{
                 fontFamily: fonts.sans,
-                fontSize: 10,
+                fontSize: fontSize.xs,
                 fontWeight: 700,
                 letterSpacing: '1px',
                 textTransform: 'uppercase',
@@ -725,7 +725,7 @@ export const SeasonSettingsPanel = ({
         border: `1px solid ${blue(0.2)}`,
         borderRadius: 6,
         fontFamily: fonts.sans,
-        fontSize: 11,
+        fontSize: fontSize.caption,
         color: colors.textSecondary,
         lineHeight: 1.55,
       }}>

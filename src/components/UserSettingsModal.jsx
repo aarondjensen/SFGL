@@ -14,7 +14,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
-import { colors, fonts, green, white, black } from '../theme.js';
+import { colors, fonts, green, white, black, fontSize } from '../theme.js';
 import { useModalBehavior } from '../utils/modalUtils';
 import {
   isPushSupported,
@@ -255,7 +255,7 @@ export const UserSettingsModal = ({
               {loggedInUser || 'Account'}
             </div>
             {userTeam && (
-              <div style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textMuted, marginTop: 2 }}>
+              <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted, marginTop: 2 }}>
                 {userTeam.name}
               </div>
             )}
@@ -294,11 +294,11 @@ export const UserSettingsModal = ({
                       >
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14.5, fontWeight: 600, color: colors.textPrimary }}>
+                          <div style={{ fontSize: fontSize.md, fontWeight: 600, color: colors.textPrimary }}>
                             Notifications on this device
                           </div>
                           {showDetail && (
-                            <div style={{ fontSize: 11.5, color: colors.textMuted, marginTop: 2 }}>{detail}</div>
+                            <div style={{ fontSize: fontSize.caption, color: colors.textMuted, marginTop: 2 }}>{detail}</div>
                           )}
                         </div>
                         <Toggle on={isOn} accent="rgba(255,215,0,0.95)" disabled={!canToggle} />
@@ -308,14 +308,14 @@ export const UserSettingsModal = ({
                 })()}
 
                 {!pushSupported && (
-                  <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, marginTop: 10, lineHeight: 1.55 }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, marginTop: 10, lineHeight: 1.55 }}>
                     <strong>iPhone:</strong> add SFGL to your home screen (Safari → Share → Add to Home Screen), then open from the icon and revisit this screen.
                     <br />
                     <strong>Other browsers:</strong> notifications require a recent Chrome, Edge, or Firefox.
                   </div>
                 )}
                 {pushPermission === 'denied' && (
-                  <div style={{ fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, marginTop: 10, lineHeight: 1.55 }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, marginTop: 10, lineHeight: 1.55 }}>
                     Notifications are blocked. Open your browser settings for sfglgolf.com, allow notifications, then return here.
                   </div>
                 )}
@@ -340,7 +340,7 @@ export const UserSettingsModal = ({
                               opacity: saving ? 0.5 : 1,
                             }}
                           >
-                            <div style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 600, color: colors.textPrimary }}>{evt.label}</div>
+                            <div style={{ flex: 1, minWidth: 0, fontSize: fontSize.md, fontWeight: 600, color: colors.textPrimary }}>{evt.label}</div>
                             <Toggle on={enabled} />
                           </button>
                         );

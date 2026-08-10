@@ -6,7 +6,7 @@ import { TeamName } from '../components/TeamName';
 import { buildPlayerAttributeIndex, hydratePlayer, resolveTxTournament,
          getSeasonFeesForTeam, getSwingFeesForTeam, getSwingPot,
          effectiveTransactionFee, txBelongsToTeam, resolveTxTeam } from '../utils/sharedHelpers';
-import { theme, colors, fonts, getSwingColor, SWINGS, blue, green, greenMuted, red, white, scrim } from '../theme.js';
+import { theme, colors, fonts, getSwingColor, SWINGS, blue, green, greenMuted, red, white, scrim, fontSize } from '../theme.js';
 import { useModalBehaviorAlways } from '../utils/modalUtils';
 import { AddTransactionModal } from './AddTransactionModal';
 
@@ -234,7 +234,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                       padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                       background: sel ? greenMuted(0.15) : white(0.03),
                       border: `1px solid ${sel ? greenMuted(0.4) : colors.borderSubtle}`,
-                      fontFamily: fonts.serif, fontSize: 12,
+                      fontFamily: fonts.serif, fontSize: fontSize.sm,
                       color: sel ? colors.success : colors.textPrimary,
                       transition: 'all 0.1s',
                     }}
@@ -262,7 +262,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                     padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                     background: !editDrop ? white(0.06) : white(0.03),
                     border: `1px solid ${!editDrop ? colors.borderInput : colors.borderSubtle}`,
-                    fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted,
+                    fontFamily: fonts.sans, fontSize: fontSize.caption, color: colors.textMuted,
                   }}
                 >
                   — None —
@@ -277,7 +277,7 @@ const EditTransactionModal = ({ tx, txIndex, teams, tournaments, allPlayers, tra
                         padding: '7px 10px', borderRadius: 2, cursor: 'pointer',
                         background: sel ? colors.dangerBg : white(0.03),
                         border: `1px solid ${sel ? colors.dangerBorder : colors.borderSubtle}`,
-                        fontFamily: fonts.serif, fontSize: 12,
+                        fontFamily: fonts.serif, fontSize: fontSize.sm,
                         color: sel ? colors.danger : colors.textPrimary,
                         transition: 'all 0.1s',
                       }}
@@ -581,11 +581,11 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               const swingColor = getSwingColor(teamFees[0].currentSwing);
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: fonts.sans, fontSize: 10, letterSpacing: '0.3px', color: swingColor }}>
+                  <span style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, letterSpacing: '0.3px', color: swingColor }}>
                     {teamFees[0].currentSwing}
                   </span>
                   {swingPot > 0 && (
-                    <span style={{ fontFamily: fonts.mono, fontSize: 12, fontWeight: 700, color: swingColor }}>
+                    <span style={{ fontFamily: fonts.mono, fontSize: fontSize.sm, fontWeight: 700, color: swingColor }}>
                       ${swingPot}
                     </span>
                   )}
@@ -604,13 +604,13 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                     border: `1px solid ${colors.borderSubtle}`,
                     borderRadius: 10, padding: '8px 6px', textAlign: 'center', minWidth: 0,
                   }}>
-                    <div style={{ fontFamily: fonts.serif, fontSize: 13, color: colors.textPrimary }}>
+                    <div style={{ fontFamily: fonts.serif, fontSize: fontSize.base, color: colors.textPrimary }}>
                       {abbr}
                     </div>
-                    <div style={{ ...theme.statNum, fontSize: 13, color: colors.textGold, marginTop: 2 }}>
+                    <div style={{ ...theme.statNum, fontSize: fontSize.base, color: colors.textGold, marginTop: 2 }}>
                       ${team.seasonTotal}
                     </div>
-                    <div style={{ fontFamily: fonts.sans, fontSize: 10, color: getSwingColor(team.currentSwing), marginTop: 1 }}>
+                    <div style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, color: getSwingColor(team.currentSwing), marginTop: 1 }}>
                       ${team.swingTotal} swing
                     </div>
                   </div>
@@ -630,7 +630,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 4,
                     padding: '4px 10px', borderRadius: 6,
-                    fontFamily: fonts.sans, fontSize: 11, fontWeight: 700,
+                    fontFamily: fonts.sans, fontSize: fontSize.caption, fontWeight: 700,
                     cursor: 'pointer',
                     transition: 'background 0.15s',
                     background: green(0.1),
@@ -643,7 +643,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   onMouseLeave={e => { e.currentTarget.style.background = green(0.1); }}
                   title="Add manual transaction"
                 >
-                  <span style={{ fontSize: 13, fontWeight: 800 }}>+</span>
+                  <span style={{ fontSize: fontSize.base, fontWeight: 800 }}>+</span>
                   <span>Add</span>
                 </button>
               )}
@@ -652,7 +652,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               <select
                 value={filterSwing}
                 onChange={e => setFilterSwing(e.target.value)}
-                style={{ ...theme.select, flex: 1, minWidth: 0, fontSize: 11, padding: '5px 10px', borderRadius: 8 }}
+                style={{ ...theme.select, flex: 1, minWidth: 0, fontSize: fontSize.caption, padding: '5px 10px', borderRadius: 8 }}
                 onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
@@ -664,7 +664,7 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
               <select
                 value={filterTeam}
                 onChange={e => setFilterTeam(e.target.value)}
-                style={{ ...theme.select, flex: 1, minWidth: 0, fontSize: 11, padding: '5px 10px', borderRadius: 8 }}
+                style={{ ...theme.select, flex: 1, minWidth: 0, fontSize: fontSize.caption, padding: '5px 10px', borderRadius: 8 }}
                 onFocus={e => { e.target.style.borderColor = colors.borderFocus; }}
                 onBlur={e => { e.target.style.borderColor = colors.borderInput; }}
               >
@@ -744,14 +744,14 @@ export const TransactionsView = ({ transactions, tournaments = [], teams, allPla
                   {/* Fee + commish actions */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                     {tx.type === 'mulligan' ? (
-                      <span style={{ fontSize: 14, lineHeight: 1 }}>🚨</span>
+                      <span style={{ fontSize: fontSize.md, lineHeight: 1 }}>🚨</span>
                     ) : tx.type === 'swing_winner' ? (
-                      <span style={{ ...theme.statNum, fontSize: 13, fontWeight: 600, color: colors.textGold }}>
+                      <span style={{ ...theme.statNum, fontSize: fontSize.base, fontWeight: 600, color: colors.textGold }}>
                         +${(tx.amount || 0).toLocaleString()}
                       </span>
                     ) : (
                       <span style={{
-                        ...theme.statNum, fontSize: 13, fontWeight: 600,
+                        ...theme.statNum, fontSize: fontSize.base, fontWeight: 600,
                         color: tx.status === 'failed' ? colors.textMuted
                           : (effectiveTransactionFee(tx, settings) > 0 ? colors.earningsGreen : colors.textMuted),
                       }}>

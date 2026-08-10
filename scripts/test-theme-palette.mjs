@@ -10,6 +10,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   withAlpha, colors,
+  fontSize,
   white, black, navy, gold, brass, amber, green, greenMuted,
   red, blue, blueBright, steel, purple, yellow, scrim,
 } from '../src/theme.js';
@@ -83,6 +84,33 @@ for (const file of walk('src')) {
 }
 check('no palette hue is written as a literal outside theme.js',
   offenders.length === 0, '\n      ' + offenders.join('\n      '));
+
+// ── 4. Font scale ─────────────────────────────────────────────────────────
+// The scale must be able to express what the app actually authors. 199 sizes
+// were written as bare pixels before this, 57 of them at 11px — a size the
+// scale had no name for at all.
+check('scale names the app\'s most-used size', fontSize.caption === 11);
+check('scale is ordered', fontSize.xs < fontSize.caption && fontSize.caption < fontSize.sm
+  && fontSize.sm < fontSize.base && fontSize.base < fontSize.md
+  && fontSize.md < fontSize.lg && fontSize.lg < fontSize.xl && fontSize.xl < fontSize.xxl);
+
+// Only these sizes may still be written as raw pixels. They are the documented
+// off-scale remainder (see the note in theme.js): snapping them is a visual
+// decision about the app's look, not a consistency fix, so they are pinned here
+// rather than silently changed — and nothing NEW may join them.
+const ALLOWED_RAW = new Set([9, 15, 18]);
+const rawSizes = [];
+for (const file of walk('src')) {
+  if (file.endsWith('theme.js')) continue;
+  const src = readFileSync(file, 'utf8');
+  for (const m of src.matchAll(/fontSize: ([0-9.]+)/g)) {
+    if (!ALLOWED_RAW.has(Number(m[1]))) {
+      rawSizes.push(`${file}:${src.slice(0, m.index).split('\n').length} ${m[0]}`);
+    }
+  }
+}
+check('no font size outside the scale except the documented remainder',
+  rawSizes.length === 0, '\n      ' + rawSizes.join('\n      '));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

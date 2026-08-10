@@ -12,7 +12,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts, red } from '../../theme.js';
+import { colors, fonts, red, fontSize } from '../../theme.js';
 import { compactTeamName } from '../../utils/index.js';
 import { sfglDataApi } from '../../api/firebase';
 import { cronFetch } from '../../api/cronApi';
@@ -54,7 +54,7 @@ const RoundLeaderSelect = ({
           <select
             value={leader}
             onChange={e => { const n = [...leaders]; n[idx] = e.target.value; onChange(n); }}
-            style={{ ...M.select, flex: 1, fontSize: 12, padding: '7px 8px' }}
+            style={{ ...M.select, flex: 1, fontSize: fontSize.sm, padding: '7px 8px' }}
           >
             <option value="">(none)</option>
             {players.map(p => <option key={p.name + p.team} value={p.name}>{p.name} — {compactTeamName(p.team)}</option>)}
@@ -69,7 +69,7 @@ const RoundLeaderSelect = ({
                 borderRadius: 6,
                 padding: '4px 8px',
                 cursor: 'pointer',
-                fontSize: 11,
+                fontSize: fontSize.caption,
                 flexShrink: 0,
               }}
               aria-label="Remove leader"
@@ -85,7 +85,7 @@ const RoundLeaderSelect = ({
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          fontSize: 11,
+          fontSize: fontSize.caption,
           color: colors.textGoldDim,
           padding: '2px 0',
           textAlign: 'left',
@@ -839,7 +839,7 @@ export const TournamentResultsPanel = ({
               : isPlaying ? colors.textGold
               : colors.textMuted
             )} />
-            <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+            <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textPrimary }}>
               {isCompleted ? 'This tournament has been processed'
                : isPlaying ? 'Tournament currently in progress'
                : 'Tournament not yet started'}

@@ -8,7 +8,7 @@ import { getTransactionFee, buildPlayerAttributeIndex, hydratePlayer, buildEffec
 // ROSTER_LIMIT and fees now come from leagueSettings prop
 import { playersApi } from '../api/firebase';
 import { sendManagerPush } from '../api/pushNotifications';
-import { theme, colors, fonts, amber, gold, green, greenMuted, red, white, blueBright, scrim } from '../theme.js';
+import { theme, colors, fonts, amber, gold, green, greenMuted, red, white, blueBright, scrim, fontSize } from '../theme.js';
 import { LIV_GOLF_ROSTER } from '../constants';
 import { useModalBehavior } from '../utils/modalUtils';
 
@@ -31,7 +31,7 @@ const FieldToggle = ({ value, setter, disabled = false, width = 84 }) => (
             flex: 1, padding: '8px 0', borderRadius: 8,
             background: active ? white(0.08) : 'transparent',
             border: active ? `1px solid ${white(0.18)}` : '1px solid transparent',
-            fontFamily: fonts.sans, fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+            fontFamily: fonts.sans, fontSize: fontSize.caption, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
             color: active ? color : colors.textMuted,
             cursor: 'pointer', transition: 'all 0.15s',
           }}
@@ -501,7 +501,7 @@ export const AddDropPlayerModal = ({
                 the team name underneath. */}
             <div style={{
               fontFamily: fonts.sans,
-              fontSize: 10,
+              fontSize: fontSize.xs,
               fontWeight: 700,
               letterSpacing: '1.8px',
               textTransform: 'uppercase',
@@ -511,7 +511,7 @@ export const AddDropPlayerModal = ({
             </div>
             <div style={{
               fontFamily: fonts.sans,
-              fontSize: 13,
+              fontSize: fontSize.base,
               fontWeight: 600,
               color: colors.textPrimary,
               marginTop: 2,
@@ -550,10 +550,10 @@ export const AddDropPlayerModal = ({
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: colors.success, marginBottom: 3 }}>
+                <div style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: colors.success, marginBottom: 3 }}>
                   Adding
                 </div>
-                <div style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {selectedPlayerToAdd.name}
                 </div>
               </div>
@@ -568,7 +568,7 @@ export const AddDropPlayerModal = ({
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer',
                   color: red(0.8),
-                  fontSize: 13, lineHeight: 1, fontWeight: 700,
+                  fontSize: fontSize.base, lineHeight: 1, fontWeight: 700,
                   flexShrink: 0,
                   transition: 'all 0.15s',
                 }}
@@ -589,10 +589,10 @@ export const AddDropPlayerModal = ({
                 display: 'flex', alignItems: 'center', gap: 8,
               }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: selectedPlayerToDrop ? colors.danger : colors.textMuted, marginBottom: 3 }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: selectedPlayerToDrop ? colors.danger : colors.textMuted, marginBottom: 3 }}>
                     Dropping
                   </div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 13, color: selectedPlayerToDrop ? colors.danger : colors.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: selectedPlayerToDrop ? colors.danger : colors.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {selectedPlayerToDrop ? selectedPlayerToDrop.name : '← tap a player'}
                   </div>
                 </div>
@@ -606,7 +606,7 @@ export const AddDropPlayerModal = ({
                       borderRadius: 6, width: 26, height: 26,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       cursor: 'pointer', color: red(0.8),
-                      fontSize: 13, lineHeight: 1, fontWeight: 700, flexShrink: 0,
+                      fontSize: fontSize.base, lineHeight: 1, fontWeight: 700, flexShrink: 0,
                     }}
                   >✕</button>
                 )}
@@ -623,7 +623,7 @@ export const AddDropPlayerModal = ({
             <div style={{ marginBottom: 16 }}>
               <div style={{
                 fontFamily: fonts.sans,
-                fontSize: 10,
+                fontSize: fontSize.xs,
                 fontWeight: 700,
                 letterSpacing: '1.8px',
                 textTransform: 'uppercase',
@@ -656,13 +656,13 @@ export const AddDropPlayerModal = ({
                         color: isSelected ? 'rgba(240,90,90,0.95)' : red(0.6),
                       }} />
                       <span style={{
-                        fontFamily: fonts.sans, fontSize: 13,
+                        fontFamily: fonts.sans, fontSize: fontSize.base,
                         color: isSelected ? colors.danger : colors.textPrimary,
                       }}>
                         {player.name}
                       </span>
                       {tournamentField?.has(player.name) && (
-                        <span title="In this week's field" style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>⛳</span>
+                        <span title="In this week's field" style={{ fontSize: fontSize.base, lineHeight: 1, flexShrink: 0 }}>⛳</span>
                       )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -678,7 +678,7 @@ export const AddDropPlayerModal = ({
                         </span>
                       )}
                       {isSelected && (
-                        <span style={{ fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, color: colors.danger, letterSpacing: 1, textTransform: 'uppercase' }}>
+                        <span style={{ fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, color: colors.danger, letterSpacing: 1, textTransform: 'uppercase' }}>
                           DROP
                         </span>
                       )}
@@ -695,7 +695,7 @@ export const AddDropPlayerModal = ({
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '10px 14px', marginBottom: 16,
               background: white(0.02), border: `1px solid ${colors.borderSubtle}`, borderRadius: 6,
-              fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary,
+              fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textSecondary,
             }}>
               <span>Fee: <span style={{ color: '#f5c518' }}>${fee.toLocaleString()}</span> · <span style={{ color: accentColor(isWaiverMode) }}>{isWaiverMode ? 'Waiver (pending)' : 'Immediate'}</span></span>
               <ConfirmBtn compact />
@@ -719,7 +719,7 @@ export const AddDropPlayerModal = ({
                 borderRadius: 6,
                 color: colors.textPrimary,
                 fontFamily: fonts.sans,
-                fontSize: 16, // prevent iOS zoom
+                fontSize: fontSize.lg, // prevent iOS zoom
                 transition: 'background 0.15s, border-color 0.15s',
               }}
               onFocus={e => { e.target.style.borderColor = white(0.25); e.target.style.background = white(0.04); }}
@@ -768,14 +768,14 @@ export const AddDropPlayerModal = ({
                         flexShrink: 0,
                       }}
                     />
-                    <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 500, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
+                    <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 500, color: isCurrentlySelected ? accentColor(isWaiverMode) : colors.textPrimary }}>
                       {player.name}
                     </span>
                     {tournamentField?.has(player.name) && (
-                      <span title="In this week's field" style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>⛳</span>
+                      <span title="In this week's field" style={{ fontSize: fontSize.base, lineHeight: 1, flexShrink: 0 }}>⛳</span>
                     )}
                     {player.worldRank && !isRostered && (
-                      <span style={{ fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted, marginLeft: 4 }}>
+                      <span style={{ fontFamily: fonts.mono, fontSize: fontSize.xs, color: colors.textMuted, marginLeft: 4 }}>
                         #{player.worldRank}
                       </span>
                     )}
@@ -787,7 +787,7 @@ export const AddDropPlayerModal = ({
                   </div>
                   {isRostered ? (
                     <span style={{
-                      fontFamily: fonts.sans, fontSize: 10, fontWeight: 700,
+                      fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700,
                       padding: '5px 10px', borderRadius: 6,
                       letterSpacing: '0.5px',
                       background: white(0.04),
@@ -799,7 +799,7 @@ export const AddDropPlayerModal = ({
                     </span>
                   ) : isLimbo ? (
                     <span style={{
-                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      fontFamily: fonts.sans, fontSize: fontSize.caption, fontWeight: 600,
                       padding: '5px 0', borderRadius: 6,
                       width: 96, textAlign: 'center', flexShrink: 0,
                       background: gold(0.08),
@@ -812,7 +812,7 @@ export const AddDropPlayerModal = ({
                     </span>
                   ) : tournamentIsLocked ? (
                     <span style={{
-                      fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                      fontFamily: fonts.sans, fontSize: fontSize.caption, fontWeight: 600,
                       padding: '5px 0', borderRadius: 6,
                       width: 96, textAlign: 'center', flexShrink: 0,
                       background: white(0.03),
@@ -827,7 +827,7 @@ export const AddDropPlayerModal = ({
                     <button
                       onClick={e => { e.stopPropagation(); selectPlayerToAdd(player); }}
                       style={{
-                        fontFamily: fonts.sans, fontSize: 11, fontWeight: 600,
+                        fontFamily: fonts.sans, fontSize: fontSize.caption, fontWeight: 600,
                         padding: '6px 0', borderRadius: 6, cursor: 'pointer',
                         width: 96, textAlign: 'center', flexShrink: 0,
                         transition: 'all 0.15s',
@@ -852,7 +852,7 @@ export const AddDropPlayerModal = ({
             borderTop: `1px solid ${colors.borderSubtle}`,
             background: red(0.04),
             flexShrink: 0,
-            fontFamily: fonts.sans, fontSize: 11, color: colors.danger,
+            fontFamily: fonts.sans, fontSize: fontSize.caption, color: colors.danger,
             textAlign: 'center',
           }}>
             Select a player to drop above to continue
@@ -865,7 +865,7 @@ export const AddDropPlayerModal = ({
             padding: '10px 18px', borderTop: `1px solid ${colors.borderSubtle}`,
             background: red(0.04), flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            fontFamily: fonts.sans, fontSize: 11,
+            fontFamily: fonts.sans, fontSize: fontSize.caption,
           }}>
             <span style={{ color: colors.textSecondary }}>
               Fee: <span style={{ color: '#f5c518' }}>${fee.toLocaleString()}</span>

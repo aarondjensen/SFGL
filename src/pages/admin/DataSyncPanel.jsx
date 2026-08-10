@@ -23,7 +23,7 @@
 
 import React from 'react';
 import { playersApi, playerRankingsApi } from '../../api/firebase';
-import { colors, fonts, white } from '../../theme.js';
+import { colors, fonts, white, fontSize } from '../../theme.js';
 import { M, SyncStatusBanner, LastSyncedLine, disabledBtn } from './adminStyles';
 import { useDialog } from '../DialogContext';
 
@@ -231,7 +231,7 @@ export const DataSyncPanel = ({
   // treatment so the manual-add fields read as part of the same design system.
   const fieldLabel = {
     fontFamily: fonts.sans,
-    fontSize: 10,
+    fontSize: fontSize.xs,
     fontWeight: 700,
     letterSpacing: '1px',
     textTransform: 'uppercase',
@@ -322,7 +322,7 @@ export const DataSyncPanel = ({
                   onLoad={e => { e.currentTarget.style.display = 'block'; }}
                 />
               ) : (
-                <span style={{ fontSize: 22, opacity: 0.4 }}>👤</span>
+                <span style={{ fontSize: fontSize.tileIcon, opacity: 0.4 }}>👤</span>
               )}
             </div>
           </div>

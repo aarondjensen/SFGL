@@ -11,7 +11,7 @@
 
 import React from 'react';
 import { useDialog } from '../DialogContext';
-import { colors, fonts, amber, green, white } from '../../theme.js';
+import { colors, fonts, amber, green, white, fontSize } from '../../theme.js';
 import { sfglDataApi } from '../../api/firebase';
 import { M } from './adminStyles';
 import { getETClock, fmtETTime, DAY_NAMES, getSeasonEarningsByTeam, buildEffectiveRoster, buildPlayerAttributeIndex, hydratePlayer, resolveTxTeam } from '../../utils/sharedHelpers';
@@ -234,7 +234,7 @@ export const WaiverProcessingPanel = ({
           gap: 10,
         }}>
           <div style={M.statusDot(colors.earningsGreen)} />
-          <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, color: colors.textPrimary }}>
+          <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textPrimary }}>
             No pending waiver claims
           </div>
         </div>
@@ -257,8 +257,8 @@ export const WaiverProcessingPanel = ({
           borderColor: amber(0.4),
           gap: 10,
         }}>
-          <span style={{ fontSize: 14 }}>⏰</span>
-          <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: 'rgba(220,190,80,0.95)' }}>
+          <span style={{ fontSize: fontSize.md }}>⏰</span>
+          <div style={{ flex: 1, fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 600, color: 'rgba(220,190,80,0.95)' }}>
             Past {fmtETTime(wh, wm)} ET {DAY_NAMES[wd]} — process now!
           </div>
         </div>
@@ -269,7 +269,7 @@ export const WaiverProcessingPanel = ({
           <div style={M.eyebrow}>Pending Claims</div>
           <span style={{
             fontFamily: fonts.sans,
-            fontSize: 10,
+            fontSize: fontSize.xs,
             fontWeight: 700,
             letterSpacing: '0.5px',
             textTransform: 'uppercase',
@@ -302,19 +302,19 @@ export const WaiverProcessingPanel = ({
                     background: amber(0.1),
                     border: `1px solid ${amber(0.3)}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 10, fontWeight: 700, color: colors.warning,
+                    fontSize: fontSize.xs, fontWeight: 700, color: colors.warning,
                     flexShrink: 0,
                   }}>
                     {w.priority || '?'}
                   </div>
                   <div style={{
-                    fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
+                    fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 600,
                     color: colors.textPrimary,
                   }}>
                     {w.team}
                   </div>
                   <div style={{ flex: 1 }} />
-                  <span style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted }}>
+                  <span style={{ fontFamily: fonts.sans, fontSize: fontSize.caption, color: colors.textMuted }}>
                     claim pending
                   </span>
                 </div>
@@ -326,7 +326,7 @@ export const WaiverProcessingPanel = ({
               style={ready
                 ? {
                     ...M.btnWarning,
-                    fontSize: 13,
+                    fontSize: fontSize.base,
                     fontWeight: 700,
                     boxShadow: `0 0 12px ${amber(0.18)}`,
                   }
@@ -362,19 +362,19 @@ export const WaiverProcessingPanel = ({
                     background: amber(0.1),
                     border: `1px solid ${amber(0.3)}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 10, fontWeight: 700, color: colors.warning,
+                    fontSize: fontSize.xs, fontWeight: 700, color: colors.warning,
                     flexShrink: 0,
                   }}>
                     {w.priority || '?'}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
-                      fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
+                      fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 600,
                       color: colors.textPrimary,
                     }}>
                       {w.team}
                     </div>
-                    <div style={{ fontSize: 11, marginTop: 1 }}>
+                    <div style={{ fontSize: fontSize.caption, marginTop: 1 }}>
                       <span style={{ color: colors.earningsGreen }}>+{w.player}</span>
                       {w.droppedPlayer && <span style={{ color: colors.danger }}> / -{w.droppedPlayer}</span>}
                     </div>
@@ -386,7 +386,7 @@ export const WaiverProcessingPanel = ({
                       ...M.btnSecondary,
                       width: 'auto',
                       padding: '6px 12px',
-                      fontSize: 11,
+                      fontSize: fontSize.caption,
                       flexShrink: 0,
                     }}
                   >
@@ -403,7 +403,7 @@ export const WaiverProcessingPanel = ({
                 background: 'none',
                 border: 'none',
                 color: colors.textMuted,
-                fontSize: 11,
+                fontSize: fontSize.caption,
                 padding: '6px 0 0',
                 cursor: 'pointer',
                 fontFamily: fonts.sans,
@@ -444,7 +444,7 @@ const ConflictSummary = ({ pending, teams }) => {
     }}>
       <div style={{
         fontFamily: fonts.sans,
-        fontSize: 10,
+        fontSize: fontSize.xs,
         fontWeight: 700,
         letterSpacing: '1.8px',
         textTransform: 'uppercase',
@@ -467,7 +467,7 @@ const ConflictSummary = ({ pending, teams }) => {
             >
               <div style={{
                 fontFamily: fonts.sans,
-                fontSize: 12,
+                fontSize: fontSize.sm,
                 fontWeight: 600,
                 color: colors.textPrimary,
                 marginBottom: 6,
@@ -480,7 +480,7 @@ const ConflictSummary = ({ pending, teams }) => {
                     key={c.team}
                     style={{
                       fontFamily: fonts.sans,
-                      fontSize: 11,
+                      fontSize: fontSize.caption,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
@@ -501,13 +501,13 @@ const ConflictSummary = ({ pending, teams }) => {
                     }}>
                       {c.team}
                     </span>
-                    <span style={{ color: colors.textMuted, fontSize: 10 }}>
+                    <span style={{ color: colors.textMuted, fontSize: fontSize.xs }}>
                       {fmt(earningsMap[c.team])}
                     </span>
                     {i === 0 && (
                       <span style={{
                         color: colors.earningsGreen,
-                        fontSize: 10,
+                        fontSize: fontSize.xs,
                         fontWeight: 600,
                       }}>
                         ← wins
@@ -520,7 +520,7 @@ const ConflictSummary = ({ pending, teams }) => {
           );
         })}
       </div>
-      <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, lineHeight: 1.5 }}>
+      <div style={{ fontFamily: fonts.sans, fontSize: fontSize.caption, color: colors.textMuted, lineHeight: 1.5 }}>
         Tiebreaker: lowest total SFGL earnings wins. Winner moves to back of line.
       </div>
     </div>

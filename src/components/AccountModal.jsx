@@ -14,7 +14,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, LogOut } from 'lucide-react';
 import { useDialog } from '../pages/DialogContext';
-import { colors, fonts, gold, white, black, red } from '../theme.js';
+import { colors, fonts, gold, white, black, red, fontSize } from '../theme.js';
 import { useModalBehavior } from '../utils/modalUtils';
 import { linkAppleAccount, linkGoogleAccount, getLinkedProviders } from '../api/authApi';
 import { teamsApi } from '../api/firebase';
@@ -112,7 +112,7 @@ export const AccountModal = ({
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   const labelStyle = {
-    fontSize: 12, fontWeight: 700, color: colors.textMuted,
+    fontSize: fontSize.sm, fontWeight: 700, color: colors.textMuted,
     letterSpacing: '0.4px', marginBottom: 8, textTransform: 'uppercase',
   };
 
@@ -167,7 +167,7 @@ export const AccountModal = ({
               {loggedInUser || 'Account'}
             </div>
             {userTeam && (
-              <div style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.textMuted, marginTop: 2 }}>
+              <div style={{ fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted, marginTop: 2 }}>
                 {userTeam.name}
               </div>
             )}
@@ -216,7 +216,7 @@ export const AccountModal = ({
                   background: nameChanged ? gold(0.16) : white(0.05),
                   border: `1px solid ${nameChanged ? gold(0.40) : white(0.10)}`,
                   color: nameChanged ? '#f5d97a' : colors.textMuted,
-                  fontFamily: fonts.sans, fontSize: 14, fontWeight: 600,
+                  fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 600,
                   cursor: nameChanged && !savingName ? 'pointer' : 'default',
                 }}
               >
@@ -243,9 +243,9 @@ export const AccountModal = ({
                     marginTop: idx === 0 ? 0 : 8,
                   }}
                 >
-                  <div style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 600, color: colors.textPrimary }}>{p.label}</div>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: fontSize.md, fontWeight: 600, color: colors.textPrimary }}>{p.label}</div>
                   {isLinked ? (
-                    <span style={{ fontSize: 13, fontWeight: 600, color: colors.earningsGreen }}>Linked</span>
+                    <span style={{ fontSize: fontSize.base, fontWeight: 600, color: colors.earningsGreen }}>Linked</span>
                   ) : (
                     <button
                       onClick={() => handleLink(p.id)}
@@ -255,7 +255,7 @@ export const AccountModal = ({
                         background: white(0.10),
                         border: `1px solid ${white(0.16)}`,
                         color: colors.textPrimary,
-                        fontFamily: fonts.sans, fontSize: 13, fontWeight: 600,
+                        fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600,
                         cursor: linkBusy ? 'default' : 'pointer', opacity: linkBusy ? 0.6 : 1,
                       }}
                     >
@@ -265,7 +265,7 @@ export const AccountModal = ({
                 </div>
               );
             })}
-            <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 8, lineHeight: 1.4 }}>
+            <div style={{ fontSize: fontSize.sm, color: colors.textMuted, marginTop: 8, lineHeight: 1.4 }}>
               Link both so either button signs you into the same team.
             </div>
           </div>
@@ -281,7 +281,7 @@ export const AccountModal = ({
               border: `1px solid ${red(0.28)}`,
               borderRadius: 14,
               color: 'rgba(240,140,140,0.95)',
-              fontFamily: fonts.sans, fontSize: 14.5, fontWeight: 600, letterSpacing: '0.2px',
+              fontFamily: fonts.sans, fontSize: fontSize.md, fontWeight: 600, letterSpacing: '0.2px',
               cursor: 'pointer', transition: 'background 0.18s',
             }}
             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(200,70,70,0.18)'; }}

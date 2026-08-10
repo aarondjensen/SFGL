@@ -480,7 +480,7 @@ export const StandingsView = ({ teams, tournaments = [], transactions = [] }) =>
               cursor: 'pointer',
               border: 'none',
               background: 'transparent',
-              fontSize: 16, // ≥16px to prevent iOS zoom
+              fontSize: fontSize.lg, // ≥16px to prevent iOS zoom
             }}
           >
             {swingsWithResults.map(s => (

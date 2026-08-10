@@ -25,7 +25,7 @@ import { getCurrentTournamentIndex } from '../utils/index.js';
 import { compactTeamName } from '../utils/index.js';
 import { getTransactionFee, buildEffectiveRoster, txBelongsToTeam } from '../utils/sharedHelpers';
 import { recomputeTeamTournamentResult } from '../utils/mulliganReversal';
-import { colors, fonts, gold, green, red, white, scrim } from '../theme.js';
+import { colors, fonts, gold, green, red, white, scrim, fontSize } from '../theme.js';
 import { M, disabledBtn } from './admin/adminStyles';
 import { LIV_GOLF_ROSTER } from '../constants';
 
@@ -544,7 +544,7 @@ export const AddTransactionModal = ({
           <div style={{ minWidth: 0 }}>
             <div style={{
               fontFamily: fonts.sans,
-              fontSize: 10,
+              fontSize: fontSize.xs,
               fontWeight: 700,
               letterSpacing: '1.8px',
               textTransform: 'uppercase',
@@ -554,7 +554,7 @@ export const AddTransactionModal = ({
             </div>
             <div style={{
               fontFamily: fonts.sans,
-              fontSize: 16,
+              fontSize: fontSize.lg,
               fontWeight: 600,
               color: colors.textPrimary,
               marginTop: 2,
@@ -653,7 +653,7 @@ export const AddTransactionModal = ({
                       minWidth: 0,
                       padding: '8px 4px',
                       borderRadius: 6,
-                      fontSize: 13,
+                      fontSize: fontSize.base,
                       fontFamily: fonts.sans,
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -748,7 +748,7 @@ export const AddTransactionModal = ({
                   }}>
                     <span style={{
                       fontFamily: fonts.sans,
-                      fontSize: 13,
+                      fontSize: fontSize.base,
                       fontWeight: 500,
                       color: colors.earningsGreen,
                     }}>
@@ -767,7 +767,7 @@ export const AddTransactionModal = ({
                         justifyContent: 'center',
                         cursor: 'pointer',
                         color: red(0.8),
-                        fontSize: 12,
+                        fontSize: fontSize.sm,
                         lineHeight: 1,
                       }}
                       aria-label="Clear selection"
@@ -814,7 +814,7 @@ export const AddTransactionModal = ({
                               {p.worldRank && (
                                 <span style={{
                                   fontFamily: fonts.sans,
-                                  fontSize: 10,
+                                  fontSize: fontSize.xs,
                                   color: colors.textMuted,
                                   minWidth: 28,
                                 }}>
@@ -823,7 +823,7 @@ export const AddTransactionModal = ({
                               )}
                               <span style={{
                                 fontFamily: fonts.sans,
-                                fontSize: 13,
+                                fontSize: fontSize.base,
                                 fontWeight: 500,
                                 color: colors.textPrimary,
                               }}>
@@ -836,7 +836,7 @@ export const AddTransactionModal = ({
                           <div style={{
                             padding: '12px',
                             fontFamily: fonts.sans,
-                            fontSize: 11,
+                            fontSize: fontSize.caption,
                             color: colors.textMuted,
                             textAlign: 'center',
                           }}>
@@ -912,7 +912,7 @@ export const AddTransactionModal = ({
                   }}>
                     <span style={{
                       fontFamily: fonts.sans,
-                      fontSize: 13,
+                      fontSize: fontSize.base,
                       fontWeight: 500,
                       color: colors.danger,
                     }}>
@@ -931,7 +931,7 @@ export const AddTransactionModal = ({
                         justifyContent: 'center',
                         cursor: 'pointer',
                         color: red(0.8),
-                        fontSize: 12,
+                        fontSize: fontSize.sm,
                         lineHeight: 1,
                       }}
                       aria-label="Clear selection"
@@ -977,7 +977,7 @@ export const AddTransactionModal = ({
                             >
                               <span style={{
                                 fontFamily: fonts.sans,
-                                fontSize: 13,
+                                fontSize: fontSize.base,
                                 fontWeight: 500,
                                 color: colors.textPrimary,
                               }}>
@@ -990,7 +990,7 @@ export const AddTransactionModal = ({
                           <div style={{
                             padding: '12px',
                             fontFamily: fonts.sans,
-                            fontSize: 11,
+                            fontSize: fontSize.caption,
                             color: colors.textMuted,
                             textAlign: 'center',
                           }}>

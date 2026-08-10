@@ -1013,7 +1013,7 @@ export const TournamentsView = ({
                       color: t.completed ? colors.textMuted : 'rgba(220,60,60,0.9)',
                       cursor: t.completed ? 'not-allowed' : 'pointer',
                       width: 24, height: 24,
-                      fontSize: 14, lineHeight: 1,
+                      fontSize: fontSize.md, lineHeight: 1,
                       opacity: t.completed ? 0.4 : 1,
                     }}
                   >
@@ -1147,7 +1147,7 @@ export const TournamentsView = ({
                   cursor: 'pointer',
                 }}
               >
-                <span style={{ fontSize: 14, lineHeight: 1, fontWeight: 700 }}>+</span>
+                <span style={{ fontSize: fontSize.md, lineHeight: 1, fontWeight: 700 }}>+</span>
                 Add Tournament
               </button>
             </td>

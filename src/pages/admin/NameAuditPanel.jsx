@@ -25,7 +25,7 @@
 // ============================================================================
 
 import React from 'react';
-import { colors, fonts, green, white } from '../../theme.js';
+import { colors, fonts, green, white, fontSize } from '../../theme.js';
 import { cronFetch } from '../../api/cronApi';
 import { sfglDataApi } from '../../api/firebase';
 import { M, disabledBtn } from './adminStyles';
@@ -123,19 +123,19 @@ export const NameAuditPanel = ({ teams }) => {
         >
           {status === 'running' ? '⏳ Auditing…' : '🔍 Run Name Audit'}
         </button>
-        <div style={{ ...M.descText, fontSize: 11, color: colors.textMuted }}>
+        <div style={{ ...M.descText, fontSize: fontSize.caption, color: colors.textMuted }}>
           {lastRunAt
             ? `Last run ${new Date(lastRunAt).toLocaleString()}${source === 'field-check' ? ' (automatic, weekly field check)' : ''} · ${rosterCount} rostered players`
             : `Never run · ${rosterCount} rostered players`}
         </div>
         {error && (
-          <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.danger }}>{error}</div>
+          <div style={{ fontFamily: fonts.sans, fontSize: fontSize.caption, color: colors.danger }}>{error}</div>
         )}
       </div>
 
       {audit && totalFindings === 0 && (
         <div style={{
-          fontFamily: fonts.sans, fontSize: 13, color: colors.earningsGreen,
+          fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.earningsGreen,
           background: green(0.08), border: `1px solid ${green(0.25)}`,
           borderRadius: 6, padding: '12px 14px',
         }}>
@@ -163,7 +163,7 @@ export const NameAuditPanel = ({ teams }) => {
               {meta.icon} {findings.length} unmatched vs {meta.what || section.check}
             </div>
             {meta.why && (
-              <div style={{ ...M.descText, fontSize: 11, color: colors.textMuted }}>{meta.why}</div>
+              <div style={{ ...M.descText, fontSize: fontSize.caption, color: colors.textMuted }}>{meta.why}</div>
             )}
             {findings.map((finding) => (
               <Finding key={`${section.check}:${finding.name}`} finding={finding} />
@@ -175,14 +175,14 @@ export const NameAuditPanel = ({ teams }) => {
       {ambiguous.length > 0 && (
         <div style={M.group}>
           <div style={M.eyebrow}>⚠ {ambiguous.length} ambiguous abbreviation{ambiguous.length === 1 ? '' : 's'}</div>
-          <div style={{ ...M.descText, fontSize: 11, color: colors.textMuted }}>
+          <div style={{ ...M.descText, fontSize: fontSize.caption, color: colors.textMuted }}>
             Two players in the field abbreviate the same way, so an abbreviated leaderboard entry
             can&apos;t be assigned to either one. They still match on their full names — this is listed
             only so a missing score has an explanation.
           </div>
           {ambiguous.map(({ key, names }) => (
             <div key={key} style={{
-              fontFamily: fonts.mono, fontSize: 12, color: colors.textSecondary,
+              fontFamily: fonts.mono, fontSize: fontSize.sm, color: colors.textSecondary,
               padding: '6px 0', borderBottom: `1px solid ${colors.borderSubtle}`,
             }}>
               <span style={{ color: colors.textMuted }}>{key}</span> → {names.join(' / ')}
@@ -208,12 +208,12 @@ const Finding = ({ finding }) => {
       padding: '10px 12px',
     }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: colors.textPrimary }}>
+        <span style={{ fontFamily: fonts.sans, fontSize: fontSize.base, fontWeight: 600, color: colors.textPrimary }}>
           {finding.name}
         </span>
         {finding.inLineup && (
           <span style={{
-            fontFamily: fonts.sans, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px',
+            fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700, letterSpacing: '0.5px',
             color: colors.danger, border: `1px solid ${colors.danger}`, borderRadius: 3, padding: '1px 5px',
           }}>
             IN A LINEUP
@@ -225,21 +225,21 @@ const Finding = ({ finding }) => {
         <div style={{ marginTop: 6 }}>
           {suggestions.map((s) => (
             <div key={s.name} style={{
-              fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary,
+              fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textSecondary,
               display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap', padding: '2px 0',
             }}>
               <span style={{ color: colors.textMuted }}>↳</span>
               <span style={{ color: colors.textPrimary }}>{s.name}</span>
-              <span style={{ fontSize: 11, color: colors.textMuted }}>({s.reason})</span>
+              <span style={{ fontSize: fontSize.caption, color: colors.textMuted }}>({s.reason})</span>
             </div>
           ))}
-          <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, marginTop: 6 }}>
+          <div style={{ fontFamily: fonts.sans, fontSize: fontSize.caption, color: colors.textMuted, marginTop: 6 }}>
             If that&apos;s the same golfer, merge them in <strong>Merge Players</strong> — the alias is
             recorded and this stops recurring.
           </div>
         </div>
       ) : (
-        <div style={{ fontFamily: fonts.sans, fontSize: 11, color: colors.textMuted, marginTop: 4 }}>
+        <div style={{ fontFamily: fonts.sans, fontSize: fontSize.caption, color: colors.textMuted, marginTop: 4 }}>
           No close candidate — most likely genuinely absent from this source.
         </div>
       )}
