@@ -59,8 +59,16 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // .get() rather than a bare property read. A token WITHOUT the claim has no
+    // `commissioner` key, and a missing key on a Map raises rather than
+    // returning false — so `request.auth.token.commissioner == true` errors for
+    // every ordinary manager. Firestore recovers when the other side of an ||
+    // is true, which is why it appeared to work, but that leaves the primary
+    // authorization check depending on error-recovery semantics and logs a
+    // warning on every manager evaluation. The Rules Playground reports it as
+    // "Property commissioner is undefined on object".
     function isCommish() {
-      return signedIn() && request.auth.token.commissioner == true;
+      return signedIn() && request.auth.token.get('commissioner', false) == true;
     }
 
     // Ownership lives in team_claims, NOT on the team document.
@@ -68,7 +76,7 @@ service cloud.firestore {
       return signedIn()
         && teamId != null
         && exists(/databases/$(database)/documents/team_claims/$(teamId))
-        && get(/databases/$(database)/documents/team_claims/$(teamId)).data.uid == request.auth.uid;
+        && get(/databases/$(database)/documents/team_claims/$(teamId)).data.get('uid', null) == request.auth.uid;
     }
 
     function onlyChanges(allowed) {
@@ -87,13 +95,13 @@ service cloud.firestore {
     match /team_claims/{teamId} {
       allow read: if signedIn();
       allow create: if isCommish()
-                    || (signedIn() && request.resource.data.uid == request.auth.uid);
+                    || (signedIn() && request.resource.data.get('uid', null) == request.auth.uid);
       allow update: if isCommish()
                     || (signedIn()
-                        && request.resource.data.uid == request.auth.uid
+                        && request.resource.data.get('uid', null) == request.auth.uid
                         // Unclaimed, or already mine — never a takeover.
                         && (resource.data.get('uid', null) == null
-                            || resource.data.uid == request.auth.uid))
+                            || resource.data.get('uid', null) == request.auth.uid))
                     // The owner may also set their own notify email
                     // (setNotifyEmail in authApi) without touching uid.
                     || (ownsTeam(teamId) && onlyChanges(['notifyEmail', 'email', 'displayName']));
@@ -147,26 +155,26 @@ service cloud.firestore {
 
       allow create: if isCommish()
                     || (signedIn()
-                        && ownsTeam(request.resource.data.teamId)
+                        && ownsTeam(request.resource.data.get('teamId', null))
                         && (
-                          (request.resource.data.type == 'waiver'
-                            && request.resource.data.status == 'pending')
-                          || (request.resource.data.type == 'free agent'
-                            && request.resource.data.status == 'processed')
+                          (request.resource.data.get('type', '') == 'waiver'
+                            && request.resource.data.get('status', '') == 'pending')
+                          || (request.resource.data.get('type', '') == 'free agent'
+                            && request.resource.data.get('status', '') == 'processed')
                         ));
 
       // Editing or withdrawing your own claim while it is still pending, and
       // without moving it out of pending or handing it to another team.
       // A processed row is history; only the commissioner touches it.
       allow update: if isCommish()
-                    || (ownsTeam(resource.data.teamId)
-                        && resource.data.status == 'pending'
-                        && request.resource.data.status == 'pending'
-                        && request.resource.data.teamId == resource.data.teamId);
+                    || (ownsTeam(resource.data.get('teamId', null))
+                        && resource.data.get('status', '') == 'pending'
+                        && request.resource.data.get('status', '') == 'pending'
+                        && request.resource.data.get('teamId', null) == resource.data.get('teamId', null));
 
       allow delete: if isCommish()
-                    || (ownsTeam(resource.data.teamId)
-                        && resource.data.status == 'pending');
+                    || (ownsTeam(resource.data.get('teamId', null))
+                        && resource.data.get('status', '') == 'pending');
     }
 
     // ── Players ─────────────────────────────────────────────────────────────
@@ -224,8 +232,8 @@ service cloud.firestore {
     // that with admin credentials, which bypass these rules.
     match /pushTokens/{token} {
       allow read: if isCommish();
-      allow create, update: if signedIn() && ownsTeam(request.resource.data.teamId);
-      allow delete:         if signedIn() && ownsTeam(resource.data.teamId);
+      allow create, update: if signedIn() && ownsTeam(request.resource.data.get('teamId', null));
+      allow delete:         if signedIn() && ownsTeam(resource.data.get('teamId', null));
     }
 
     // ── Anything not named above ────────────────────────────────────────────

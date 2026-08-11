@@ -90,9 +90,24 @@ test('the file still ends in a default deny', () => {
 
 test('ownership reads team_claims, not teams', () => {
   // The single most consequential error in the first draft.
-  assert.match(rules, /function ownsTeam\(teamId\)[\s\S]*?team_claims\/\$\(teamId\)\)\.data\.uid == request\.auth\.uid/);
-  assert.ok(!/documents\/teams\/\$\(teamId\)\)\.data\.uid/.test(rules),
+  assert.match(rules, /function ownsTeam\(teamId\)[\s\S]*?team_claims\/\$\(teamId\)\)\.data\.get\('uid', null\) == request\.auth\.uid/);
+  assert.ok(!/documents\/teams\/\$\(teamId\)\)\.data\.get\('uid'/.test(rules),
     'ownsTeam is still reading teams/{id}.uid');
+});
+
+test('optional fields are read with .get(), never bare', () => {
+  // A missing key on a rules Map RAISES; it does not return null. A bare read
+  // of a field that may be absent therefore errors, and the rule only appears
+  // to work because Firestore recovers when the other side of an || is true.
+  // The Rules Playground surfaces it as "Property X is undefined on object".
+  //
+  // request.auth.token.commissioner is the one that matters: absent on every
+  // ordinary manager's token, i.e. the common case.
+  const bare = rules
+    .split('\n')
+    .filter(l => !l.trim().startsWith('//'))
+    .filter(l => /request\.auth\.token\.commissioner|resource\.data\.(teamId|status|type|uid)[^A-Za-z(]/.test(l));
+  assert.deepEqual(bare, [], `bare optional-field reads:\n${bare.join('\n')}`);
 });
 
 test('the commissioner claim is never a document field', () => {
