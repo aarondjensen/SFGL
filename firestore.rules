@@ -3,15 +3,30 @@ rules_version = '2';
 // ============================================================================
 // SFGL Firestore security rules
 //
-// ⚠ NOT DEPLOYED. What is live today is:
+// DEPLOYED. This file is the source of truth for what is live; keep the two in
+// step. There is no firebase.json here, so publishing is a manual paste into
+// Firebase console → Firestore → Rules. Edit here first, then paste.
+//
+// What this replaced, and why it mattered:
 //
 //     match /{document=**} { allow read, write: if request.auth != null; }
 //
-// i.e. any signed-in account may read and write every document in the
-// database. This file is a proposed replacement, and adopting it is a large
-// tightening rather than a small diff — test it in the Rules Playground
-// against a real document from every collection before it goes anywhere near
-// production.
+// Any signed-in account could read and write every document. Sign-in is open
+// Google/Apple with no allowlist, so that included anybody who found the site
+// and signed in with a throwaway account. The app's ownership checks and its
+// commish toggle are client-side JavaScript — advisory to anyone willing to
+// skip the UI and call Firestore directly.
+//
+// Before changing anything here, use the Rules Playground on the draft. The
+// checks that matter, simulated as a plain manager (Authenticated, a real uid,
+// NO custom claims):
+//
+//   update  teams/{their team}          field abbr    -> allow
+//   update  teams/{someone else's}      field abbr    -> deny
+//   update  sfgl_data/player-registry   any field     -> allow
+//
+// The first and third are the paths every manager hits on every roster save;
+// the second is what proves the rules are doing anything at all.
 //
 // An earlier draft of this file was written by reading the app's UI and
 // inferring the access pattern. It was wrong in six ways, each of which would
