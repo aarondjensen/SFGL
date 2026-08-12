@@ -139,6 +139,95 @@ async function getUpcomingTournament() {
   return t;
 }
 
+// ── Odds ─────────────────────────────────────────────────────────────────────
+//
+// Every odds payload pgatour.com serves identifies its players by ID, not by
+// name — the shape is `{ oddsToWinId, players: [{ id, odds }] }`. So the ONLY
+// way a price becomes a name is the id→name join below, which made that join
+// the single point of failure for the whole Odds column, failing one player at
+// a time and silently: the player still appears in `players` (so the ⛳ flag
+// and the "Playing" filter work), but the Odds cell renders '—'.
+//
+// Three ways it used to lose a player, all fixed here:
+//
+//   1. ORDER. The field-page odds block was resolved INSIDE the walk that
+//      builds `pgaIds`. walkAll is pre-order DFS, so any odds row reached
+//      before that player's id had been recorded resolved to undefined and was
+//      dropped. Rows are now collected raw and resolved in a second pass, once
+//      the id map is complete.
+//   2. OVERWRITE. `pgaIds` is name→id and last-write-wins, so a player who
+//      also appears in a second page section (featured group, defending
+//      champion, notable-players rail) had their id replaced by whatever `id`
+//      that object carried, and the join then matched nothing. `idToName` is
+//      keyed by ID and first-write-wins, so it keeps every association a page
+//      ever stated instead of only the last one.
+//   3. NO FALLBACK. The odds-page path had no name fallback at all, so a
+//      player absent from `pgaIds` — no `id` on their field-page object — was
+//      unreachable even when the odds row named them outright. Both paths now
+//      try the row's own name first.
+//
+// A row that still resolves to nothing is counted, not swallowed: `?debug=1`
+// reports `oddsUnresolved` so the next instance of this is visible from the
+// endpoint instead of from a screenshot of the roster page.
+
+/** Normalize a book price to the '+700' / '-150' rendering the app serves. */
+function formatOdds(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (!t) return null;                       // a pulled/suspended market
+    if (t.startsWith('+') || t.startsWith('-')) return t;
+  }
+  const n = parseInt(raw, 10);
+  if (isNaN(n)) return null;
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
+/**
+ * Pull every odds row out of a __NEXT_DATA__ blob, WITHOUT resolving names.
+ * Each row keeps whatever the payload gave us to identify the player by, so
+ * the caller can resolve after its id map is complete.
+ */
+function collectOddsRows(nd) {
+  const rows = [];
+  walkAll(nd, (obj) => {
+    if (obj.oddsToWinId && Array.isArray(obj.players) && obj.players.length) {
+      obj.players.forEach((p) => {
+        const odds = formatOdds(p.odds ?? p.currentOdds ?? p.americanOdds);
+        if (!odds) return;
+        rows.push({
+          name: p.displayName?.trim() || p.playerName?.trim() || null,
+          ids: [p.playerId, p.id].filter((v) => v != null).map(String),
+          odds,
+        });
+      });
+    }
+  });
+  return rows;
+}
+
+/**
+ * Resolve collected rows into a name→odds map. Name first (it needs no join
+ * and cannot go stale), then the id map. Returns the map plus the number of
+ * rows that could not be resolved at all.
+ */
+function resolveOddsRows(rows, idToName) {
+  const oddsMap = {};
+  let unresolved = 0;
+  for (const row of rows) {
+    let name = row.name;
+    if (!name) {
+      for (const id of row.ids) {
+        const hit = idToName.get(id);
+        if (hit) { name = hit; break; }
+      }
+    }
+    if (name) oddsMap[canonicalName(name) || name] = row.odds;
+    else unresolved++;
+  }
+  return { oddsMap, unresolved };
+}
+
 // ── Parse field page — players, IDs, tee times, odds all in one pass ──────────
 // IDs are kept in SEPARATE, NAMESPACE-PURE maps. They used to share one
 // `playerIdMap` that mixed three different things — PGA TOUR player IDs from
@@ -147,16 +236,26 @@ async function getUpcomingTournament() {
 // map as "PGA IDs" could take an ESPN ID and build a PGA Tour CDN URL from it,
 // which does not 404 — it can resolve to a DIFFERENT REAL GOLFER's photo.
 // Wrong faces are worse than missing ones, so the namespaces stay separate.
-function parseFieldPage(nd) {
+export function parseFieldPage(nd) {
   const playerNames = new Set();
-  const pgaIds      = {};   // name → PGA TOUR player id
+  const pgaIds      = {};   // name → PGA TOUR player id (last section seen wins)
+  const idToName    = new Map(); // PGA TOUR player id → name (FIRST claim wins)
   const photos      = {};   // name → direct headshot URL (when the page has one)
   const teeTimeMap  = {};   // name → "8:24 AM"
   const teeTimeISOMap = {}; // name → ISO string (internal — used to compare across rounds)
-  const oddsMap     = {};   // name → "+700"
 
   // See makeTeeTimeRecorder for why this exists (multi-round disambiguation).
   const setTeeTime = makeTeeTimeRecorder(teeTimeMap, teeTimeISOMap);
+
+  // pgaIds is name-keyed and last-write-wins, so it can only remember one id
+  // per player. idToName is id-keyed, so it remembers all of them — that is
+  // what makes the odds join survive a page that states a player's id twice.
+  const recordId = (name, id) => {
+    if (!name || id == null) return;
+    const key = String(id);
+    pgaIds[name] = key;
+    if (!idToName.has(key)) idToName.set(key, name);
+  };
 
   walkAll(nd, obj => {
     // Player with id + name
@@ -166,7 +265,7 @@ function parseFieldPage(nd) {
     if (name?.includes(' ')) {
       playerNames.add(canonicalName(name) || name);
       // Store player ID (field page uses 'id')
-      if (obj.id) pgaIds[canonicalName(name) || name] = String(obj.id);
+      if (obj.id) recordId(canonicalName(name) || name, obj.id);
       // Capture photo URL if present directly on player object
       const photo = obj.photo || obj.headshot || obj.photoUrl || obj.imageUrl || obj.headShotUrl || obj.headshotUrl;
       if (photo && typeof photo === 'string' && photo.startsWith('http')) {
@@ -188,32 +287,18 @@ function parseFieldPage(nd) {
             || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
           if (pn) {
             setTeeTime(canonicalName(pn) || pn, ttIso);
-            if (p.id) pgaIds[canonicalName(pn) || pn] = String(p.id);
+            if (p.id) recordId(canonicalName(pn) || pn, p.id);
           }
         });
       }
     }
 
-    // Odds object: { oddsToWinId, players: [{ id, odds }] }
-    if (obj.oddsToWinId && Array.isArray(obj.players) && obj.players.length) {
-      obj.players.forEach(p => {
-        // Resolve name via pgaIds (built above) or direct name fields
-        const pn = p.displayName?.trim() || p.playerName?.trim();
-        const raw = p.odds ?? p.currentOdds ?? p.americanOdds;
-        if (raw != null) {
-          const nameToUse = pn || Object.keys(pgaIds).find(n => pgaIds[n] === String(p.playerId || p.id));
-          if (nameToUse) {
-            if (typeof raw === 'string' && (raw.startsWith('+') || raw.startsWith('-'))) {
-              oddsMap[nameToUse] = raw;
-            } else {
-              const n = parseInt(raw, 10);
-              if (!isNaN(n)) oddsMap[nameToUse] = n > 0 ? `+${n}` : `${n}`;
-            }
-          }
-        }
-      });
-    }
+    // Odds rows are NOT resolved here — see the Odds section above. Resolving
+    // them mid-walk meant joining against a half-built id map.
   });
+
+  // Second pass, with the id map complete.
+  const { oddsMap, unresolved: oddsUnresolved } = resolveOddsRows(collectOddsRows(nd), idToName);
 
   // Deduplicate the same golfer appearing under two renderings. The old
   // version only handled the literal "Last, First" vs "First Last" pair by
@@ -224,7 +309,7 @@ function parseFieldPage(nd) {
   const ordered = [...playerNames].sort((a, b) => Number(a.includes(',')) - Number(b.includes(',')));
   const players = new NameSet(ordered).groups.map((group) => group[0]);
 
-  return { players, pgaIds, photos, teeTimeMap, oddsMap };
+  return { players, pgaIds, idToName, photos, teeTimeMap, oddsMap, oddsUnresolved };
 }
 
 // ── ESPN fallback for field + tee times ───────────────────────────────────────
@@ -290,8 +375,10 @@ export default async function handler(req, res) {
     if (fieldResp.ok) {
       const fieldNd = extractNextData(await fieldResp.text());
       if (fieldNd) {
-        const { players, pgaIds, photos, teeTimeMap, oddsMap } = parseFieldPage(fieldNd);
+        const { players, pgaIds, idToName, photos, teeTimeMap, oddsMap,
+                oddsUnresolved: fieldOddsUnresolved } = parseFieldPage(fieldNd);
         const espnIds = {}; // filled only from the ESPN supplement below
+        let oddsUnresolved = fieldOddsUnresolved;
 
         // If no tee times from field page, try dedicated tee-times page
         let finalTeeTimes = joinPlayersToTeeTimes(players, teeTimeMap);
@@ -301,10 +388,14 @@ export default async function handler(req, res) {
             if (ttResp.ok) {
               const ttNd = extractNextData(await ttResp.text());
               if (ttNd) {
-                const { teeTimeMap: ttMap2, pgaIds: pgaIds2, photos: photos2 } = parseFieldPage(ttNd);
+                const { teeTimeMap: ttMap2, pgaIds: pgaIds2, idToName: idToName2, photos: photos2 } = parseFieldPage(ttNd);
                 finalTeeTimes = joinPlayersToTeeTimes(players, ttMap2);
-                // Merge any new PGA ids / photos from the tee-times page
+                // Merge any new PGA ids / photos from the tee-times page. The
+                // id→name direction merges WITHOUT clobbering: the field page
+                // is the better authority on spelling, and an id it already
+                // claimed must keep pointing at the same golfer.
                 Object.assign(pgaIds, pgaIds2);
+                for (const [id, n] of idToName2) if (!idToName.has(id)) idToName.set(id, n);
                 Object.assign(photos, photos2);
               }
             }
@@ -341,6 +432,9 @@ export default async function handler(req, res) {
             if (oddsResp.ok) {
               const oddsNd = extractNextData(await oddsResp.text());
               if (oddsNd) {
+                // Market selection stays as it was: the odds page can carry
+                // several markets (outright, top-10, matchups), each with its
+                // own oddsToWinId, and the enabled one is the outright board.
                 let oddsObj = null;
                 walkAll(oddsNd, obj => {
                   if (obj.oddsToWinId && Array.isArray(obj.players) && obj.players.length) {
@@ -348,18 +442,14 @@ export default async function handler(req, res) {
                   }
                 });
                 if (oddsObj) {
-                  oddsObj.players.forEach(p => {
-                    const name = Object.keys(pgaIds).find(n => pgaIds[n] === String(p.playerId));
-                    const raw = p.odds ?? p.currentOdds;
-                    if (name && raw != null) {
-                      if (typeof raw === 'string' && (raw.startsWith('+') || raw.startsWith('-'))) {
-                        finalOdds.push({ name, odds: raw });
-                      } else {
-                        const n = parseInt(raw, 10);
-                        if (!isNaN(n)) finalOdds.push({ name, odds: n > 0 ? `+${n}` : `${n}` });
-                      }
-                    }
-                  });
+                  const rows = oddsObj.players.map(p => ({
+                    name: p.displayName?.trim() || p.playerName?.trim() || null,
+                    ids: [p.playerId, p.id].filter(v => v != null).map(String),
+                    odds: formatOdds(p.odds ?? p.currentOdds ?? p.americanOdds),
+                  })).filter(r => r.odds);
+                  const resolved = resolveOddsRows(rows, idToName);
+                  oddsUnresolved = resolved.unresolved;
+                  finalOdds = Object.entries(resolved.oddsMap).map(([name, odds]) => ({ name, odds }));
                 }
               }
             }
@@ -374,6 +464,7 @@ export default async function handler(req, res) {
             photos,
             teeTimes: finalTeeTimes,
             odds: finalOdds,
+            oddsUnresolved,
             tournament: tournament.name,
             source: 'pgatour',
           };
@@ -401,6 +492,18 @@ export default async function handler(req, res) {
       playerCount: result.players.length,
       teeTimeCount: result.teeTimes?.length || 0,
       oddsCount: result.odds?.length || 0,
+      // Odds rows the id→name join could not place. Non-zero here is the
+      // signature of a player sitting in the field with a '—' in the Odds
+      // column; zero with a low oddsCount means the book simply has no price
+      // for them, which is not ours to fix.
+      oddsUnresolved: result.oddsUnresolved || 0,
+      // Truncated — when the join fails wholesale this is the entire field,
+      // and a debug endpoint that dumps 156 names is one nobody reads.
+      fieldPlayersWithoutOdds: (() => {
+        const priced = new NameSet((result.odds || []).map(o => o.name));
+        const missing = (result.players || []).filter(n => !priced.has(n));
+        return { count: missing.length, sample: missing.slice(0, 20) };
+      })(),
       pgaIdCount: Object.keys(result.pgaIds || {}).length,
       espnIdCount: Object.keys(result.espnIds || {}).length,
       photoUrlCount: Object.keys(result.photos || {}).length,

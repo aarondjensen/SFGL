@@ -64,7 +64,7 @@ export const AddDropPlayerModal = ({
   isOpen, onClose, team, currentRoster, teams,
   updateTeams, transactions, setTransactions, tournaments,
   isWaiverMode, activeTournamentIndex, nextTournamentIndex, txSegment, editingWaiverData,
-  headshots, fieldPlayerIds = {}, tournamentField = null, leagueSettings = {}, onHeadshotsFound,
+  headshots, tournamentField = null, leagueSettings = {}, onHeadshotsFound,
   allPlayers = [],
 }) => {
   const ROSTER_LIMIT            = leagueSettings.rosterLimit ?? 13;

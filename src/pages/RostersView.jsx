@@ -300,7 +300,7 @@ const WaiverQueue = ({ team, pendingWaivers, transactions, setTransactions, upda
 
 // ── Main RostersView ──────────────────────────────────────────────────────────
 // ── LineupHeadshot — shows ×-remove button on hover when editable ─────────────
-const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, fieldPlayerIds = {}, canEdit, onRemove }) => {
+const LineupHeadshot = ({ player, lastName, nameFontSize, headshots, canEdit, onRemove }) => {
   const [hovered, setHovered] = React.useState(false);
   const [tapped, setTapped]   = React.useState(false);
   const [focused, setFocused] = React.useState(false);
@@ -484,7 +484,13 @@ export const RostersView = ({
   // so .has()/.get() take the RAW roster name and do the matching themselves.
   const [tournamentField,   setTournamentField]   = useState(null); // NameSet
   const [teeTimeMap,        setTeeTimeMap]        = useState(() => new NameMap()); // → '8:04 AM'
-  const [fieldPlayerIds,    setFieldPlayerIds]    = useState({}); // { playerName: espnId }
+  // No fieldPlayerIds state. It was fed from `data.playerIds`, a response key
+  // /api/field stopped emitting when it split that mixed map into
+  // namespace-pure pgaIds/espnIds/photos — so it had been {} ever since, and
+  // neither consumer ever read the prop. Repointing it at `pgaIds` would have
+  // been worse than deleting it: the prop is typed as ESPN ids, and a PGA id
+  // used to build an ESPN URL resolves to a DIFFERENT REAL GOLFER's photo.
+  // Headshots come from `headshots` (App.jsx) via getPlayerHeadshot.
   const [oddsMap,           setOddsMap]           = useState(() => new NameMap()); // → '+2000'
   const [liveData,          setLiveData]          = useState(null); // { players, round, state } from /api/live
   const dialog = useDialog();
@@ -834,9 +840,6 @@ export const RostersView = ({
           setTournamentField(new NameSet(data.players));
           if (data.teeTimes?.length) {
             setTeeTimeMap(new NameMap(data.teeTimes.map(({ name, teeTime }) => [name, teeTime])));
-          }
-          if (data.playerIds && Object.keys(data.playerIds).length) {
-            setFieldPlayerIds(data.playerIds);
           }
           if (data.odds?.length) {
             setOddsMap(new NameMap(data.odds.map(({ name, odds }) => [name, odds])));
@@ -1188,7 +1191,6 @@ export const RostersView = ({
                         lastName={lastName}
                         nameFontSize={nameFontSize}
                         headshots={headshots}
-                        fieldPlayerIds={fieldPlayerIds}
                         canEdit={canEditLineup}
                         onRemove={() => togglePlayerInLineup(player)}
                       />
@@ -1760,7 +1762,6 @@ export const RostersView = ({
         txSegment={tournaments[addDropTournamentIndex]?.segment || getSegmentByDate()}
         editingWaiverData={editingWaiverData}
         headshots={headshots}
-        fieldPlayerIds={fieldPlayerIds}
         tournamentField={tournamentField}
         allPlayers={allPlayers}
         leagueSettings={resolvedSettings}
