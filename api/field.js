@@ -228,6 +228,47 @@ function resolveOddsRows(rows, idToName) {
   return { oddsMap, unresolved };
 }
 
+// ── Telling a golfer from a page label ───────────────────────────────────────
+//
+// A name is not evidence of a person. The field list was built from "any
+// object whose displayName contains a space", and `{ displayName: 'FedExCup
+// Fall' }` — a tour-section label sitting in the same __NEXT_DATA__ — is
+// shaped exactly like a two-word name, so it rode in as a phantom golfer and
+// inflated the field count by one.
+//
+// So a name now needs corroboration from a field that only ever appears on a
+// golfer. api/pga-results.js already works this way: it will not accept a name
+// without a money value beside it.
+//
+// The test is a UNION, and deliberately generous. The two errors are not
+// symmetric: a phantom entry matches no roster (NameSet keeps it in its own
+// equivalence group) and costs a wrong `count`, whereas a REJECTED REAL GOLFER
+// loses their ⛳ flag, vanishes from the "Playing" filter, and draws the
+// Wednesday "not in this week's field" push against a player who is in it.
+// When in doubt this must accept, not reject.
+const PLAYER_MARKERS = [
+  'shortName', 'country', 'countryCode', 'countryFlag', 'countryName',
+  'amateur', 'isAmateur', 'owgr', 'worldRank', 'playerId', 'playerBio',
+  'headshot', 'photo', 'photoUrl', 'imageUrl', 'headShotUrl', 'headshotUrl',
+  'teeTime', 'teeTimeLocal', 'startTime',
+];
+
+function looksLikePlayer(obj) {
+  // Both halves of a person's name is unambiguous on its own — no label
+  // carries firstName/lastName.
+  if (obj.firstName && obj.lastName) return true;
+  // pgatour.com's Next.js payload is GraphQL-derived, so most player objects
+  // announce themselves ('Player', 'FieldPlayer', 'PlayerRowV3').
+  if (typeof obj.__typename === 'string' && /player/i.test(obj.__typename)) return true;
+  // A PGA TOUR player id is a number ('46046'); a section id is a slug
+  // ('fall', 'playoffs'). Having an id is not evidence — having a NUMERIC one
+  // is, and it is what separates the two objects this function exists to tell
+  // apart. If a label ever turns up with a numeric id we get a harmless
+  // phantom back, and ?debug=1 will not list it as rejected, which is the tell.
+  if (obj.id != null && /^\d+$/.test(String(obj.id))) return true;
+  return PLAYER_MARKERS.some((k) => obj[k] != null && obj[k] !== '');
+}
+
 // ── Parse field page — players, IDs, tee times, odds all in one pass ──────────
 // IDs are kept in SEPARATE, NAMESPACE-PURE maps. They used to share one
 // `playerIdMap` that mixed three different things — PGA TOUR player IDs from
@@ -238,6 +279,7 @@ function resolveOddsRows(rows, idToName) {
 // Wrong faces are worse than missing ones, so the namespaces stay separate.
 export function parseFieldPage(nd) {
   const playerNames = new Set();
+  const rejectedNames = new Set(); // named things that failed looksLikePlayer
   const pgaIds      = {};   // name → PGA TOUR player id (last section seen wins)
   const idToName    = new Map(); // PGA TOUR player id → name (FIRST claim wins)
   const photos      = {};   // name → direct headshot URL (when the page has one)
@@ -262,7 +304,20 @@ export function parseFieldPage(nd) {
     const name = obj.displayName?.trim()
       || (obj.firstName && obj.lastName ? `${obj.firstName.trim()} ${obj.lastName.trim()}` : null);
 
-    if (name?.includes(' ')) {
+    if (name?.includes(' ') && !looksLikePlayer(obj)) {
+      // Kept for ?debug=1 so an over-eager rejection is visible here rather
+      // than as a missing ⛳ on somebody's roster.
+      rejectedNames.add(name);
+      // The id→name direction is recorded ANYWAY. It feeds the odds join, and
+      // that join must not be able to break because this filter got a call
+      // wrong — a phantom in idToName can only surface if an odds row cites
+      // its id, and that row would then name something no roster holds. A
+      // real golfer wrongly rejected here still gets priced.
+      if (obj.id != null) {
+        const key = String(obj.id);
+        if (!idToName.has(key)) idToName.set(key, canonicalName(name) || name);
+      }
+    } else if (name?.includes(' ')) {
       playerNames.add(canonicalName(name) || name);
       // Store player ID (field page uses 'id')
       if (obj.id) recordId(canonicalName(name) || name, obj.id);
@@ -286,6 +341,12 @@ export function parseFieldPage(nd) {
           const pn = p.displayName?.trim()
             || (p.firstName && p.lastName ? `${p.firstName.trim()} ${p.lastName.trim()}` : null);
           if (pn) {
+            // Being in a pairing IS the corroboration — nothing but a golfer
+            // is grouped under a tee time. Adding them here is the safety net
+            // under looksLikePlayer: a real player whose own object was too
+            // sparse to pass the marker test is still recovered from the
+            // groupings, so the filter above cannot cost us a ⛳ flag.
+            playerNames.add(canonicalName(pn) || pn);
             setTeeTime(canonicalName(pn) || pn, ttIso);
             if (p.id) recordId(canonicalName(pn) || pn, p.id);
           }
@@ -309,7 +370,16 @@ export function parseFieldPage(nd) {
   const ordered = [...playerNames].sort((a, b) => Number(a.includes(',')) - Number(b.includes(',')));
   const players = new NameSet(ordered).groups.map((group) => group[0]);
 
-  return { players, pgaIds, idToName, photos, teeTimeMap, oddsMap, oddsUnresolved };
+  // A name is only really rejected if NOTHING accepted it. The same golfer is
+  // walked several times over — their own object, their tee-time pairing, a
+  // featured-group entry — and the sparse renderings fail looksLikePlayer
+  // while the rich ones pass. Subtracting at the end rather than deleting on
+  // acceptance keeps this independent of which rendering the DFS reaches last.
+  const accepted = new NameSet(players);
+  const rejected = [...rejectedNames].filter((n) => !accepted.has(n));
+
+  return { players, pgaIds, idToName, photos, teeTimeMap, oddsMap, oddsUnresolved,
+           rejectedNames: rejected };
 }
 
 // ── ESPN fallback for field + tee times ───────────────────────────────────────
@@ -376,7 +446,7 @@ export default async function handler(req, res) {
       const fieldNd = extractNextData(await fieldResp.text());
       if (fieldNd) {
         const { players, pgaIds, idToName, photos, teeTimeMap, oddsMap,
-                oddsUnresolved: fieldOddsUnresolved } = parseFieldPage(fieldNd);
+                oddsUnresolved: fieldOddsUnresolved, rejectedNames } = parseFieldPage(fieldNd);
         const espnIds = {}; // filled only from the ESPN supplement below
         let oddsUnresolved = fieldOddsUnresolved;
 
@@ -465,6 +535,7 @@ export default async function handler(req, res) {
             teeTimes: finalTeeTimes,
             odds: finalOdds,
             oddsUnresolved,
+            rejectedNames,
             tournament: tournament.name,
             source: 'pgatour',
           };
@@ -504,6 +575,11 @@ export default async function handler(req, res) {
         const missing = (result.players || []).filter(n => !priced.has(n));
         return { count: missing.length, sample: missing.slice(0, 20) };
       })(),
+      // Named objects rejected as page furniture rather than golfers. Expect
+      // section labels and banner text here. A REAL GOLFER in this list is a
+      // bug in looksLikePlayer — they will be missing their ⛳ flag on every
+      // roster that holds them.
+      rejectedNames: result.rejectedNames || [],
       pgaIdCount: Object.keys(result.pgaIds || {}).length,
       espnIdCount: Object.keys(result.espnIds || {}).length,
       photoUrlCount: Object.keys(result.photos || {}).length,
