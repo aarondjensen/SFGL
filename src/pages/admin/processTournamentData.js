@@ -7,7 +7,7 @@
 import { namesMatch } from '../../../api/_playerNames.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../../constants';
 import { txBelongsToTeam } from '../../utils/sharedHelpers';
-import { scoringStarters, applyCutForfeit } from '../../../api/_rules.js';
+import { scoringStarters } from '../../../api/_rules.js';
 
 // Are these two strings the same golfer? Delegates to the shared identity
 // module (api/_playerNames.js), which is what /api/field, /api/cron and the
@@ -186,17 +186,8 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
       });
     }
 
-    // Team cut forfeit — off unless the commissioner enables it. See applyCutForfeit.
-    const cut = applyCutForfeit(topStarters, totalEarnings, settings);
-    if (cut.forfeited) {
-      console.log(`[processTournament] ${team.name} forfeits ${tournament.name}: `
-        + `${cut.earners} starter(s) earned, minimum is ${cut.minEarners}`);
-    }
-    totalEarnings = cut.totalEarnings;
-
     resultsData.teams[team.id] = {
       totalEarnings,
-      cutForfeited: cut.forfeited,
       bonuses: bonusEarnings,
       players: topStarters.map(s => ({
         name: s.playerName,

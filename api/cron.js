@@ -15,7 +15,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { isEventEnabled, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
 import { SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET, getTeeTimeLockMs } from './_league.js';
-import { scoringStarters, applyCutForfeit } from './_rules.js';
+import { scoringStarters } from './_rules.js';
 import {
   getSegmentForTournament, computeSwingAward, buildEffectiveRoster,
   getSeasonEarningsByTeam, bonusesFor,
@@ -1040,19 +1040,8 @@ async function handleProcessResults(res) {
       });
     });
 
-    // Team cut forfeit — off unless the commissioner enables it. Same helper
-    // the in-app processor uses, so a cron-processed event and a manually
-    // processed one cannot disagree about the rule.
-    const cut = applyCutForfeit(topStarters, totalEarnings, settings);
-    if (cut.forfeited) {
-      console.log(`[process-results] ${team.name} forfeits ${newTournaments[ti]?.name}: `
-        + `${cut.earners} starter(s) earned, minimum is ${cut.minEarners}`);
-    }
-    totalEarnings = cut.totalEarnings;
-
     resultsData.teams[team.id] = {
       totalEarnings,
-      cutForfeited: cut.forfeited,
       bonuses: bonusEarnings,
       players: topStarters.map(s => ({
         name: s.playerName,

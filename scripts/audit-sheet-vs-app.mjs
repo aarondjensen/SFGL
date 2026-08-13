@@ -24,9 +24,9 @@
 // phantom discrepancy.
 //
 // KNOWN CAUSES it labels rather than leaving as a bare number:
-//   CUT-RULE   the sheet forfeits a team's earnings for an event when fewer
-//              than two starters make the cut; nothing in the app applies that
-//              rule (processTournamentData.js sums all five unconditionally).
+//   SHEET $0   the sheet's team Total reads $0 while its own player rows do
+//              not. Cause unknown — most likely a broken Total formula.
+//   NO DATA    the sheet has no starter rows at all for that event.
 //   BONUS      totals agree on raw earnings but disagree on round-leader money.
 //   LINEUP     the two disagree about WHO was started, not about what they won.
 //   MISSING    the tournament or team block exists on one side only.
@@ -210,9 +210,22 @@ for (const team of [...divergentTeams].sort()) {
       // about which side to correct.
       label = 'NO DATA ';
       why = 'the sheet has no starters for this event — tab never populated; the app has results';
-    } else if ((sT.total ?? 0) === 0 && (aT.total ?? 0) > 0 && (sT.earners ?? 0) < 2) {
-      label = 'CUT-RULE';
-      why = `sheet forfeited the event (${sT.earners} of ${sT.starters} starters made money); the app counted it`;
+    } else if ((sT.total ?? 0) === 0 && (aT.total ?? 0) > 0) {
+      // The sheet's team Total reads $0 while its own player rows do not.
+      //
+      // This was labelled CUT-RULE on the theory that the sheet forfeits an
+      // event when fewer than two starters make the cut. That rule does not
+      // exist: the 2026 sheet mentions "cut" exactly once, about mulligan
+      // timing for three-course events. The wording it was inferred from
+      // ("must start five guys… only get dollars if…") is from the 2019
+      // sheet's historical notes. Every observed case happened to have one
+      // earner, which made a coincidence look like a rule.
+      //
+      // So this is stated as what it is — a total that disagrees with the
+      // rows above it — and not explained away.
+      label = 'SHEET $0';
+      why = `sheet Total reads $0 but its own player rows sum to ${$(sT.earnings)} `
+          + `(${sT.earners} of ${sT.starters} starters earned); the app counted it`;
     } else if (Math.abs((aT.earnings ?? 0) - (sT.earnings ?? 0)) < 1 &&
                Math.abs((aT.bonuses ?? 0) - (sT.bonuses ?? 0)) >= 1) {
       label = 'BONUS   ';
