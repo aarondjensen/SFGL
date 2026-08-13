@@ -58,6 +58,57 @@ export const bonusesFor = (tournament, settings = {}) => {
       };
 };
 
+// ── Scoring starters ─────────────────────────────────────────────────────────
+
+export const DEFAULT_LINEUP_SIZE = 5;
+
+/**
+ * The starters that score for a team in one tournament.
+ *
+ * A team scores THE PLAYERS IN ITS STARTING LINEUP — usually five, sometimes
+ * fewer. Not "the best five".
+ *
+ * This replaces three byte-identical copies of
+ *
+ *     [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5)
+ *
+ * in processTournamentData.js, api/cron.js and src/utils/mulliganReversal.js —
+ * the last of which described itself as "same math as processTournamentData",
+ * which is the comment this repo has learned to distrust.
+ *
+ * Two things were wrong with that line:
+ *
+ *   1. `.slice(0, 5)` after a descending sort silently keeps the five
+ *      HIGHEST-EARNING names. For a normal five-player lineup that is the same
+ *      set, so it looks harmless. It stops being harmless when the mulligan
+ *      handler's fallback branch pushes an IN player onto a lineup it could not
+ *      find the OUT player in: the lineup becomes six, and the team is quietly
+ *      scored on its best five. An oversized lineup is a data error, and paying
+ *      out the most generous reading of it hides the error instead of showing
+ *      it. `oversized` is returned so callers can say so out loud.
+ *
+ *   2. The 5 was hardcoded in all three, while the commissioner has a
+ *      `lineupSize` setting that SeasonSettingsPanel writes and RostersView
+ *      honours. Changing it moved what managers could submit but not what the
+ *      scorer counted.
+ *
+ * Order is descending by earnings, preserving how results have always been
+ * displayed. Nothing is dropped.
+ */
+export const scoringStarters = (starterResults, settings = {}) => {
+  const list = (Array.isArray(starterResults) ? starterResults : []).filter(Boolean);
+  const configured = settings?.lineupSize;
+  const lineupSize = (Number.isInteger(configured) && configured > 0)
+    ? configured
+    : DEFAULT_LINEUP_SIZE;
+
+  return {
+    starters: [...list].sort((a, b) => (b.earnings || 0) - (a.earnings || 0)),
+    lineupSize,
+    oversized: list.length > lineupSize,
+  };
+};
+
 // ── Segment resolution ───────────────────────────────────────────────────────
 
 /**

@@ -232,5 +232,49 @@ check('commish overrides win for regulars',
     award.updatedTeams.every(t => t.earnings === undefined || t.earnings === 0));
 }
 
+
+// ── scoringStarters: the starting lineup scores, not "the best five" ─────────
+// Three byte-identical copies of
+//   [...starterResults].sort((a,b)=>b.earnings-a.earnings).slice(0,5)
+// lived in processTournamentData.js, api/cron.js and mulliganReversal.js. The
+// slice silently kept the five highest earners, so an oversized lineup — which
+// the mulligan fallback branch can produce by pushing an IN player — was scored
+// on its best five instead of being surfaced as the data error it is.
+{
+  const { scoringStarters, DEFAULT_LINEUP_SIZE } = await import('../api/_rules.js');
+  const mk = (...v) => v.map((earnings, i) => ({ playerName: `P${i}`, earnings }));
+
+  const five = scoringStarters(mk(100, 400, 0, 250, 50));
+  check('five starters: nothing dropped', five.starters.length === 5);
+  check('five starters: not flagged oversized', five.oversized === false);
+  check('sorted descending for display',
+    five.starters.map(s => s.earnings).join(',') === '400,250,100,50,0');
+
+  // Fewer than five is legal — a manager may start short.
+  const three = scoringStarters(mk(100, 0, 50));
+  check('short lineup keeps every starter', three.starters.length === 3);
+  check('short lineup is not oversized', three.oversized === false);
+
+  // The case the slice used to hide: six names, lowest earner silently dropped.
+  const six = scoringStarters(mk(900, 800, 700, 600, 500, 400));
+  check('oversized lineup keeps ALL starters', six.starters.length === 6);
+  check('oversized lineup is flagged', six.oversized === true);
+  check('oversized total counts every starter',
+    six.starters.reduce((s, p) => s + p.earnings, 0) === 3900,
+    String(six.starters.reduce((s, p) => s + p.earnings, 0)));
+
+  // The commissioner's lineupSize setting is honoured for the oversize check
+  // rather than a hardcoded 5.
+  check('lineupSize from settings raises the threshold',
+    scoringStarters(mk(1, 2, 3, 4, 5, 6), { lineupSize: 6 }).oversized === false);
+  check('lineupSize from settings lowers it',
+    scoringStarters(mk(1, 2, 3, 4), { lineupSize: 3 }).oversized === true);
+  check('bad lineupSize falls back to the default',
+    scoringStarters(mk(1, 2, 3, 4, 5, 6), { lineupSize: 0 }).oversized === true &&
+    DEFAULT_LINEUP_SIZE === 5);
+  check('empty input is safe', scoringStarters(null).starters.length === 0);
+}
+
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

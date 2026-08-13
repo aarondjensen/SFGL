@@ -18,6 +18,7 @@
 // mid-flight; matchPlayerName is a small pure mirror of the one there.
 // ============================================================================
 import { namesMatch } from '../../api/_playerNames.js';
+import { scoringStarters } from '../../api/_rules.js';
 import { getPlayerRegistry, resolveTxTeam } from './sharedHelpers';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../constants/index.js';
 
@@ -32,12 +33,15 @@ const lookupEarnings = (name, earningsMap) => {
   return k !== undefined ? (earningsMap[k] || 0) : 0;
 };
 
-// Recompute a team's tournament result for an effective lineup — same math as
-// processTournamentData (top-5 by earnings + round-leader bonuses).
+// Recompute a team's tournament result for an effective lineup. Shares
+// scoringStarters with processTournamentData and api/cron.js rather than
+// restating the math — the three had drifted-by-copy risk and this one used to
+// advertise itself as "same math as processTournamentData".
 export const recomputeTeamTournamentResult = (lineup, earningsMap, roundLeaders, isMajor, roster) => {
   const bonuses = isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
   const starterResults = (lineup || []).map(pn => ({ playerName: pn, earnings: lookupEarnings(pn, earningsMap) }));
-  const topStarters = [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5);
+  // Scores the STARTING LINEUP, not the best five — see scoringStarters.
+  const { starters: topStarters } = scoringStarters(starterResults);
   let totalEarnings = topStarters.reduce((s, p) => s + p.earnings, 0);
   const bonusEarnings = { round1: 0, round2: 0, round3: 0 };
   const playersWithBonuses = {};
@@ -48,7 +52,7 @@ export const recomputeTeamTournamentResult = (lineup, earningsMap, roundLeaders,
       if (!leaderName) return;
       const actual = (lineup || []).find(pn => matchPlayerName(pn, leaderName));
       if (actual) {
-        bonusEarnings[round] = bonuses[round];
+        bonusEarnings[round] += bonuses[round];
         totalEarnings += bonuses[round];
         if (!playersWithBonuses[actual]) playersWithBonuses[actual] = { total: 0, rounds: [] };
         playersWithBonuses[actual].total += bonuses[round];

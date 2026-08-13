@@ -7,6 +7,7 @@
 import { namesMatch } from '../../../api/_playerNames.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../../constants';
 import { txBelongsToTeam } from '../../utils/sharedHelpers';
+import { scoringStarters } from '../../../api/_rules.js';
 
 // Are these two strings the same golfer? Delegates to the shared identity
 // module (api/_playerNames.js), which is what /api/field, /api/cron and the
@@ -155,7 +156,13 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
       return { playerName, earnings: earnings || 0 };
     });
 
-    const topStarters = [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5);
+    // Scores the STARTING LINEUP, not the best five — see scoringStarters.
+    const { starters: topStarters, oversized, lineupSize } = scoringStarters(starterResults);
+    if (oversized) {
+      console.warn(`[processTournament] ${team.name} has ${topStarters.length} starters for a `
+        + `lineup size of ${lineupSize} — scoring all of them. Check this team's mulligan for `
+        + `${tournament.name}.`);
+    }
     let totalEarnings = topStarters.reduce((s, p) => s + p.earnings, 0);
     const bonusEarnings = { round1: 0, round2: 0, round3: 0 };
     const playersWithBonuses = {};
@@ -169,7 +176,7 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
           if (!leaderName) return;
           const actual = effectiveLineup.find(pn => matchPlayerName(pn, leaderName));
           if (actual) {
-            bonusEarnings[round] = bonuses[round];
+            bonusEarnings[round] += bonuses[round];
             totalEarnings += bonuses[round];
             if (!playersWithBonuses[actual]) playersWithBonuses[actual] = { total: 0, rounds: [] };
             playersWithBonuses[actual].total  += bonuses[round];

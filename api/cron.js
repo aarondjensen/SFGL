@@ -15,6 +15,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { isEventEnabled, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
 import { SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET, getTeeTimeLockMs } from './_league.js';
+import { scoringStarters } from './_rules.js';
 import {
   getSegmentForTournament, computeSwingAward, buildEffectiveRoster,
   getSeasonEarningsByTeam, bonusesFor,
@@ -1014,7 +1015,12 @@ async function handleProcessResults(res) {
       return { playerName, earnings: earnings || 0 };
     });
 
-    const topStarters = [...starterResults].sort((a, b) => b.earnings - a.earnings).slice(0, 5);
+    // Scores the STARTING LINEUP, not the best five — see scoringStarters.
+    const { starters: topStarters, oversized, lineupSize } = scoringStarters(starterResults);
+    if (oversized) {
+      console.warn(`[process-results] ${team.name} has ${topStarters.length} starters for a lineup `
+        + `size of ${lineupSize} — scoring all of them.`);
+    }
     let totalEarnings = topStarters.reduce((s, p) => s + p.earnings, 0);
     const bonusEarnings = { round1: 0, round2: 0, round3: 0 };
     const playersWithBonuses = {};
@@ -1025,7 +1031,7 @@ async function handleProcessResults(res) {
         if (!leaderName) return;
         const actual = team.lineup.find(pn => matchName(pn, leaderName));
         if (actual) {
-          bonusEarnings[round] = bonuses[round];
+          bonusEarnings[round] += bonuses[round];
           totalEarnings += bonuses[round];
           if (!playersWithBonuses[actual]) playersWithBonuses[actual] = { total: 0, rounds: [] };
           playersWithBonuses[actual].total += bonuses[round];
