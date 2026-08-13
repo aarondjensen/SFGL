@@ -1,0 +1,20 @@
+[
+  {
+    "_why": "App scored Harris English; the commissioner's record has Brian Harman. +$680,583 to the app.",
+    "tournament": "RBC Heritage",
+    "team": "Dirty Bird(ies)",
+    "replace": { "Harris English": "Brian Harman" }
+  },
+  {
+    "_why": "App scored Marco Penge; the started five were Thomas, Hisatsune, Griffin, Fitzpatrick, Bridgeman. +$382,958 to the app.",
+    "tournament": "Valspar Championship",
+    "team": "Hip Happens",
+    "lineup": ["Justin Thomas", "Ryo Hisatsune", "Ben Griffin", "Matt Fitzpatrick", "Jacob Bridgeman"]
+  },
+  {
+    "_why": "App scored Michael Kim; the commissioner's record has Austin Smotherman. +$51,142 to the app.",
+    "tournament": "Valspar Championship",
+    "team": "World #1",
+    "replace": { "Michael Kim": "Austin Smotherman" }
+  }
+]
