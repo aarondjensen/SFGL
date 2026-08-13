@@ -165,6 +165,57 @@ console.log('\n── capture rules that keep the lock from moving ──');
     readFileSync(new URL('../api/field.js', import.meta.url), 'utf8').includes('firstTeeTimeISO'));
 }
 
+console.log('\n── locks ONCE before round 1, stays locked all week ──');
+{
+  // The league rule: rosters lock before the first round and stay locked for
+  // the duration. Rounds 2/3/4 tee times are irrelevant to locking, so the
+  // lock must be monotonic — never true then false again.
+  const firstTee = new Date('2026-08-06T11:35:00.000Z').getTime();   // Thu 7:35am ET
+  const t = { location: 'Greensboro, NC', dates: 'Aug 6-9',
+              firstTeeTimeISO: new Date(firstTee).toISOString() };
+
+  // Walk the whole tournament week minute-coarse and assert the lock never
+  // flips back open once it has fired.
+  const realNow = Date.now;
+  let everLocked = false, reopened = false;
+  try {
+    for (let h = -48; h <= 120; h++) {          // Tue before → Monday after
+      Date.now = () => firstTee + h * 3600_000;
+      const locked = isTournamentLocked(t);
+      if (locked) everLocked = true;
+      else if (everLocked) reopened = true;
+    }
+  } finally { Date.now = realNow; }
+
+  check('locks at some point during the week', everLocked);
+  check('never re-opens once locked', !reopened);
+
+  // Later rounds must not enter into it at all: the resolver reads only
+  // firstTeeTimeISO, so an R2/R3/R4 time on the record changes nothing.
+  const withLaterRounds = {
+    ...t,
+    teeTimes: [{ name: 'X', teeTime: '1:30 PM' }],
+    round2TeeTime: '2026-08-07T12:00:00.000Z',
+    round4TeeTime: '2026-08-09T15:00:00.000Z',
+  };
+  check('later-round times do not move the lock',
+    getTeeTimeLockMs(withLaterRounds) === getTeeTimeLockMs(t));
+}
+
+console.log('\n── the tee-sheet fallback still yields a first tee ──');
+{
+  // This branch runs precisely because the field page carried no tee times, so
+  // it is also the branch where firstTeeTimeISO came back null. If it drops the
+  // value, the lineup lock silently reverts to the hour rule for every event
+  // whose field page omits the tee sheet.
+  const { readFileSync } = await import('node:fs');
+  const field = readFileSync(new URL('../api/field.js', import.meta.url), 'utf8');
+  check('tee-times page threads firstTeeTimeISO', /firstTeeTimeISO: firstTee2/.test(field));
+  check('and it is adopted when the field page had none',
+    /if \(!firstTeeTimeISO && firstTee2\) firstTeeTimeISO = firstTee2;/.test(field));
+  check('parseFieldPage returns it', /rejectedNames: rejected, firstTeeTimeISO/.test(field));
+}
+
 console.log('\n── no stale lockHourET references survive ──');
 {
   const { readFileSync } = await import('node:fs');

@@ -464,9 +464,12 @@ export default async function handler(req, res) {
     if (fieldResp.ok) {
       const fieldNd = extractNextData(await fieldResp.text());
       if (fieldNd) {
+        const parsedField = parseFieldPage(fieldNd);
         const { players, pgaIds, idToName, photos, teeTimeMap, oddsMap,
-                oddsUnresolved: fieldOddsUnresolved, rejectedNames,
-                firstTeeTimeISO } = parseFieldPage(fieldNd);
+                oddsUnresolved: fieldOddsUnresolved, rejectedNames } = parsedField;
+        // Reassignable, unlike the rest: the tee-times-page fallback below may
+        // supply this when the field page did not carry a tee sheet.
+        let firstTeeTimeISO = parsedField.firstTeeTimeISO;
         const espnIds = {}; // filled only from the ESPN supplement below
         let oddsUnresolved = fieldOddsUnresolved;
 
@@ -478,8 +481,15 @@ export default async function handler(req, res) {
             if (ttResp.ok) {
               const ttNd = extractNextData(await ttResp.text());
               if (ttNd) {
-                const { teeTimeMap: ttMap2, pgaIds: pgaIds2, idToName: idToName2, photos: photos2 } = parseFieldPage(ttNd);
+                const { teeTimeMap: ttMap2, pgaIds: pgaIds2, idToName: idToName2, photos: photos2,
+                        firstTeeTimeISO: firstTee2 } = parseFieldPage(ttNd);
                 finalTeeTimes = joinPlayersToTeeTimes(players, ttMap2);
+                // This branch runs precisely BECAUSE the field page had no tee
+                // times, so it is also the branch where firstTeeTimeISO came
+                // back null. Taking it from here too is what stops the lineup
+                // lock silently falling back to the hour rule for every event
+                // whose field page omits the tee sheet.
+                if (!firstTeeTimeISO && firstTee2) firstTeeTimeISO = firstTee2;
                 // Merge any new PGA ids / photos from the tee-times page. The
                 // id→name direction merges WITHOUT clobbering: the field page
                 // is the better authority on spelling, and an id it already
