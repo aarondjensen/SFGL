@@ -31,6 +31,7 @@ import { useDialog } from '../DialogContext';
 import { theme, colors, fonts, SWINGS, green, purple, red, white, fontSize } from '../../theme.js';
 import { tournamentsApi } from '../../api/firebase';
 import { seedSegments } from '../../../api/_rules.js';
+import { fmtETTime, getTournamentLockHourET, getTournamentTimezone } from '../../../api/_league.js';
 import { M, disabledBtn } from './adminStyles';
 
 export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
@@ -99,10 +100,14 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
       // silently moved an event into Summer. seedSegments splits the league
       // events into four contiguous blocks instead, which is the actual shape
       // of the season; the commissioner adjusts the boundaries from here.
+      // lockHour is deliberately left unset: it is an OVERRIDE, and Auto
+      // derives the right hour from the course timezone (9am ET on the west
+      // coast, 12pm for Hawaii). Stamping 7 on every row, as this used to,
+      // pinned every event to the Eastern default and made a Hawaii lineup
+      // lock five hours early.
       const rows = seedSegments(data.tournaments || []).map(t => ({
         ...t,
         include: !existingNames.has(String(t.name || '').trim().toLowerCase()),
-        lockHour: 7,
       }));
       setPreviewRows(rows);
       setFetchWarnings(data.warnings || []);
@@ -404,11 +409,19 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
                               </label>
                               <label style={{ fontSize: fontSize.caption, color: colors.textMuted }}>
                                 Lock hour (ET)
-                                <select value={row.lockHour ?? 7} onChange={e => updateField(i, 'lockHour', parseInt(e.target.value, 10))}
+                                {/* Blank = Auto (derived from the course
+                                    timezone). Showing "7:00 AM (default)" for an
+                                    unset row misstated the deadline for every
+                                    non-ET event. */}
+                                <select value={Number.isInteger(row.lockHour) ? row.lockHour : ''}
+                                  onChange={e => updateField(i, 'lockHour', e.target.value === '' ? null : parseInt(e.target.value, 10))}
                                   style={{ ...M.select, marginTop: 2, fontSize: fontSize.md, padding: '8px 10px' }}>
+                                  <option value="">
+                                    Auto — {fmtETTime(getTournamentLockHourET({ ...row, lockHour: null }))} ({getTournamentTimezone(row)})
+                                  </option>
                                   {[7, 8, 9, 10, 11, 12].map(h => (
                                     <option key={h} value={h}>
-                                      {h === 12 ? '12:00 PM' : `${h}:00 AM`}{h === 7 ? ' (default)' : ''}
+                                      {fmtETTime(h)}
                                     </option>
                                   ))}
                                 </select>

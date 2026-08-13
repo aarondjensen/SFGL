@@ -14,7 +14,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
 import { isEventEnabled, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
-import { SEASON, getETNow, abbreviateName, waiverCutoff } from './_league.js';
+import { SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET } from './_league.js';
 import {
   getSegmentForTournament, computeSwingAward, buildEffectiveRoster,
   getSeasonEarningsByTeam, bonusesFor,
@@ -698,7 +698,12 @@ async function handleLineupReminder(res) {
   const activeTourney = tournaments?.find(t => t.playing && !t.completed);
   if (!activeTourney) return res.json({ status: 'no_tournament' });
 
-  const lockHour = activeTourney.lockHourET || 7;
+  // Was `activeTourney.lockHourET || 7` — a field name nothing has ever
+  // written, so this always resolved to 7 and the reminder told managers the
+  // wrong deadline for every non-ET event (9am at Pebble Beach, 12pm at Sony).
+  // Now the same helper isTournamentLocked uses, so the email and the actual
+  // lock cannot disagree.
+  const lockHour = getTournamentLockHourET(activeTourney);
   const lockTime = lockHour > 12 ? `${lockHour - 12}pm` : lockHour === 12 ? '12pm' : `${lockHour}am`;
 
   const teams = await loadTeams();

@@ -432,7 +432,7 @@ export const RostersView = ({
   // name any more, so it is no longer destructured.
   loggedInTeamId, isCommissioner, globalPlayerStats, headshots,
   updateHeadshots,
-  leagueSettings = {}, settings, firstTeeTime,
+  leagueSettings = {}, settings,
 }) => {
   // leagueSettings may come from either prop name (App passes settings=)
   const resolvedSettings = settings || leagueSettings;
@@ -1446,10 +1446,17 @@ export const RostersView = ({
                 const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
                 const hasLineup      = (team.lineup || []).length > 0;
                 const isEditing      = canEditLineup && lineupMode;
-                // Only dim benched players once the tournament week has actually begun —
-                // i.e. tee times are posted (firstTeeTime exists) or lineup window is open.
-                // Between events the lineup carries over from the prior week and should not dim.
-                const tournamentActive = !!(firstTeeTime || lineupOpen);
+                // Only dim benched players once the tournament week has actually
+                // begun. Between events the lineup carries over from the prior
+                // week and should not dim.
+                //
+                // This read `!!(firstTeeTime || lineupOpen)`, but firstTeeTime
+                // has been undefined in production since Wave C.5 removed
+                // fetchFirstTeeTime, so the first operand never contributed.
+                // Dropping it changes no behaviour. If tee-time gating is ever
+                // wanted here, source it from /api/field (teeTimeMap above)
+                // rather than reviving the prop.
+                const tournamentActive = !!lineupOpen;
                 const isBenched      = tournamentActive && hasLineup && !isInLineup && !isEditing;
                 const dimColor       = white(0.45);
 

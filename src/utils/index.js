@@ -161,34 +161,18 @@ export { getSegmentByDate, getSegmentForTournament, segmentSource, seedSegments 
 // ============================================================================
 // TOURNAMENT TIMEZONE / LOCK LOGIC
 // ============================================================================
-export const getTournamentTimezone = (tournament) => {
-  if (!tournament?.location) return 'ET';
-  const loc = tournament.location.toLowerCase();
-  if (loc.includes('hawaii') || loc.includes('honolulu'))                                      return 'HT';
-  if (loc.includes('california') || loc.includes('pebble beach') || loc.includes('la quinta') ||
-      loc.includes('san diego')  || loc.includes('pacific palisades') || loc.includes('napa')  ||
-      loc.includes('oregon')     || loc.includes('washington'))                                 return 'PT';
-  if (loc.includes('arizona')   || loc.includes('scottsdale') || loc.includes('colorado')     ||
-      loc.includes('utah')       || loc.includes('montana')   || loc.includes('idaho')         ||
-      loc.includes('wyoming')    || loc.includes('new mexico') || loc.includes('nevada'))       return 'MT';
-  if (loc.includes('texas')     || loc.includes('houston')   || loc.includes('san antonio')   ||
-      loc.includes('fort worth') || loc.includes('louisiana') || loc.includes('avondale')      ||
-      loc.includes('illinois')   || loc.includes('silvis')   || loc.includes('minnesota')      ||
-      loc.includes('blaine')     || loc.includes('michigan')  || loc.includes('detroit')       ||
-      loc.includes('memphis')    || loc.includes('tennessee') || loc.includes('kentucky')       ||
-      loc.includes('louisville'))                                                                return 'CT';
-  return 'ET';
-};
-
-export const getTournamentLockHourET = (tournament) => {
-  switch (getTournamentTimezone(tournament)) {
-    case 'HT': return 12;
-    case 'PT': return 9;
-    case 'MT': return 8;
-    case 'CT': return 8;
-    default:   return 7;
-  }
-};
+// Moved to api/_league.js for the same reason as the segment helpers above:
+// api/cron.js cannot import from src/, so while this lived here the cron had no
+// way to share it. It didn't copy the logic — it invented a field name,
+// `activeTourney.lockHourET`, that nothing in the app has ever written. The
+// lineup-lock reminder therefore told every manager "7am" regardless of the
+// real lock, which is two hours early for a California event and five for
+// Hawaii. Re-exported so existing importers are unchanged.
+// Imported as well as re-exported: `export ... from` forwards the binding
+// without introducing it into this module's scope, and isTournamentLocked /
+// getRoundLockTime below call it directly.
+import { getTournamentLockHourET } from '../../api/_league.js';
+export { getTournamentTimezone, getTournamentLockHourET } from '../../api/_league.js';
 
 export const getTournamentStartDate = (tournament) => {
   if (tournament?.startDate) return new Date(tournament.startDate);

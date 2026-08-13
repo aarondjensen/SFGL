@@ -3,7 +3,8 @@ import { Calendar, Trophy, Edit2, Save, ChevronDown, ChevronRight } from 'lucide
 import { useDialog } from './DialogContext';
 
 import { theme, colors, fonts, fontSize, SWINGS, getSwingColor, getSwingColorAt, black, brass, gold, purple, red, white, blueBright } from '../theme.js';
-import { getSegmentForTournament, segmentSource, seedSegments, shortName } from '../utils';
+import { getSegmentForTournament, segmentSource, seedSegments, shortName, getTournamentLockHourET, getTournamentTimezone } from '../utils';
+import { fmtETTime } from '../../api/_league.js';
 import { NameMap } from '../../api/_playerNames.js';
 import { TeamName } from '../components/TeamName';
 import { sfglDataApi } from '../api/firebase';
@@ -179,7 +180,6 @@ export const TournamentsView = ({
   tournaments,
   isCommissioner,
   setTournaments,
-  firstTeeTime,
   teams = [],
   transactions = [],
 }) => {
@@ -425,8 +425,12 @@ export const TournamentsView = ({
         isSignature: false,
         isMajor: false,
         isAlternate: false,
+        // Both left unset on purpose. segment shows "⚠ not set" until the
+        // commish picks one, rather than silently inheriting a month guess;
+        // lockHour is an override, so unset means Auto (derived from the
+        // course timezone) rather than pinned to the 7am Eastern default.
         segment: null,
-        lockHour: 7,
+        lockHour: null,
         results: null,
       },
     ]);
@@ -998,9 +1002,16 @@ export const TournamentsView = ({
 
                 {/* Lock hour override */}
                 <td style={{ padding: '8px 8px' }}>
+                  {/* Unset must NOT display as 7:00 AM. The default is derived
+                      from the course timezone, so an unset Pebble Beach really
+                      locks at 9 — showing "7:00 AM (default)" stated the wrong
+                      deadline for every non-ET event. Blank now means Auto and
+                      names the hour Auto resolves to. */}
                   <select
-                    value={t.lockHour ?? 7}
-                    onChange={e => updateLocal(realIndex, { lockHour: parseInt(e.target.value) })}
+                    value={Number.isInteger(t.lockHour) ? t.lockHour : ''}
+                    onChange={e => updateLocal(realIndex, {
+                      lockHour: e.target.value === '' ? null : parseInt(e.target.value, 10),
+                    })}
                     style={{
                       ...theme.select,
                       fontSize: fontSize.base,
@@ -1012,8 +1023,9 @@ export const TournamentsView = ({
                       minWidth: 90,
                     }}
                   >
+                    <option value="">Auto — {fmtETTime(getTournamentLockHourET({ ...t, lockHour: null }))} ({getTournamentTimezone(t)})</option>
                     {[7, 8, 9, 10, 11, 12].map(h => (
-                      <option key={h} value={h}>{h === 12 ? '12:00 PM' : `${h}:00 AM`}{h === 7 ? ' (default)' : ''}</option>
+                      <option key={h} value={h}>{fmtETTime(h)}</option>
                     ))}
                   </select>
                 </td>
