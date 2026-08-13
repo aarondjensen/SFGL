@@ -127,6 +127,14 @@ async function main() {
       for (const [outName, inName] of Object.entries(c.replace)) {
         const idx = next.findIndex(p => namesMatch(p, outName));
         if (idx === -1) {
+          // Already applied is not a failure. `replace` is not idempotent —
+          // once the swap is written, lockedLineups no longer contains the OUT
+          // player, so re-running errored and, because one failure aborts the
+          // whole run, blocked every OTHER correction from being written too.
+          if (next.some(p => namesMatch(p, inName))) {
+            console.log(`   already applied: "${inName}" in place of "${outName}"`);
+            continue;
+          }
           console.error(`✗ ${t.name} / ${team.name}: "${outName}" is not in the scored lineup ` +
             `(${current.join(', ')})`);
           failed++; next = null; break;
@@ -171,6 +179,13 @@ async function main() {
     const notCurrent = next.filter(n => !(team.roster || []).some(p => namesMatch(p.name, n)));
     if (notCurrent.length) {
       console.log(`   note: ${notCurrent.join(', ')} — on the roster then, not now`);
+    }
+
+    const unchanged = next.length === current.length
+      && next.every((n, i) => namesMatch(n, current[i]));
+    if (unchanged) {
+      console.log(`\n${t.name} / ${team.name}\n   no change — already correct`);
+      continue;
     }
 
     const entry = writes.get(t._id) || { name: t.name, lockedLineups: { ...(t.lockedLineups || {}) } };
