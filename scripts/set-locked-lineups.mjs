@@ -45,7 +45,7 @@
 import { readFileSync } from 'node:fs';
 import { adminDb } from './_adminCreds.mjs';
 import { namesMatch } from '../api/_playerNames.js';
-import { lineupFor } from '../api/_rules.js';
+
 
 const arg = (flag, fallback) => {
   const i = process.argv.indexOf(flag);
@@ -100,9 +100,19 @@ async function main() {
     const team = findByName(teams, c.team);
     if (!team) { console.error(`✗ no single team matches "${c.team}"`); failed++; continue; }
 
-    // Start from what the event is CURRENTLY scored against, so `replace`
-    // changes exactly one thing.
-    const current = [...lineupFor(t, team)];
+    // What the event is CURRENTLY SCORED AGAINST — results.fullLineups, the
+    // lineup the processor recorded at the time.
+    //
+    // NOT lineupFor(): that is the processor's own precedence and falls back to
+    // team.lineup, the team's LIVE lineup. Using it here showed today's five
+    // instead of the scored ones, which is the very drift this script exists to
+    // repair. An existing lockedLineups entry wins, so re-running after a
+    // correction is idempotent.
+    const scored = t.lockedLineups?.[team.id]
+      || t.results?.fullLineups?.[team.id]
+      || team.lineup
+      || [];
+    const current = [...scored];
     if (!current.length) {
       console.error(`✗ ${t.name} / ${team.name}: no recorded lineup to correct`); failed++; continue;
     }
