@@ -86,6 +86,70 @@ const d$ = (n) => `${n >= 0 ? '+' : '-'}$${Math.abs(Math.round(n)).toLocaleStrin
 let findings = 0;
 const note = (...a) => { findings++; console.log(...a); };
 
+// ── Pairing tournaments across the two sources ───────────────────────────────
+//
+// The sheet knows a tournament by its TAB NAME ("Farmers", "API", "RBC"); the
+// app stores the full PGA Tour title ("Farmers Insurance Open", "Arnold Palmer
+// Invitational presented by Mastercard", "RBC Heritage"). Comparing those with
+// === reports every tournament as missing from both sides, which is the same
+// mistake this file already refuses to make for player names.
+//
+// Match on token containment, then assign one-to-one, best score first. The
+// ordering is what disambiguates the genuinely overlapping cases:
+//
+//   "Canadian Open" ⊂ "RBC Canadian Open"   (2 tokens)  assigned first
+//   "RBC"           ⊂ "RBC Canadian Open"   (1 token)   … so RBC gets Heritage
+//   "Scottish Open" ⊂ "Genesis Scottish Open"           … so Genesis gets
+//   "Genesis"       ⊂ "Genesis Scottish Open"               The Genesis Invitational
+//
+// A sheet name left with no free candidate is reported as unmatched rather than
+// silently paired, for the same reason buildNameIndex drops colliding keys: a
+// wrong pairing invents a discrepancy AND hides a real one.
+const TOURNAMENT_ALIASES = {
+  // Abbreviations no token rule can derive.
+  'amex': 'the american express',
+  'api': 'arnold palmer invitational presented by mastercard',
+};
+
+const normTourney = (s) => String(s || '')
+  .toLowerCase()
+  .replace(/\bpresented by\b.*$/, '')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
+const tokens = (s) => new Set(normTourney(s).split(' ').filter(Boolean));
+
+function pairTournaments(sheetNames, appNames) {
+  const pairs = new Map();     // sheet name → app name
+  const taken = new Set();
+  const scored = [];
+
+  for (const sn of sheetNames) {
+    const alias = TOURNAMENT_ALIASES[normTourney(sn)];
+    const st = tokens(sn);
+    for (const an of appNames) {
+      const at = tokens(an);
+      let score = 0;
+      if (alias && normTourney(an).startsWith(normTourney(alias))) score = 99;
+      else if (st.size && [...st].every(t => at.has(t))) score = st.size;
+      else if (at.size && [...at].every(t => st.has(t))) score = at.size;
+      if (score) scored.push({ sn, an, score });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  for (const { sn, an } of scored) {
+    if (pairs.has(sn) || taken.has(an)) continue;
+    pairs.set(sn, an);
+    taken.add(an);
+  }
+  return { pairs, unmatchedSheet: sheetNames.filter(n => !pairs.has(n)),
+           unmatchedApp: appNames.filter(n => !taken.has(n)) };
+}
+
+const { pairs: TPAIR, unmatchedSheet, unmatchedApp } = pairTournaments(
+  Object.keys(sheet.tournaments || {}), Object.keys(app.tournaments || {}));
+
 // ── Level 1: season ──────────────────────────────────────────────────────────
 console.log('\n═══ SEASON TOTALS ═══\n');
 const teams = [...new Set([...Object.keys(sheet.seasonTotals || {}), ...Object.keys(app.seasonTotals || {})])].sort();
@@ -107,7 +171,13 @@ if (!divergentTeams.size) {
 
 // ── Level 2 + 3: tournament, then team ───────────────────────────────────────
 console.log('\n═══ WHERE THE SEASON GAP COMES FROM ═══');
-const allTourneys = [...new Set([...Object.keys(sheet.tournaments || {}), ...Object.keys(app.tournaments || {})])];
+if (unmatchedSheet.length || unmatchedApp.length) {
+  console.log('\n  Tournaments that could not be paired across the two sources:');
+  unmatchedSheet.forEach(n => console.log(`    sheet only: ${n}`));
+  unmatchedApp.forEach(n => console.log(`    app only:   ${n}`));
+  console.log('    (add an entry to TOURNAMENT_ALIASES if these are the same event)');
+}
+const allTourneys = Object.keys(sheet.tournaments || {});
 
 for (const team of [...divergentTeams].sort()) {
   console.log(`\n── ${team} ──`);
@@ -115,12 +185,13 @@ for (const team of [...divergentTeams].sort()) {
 
   for (const tn of allTourneys) {
     const sT = sheet.tournaments?.[tn]?.teams?.[team];
-    const aT = app.tournaments?.[tn]?.teams?.[team];
+    const appName = TPAIR.get(tn);
+    const aT = appName ? app.tournaments?.[appName]?.teams?.[team] : undefined;
     if (!sT && !aT) continue;
 
     if (!sT || !aT) {
-      note(`  MISSING  ${tn.padEnd(20)} present only in ${sT ? 'the sheet' : 'the app'}` +
-           `  (${$((sT || aT).total)})`);
+      const where = sT ? 'the sheet' : 'the app';
+      note(`  MISSING  ${tn.padEnd(20)} team block present only in ${where}  (${$((sT || aT).total)})`);
       running += (aT?.total ?? 0) - (sT?.total ?? 0);
       continue;
     }
@@ -142,6 +213,7 @@ for (const team of [...divergentTeams].sort()) {
     }
 
     note(`  ${label} ${tn.padEnd(20)} sheet ${$(sT.total).padStart(12)}  app ${$(aT.total).padStart(12)}  ${d$(delta)}`);
+    if (appName && appName !== tn) console.log(`           app calls this "${appName}"`);
     if (why) console.log(`           ${why}`);
 
     // ── Level 4: player, only for tournaments that actually disagree ─────────
