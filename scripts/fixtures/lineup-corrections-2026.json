@@ -3,18 +3,40 @@
     "_why": "App scored Harris English; the commissioner's record has Brian Harman. Harman has since been dropped, so he is on the roster then but not now. +$680,583 to the app.",
     "tournament": "RBC Heritage",
     "team": "Dirty Bird(ies)",
-    "replace": { "Harris English": "Brian Harman" }
+    "replace": {
+      "Harris English": "Brian Harman"
+    }
   },
   {
     "_why": "App scored Marco Penge; the started five were Thomas, Hisatsune, Griffin, Fitzpatrick, Bridgeman. +$382,958 to the app.",
     "tournament": "Valspar Championship",
     "team": "Hip Happens",
-    "lineup": ["Justin Thomas", "Ryo Hisatsune", "Ben Griffin", "Matt Fitzpatrick", "Jacob Bridgeman"]
+    "lineup": [
+      "Justin Thomas",
+      "Ryo Hisatsune",
+      "Ben Griffin",
+      "Matt Fitzpatrick",
+      "Jacob Bridgeman"
+    ]
   },
   {
-    "_why": "The app recorded SIX starters here — J.J. Spaun, Michael Kim, Aaron Rai, Nick Taylor, Sahith Theegala, Austin Smotherman — and the old slice(0,5) scored the best five, keeping Michael Kim ($51,142) and dropping Austin Smotherman ($0). Smotherman was started; Michael Kim was not. Correcting to the real five rather than swapping, because Smotherman is already present. +$51,142 to the app.",
+    "_why": "The app recorded SIX starters here \u2014 J.J. Spaun, Michael Kim, Aaron Rai, Nick Taylor, Sahith Theegala, Austin Smotherman \u2014 and the old slice(0,5) scored the best five, keeping Michael Kim ($51,142) and dropping Austin Smotherman ($0). Smotherman was started; Michael Kim was not. Correcting to the real five rather than swapping, because Smotherman is already present. +$51,142 to the app.",
     "tournament": "Valspar Championship",
     "team": "World #1",
-    "lineup": ["J.J. Spaun", "Aaron Rai", "Nick Taylor", "Sahith Theegala", "Austin Smotherman"]
+    "lineup": [
+      "J.J. Spaun",
+      "Aaron Rai",
+      "Nick Taylor",
+      "Sahith Theegala",
+      "Austin Smotherman"
+    ]
+  },
+  {
+    "_why": "App scored Maverick McNealy; the sheet has Alex Smalley, and the sheet's own Transactions tab records Hip Happens adding Smalley (dropping Luke Clanton, $1 fee) in the Truist column \u2014 they paid to pick him up for that week and he earned $310,000. Commissioner confirmed Smalley started. Same live-lineup drift as the other three; the app is $227,813 LOW here, so this correction adds money back.",
+    "tournament": "Truist Championship",
+    "team": "Hip Happens",
+    "replace": {
+      "Maverick McNealy": "Alex Smalley"
+    }
   }
 ]
