@@ -84,12 +84,14 @@ async function main() {
     process.exit(2);
   }
 
-  const [tSnap, teamSnap] = await Promise.all([
+  const [tSnap, teamSnap, txSnap] = await Promise.all([
     db.collection('tournaments').get(),
     db.collection('teams').get(),
+    db.collection('transactions').get(),
   ]);
   const tournaments = tSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
   const teams = teamSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const transactions = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
   const writes = new Map();   // tournament doc id → { name, lockedLineups }
   let failed = 0;
@@ -125,7 +127,7 @@ async function main() {
       for (const [outName, inName] of Object.entries(c.replace)) {
         const idx = next.findIndex(p => namesMatch(p, outName));
         if (idx === -1) {
-          console.error(`✗ ${t.name} / ${team.name}: "${outName}" is not in the recorded lineup ` +
+          console.error(`✗ ${t.name} / ${team.name}: "${outName}" is not in the scored lineup ` +
             `(${current.join(', ')})`);
           failed++; next = null; break;
         }
@@ -136,12 +138,39 @@ async function main() {
       console.error(`✗ ${t.name} / ${team.name}: needs either "lineup" or "replace"`); failed++; continue;
     }
 
-    // Every name must be a real player on that roster.
-    const roster = (team.roster || []).map(p => p.name);
-    const unknown = next.filter(n => !roster.some(r => namesMatch(r, n)));
-    if (unknown.length) {
-      console.error(`✗ ${t.name} / ${team.name}: not on the roster — ${unknown.join(', ')}`);
+    // A lineup with the same player twice is never right, and it is what a
+    // wrong `replace` produces when the incoming player was already starting.
+    const dupes = next.filter((n, i) => next.findIndex(m => namesMatch(m, n)) !== i);
+    if (dupes.length) {
+      console.error(`✗ ${t.name} / ${team.name}: "${dupes[0]}" would appear twice — ` +
+        `they were already in the scored lineup (${current.join(', ')})`);
       failed++; continue;
+    }
+
+    // Typo guard, checked against the roster AS IT WAS — not today's.
+    //
+    // The current roster is the wrong yardstick for a historical lineup:
+    // Brian Harman really did start for Dirty Bird(ies) at RBC Heritage and has
+    // since been dropped, so a current-roster check rejected the correct
+    // answer. The universe is therefore the current roster, plus everyone this
+    // team has ever transacted, plus whoever the event was already scored with.
+    const known = [
+      ...(team.roster || []).map(p => p.name),
+      ...transactions
+        .filter(tx => tx.teamId === team.id || tx.team === team.name)
+        .flatMap(tx => [tx.player, tx.droppedPlayer]),
+      ...current,
+    ].filter(Boolean);
+
+    const unknown = next.filter(n => !known.some(k => namesMatch(k, n)));
+    if (unknown.length) {
+      console.error(`✗ ${t.name} / ${team.name}: never on this roster — ${unknown.join(', ')}`);
+      console.error(`    scored lineup was: ${current.join(', ')}`);
+      failed++; continue;
+    }
+    const notCurrent = next.filter(n => !(team.roster || []).some(p => namesMatch(p.name, n)));
+    if (notCurrent.length) {
+      console.log(`   note: ${notCurrent.join(', ')} — on the roster then, not now`);
     }
 
     const entry = writes.get(t._id) || { name: t.name, lockedLineups: { ...(t.lockedLineups || {}) } };
