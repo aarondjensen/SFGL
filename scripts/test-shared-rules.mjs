@@ -277,5 +277,33 @@ check('commish overrides win for regulars',
 
 
 
+
+// ── lineupFor: score the lineup frozen at lock, not the live one ────────────
+// Lineup editing re-opens Sunday 9pm ET; results process Monday 9am ET. In that
+// window a manager sets NEXT week's five and the finished tournament was being
+// scored with them. Confirmed in 2026: three team-events scored on the wrong
+// five, worth $1.1M — RBC Heritage (Harris English scored instead of Brian
+// Harman), Valspar x2 (Marco Penge for Ben Griffin, Michael Kim for Austin
+// Smotherman). Each substitute is a different player from the SAME roster,
+// which is what a next-week lineup looks like.
+{
+  const { lineupFor } = await import('../api/_rules.js');
+  const team = { id: 'db', lineup: ['Harris English', 'B', 'C', 'D', 'E'] };  // this week
+  const frozen = { lockedLineups: { db: ['Brian Harman', 'B', 'C', 'D', 'E'] } };
+
+  check('prefers the lineup frozen at lock',
+    lineupFor(frozen, team)[0] === 'Brian Harman');
+  check('falls back to the live lineup when nothing was frozen',
+    lineupFor({}, team)[0] === 'Harris English');
+  check('falls back when the snapshot has no entry for this team',
+    lineupFor({ lockedLineups: { other: ['X'] } }, team)[0] === 'Harris English');
+  check('an empty snapshot does not blank the lineup',
+    lineupFor({ lockedLineups: { db: [] } }, team).length === 5);
+  check('missing tournament is safe', lineupFor(null, team).length === 5);
+  check('missing team is safe', lineupFor(frozen, null).length === 0);
+  check('a non-array snapshot is ignored',
+    lineupFor({ lockedLineups: { db: 'Brian Harman' } }, team)[0] === 'Harris English');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

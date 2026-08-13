@@ -7,7 +7,7 @@
 import { namesMatch } from '../../../api/_playerNames.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../../constants';
 import { txBelongsToTeam } from '../../utils/sharedHelpers';
-import { scoringStarters } from '../../../api/_rules.js';
+import { scoringStarters, lineupFor } from '../../../api/_rules.js';
 
 // Are these two strings the same golfer? Delegates to the shared identity
 // module (api/_playerNames.js), which is what /api/field, /api/cron and the
@@ -114,7 +114,8 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     //
     // Idempotent: if the lineup already contains IN (not OUT), the swap is a
     // no-op. Safe to run on every process/re-process.
-    let effectiveLineup = [...team.lineup];
+    // The lineup frozen at lock when there is one — see lineupFor.
+    let effectiveLineup = [...lineupFor(tournament, team)];
     const teamMulligans = (transactions || []).filter(tx =>
       tx.type === 'mulligan' &&
       txBelongsToTeam(tx, team) &&

@@ -58,6 +58,31 @@ export const bonusesFor = (tournament, settings = {}) => {
       };
 };
 
+// ── Lineups ──────────────────────────────────────────────────────────────────
+
+/**
+ * The lineup a team should be SCORED on for a given tournament.
+ *
+ * Prefers the snapshot frozen at lock (`tournament.lockedLineups[teamId]`) over
+ * the team's live `lineup`.
+ *
+ * Reading the live lineup is a real scoring bug, not a theoretical one. Lineup
+ * editing re-opens Sunday 9pm ET while results process Monday 9am ET by
+ * default, so for twelve hours a manager can set NEXT week's five and the
+ * just-finished tournament gets scored with them. Three team-events in the 2026
+ * season were scored on the wrong five that way, worth $1.1M — each time a
+ * different player from the same roster, which is exactly what a next-week
+ * lineup looks like.
+ *
+ * Falls back to the live lineup when no snapshot exists, so events processed
+ * before this existed behave as they always did.
+ */
+export const lineupFor = (tournament, team) => {
+  const frozen = tournament?.lockedLineups?.[team?.id];
+  if (Array.isArray(frozen) && frozen.length) return frozen;
+  return Array.isArray(team?.lineup) ? team.lineup : [];
+};
+
 // ── Scoring starters ─────────────────────────────────────────────────────────
 
 export const DEFAULT_LINEUP_SIZE = 5;

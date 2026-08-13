@@ -15,7 +15,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { isEventEnabled, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
 import { SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET, getTeeTimeLockMs } from './_league.js';
-import { scoringStarters } from './_rules.js';
+import { scoringStarters, lineupFor } from './_rules.js';
 import {
   getSegmentForTournament, computeSwingAward, buildEffectiveRoster,
   getSeasonEarningsByTeam, bonusesFor,
@@ -449,6 +449,50 @@ async function tryCaptureFirstTeeTime() {
       : { status: 'unchanged', firstTeeTimeISO: tournament.firstTeeTimeISO || null };
   } catch (err) {
     console.error('[field-check] first tee capture failed:', err.message);
+    return { status: 'error', error: err.message };
+  }
+}
+
+/**
+ * Freeze each team's lineup at lock, so results are scored against what was
+ * actually started rather than whatever is current when processing runs.
+ *
+ * The bug this closes: lineup editing re-opens Sunday 9pm ET
+ * (isLineupEditingOpen) and results process Monday 9am ET by default. In that
+ * window a manager sets NEXT week's lineup — and processTournamentData reads
+ * team.lineup, the live one, so the finished tournament gets scored with it.
+ * Confirmed against the 2026 season: three team-events were scored on the wrong
+ * five, worth $1.1M, each time substituting a different player from the same
+ * roster.
+ *
+ * Written once and never overwritten: after lock the lineup is history.
+ * Only fires when the tee-time lock instant is known; without one this does
+ * nothing and processing behaves exactly as it did before.
+ */
+async function trySnapshotLineups() {
+  try {
+    const tournaments = await loadTournaments();
+    const tournament = tournaments?.find(t => t.playing && !t.completed);
+    if (!tournament) return { status: 'no_tournament' };
+    if (tournament.lockedLineups && Object.keys(tournament.lockedLineups).length) {
+      return { status: 'already_frozen' };
+    }
+
+    const lockMs = getTeeTimeLockMs(tournament);
+    if (lockMs === null) return { status: 'no_lock_instant' };
+    if (Date.now() < lockMs) return { status: 'not_locked_yet' };
+
+    const teams = await loadTeams();
+    const lockedLineups = {};
+    (teams || []).forEach(t => {
+      if (t?.id && Array.isArray(t.lineup) && t.lineup.length) lockedLineups[t.id] = [...t.lineup];
+    });
+    if (!Object.keys(lockedLineups).length) return { status: 'no_lineups' };
+
+    await db.collection('tournaments').doc(tournament.name).update({ lockedLineups });
+    return { status: 'frozen', teams: Object.keys(lockedLineups).length };
+  } catch (err) {
+    console.error('[field-check] lineup snapshot failed:', err.message);
     return { status: 'error', error: err.message };
   }
 }
@@ -1004,7 +1048,7 @@ async function handleProcessResults(res) {
   const updatedTeams = teams.map(team => {
     if (!team.lineup || team.lineup.length === 0) return team;
 
-    resultsData.fullLineups[team.id] = [...team.lineup];
+    resultsData.fullLineups[team.id] = [...lineupFor(newTournaments[ti], team)];
 
     const starterResults = team.lineup.map(playerName => {
       let earnings = earningsMap[playerName];
@@ -1970,9 +2014,10 @@ async function handleFieldCheck(res) {
   // the value freezes at tee-off. Tee times publish Wednesday; the default
   // notification gate is Wednesday 6pm ET; capture no longer depends on either.
   const teeCapture = await tryCaptureFirstTeeTime();
+  const lineupSnapshot = await trySnapshotLineups();
 
   if (settings?.fieldCheckEnabled === false) {
-    return res.json({ status: 'disabled', teeCapture });
+    return res.json({ status: 'disabled', teeCapture, lineupSnapshot });
   }
 
   // Admin-configurable day/hour/minute gate (mirrors handleLineupReminder).
@@ -1984,10 +2029,10 @@ async function handleFieldCheck(res) {
 
   const et = getETNow();
   if (et.getDay() !== targetDay) {
-    return res.json({ status: 'not_target_day', targetDay, teeCapture });
+    return res.json({ status: 'not_target_day', targetDay, teeCapture, lineupSnapshot });
   }
   if (et.getHours() < targetHour || (et.getHours() === targetHour && et.getMinutes() < targetMinute)) {
-    return res.json({ status: 'not_yet', targetHour, targetMinute, teeCapture });
+    return res.json({ status: 'not_yet', targetHour, targetMinute, teeCapture, lineupSnapshot });
   }
 
   // Must have an active tournament to check against.
@@ -2011,7 +2056,7 @@ async function handleFieldCheck(res) {
     return res.json({ status: 'field_fetch_error', error: err.message });
   }
   const fieldPlayers = fieldData?.players || [];
-  if (!fieldPlayers.length) return res.json({ status: 'field_unknown', teeCapture });
+  if (!fieldPlayers.length) return res.json({ status: 'field_unknown', teeCapture, lineupSnapshot });
 
   // Field membership by player IDENTITY — the same NameSet the app builds for
   // the ⛳ flag, from the same endpoint, so this push and the roster page can
