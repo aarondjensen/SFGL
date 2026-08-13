@@ -203,7 +203,14 @@ for (const team of [...divergentTeams].sort()) {
     // Label the cause instead of printing a bare number.
     let label = 'DIFFERS ';
     let why = '';
-    if ((sT.total ?? 0) === 0 && (aT.total ?? 0) > 0 && (sT.earners ?? 0) < 2) {
+    if ((sT.starters ?? 0) === 0 && (aT.starters ?? 0) > 0) {
+      // No starter rows at all on the sheet side is missing data, NOT a
+      // forfeit. Calling it CUT-RULE reads as "the sheet applied a rule" when
+      // the truth is "the sheet was never filled in" — opposite conclusions
+      // about which side to correct.
+      label = 'NO DATA ';
+      why = 'the sheet has no starters for this event — tab never populated; the app has results';
+    } else if ((sT.total ?? 0) === 0 && (aT.total ?? 0) > 0 && (sT.earners ?? 0) < 2) {
       label = 'CUT-RULE';
       why = `sheet forfeited the event (${sT.earners} of ${sT.starters} starters made money); the app counted it`;
     } else if (Math.abs((aT.earnings ?? 0) - (sT.earnings ?? 0)) < 1 &&
