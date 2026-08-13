@@ -30,6 +30,7 @@ import React, { useState, useMemo } from 'react';
 import { useDialog } from '../DialogContext';
 import { theme, colors, fonts, SWINGS, green, purple, red, white, fontSize } from '../../theme.js';
 import { tournamentsApi } from '../../api/firebase';
+import { seedSegments } from '../../../api/_rules.js';
 import { M, disabledBtn } from './adminStyles';
 
 export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
@@ -88,10 +89,19 @@ export const ScheduleImportPanel = ({ tournaments = [], setTournaments }) => {
         setFetchWarnings(data.warnings || []);
         return;
       }
-      const rows = (data.tournaments || []).map(t => ({
+      // Seed the swing rather than importing 31 rows set to "— derived —".
+      //
+      // `segment: null` used to be the hardcoded value here, which left every
+      // tournament on getSegmentForTournament's month fallback. That fallback
+      // maps calendar quarters, so for a January-to-August season it can never
+      // produce 'Fall Finish' — the swing was structurally unreachable until a
+      // human tagged all seven events by hand, and a single missed dropdown
+      // silently moved an event into Summer. seedSegments splits the league
+      // events into four contiguous blocks instead, which is the actual shape
+      // of the season; the commissioner adjusts the boundaries from here.
+      const rows = seedSegments(data.tournaments || []).map(t => ({
         ...t,
         include: !existingNames.has(String(t.name || '').trim().toLowerCase()),
-        segment: null,
         lockHour: 7,
       }));
       setPreviewRows(rows);

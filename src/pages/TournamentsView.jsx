@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, Trophy, Edit2, Save, ChevronDown, ChevronRight } from 'lucide-react';
 import { useDialog } from './DialogContext';
 
-import { theme, colors, fonts, fontSize, SWINGS, getSwingColor, getSwingColorAt, black, brass, gold, purple, white, blueBright } from '../theme.js';
-import { getSegmentForTournament, shortName } from '../utils';
+import { theme, colors, fonts, fontSize, SWINGS, getSwingColor, getSwingColorAt, black, brass, gold, purple, red, white, blueBright } from '../theme.js';
+import { getSegmentForTournament, segmentSource, seedSegments, shortName } from '../utils';
 import { NameMap } from '../../api/_playerNames.js';
 import { TeamName } from '../components/TeamName';
 import { sfglDataApi } from '../api/firebase';
@@ -360,6 +360,14 @@ export const TournamentsView = ({
 
   const updateLocal = (index, patch) => {
     setLocalTournaments(prev => prev.map((t, i) => i === index ? { ...t, ...patch } : t));
+  };
+
+  // Re-seed every swing from the current schedule order. Local-only until Save,
+  // so the commissioner can seed, nudge the boundaries, and review before any
+  // of it reaches Firestore.
+  const seedSwings = () => {
+    setLocalTournaments(prev => seedSegments(prev));
+    dialog.showToast('Swings seeded — adjust the boundaries, then Save Changes.', 'success');
   };
 
   // Wave J Round 4 — Edit Schedule: enable any-row edits.
@@ -955,23 +963,35 @@ export const TournamentsView = ({
                   />
                 </td>
 
-                {/* Swing override */}
+                {/* Swing */}
                 <td style={{ padding: '8px 8px' }}>
+                  {/* An unset swing is NOT a safe default, so it is drawn as a
+                      warning rather than as a neutral placeholder. The fallback
+                      behind it maps calendar quarters and cannot return 'Fall
+                      Finish' for a Jan-Aug season, so a row left unset can only
+                      drift out of Fall Finish and into Summer — silently, and
+                      early-paying that swing's pot when it does. */}
                   <select
                     value={t.segment || ''}
                     onChange={e => updateLocal(realIndex, { segment: e.target.value || null })}
+                    title={segmentSource(t) === 'explicit'
+                      ? undefined
+                      : `Not set — currently falling back to "${getSegmentForTournament(t) || 'nothing'}" from the month. Pick a swing.`}
                     style={{
                       ...theme.select,
                       fontSize: fontSize.base,
                       padding: '5px 8px',
                       background: '#0d1b2e',
-                      color: colors.textPrimary,
+                      color: segmentSource(t) === 'explicit' ? colors.textPrimary : red(0.95),
+                      border: segmentSource(t) === 'explicit'
+                        ? theme.select.border
+                        : `1px solid ${red(0.6)}`,
                       appearance: 'none',
                       WebkitAppearance: 'none',
                       minWidth: 110,
                     }}
                   >
-                    <option value="">— derived —</option>
+                    <option value="">⚠ not set</option>
                     {SWINGS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </td>
@@ -1180,6 +1200,19 @@ export const TournamentsView = ({
           mistake or change your mind mid-edit. */}
       {isCommissioner && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          {editMode && (
+            <button
+              onClick={seedSwings}
+              title="Split the league events into four contiguous swings of roughly equal size. Overwrites every swing — adjust the boundaries afterwards, then Save."
+              style={{
+                ...theme.btnSecondary,
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '8px 14px', flexShrink: 0,
+              }}
+            >
+              Seed Swings
+            </button>
+          )}
           {editMode && (
             <button
               onClick={() => {

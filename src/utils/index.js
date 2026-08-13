@@ -156,7 +156,7 @@ export const getETNow = _getETNow;
 // getSegmentForTournamentServer, which had at one point mapped Jan-Mar to
 // 'Spring Swing' and Aug-Sep to a 'Fall Swing' that exists nowhere else in the
 // codebase. Re-exported so existing importers are unchanged.
-export { getSegmentByDate, getSegmentForTournament } from '../../api/_rules.js';
+export { getSegmentByDate, getSegmentForTournament, segmentSource, seedSegments } from '../../api/_rules.js';
 
 // ============================================================================
 // TOURNAMENT TIMEZONE / LOCK LOGIC

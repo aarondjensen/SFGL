@@ -33,7 +33,7 @@
 // alike.
 // ============================================================================
 
-import { swingForMonth, txBelongsToTeam } from './_league.js';
+import { SWINGS, swingForMonth, txBelongsToTeam } from './_league.js';
 
 // ── Round-leader bonuses ─────────────────────────────────────────────────────
 // Defaults; the commish can override each via league_settings (bonusR1Major
@@ -118,6 +118,79 @@ export const getSegmentForTournament = (tournament) => {
     }
   }
   return null;
+};
+
+/**
+ * Where a tournament's swing actually came from: 'explicit' when a human set
+ * it, 'derived' when only the month fallback produced one, 'none' when nothing
+ * could resolve it.
+ *
+ * This exists because 'derived' is not a safe default here, and the UI needs to
+ * say so. See seedSegments below for why.
+ */
+export const segmentSource = (tournament) => {
+  if (!tournament) return 'none';
+  if (tournament.segment || tournament.swing) return 'explicit';
+  return getSegmentForTournament(tournament) ? 'derived' : 'none';
+};
+
+/**
+ * Assign every league tournament to a swing, in contiguous blocks.
+ *
+ * ── WHY THE MONTH FALLBACK CANNOT BE THE SEED ────────────────────────────────
+ * getSegmentForTournament falls back to swingForMonth, which maps calendar
+ * quarters: Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec. The SFGL season runs January
+ * to August, so months 10-12 never occur and that fallback is STRUCTURALLY
+ * INCAPABLE of returning 'Fall Finish'.
+ *
+ * The consequence is asymmetric and it is the whole reason this function
+ * exists: an untagged tournament can only ever defect OUT of Fall Finish (into
+ * Summer, for anything in July or August), never into it. Fall Finish is the
+ * one swing that exists solely because a human tagged it — and losing a member
+ * silently is expensive, because computeSwingAward gates on "every member
+ * completed". Drop Wyndham out of Fall and the remaining six may all be
+ * complete, so the Fall pot pays out early.
+ *
+ * Checked against the real 2026 schedule, the quarter fallback disagreed with
+ * the commissioner's tagging on 20 of 31 events and left Fall Finish empty.
+ *
+ * ── THE SEED ─────────────────────────────────────────────────────────────────
+ * The league plays 30-32 events split into four swings of roughly eight. So
+ * seed four contiguous, near-equal blocks and let the commissioner nudge the
+ * boundaries — which is the actual shape of the season, unlike calendar
+ * quarters. 31 events seeds 8/8/8/7.
+ *
+ * Ordering is by ARRAY POSITION, deliberately. `resolveTournamentStart` lives
+ * in src/utils and api/ must not import from src/; and `start_date` is an
+ * ordering field, not a real date. The array's own order is what the schedule
+ * view shows and what tournamentIndex already means, so it is the right notion
+ * of "schedule order" and the only one available here.
+ *
+ * Returns a new array; input is not mutated.
+ */
+export const seedSegments = (tournaments) => {
+  const list = tournaments || [];
+  const out = list.map(t => (t ? { ...t } : t));
+
+  // Alternates are excluded from swing membership everywhere else
+  // (makeSwingMembership, computeSwingAward), so seeding one would add a member
+  // that can never satisfy the completion gate and would block the award.
+  const seedable = [];
+  list.forEach((t, i) => { if (t && !t.isAlternate) seedable.push(i); });
+
+  const n = seedable.length;
+  if (n === 0) return out;
+
+  // Remainder goes to the earlier swings, so the last block is the short one.
+  const base = Math.floor(n / SWINGS.length);
+  const extra = n % SWINGS.length;
+
+  let cursor = 0;
+  SWINGS.forEach((swing, s) => {
+    const size = base + (s < extra ? 1 : 0);
+    for (let k = 0; k < size; k++) out[seedable[cursor++]].segment = swing;
+  });
+  return out;
 };
 
 // ── Swing helpers ────────────────────────────────────────────────────────────
@@ -226,17 +299,44 @@ const isFeeBearing = (tx) => !!tx && tx.status !== 'failed' && tx.type !== 'swin
 // Alternates are excluded to match the computeSwingAward gate — alternate-event
 // fees count toward season totals but not the swing pot.
 export const makeSwingMembership = (tournaments, segment) => {
+  const list = tournaments || [];
   const swingNames = new Set();
   const swingIndexes = new Set();
-  (tournaments || []).forEach((t, i) => {
+  // Every name in the schedule, not just this swing's — see tier 1 below.
+  const knownNames = new Set();
+
+  list.forEach((t, i) => {
+    if (t?.name) knownNames.add(t.name);
     if (getSegmentForTournament(t) === segment && !t.isAlternate) {
       if (t?.name) swingNames.add(t.name);
       swingIndexes.add(i);
     }
   });
+
   return (tx) => {
-    if (tx.tournament) return swingNames.has(tx.tournament);
-    if (tx.tournamentIndex !== undefined) return swingIndexes.has(tx.tournamentIndex);
+    // Each tier DECIDES when it can identify the tournament, and falls through
+    // only when the reference is unresolvable. Tiers must stay mutually
+    // exclusive: if a miss fell through instead of deciding, a transaction
+    // whose name sits in one swing and whose stale index points at another
+    // would answer true for BOTH and be counted twice.
+    //
+    // Tier 1 previously read `return swingNames.has(tx.tournament)`, which
+    // decided on a name this swing didn't recognise — including names no
+    // tournament anywhere recognised. Such a row answered false for EVERY
+    // swing, so its fee silently vanished from all four pots while still
+    // counting in getSeasonFeesByTeam; season totals and the sum of the swings
+    // stopped reconciling with nothing on screen to explain it.
+    //
+    // Not hypothetical: tournamentsApi.setAll uses the tournament NAME as the
+    // Firestore document id, so renaming an event rewrites its identity and
+    // orphans every transaction already tagged with the old name.
+    if (tx.tournament && knownNames.has(tx.tournament)) return swingNames.has(tx.tournament);
+
+    if (tx.tournamentIndex !== undefined &&
+        tx.tournamentIndex >= 0 && tx.tournamentIndex < list.length) {
+      return swingIndexes.has(tx.tournamentIndex);
+    }
+
     return tx.segment === segment;
   };
 };
