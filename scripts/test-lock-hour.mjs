@@ -161,6 +161,26 @@ console.log('\n── capture rules that keep the lock from moving ──');
   check('capture refuses a non-future tee time', /ms <= now\) return null/.test(cron));
   check('capture freezes once the stored instant has passed',
     /storedMs <= now\) return null/.test(cron));
+
+  // The capture must not inherit the field-check NOTIFICATION schedule.
+  // Coupling them meant (a) disabling alerts also disabled lock capture, and
+  // (b) exactly one attempt per week — a single PGA hiccup on that run left the
+  // event on the hour rule, because by the next run the tournament had started
+  // and the future-only rule rejects everything.
+  const handler = cron.slice(cron.indexOf('async function handleFieldCheck'));
+  const iCapture = handler.indexOf('tryCaptureFirstTeeTime()');
+  const iEnabled = handler.indexOf('fieldCheckEnabled === false');
+  const iDayGate = handler.indexOf('et.getDay() !== targetDay');
+  check('capture runs before the enabled check',
+    iCapture !== -1 && iEnabled !== -1 && iCapture < iEnabled);
+  check('capture runs before the day/hour gate',
+    iDayGate !== -1 && iCapture < iDayGate);
+  check('frozen tournaments short-circuit before the fetch',
+    /return \{ status: 'frozen'/.test(cron));
+  // The membership fetch deliberately cache-busts; this one must not, since it
+  // now runs on every ping.
+  check('capture fetch uses the CDN copy',
+    /No cache-bust here[\s\S]{0,400}?await fetch\(`\$\{baseUrl\}\/api\/field`\);/.test(cron));
   check('field.js serves the absolute instant',
     readFileSync(new URL('../api/field.js', import.meta.url), 'utf8').includes('firstTeeTimeISO'));
 }

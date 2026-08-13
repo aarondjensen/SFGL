@@ -404,6 +404,54 @@ async function captureFirstTeeTime(tournament, fieldData) {
   return iso;
 }
 
+/**
+ * Try to capture the active tournament's first tee time. Safe to call on every
+ * field-check ping — it short-circuits before spending a fetch once there is
+ * nothing left to do.
+ *
+ * Deliberately independent of the field-check notification gates: the lineup
+ * lock must not depend on whether alerts are enabled or on what day they fire.
+ * Returns a small status object for the handler's response, and never throws —
+ * a capture problem must not break the notification this handler exists for.
+ */
+async function tryCaptureFirstTeeTime() {
+  try {
+    const tournaments = await loadTournaments();
+    const tournament = tournaments?.find(t => t.playing && !t.completed);
+    if (!tournament) return { status: 'no_tournament' };
+
+    // Frozen: the stored instant has passed, so the lock has already fired and
+    // nothing may move it. Bail before the fetch — this is the steady state for
+    // most of the week.
+    const stored = tournament.firstTeeTimeISO;
+    if (typeof stored === 'string' && stored) {
+      const ms = new Date(stored).getTime();
+      if (!Number.isNaN(ms) && ms <= Date.now()) {
+        return { status: 'frozen', firstTeeTimeISO: stored };
+      }
+    }
+
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'https://www.sfglgolf.com';
+
+    // No cache-bust here, unlike the field-membership fetch below. Tee times
+    // are not second-sensitive and this runs on every ping, so the CDN copy
+    // (s-maxage=300) is exactly what we want rather than hammering pgatour.com.
+    const resp = await fetch(`${baseUrl}/api/field`);
+    if (!resp.ok) return { status: `field_http_${resp.status}` };
+    const fieldData = await resp.json();
+
+    const captured = await captureFirstTeeTime(tournament, fieldData);
+    return captured
+      ? { status: 'captured', firstTeeTimeISO: captured }
+      : { status: 'unchanged', firstTeeTimeISO: tournament.firstTeeTimeISO || null };
+  } catch (err) {
+    console.error('[field-check] first tee capture failed:', err.message);
+    return { status: 'error', error: err.message };
+  }
+}
+
 async function loadTournaments() {
   // Unordered fetch + JS sort by start_date. NOT orderBy('start_date'): that
   // silently drops any doc missing the field, which made this return an EMPTY
@@ -1900,8 +1948,25 @@ async function handleNameAudit(res) {
 
 async function handleFieldCheck(res) {
   const settings = await loadSettings();
+
+  // The tee-time capture runs FIRST, before every gate below, and is reported
+  // on every exit path.
+  //
+  // It used to sit after them, which coupled the lineup lock to a notification
+  // schedule in two bad ways. Turning off field-check ALERTS would have turned
+  // off lock capture with them. And the day/hour gate meant exactly one capture
+  // attempt per week: if that single run hit a PGA Tour hiccup there was no
+  // retry, and by the next one the tournament had started and the future-only
+  // rule would reject everything — the lock would silently fall back to the
+  // hour rule for that event.
+  //
+  // Now every ping tries, from the moment a tournament becomes `playing` until
+  // the value freezes at tee-off. Tee times publish Wednesday; the default
+  // notification gate is Wednesday 6pm ET; capture no longer depends on either.
+  const teeCapture = await tryCaptureFirstTeeTime();
+
   if (settings?.fieldCheckEnabled === false) {
-    return res.json({ status: 'disabled' });
+    return res.json({ status: 'disabled', teeCapture });
   }
 
   // Admin-configurable day/hour/minute gate (mirrors handleLineupReminder).
@@ -1913,10 +1978,10 @@ async function handleFieldCheck(res) {
 
   const et = getETNow();
   if (et.getDay() !== targetDay) {
-    return res.json({ status: 'not_target_day', targetDay });
+    return res.json({ status: 'not_target_day', targetDay, teeCapture });
   }
   if (et.getHours() < targetHour || (et.getHours() === targetHour && et.getMinutes() < targetMinute)) {
-    return res.json({ status: 'not_yet', targetHour, targetMinute });
+    return res.json({ status: 'not_yet', targetHour, targetMinute, teeCapture });
   }
 
   // Must have an active tournament to check against.
@@ -1939,16 +2004,6 @@ async function handleFieldCheck(res) {
   } catch (err) {
     return res.json({ status: 'field_fetch_error', error: err.message });
   }
-  // Capture the real first tee time onto the tournament while it is still
-  // ahead of us, so the lineup lock can use it. Best-effort: a failure here
-  // must not stop the field-check notification this handler exists for.
-  let teeCapture = null;
-  try {
-    teeCapture = await captureFirstTeeTime(activeTourney, fieldData);
-  } catch (err) {
-    console.error('[field-check] first tee capture failed:', err.message);
-  }
-
   const fieldPlayers = fieldData?.players || [];
   if (!fieldPlayers.length) return res.json({ status: 'field_unknown', teeCapture });
 
