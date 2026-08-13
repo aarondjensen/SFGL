@@ -32,6 +32,7 @@
 //   MISSING    the tournament or team block exists on one side only.
 
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { namesMatch } from '../api/_playerNames.js';
 
 const arg = (flag, fallback) => {
@@ -39,7 +40,11 @@ const arg = (flag, fallback) => {
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 };
 const appPath   = arg('--app', null);
-const sheetPath = arg('--sheet', new URL('./fixtures/sheet-earnings-2026.json', import.meta.url).pathname);
+// fileURLToPath, not .pathname: on Windows a file: URL's pathname is
+// "/C:/dev/sfgl/..." — the leading slash makes readFileSync resolve it to
+// "C:\C:\dev\sfgl\..." and fail with ENOENT.
+const sheetPath = arg('--sheet',
+  fileURLToPath(new URL('./fixtures/sheet-earnings-2026.json', import.meta.url)));
 
 if (!appPath) {
   console.error('Usage: node scripts/audit-sheet-vs-app.mjs --app app-earnings.json [--sheet sheet.json]');
