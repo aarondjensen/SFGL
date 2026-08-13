@@ -1,12 +1,14 @@
-// Diff the app's season earnings against the Google Sheet's, and say WHERE
-// they diverge rather than just that they do.
+// Diff the app against the Google Sheet — rosters, lineups, earnings,
+// transactions, fees and swings — and say WHERE they diverge rather than just
+// that they do.
 //
 // Usage:
-//   node scripts/export-app-earnings.mjs > app-earnings.json
-//   node scripts/audit-sheet-vs-app.mjs --app app-earnings.json
-//   node scripts/audit-sheet-vs-app.mjs --app app.json --sheet other-sheet.json
+//   node scripts/export-app-state.mjs --out app-state.json
+//   node scripts/audit-sheet-vs-app.mjs --app app-state.json
+//   node scripts/audit-sheet-vs-app.mjs --app app-state.json --sheet other-sheet.json
 //
-// Defaults --sheet to scripts/fixtures/sheet-earnings-2026.json.
+// Defaults --sheet to scripts/fixtures/sheet-state-2026.json (produced by
+// scripts/extract-sheet-2026.py from a downloaded copy of the workbook).
 // READ-ONLY, and needs no credentials — it reads two JSON files.
 //
 // WHY THIS EXISTS
@@ -30,6 +32,22 @@
 //   BONUS      totals agree on raw earnings but disagree on round-leader money.
 //   LINEUP     the two disagree about WHO was started, not about what they won.
 //   MISSING    the tournament or team block exists on one side only.
+//
+// SECTIONS AFTER THE MONEY
+// ------------------------
+// Matching season totals is a weaker result than it appears — two offsetting
+// lineup errors net to zero, and a transaction the app never recorded for a
+// player who missed the cut moves nothing at all. So the remaining dimensions
+// run unconditionally:
+//
+//   the sheet against itself   its three tallies of the same money (event
+//                              tabs, team grid, standings) must agree before
+//                              "differs from the sheet" means anything
+//   rosters                    sheet Rosters tab vs the app's EFFECTIVE roster
+//   lineups                    every populated event, money or no money
+//   transactions               matched on (team, event, added player)
+//   fees and swings            per swing and per season, plus the pots
+//   swing assignment           which swing each event lands in, per side
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -44,11 +62,11 @@ const appPath   = arg('--app', null);
 // "/C:/dev/sfgl/..." — the leading slash makes readFileSync resolve it to
 // "C:\C:\dev\sfgl\..." and fail with ENOENT.
 const sheetPath = arg('--sheet',
-  fileURLToPath(new URL('./fixtures/sheet-earnings-2026.json', import.meta.url)));
+  fileURLToPath(new URL('./fixtures/sheet-state-2026.json', import.meta.url)));
 
 if (!appPath) {
-  console.error('Usage: node scripts/audit-sheet-vs-app.mjs --app app-earnings.json [--sheet sheet.json]');
-  console.error('Produce the app side with: node scripts/export-app-earnings.mjs > app-earnings.json');
+  console.error('Usage: node scripts/audit-sheet-vs-app.mjs --app app-state.json [--sheet sheet.json]');
+  console.error('Produce the app side with: node scripts/export-app-state.mjs --out app-state.json');
   process.exit(2);
 }
 
@@ -164,18 +182,22 @@ for (const t of teams) {
   const mark = Math.abs(delta) < 1 ? '' : '   <-- differs';
   console.log(`  ${t.padEnd(22)}${$(s).padStart(15)}${$(a).padStart(15)}${(delta ? d$(delta) : '—').padStart(15)}${mark}`);
 }
-if (!divergentTeams.size) {
-  console.log('\n  Season totals agree for every team.\n');
-  process.exit(0);
-}
+if (!divergentTeams.size) console.log('\n  Season totals agree for every team.');
 
 // ── Level 2 + 3: tournament, then team ───────────────────────────────────────
-console.log('\n═══ WHERE THE SEASON GAP COMES FROM ═══');
-if (unmatchedSheet.length || unmatchedApp.length) {
-  console.log('\n  Tournaments that could not be paired across the two sources:');
-  unmatchedSheet.forEach(n => console.log(`    sheet only: ${n}`));
-  unmatchedApp.forEach(n => console.log(`    app only:   ${n}`));
-  console.log('    (add an entry to TOURNAMENT_ALIASES if these are the same event)');
+// Not exited early on agreement any more. Season totals agreeing means the
+// MONEY reconciles, which is a weaker claim than it looks: two offsetting
+// lineup errors, or a transaction the app never recorded for a player who
+// earned nothing, both leave the totals untouched. The dimensions below are
+// checked either way.
+if (divergentTeams.size) {
+  console.log('\n═══ WHERE THE SEASON GAP COMES FROM ═══');
+  if (unmatchedSheet.length || unmatchedApp.length) {
+    console.log('\n  Tournaments that could not be paired across the two sources:');
+    unmatchedSheet.forEach(n => console.log(`    sheet only: ${n}`));
+    unmatchedApp.forEach(n => console.log(`    app only:   ${n}`));
+    console.log('    (add an entry to TOURNAMENT_ALIASES if these are the same event)');
+  }
 }
 const allTourneys = Object.keys(sheet.tournaments || {});
 
@@ -274,6 +296,240 @@ for (const team of [...divergentTeams].sort()) {
     note(`  ${d$(seasonDelta - running)} of this team's season gap is not attributable to any tournament ` +
          `— check the standings formula rather than the data.`);
   }
+}
+
+// ── The sheet against itself ─────────────────────────────────────────────────
+// Run FIRST among the non-earnings checks, because it decides what a
+// sheet-vs-app delta means. The workbook keeps three independent tallies of the
+// same money — the per-event tabs, the per-team player grid, and the Rosters
+// standings — and when they disagree, "the app differs from the sheet" has no
+// single referent. Naming which of the three is the outlier turns an unfixable
+// finding into a cell reference.
+if (sheet.teamTabs && sheet.standings) {
+  console.log('\n═══ THE SHEET AGAINST ITSELF ═══\n');
+  const standBy = Object.fromEntries((sheet.standings || []).map(s => [s.team, s.total]));
+  const sheetTeams = Object.keys(sheet.teamTabs);
+
+  console.log(`  ${'Team'.padEnd(22)}${'event tabs'.padStart(15)}${'team tabs'.padStart(15)}${'standings'.padStart(15)}`);
+  for (const t of sheetTeams) {
+    const ev = sheet.seasonTotals?.[t] ?? 0;
+    const tt = Object.values(sheet.teamTabs[t]?.byEvent || {}).reduce((s, v) => s + (v || 0), 0);
+    const st = standBy[t] ?? 0;
+    const agree = Math.abs(ev - tt) < 1 && Math.abs(ev - st) < 1;
+    console.log(`  ${t.padEnd(22)}${$(ev).padStart(15)}${$(tt).padStart(15)}${$(st).padStart(15)}` +
+      (agree ? '' : '   <-- disagree'));
+  }
+
+  // A Total cell reading $0 over rows that sum to more is a broken formula, and
+  // the standings inherit it — so this understates a real team by real money
+  // and nothing on the sheet says so.
+  console.log('\n  Event blocks whose Total cell disagrees with its own player rows:');
+  let brokenTotals = 0;
+  for (const [tn, blk] of Object.entries(sheet.tournaments || {})) {
+    for (const [team, b] of Object.entries(blk.teams || {})) {
+      const rowSum = (b.players || []).reduce((s, p) => s + (p.total || 0), 0);
+      if (Math.abs(rowSum - (b.total || 0)) < 1) continue;
+      brokenTotals++;
+      note(`    ${tn.padEnd(18)}${team.padEnd(20)} rows ${$(rowSum).padStart(12)}  Total ${$(b.total).padStart(12)}`);
+    }
+  }
+  if (!brokenTotals) console.log('    none.');
+
+  console.log('\n  Events where the team grid and the event tab disagree:');
+  let gridGaps = 0;
+  for (const [tn, blk] of Object.entries(sheet.tournaments || {})) {
+    for (const [team, b] of Object.entries(blk.teams || {})) {
+      const tt = sheet.teamTabs[team]?.byEvent?.[tn];
+      if (tt === undefined || tt === null) continue;
+      if (Math.abs((b.total || 0) - tt) < 1) continue;
+      gridGaps++;
+      note(`    ${tn.padEnd(18)}${team.padEnd(20)} event ${$(b.total).padStart(12)}  grid ${$(tt).padStart(12)}`);
+    }
+  }
+  if (!gridGaps) console.log('    none.');
+}
+
+// ── Rosters ──────────────────────────────────────────────────────────────────
+// Against the app's EFFECTIVE roster — the drafted one with every processed
+// add/drop replayed — because that is what the sheet's Rosters tab is. Diffing
+// the drafted roster would report every completed transaction as a finding.
+if (sheet.rosters && app.rosters) {
+  console.log('\n═══ ROSTERS ═══');
+  for (const team of Object.keys(sheet.rosters)) {
+    const sNames = (sheet.rosters[team] || []).map(p => p.player);
+    const aNames = app.rosters[team]?.effective || [];
+    if (!app.rosters[team]) { note(`\n  ${team}: no roster in the app export`); continue; }
+
+    const usedApp = new Set();
+    const sheetOnly = [];
+    for (const n of sNames) {
+      const i = aNames.findIndex((m, j) => !usedApp.has(j) && namesMatch(m, n));
+      if (i === -1) sheetOnly.push(n); else usedApp.add(i);
+    }
+    const appOnly = aNames.filter((_, j) => !usedApp.has(j));
+
+    if (!sheetOnly.length && !appOnly.length) {
+      console.log(`\n  ${team}: ${sNames.length} players, identical.`);
+      continue;
+    }
+    console.log(`\n  ${team}:  sheet ${sNames.length}, app ${aNames.length}`);
+    sheetOnly.forEach(n => note(`    on the sheet, not the app:  ${n}`));
+    appOnly.forEach(n => note(`    in the app, not the sheet:  ${n}`));
+  }
+}
+
+// ── Lineups ──────────────────────────────────────────────────────────────────
+// Every event, not just the ones whose money differs. A starter swapped for one
+// who earned the same — or for one who earned nothing while the man he replaced
+// also earned nothing — moves no money and is still the wrong lineup, and the
+// earnings walk above cannot see it.
+if (app.tournaments) {
+  console.log('\n═══ LINEUPS ═══\n');
+  let lineupGaps = 0;
+  for (const tn of allTourneys) {
+    const appName = TPAIR.get(tn);
+    if (!appName) continue;
+    for (const [team, sT] of Object.entries(sheet.tournaments[tn]?.teams || {})) {
+      const aT = app.tournaments[appName]?.teams?.[team];
+      if (!aT) continue;
+
+      // The sheet's own two records first: column H (submitted) against the
+      // scored rows beside it. Where those disagree the sheet is arguing with
+      // itself and the app cannot be judged against either.
+      const sScored = (sT.players || []).map(p => p.player);
+      const sSubmitted = sT.submitted || [];
+      if (sSubmitted.length && sSubmitted.length !== sScored.length) {
+        note(`  ${tn.padEnd(18)}${team.padEnd(20)} sheet submits ${sSubmitted.length}, scores ${sScored.length}`);
+      }
+
+      const aScored = (aT.players || []).map(p => p.player);
+      const usedApp = new Set();
+      const onlySheet = [];
+      for (const n of sScored) {
+        const i = aScored.findIndex((m, j) => !usedApp.has(j) && namesMatch(m, n));
+        if (i === -1) onlySheet.push(n); else usedApp.add(i);
+      }
+      const onlyApp = aScored.filter((_, j) => !usedApp.has(j));
+      if (!onlySheet.length && !onlyApp.length) continue;
+
+      // An empty sheet block is missing data, not a lineup disagreement — the
+      // event tab was never filled in. Saying "the app started five players the
+      // sheet did not" about a blank tab buries the real findings.
+      if (!sScored.length) continue;
+
+      lineupGaps++;
+      note(`  ${tn.padEnd(18)}${team.padEnd(20)} lineups differ`);
+      onlySheet.forEach(n => console.log(`      sheet only: ${n}`));
+      onlyApp.forEach(n => console.log(`      app only:   ${n}`));
+
+      // lockedLineup is what the app FROZE at lock; scoredAgainst is what it
+      // actually scored. A gap between those two means the stored result is
+      // stale and a reprocess would change it — a different fix from a
+      // genuine disagreement about who was started.
+      if (aT.lockedLineup && aT.scoredAgainst &&
+          aT.lockedLineup.join('|') !== aT.scoredAgainst.join('|')) {
+        console.log(`      app scored against a lineup that is not the one it locked`);
+        console.log(`        locked: ${aT.lockedLineup.join(', ')}`);
+        console.log(`        scored: ${aT.scoredAgainst.join(', ')}`);
+      }
+    }
+  }
+  if (!lineupGaps) console.log('  Every populated event agrees on who was started.');
+}
+
+// ── Transactions ─────────────────────────────────────────────────────────────
+// Matched on (team, event, added player). Not on the drop: a manager who adds
+// one player and drops another in the same week can have the two recorded in
+// either order, and pairing on the drop would report both halves as missing.
+if (sheet.transactions && app.transactions) {
+  console.log('\n═══ TRANSACTIONS ═══\n');
+
+  // swing_winner rows are payouts, not moves — the sheet has no column for
+  // them and reporting all four as missing every run trains the eye to skip
+  // this section.
+  const appTx = app.transactions.filter(tx => tx.type !== 'swing_winner' && tx.status !== 'failed');
+  console.log(`  sheet ${sheet.transactions.length} rows, app ${appTx.length} (excluding swing payouts and failed claims)\n`);
+
+  const used = new Set();
+  const unmatchedSheetTx = [];
+  for (const s of sheet.transactions) {
+    const appEvent = TPAIR.get(s.event);
+    const i = appTx.findIndex((a, j) =>
+      !used.has(j) &&
+      a.team === s.team &&
+      (!appEvent || !a.tournament || a.tournament === appEvent) &&
+      s.added && a.player && namesMatch(a.player, s.added));
+    if (i === -1) unmatchedSheetTx.push(s); else used.add(i);
+  }
+  const unmatchedAppTx = appTx.filter((_, j) => !used.has(j));
+
+  unmatchedSheetTx.forEach(s => note(
+    `  sheet only:  ${s.team.padEnd(20)} ${String(s.event).padEnd(18)} +${s.added || '—'} / -${s.dropped || '—'}  fee $${s.fee ?? '—'}`));
+  unmatchedAppTx.forEach(a => note(
+    `  app only:    ${String(a.team).padEnd(20)} ${String(a.tournament || a.segment || '—').padEnd(18)} +${a.player || '—'} / -${a.droppedPlayer || '—'}  fee $${a.fee ?? '—'}  [${a.type}/${a.status}]`));
+  if (!unmatchedSheetTx.length && !unmatchedAppTx.length) {
+    console.log('  Every transaction is present on both sides.');
+  }
+}
+
+// ── Fees and swings ──────────────────────────────────────────────────────────
+if (sheet.swings && app.fees?.bySwing) {
+  console.log('\n═══ SWING EARNINGS AND FEES ═══');
+  for (const swing of Object.keys(app.fees.bySwing)) {
+    console.log(`\n  ${swing}`);
+    console.log(`    ${'Team'.padEnd(22)}${'earn sheet'.padStart(14)}${'earn app'.padStart(14)}` +
+                `${'fee sheet'.padStart(11)}${'fee app'.padStart(10)}`);
+    for (const team of Object.keys(sheet.swings)) {
+      const s = sheet.swings[team]?.bySwing?.[swing] || {};
+      const ae = app.swingEarnings?.[swing]?.[team] ?? 0;
+      const af = app.fees.bySwing[swing]?.[team] ?? 0;
+      const earnGap = Math.abs((s.earnings ?? 0) - ae) >= 1;
+      const feeGap = Math.abs((s.fees ?? 0) - af) >= 0.01;
+      if (earnGap || feeGap) findings++;
+      console.log(`    ${team.padEnd(22)}${$(s.earnings).padStart(14)}${$(ae).padStart(14)}` +
+        `${String(s.fees ?? '—').padStart(11)}${String(af).padStart(10)}` +
+        `${earnGap || feeGap ? '   <--' : ''}`);
+    }
+    const sheetPot = sheet.swingWinners?.[swing];
+    const appPot = app.swingPots?.[swing];
+    if (sheetPot || appPot !== undefined) {
+      console.log(`    pot: sheet $${sheetPot?.pot ?? '—'} (${sheetPot?.team || 'no winner recorded'})` +
+        `   app $${appPot ?? '—'}`);
+    }
+  }
+
+  console.log('\n  Season fees');
+  for (const team of Object.keys(sheet.swings)) {
+    const s = sheet.swings[team]?.seasonFees;
+    const a = app.fees?.season?.[team] ?? 0;
+    const gap = Math.abs((s ?? 0) - a) >= 0.01;
+    if (gap) findings++;
+    console.log(`    ${team.padEnd(22)}sheet $${String(s ?? '—').padStart(9)}   app $${String(a).padStart(9)}${gap ? '   <--' : ''}`);
+  }
+}
+
+// ── Swing assignment ─────────────────────────────────────────────────────────
+// The sheet says which swing an event belongs to in two places that need not
+// agree — the Schedule tab's Swing column, and the column group it sits in on
+// the Transactions tab — and the app decides for itself from the start date.
+// Every fee and swing total above rides on this, so a disagreement here
+// explains a fee gap that otherwise looks like a missing transaction.
+if (sheet.schedule && app.tournaments) {
+  console.log('\n═══ SWING ASSIGNMENT ═══\n');
+  let swingGaps = 0;
+  const SHEET_SWING = { West: 'West Coast Swing', Spring: 'Spring Swing',
+                        Summer: 'Summer Swing', Fall: 'Fall Finish' };
+  for (const ev of sheet.schedule) {
+    if (!ev.sfgl) continue;
+    const appName = TPAIR.get(ev.name);
+    const a = appName ? app.tournaments[appName] : null;
+    if (!a) continue;
+    const sheetSwing = SHEET_SWING[ev.swing] || ev.swing;
+    if (a.segmentResolved === sheetSwing) continue;
+    swingGaps++;
+    note(`  ${ev.name.padEnd(20)} sheet "${sheetSwing}"  app "${a.segmentResolved}"  (app start ${a.startDate || '—'})`);
+  }
+  if (!swingGaps) console.log('  Every event lands in the same swing on both sides.');
 }
 
 console.log(`\n${findings} finding(s).\n`);
