@@ -171,8 +171,8 @@ export { getSegmentByDate, getSegmentForTournament, segmentSource, seedSegments 
 // Imported as well as re-exported: `export ... from` forwards the binding
 // without introducing it into this module's scope, and isTournamentLocked /
 // getRoundLockTime below call it directly.
-import { getTournamentLockHourET } from '../../api/_league.js';
-export { getTournamentTimezone, getTournamentLockHourET } from '../../api/_league.js';
+import { getTournamentLockHourET, getTeeTimeLockMs } from '../../api/_league.js';
+export { getTournamentTimezone, getTournamentLockHourET, getTeeTimeLockMs } from '../../api/_league.js';
 
 export const getTournamentStartDate = (tournament) => {
   if (tournament?.startDate) return new Date(tournament.startDate);
@@ -215,9 +215,22 @@ export const resolveTournamentStart = (tournament) => {
   return isNaN(d.getTime()) ? null : d;
 };
 
-/** Locks at first-tee Thursday morning (adjusted per local timezone). */
+/**
+ * Locks at the published first tee time when one is known, otherwise at the
+ * timezone-derived hour on Thursday.
+ *
+ * The tee-time branch compares ABSOLUTE instants. The fallback below works in
+ * getETNow()'s shifted wall-clock space, where a Date's local fields spell out
+ * ET — fine for "Thursday at 9", but the wrong frame for an instant that
+ * already carries a UTC offset. Mixing the two would shift the lock by the
+ * runtime's offset from ET.
+ */
 export const isTournamentLocked = (tournament) => {
   if (!tournament) return false;
+
+  const teeMs = getTeeTimeLockMs(tournament);
+  if (teeMs !== null) return Date.now() >= teeMs;
+
   const et       = getETNow();
   const startDate = getTournamentStartDate(tournament);
   if (!startDate) return false;

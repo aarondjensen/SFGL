@@ -110,10 +110,38 @@ const LOCK_HOUR_BY_TZ = { HT: 12, PT: 9, MT: 8, CT: 8, ET: 7 };
  * lineups at NaN o'clock (which compares false against every time, leaving a
  * tournament permanently unlocked).
  */
-export const getTournamentLockHourET = (tournament) => {
+const lockHourOverride = (tournament) => {
   const override = tournament?.lockHour;
-  if (Number.isInteger(override) && override >= 0 && override <= 23) return override;
+  return (Number.isInteger(override) && override >= 0 && override <= 23) ? override : null;
+};
+
+export const getTournamentLockHourET = (tournament) => {
+  const override = lockHourOverride(tournament);
+  if (override !== null) return override;
   return LOCK_HOUR_BY_TZ[getTournamentTimezone(tournament)] ?? 7;
+};
+
+/**
+ * The absolute instant (ms) lineups lock, when a real first tee time is known.
+ * Returns null when the hour-based rule should be used instead.
+ *
+ * Precedence, highest first:
+ *   1. An explicit `lockHour` — a deliberate human call (a Monday finish, a
+ *      weather delay) outranks whatever the tee sheet says.
+ *   2. `firstTeeTimeISO` — the published first tee of round 1, captured from
+ *      /api/field before the tournament starts and frozen there by
+ *      handleFieldCheck.
+ *   3. null → caller falls back to getTournamentLockHourET, i.e. exactly the
+ *      behaviour that existed before tee-time locking. An absent or unparseable
+ *      tee time therefore cannot make the lock worse than it already was.
+ */
+export const getTeeTimeLockMs = (tournament) => {
+  if (lockHourOverride(tournament) !== null) return null;
+
+  const iso = tournament?.firstTeeTimeISO;
+  if (typeof iso !== 'string' || !iso) return null;
+  const ms = new Date(iso).getTime();
+  return Number.isNaN(ms) ? null : ms;
 };
 
 // ── Days ─────────────────────────────────────────────────────────────────────

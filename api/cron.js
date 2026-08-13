@@ -14,7 +14,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
 import { isEventEnabled, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
-import { SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET } from './_league.js';
+import { SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET, getTeeTimeLockMs } from './_league.js';
 import {
   getSegmentForTournament, computeSwingAward, buildEffectiveRoster,
   getSeasonEarningsByTeam, bonusesFor,
@@ -362,6 +362,48 @@ async function loadTeams() {
 // like the client) keeps both sides on one source. Ordering matters: array
 // position is used for next-event progression in handleProcessResults, so it
 // must match the client's ordering.
+/**
+ * Store the tournament's real first tee time so isTournamentLocked can lock on
+ * it instead of on a timezone-derived hour.
+ *
+ * Two rules make this safe, and both matter:
+ *
+ *   1. ONLY ACCEPT A FUTURE TIME. /api/field's per-player disambiguation tracks
+ *      each player's NEXT tee, so once round 1 is under way the earliest value
+ *      in that payload becomes an afternoon R1 time and then a Friday R2 time.
+ *      Capturing one of those would push the lock forward and RE-OPEN a
+ *      tournament that had already locked.
+ *
+ *   2. FREEZE ONCE IT PASSES. After the stored instant has gone by, the lock
+ *      has fired and the value is history. Nothing may move it — not a weather
+ *      delay, not a re-publish. Before it passes it may still be updated, which
+ *      is what lets a Wednesday-night tee-sheet change be picked up.
+ *
+ * Returns the ISO it stored, or null when it left things alone.
+ */
+async function captureFirstTeeTime(tournament, fieldData) {
+  if (!tournament?.name) return null;
+
+  const iso = fieldData?.firstTeeTimeISO;
+  if (typeof iso !== 'string' || !iso) return null;
+  const ms = new Date(iso).getTime();
+  if (Number.isNaN(ms)) return null;
+
+  const now = Date.now();
+  if (ms <= now) return null;                       // rule 1
+
+  const stored = tournament.firstTeeTimeISO;
+  if (typeof stored === 'string' && stored) {
+    if (stored === iso) return null;                // unchanged
+    const storedMs = new Date(stored).getTime();
+    if (!Number.isNaN(storedMs) && storedMs <= now) return null;   // rule 2
+  }
+
+  await db.collection('tournaments').doc(tournament.name).update({ firstTeeTimeISO: iso });
+  tournament.firstTeeTimeISO = iso;                 // keep this run consistent
+  return iso;
+}
+
 async function loadTournaments() {
   // Unordered fetch + JS sort by start_date. NOT orderBy('start_date'): that
   // silently drops any doc missing the field, which made this return an EMPTY
@@ -701,10 +743,17 @@ async function handleLineupReminder(res) {
   // Was `activeTourney.lockHourET || 7` — a field name nothing has ever
   // written, so this always resolved to 7 and the reminder told managers the
   // wrong deadline for every non-ET event (9am at Pebble Beach, 12pm at Sony).
-  // Now the same helper isTournamentLocked uses, so the email and the actual
-  // lock cannot disagree.
-  const lockHour = getTournamentLockHourET(activeTourney);
-  const lockTime = lockHour > 12 ? `${lockHour - 12}pm` : lockHour === 12 ? '12pm' : `${lockHour}am`;
+  // Now resolved through the same helpers isTournamentLocked uses, in the same
+  // precedence, so the email and the actual lock cannot disagree.
+  const teeLockMs = getTeeTimeLockMs(activeTourney);
+  const lockTime = teeLockMs !== null
+    ? new Date(teeLockMs).toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
+      }).replace(' AM', 'am').replace(' PM', 'pm')
+    : (() => {
+        const h = getTournamentLockHourET(activeTourney);
+        return h > 12 ? `${h - 12}pm` : h === 12 ? '12pm' : `${h}am`;
+      })();
 
   const teams = await loadTeams();
   const managerEmails = await getEmailMap(settings, teams);
@@ -1890,8 +1939,18 @@ async function handleFieldCheck(res) {
   } catch (err) {
     return res.json({ status: 'field_fetch_error', error: err.message });
   }
+  // Capture the real first tee time onto the tournament while it is still
+  // ahead of us, so the lineup lock can use it. Best-effort: a failure here
+  // must not stop the field-check notification this handler exists for.
+  let teeCapture = null;
+  try {
+    teeCapture = await captureFirstTeeTime(activeTourney, fieldData);
+  } catch (err) {
+    console.error('[field-check] first tee capture failed:', err.message);
+  }
+
   const fieldPlayers = fieldData?.players || [];
-  if (!fieldPlayers.length) return res.json({ status: 'field_unknown' });
+  if (!fieldPlayers.length) return res.json({ status: 'field_unknown', teeCapture });
 
   // Field membership by player IDENTITY — the same NameSet the app builds for
   // the ⛳ flag, from the same endpoint, so this push and the roster page can

@@ -48,12 +48,26 @@ function formatTeeTime(iso) {
 //
 // `teeTimeMap[name]`     — the human-formatted "8:24 AM" string we serve.
 // `teeTimeISOMap[name]`  — the underlying ISO string, used here for cmp.
-function makeTeeTimeRecorder(teeTimeMap, teeTimeISOMap) {
+function makeTeeTimeRecorder(teeTimeMap, teeTimeISOMap, earliest) {
   const nowMs = Date.now();
   return function setTeeTime(name, iso) {
     if (!name || !iso || typeof iso !== 'string') return;
     const newMs = new Date(iso).getTime();
     if (isNaN(newMs)) return;
+
+    // Running minimum over EVERY tee time seen, before the per-player
+    // disambiguation below touches it. That disambiguation deliberately tracks
+    // each player's *next* tee, so its output walks forward as the week
+    // progresses and is useless as a fixed point. The raw minimum, read before
+    // round 1 starts (when nothing has been played and every published time is
+    // an R1 time), is the tournament's actual first tee.
+    //
+    // Only meaningful pre-start; api/cron.js is responsible for capturing it in
+    // that window and then freezing it. See handleFieldCheck.
+    if (earliest && (earliest.ms === null || newMs < earliest.ms)) {
+      earliest.ms = newMs;
+      earliest.iso = iso;
+    }
     const existingIso = teeTimeISOMap[name];
     if (!existingIso) {
       teeTimeISOMap[name] = iso;
@@ -286,8 +300,13 @@ export function parseFieldPage(nd) {
   const teeTimeMap  = {};   // name → "8:24 AM"
   const teeTimeISOMap = {}; // name → ISO string (internal — used to compare across rounds)
 
+  // Earliest tee time seen anywhere in the payload — the lineup-lock instant,
+  // when read before the tournament starts. Mutable box so the recorder can
+  // update it. See makeTeeTimeRecorder.
+  const earliestTee = { ms: null, iso: null };
+
   // See makeTeeTimeRecorder for why this exists (multi-round disambiguation).
-  const setTeeTime = makeTeeTimeRecorder(teeTimeMap, teeTimeISOMap);
+  const setTeeTime = makeTeeTimeRecorder(teeTimeMap, teeTimeISOMap, earliestTee);
 
   // pgaIds is name-keyed and last-write-wins, so it can only remember one id
   // per player. idToName is id-keyed, so it remembers all of them — that is
@@ -379,7 +398,7 @@ export function parseFieldPage(nd) {
   const rejected = [...rejectedNames].filter((n) => !accepted.has(n));
 
   return { players, pgaIds, idToName, photos, teeTimeMap, oddsMap, oddsUnresolved,
-           rejectedNames: rejected };
+           rejectedNames: rejected, firstTeeTimeISO: earliestTee.iso };
 }
 
 // ── ESPN fallback for field + tee times ───────────────────────────────────────
@@ -446,7 +465,8 @@ export default async function handler(req, res) {
       const fieldNd = extractNextData(await fieldResp.text());
       if (fieldNd) {
         const { players, pgaIds, idToName, photos, teeTimeMap, oddsMap,
-                oddsUnresolved: fieldOddsUnresolved, rejectedNames } = parseFieldPage(fieldNd);
+                oddsUnresolved: fieldOddsUnresolved, rejectedNames,
+                firstTeeTimeISO } = parseFieldPage(fieldNd);
         const espnIds = {}; // filled only from the ESPN supplement below
         let oddsUnresolved = fieldOddsUnresolved;
 
@@ -533,6 +553,9 @@ export default async function handler(req, res) {
             espnIds,
             photos,
             teeTimes: finalTeeTimes,
+            // Absolute instant, unlike the display strings in teeTimes. Only
+            // trustworthy before round 1 begins — see makeTeeTimeRecorder.
+            firstTeeTimeISO,
             odds: finalOdds,
             oddsUnresolved,
             rejectedNames,
@@ -602,6 +625,7 @@ export default async function handler(req, res) {
     espnIds: result.espnIds || {},
     photos:  result.photos  || {},
     teeTimes: result.teeTimes || [],
+    firstTeeTimeISO: result.firstTeeTimeISO || null,
     odds: result.odds || [],
     tournament: result.tournament,
     count: result.players.length,

@@ -10,9 +10,11 @@
 // dropdown actually does something. It has always written `lockHour`, and
 // nothing ever read it, so setting it was a no-op.
 import {
-  getTournamentTimezone, getTournamentLockHourET, fmtETTime,
+  getTournamentTimezone, getTournamentLockHourET, getTeeTimeLockMs, fmtETTime,
 } from '../api/_league.js';
-import { getTournamentLockHourET as clientLockHour } from '../src/utils/index.js';
+import {
+  getTournamentLockHourET as clientLockHour, isTournamentLocked,
+} from '../src/utils/index.js';
 
 let pass = 0, fail = 0;
 const check = (name, cond, extra = '') =>
@@ -100,6 +102,67 @@ console.log('\n── the reminder text the cron builds ──');
   check('Pebble Beach reads 9:00 AM, not 7am',
     fmtETTime(getTournamentLockHourET(pebble)) === '9:00 AM',
     fmtETTime(getTournamentLockHourET(pebble)));
+}
+
+console.log('\n── tee-time lock precedence ──');
+{
+  const iso = '2026-08-06T11:35:00.000Z';   // 7:35am ET Thursday
+  const ms = new Date(iso).getTime();
+
+  check('a known first tee time drives the lock',
+    getTeeTimeLockMs({ location: 'Ponte Vedra, FL', firstTeeTimeISO: iso }) === ms);
+
+  // The commissioner's call is a deliberate human decision — a weather delay,
+  // a Monday finish — and must outrank whatever the tee sheet says.
+  check('an explicit lockHour outranks the tee time',
+    getTeeTimeLockMs({ firstTeeTimeISO: iso, lockHour: 10 }) === null);
+  check('lockHour 0 also outranks it (not falsy-ignored)',
+    getTeeTimeLockMs({ firstTeeTimeISO: iso, lockHour: 0 }) === null);
+
+  // Absence must degrade to exactly the previous behaviour, never to something
+  // worse — no tee time is not a reason to change when a lineup locks.
+  check('no tee time → null (fall back to the hour rule)',
+    getTeeTimeLockMs({ location: 'Pebble Beach, CA' }) === null);
+  for (const bad of [null, '', 'not a date', 12345, {}]) {
+    check(`unparseable ${JSON.stringify(bad)} → null`,
+      getTeeTimeLockMs({ firstTeeTimeISO: bad }) === null);
+  }
+  // An out-of-range lockHour is not a valid override, so the tee time still wins.
+  check('a corrupt lockHour does not suppress the tee time',
+    getTeeTimeLockMs({ firstTeeTimeISO: iso, lockHour: 99 }) === ms);
+}
+
+console.log('\n── isTournamentLocked honours the tee time ──');
+{
+  const past   = new Date(Date.now() - 3600_000).toISOString();
+  const future = new Date(Date.now() + 3600_000).toISOString();
+
+  check('locked once the first tee has passed',
+    isTournamentLocked({ location: 'Ponte Vedra, FL', dates: 'Aug 6-9', firstTeeTimeISO: past }) === true);
+  check('open while the first tee is still ahead',
+    isTournamentLocked({ location: 'Ponte Vedra, FL', dates: 'Aug 6-9', firstTeeTimeISO: future }) === false);
+
+  // The tee-time branch compares absolute instants; the fallback works in
+  // getETNow()'s shifted wall-clock space. A tournament with no start date at
+  // all still resolves via the tee time rather than bailing to "not locked".
+  check('a tee time works even with no parseable start date',
+    isTournamentLocked({ firstTeeTimeISO: past }) === true);
+}
+
+console.log('\n── capture rules that keep the lock from moving ──');
+{
+  // Mirrors captureFirstTeeTime in api/cron.js. /api/field tracks each player's
+  // NEXT tee, so mid-tournament its earliest value becomes an afternoon R1 time
+  // and then a Friday R2 time. Capturing one would push the lock forward and
+  // RE-OPEN a tournament that had already locked.
+  const { readFileSync } = await import('node:fs');
+  const cron = readFileSync(new URL('../api/cron.js', import.meta.url), 'utf8');
+  check('cron has a capture step', cron.includes('captureFirstTeeTime'));
+  check('capture refuses a non-future tee time', /ms <= now\) return null/.test(cron));
+  check('capture freezes once the stored instant has passed',
+    /storedMs <= now\) return null/.test(cron));
+  check('field.js serves the absolute instant',
+    readFileSync(new URL('../api/field.js', import.meta.url), 'utf8').includes('firstTeeTimeISO'));
 }
 
 console.log('\n── no stale lockHourET references survive ──');
