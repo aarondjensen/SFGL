@@ -422,6 +422,7 @@ async function fetchFromESPN() {
     const players = [];
     const teeTimes = [];
     const espnIds = {};
+    let earliestMs = null, earliestISO = null;
 
     competitors.forEach(c => {
       const name = c.athlete?.displayName || c.athlete?.fullName || '';
@@ -434,10 +435,31 @@ async function fetchFromESPN() {
       if (ttRaw) {
         const tt = formatTeeTime(ttRaw);
         if (tt) teeTimes.push({ name: canonical, teeTime: tt });
+        const ms = new Date(ttRaw).getTime();
+        if (!isNaN(ms) && (earliestMs === null || ms < earliestMs)) {
+          earliestMs = ms;
+          earliestISO = new Date(ms).toISOString();
+        }
       }
     });
 
-    if (players.length) return { players, espnIds, teeTimes, oddsMap: {}, tournament: event.name, source: 'espn' };
+    // ESPN only supplies a first tee time BEFORE the event starts.
+    //
+    // Unlike pgatour.com's field page, which is a tee sheet, this is the
+    // LEADERBOARD: once play is under way `c.teeTime` carries the CURRENT
+    // round's times, so on Friday the minimum here is an R2 time. Storing that
+    // as the first tee would move a lock that had already fired and re-open the
+    // tournament mid-week. Gating on 'pre' means the value is only ever offered
+    // while every published time is still an R1 time.
+    const notStarted = event.status?.type?.state === 'pre';
+
+    if (players.length) {
+      return {
+        players, espnIds, teeTimes, oddsMap: {},
+        firstTeeTimeISO: notStarted ? earliestISO : null,
+        tournament: event.name, source: 'espn',
+      };
+    }
   }
   throw new Error('No field found via ESPN');
 }
@@ -520,6 +542,10 @@ export default async function handler(req, res) {
               finalTeeTimes = players
                 .filter(n => espnMap.has(n))
                 .map(n => ({ name: n, teeTime: espnMap.get(n) }));
+              // Last source standing for the lineup lock. Already gated to
+              // pre-start inside fetchFromESPN, so it cannot contribute a
+              // later-round time.
+              if (!firstTeeTimeISO && espn.firstTeeTimeISO) firstTeeTimeISO = espn.firstTeeTimeISO;
             }
           } catch (_) {}
         }

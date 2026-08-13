@@ -214,6 +214,21 @@ console.log('\n── the tee-sheet fallback still yields a first tee ──');
   check('and it is adopted when the field page had none',
     /if \(!firstTeeTimeISO && firstTee2\) firstTeeTimeISO = firstTee2;/.test(field));
   check('parseFieldPage returns it', /rejectedNames: rejected, firstTeeTimeISO/.test(field));
+
+  // ESPN is the last source. It is a LEADERBOARD, not a tee sheet: once play
+  // starts, c.teeTime carries the CURRENT round, so on Friday its minimum is an
+  // R2 time. Offering that would move a lock that had already fired. Hence the
+  // pre-start gate — without it this source could re-open a locked tournament.
+  check('ESPN tracks an earliest tee time', /earliestMs === null \|\| ms < earliestMs/.test(field));
+  check('ESPN gates the first tee on event state pre',
+    /const notStarted = event\.status\?\.type\?\.state === 'pre'/.test(field));
+  check('ESPN emits null once the event has started',
+    /firstTeeTimeISO: notStarted \? earliestISO : null/.test(field));
+  check('the ESPN supplement adopts it',
+    /if \(!firstTeeTimeISO && espn\.firstTeeTimeISO\) firstTeeTimeISO = espn\.firstTeeTimeISO;/.test(field));
+  // The ESPN-only path spreads the whole object into `result`, so it needs no
+  // separate adopt — but the handler must actually surface the field.
+  check('handler surfaces firstTeeTimeISO', /firstTeeTimeISO: result\.firstTeeTimeISO \|\| null/.test(field));
 }
 
 console.log('\n── no stale lockHourET references survive ──');
