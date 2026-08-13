@@ -1,7 +1,12 @@
 // Export the app's season earnings, per tournament, per team, per player.
 //
-// Usage:  node scripts/export-app-earnings.mjs > app-earnings.json
-//         node scripts/export-app-earnings.mjs --pretty
+// Usage:  node scripts/export-app-earnings.mjs --out app-earnings.json
+//         node scripts/export-app-earnings.mjs --pretty --out app-earnings.json
+//         node scripts/export-app-earnings.mjs > app-earnings.json   (POSIX only)
+//
+// Prefer --out. PowerShell's `>` encodes redirected output as UTF-16LE with a
+// BOM, which is not readable as JSON — `Unexpected token '<27>', "<FF><FE>{"ge"...`.
+// --out writes the file directly as UTF-8 and is shell-independent.
 //
 // Needs Firebase Admin credentials — see scripts/_adminCreds.mjs. Either
 // FIREBASE_SERVICE_ACCOUNT (the JSON blob Vercel already holds for /api/cron)
@@ -22,12 +27,15 @@
 // rule. Carrying the count means the diff can name that cause directly instead
 // of reporting an unexplained delta.
 
+import { writeFileSync } from 'node:fs';
 import { adminDb } from './_adminCreds.mjs';
 import { SEASON } from '../api/_league.js';
 import { getSegmentForTournament } from '../api/_rules.js';
 
 const db = adminDb();
 const pretty = process.argv.includes('--pretty');
+const outArg = process.argv.indexOf('--out');
+const outPath = outArg !== -1 && process.argv[outArg + 1] ? process.argv[outArg + 1] : null;
 
 // Unordered fetch + JS sort, never orderBy('start_date'): Firestore silently
 // drops documents missing the ordered field, and start_date is ordering-only.
@@ -101,7 +109,15 @@ async function main() {
     out.tournaments[t.name || t._id] = entry;
   }
 
-  process.stdout.write(JSON.stringify(out, null, pretty ? 1 : 0) + '\n');
+  const json = JSON.stringify(out, null, pretty ? 1 : 0) + '\n';
+  if (outPath) {
+    // Explicit utf8, no BOM. Writing the file ourselves keeps the encoding out
+    // of the shell's hands — see the --out note in the header.
+    writeFileSync(outPath, json, 'utf8');
+    console.error(`Wrote ${outPath}`);
+  } else {
+    process.stdout.write(json);
+  }
 
   // Everything human-readable goes to stderr so `> app-earnings.json` stays
   // valid JSON.

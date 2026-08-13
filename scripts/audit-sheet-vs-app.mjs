@@ -47,8 +47,31 @@ if (!appPath) {
   process.exit(2);
 }
 
-const load = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch (e) {
-  console.error(`Could not read ${p}: ${e.message}`); process.exit(2); } };
+// Read as bytes and sniff the encoding rather than assuming utf8.
+//
+// `node export.mjs > app-earnings.json` in PowerShell writes UTF-16LE with a
+// BOM, which fails as `Unexpected token '<27>', "<FF><FE>{"ge"...` — a message that
+// points at the JSON rather than at the redirect that mangled it. Accepting
+// both encodings here means a file produced by any shell just works; use
+// --out on the export side to avoid the problem at source.
+const load = (p) => {
+  let buf;
+  try { buf = readFileSync(p); } catch (e) {
+    console.error(`Could not read ${p}: ${e.message}`); process.exit(2);
+  }
+  let text;
+  if (buf[0] === 0xFF && buf[1] === 0xFE)      text = buf.toString('utf16le').slice(1);
+  else if (buf[0] === 0xFE && buf[1] === 0xFF) {
+    console.error(`${p} is UTF-16BE, which this cannot decode. Re-export with --out.`);
+    process.exit(2);
+  }
+  else if (buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) text = buf.toString('utf8').slice(1);
+  else text = buf.toString('utf8');
+
+  try { return JSON.parse(text); } catch (e) {
+    console.error(`Could not parse ${p}: ${e.message}`); process.exit(2);
+  }
+};
 
 const app = load(appPath);
 const sheet = load(sheetPath);
