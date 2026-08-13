@@ -229,7 +229,12 @@ for (const team of [...divergentTeams].sort()) {
     } else if (Math.abs((aT.earnings ?? 0) - (sT.earnings ?? 0)) < 1 &&
                Math.abs((aT.bonuses ?? 0) - (sT.bonuses ?? 0)) >= 1) {
       label = 'BONUS   ';
-      why = `raw earnings agree; round-leader money differs (sheet ${$(sT.bonuses)} vs app ${$(aT.bonuses)})`;
+      const rl = app.tournaments?.[appName]?.roundLeaders;
+      const who = rl ? ['round1', 'round2', 'round3']
+        .map(r => `${r.slice(-1)}: ${[].concat(rl[r] || []).filter(Boolean).join(', ') || '—'}`)
+        .join('  |  ') : 'not recorded';
+      why = `raw earnings agree; round-leader money differs (sheet ${$(sT.bonuses)} vs app ${$(aT.bonuses)})\n`
+          + `           app's round leaders — ${who}`;
     }
 
     note(`  ${label} ${tn.padEnd(20)} sheet ${$(sT.total).padStart(12)}  app ${$(aT.total).padStart(12)}  ${d$(delta)}`);

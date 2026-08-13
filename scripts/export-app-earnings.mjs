@@ -76,6 +76,11 @@ async function main() {
       segment: t.segment || null,
       segmentResolved: getSegmentForTournament(t),
       startDate: t.start_date || t.startDate || null,
+      // What the app believes led each round. Bonuses are awarded off these, so
+      // when a bonus is disputed this is the thing to check — it is either
+      // typed in during manual entry or scraped, and nothing downstream
+      // re-derives it.
+      roundLeaders: t.results?.roundLeaders || null,
       teams: {},
     };
 
@@ -88,6 +93,7 @@ async function main() {
         bonus: p.bonus ?? 0,
         total: (p.earnings ?? 0) + (p.bonus ?? 0),
         roundsLed: (p.roundsLed || []).map(r => r.round),
+        bonusDetail: p.roundsLed || [],
       }));
 
       entry.teams[name] = {
