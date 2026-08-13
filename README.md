@@ -248,6 +248,31 @@ Firebase.
 
 ---
 
+### Guest login (app-store review and testers)
+
+The login screen carries a **Continue as guest** link under Google and Apple.
+It signs in ANONYMOUSLY, which exists so Play/App Store reviewers and
+closed-track testers can get in without handing over a personal account and
+without owning a team. Tell a reviewer exactly that: *no credentials — open the
+app and tap "Continue as guest".*
+
+A guest is read-only, and it is `firestore.rules` that makes it so, not the UI:
+reads key on `signedIn()`, writes key on `isMember()` (signed in, not
+anonymous). `scripts/test-guest-mode.mjs` fails if a write grant ever falls back
+to bare `signedIn()`. In the app they land straight on Standings with no team —
+the claim screen is skipped on purpose, since offering a tester a real
+manager's unclaimed team ends in a denied write — and a banner in the header
+says so and offers a way back to a real sign-in.
+
+**Two manual steps, or the button just errors:**
+
+1. Firebase console → Authentication → Sign-in method → enable **Anonymous**.
+2. Paste the updated `firestore.rules` (see the Security note below — nothing
+   deploys it automatically). Until then a guest can *write*, which is the
+   thing worth not shipping.
+
+---
+
 ## Security
 
 - Commissioner authority is a **custom claim** on the Firebase ID token,
@@ -261,5 +286,9 @@ Firebase.
   filled in. The script is a dry run unless given `--apply`.
 - Service-account JSON must never be committed; `.gitignore` covers the usual
   filenames.
+- Guest sessions are anonymous Firebase users. They read everything a manager
+  reads and write nothing — `isMember()` in `firestore.rules` is the enforcement,
+  and `ownsTeam()` starts from it, so no ownership-gated write can be reached by
+  one.
 - `VITE_*` values are inlined into the browser bundle and are public by design.
   Firestore rules and App Check are what protect the data.

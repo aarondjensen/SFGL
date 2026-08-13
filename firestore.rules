@@ -28,6 +28,17 @@ rules_version = '2';
 // The first and third are the paths every manager hits on every roster save;
 // the second is what proves the rules are doing anything at all.
 //
+// And as a GUEST (Authenticated, provider "Anonymous" in the Playground's
+// provider dropdown, no custom claims) — the app-store/tester login added in
+// signInAsGuest():
+//
+//   get     teams/{any}                               -> allow
+//   create  team_claims/{an unclaimed team}  uid=mine -> deny
+//   update  sfgl_data/player-registry        any      -> deny
+//
+// The first is the whole point of a guest; the other two are what keeps one
+// from taking a team or scribbling on the league.
+//
 // An earlier draft of this file was written by reading the app's UI and
 // inferring the access pattern. It was wrong in six ways, each of which would
 // have broken the app for ordinary managers:
@@ -74,6 +85,31 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // ── Guests ──────────────────────────────────────────────────────────────
+    // signInAsGuest() in src/api/authApi.js signs app-store reviewers and
+    // closed-track testers in ANONYMOUSLY, so they can look around without a
+    // Google/Apple account and without owning a team.
+    //
+    // An anonymous user is a fully real signed-in principal — request.auth is
+    // not null, so signedIn() is true for them. That matters, because several
+    // rules below grant writes to any signed-in user: /players (headshot ids),
+    // /app_metadata (sync stamps), sfgl_data/player-registry, and — the one
+    // that actually bites — team_claims create/update, which would let a guest
+    // claim a real manager's unclaimed team.
+    //
+    // So reads key on signedIn() and writes key on isMember(). A guest sees the
+    // league and changes nothing. The client agrees (App.jsx renders guests with
+    // no team, which turns off every edit affordance) but this is the half that
+    // is enforced.
+    function isGuest() {
+      return signedIn()
+        && request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'anonymous';
+    }
+
+    function isMember() {
+      return signedIn() && !isGuest();
+    }
+
     // .get() rather than a bare property read. A token WITHOUT the claim has no
     // `commissioner` key, and a missing key on a Map raises rather than
     // returning false — so `request.auth.token.commissioner == true` errors for
@@ -87,8 +123,11 @@ service cloud.firestore {
     }
 
     // Ownership lives in team_claims, NOT on the team document.
+    // isMember() rather than signedIn(): a guest can never hold a claim, so
+    // this is belt-and-braces, but it means every ownership-gated write below
+    // is guest-proof without each one having to remember.
     function ownsTeam(teamId) {
-      return signedIn()
+      return isMember()
         && teamId != null
         && exists(/databases/$(database)/documents/team_claims/$(teamId))
         && get(/databases/$(database)/documents/team_claims/$(teamId)).data.get('uid', null) == request.auth.uid;
@@ -110,9 +149,9 @@ service cloud.firestore {
     match /team_claims/{teamId} {
       allow read: if signedIn();
       allow create: if isCommish()
-                    || (signedIn() && request.resource.data.get('uid', null) == request.auth.uid);
+                    || (isMember() && request.resource.data.get('uid', null) == request.auth.uid);
       allow update: if isCommish()
-                    || (signedIn()
+                    || (isMember()
                         && request.resource.data.get('uid', null) == request.auth.uid
                         // Unclaimed, or already mine — never a takeover.
                         && (resource.data.get('uid', null) == null
@@ -169,7 +208,7 @@ service cloud.firestore {
       allow read: if signedIn();
 
       allow create: if isCommish()
-                    || (signedIn()
+                    || (isMember()
                         && ownsTeam(request.resource.data.get('teamId', null))
                         && (
                           (request.resource.data.get('type', '') == 'waiver'
@@ -207,9 +246,9 @@ service cloud.firestore {
     match /players/{name} {
       allow read: if signedIn();
       allow create: if isCommish()
-                    || (signedIn() && request.resource.data.keys().hasOnly(headshotIdFields()));
+                    || (isMember() && request.resource.data.keys().hasOnly(headshotIdFields()));
       allow update: if isCommish()
-                    || (signedIn() && onlyChanges(headshotIdFields()));
+                    || (isMember() && onlyChanges(headshotIdFields()));
       allow delete: if isCommish();
     }
 
@@ -219,7 +258,7 @@ service cloud.firestore {
     // commissioner-only without breaking it.
     match /app_metadata/{key} {
       allow read: if signedIn();
-      allow write: if signedIn();
+      allow write: if isMember();
     }
 
     // ── sfgl_data ───────────────────────────────────────────────────────────
@@ -232,7 +271,7 @@ service cloud.firestore {
     // every manager save in the league.
     match /sfgl_data/{key} {
       allow read: if signedIn();
-      allow write: if isCommish() || (signedIn() && key == 'player-registry');
+      allow write: if isCommish() || (isMember() && key == 'player-registry');
     }
 
     // ── Commissioner-owned league data ──────────────────────────────────────
@@ -247,8 +286,8 @@ service cloud.firestore {
     // that with admin credentials, which bypass these rules.
     match /pushTokens/{token} {
       allow read: if isCommish();
-      allow create, update: if signedIn() && ownsTeam(request.resource.data.get('teamId', null));
-      allow delete:         if signedIn() && ownsTeam(resource.data.get('teamId', null));
+      allow create, update: if isMember() && ownsTeam(request.resource.data.get('teamId', null));
+      allow delete:         if isMember() && ownsTeam(resource.data.get('teamId', null));
     }
 
     // ── Anything not named above ────────────────────────────────────────────

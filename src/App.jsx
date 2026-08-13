@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
-import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, User, AlertTriangle, X } from 'lucide-react';
+import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, User, AlertTriangle, Eye, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
@@ -64,7 +64,7 @@ import { tournamentsApi, playersApi } from './api/firebase';
 import { managerActivityApi } from './api/managerActivity';
 import { mergeHeadshotEntry, changedHeadshotIds, getPlayerHeadshotUrls } from './utils/headshotUtils';
 import AuthGate from './pages/AuthGate';
-import { watchAuth, subscribeClaims, teamIdForUid, claimTeam, signOutUser } from './api/authApi';
+import { watchAuth, subscribeClaims, teamIdForUid, claimTeam, signOutUser, isGuestUser } from './api/authApi';
 
 
 // ── Lazy-load fallback spinner ─────────────────────────────────────────────
@@ -171,7 +171,7 @@ const headshotRetryDelay = (misses = 0) =>
   Math.min(HEADSHOT_RETRY_MS * 2 ** Math.max(0, misses - 1), HEADSHOT_MAX_RETRY_MS);
 
 // ── App shell ───────────────────────────────────────────────────────────────
-const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
+const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) => {
   // Initial tab: read the URL hash (#rosters, #admin, etc) on first mount so
   // deep links / page refreshes land on the right tab. Falls back to
   // 'standings' for empty / invalid hashes. Lazy initializer ensures this
@@ -564,12 +564,20 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
           // over the whole roster on every launch, so writing back every result
           // meant rewriting ~75 player docs per launch with the values they
           // already held.
-          const toSave = changedHeadshotIds(headshotsMapRef.current, data.results);
+          //
+          // Guests skip the write entirely. This is the only Firestore write an
+          // ordinary session makes without the user asking for it, and
+          // firestore.rules denies it for anonymous users — so for a guest it
+          // is a permission-denied on every launch, swallowed by the .catch()
+          // and visible only as red console noise for whoever is testing. The
+          // headshots themselves still resolve and render; only the write-back
+          // to /players is skipped.
+          const toSave = isGuest ? [] : changedHeadshotIds(headshotsMapRef.current, data.results);
           if (toSave.length) playersApi.upsertMany(toSave).catch(() => {});
         }
       })
       .catch(() => recordOutcome([]));
-  }, [updateHeadshots]);
+  }, [updateHeadshots, isGuest]);
 
   const rosteredNames = useMemo(() => [...new Set(
     resolvedTeams.flatMap(t => (t.roster || []).map(p => p.name))
@@ -674,7 +682,14 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
   }
 
   // Signed in but no team yet (and not the commissioner): self-claim a team.
-  if (!loggedInTeamId && !isCommissionerClaim) {
+  //
+  // A guest is deliberately exempt. They have a real uid and no team, which is
+  // exactly the shape this branch catches — but the claim screen would offer a
+  // reviewer or a closed-track tester the chance to take a real manager's
+  // unclaimed team, and firestore.rules denies the write anyway, so all they
+  // would get is a dead end with an error on it. Guests fall through to the
+  // app with loggedInTeamId null, which is the read-only state.
+  if (!loggedInTeamId && !isCommissionerClaim && !isGuest) {
     return (
       <AuthGate
         mode="claim"
@@ -733,6 +748,42 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
             )}
           </div>
         </header>
+
+        {/* ── Guest banner ──
+            The only thing on screen that says a guest session is a guest
+            session: with no team there is no Account sheet, no owner name in
+            the header and no edit affordance anywhere, so without this the app
+            just looks oddly inert. It also carries the way back out — signing
+            out is otherwise reachable only from the Account sheet, which needs
+            a team. Sits inside the sticky shell so it stays true while
+            scrolling, same as the stale-data banner below it. */}
+        {isGuest && (
+          <div
+            role="status"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              maxWidth: 720, margin: '0 auto', padding: '8px 16px 10px',
+              fontFamily: fonts.sans, fontSize: fontSize.base,
+              color: white(0.6),
+            }}
+          >
+            <Eye style={{ width: 15, height: 15, flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35 }}>
+              Guest preview — read only.
+            </span>
+            <button
+              onClick={handleLogout}
+              style={{
+                flexShrink: 0, padding: '4px 10px', borderRadius: 4,
+                background: white(0.06), border: `1px solid ${white(0.18)}`,
+                color: white(0.75), fontFamily: fonts.sans, fontSize: fontSize.caption,
+                letterSpacing: 0.4, textTransform: 'uppercase', cursor: 'pointer',
+              }}
+            >
+              Sign in
+            </button>
+          </div>
+        )}
 
         {/* ── Stale-data banner ──
             Lives inside the sticky shell so it travels with the header instead
@@ -1029,6 +1080,24 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim }) => {
             </button>
             )}
 
+            {/* Guests own no team, so every other item in here is hidden and the
+                menu would open empty — a dead popup is the last thing to hand
+                someone who was asked to tap around the app. Account is not an
+                option for them either: it edits a team they do not have, and
+                its provider-linking would silently upgrade the anonymous
+                account into a permanent one. Leaving is the only thing a guest
+                can do here, so that is what it offers. */}
+            {isGuest && (
+            <button
+              role="menuitem"
+              onClick={() => { setShowMoreMenu(false); handleLogout(); }}
+              style={MORE_MENU_ITEM_STYLE}
+            >
+              <User style={{ width: 18, height: 18, opacity: 0.85 }} />
+              <span>Sign in with an account</span>
+            </button>
+            )}
+
             {loggedInUser && (
             <button
               role="menuitem"
@@ -1170,7 +1239,11 @@ const App = () => {
 
   return (
     <DialogProvider>
-      <FantasyGolfLeague authUser={auth.user} isCommissionerClaim={auth.isCommissioner} />
+      <FantasyGolfLeague
+        authUser={auth.user}
+        isCommissionerClaim={auth.isCommissioner}
+        isGuest={isGuestUser(auth.user)}
+      />
     </DialogProvider>
   );
 };

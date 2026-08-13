@@ -25,6 +25,7 @@ import {
   OAuthProvider,
   signInWithPopup,
   signInWithCredential,
+  signInAnonymously,
   linkWithCredential,
   linkWithPopup,
   signOut,
@@ -83,6 +84,39 @@ export async function signInWithApple() {
     return;
   }
   await signInWithPopup(auth, appleProvider);
+}
+
+// ── Guest (anonymous) sign-in ────────────────────────────────────────────────
+// Exists for app-store review and tester runs: Google Play and Apple both
+// require a way in for a reviewer who has no league team, and the 12-tester
+// closed-track requirement means handing the app to people who will never own
+// one either. Everything below the gate needs a signed-in user, so "no login"
+// was not an option — a real Firebase account with no team is.
+//
+// A guest is an ANONYMOUS Firebase user, and that is the whole permission
+// model:
+//
+//   • uid is real, so App Check, the rules and the SDK all behave normally.
+//   • It matches no team_claims document, so teamIdForUid returns null and the
+//     app renders with no owned team — every edit affordance in the views keys
+//     off loggedInTeamId, so they are all off.
+//   • firestore.rules denies WRITES to sign_in_provider == 'anonymous' (see
+//     isMember there). The read-only-ness is enforced server-side; the UI just
+//     agrees with it.
+//
+// No popup and no native plugin — anonymous sign-in is a plain token exchange,
+// so this one path works identically in the browser and in the Capacitor
+// WebView. Requires Anonymous to be enabled in Firebase console →
+// Authentication → Sign-in method.
+export async function signInAsGuest() {
+  await signInAnonymously(auth);
+}
+
+// True when the given user (default: the current one) is a guest. Callers pass
+// the user from watchAuth rather than reading auth.currentUser, so the answer
+// changes in the same render as the rest of the auth state.
+export function isGuestUser(user = auth.currentUser) {
+  return user?.isAnonymous === true;
 }
 
 export async function signOutUser() {

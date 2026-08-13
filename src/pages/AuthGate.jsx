@@ -12,7 +12,7 @@
 
 import { useState } from 'react';
 import { fonts, fontSize, white } from '../theme.js';
-import { signInWithGoogle, signInWithApple } from '../api/authApi';
+import { signInWithGoogle, signInWithApple, signInAsGuest } from '../api/authApi';
 
 const NAVY_TOP = '#0b1521';
 const NAVY_BOT = '#111d2e';
@@ -97,6 +97,24 @@ export default function AuthGate({
               <GoogleMark />
               <span>{busy === 'google' ? 'Signing in…' : 'Continue with Google'}</span>
             </button>
+
+            {/* Guest — for app-store reviewers and testers, who have no league
+                team and no reason to hand over a Google/Apple account to look
+                around. Deliberately below the two real providers and styled as
+                a link rather than a third button: it is the way in for someone
+                who was TOLD to use it, not a choice a manager should weigh
+                against signing in properly. Anonymous auth, read-only
+                (firestore.rules denies writes to anonymous users). */}
+            <div style={S.guestRow}>
+              <button
+                style={{ ...S.guestBtn, ...(busy ? S.btnBusy : null) }}
+                disabled={!!busy}
+                onClick={() => run('guest', signInAsGuest)}
+              >
+                {busy === 'guest' ? 'Signing in…' : 'Continue as guest'}
+              </button>
+              <div style={S.guestNote}>Look around read-only. No account needed.</div>
+            </div>
           </>
         ) : (
           <>
@@ -207,6 +225,34 @@ const S = {
   btnBusy: {
     opacity: 0.6,
     cursor: 'default',
+  },
+  // Guest sits under a hairline rule so it reads as "or, if you were sent
+  // here" rather than a peer of the two provider buttons.
+  guestRow: {
+    marginTop: 6,
+    paddingTop: 14,
+    borderTop: `1px solid ${LINE}`,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 4,
+  },
+  guestBtn: {
+    background: 'none',
+    border: 'none',
+    padding: '4px 8px',
+    color: WHITE,
+    fontFamily: fonts.sans,
+    fontSize: fontSize.base || 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    textDecoration: 'underline',
+  },
+  guestNote: {
+    fontSize: fontSize.sm || 12,
+    color: MUTED,
+    textAlign: 'center',
+    lineHeight: 1.4,
   },
   teamList: {
     display: 'flex',
