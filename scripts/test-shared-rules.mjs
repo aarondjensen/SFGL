@@ -276,5 +276,51 @@ check('commish overrides win for regulars',
 }
 
 
+
+// ── applyCutForfeit: the rule the sheet enforces and the app did not ─────────
+// Evidence from the 2026 sheet: every team-block with exactly ONE earner had
+// its total zeroed (3 of 3); none of the 135 blocks with two or more did.
+// Default OFF — three observations set the threshold, they do not license
+// restating settled results mid-season without the commissioner saying so.
+{
+  const { applyCutForfeit, DEFAULT_CUT_FORFEIT_MIN_EARNERS } = await import('../api/_rules.js');
+  const mk = (...v) => v.map((earnings, i) => ({ playerName: `P${i}`, earnings }));
+  const oneEarner = mk(159250, 0, 0, 0, 0);
+
+  check('disabled by default — nothing forfeited',
+    applyCutForfeit(oneEarner, 159250).forfeited === false);
+  check('disabled by default — total untouched',
+    applyCutForfeit(oneEarner, 159250).totalEarnings === 159250);
+
+  const on = { cutForfeitEnabled: true };
+  const f = applyCutForfeit(oneEarner, 159250, on);
+  check('enabled: one earner forfeits', f.forfeited === true);
+  check('enabled: total zeroed', f.totalEarnings === 0);
+  check('enabled: reports the earner count', f.earners === 1 && f.minEarners === 2);
+  check('two earners keep their money',
+    applyCutForfeit(mk(100, 200, 0, 0, 0), 300, on).forfeited === false);
+  check('zero earners forfeit too',
+    applyCutForfeit(mk(0, 0, 0, 0, 0), 0, on).forfeited === true);
+
+  // Bonuses ride along: the sheet's worked example says a player who led early
+  // "is no longer eligible to collect bonus money" once the team misses the cut.
+  check('a bonus-inflated total is forfeited whole',
+    applyCutForfeit(oneEarner, 159250 + 60000, on).totalEarnings === 0);
+
+  check('threshold is configurable',
+    applyCutForfeit(mk(100, 200, 0), 300, { cutForfeitEnabled: true, cutForfeitMinEarners: 3 }).forfeited === true);
+  check('threshold 0 never forfeits',
+    applyCutForfeit(mk(0, 0), 0, { cutForfeitEnabled: true, cutForfeitMinEarners: 0 }).forfeited === false);
+  check('bad threshold falls back to the default',
+    applyCutForfeit(mk(1, 0), 1, { cutForfeitEnabled: true, cutForfeitMinEarners: -2 }).minEarners === DEFAULT_CUT_FORFEIT_MIN_EARNERS);
+  check('empty starters are safe', applyCutForfeit(null, 0, on).earners === 0);
+
+  // The two clean 2026 cases, as measured against the app export.
+  check('Valero / Detroit Rock City forfeits $159,250',
+    applyCutForfeit(oneEarner, 159250, on).totalEarnings === 0);
+  check('Canadian Open / POPS forfeits $58,854',
+    applyCutForfeit(mk(58854, 0, 0, 0, 0), 58854, on).totalEarnings === 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

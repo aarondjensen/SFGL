@@ -109,6 +109,51 @@ export const scoringStarters = (starterResults, settings = {}) => {
   };
 };
 
+// ── Team cut forfeit ─────────────────────────────────────────────────────────
+
+export const DEFAULT_CUT_FORFEIT_MIN_EARNERS = 2;
+
+/**
+ * The league's team-cut rule: a team that gets fewer than N starters through
+ * the cut forfeits its earnings for that event.
+ *
+ * The Google Sheet has enforced this all season and the app never has, which is
+ * a real part of why the two disagree on season totals. The evidence is clean —
+ * across 2026 every team-block with exactly ONE earner had its total zeroed
+ * (3 of 3), and none of the 135 blocks with two or more did.
+ *
+ * DEFAULT OFF. Three observations is enough to infer the threshold, not enough
+ * to start restating settled results mid-season on my own authority. Turning it
+ * on is the commissioner's call:
+ *
+ *     league_settings.cutForfeitEnabled   = true
+ *     league_settings.cutForfeitMinEarners = 2      (optional, defaults to 2)
+ *
+ * Note it keys off starters who EARNED money, not off a cut line. On the PGA
+ * Tour those coincide — everyone who makes the cut is paid — and earnings are
+ * what both systems actually store.
+ *
+ * Bonuses are forfeited with the rest. The sheet's own worked example says a
+ * player who led early "is no longer eligible to collect bonus money" once the
+ * team misses the cut, so the forfeit applies to the whole total rather than to
+ * raw earnings only.
+ *
+ * @returns {{ totalEarnings: number, forfeited: boolean, earners: number, minEarners: number }}
+ */
+export const applyCutForfeit = (starters, totalEarnings, settings = {}) => {
+  const list = Array.isArray(starters) ? starters : [];
+  const earners = list.filter(p => (p?.earnings || 0) > 0).length;
+  const configured = settings?.cutForfeitMinEarners;
+  const minEarners = (Number.isInteger(configured) && configured >= 0)
+    ? configured
+    : DEFAULT_CUT_FORFEIT_MIN_EARNERS;
+
+  if (!settings?.cutForfeitEnabled || earners >= minEarners) {
+    return { totalEarnings, forfeited: false, earners, minEarners };
+  }
+  return { totalEarnings: 0, forfeited: true, earners, minEarners };
+};
+
 // ── Segment resolution ───────────────────────────────────────────────────────
 
 /**

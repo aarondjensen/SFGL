@@ -7,7 +7,7 @@
 import { namesMatch } from '../../../api/_playerNames.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../../constants';
 import { txBelongsToTeam } from '../../utils/sharedHelpers';
-import { scoringStarters } from '../../../api/_rules.js';
+import { scoringStarters, applyCutForfeit } from '../../../api/_rules.js';
 
 // Are these two strings the same golfer? Delegates to the shared identity
 // module (api/_playerNames.js), which is what /api/field, /api/cron and the
@@ -42,7 +42,7 @@ export const matchPlayerName = namesMatch;
  *   resultsData — the structure stored on tournament.results: per-team breakdown,
  *                 earningsMap, roundLeaders, fullLineups
  */
-export const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = []) => {
+export const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = [], settings = {}) => {
   const bonuses = tournament.isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
 
   // Build earningsMap from the tournamentData (Map | object | competitor array).
@@ -157,7 +157,7 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     });
 
     // Scores the STARTING LINEUP, not the best five — see scoringStarters.
-    const { starters: topStarters, oversized, lineupSize } = scoringStarters(starterResults);
+    const { starters: topStarters, oversized, lineupSize } = scoringStarters(starterResults, settings);
     if (oversized) {
       console.warn(`[processTournament] ${team.name} has ${topStarters.length} starters for a `
         + `lineup size of ${lineupSize} — scoring all of them. Check this team's mulligan for `
@@ -186,8 +186,17 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
       });
     }
 
+    // Team cut forfeit — off unless the commissioner enables it. See applyCutForfeit.
+    const cut = applyCutForfeit(topStarters, totalEarnings, settings);
+    if (cut.forfeited) {
+      console.log(`[processTournament] ${team.name} forfeits ${tournament.name}: `
+        + `${cut.earners} starter(s) earned, minimum is ${cut.minEarners}`);
+    }
+    totalEarnings = cut.totalEarnings;
+
     resultsData.teams[team.id] = {
       totalEarnings,
+      cutForfeited: cut.forfeited,
       bonuses: bonusEarnings,
       players: topStarters.map(s => ({
         name: s.playerName,
