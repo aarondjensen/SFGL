@@ -241,12 +241,11 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
 
   const [selectedTeam,          setSelectedTeam]          = useState(null);
   const [isCommissioner,        setIsCommissioner]        = useState(false);
-  // Tagged via team.isCommissioner. Determines whether the user is *allowed*
-  // to enter commish mode. Active commish mode (isCommissioner) is toggled
-  // by tapping the user's name in the header.
-  // taggedCommissioner is DERIVED below from the logged-in team (see useMemo
-  // after resolvedTeams) so it can never be left stale or spuriously reset by
-  // an effect re-run. Do not reintroduce it as imperative state.
+  // Active commish mode — the gold edit state. Turned on by opening the Commish
+  // tab (see the effect below); there is no separate toggle. Eligibility to
+  // enter it is taggedCommissioner, DERIVED below from the ID-token claim so it
+  // can never be left stale or spuriously reset by an effect re-run. Do not
+  // reintroduce eligibility as imperative state.
   const [loggedInUser,          setLoggedInUser]          = useState(null);
   // Immutable identity of the team the manager authenticated into. Edit
   // permissions key off THIS (team id), never the editable owner string —
@@ -258,7 +257,8 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
   const [showAccount,           setShowAccount]           = useState(false);
   const [showMoreMenu,          setShowMoreMenu]          = useState(false);
   // Commish eligibility comes from the Firebase ID-token claim (see App root /
-  // taggedCommissioner). Active commish MODE is the user-toggled isCommissioner.
+  // taggedCommissioner). Active commish MODE is isCommissioner, entered by
+  // opening the Commish tab.
 
   // The More menu closes on a tap outside via a transparent backdrop. A pointer
   // has that escape route; a keyboard had none — the menu items are reachable
@@ -299,10 +299,22 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
   // from the current team list + loggedInTeamId so it's always accurate: it
   // recomputes when teams finish loading (fixing the "team not found on first
   // paint" race) and can't be wiped by a stale session-restore re-run. Active
-  // commish MODE (isCommissioner) remains separate, user-toggled state.
+  // commish MODE (isCommissioner) remains separate state, entered by opening
+  // the Commish tab.
   // Eligibility to enter commish mode comes from the Firebase ID-token custom
   // claim (stamped once via the Admin SDK), not a client-writable team flag.
   const taggedCommissioner = isCommissionerClaim;
+
+  // Opening the Commish tab IS how commish mode turns on — there is no separate
+  // switch. Kept as an effect rather than living only in the More-menu handler
+  // so every route into the tab agrees: the menu item, a #admin deep link on
+  // cold start, and the hashchange listener all land here. Without it, a commish
+  // who bookmarked #admin would get an empty tab (the panel is gated on
+  // isCommissioner) and no way to turn the mode on.
+  useEffect(() => {
+    if (activeTab === 'admin' && taggedCommissioner) setIsCommissioner(true);
+  }, [activeTab, taggedCommissioner]);
+
   const currentTournament = safeTournaments.find(t => t.playing);
 
   // ── Google Fonts is now loaded statically from index.html (Wave 1 cleanup) ──
@@ -963,10 +975,10 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
             position: 'relative',
           }}
         >
-          {/* Admin is intentionally excluded from the bottom nav — the
-              commish panel is reached via More > Admin, and commish mode is
-              flipped by the toggle beside it. 'admin' stays in TABS so it
-              remains a valid activeTab/#hash route. */}
+          {/* Admin is intentionally excluded from the bottom nav — the commish
+              panel is reached via More > Admin, which is also what turns commish
+              mode on. 'admin' stays in TABS so it remains a valid
+              activeTab/#hash route. */}
           {TABS.filter(tab => tab.id !== 'admin').map(tab => {
             const isActive = activeTab === tab.id;
             return (
@@ -1109,79 +1121,34 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
             </button>
             )}
 
+            {/* Admin — the commish panel, and the only way into commish mode.
+                Opening the tab turns the gold edit mode on (the effect near
+                taggedCommissioner does the work; this handler sets it here too
+                so the panel paints on the first frame instead of flashing the
+                commish-gated blank). There is deliberately no separate switch
+                beside it — being in the Commish tab IS the mode. */}
             {taggedCommissioner && (
-              <div role="group" aria-label="Commish controls" style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 6 }}>
-                {/* Admin — opens the commish panel. The panel is gated on commish
-                    mode, so opening it switches commish mode on (reflected by the
-                    toggle to the right, which controls that same state). */}
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setShowMoreMenu(false);
-                    if (!isCommissioner) setIsCommissioner(true);
-                    setActiveTab('admin');
-                  }}
-                  style={{ ...MORE_MENU_ITEM_STYLE, flex: 1, color: activeTab === 'admin' ? '#f5c518' : MORE_MENU_ITEM_STYLE.color }}
-                >
-                  <Shield style={{ width: 18, height: 18, opacity: 0.85 }} />
-                  <span>Admin</span>
-                </button>
-
-                {/* Commish-mode toggle — flips the gold edit mode in place without
-                    leaving the current view. Turning it off while the Admin panel
-                    is open drops back to Standings (panel is commish-gated). Stays
-                    inside the menu (no close) so the state change is visible. */}
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={isCommissioner}
-                  aria-label="Commish mode"
-                  title={isCommissioner ? 'Commish mode on' : 'Commish mode off'}
-                  onClick={() => {
-                    const next = !isCommissioner;
-                    setIsCommissioner(next);
-                    if (!next) setActiveTab(t => (t === 'admin' ? 'standings' : t));
-                  }}
-                  style={{
-                    flexShrink: 0,
-                    boxSizing: 'border-box',
-                    width: 40,
-                    height: 24,
-                    padding: 0,
-                    border: '1px solid ' + (isCommissioner ? gold(0.6) : white(0.18)),
-                    borderRadius: 999,
-                    background: isCommissioner ? gold(0.28) : white(0.06),
-                    cursor: 'pointer',
-                    position: 'relative',
-                    transition: 'background 0.18s, border-color 0.18s',
-                  }}
-                >
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: isCommissioner ? 18 : 2,
-                      transform: 'translateY(-50%)',
-                      width: 18,
-                      height: 18,
-                      borderRadius: '50%',
-                      background: isCommissioner ? '#f5c518' : white(0.65),
-                      transition: 'left 0.18s, background 0.18s',
-                      boxShadow: `0 1px 2px ${black(0.4)}`,
-                    }}
-                  />
-                </button>
-              </div>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  setIsCommissioner(true);
+                  setActiveTab('admin');
+                }}
+                style={{ ...MORE_MENU_ITEM_STYLE, color: activeTab === 'admin' ? '#f5c518' : MORE_MENU_ITEM_STYLE.color }}
+              >
+                <Shield style={{ width: 18, height: 18, opacity: 0.85 }} />
+                <span>Admin</span>
+              </button>
             )}
           </div>
         </>
       )}
 
-      {/* ── User Settings Modal (Wave J Round 6 batch 2) ── */}
-      {/* Opened by tapping the user's name in the header. Replaces the
-          previous tap-to-toggle-commish behavior — that toggle is now an
-          option inside the modal, alongside push notifications. */}
+      {/* ── Account sheet ──
+          Opened from More > Account. Tapping the user's name in the header used
+          to flip commish mode instead; that behaviour is gone entirely — commish
+          mode now turns on by opening the Commish tab. */}
       {showAccount && (
         <Suspense fallback={null}>
           <LazyAccountModal
@@ -1195,9 +1162,9 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
         </Suspense>
       )}
 
-      {/* Notifications only. The commish toggle and sign-out that used to live
-          here moved to the More menu and AccountModal respectively; the six
-          props that fed them were still being passed long after. */}
+      {/* Notifications only. The commish switch that used to live here is gone
+          entirely and sign-out moved to AccountModal; the six props that fed
+          them were still being passed long after. */}
       {showUserSettings && (
         <Suspense fallback={null}>
           <LazyUserSettingsModal
