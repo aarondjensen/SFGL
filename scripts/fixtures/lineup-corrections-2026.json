@@ -38,5 +38,13 @@
     "replace": {
       "Maverick McNealy": "Alex Smalley"
     }
+  },
+  {
+    "_why": "App scored J.T. Poston; the sheet has Ryo Hisatsune, and the commissioner confirms Hisatsune was the lineup — Poston was never supposed to be on this roster, so the app carries a roster error upstream of the lineup. Both earned $0, so this moves no money; it corrects who is recorded as having used a start. Fixing the lineup does NOT fix the roster error that produced it — see the note below.",
+    "tournament": "Wyndham Championship",
+    "team": "Hip Happens",
+    "replace": {
+      "J.T. Poston": "Ryo Hisatsune"
+    }
   }
 ]
