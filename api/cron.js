@@ -1061,9 +1061,16 @@ async function handleProcessResults(res) {
   const updatedTeams = teams.map(team => {
     if (!team.lineup || team.lineup.length === 0) return team;
 
-    resultsData.fullLineups[team.id] = [...lineupFor(newTournaments[ti], team)];
+    // One lineup, read once. This recorded lineupFor (the five frozen at lock)
+    // and then SCORED team.lineup (the live five) — so the result and the
+    // record of what produced it could disagree. Lineup editing reopens Sunday
+    // 9pm ET and this runs Monday 9am ET, which is exactly the window where
+    // those two differ, and is how three 2026 events came to be scored on the
+    // wrong five in the first place.
+    const scoredLineup = [...lineupFor(newTournaments[ti], team)];
+    resultsData.fullLineups[team.id] = [...scoredLineup];
 
-    const starterResults = team.lineup.map(playerName => {
+    const starterResults = scoredLineup.map(playerName => {
       let earnings = earningsMap[playerName];
       if (earnings === undefined) {
         const mk = Object.keys(earningsMap).find(k => matchName(k, playerName));
@@ -1086,7 +1093,7 @@ async function handleProcessResults(res) {
       const leaders = Array.isArray(roundLeaders[round]) ? roundLeaders[round] : (roundLeaders[round] ? [roundLeaders[round]] : []);
       leaders.forEach(leaderName => {
         if (!leaderName) return;
-        const actual = team.lineup.find(pn => matchName(pn, leaderName));
+        const actual = scoredLineup.find(pn => matchName(pn, leaderName));
         if (actual) {
           bonusEarnings[round] += bonuses[round];
           totalEarnings += bonuses[round];

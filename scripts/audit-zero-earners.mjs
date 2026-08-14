@@ -20,6 +20,9 @@
 // So this separates the two, by asking what the tournament's own earningsMap
 // says about the player:
 //
+//   STALE        the feed holds money for them and the stored result does not.
+//                The result predates the map it is supposed to derive from;
+//                reprocess the event and nothing else.
 //   FEED SAYS $0 the feed lists them, holding $0. The app is faithfully
 //                reporting its source; if an outside record says they earned,
 //                the two SOURCES disagree and no code change settles it.
@@ -91,7 +94,7 @@ async function main() {
     .filter(t => !only || norm(t.name).includes(norm(only)))
     .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
 
-  let gaps = 0, absent = 0, cuts = 0;
+  let gaps = 0, absent = 0, cuts = 0, stale = 0;
 
   for (const t of tournaments) {
     const feed = t.results?.earningsMap || {};
@@ -122,9 +125,27 @@ async function main() {
         }
 
         if (hits.length === 1) {
+          const held = Number(feed[hits[0]]) || 0;
+
+          // The feed holds money for a player the stored result scored at $0.
+          // Nothing is wrong with the data OR the name matching — the result
+          // was computed from an earlier version of this map and never
+          // recomputed. A reprocess is the whole fix, and no amount of editing
+          // will help, which is worth saying out loud: the previous version of
+          // this script folded these in with the missed cuts and reported them
+          // as "the feed says $0", sending the search after a data problem
+          // that did not exist.
+          if (held > 0) {
+            stale++;
+            lines.push(`    STALE        ${teamName[teamId].padEnd(20)} ${name}`);
+            lines.push(`                 feed already holds ${$(held)} under "${hits[0]}" — ` +
+              `the stored result is out of date, reprocess this event`);
+            continue;
+          }
+
           cuts++;
-          if (showAll || only) {
-            lines.push(`    FEED SAYS ${$(feed[hits[0]]).padStart(4)}  ${teamName[teamId].padEnd(20)} ${name}` +
+          if (showAll || only || onlyPlayer) {
+            lines.push(`    FEED SAYS $0 ${teamName[teamId].padEnd(20)} ${name}` +
               `   (matched feed key "${hits[0]}")`);
           }
           continue;
@@ -159,7 +180,13 @@ async function main() {
     }
   }
 
-  console.log(`\n${gaps} name gap(s)/duplicate(s), ${absent} starter(s) absent from their feed, ${cuts} listed at $0 by their feed.`);
+  console.log(`\n${gaps} name gap(s)/duplicate(s), ${stale} stale result(s), ` +
+    `${absent} starter(s) absent from their feed, ${cuts} genuinely listed at $0.`);
+  if (stale) {
+    console.log('\nSTALE → the feed already has the money and the stored result predates it.');
+    console.log('        Reprocess those tournaments in Admin → Tournament Results. Nothing');
+    console.log('        needs editing; the correct figure is already in the document.');
+  }
   if (gaps) {
     console.log('\nNAME GAP  → add the pair to ALIAS_GROUPS in api/_playerNames.js, or extend the');
     console.log('            folding rules if it generalizes, then reprocess that tournament.');
