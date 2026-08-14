@@ -3,6 +3,7 @@
 // Usage:
 //   node scripts/audit-zero-earners.mjs
 //   node scripts/audit-zero-earners.mjs --tournament "Genesis Scottish Open"
+//   node scripts/audit-zero-earners.mjs --player "Nicolai Hojgaard"
 //   node scripts/audit-zero-earners.mjs --all      (list the missed cuts too)
 //
 // READ-ONLY. Needs Firebase Admin credentials — see scripts/_adminCreds.mjs.
@@ -19,7 +20,11 @@
 // So this separates the two, by asking what the tournament's own earningsMap
 // says about the player:
 //
-//   MISSED CUT   the feed lists them with $0. Nothing to fix.
+//   FEED SAYS $0 the feed lists them, holding $0. The app is faithfully
+//                reporting its source; if an outside record says they earned,
+//                the two SOURCES disagree and no code change settles it.
+//   DUPLICATE    the feed holds the same golfer under two spellings and the
+//                lookup took the one with less money. A real app bug.
 //   NAME GAP     the feed has money under a name that is plainly the same
 //                golfer but does not compare equal. Fix api/_playerNames.js —
 //                the two spellings are printed so the gap is actionable.
@@ -42,6 +47,7 @@ const arg = (flag, fallback) => {
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 };
 const only = arg('--tournament', null);
+const onlyPlayer = arg('--player', null);
 const showAll = process.argv.includes('--all');
 
 const db = adminDb();
@@ -96,12 +102,31 @@ async function main() {
       for (const p of tr.players || []) {
         if ((p.earnings || 0) > 0) continue;
         const name = p.name;
+        if (onlyPlayer && !namesMatch(name, onlyPlayer)) continue;
 
-        // Present in the feed at $0 — an ordinary missed cut.
-        const hit = feedNames.find(f => namesMatch(f, name));
-        if (hit !== undefined) {
+        // EVERY matching key, not the first one. processTournamentData resolves
+        // earnings with Object.keys(earningsMap).find(k => matchPlayerName(...)),
+        // so when a feed carries the same golfer under two spellings — a banner
+        // object at $0 and a leaderboard row with the real money — the lookup
+        // takes whichever key happens to come first and can score a player $0
+        // while his money sits under the other key. Reporting only the first
+        // match would hide exactly that.
+        const hits = feedNames.filter(f => namesMatch(f, name));
+
+        if (hits.length > 1) {
+          gaps++;
+          lines.push(`    DUPLICATE    ${teamName[teamId].padEnd(20)} ${name}`);
+          hits.forEach(f => lines.push(`                 feed key "${f}" = ${$(feed[f])}`));
+          lines.push(`                 the lookup takes "${hits[0]}" — first key wins`);
+          continue;
+        }
+
+        if (hits.length === 1) {
           cuts++;
-          if (showAll) lines.push(`    MISSED CUT   ${teamName[teamId].padEnd(20)} ${name}`);
+          if (showAll || only) {
+            lines.push(`    FEED SAYS ${$(feed[hits[0]]).padStart(4)}  ${teamName[teamId].padEnd(20)} ${name}` +
+              `   (matched feed key "${hits[0]}")`);
+          }
           continue;
         }
 
@@ -134,7 +159,7 @@ async function main() {
     }
   }
 
-  console.log(`\n${gaps} name gap(s), ${absent} starter(s) absent from their feed, ${cuts} ordinary missed cut(s).`);
+  console.log(`\n${gaps} name gap(s)/duplicate(s), ${absent} starter(s) absent from their feed, ${cuts} listed at $0 by their feed.`);
   if (gaps) {
     console.log('\nNAME GAP  → add the pair to ALIAS_GROUPS in api/_playerNames.js, or extend the');
     console.log('            folding rules if it generalizes, then reprocess that tournament.');
