@@ -175,6 +175,81 @@ export const scoringStarters = (starterResults, settings = {}) => {
   };
 };
 
+// ── The cut rule ─────────────────────────────────────────────────────────────
+/**
+ * Does this team forfeit its earnings for the event?
+ *
+ * THE RULE, as the commissioner states it: if only ONE of a team's starters
+ * makes the cut, the team's earnings for that week do not count — unless the
+ * manager started a full lineup AND that lone survivor WINS the tournament.
+ *
+ * ── Why this is being added back ──────────────────────────────────────────
+ * A version of this once existed here and was DELETED, on the reasoning that
+ * the rule could not be found written down anywhere and every observed case
+ * happened to have one earner, which made a coincidence look like a rule. The
+ * reasoning was sound and the conclusion was wrong. The rule is real; it simply
+ * lives in the commissioner's head and in three hand-typed zeros on the sheet.
+ *
+ * It reproduces the 2026 sheet exactly: three team-events have exactly one
+ * earner, all three are zeroed on the sheet, and no other zeroed block exists
+ * to explain. No 2026 event exercises the winner exception, so that branch is
+ * carried on the commissioner's word alone and is covered by tests rather than
+ * by data.
+ *
+ * ── What forfeiting does and does not touch ───────────────────────────────
+ * The TEAM's event total goes to zero. The individual player keeps his money:
+ * the sheet's own per-team player grid still shows the lone earner's winnings
+ * in the week his team forfeited, so sfglEarnings and the player's season stats
+ * are unaffected. Only the number the standings add up is zeroed.
+ *
+ * "Makes the cut" is read as "earned money", because earnings are the only
+ * per-player fact a result carries — no finishing position is stored. The two
+ * come apart for an amateur or a non-member, who can place well and be paid
+ * nothing; such a player counts as having missed the cut here, which is a
+ * limitation worth knowing rather than a decision worth defending.
+ *
+ * Returns null when there is no forfeit, or a reason object when there is, so
+ * callers can say WHY a team shows $0 rather than leaving it unexplained.
+ */
+export const cutRuleForfeit = ({ starters, earningsMap, settings } = {}) => {
+  // The commissioner can switch it off; absent a setting it is ON, because it
+  // is the league's rule and the season's results already assume it.
+  if (settings?.cutRuleEnabled === false) return null;
+
+  const list = (Array.isArray(starters) ? starters : []).filter(Boolean);
+  const cutMakers = list.filter(s => (s.earnings || 0) > 0);
+  if (cutMakers.length !== 1) return null;
+
+  const lone = cutMakers[0];
+  const configured = settings?.lineupSize;
+  const lineupSize = (Number.isInteger(configured) && configured > 0)
+    ? configured
+    : DEFAULT_LINEUP_SIZE;
+
+  // "Started five" — a manager who started short does not get the exception,
+  // which is the whole point of it: the escape hatch rewards fielding a full
+  // lineup and getting a winner out of it, not fielding one man who wins.
+  const startedFull = list.length >= lineupSize;
+
+  // The winner is the biggest cheque in the field. No finishing position is
+  // stored anywhere in a result, so this is the only derivation available —
+  // and it is exact, since the champion is always the top earner.
+  const purses = Object.values(earningsMap || {}).map(v => Number(v) || 0);
+  const top = purses.length ? Math.max(...purses) : 0;
+  const won = top > 0 && (lone.earnings || 0) >= top;
+
+  if (startedFull && won) return null;
+
+  return {
+    player: lone.playerName || lone.name || null,
+    earnings: lone.earnings || 0,
+    starters: list.length,
+    lineupSize,
+    startedFull,
+    won,
+  };
+};
+
 // ── Segment resolution ───────────────────────────────────────────────────────
 
 /**

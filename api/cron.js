@@ -15,7 +15,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { isEventEnabled, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
 import { SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET, getTeeTimeLockMs } from './_league.js';
-import { scoringStarters, lineupFor } from './_rules.js';
+import { scoringStarters, lineupFor, cutRuleForfeit } from './_rules.js';
 import {
   getSegmentForTournament, computeSwingAward, buildEffectiveRoster,
   getSeasonEarningsByTeam, bonusesFor,
@@ -1097,8 +1097,20 @@ async function handleProcessResults(res) {
       });
     });
 
+    // The cut rule — same placement and same reasoning as
+    // processTournamentData: after bonuses, zeroing the team's week while
+    // leaving each player's own earnings intact.
+    const forfeit = cutRuleForfeit({ starters: topStarters, earningsMap, settings });
+    if (forfeit) {
+      console.log(`[process-results] ${team.name} forfeits ${tournament.name}: only `
+        + `${forfeit.player} made the cut (${forfeit.starters} started`
+        + `${forfeit.won ? '' : ', and he did not win'})`);
+      totalEarnings = 0;
+    }
+
     resultsData.teams[team.id] = {
       totalEarnings,
+      cutRuleForfeit: forfeit || null,
       bonuses: bonusEarnings,
       players: topStarters.map(s => ({
         name: s.playerName,

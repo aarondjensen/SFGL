@@ -7,7 +7,7 @@
 import { namesMatch } from '../../../api/_playerNames.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../../constants';
 import { txBelongsToTeam } from '../../utils/sharedHelpers';
-import { scoringStarters, lineupFor } from '../../../api/_rules.js';
+import { scoringStarters, lineupFor, cutRuleForfeit } from '../../../api/_rules.js';
 
 // Are these two strings the same golfer? Delegates to the shared identity
 // module (api/_playerNames.js), which is what /api/field, /api/cron and the
@@ -187,8 +187,22 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
       });
     }
 
+    // The cut rule, applied after bonuses because it zeroes the whole week —
+    // a forfeited team keeps no round-leader money either. Individual
+    // sfglEarnings below are deliberately NOT zeroed: the sheet's per-team
+    // grid still credits the lone earner his winnings in a forfeited week, and
+    // only the figure the standings add up goes to zero.
+    const forfeit = cutRuleForfeit({ starters: topStarters, earningsMap, settings });
+    if (forfeit) {
+      console.log(`[processTournament] ${team.name} forfeits ${tournament.name}: only `
+        + `${forfeit.player} made the cut (${forfeit.starters} started`
+        + `${forfeit.won ? '' : ', and he did not win'})`);
+      totalEarnings = 0;
+    }
+
     resultsData.teams[team.id] = {
       totalEarnings,
+      cutRuleForfeit: forfeit || null,
       bonuses: bonusEarnings,
       players: topStarters.map(s => ({
         name: s.playerName,

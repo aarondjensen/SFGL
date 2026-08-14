@@ -358,5 +358,62 @@ check('commish overrides win for regulars',
     locked.lockedLineups.db[0] === 'LOCK1');
 }
 
+// ── The cut rule ────────────────────────────────────────────────────────────
+// One starter makes the cut → the team's week is forfeited, unless a full
+// lineup was started AND that lone survivor won the tournament.
+//
+// This rule was once implemented here and then DELETED, on the reasoning that
+// it appeared nowhere in writing and every observed case happened to have one
+// earner — a coincidence dressed as a rule. The commissioner has since
+// confirmed it, and it reproduces the 2026 sheet exactly: three team-events
+// with exactly one earner, all three zeroed, and no other zeroed block. These
+// tests are what stops it being reasoned away a second time.
+{
+  const { cutRuleForfeit } = await import('../api/_rules.js');
+  const five = (...earnings) => earnings.map((e, i) => ({ playerName: `P${i}`, earnings: e }));
+  const field = { Champion: 1800000, Second: 900000, Novak: 159250 };
+
+  check('two cut-makers is no forfeit',
+    cutRuleForfeit({ starters: five(159250, 58931, 0, 0, 0), earningsMap: field }) === null);
+  check('nobody making the cut is no forfeit (already zero)',
+    cutRuleForfeit({ starters: five(0, 0, 0, 0, 0), earningsMap: field }) === null);
+
+  // Valero / Detroit Rock City: five started, Novak alone at T14, did not win.
+  const valero = cutRuleForfeit({ starters: five(0, 0, 159250, 0, 0), earningsMap: field });
+  check('one cut-maker who did not win forfeits', valero !== null);
+  check('...and the reason names him', valero.player === 'P2' && valero.won === false);
+
+  // The exception, which no 2026 event exercises.
+  const won = cutRuleForfeit({ starters: five(0, 0, 1800000, 0, 0), earningsMap: field });
+  check('a full lineup whose lone survivor WINS keeps the money', won === null);
+
+  // Byron Nelson / World #1: only two started, one earned. Short lineups get no
+  // exception even if that man wins — the escape hatch rewards fielding five.
+  const short = cutRuleForfeit({
+    starters: [{ playerName: 'A', earnings: 1800000 }, { playerName: 'B', earnings: 0 }],
+    earningsMap: field,
+  });
+  check('a short lineup forfeits even when its lone man wins', short !== null);
+  check('...and says the lineup was short', short.startedFull === false && short.won === true);
+
+  check('lineupSize from settings decides what "full" means',
+    cutRuleForfeit({
+      starters: [{ playerName: 'A', earnings: 1800000 }, { playerName: 'B', earnings: 0 }],
+      earningsMap: field, settings: { lineupSize: 2 },
+    }) === null);
+
+  check('the commissioner can switch the rule off',
+    cutRuleForfeit({ starters: five(0, 0, 159250, 0, 0), earningsMap: field,
+      settings: { cutRuleEnabled: false } }) === null);
+
+  // The winner is derived from the biggest cheque, since no result stores a
+  // finishing position. An empty field must not make everyone a winner.
+  check('an empty earnings map cannot manufacture a winner',
+    cutRuleForfeit({ starters: five(0, 0, 100, 0, 0), earningsMap: {} }) !== null);
+  check('missing input is safe', cutRuleForfeit() === null);
+  check('bonuses do not count as making the cut — earnings do',
+    cutRuleForfeit({ starters: five(159250, 0, 0, 0, 0), earningsMap: field }).player === 'P0');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
