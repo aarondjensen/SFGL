@@ -196,7 +196,7 @@ async function main() {
     console.log('            event in Admin → Tournament Results and reprocess. Nothing in the');
     console.log('            name module can recover a row that was never fetched.');
   }
-  if (!gaps && !absent) console.log('\nEvery $0 starter is a genuine missed cut.');
+  if (!gaps && !absent && !stale) console.log('\nEvery $0 starter is a genuine missed cut.');
 }
 
 main().catch(err => {

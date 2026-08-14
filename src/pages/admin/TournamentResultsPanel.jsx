@@ -21,7 +21,7 @@ import { processTournamentData, matchPlayerName } from './processTournamentData'
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { M, disabledBtn } from './adminStyles';
 import { SEASON } from '../../../api/_league.js';
-import { NameSet } from '../../../api/_playerNames.js';
+import { NameSet, namesMatch } from '../../../api/_playerNames.js';
 import { lineupFor } from '../../../api/_rules.js';
 import { txBelongsToTeam } from '../../utils/sharedHelpers';
 import { STORAGE_KEYS } from '../../constants';
@@ -48,6 +48,32 @@ const RoundLeaderSelect = ({
     return names.map(name => ({ name, team: team.name }));
   }).sort((a, b) => a.name.localeCompare(b.name));
 
+  // A <select> can only show a value it has an <option> for, and this list is
+  // built from LINEUPS — so a stored leader who is not in one silently renders
+  // as "(none)". Two ordinary cases hit that:
+  //
+  //   • a leader nobody started. Matt McCarty led round 1 of the Truist and is
+  //     on no roster; he belongs in the record even though he collects nothing.
+  //   • a spelling the rosters do not use. Round leaders can be entered from an
+  //     outside record — "Ludvig Åberg" against a roster holding "Ludvig
+  //     Aberg" — and namesMatch considers those the same golfer while the
+  //     browser's exact-string comparison does not.
+  //
+  // Either way the stored value is real and showing "(none)" invites the
+  // commissioner to "fix" a dropdown that was already right, overwriting it on
+  // the next change. So anything currently selected is carried into the option
+  // list, and labelled with WHY it is not in a lineup.
+  const known = new Set(players.map(p => p.name));
+  const carried = leaders
+    .filter(l => l && l.trim() && !known.has(l))
+    .map(l => ({
+      name: l,
+      team: teams.some(t => (teamLineups[t.id] || t.lineup || []).some(n => namesMatch(n, l)))
+        ? 'spelled differently on the roster'
+        : 'not started',
+    }));
+  const options = [...carried, ...players];
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={M.eyebrow}>{label}</div>
@@ -59,7 +85,7 @@ const RoundLeaderSelect = ({
             style={{ ...M.select, flex: 1, fontSize: fontSize.sm, padding: '7px 8px' }}
           >
             <option value="">(none)</option>
-            {players.map(p => <option key={p.name + p.team} value={p.name}>{p.name} — {compactTeamName(p.team)}</option>)}
+            {options.map(p => <option key={p.name + p.team} value={p.name}>{p.name} — {compactTeamName(p.team)}</option>)}
           </select>
           {idx > 0 && (
             <button
