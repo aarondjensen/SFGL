@@ -191,6 +191,20 @@ async function main() {
       }
     }
 
+    // ── Report ───────────────────────────────────────────────────────────────
+    // Built up and printed under the tournament's own heading rather than
+    // logged as it goes, so a note about one event cannot appear under the
+    // previous event's name.
+    //
+    // Every round is reported, changed or not, and the full list and the
+    // collecting subset are always both shown. The first version printed only
+    // rounds whose FULL list moved — which is why a run that corrected exactly
+    // the thing this script exists to correct, the started-only list, printed
+    // the tournament name and nothing else, then wrote. A dry run that shows
+    // nothing is not a dry run.
+    const notes = [];
+    const rows = [];
+
     // Removing a name that is not there is a no-op, but removing one that is
     // spelled differently than you think is a silent no-op — and this script
     // exists because silent no-ops in bonus data cost $220,000. So say it.
@@ -200,19 +214,33 @@ async function main() {
           const wasThere = asList(currentAll[r]).some(m => namesMatch(m, n));
           const stillListed = asList(t.results?.roundLeaders?.[r]).some(m => namesMatch(m, n));
           if (!wasThere && !stillListed) {
-            console.log(`   ${t.name} / ${r}: "${n}" was not listed — nothing to remove`);
+            notes.push(`   ${r}: "${n}" was not listed — nothing to remove`);
           }
         }
       }
     }
 
+    for (const r of ROUNDS) {
+      const wasAll = asList(currentAll[r]);
+      const wasPaid = asList(t.results?.roundLeaders?.[r]);
+      const allMoved = !sameList(wasAll, nextAll[r]);
+      const paidMoved = !sameList(wasPaid, nextFiltered[r]);
+      const mark = allMoved || paidMoved ? '→' : ' ';
+      rows.push(`   ${mark} ${r}  led: ${nextAll[r].join(', ') || '—'}` +
+        (allMoved ? `   (was ${wasAll.join(', ') || '—'})` : ''));
+      rows.push(`     ${' '.repeat(r.length)}  collects: ${nextFiltered[r].join(', ') || 'nobody — none of them was started'}` +
+        (paidMoved ? `   (was ${wasPaid.join(', ') || '—'})` : ''));
+    }
+
     const unchanged = ROUNDS.every(r =>
       sameList(nextAll[r], asList(currentAll[r])) &&
       sameList(nextFiltered[r], asList(t.results?.roundLeaders?.[r])));
-    if (unchanged) {
-      console.log(`\n${t.name}\n   no change — already correct`);
-      continue;
-    }
+
+    console.log(`\n${t.name}${unchanged ? '   — no change, already correct' : ''}`);
+    notes.forEach(n => console.log(n));
+    rows.forEach(n => console.log(n));
+
+    if (unchanged) continue;
 
     if (!t.results) {
       console.error(`✗ ${t.name}: has no stored results — process the tournament first`);
@@ -220,17 +248,6 @@ async function main() {
     }
 
     writes.set(t._id, { name: t.name, roundLeaders: nextFiltered, roundLeadersAll: nextAll });
-
-    console.log(`\n${t.name}`);
-    for (const r of ROUNDS) {
-      const was = asList(currentAll[r]);
-      const now = nextAll[r];
-      if (sameList(was, now)) continue;
-      console.log(`   ${r}  was: ${was.join(', ') || '—'}`);
-      console.log(`   ${' '.repeat(r.length)}  now: ${now.join(', ') || '—'}`);
-      const collects = nextFiltered[r];
-      console.log(`   ${' '.repeat(r.length)}  collects a bonus: ${collects.join(', ') || 'nobody — none of them was started'}`);
-    }
   }
 
   if (failed) {
