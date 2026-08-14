@@ -21,6 +21,8 @@ import { processTournamentData, matchPlayerName } from './processTournamentData'
 import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { M, disabledBtn } from './adminStyles';
 import { SEASON } from '../../../api/_league.js';
+import { NameSet } from '../../../api/_playerNames.js';
+import { lineupFor } from '../../../api/_rules.js';
 import { txBelongsToTeam } from '../../utils/sharedHelpers';
 import { STORAGE_KEYS } from '../../constants';
 
@@ -180,7 +182,14 @@ export const TournamentResultsPanel = ({
         .map(p => `${p.name}, ${p.earnings}`)
         .join('\n');
 
-      const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
+      // NameSet + lineupFor, for the same two reasons api/cron.js carries — the
+      // feed's spelling need not match the roster's, and the lineup that scores
+      // is the one frozen at lock, not the team's live five. A leader dropped
+      // here is a bonus nobody is paid, and nothing downstream notices.
+      //
+      // The callback parameter is `team`, not `t`: `t` is the TOURNAMENT in this
+      // scope, and shadowing it here is what the old line did.
+      const startedPlayers = new NameSet(teams.flatMap(team => lineupFor(t, team) || []));
       const filterToStarted = (names) => {
         if (!names?.length) return [''];
         const filtered = names.filter(n => startedPlayers.has(n));

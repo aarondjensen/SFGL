@@ -1005,7 +1005,20 @@ async function handleProcessResults(res) {
   players.forEach(p => { if (p.name && p.earnings >= 0) earningsMap[p.name] = p.earnings; });
 
   // Filter round leaders to only those in SFGL lineups
-  const startedPlayers = new Set(teams.flatMap(t => t.lineup || []));
+  // Two things this must not do, both of which it used to.
+  //
+  // lineupFor, not t.lineup. Scoring below reads lineupFor — the lineup frozen
+  // at lock — so reading the live lineup here made the bonus filter and the
+  // scorer disagree about who started. Lineup editing reopens Sunday 9pm ET and
+  // results process Monday 9am ET, so by process time t.lineup can already hold
+  // next week's five, and a leader would be dropped from a lineup he is
+  // simultaneously being scored in.
+  //
+  // NameSet, not Set. A raw Set compares strings, and the results feed spells
+  // Nordic and hyphenated names differently from the rosters — Set.has() is
+  // precisely the comparison _playerNames.js exists to replace, and this file
+  // already imports NameSet for other call sites.
+  const startedPlayers = new NameSet(teams.flatMap(t => lineupFor(tournament, t) || []));
   const filterToStarted = (names) => {
     if (!names?.length) return [];
     return names.filter(n => startedPlayers.has(n));

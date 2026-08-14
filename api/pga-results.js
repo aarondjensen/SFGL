@@ -7,6 +7,7 @@
 //   3. ?name=The+Players&year=2026  (schedule lookup)
 
 import { extractNextData, nameToSlug } from './_constants.js';
+import { namesMatch } from './_playerNames.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -151,6 +152,40 @@ async function lookupFromSchedule(name, year) {
 
 // ── Main parse function ───────────────────────────────────────────────────────
 
+/**
+ * Merge the two sources of round leaders, one round at a time.
+ *
+ * `json` is what pgatour.com's own page data names as the leader — editorial,
+ * authoritative about WHO, and routinely a single name even when a round was
+ * tied. `html` is computed from the score table by equality on the cumulative
+ * total, so it gets ties right by construction but depends on a scrape that
+ * can break.
+ *
+ * The rule is deliberately timid: the score-derived set is used only when it
+ * CONTAINS everyone the JSON already named. Then the two agree about who led
+ * and the scores are merely supplying the co-leaders the JSON dropped, which
+ * is the case worth fixing. If the sources name different players, the JSON is
+ * kept — a disagreement means one of them is wrong, and paying both would turn
+ * a scraping fault into a bonus somebody did not earn.
+ *
+ * Names are compared with namesMatch, never ===: the two sources are two
+ * different renderings of the same page and spell Nordic and hyphenated names
+ * differently, and a string compare would read every such round as a
+ * disagreement and silently decline to recover its ties.
+ */
+export const reconcileRoundLeaders = (json, html) => {
+  const out = {};
+  for (const round of ['round1', 'round2', 'round3']) {
+    const j = (json?.[round] || []).filter(Boolean);
+    const h = (html?.[round] || []).filter(Boolean);
+    if (!h.length) { out[round] = j; continue; }
+    if (!j.length) { out[round] = h; continue; }
+    const jsonIsSubset = j.every(n => h.some(m => namesMatch(m, n)));
+    out[round] = jsonIsSubset ? h : j;
+  }
+  return out;
+};
+
 function parseResults(html) {
   const nd = extractNextData(html);
 
@@ -277,17 +312,43 @@ function parseResults(html) {
         .sort((a, b) => b.earnings - a.earnings);
       console.log(`[pga-results] __NEXT_DATA__ found ${players.length} players, top: ${players[0]?.name} $${players[0]?.earnings}`);
 
-      // If __NEXT_DATA__ didn't contain round leader keys, compute them from
-      // the HTML table scores as a fallback (the table parser does this reliably).
-      const hasLeaders = roundLeaders.round1.length || roundLeaders.round2.length || roundLeaders.round3.length;
-      if (!hasLeaders) {
-        const { roundLeaders: htmlLeaders } = parseHtmlTable(html);
-        console.log(`[pga-results] No round leaders in JSON — computed from HTML: R1=${htmlLeaders.round1.join(',')} R2=${htmlLeaders.round2.join(',')} R3=${htmlLeaders.round3.join(',')}`);
-        return { players, roundLeaders: htmlLeaders, status: statusSignals };
+      // Reconcile the JSON's leaders against the ones arithmetic gives.
+      //
+      // This used to be all-or-nothing: if the JSON named a leader for ANY
+      // round, the HTML computation was skipped for EVERY round. Two ways to
+      // lose a bonus followed from that, and both were observed in 2026.
+      //
+      //   1. A round the JSON simply omits stayed empty, because the fallback
+      //      was gated on the whole object rather than on the round.
+      //   2. A CO-LEAD collapsed to one name. `roundLeader.round3` is often a
+      //      single object, so toNames() yields one player — whoever the tour's
+      //      page chose to feature. Michael Brennan tied Beau Hossler at 194
+      //      after round 3 of the Wyndham and went on to win it; the JSON named
+      //      one of them and the $60,000 went to nobody.
+      //
+      // parseHtmlTable computes each round's leaders from cumulative scores and
+      // gets ties right by construction, so it is the better authority on WHO
+      // TIED. It is not automatically the better authority on who led — a
+      // scraped table can break — so the two are reconciled per round rather
+      // than one being preferred wholesale. See reconcileRoundLeaders.
+      let htmlLeaders = null;
+      try {
+        htmlLeaders = parseHtmlTable(html).roundLeaders;
+      } catch (e) {
+        console.log(`[pga-results] HTML leader cross-check unavailable: ${e.message}`);
+      }
+      const reconciled = reconcileRoundLeaders(roundLeaders, htmlLeaders);
+      for (const round of ['round1', 'round2', 'round3']) {
+        const before = roundLeaders[round] || [];
+        const after = reconciled[round] || [];
+        if (after.length !== before.length) {
+          console.log(`[pga-results] ${round}: JSON had ${before.join(', ') || '(none)'} — ` +
+            `scores say ${after.join(', ')}`);
+        }
       }
 
       console.log(`[pga-results] status signals: ${statusSignals.raw.join(', ') || '(none found)'} → isFinal=${statusSignals.isFinal}`);
-      return { players, roundLeaders, status: statusSignals };
+      return { players, roundLeaders: reconciled, status: statusSignals };
     }
 
     console.log('[pga-results] __NEXT_DATA__ found no players, falling back to HTML table');

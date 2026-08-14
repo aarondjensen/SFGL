@@ -23,5 +23,12 @@
     "remove": {
       "round1": ["Brooks Koepka"]
     }
+  },
+  {
+    "_why": "Round 3 was a two-way tie at 194 — Michael Brennan and Beau Hossler — and Brennan went on to win the tournament. Only one name was stored, so the co-lead was not recognised and Detroit Rock City's $60,000 went nowhere. Hossler is on no roster and collects nothing; he is listed because a tie recorded as a solo lead is what caused this. Rounds 1 and 2 are left alone: Hossler led both outright and neither pays anyone. Setting round3 only.",
+    "tournament": "Wyndham Championship",
+    "set": {
+      "round3": ["Michael Brennan", "Beau Hossler"]
+    }
   }
 ]
