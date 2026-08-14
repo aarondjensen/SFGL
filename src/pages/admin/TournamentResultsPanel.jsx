@@ -321,6 +321,10 @@ export const TournamentResultsPanel = ({
         teams: newTeams,
         settings,
       });
+      // No lineup restore here, unlike the reprocess path below: this is the
+      // FIRST processing of an event that has just finished, so clearing the
+      // lineup is exactly right — the week is over and the next one starts
+      // empty.
       const finalTeams = award ? award.updatedTeams : newTeams;
       const finalTransactions = award ? [...transactions, award.newTx] : transactions;
 
@@ -435,6 +439,26 @@ export const TournamentResultsPanel = ({
       const earningsMap = parseEarningsLines(manualEntry.playerEarnings);
       if (!earningsMap.size) { dialog.showToast('No valid earnings lines found', 'error'); return; }
 
+      // THE LIVE LINEUPS, SAVED BEFORE ANYTHING TOUCHES THEM.
+      //
+      // Reprocessing a past event destroyed the current week's submitted
+      // lineups. Step 1 below overwrites team.lineup with the OLD tournament's
+      // five so the scorer can re-run it, and processTournamentData then clears
+      // lineup to [] as it always does when an event finishes. Net effect: an
+      // audit of a March result wiped what every manager had submitted for the
+      // tournament being played that afternoon, with no warning and nothing to
+      // undo it.
+      //
+      // The lineup a past reprocess needs and the lineup managers are currently
+      // holding are different things. This keeps the second one and puts it
+      // back at the end.
+      const liveLineups = {};
+      const liveBackups = {};
+      teams.forEach(team => {
+        liveLineups[team.id] = Array.isArray(team.lineup) ? [...team.lineup] : [];
+        if (team.backup) liveBackups[team.id] = team.backup;
+      });
+
       // Step 1: Reverse old results
       const oldResults = tournament.results;
       let reversedTeams = teams.map(team => {
@@ -507,7 +531,16 @@ export const TournamentResultsPanel = ({
         teams: newTeams,
         settings,
       });
-      const finalTeams = award ? award.updatedTeams : newTeams;
+      // Put the live lineups back. processTournamentData legitimately clears
+      // lineup — that is right when an event has just FINISHED — but this is a
+      // reprocess of an event that finished long ago, and the managers' current
+      // five has nothing to do with it.
+      const scoredTeams = (award ? award.updatedTeams : newTeams).map(team => ({
+        ...team,
+        lineup: liveLineups[team.id] || [],
+        backup: liveBackups[team.id] || null,
+      }));
+      const finalTeams = scoredTeams;
       const finalTransactions = award ? [...transactions, award.newTx] : transactions;
 
       updateTeams(finalTeams);
