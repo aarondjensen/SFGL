@@ -242,10 +242,11 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
   const [selectedTeam,          setSelectedTeam]          = useState(null);
   const [isCommissioner,        setIsCommissioner]        = useState(false);
   // Active commish mode — the gold edit state. Turned on by opening the Commish
-  // tab (see the effect below); there is no separate toggle. Eligibility to
-  // enter it is taggedCommissioner, DERIVED below from the ID-token claim so it
-  // can never be left stale or spuriously reset by an effect re-run. Do not
-  // reintroduce eligibility as imperative state.
+  // tab (see the effect below) and off by the chip in the header; there is no
+  // toggle, the two directions are separate actions. Eligibility to enter it is
+  // taggedCommissioner, DERIVED below from the ID-token claim so it can never be
+  // left stale or spuriously reset by an effect re-run. Do not reintroduce
+  // eligibility as imperative state.
   const [loggedInUser,          setLoggedInUser]          = useState(null);
   // Immutable identity of the team the manager authenticated into. Edit
   // permissions key off THIS (team id), never the editable owner string —
@@ -675,6 +676,17 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
   // ── Manager login ──────────────────────────────────────────────────────────
 // (login modal removed — sign-in is the gate, handled at the App root)
 
+  // ── Leave commish mode ─────────────────────────────────────────────────────
+  // Dropping the Commish tab is part of leaving, not a side effect: the panel is
+  // gated on the mode, so staying put would leave an empty tab on screen. It
+  // also has to happen in this same batch — the effect that turns the mode ON is
+  // keyed on activeTab, so exiting while activeTab is still 'admin' would leave
+  // the two disagreeing until the next navigation.
+  const exitCommishMode = () => {
+    setIsCommissioner(false);
+    setActiveTab(prev => (prev === 'admin' ? 'standings' : prev));
+  };
+
   // ── Logout ─────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
     await signOutUser();
@@ -751,6 +763,47 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
                 </div>
               )}
             </div>
+
+            {/* Commish chip — the way out of commish mode, and the only thing
+                that names the mode in words. The gold header tint says
+                *something* is on; this says what, and takes it back off.
+                Absolutely placed like the sync indicator so it never nudges the
+                centered stack, and on the opposite side so the two never
+                collide mid-save. */}
+            {isCommissioner && (
+              <button
+                onClick={exitCommishMode}
+                aria-label="Exit commish mode"
+                title="Exit commish mode"
+                style={{
+                  position: 'absolute', top: 16, left: 16,
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  // The chip shares this row with the wordmark, which is centered
+                  // on the viewport — so the chip's width alone decides whether
+                  // the two touch on the narrowest phone. Measured at 320px with
+                  // the system-ui fallback (wider than Raleway, and what actually
+                  // paints before the webfont lands): ~14px of clearance. A
+                  // leading icon here spent all of it and then some, which is why
+                  // the chip is text + dismiss only.
+                  padding: '4px 7px',
+                  border: `1px solid ${gold(0.5)}`,
+                  borderRadius: 999,
+                  background: gold(0.16),
+                  color: colors.textGold,
+                  fontFamily: fonts.sans,
+                  fontSize: fontSize.xs,
+                  fontWeight: 700,
+                  letterSpacing: 0.8,
+                  textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                }}
+              >
+                <span>Commish</span>
+                <X style={{ width: 11, height: 11, flexShrink: 0, opacity: 0.75 }} />
+              </button>
+            )}
 
             {/* Sync indicator — absolutely placed so it never nudges the centered stack */}
             {isSyncing && (
@@ -1125,8 +1178,8 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
                 Opening the tab turns the gold edit mode on (the effect near
                 taggedCommissioner does the work; this handler sets it here too
                 so the panel paints on the first frame instead of flashing the
-                commish-gated blank). There is deliberately no separate switch
-                beside it — being in the Commish tab IS the mode. */}
+                commish-gated blank). There is deliberately no switch beside it —
+                the way back out is the Commish chip in the header. */}
             {taggedCommissioner && (
               <button
                 role="menuitem"
