@@ -185,10 +185,18 @@ html {
   .sfgl-bottom-sheet {
     padding-bottom: env(safe-area-inset-bottom);
   }
-  /* Main content area — already has padding-bottom: 80px, add safe area on top */
-  .sfgl-main-content {
-    padding-bottom: calc(80px + env(safe-area-inset-bottom));
-  }
+}
+
+/* Main content clears the fixed bottom nav.
+   The inset is measured, not written down: App.jsx publishes the nav's real
+   offsetHeight as --sfgl-nav-h (which already includes its safe-area padding).
+   This used to be a hard-coded 80px, and 80px was only ever right for one shape
+   of nav — the commish row adds a strip to it, and any number picked here would
+   have gone stale the moment the nav grew, silently hiding the last rows of
+   every view. The fallback covers the frame before the ResizeObserver first
+   fires; the extra 18px is breathing room below the content, not overlap. */
+.sfgl-main-content {
+  padding-bottom: calc(var(--sfgl-nav-h, 80px) + 18px);
 }
 
 /* ── Toast + confirm dialog animations (was: inline <style> in DialogContext.jsx) ── */

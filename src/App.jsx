@@ -490,6 +490,25 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
     return () => ro.disconnect();
   }, [loading]);
 
+  // ── Publish bottom-nav height as --sfgl-nav-h ────────────────────────
+  // The main content pads its bottom by this so the fixed nav never covers the
+  // last rows of a view. It has to be measured rather than hard-coded: the
+  // commish row adds a strip to the nav, and the safe-area inset adds more on a
+  // notched phone, so the one number that used to live in app-global.css was
+  // wrong for at least one of those states no matter what it said.
+  const navRef = useRef(null);
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const publish = () => {
+      document.documentElement.style.setProperty('--sfgl-nav-h', `${el.offsetHeight}px`);
+    };
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loading]);
+
   // Live mirror of the headshots map, so callbacks can read the current map
   // without taking it as a dependency (which would re-create them on every
   // headshot merge). Declared here because resolveHeadshots below reads it too.
@@ -764,47 +783,6 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
               )}
             </div>
 
-            {/* Commish chip — the way out of commish mode, and the only thing
-                that names the mode in words. The gold header tint says
-                *something* is on; this says what, and takes it back off.
-                Absolutely placed like the sync indicator so it never nudges the
-                centered stack, and on the opposite side so the two never
-                collide mid-save. */}
-            {isCommissioner && (
-              <button
-                onClick={exitCommishMode}
-                aria-label="Exit commish mode"
-                title="Exit commish mode"
-                style={{
-                  position: 'absolute', top: 16, left: 16,
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  // The chip shares this row with the wordmark, which is centered
-                  // on the viewport — so the chip's width alone decides whether
-                  // the two touch on the narrowest phone. Measured at 320px with
-                  // the system-ui fallback (wider than Raleway, and what actually
-                  // paints before the webfont lands): ~14px of clearance. A
-                  // leading icon here spent all of it and then some, which is why
-                  // the chip is text + dismiss only.
-                  padding: '4px 7px',
-                  border: `1px solid ${gold(0.5)}`,
-                  borderRadius: 999,
-                  background: gold(0.16),
-                  color: colors.textGold,
-                  fontFamily: fonts.sans,
-                  fontSize: fontSize.xs,
-                  fontWeight: 700,
-                  letterSpacing: 0.8,
-                  textTransform: 'uppercase',
-                  whiteSpace: 'nowrap',
-                  lineHeight: 1,
-                  cursor: 'pointer',
-                }}
-              >
-                <span>Commish</span>
-                <X style={{ width: 11, height: 11, flexShrink: 0, opacity: 0.75 }} />
-              </button>
-            )}
-
             {/* Sync indicator — absolutely placed so it never nudges the centered stack */}
             {isSyncing && (
               <span style={{ position: 'absolute', top: 16, right: 16, fontSize: fontSize.sm, color: white(0.25), letterSpacing: 1 }} className="sfgl-text-pulse">
@@ -997,6 +975,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
           mid-page. Keeping it a sibling of PullToRefresh guarantees it stays
           pinned to the true viewport bottom. */}
       <nav
+        ref={navRef}
         style={{
           position: 'fixed',
           bottom: 0,
@@ -1013,11 +992,62 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
           borderTop: isCommissioner
             ? `1px solid ${gold(0.55)}`
             : `1px solid ${brass(0.15)}`,
-          paddingTop: 6,
+          // The commish row carries its own top padding and sits flush against
+          // the nav's top border; without dropping this, a 6px strip of plain
+          // nav background would show above it and read as a seam.
+          paddingTop: isCommissioner ? 0 : 6,
           paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
           transition: 'background 0.25s, border-color 0.25s',
         }}
       >
+        {/* ── Commish row ──
+            The way out of commish mode, and the only place the mode is named in
+            words — the gold tint on the header and nav says *something* is on
+            without saying what. A full-bleed strip rather than a badge tucked
+            into a corner: it sits directly above the tabs, where a thumb already
+            is, and the whole row is the target. */}
+        {isCommissioner && (
+          <button
+            onClick={exitCommishMode}
+            aria-label="Exit commish mode"
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '5px 0',
+              marginBottom: 6,
+              border: 'none',
+              borderBottom: `1px solid ${gold(0.3)}`,
+              background: gold(0.14),
+              color: colors.textGold,
+              fontFamily: fonts.sans,
+              fontSize: fontSize.xs,
+              fontWeight: 700,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              lineHeight: 1,
+              cursor: 'pointer',
+            }}
+          >
+            {/* Inner width matches the tab row's so the label and the "Exit"
+                land over the same gutters the tabs use. */}
+            <span style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              maxWidth: 600, margin: '0 auto', padding: '0 12px',
+            }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                <Shield style={{ width: 11, height: 11, flexShrink: 0 }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  Commish mode
+                </span>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0, opacity: 0.85 }}>
+                <span>Exit</span>
+                <X style={{ width: 11, height: 11 }} />
+              </span>
+            </span>
+          </button>
+        )}
+
         <div
           style={{
             maxWidth: 600,
