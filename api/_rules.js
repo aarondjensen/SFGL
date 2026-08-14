@@ -83,6 +83,47 @@ export const lineupFor = (tournament, team) => {
   return Array.isArray(team?.lineup) ? team.lineup : [];
 };
 
+/**
+ * The lineup a PAST tournament was actually scored with, and where that answer
+ * came from.
+ *
+ * The near-twin of lineupFor, and the distinction matters enough to be worth
+ * two functions. lineupFor answers "what SHOULD this event score" and is right
+ * to end at team.lineup — for a live event that is the manager's current five.
+ * This answers "what DID it score", where falling through to team.lineup is
+ * almost always wrong: the live lineup is next week's, and reading it for a
+ * finished event is the drift that put three 2026 events on the wrong five in
+ * the first place.
+ *
+ * So it prefers, in order:
+ *   locked     the snapshot frozen at lineup lock
+ *   processed  results.fullLineups — what the processor recorded scoring
+ *   scored     the names on the stored per-player rows, for results written
+ *              before fullLineups existed
+ *   live       team.lineup, which is a guess, and is reported as one
+ *
+ * Callers get the source so they can refuse to act on a guess. Both correction
+ * scripts need exactly this precedence, and the first copy of it that lived
+ * only in a comment was reproduced wrongly the very next time it was needed.
+ */
+export const scoredLineupFor = (tournament, team) => {
+  const id = team?.id;
+  const locked = tournament?.lockedLineups?.[id];
+  if (Array.isArray(locked) && locked.length) return { lineup: [...locked], source: 'locked' };
+
+  const processed = tournament?.results?.fullLineups?.[id];
+  if (Array.isArray(processed) && processed.length) return { lineup: [...processed], source: 'processed' };
+
+  const players = tournament?.results?.teams?.[id]?.players;
+  if (Array.isArray(players) && players.length) {
+    const names = players.map(p => p?.name || p).filter(Boolean);
+    if (names.length) return { lineup: names, source: 'scored' };
+  }
+
+  const live = Array.isArray(team?.lineup) ? team.lineup : [];
+  return { lineup: [...live], source: live.length ? 'live' : 'none' };
+};
+
 // ── Scoring starters ─────────────────────────────────────────────────────────
 
 export const DEFAULT_LINEUP_SIZE = 5;

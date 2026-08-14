@@ -305,5 +305,58 @@ check('commish overrides win for regulars',
     lineupFor({ lockedLineups: { db: 'Brian Harman' } }, team)[0] === 'Harris English');
 }
 
+// ── scoredLineupFor: what a PAST event was scored with ──────────────────────
+// The near-twin of lineupFor, and the reason both exist. Asking lineupFor what
+// a finished event scored gets you team.lineup — the manager's CURRENT five —
+// whenever no snapshot was frozen. A correction script did exactly that,
+// concluded that none of an event's round leaders had been started, and wrote
+// an empty bonus list over a correct one. The fallback ORDER is the whole
+// point, so every rung is pinned here.
+{
+  const { scoredLineupFor } = await import('../api/_rules.js');
+  const team = { id: 'db', lineup: ['LIVE1', 'LIVE2'] };   // next week's five
+  const locked    = { lockedLineups: { db: ['LOCK1', 'LOCK2'] } };
+  const processed = { results: { fullLineups: { db: ['FULL1', 'FULL2'] } } };
+  const scored    = { results: { teams: { db: { players: [{ name: 'ROW1' }, { name: 'ROW2' }] } } } };
+
+  check('prefers the lock snapshot over everything',
+    scoredLineupFor({ ...locked, ...processed }, team).source === 'locked');
+  // Both rungs live under `results`, so this has to be a deep merge — a
+  // top-level spread would replace one wholesale and test nothing.
+  const both = { results: { ...processed.results, ...scored.results } };
+  check('then what the processor recorded scoring',
+    scoredLineupFor(both, team).lineup[0] === 'FULL1');
+  check('then the stored player rows, for results predating fullLineups',
+    scoredLineupFor(scored, team).lineup[0] === 'ROW1');
+  check('the player-row rung is labelled as such',
+    scoredLineupFor(scored, team).source === 'scored');
+
+  // The rung that matters: reachable, but never silently.
+  const guess = scoredLineupFor({}, team);
+  check('falls back to the live lineup only as a last resort', guess.lineup[0] === 'LIVE1');
+  check('...and says so, so a caller can refuse to act on it', guess.source === 'live');
+
+  check('no record anywhere is "none", not a bogus empty lineup',
+    scoredLineupFor({}, { id: 'db' }).source === 'none');
+  check('missing tournament is safe', scoredLineupFor(null, team).lineup.length === 2);
+  check('missing team is safe', scoredLineupFor(locked, null).lineup.length === 0);
+  check('an empty snapshot falls through rather than blanking the lineup',
+    scoredLineupFor({ lockedLineups: { db: [] }, ...processed }, team).source === 'processed');
+
+  // An oversized stored lineup is a data error — Hip Happens carried six at the
+  // 2026 Wyndham — and must be returned whole. Trimming it here would hide the
+  // error from the very script written to repair it.
+  const six = { lockedLineups: { db: ['A', 'B', 'C', 'D', 'E', 'F'] } };
+  check('an oversized lineup is returned intact, not trimmed',
+    scoredLineupFor(six, team).lineup.length === 6);
+
+  // Returned arrays must be copies: set-locked-lineups mutates what it gets
+  // back, and handing out the stored array would edit the snapshot in place.
+  const copy = scoredLineupFor(locked, team).lineup;
+  copy[0] = 'MUTATED';
+  check('returns a copy, so callers cannot edit the stored record',
+    locked.lockedLineups.db[0] === 'LOCK1');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

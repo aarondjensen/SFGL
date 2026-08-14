@@ -58,7 +58,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { adminDb } from './_adminCreds.mjs';
 import { namesMatch } from '../api/_playerNames.js';
-import { lineupFor } from '../api/_rules.js';
+import { scoredLineupFor } from '../api/_rules.js';
 
 const arg = (flag, fallback) => {
   const i = process.argv.indexOf(flag);
@@ -157,9 +157,25 @@ async function main() {
     }
 
     // Everyone any team was scored with, so a leader can be told apart from a
-    // name that collects nothing. lineupFor prefers the snapshot frozen at
-    // lock, which is what the event is actually scored against.
-    const started = teams.flatMap(team => lineupFor(t, team)).filter(Boolean);
+    // name that collects nothing.
+    //
+    // scoredLineupFor, NOT lineupFor. lineupFor falls through to team.lineup —
+    // the manager's CURRENT five — which for a finished event is next week's
+    // lineup, and every leader is then judged against a lineup that did not
+    // exist when the tournament was played. That is not hypothetical: the first
+    // version of this script used lineupFor, computed "nobody was started" for
+    // every event, and wrote an empty bonus list over a correct one.
+    const started = [];
+    const guessed = [];
+    for (const team of teams) {
+      const { lineup, source } = scoredLineupFor(t, team);
+      started.push(...lineup.filter(Boolean));
+      if (source === 'live') guessed.push(team.name || team.id);
+    }
+    if (guessed.length) {
+      console.warn(`⚠ ${t.name}: no scored lineup recorded for ${guessed.join(', ')} — ` +
+        `falling back to their CURRENT lineup, which may not be who played.`);
+    }
 
     const currentAll = t.results?.roundLeadersAll || t.results?.roundLeaders || {};
     const { all: nextAll, filtered: nextFiltered } = applyRoundLeaderCorrection({

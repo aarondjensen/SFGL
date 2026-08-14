@@ -40,11 +40,15 @@
     }
   },
   {
-    "_why": "App scored J.T. Poston; the sheet has Ryo Hisatsune, and the commissioner confirms Hisatsune was the lineup — Poston was never supposed to be on this roster, so the app carries a roster error upstream of the lineup. Both earned $0, so this moves no money; it corrects who is recorded as having used a start. Fixing the lineup does NOT fix the roster error that produced it — see the note below.",
+    "_why": "The app has SIX starters here — Griffin, Thomas, McNealy, Glover, Poston and Hisatsune — so this is not the swap it first looked like. Hisatsune was in the lineup all along; Poston was added on top, and he was never supposed to be on this roster at all. Restating the five rather than replacing a name, because there is no name to replace. Everyone but Thomas and McNealy earned $0, so no money moves; it corrects who is recorded as having used a start, and drops the lineup back to legal size.",
     "tournament": "Wyndham Championship",
     "team": "Hip Happens",
-    "replace": {
-      "J.T. Poston": "Ryo Hisatsune"
-    }
+    "lineup": [
+      "Ben Griffin",
+      "Justin Thomas",
+      "Maverick McNealy",
+      "Lucas Glover",
+      "Ryo Hisatsune"
+    ]
   }
 ]

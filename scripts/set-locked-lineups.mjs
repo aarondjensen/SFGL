@@ -45,6 +45,7 @@
 import { readFileSync } from 'node:fs';
 import { adminDb } from './_adminCreds.mjs';
 import { namesMatch } from '../api/_playerNames.js';
+import { scoredLineupFor } from '../api/_rules.js';
 
 
 const arg = (flag, fallback) => {
@@ -102,21 +103,22 @@ async function main() {
     const team = findByName(teams, c.team);
     if (!team) { console.error(`✗ no single team matches "${c.team}"`); failed++; continue; }
 
-    // What the event is CURRENTLY SCORED AGAINST — results.fullLineups, the
-    // lineup the processor recorded at the time.
+    // What the event is CURRENTLY SCORED AGAINST.
     //
     // NOT lineupFor(): that is the processor's own precedence and falls back to
     // team.lineup, the team's LIVE lineup. Using it here showed today's five
     // instead of the scored ones, which is the very drift this script exists to
-    // repair. An existing lockedLineups entry wins, so re-running after a
-    // correction is idempotent.
-    const scored = t.lockedLineups?.[team.id]
-      || t.results?.fullLineups?.[team.id]
-      || team.lineup
-      || [];
-    const current = [...scored];
+    // repair. scoredLineupFor encodes that precedence — and says which of the
+    // records it found, so a fallback to the live lineup is visible rather than
+    // silently treated as history. An existing lockedLineups entry wins, so
+    // re-running after a correction is idempotent.
+    const { lineup: current, source } = scoredLineupFor(t, team);
     if (!current.length) {
       console.error(`✗ ${t.name} / ${team.name}: no recorded lineup to correct`); failed++; continue;
+    }
+    if (source === 'live') {
+      console.warn(`⚠ ${t.name} / ${team.name}: nothing records what this event scored — ` +
+        `the list below is ${team.name}'s CURRENT lineup, which may be a later week's.`);
     }
 
     let next;
