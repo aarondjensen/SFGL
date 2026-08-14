@@ -3,32 +3,40 @@
     "_why": "The app has no round leaders recorded for RBC Heritage at all, so it paid no bonuses. The sheet's own After 1/2/3 columns give a clean read: Åberg alone at 63 after R1, Fitzpatrick alone at 128 after R2 and 196 after R3, with no disqualified player holding a stale score above them. Signature event, so 20/40/60. Worth $100,000 to Hip Happens and $20,000 to POPS.",
     "tournament": "RBC Heritage",
     "set": {
-      "round1": ["Ludvig Åberg"],
-      "round2": ["Matt Fitzpatrick"],
-      "round3": ["Matt Fitzpatrick"]
+      "round1": [
+        "Ludvig Åberg"
+      ],
+      "round2": [
+        "Matt Fitzpatrick"
+      ],
+      "round3": [
+        "Matt Fitzpatrick"
+      ]
     }
   },
   {
     "_why": "Same as RBC — no round leaders recorded, no bonuses paid. Matt McCarty led R1 and is on nobody's roster, so he earns nothing and is listed only to keep the record true. Sungjae Im led R2 (133) and Alex Fitzpatrick R3 (199). Signature event. Worth $40,000 to POPS and $60,000 to World #1.",
     "tournament": "Truist Championship",
     "set": {
-      "round1": ["Matt McCarty"],
-      "round2": ["Sungjae Im"],
-      "round3": ["Alex Fitzpatrick"]
-    }
-  },
-  {
-    "_why": "Koepka withdrew and posted no round the sheet's field data records. The R1 lead was a five-way tie at 64 — Grillo, Cole, Anderson, Theegala, Burns — and he is not in it. Removing rather than restating the round, because the app's stored list is filtered to started players and restating it would drop the leaders it has right. -$20,000 from Detroit Rock City.",
-    "tournament": "RBC Canadian Open",
-    "remove": {
-      "round1": ["Brooks Koepka"]
+      "round1": [
+        "Matt McCarty"
+      ],
+      "round2": [
+        "Sungjae Im"
+      ],
+      "round3": [
+        "Alex Fitzpatrick"
+      ]
     }
   },
   {
     "_why": "Round 3 was a two-way tie at 194 — Michael Brennan and Beau Hossler — and Brennan went on to win the tournament. Only one name was stored, so the co-lead was not recognised and Detroit Rock City's $60,000 went nowhere. Hossler is on no roster and collects nothing; he is listed because a tie recorded as a solo lead is what caused this. Rounds 1 and 2 are left alone: Hossler led both outright and neither pays anyone. Setting round3 only.",
     "tournament": "Wyndham Championship",
     "set": {
-      "round3": ["Michael Brennan", "Beau Hossler"]
+      "round3": [
+        "Michael Brennan",
+        "Beau Hossler"
+      ]
     }
   }
 ]
