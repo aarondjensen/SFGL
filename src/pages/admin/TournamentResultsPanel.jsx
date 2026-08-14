@@ -22,7 +22,7 @@ import { maybeAwardForCompletedTournament } from '../../utils/swingAward';
 import { M, disabledBtn } from './adminStyles';
 import { SEASON } from '../../../api/_league.js';
 import { NameSet, namesMatch } from '../../../api/_playerNames.js';
-import { lineupFor } from '../../../api/_rules.js';
+import { scoredLineupFor } from '../../../api/_rules.js';
 import { txBelongsToTeam } from '../../utils/sharedHelpers';
 import { STORAGE_KEYS } from '../../constants';
 
@@ -208,33 +208,56 @@ export const TournamentResultsPanel = ({
         .map(p => `${p.name}, ${p.earnings}`)
         .join('\n');
 
-      // NameSet + lineupFor, for the same two reasons api/cron.js carries — the
-      // feed's spelling need not match the roster's, and the lineup that scores
-      // is the one frozen at lock, not the team's live five. A leader dropped
-      // here is a bonus nobody is paid, and nothing downstream notices.
+      // Who was started, for deciding which leaders collect.
+      //
+      // scoredLineupFor, NOT lineupFor. On a COMPLETED tournament — which is
+      // every reprocess — team.lineup has been cleared to [] by the processor,
+      // so lineupFor returns nothing unless a lock snapshot happens to exist.
+      // The set was then empty, every leader was filtered out, and all three
+      // dropdowns read "(none)" for an event whose leaders were stored and
+      // correct. scoredLineupFor falls through to results.fullLineups, which is
+      // what a finished event was actually scored with. The commissioner's own
+      // edits to those lineups live in manualEntry.teamLineups and win.
+      //
+      // NameSet, not Set: the feed's spelling need not match the roster's.
       //
       // The callback parameter is `team`, not `t`: `t` is the TOURNAMENT in this
-      // scope, and shadowing it here is what the old line did.
-      const startedPlayers = new NameSet(teams.flatMap(team => lineupFor(t, team) || []));
+      // scope, and shadowing it here is what the original line did.
+      const editedLineups = manualEntry.teamLineups || {};
+      const startedPlayers = new NameSet(teams.flatMap(team =>
+        editedLineups[team.id] || scoredLineupFor(t, team).lineup || []));
       const filterToStarted = (names) => {
-        if (!names?.length) return [''];
+        if (!names?.length) return null;
         const filtered = names.filter(n => startedPlayers.has(n));
         return filtered.length ? filtered : [''];
       };
 
+      // A fetch that returns no leaders for a round must LEAVE THAT ROUND
+      // ALONE, not blank it. This overwrote the stored leaders unconditionally,
+      // so pressing "Get results" on an event whose scrape had no leader data
+      // silently discarded correct ones — and then a reprocess wrote the blanks
+      // back to Firestore. That is how RBC Heritage and the Truist lost
+      // $220,000 of bonuses twice in one week.
       const rl = roundLeaders || {};
+      const keepOrReplace = (fetched, existing) => fetched ?? (existing?.length ? existing : ['']);
+      const keepAll = (fetched, existing) => {
+        const list = (fetched || []).filter(Boolean);
+        return list.length ? list : (existing || []);
+      };
+
       setManualEntry(prev => ({
         ...prev,
         playerEarnings: earningsLines,
-        round1Leaders: filterToStarted(rl.round1),
-        round2Leaders: filterToStarted(rl.round2),
-        round3Leaders: filterToStarted(rl.round3),
+        round1Leaders: keepOrReplace(filterToStarted(rl.round1), prev.round1Leaders),
+        round2Leaders: keepOrReplace(filterToStarted(rl.round2), prev.round2Leaders),
+        round3Leaders: keepOrReplace(filterToStarted(rl.round3), prev.round3Leaders),
         // Keep the UNFILTERED leaders so a later mulligan can credit an IN
         // player who led a round but wasn't started (and so is absent from the
         // filtered, display-facing lists above).
-        round1LeadersAll: (rl.round1 || []).filter(Boolean),
-        round2LeadersAll: (rl.round2 || []).filter(Boolean),
-        round3LeadersAll: (rl.round3 || []).filter(Boolean),
+        // Same rule: a round the fetch says nothing about keeps what it had.
+        round1LeadersAll: keepAll(rl.round1, prev.round1LeadersAll),
+        round2LeadersAll: keepAll(rl.round2, prev.round2LeadersAll),
+        round3LeadersAll: keepAll(rl.round3, prev.round3LeadersAll),
       }));
 
       dialog.showToast(`✓ ${players.length} players loaded`, 'success');
