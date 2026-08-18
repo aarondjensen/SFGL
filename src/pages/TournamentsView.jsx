@@ -1092,17 +1092,43 @@ export const TournamentsView = ({
             background: open ? white(0.04) : 'transparent',
             opacity: isAlternate(t) && !open ? 0.55 : 1,
           }}>
-            {/* Summary row — the whole event in two compact lines. */}
+            {/* Summary row — one line: name, dates, swing (as colour), badge.
+                The swing was spelled out here and it cost the row its second
+                line for a word repeated eight times down the list. As the
+                row's left edge it reads faster than the text did: a swing is a
+                contiguous block of events, so the boundaries — the thing you
+                are actually checking after Seed Swings — show up as colour
+                changes without reading anything. */}
             <div
               {...activatable(() => setEditingRow(open ? null : i), {
                 expanded: open,
-                label: `${open ? 'Close' : 'Edit'} ${t.name}`,
+                label: `${open ? 'Close' : 'Edit'} ${t.name}, ${t.dates || 'no dates'}, `
+                  + `${segIsSet ? seg : 'swing not set'}`,
               })}
               style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '10px 2px', cursor: 'pointer', minHeight: 44,
+                // gap 6, not 8: five gaps across the row, and at 320px the
+                // difference is whether "Championship" fits on the name's
+                // second line or loses its last two characters.
+                display: 'flex', alignItems: 'center', gap: 6,
+                // 44 is the tap-target floor, and 44 + 6px padding is 56 — the
+                // same row height the read-only table uses, so the two lists
+                // scan at the same rhythm. Every row lands on it: a two-line
+                // name still fits inside 44.
+                padding: '6px 2px 6px 0', cursor: 'pointer', minHeight: 44,
               }}
             >
+              {/* Swing, as the row's left edge. Red when unset — the fallback
+                  behind an unset swing cannot return 'Fall Finish' for a
+                  Jan-Aug season, so a row left unset silently defects to
+                  Summer and pays that pot out early. See swingSelect. */}
+              <span
+                title={segIsSet ? seg : 'Swing not set'}
+                style={{
+                  width: 4, alignSelf: 'stretch', borderRadius: 2, flexShrink: 0,
+                  background: segIsSet ? getSwingColor(seg) : red(0.9),
+                }}
+              />
+
               {/* The checkbox is its own control. Without stopPropagation the
                   row's click handler also fires and ticking "active" would
                   open the editor. */}
@@ -1110,48 +1136,43 @@ export const TournamentsView = ({
                 {activeToggle(t, i)}
               </span>
 
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontFamily: fonts.serif, fontSize: fontSize.md,
-                  color: isActive ? colors.textGold : colors.textPrimary,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {t.name}
-                </div>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 6, marginTop: 2,
-                  fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textSecondary,
-                  overflow: 'hidden', whiteSpace: 'nowrap',
-                }}>
-                  <span style={{ flexShrink: 0 }}>{t.dates || '—'}</span>
-                  <span style={{ color: colors.textLabel }}>·</span>
-                  {/* The swing is on the summary line because it is the field
-                      most often wrong and the one that decides when a pot pays
-                      out. An unset swing is a warning here, exactly as it is in
-                      the dropdown — see swingSelect. */}
-                  <span style={{
-                    color: segIsSet ? getSwingColor(seg) : red(0.95),
-                    overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>
-                    {segIsSet ? seg : '⚠ swing not set'}
-                  </span>
-                  {Number.isInteger(t.lockHour) && (
-                    <>
-                      <span style={{ color: colors.textLabel }}>·</span>
-                      <span style={{ flexShrink: 0 }}>{fmtETTime(t.lockHour)}</span>
-                    </>
-                  )}
-                </div>
-              </div>
+              {/* Wraps to a second line rather than ellipsing. Once the row
+                  is down to one line, the name has ~165px and a third of the
+                  schedule reads "FedEx St. Jude Cham…" — which is the
+                  truncation this whole rework exists to remove. Clamped at two
+                  lines so a row can never grow unbounded; short names, which
+                  are most of them, still sit on one. Same treatment the
+                  read-only table gives the column. */}
+              <span style={{
+                flex: 1, minWidth: 0,
+                fontFamily: fonts.serif, fontSize: fontSize.md,
+                color: isActive ? colors.textGold : colors.textPrimary,
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                overflow: 'hidden', lineHeight: 1.25,
+              }}>
+                {t.name}
+              </span>
 
-              <TournamentBadges tournament={t} size="sm" />
+              {!segIsSet && (
+                <span title="Swing not set"
+                  style={{ color: red(0.95), fontSize: fontSize.sm, flexShrink: 0 }}>⚠</span>
+              )}
               {isAlternate(t) && (
                 <span style={{
                   fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700,
                   color: colors.danger, border: `1px solid ${colors.dangerBorder}`,
-                  borderRadius: 2, padding: '2px 4px', lineHeight: 1,
+                  borderRadius: 2, padding: '2px 3px', lineHeight: 1, flexShrink: 0,
                 }}>Alt</span>
               )}
+              <TournamentBadges tournament={t} size="sm" />
+
+              <span style={{
+                fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textSecondary,
+                whiteSpace: 'nowrap', flexShrink: 0,
+              }}>
+                {t.dates || '—'}
+              </span>
+
               {open
                 ? <ChevronDown style={{ width: 16, height: 16, color: colors.textSecondary, flexShrink: 0 }} />
                 : <ChevronRight style={{ width: 16, height: 16, color: colors.textMuted, flexShrink: 0 }} />}

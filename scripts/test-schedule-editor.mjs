@@ -57,10 +57,27 @@ console.log('\n── the phone gets a different layout, not a smaller table ─
   check('the summary row is keyboard-activatable (house a11y helper)',
     /\{\.\.\.activatable\(\(\) => setEditingRow\(open \? null : i\)/.test(src));
   check('one editor open at a time', /const \[editingRow, setEditingRow\] = useState\(null\)/.test(src));
-  check('the summary line carries the swing, warning included',
-    /segIsSet \? seg : '⚠ swing not set'/.test(src));
   check('the active checkbox does not also toggle the editor',
     /onClick=\{e => e\.stopPropagation\(\)\}/.test(src));
+
+  // The summary row holds exactly four things: name, dates, the swing as the
+  // row's left edge colour, and the S/M badge. Everything else — location,
+  // course, lock, type, delete — is in the editor. Spelling the swing out cost
+  // the row a second line for a word repeated down the whole list.
+  const row = src.slice(src.indexOf('{/* Summary row'), src.indexOf('{/* Editor — only for the open row'));
+  check('the swing is a colour on the row, not a word',
+    /background: segIsSet \? getSwingColor\(seg\) : red\(0\.9\)/.test(row) && !/\{seg\}/.test(row));
+  check('an unset swing is still flagged on the row', /⚠/.test(row));
+  check('the row shows the dates', /\{t\.dates \|\| '—'\}/.test(row));
+  check('the row shows the signature/major badge', /<TournamentBadges/.test(row));
+  check('location and course are not on the row',
+    !/t\.location/.test(row) && !/t\.course/.test(row));
+
+  // 165px of name column ellipses a third of the schedule to "FedEx St. Jude
+  // Cham…", which is the truncation this rework exists to remove.
+  check('a long name wraps to a second line instead of truncating',
+    /WebkitLineClamp: 2/.test(row) && !/textOverflow: 'ellipsis'/.test(row));
+  check('the row height matches the read-only table\'s', /minHeight: 44/.test(row));
   check('the editor picks between them on width',
     /useCardEditor\s*\?\s*\n?\s*renderEditCards/.test(src));
   check('the breakpoint clears the table\'s own minimum',
