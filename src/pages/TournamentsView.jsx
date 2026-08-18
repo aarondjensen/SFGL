@@ -11,6 +11,7 @@ import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 import { TournamentBadges } from './TournamentBadges';
 import { useIsMobile } from '../hooks/useIsMobile.js';
+import { activatable } from '../utils/a11y';
 
 // Alternate-event detection: relies on the explicit `isAlternate` flag the
 // commish sets via the "Alt" toggle in the schedule editor.
@@ -191,6 +192,12 @@ export const TournamentsView = ({
   // 900 it would technically render, but only behind a horizontal scrollbar.
   // Reactive, so rotating a tablet lands on the other layout.
   const useCardEditor = useIsMobile(900);
+  // Which event's editor is open in the card list, as its INDEX into
+  // localTournaments — not its name. The name is one of the fields being
+  // edited, so keying on it would close the editor on the first keystroke of a
+  // rename. One row at a time; see renderEditCards. Cleared on leaving edit
+  // mode so the editor reopens on the scannable list, not wherever you were.
+  const [editingRow, setEditingRow] = useState(null);
   const [localTournaments, setLocalTournaments] = useState([]);
   const dialog = useDialog();
 
@@ -353,6 +360,7 @@ export const TournamentsView = ({
 
   const saveChanges = async () => {
     setTournaments(localTournaments);
+    setEditingRow(null);
     setEditMode(false);
     // setTournaments (= updateTournaments from useLeague) already persists to
     // Firestore + localStorage. The sfglDataApi write below is a belt-and-
@@ -394,6 +402,9 @@ export const TournamentsView = ({
       { type: 'danger', confirmText: 'Delete', cancelText: 'Cancel' }
     );
     if (!ok) return;
+    // Every index after this one shifts, so the open editor no longer points at
+    // the row it was opened on. Close it rather than silently re-target it.
+    setEditingRow(null);
     setLocalTournaments(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -419,6 +430,10 @@ export const TournamentsView = ({
     let n = 2;
     const existing = new Set(localTournaments.map(t => t.name));
     while (existing.has(candidate)) { candidate = `${baseName} ${n++}`; }
+    // Open the new row's editor. It is appended to the end of the list as
+    // "New Tournament" with every field blank, and in the card layout that is
+    // otherwise a collapsed line you have to find and tap before you can type.
+    setEditingRow(localTournaments.length);
     setLocalTournaments(prev => [
       ...prev,
       {
@@ -1047,82 +1062,158 @@ export const TournamentsView = ({
   // One card per event, fields stacked and labelled. Nothing is truncated and
   // nothing scrolls sideways: the constraint a table cannot satisfy at 390px is
   // that eight fields have to share one line, so the card stops trying.
+  // ── Edit mode, phone ──────────────────────────────────────────────────────
+  // One LINE per event, not one form per event.
+  //
+  // The first attempt at this laid every field out as a labelled block, which
+  // fixed the truncation and traded it for scrolling: six rows and ~380px per
+  // event, so a 31-event schedule ran about eleven screens and you could not
+  // see two events at once. The read-only table gets a whole event into 56px,
+  // and that density is the thing worth keeping — so the list reads like the
+  // table (name, dates, swing, badges) and opens the editor for one event at a
+  // time, in place.
+  //
+  // One row open at a time, deliberately: the point is that the schedule stays
+  // scannable while you edit a piece of it.
   const renderEditCards = (list, kind) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', padding: '0 10px 10px' }}>
       {list.map(t => {
-        const i = localTournaments.findIndex(lt => lt.name === t.name);
+        // indexOf on the object, not findIndex on the name: two rows can share
+        // a name transiently while one is being retyped, and the name lookup
+        // would then edit the wrong row.
+        const i = localTournaments.indexOf(t);
         const isActive = t.playing && !t.completed;
+        const open = editingRow === i;
+        const seg = getSegmentForTournament(t);
+        const segIsSet = segmentSource(t) === 'explicit';
         return (
-          <div key={t.name} style={{
-            border: `1px solid ${isActive ? colors.border : colors.borderSubtle}`,
-            borderRadius: 6,
-            background: isActive ? white(0.04) : colors.cardBg,
-            padding: 12,
-            display: 'flex', flexDirection: 'column', gap: 10,
-            opacity: isAlternate(t) ? 0.6 : 1,
+          <div key={i} style={{
+            borderBottom: `1px solid ${colors.borderSubtle}`,
+            background: open ? white(0.04) : 'transparent',
+            opacity: isAlternate(t) && !open ? 0.55 : 1,
           }}>
-            {/* Header: active toggle + type badges + delete */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <label style={{
-                display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-                fontFamily: fonts.sans, fontSize: fontSize.caption, fontWeight: 600,
-                letterSpacing: '1px', textTransform: 'uppercase',
-                color: isActive ? colors.textGold : colors.textLabel,
-              }}>
+            {/* Summary row — the whole event in two compact lines. */}
+            <div
+              {...activatable(() => setEditingRow(open ? null : i), {
+                expanded: open,
+                label: `${open ? 'Close' : 'Edit'} ${t.name}`,
+              })}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 2px', cursor: 'pointer', minHeight: 44,
+              }}
+            >
+              {/* The checkbox is its own control. Without stopPropagation the
+                  row's click handler also fires and ticking "active" would
+                  open the editor. */}
+              <span onClick={e => e.stopPropagation()} style={{ display: 'flex' }}>
                 {activeToggle(t, i)}
-                Active
-              </label>
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-                {typeBadges(t, i)}
-                {deleteButton(t, i, true)}
+              </span>
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontFamily: fonts.serif, fontSize: fontSize.md,
+                  color: isActive ? colors.textGold : colors.textPrimary,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {t.name}
+                </div>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6, marginTop: 2,
+                  fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textSecondary,
+                  overflow: 'hidden', whiteSpace: 'nowrap',
+                }}>
+                  <span style={{ flexShrink: 0 }}>{t.dates || '—'}</span>
+                  <span style={{ color: colors.textLabel }}>·</span>
+                  {/* The swing is on the summary line because it is the field
+                      most often wrong and the one that decides when a pot pays
+                      out. An unset swing is a warning here, exactly as it is in
+                      the dropdown — see swingSelect. */}
+                  <span style={{
+                    color: segIsSet ? getSwingColor(seg) : red(0.95),
+                    overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {segIsSet ? seg : '⚠ swing not set'}
+                  </span>
+                  {Number.isInteger(t.lockHour) && (
+                    <>
+                      <span style={{ color: colors.textLabel }}>·</span>
+                      <span style={{ flexShrink: 0 }}>{fmtETTime(t.lockHour)}</span>
+                    </>
+                  )}
+                </div>
               </div>
+
+              <TournamentBadges tournament={t} size="sm" />
+              {isAlternate(t) && (
+                <span style={{
+                  fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 700,
+                  color: colors.danger, border: `1px solid ${colors.dangerBorder}`,
+                  borderRadius: 2, padding: '2px 4px', lineHeight: 1,
+                }}>Alt</span>
+              )}
+              {open
+                ? <ChevronDown style={{ width: 16, height: 16, color: colors.textSecondary, flexShrink: 0 }} />
+                : <ChevronRight style={{ width: 16, height: 16, color: colors.textMuted, flexShrink: 0 }} />}
             </div>
 
-            <div>
-              <span style={fieldLabel}>Tournament</span>
-              {textField(t, i, 'name', 'Tournament name', false, { fontFamily: fonts.serif })}
-            </div>
+            {/* Editor — only for the open row. */}
+            {open && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '2px 2px 14px' }}>
+                <div>
+                  <span style={fieldLabel}>Tournament</span>
+                  {textField(t, i, 'name', 'Tournament name', false, { fontFamily: fonts.serif })}
+                </div>
 
-            {/* Dates and swing share a line — both are short, and pairing them
-                keeps the card from becoming a column of eight full-width
-                boxes the commish has to scroll through. */}
-            {/* Dates and swing pair up only when both fit. 168px is what the
-                swing dropdown needs to show "West Coast Swing", the longest of
-                the four, without truncating it — below that auto-fit drops to
-                one column and each takes the full card.
-                
-                minmax(…, 1fr) rather than a fixed fraction because a grid
-                item's default min-width is min-content, and a <select>'s
-                min-content is its longest option: a plain `1fr 1fr` let the
-                swing box widen past the card and clip its own label. */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))', gap: 10 }}>
-              <div style={{ minWidth: 0 }}>
-                <span style={fieldLabel}>Dates</span>
-                {textField(t, i, 'dates', 'Aug 20-23', false)}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <span style={fieldLabel}>Swing</span>
-                {swingSelect(t, i, false)}
-              </div>
-            </div>
+                {/* Dates and swing pair up only when both fit. 168px is what the
+                    swing dropdown needs to show "West Coast Swing", the longest
+                    of the four, without truncating it — below that auto-fit
+                    drops to one column and each takes the full width.
 
-            {/* One label over both, matching the desktop column. Two labels for
-                two lines of the same address is a row of vertical space the
-                card cannot spare. */}
-            <div>
-              <span style={fieldLabel}>Location / course</span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {textField(t, i, 'location', 'City, ST', false)}
-                {/* Subordinate by SIZE, not by colour: a muted course name in
-                    its own box reads as a placeholder or a disabled field. */}
-                {textField(t, i, 'course', 'Course name', false, { fontSize: fontSize.md })}
-              </div>
-            </div>
+                    minmax(…, 1fr) rather than a fixed fraction because a grid
+                    item's default min-width is min-content, and a <select>'s
+                    min-content is its longest option: a plain `1fr 1fr` let the
+                    swing box widen past the card and clip its own label. */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))', gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <span style={fieldLabel}>Dates</span>
+                    {textField(t, i, 'dates', 'Aug 20-23', false)}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <span style={fieldLabel}>Swing</span>
+                    {swingSelect(t, i, false)}
+                  </div>
+                </div>
 
-            <div>
-              <span style={fieldLabel}>Lineup lock</span>
-              {lockSelect(t, i, false)}
-            </div>
+                {/* One label over both, matching the desktop column. Two labels
+                    for two lines of the same address is a row of vertical space
+                    this list is trying to save. */}
+                <div>
+                  <span style={fieldLabel}>Location / course</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {textField(t, i, 'location', 'City, ST', false)}
+                    {/* Subordinate by SIZE, not by colour: a muted course name
+                        in its own box reads as a placeholder or a disabled
+                        field. */}
+                    {textField(t, i, 'course', 'Course name', false, { fontSize: fontSize.md })}
+                  </div>
+                </div>
+
+                <div>
+                  <span style={fieldLabel}>Lineup lock</span>
+                  {lockSelect(t, i, false)}
+                </div>
+
+                {/* Type and delete live in the editor rather than the summary
+                    row: the row has to stay one line, and neither is edited
+                    often enough to earn permanent space there. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 2 }}>
+                  <span style={{ ...fieldLabel, marginBottom: 0 }}>Type</span>
+                  {typeBadges(t, i)}
+                  <span style={{ marginLeft: 'auto' }}>{deleteButton(t, i, true)}</span>
+                </div>
+              </div>
+            )}
           </div>
         );
       })}
@@ -1134,7 +1225,7 @@ export const TournamentsView = ({
           No events here yet.
         </div>
       )}
-      {kind === 'upcoming' && addTournamentButton(true)}
+      {kind === 'upcoming' && <div style={{ paddingTop: 10 }}>{addTournamentButton(true)}</div>}
     </div>
   );
 
@@ -1172,9 +1263,13 @@ export const TournamentsView = ({
       </thead>
       <tbody>
         {list.map(t => {
-          const i = localTournaments.findIndex(lt => lt.name === t.name);
+          // See renderEditCards: identity, not name. The key was t.name, which
+          // changes as the name field is typed into — React then unmounts the
+          // row and remounts a new one, and the input loses focus after every
+          // single character.
+          const i = localTournaments.indexOf(t);
           return (
-            <tr key={t.name}
+            <tr key={i}
               style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
               onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
@@ -1386,6 +1481,7 @@ export const TournamentsView = ({
             <button
               onClick={() => {
                 setLocalTournaments(tournaments);  // discard local edits
+                setEditingRow(null);
                 setEditMode(false);
               }}
               style={{

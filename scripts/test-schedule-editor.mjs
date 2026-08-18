@@ -48,6 +48,19 @@ console.log('\n── every table declares its columns ──');
 console.log('\n── the phone gets a different layout, not a smaller table ──');
 {
   check('a card list exists for narrow viewports', /renderEditCards = \(list, kind\)/.test(src));
+
+  // The first version of the card list was one labelled form per event: six
+  // rows and ~380px each, so a 31-event schedule ran about eleven screens.
+  // It reads as one line per event now and opens the editor in place.
+  check('events are collapsed to a summary row by default',
+    /const open = editingRow === i;/.test(src));
+  check('the summary row is keyboard-activatable (house a11y helper)',
+    /\{\.\.\.activatable\(\(\) => setEditingRow\(open \? null : i\)/.test(src));
+  check('one editor open at a time', /const \[editingRow, setEditingRow\] = useState\(null\)/.test(src));
+  check('the summary line carries the swing, warning included',
+    /segIsSet \? seg : '⚠ swing not set'/.test(src));
+  check('the active checkbox does not also toggle the editor',
+    /onClick=\{e => e\.stopPropagation\(\)\}/.test(src));
   check('the editor picks between them on width',
     /useCardEditor\s*\?\s*\n?\s*renderEditCards/.test(src));
   check('the breakpoint clears the table\'s own minimum',
@@ -61,6 +74,27 @@ console.log('\n── the phone gets a different layout, not a smaller table ─
   }
   check('the card list renders the swing control', /swingSelect\(t, i, false\)/.test(src));
   check('the table renders the same one', /swingSelect\(t, i, true\)/.test(src));
+}
+
+console.log('\n── an editable row is identified by identity, not by its name ──');
+{
+  // Both edit renderers used `key={t.name}` and looked their row up with
+  // findIndex on the name. The name is one of the fields being edited: React
+  // sees a new key on every keystroke, unmounts the row, and the input loses
+  // focus after each character — and the open editor, keyed the same way,
+  // closed itself.
+  const editSection = src.slice(src.indexOf('const renderEditCards'), src.indexOf('const renderTable'));
+  check('no edit row is keyed by the name being typed into',
+    !/key=\{t\.name\}/.test(editSection));
+  check('rows resolve by object identity',
+    (editSection.match(/localTournaments\.indexOf\(t\)/g) || []).length === 2,
+    'expected both edit renderers to use indexOf');
+  check('no name-based row lookup remains in the editors',
+    !/findIndex\(lt => lt\.name === t\.name\)/.test(editSection));
+  check('deleting a row closes the editor rather than re-targeting it',
+    /setEditingRow\(null\);\n\s*setLocalTournaments\(prev => prev\.filter/.test(src));
+  check('a newly added row opens straight into its editor',
+    /setEditingRow\(localTournaments\.length\)/.test(src));
 }
 
 console.log('\n── inputs fit the box they are in ──');
