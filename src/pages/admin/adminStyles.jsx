@@ -63,7 +63,7 @@ export const S = {
     ...theme.select,
     marginBottom: 8,
     color: colors.textPrimary,
-    backgroundColor: '#0d1b2e',
+    backgroundColor: colors.selectBg,
     appearance: 'none',
     WebkitAppearance: 'none',
   },

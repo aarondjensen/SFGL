@@ -70,6 +70,12 @@ export const colors = {
   headerBg:      'linear-gradient(90deg, rgba(16,40,72,0.5) 0%, transparent 100%)',
   inputBg:       white(0.04),
   inputBgFocus:  white(0.07),
+  // OPAQUE background for a <select>. theme.select's inputBg is a translucent
+  // white, and a native dropdown list painted over a translucent background
+  // renders white-on-white in several browsers — so every select that has to
+  // stay readable overrode it with this hex by hand, in three places. Named
+  // here so the fourth one doesn't invent its own navy.
+  selectBg:      '#0d1b2e',
   buttonNavy:    '#1c3a5e',
   buttonNavyHover: '#22456e',
   sectionHeaderBlue: blue(0.90),   // bright blue for AdminView section headers
@@ -389,6 +395,11 @@ export const theme = {
   // mouse users, which is what the bare outline reset was reaching for.
   input: {
     width: '100%',
+    // border-box, because the width above is 100%. Without it the padding and
+    // border are ADDED to the parent's full width, so every input in the app
+    // sits 30px wider than the box it is in and clips on the right — which is
+    // what the schedule editor's fields were doing inside their card.
+    boxSizing: 'border-box',
     background: colors.inputBg,
     border: `1px solid ${colors.borderInput}`,
     borderRadius: shape.inputRadius,
@@ -402,6 +413,7 @@ export const theme = {
 
   select: {
     width: '100%',
+    boxSizing: 'border-box',   // see theme.input
     background: colors.inputBg,
     border: `1px solid ${colors.borderInput}`,
     borderRadius: shape.inputRadius,

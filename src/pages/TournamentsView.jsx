@@ -10,6 +10,7 @@ import { TeamName } from '../components/TeamName';
 import { sfglDataApi } from '../api/firebase';
 import { STORAGE_KEYS } from '../constants';
 import { TournamentBadges } from './TournamentBadges';
+import { useIsMobile } from '../hooks/useIsMobile.js';
 
 // Alternate-event detection: relies on the explicit `isAlternate` flag the
 // commish sets via the "Alt" toggle in the schedule editor.
@@ -184,6 +185,12 @@ export const TournamentsView = ({
   transactions = [],
 }) => {
   const [editMode,         setEditMode]         = useState(false);
+  // The schedule editor is a card list below 900px and a table above it — see
+  // renderEditCards. 900 rather than the app's usual 640 because this table
+  // carries eight editable fields and genuinely needs ~1140px; between 640 and
+  // 900 it would technically render, but only behind a horizontal scrollbar.
+  // Reactive, so rotating a tablet lands on the other layout.
+  const useCardEditor = useIsMobile(900);
   const [localTournaments, setLocalTournaments] = useState([]);
   const dialog = useDialog();
 
@@ -835,227 +842,389 @@ export const TournamentsView = ({
     );
   };
 
-  const renderTable = (list, kind = 'upcoming') => (
-    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-      {!editMode && (
-        <colgroup>
-          <col style={{ width: 26 }} />
-          <col />
-          <col style={{ width: 70 }} />
-          <col style={{ width: '34%' }} />
-        </colgroup>
+  // ── Edit-mode field controls ──────────────────────────────────────────────
+  // Each field is defined ONCE and composed twice: into <td>s by the desktop
+  // table, and into labelled blocks by the phone card list. The two used to be
+  // one eight-column table at every width, which is what the commish was
+  // looking at on a phone: `tableLayout: fixed` splits 100% of a 390px viewport
+  // eight ways, so every column got ~44px and every header and input painted
+  // straight over its neighbour. "Tournament" sat on top of "Dates", the
+  // location input overlapped the swing dropdown, and the Lock column ran off
+  // the screen entirely.
+  //
+  // These are plain functions returning JSX, NOT components. A component
+  // declared inside a render is a brand-new type on every render, so React
+  // unmounts and remounts its <input> — and the field loses focus after each
+  // keystroke.
+  //
+  // `compact` is the desktop treatment: bare underlines sized to fit eight
+  // columns. The card layout uses the shared theme.input / theme.select, whose
+  // 16px is the size that stops iOS zooming the viewport on focus and never
+  // zooming back out (see the note on theme.input) — the compact 13px inputs
+  // did exactly that on every tap.
+
+  const compactInput = {
+    boxSizing: 'border-box',
+    background: 'transparent',
+    border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
+    width: '100%', fontFamily: fonts.sans, fontSize: fontSize.base,
+    color: colors.textPrimary, padding: '2px 0',
+  };
+
+  const fieldLabel = {
+    fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 600,
+    letterSpacing: '1.5px', textTransform: 'uppercase',
+    color: colors.textLabel, marginBottom: 4, display: 'block',
+  };
+
+  const textField = (t, i, key, placeholder, compact, extra = {}) => (
+    <input
+      value={t[key] || ''}
+      onChange={e => updateLocal(i, { [key]: e.target.value })}
+      placeholder={placeholder}
+      aria-label={placeholder}
+      style={compact ? { ...compactInput, ...extra } : { ...theme.input, ...extra }}
+    />
+  );
+
+  // The active-event radio. One event at a time, so checking one clears the
+  // rest — the same mutual exclusion the checkbox always enforced by hand.
+  const activeToggle = (t, i) => (
+    <input
+      type="checkbox"
+      checked={t.playing && !t.completed}
+      aria-label={`Mark ${t.name} as the active event`}
+      onChange={e => {
+        const updated = localTournaments.map(x => ({ ...x, playing: false }));
+        if (e.target.checked && !t.completed) updated[i].playing = true;
+        setLocalTournaments(updated);
+      }}
+      style={{ accentColor: colors.textGold, width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }}
+    />
+  );
+
+  const typeBadges = (t, i) => (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {/* activeBg is spelled out per badge rather than derived from activeColor.
+          It used to be `rgba(${activeColor}, 0.15)` where activeColor was
+          already a full colour — `rgba(rgba(130,80,200,0.8), 0.15)`, which is
+          not a colour, so the browser dropped the declaration and a selected
+          badge got no fill at all. */}
+      {[
+        { badge: 'S', key: 'isSignature', label: 'Signature event',
+          activeColor: purple(0.8), activeBorder: purple(0.5), activeBg: purple(0.15) },
+        { badge: 'M', key: 'isMajor', label: 'Major',
+          activeColor: colors.textGold, activeBorder: colors.border, activeBg: gold(0.15) },
+        { badge: 'Alt', key: 'isAlternate', label: 'Alternate event',
+          activeColor: colors.danger, activeBorder: colors.dangerBorder, activeBg: colors.dangerBg },
+      ].map(({ badge, key, label, activeColor, activeBorder, activeBg }) => {
+        const active = t[key];
+        return (
+          <button key={badge} onClick={() => updateLocal(i, { [key]: !active })}
+            title={label}
+            aria-pressed={!!active}
+            style={{
+              width: badge === 'Alt' ? 30 : 24, height: 24,
+              borderRadius: 2, fontFamily: fonts.sans,
+              fontSize: fontSize.xs, fontWeight: 700, cursor: 'pointer',
+              transition: 'all 0.15s', flexShrink: 0,
+              background: active ? activeBg : white(0.04),
+              border: `1px solid ${active ? activeBorder : colors.borderSubtle}`,
+              color: active ? activeColor : colors.textMuted,
+            }}
+          >
+            {badge}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // An unset swing is NOT a safe default, so it is drawn as a warning rather
+  // than as a neutral placeholder. The fallback behind it maps calendar
+  // quarters and cannot return 'Fall Finish' for a Jan-Aug season, so a row
+  // left unset can only drift out of Fall Finish and into Summer — silently,
+  // and early-paying that swing's pot when it does.
+  const swingSelect = (t, i, compact) => {
+    const explicit = segmentSource(t) === 'explicit';
+    return (
+      <select
+        value={t.segment || ''}
+        onChange={e => updateLocal(i, { segment: e.target.value || null })}
+        aria-label={`Swing for ${t.name}`}
+        title={explicit
+          ? undefined
+          : `Not set — currently falling back to "${getSegmentForTournament(t) || 'nothing'}" from the month. Pick a swing.`}
+        style={{
+          ...theme.select,
+          // Tighter than theme.select's 14px sides: this box shares a line with
+          // the dates field, and "West Coast Swing" — the longest of the four —
+          // needs every pixel of it or the label truncates mid-word.
+          ...(compact ? { fontSize: fontSize.base, padding: '5px 8px', minWidth: 110 } : { padding: '9px 10px' }),
+          background: colors.selectBg,
+          color: explicit ? colors.textPrimary : red(0.95),
+          border: explicit ? theme.select.border : `1px solid ${red(0.6)}`,
+          appearance: 'none',
+          WebkitAppearance: 'none',
+        }}
+      >
+        <option value="">⚠ not set</option>
+        {SWINGS.map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+    );
+  };
+
+  // Unset must NOT display as 7:00 AM. The default is derived from the course
+  // timezone, so an unset Pebble Beach really locks at 9 — showing "7:00 AM
+  // (default)" stated the wrong deadline for every non-ET event. Blank means
+  // Auto, and names the hour Auto resolves to.
+  const lockSelect = (t, i, compact) => (
+    <select
+      value={Number.isInteger(t.lockHour) ? t.lockHour : ''}
+      onChange={e => updateLocal(i, {
+        lockHour: e.target.value === '' ? null : parseInt(e.target.value, 10),
+      })}
+      aria-label={`Lineup lock hour for ${t.name}`}
+      style={{
+        ...theme.select,
+        ...(compact ? { fontSize: fontSize.base, padding: '5px 8px', minWidth: 90 } : {}),
+        background: colors.selectBg,
+        color: colors.textPrimary,
+        appearance: 'none',
+        WebkitAppearance: 'none',
+      }}
+    >
+      <option value="">Auto — {fmtETTime(getTournamentLockHourET({ ...t, lockHour: null }))} ({getTournamentTimezone(t)})</option>
+      {[7, 8, 9, 10, 11, 12].map(h => (
+        <option key={h} value={h}>{fmtETTime(h)}</option>
+      ))}
+    </select>
+  );
+
+  // Refuses to delete a tournament with processed results — there is data tied
+  // to it that matters historically.
+  const deleteButton = (t, i, wide = false) => (
+    <button
+      onClick={() => deleteRow(i)}
+      disabled={t.completed}
+      title={t.completed ? 'Completed tournaments cannot be deleted from the UI' : `Delete ${t.name}`}
+      aria-label={`Delete ${t.name}`}
+      style={{
+        background: 'transparent',
+        border: `1px solid ${t.completed ? colors.borderSubtle : colors.dangerBorder}`,
+        borderRadius: 3,
+        color: t.completed ? colors.textMuted : colors.danger,
+        cursor: t.completed ? 'not-allowed' : 'pointer',
+        width: wide ? 32 : 24, height: wide ? 32 : 24,
+        fontSize: fontSize.md, lineHeight: 1, flexShrink: 0,
+        opacity: t.completed ? 0.4 : 1,
+      }}
+    >
+      ✕
+    </button>
+  );
+
+  const addTournamentButton = (full = false) => (
+    <button
+      onClick={addRow}
+      style={{
+        ...theme.btnSecondary,
+        padding: '8px 14px',
+        display: full ? 'flex' : 'inline-flex',
+        width: full ? '100%' : undefined,
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 6,
+        cursor: 'pointer',
+      }}
+    >
+      <span style={{ fontSize: fontSize.md, lineHeight: 1, fontWeight: 700 }}>+</span>
+      Add Tournament
+    </button>
+  );
+
+  // ── Edit mode, phone ──────────────────────────────────────────────────────
+  // One card per event, fields stacked and labelled. Nothing is truncated and
+  // nothing scrolls sideways: the constraint a table cannot satisfy at 390px is
+  // that eight fields have to share one line, so the card stops trying.
+  const renderEditCards = (list, kind) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 10 }}>
+      {list.map(t => {
+        const i = localTournaments.findIndex(lt => lt.name === t.name);
+        const isActive = t.playing && !t.completed;
+        return (
+          <div key={t.name} style={{
+            border: `1px solid ${isActive ? colors.border : colors.borderSubtle}`,
+            borderRadius: 6,
+            background: isActive ? white(0.04) : colors.cardBg,
+            padding: 12,
+            display: 'flex', flexDirection: 'column', gap: 10,
+            opacity: isAlternate(t) ? 0.6 : 1,
+          }}>
+            {/* Header: active toggle + type badges + delete */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                fontFamily: fonts.sans, fontSize: fontSize.caption, fontWeight: 600,
+                letterSpacing: '1px', textTransform: 'uppercase',
+                color: isActive ? colors.textGold : colors.textLabel,
+              }}>
+                {activeToggle(t, i)}
+                Active
+              </label>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {typeBadges(t, i)}
+                {deleteButton(t, i, true)}
+              </div>
+            </div>
+
+            <div>
+              <span style={fieldLabel}>Tournament</span>
+              {textField(t, i, 'name', 'Tournament name', false, { fontFamily: fonts.serif })}
+            </div>
+
+            {/* Dates and swing share a line — both are short, and pairing them
+                keeps the card from becoming a column of eight full-width
+                boxes the commish has to scroll through. */}
+            {/* Dates and swing pair up only when both fit. 168px is what the
+                swing dropdown needs to show "West Coast Swing", the longest of
+                the four, without truncating it — below that auto-fit drops to
+                one column and each takes the full card.
+                
+                minmax(…, 1fr) rather than a fixed fraction because a grid
+                item's default min-width is min-content, and a <select>'s
+                min-content is its longest option: a plain `1fr 1fr` let the
+                swing box widen past the card and clip its own label. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))', gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <span style={fieldLabel}>Dates</span>
+                {textField(t, i, 'dates', 'Aug 20-23', false)}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <span style={fieldLabel}>Swing</span>
+                {swingSelect(t, i, false)}
+              </div>
+            </div>
+
+            {/* One label over both, matching the desktop column. Two labels for
+                two lines of the same address is a row of vertical space the
+                card cannot spare. */}
+            <div>
+              <span style={fieldLabel}>Location / course</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {textField(t, i, 'location', 'City, ST', false)}
+                {/* Subordinate by SIZE, not by colour: a muted course name in
+                    its own box reads as a placeholder or a disabled field. */}
+                {textField(t, i, 'course', 'Course name', false, { fontSize: fontSize.md })}
+              </div>
+            </div>
+
+            <div>
+              <span style={fieldLabel}>Lineup lock</span>
+              {lockSelect(t, i, false)}
+            </div>
+          </div>
+        );
+      })}
+      {list.length === 0 && (
+        <div style={{
+          fontFamily: fonts.sans, fontSize: fontSize.base, color: colors.textMuted,
+          textAlign: 'center', padding: '12px 0', fontStyle: 'italic',
+        }}>
+          No events here yet.
+        </div>
       )}
+      {kind === 'upcoming' && addTournamentButton(true)}
+    </div>
+  );
+
+  // ── Edit mode, desktop ────────────────────────────────────────────────────
+  // The eight-column table, with the column widths it never had. `minWidth`
+  // is what makes the wrapper's overflowX real: without it the table shrank to
+  // 100% of whatever it was given and the cells overlapped instead of the
+  // container scrolling.
+  const renderEditTable = (list, kind) => (
+    <table style={{ width: '100%', minWidth: 1140, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+      {/* Widths measured against what each column actually holds: the ACTIVE
+          header at its letter-spacing, "West Coast Swing", and "Auto — 8:00 AM
+          (CT)" are the three that decide it. Tournament is the auto column, so
+          it absorbs whatever the viewport has beyond the 1140 minimum. */}
+      <colgroup>
+        <col style={{ width: 76 }} />
+        <col style={{ width: 104 }} />
+        <col />
+        <col style={{ width: 112 }} />
+        <col style={{ width: '20%' }} />
+        <col style={{ width: 162 }} />
+        <col style={{ width: 182 }} />
+        <col style={{ width: 46 }} />
+      </colgroup>
       <thead>
         <tr>
-          {editMode ? (
-            ['Active', 'Type', 'Tournament', 'Dates', 'Location / Course', 'Swing', 'Lock', ''].map((h, i) => (
-              <th key={h || `c${i}`} style={{ ...theme.tableHeaderCell, fontSize: fontSize.sm }}>{h}</th>
-            ))
-          ) : (
-            [{ label: '' }, { label: 'Tournament' }, { label: 'Dates' }, { label: 'Location' }].map(({ label }) => (
-              <th key={label || 'badge'} style={{ ...theme.tableHeaderCell, textAlign: 'left', padding: '8px 6px' }}>{label}</th>
-            ))
-          )}
+          {['Active', 'Type', 'Tournament', 'Dates', 'Location / Course', 'Swing', 'Lock', ''].map((h, i) => (
+            <th key={h || `c${i}`} style={{
+              ...theme.tableHeaderCell,
+              fontSize: fontSize.sm, padding: '8px 8px', textAlign: 'left',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>{h}</th>
+          ))}
         </tr>
       </thead>
       <tbody>
         {list.map(t => {
-          const realIndex = localTournaments.findIndex(lt => lt.name === t.name);
+          const i = localTournaments.findIndex(lt => lt.name === t.name);
+          return (
+            <tr key={t.name}
+              style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
+              onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <td style={{ padding: '8px 10px', textAlign: 'center' }}>{activeToggle(t, i)}</td>
+              <td style={{ padding: '8px 8px' }}>{typeBadges(t, i)}</td>
+              <td style={{ padding: '8px 8px' }}>{textField(t, i, 'name', 'Tournament name', true)}</td>
+              <td style={{ padding: '8px 8px' }}>{textField(t, i, 'dates', 'Dates', true)}</td>
+              <td style={{ padding: '8px 8px' }}>
+                {textField(t, i, 'location', 'Location', true)}
+                {textField(t, i, 'course', 'Course', true, {
+                  fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2,
+                })}
+              </td>
+              <td style={{ padding: '8px 8px' }}>{swingSelect(t, i, true)}</td>
+              <td style={{ padding: '8px 8px' }}>{lockSelect(t, i, true)}</td>
+              <td style={{ padding: '8px 6px', textAlign: 'center' }}>{deleteButton(t, i)}</td>
+            </tr>
+          );
+        })}
+        {kind === 'upcoming' && (
+          <tr>
+            <td colSpan={8} style={{ padding: '10px 8px', textAlign: 'center', borderTop: `1px dashed ${colors.borderSubtle}` }}>
+              {addTournamentButton()}
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  );
+
+  // ── Read-only schedule table ──────────────────────────────────────────────
+  const renderTable = (list, kind = 'upcoming') => (
+    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+      <colgroup>
+        <col style={{ width: 26 }} />
+        <col />
+        <col style={{ width: 70 }} />
+        <col style={{ width: '34%' }} />
+      </colgroup>
+      <thead>
+        <tr>
+          {[{ label: '' }, { label: 'Tournament' }, { label: 'Dates' }, { label: 'Location' }].map(({ label }) => (
+            <th key={label || 'badge'} style={{ ...theme.tableHeaderCell, textAlign: 'left', padding: '8px 6px' }}>{label}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {list.map(t => {
           const alt = isAlternate(t);
-
-          if (editMode) {
-            return (
-              <tr key={t.name}
-                style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
-                onMouseEnter={e => { e.currentTarget.style.background = colors.rowHover; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-              >
-                {/* Active checkbox */}
-                <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={t.playing && !t.completed}
-                    onChange={e => {
-                      const updated = localTournaments.map(x => ({ ...x, playing: false }));
-                      if (e.target.checked && !t.completed) updated[realIndex].playing = true;
-                      setLocalTournaments(updated);
-                    }}
-                    style={{ accentColor: colors.textGold, width: 14, height: 14, cursor: 'pointer' }}
-                  />
-                </td>
-
-                {/* Type toggle badges */}
-                <td style={{ padding: '8px 8px' }}>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {[
-                      { badge: 'S', key: 'isSignature', activeColor: purple(0.8), activeBorder: purple(0.5) },
-                      { badge: 'M', key: 'isMajor',     activeColor: colors.textGold,         activeBorder: colors.border },
-                      { badge: 'Alt', key: 'isAlternate', activeColor: colors.danger,           activeBorder: colors.dangerBorder },
-                    ].map(({ badge, key, activeColor, activeBorder }) => {
-                      const active = t[key];
-                      return (
-                        <button key={badge} onClick={() => updateLocal(realIndex, { [key]: !active })}
-                          style={{
-                            width: badge === 'Alt' ? 28 : 22, height: 22,
-                            borderRadius: 2, fontFamily: fonts.sans,
-                            fontSize: fontSize.xs, fontWeight: 700, cursor: 'pointer',
-                            transition: 'all 0.15s',
-                            background: active ? `rgba(${activeColor}, 0.15)` : white(0.04),
-                            border: `1px solid ${active ? activeBorder : colors.borderSubtle}`,
-                            color: active ? activeColor : colors.textMuted,
-                          }}
-                        >
-                          {badge}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </td>
-
-                {/* Name input */}
-                <td style={{ padding: '8px 8px' }}>
-                  <input
-                    value={t.name}
-                    onChange={e => updateLocal(realIndex, { name: e.target.value })}
-                    style={{
-                      background: 'transparent',
-                      border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
-                      width: '100%', fontFamily: fonts.sans, fontSize: fontSize.base,
-                      color: colors.textPrimary, padding: '2px 0',
-                    }}
-                  />
-                </td>
-
-                {/* Dates input */}
-                <td style={{ padding: '8px 8px' }}>
-                  <input
-                    value={t.dates}
-                    onChange={e => updateLocal(realIndex, { dates: e.target.value })}
-                    style={{
-                      background: 'transparent',
-                      border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
-                      width: '100%', fontFamily: fonts.sans, fontSize: fontSize.base,
-                      color: colors.textPrimary, padding: '2px 0',
-                    }}
-                  />
-                </td>
-
-                {/* Location + course */}
-                <td style={{ padding: '8px 8px' }}>
-                  <input
-                    value={t.location || ''}
-                    onChange={e => updateLocal(realIndex, { location: e.target.value })}
-                    style={{
-                      background: 'transparent',
-                      border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
-                      width: '100%', fontFamily: fonts.sans, fontSize: fontSize.base,
-                      color: colors.textPrimary, padding: '2px 0',
-                    }}
-                    placeholder="Location"
-                  />
-                  <input
-                    value={t.course || ''}
-                    onChange={e => updateLocal(realIndex, { course: e.target.value })}
-                    style={{
-                      background: 'transparent',
-                      border: 'none', borderBottom: `1px solid ${colors.borderInput}`,
-                      width: '100%', fontFamily: fonts.sans, fontSize: fontSize.sm,
-                      color: colors.textSecondary, padding: '2px 0',
-                      marginTop: 2,
-                    }}
-                    placeholder="Course"
-                  />
-                </td>
-
-                {/* Swing */}
-                <td style={{ padding: '8px 8px' }}>
-                  {/* An unset swing is NOT a safe default, so it is drawn as a
-                      warning rather than as a neutral placeholder. The fallback
-                      behind it maps calendar quarters and cannot return 'Fall
-                      Finish' for a Jan-Aug season, so a row left unset can only
-                      drift out of Fall Finish and into Summer — silently, and
-                      early-paying that swing's pot when it does. */}
-                  <select
-                    value={t.segment || ''}
-                    onChange={e => updateLocal(realIndex, { segment: e.target.value || null })}
-                    title={segmentSource(t) === 'explicit'
-                      ? undefined
-                      : `Not set — currently falling back to "${getSegmentForTournament(t) || 'nothing'}" from the month. Pick a swing.`}
-                    style={{
-                      ...theme.select,
-                      fontSize: fontSize.base,
-                      padding: '5px 8px',
-                      background: '#0d1b2e',
-                      color: segmentSource(t) === 'explicit' ? colors.textPrimary : red(0.95),
-                      border: segmentSource(t) === 'explicit'
-                        ? theme.select.border
-                        : `1px solid ${red(0.6)}`,
-                      appearance: 'none',
-                      WebkitAppearance: 'none',
-                      minWidth: 110,
-                    }}
-                  >
-                    <option value="">⚠ not set</option>
-                    {SWINGS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </td>
-
-                {/* Lock hour override */}
-                <td style={{ padding: '8px 8px' }}>
-                  {/* Unset must NOT display as 7:00 AM. The default is derived
-                      from the course timezone, so an unset Pebble Beach really
-                      locks at 9 — showing "7:00 AM (default)" stated the wrong
-                      deadline for every non-ET event. Blank now means Auto and
-                      names the hour Auto resolves to. */}
-                  <select
-                    value={Number.isInteger(t.lockHour) ? t.lockHour : ''}
-                    onChange={e => updateLocal(realIndex, {
-                      lockHour: e.target.value === '' ? null : parseInt(e.target.value, 10),
-                    })}
-                    style={{
-                      ...theme.select,
-                      fontSize: fontSize.base,
-                      padding: '5px 8px',
-                      background: '#0d1b2e',
-                      color: colors.textPrimary,
-                      appearance: 'none',
-                      WebkitAppearance: 'none',
-                      minWidth: 90,
-                    }}
-                  >
-                    <option value="">Auto — {fmtETTime(getTournamentLockHourET({ ...t, lockHour: null }))} ({getTournamentTimezone(t)})</option>
-                    {[7, 8, 9, 10, 11, 12].map(h => (
-                      <option key={h} value={h}>{fmtETTime(h)}</option>
-                    ))}
-                  </select>
-                </td>
-
-                {/* Delete row — Wave J Round 4. Refuses to delete tournaments
-                    with processed results (they have data tied to them that
-                    matters historically). Confirms before deleting otherwise. */}
-                <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                  <button
-                    onClick={() => deleteRow(realIndex)}
-                    disabled={t.completed}
-                    title={t.completed ? 'Completed tournaments cannot be deleted from the UI' : `Delete ${t.name}`}
-                    style={{
-                      background: 'transparent',
-                      border: `1px solid ${t.completed ? colors.borderSubtle : 'rgba(220,60,60,0.3)'}`,
-                      borderRadius: 3,
-                      color: t.completed ? colors.textMuted : 'rgba(220,60,60,0.9)',
-                      cursor: t.completed ? 'not-allowed' : 'pointer',
-                      width: 24, height: 24,
-                      fontSize: fontSize.md, lineHeight: 1,
-                      opacity: t.completed ? 0.4 : 1,
-                    }}
-                  >
-                    ✕
-                  </button>
-                </td>
-              </tr>
-            );
-          }
-
           // ── Read-only row ──
           // Active (currently-playing) tournaments are also expandable — they
           // show submitted lineups + live positions instead of completed-event
@@ -1173,33 +1342,21 @@ export const TournamentsView = ({
             </React.Fragment>
           );
         })}
-        {/* Add row — visible only in edit mode and only for the upcoming
-            table (so a new event lands among future events, not in the
-            completed history). Renders as a single full-width "+ Add
-            Tournament" button row matching the table's edit chrome. */}
-        {editMode && kind === 'upcoming' && (
-          <tr>
-            <td colSpan={8} style={{ padding: '10px 8px', textAlign: 'center', borderTop: `1px dashed ${colors.borderSubtle}` }}>
-              <button
-                onClick={addRow}
-                style={{
-                  ...theme.btnSecondary,
-                  padding: '6px 14px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  cursor: 'pointer',
-                }}
-              >
-                <span style={{ fontSize: fontSize.md, lineHeight: 1, fontWeight: 700 }}>+</span>
-                Add Tournament
-              </button>
-            </td>
-          </tr>
-        )}
       </tbody>
     </table>
   );
+
+  // Which of the three the section renders. Edit mode below 640px is the card
+  // list; everything else is a table, and only the tables need the horizontal
+  // scroll wrapper.
+  const renderSchedule = (list, kind) => {
+    if (editMode) {
+      return useCardEditor
+        ? renderEditCards(list, kind)
+        : <div style={{ overflowX: 'auto' }}>{renderEditTable(list, kind)}</div>;
+    }
+    return <div style={{ overflowX: 'auto' }}>{renderTable(list, kind)}</div>;
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1211,7 +1368,7 @@ export const TournamentsView = ({
           so any in-flight edits are dropped. Useful when you tap Edit by
           mistake or change your mind mid-edit. */}
       {isCommissioner && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
           {editMode && (
             <button
               onClick={seedSwings}
@@ -1219,7 +1376,7 @@ export const TournamentsView = ({
               style={{
                 ...theme.btnSecondary,
                 display: 'flex', alignItems: 'center', gap: 6,
-                padding: '8px 14px', flexShrink: 0,
+                padding: '8px 14px',
               }}
             >
               Seed Swings
@@ -1234,7 +1391,7 @@ export const TournamentsView = ({
               style={{
                 ...theme.btnSecondary,
                 display: 'flex', alignItems: 'center', gap: 6,
-                padding: '8px 14px', flexShrink: 0,
+                padding: '8px 14px',
               }}
             >
               Cancel
@@ -1245,7 +1402,7 @@ export const TournamentsView = ({
             style={{
               ...(editMode ? theme.btnPrimary : theme.btnSecondary),
               display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 14px', flexShrink: 0,
+              padding: '8px 14px',
             }}
           >
             {editMode
@@ -1262,7 +1419,7 @@ export const TournamentsView = ({
           <Calendar style={{ width: 15, height: 15, color: colors.textPrimary }} />
           <span style={sectionTitleStyle}>Upcoming Events</span>
         </div>
-        <div style={{ overflowX: 'auto' }}>{renderTable(upcoming, 'upcoming')}</div>
+        {renderSchedule(upcoming, 'upcoming')}
       </div>
 
       {/* ── Completed ──
@@ -1276,7 +1433,7 @@ export const TournamentsView = ({
             <Trophy style={{ width: 15, height: 15, color: colors.textGold }} />
             <span style={sectionTitleStyle}>Completed Events</span>
           </div>
-          <div style={{ overflowX: 'auto' }}>{renderTable(completed, 'completed')}</div>
+          {renderSchedule(completed, 'completed')}
         </div>
       )}
     </div>

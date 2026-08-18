@@ -4,6 +4,7 @@ import { AddDropPlayerModal } from './AddDropPlayerModal';
 import { TeamName } from '../components/TeamName';
 
 import { useRoster, useWindowStatus } from '../hooks';
+import { useIsMobile } from '../hooks/useIsMobile.js';
 import {
   getSortedRoster,
   getFreeAgentWindowStatus,
@@ -41,15 +42,9 @@ const playerBorderColor = (player) =>
   white(0.85);
 
 // ── Mobile display name helper ───────────────────────────────────────────────
-const useIsMobile = () => {
-  const [isMobile, setIsMobile] = React.useState(() => window.innerWidth < 640);
-  React.useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 640);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
-  return isMobile;
-};
+// useIsMobile moved to src/hooks/useIsMobile.js — the schedule editor needs the
+// same breakpoint, and a second copy of a resize listener is how two surfaces
+// end up disagreeing about what "mobile" is.
 
 // ── Custom team dropdown — stays dark on all browsers ─────────────────────────
 const TeamDropdown = ({ teams, value, onChange }) => {
