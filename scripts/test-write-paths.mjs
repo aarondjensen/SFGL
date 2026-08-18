@@ -157,7 +157,14 @@ test('E3: no JSON.stringify comparisons remain in the write paths', () => {
 test('E4: AdminView resolves tournament starts one way', () => {
   const raw = admin.match(/nextEvent\.start_date|t\.start_date \? new Date/g) || [];
   assert.deepEqual(raw, [], `still reading the ordering field directly: ${raw.join(', ')}`);
-  assert.equal((admin.match(/resolveTournamentStart\(/g) || []).length, 2);
+  // Two call sites, one resolver. The "is the week over" one now goes through
+  // the shared isTournamentWeekOver in api/_league.js — which is what the
+  // results cron gates on too — so AdminView calls resolveTournamentStart
+  // directly only for the imminent-event window.
+  assert.equal((admin.match(/resolveTournamentStart\(/g) || []).length, 1);
+  assert.match(admin, /isTournamentWeekOver\(t, et\) === true/);
+  assert.ok(!/while \(thursday\.getDay\(\) !== 4\)/.test(admin),
+    'AdminView is hand-rolling the tournament-week walk again — use isTournamentWeekOver');
 });
 
 test('E4: the imminent-event window measures from ET', () => {

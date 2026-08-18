@@ -352,11 +352,12 @@ export const segmentSource = (tournament) => {
  * boundaries — which is the actual shape of the season, unlike calendar
  * quarters. 31 events seeds 8/8/8/7.
  *
- * Ordering is by ARRAY POSITION, deliberately. `resolveTournamentStart` lives
- * in src/utils and api/ must not import from src/; and `start_date` is an
- * ordering field, not a real date. The array's own order is what the schedule
- * view shows and what tournamentIndex already means, so it is the right notion
- * of "schedule order" and the only one available here.
+ * Ordering is by ARRAY POSITION, deliberately. `resolveTournamentStart` (now in
+ * api/_league.js, so this file could reach it) answers null for any event with
+ * no date at all, and `start_date` is an ordering field rather than a real
+ * date — neither can order a whole schedule. The array's own order is what the
+ * schedule view shows and what tournamentIndex already means, so it is the
+ * right notion of "schedule order" here.
  *
  * Returns a new array; input is not mutated.
  */

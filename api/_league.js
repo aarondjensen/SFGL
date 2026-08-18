@@ -144,6 +144,107 @@ export const getTeeTimeLockMs = (tournament) => {
   return Number.isNaN(ms) ? null : ms;
 };
 
+// ── Tournament dates / when the week is over ─────────────────────────────────
+// Here rather than in src/utils for the same reason as the lock helpers above:
+// api/cron.js cannot import from src/, and while these lived on the client the
+// cron simply went without them. handleProcessResults picked the event to score
+// with `t.playing && !t.completed` and nothing else — it had no way to ask
+// whether that event had actually been PLAYED.
+//
+// That is how the BMW Championship was scored three days before it teed off.
+// St. Jude had been marked complete by hand, which advances `playing` to the
+// next event, and the results cron's retry window (every 30 min to 10pm ET on
+// results day) then found the BMW sitting there `playing && !completed`.
+// pgatour.com's past-results page for an unplayed event serves the PREVIOUS
+// edition's field, so the scrape came back as a full, ordinary-looking result:
+// the event was marked complete, the Fall Finish pot paid out, and every
+// manager got a results email for a tournament that had not started.
+
+/**
+ * The tournament's real start date, or null when nothing real is stored.
+ *
+ * `startDate` (a stored real date) wins; otherwise the human `dates` string
+ * ("Apr 6-12") is parsed, with SEASON supplying the year the string omits.
+ */
+export const getTournamentStartDate = (tournament) => {
+  if (tournament?.startDate) return new Date(tournament.startDate);
+  if (!tournament?.dates) return null;
+  const match = tournament.dates.match(/^([A-Za-z]+)\s+(\d+)/);
+  if (!match) return null;
+  const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
+  const month = months[match[1]];
+  if (month === undefined) return null;
+  // The `dates` string carries no year ("Apr 6-12"), so the season supplies it.
+  return new Date(SEASON, month, parseInt(match[2]));
+};
+
+/**
+ * The tournament's start date with the ordering field as a last resort.
+ *
+ * `start_date` is NOT a real date. _ensureStartDates in api/firebase.js
+ * back-fills missing values with a synthetic weekly series anchored at
+ * '2025-01-06' purely to keep the schedule in order, so for many events it has
+ * no relationship to when the tournament is played — which is how the 3M Open
+ * once showed as "ready to process" on the Saturday of its own week. It is
+ * still better than nothing when there is no real date at all, so it sits
+ * behind getTournamentStartDate rather than in front of it.
+ *
+ * Date-only strings are anchored at NOON UTC. Parsing 'YYYY-MM-DD' with the
+ * Date constructor gives UTC midnight, which is the previous calendar day
+ * everywhere west of Greenwich — the day-shift already found in the segment
+ * resolver. Noon has twelve hours of slack in both directions.
+ *
+ * Two callers in AdminView had drifted apart on this: one used exactly the
+ * precedence above, the other reached for raw `start_date` first, forty-five
+ * lines away in the same file.
+ */
+export const resolveTournamentStart = (tournament) => {
+  const real = getTournamentStartDate(tournament);
+  if (real && !isNaN(real.getTime())) return real;
+  const ordering = tournament?.start_date;
+  if (typeof ordering !== 'string' || !ordering) return null;
+  const d = new Date(`${ordering}T12:00:00Z`);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+/**
+ * Midnight at the START of the Monday after the tournament week, or null when
+ * the event cannot be dated at all.
+ *
+ * Same walk as isTournamentLocked: find the Thursday of the tournament week,
+ * then add four days. Play ends Sunday, so the event is over once that Monday
+ * begins. Anchoring on Thursday rather than on the stored date + N days is
+ * what makes a Sunday- or Monday-anchored `start_date` land in the right week
+ * instead of mid-event.
+ */
+export const tournamentWeekEnd = (tournament) => {
+  const start = resolveTournamentStart(tournament);
+  if (!start || Number.isNaN(start.getTime())) return null;
+  const thursday = new Date(start);
+  while (thursday.getDay() !== 4) thursday.setDate(thursday.getDate() + 1);
+  const monday = new Date(thursday);
+  monday.setDate(monday.getDate() + 4);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+};
+
+/**
+ * Has this tournament's week finished?
+ *
+ * Returns true / false, or **null** when the event carries no date of any kind
+ * — an answer of "I cannot tell", which is not the same as "no". Callers must
+ * decide what to do with null; the results cron treats it as "only proceed if
+ * the results source itself says the event is final".
+ *
+ * `now` defaults to the ET wall clock, which is the frame every other window in
+ * the league is evaluated in.
+ */
+export const isTournamentWeekOver = (tournament, now = getETNow()) => {
+  const end = tournamentWeekEnd(tournament);
+  if (end === null) return null;
+  return now.getTime() >= end.getTime();
+};
+
 // ── Days ─────────────────────────────────────────────────────────────────────
 // Indexed to match JavaScript's Date.getDay() (0 = Sunday), which is also how
 // the commish's configured waiver/results/reminder days are stored in settings.

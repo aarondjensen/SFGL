@@ -5,7 +5,6 @@
 import { TEAM_ABBREVIATIONS } from '../constants/index.js';
 import { nameKey } from '../../api/_playerNames.js';
 import {
-  SEASON,
   getETNow as _getETNow,
   fmtWaiverCutoff,
   waiverCutoff,
@@ -171,49 +170,16 @@ export { getSegmentByDate, getSegmentForTournament, segmentSource, seedSegments 
 // Imported as well as re-exported: `export ... from` forwards the binding
 // without introducing it into this module's scope, and isTournamentLocked /
 // getRoundLockTime below call it directly.
-import { getTournamentLockHourET, getTeeTimeLockMs } from '../../api/_league.js';
-export { getTournamentTimezone, getTournamentLockHourET, getTeeTimeLockMs } from '../../api/_league.js';
-
-export const getTournamentStartDate = (tournament) => {
-  if (tournament?.startDate) return new Date(tournament.startDate);
-  if (!tournament?.dates) return null;
-  const match = tournament.dates.match(/^([A-Za-z]+)\s+(\d+)/);
-  if (!match) return null;
-  const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
-  const month = months[match[1]];
-  if (month === undefined) return null;
-  // The `dates` string carries no year ("Apr 6-12"), so the season supplies it.
-  return new Date(SEASON, month, parseInt(match[2]));
-};
-
-/**
- * The tournament's start date with the ordering field as a last resort.
- *
- * `start_date` is NOT a real date. _ensureStartDates in api/firebase.js
- * back-fills missing values with a synthetic weekly series anchored at
- * '2025-01-06' purely to keep the schedule in order, so for many events it has
- * no relationship to when the tournament is played — which is how the 3M Open
- * once showed as "ready to process" on the Saturday of its own week. It is
- * still better than nothing when there is no real date at all, so it sits
- * behind getTournamentStartDate rather than in front of it.
- *
- * Date-only strings are anchored at NOON UTC. Parsing 'YYYY-MM-DD' with the
- * Date constructor gives UTC midnight, which is the previous calendar day
- * everywhere west of Greenwich — the day-shift already found in the segment
- * resolver. Noon has twelve hours of slack in both directions.
- *
- * Two callers in AdminView had drifted apart on this: one used exactly the
- * precedence above, the other reached for raw `start_date` first, forty-five
- * lines away in the same file.
- */
-export const resolveTournamentStart = (tournament) => {
-  const real = getTournamentStartDate(tournament);
-  if (real && !isNaN(real.getTime())) return real;
-  const ordering = tournament?.start_date;
-  if (typeof ordering !== 'string' || !ordering) return null;
-  const d = new Date(`${ordering}T12:00:00Z`);
-  return isNaN(d.getTime()) ? null : d;
-};
+import {
+  getTournamentLockHourET, getTeeTimeLockMs, getTournamentStartDate,
+} from '../../api/_league.js';
+export {
+  getTournamentTimezone, getTournamentLockHourET, getTeeTimeLockMs,
+  // Moved for api/cron.js's benefit — the results cron had no way to ask
+  // whether an event had been played, and scored one that had not. Re-exported
+  // so every existing importer here is unchanged.
+  getTournamentStartDate, resolveTournamentStart, tournamentWeekEnd, isTournamentWeekOver,
+} from '../../api/_league.js';
 
 /**
  * Locks at the published first tee time when one is known, otherwise at the

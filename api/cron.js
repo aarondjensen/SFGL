@@ -14,7 +14,10 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getAuth } from 'firebase-admin/auth';
 import { isEventEnabled, dedupeTokenDocs, extractNextData } from './_constants.js';
 import { NameSet, namesMatch, auditNames, suggestMatches, SUSPECTED_MISMATCH_SCORE } from './_playerNames.js';
-import { SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET, getTeeTimeLockMs } from './_league.js';
+import {
+  SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET, getTeeTimeLockMs,
+  isTournamentWeekOver, tournamentWeekEnd,
+} from './_league.js';
 import { scoringStarters, lineupFor, cutRuleForfeit } from './_rules.js';
 import {
   getSegmentForTournament, computeSwingAward, buildEffectiveRoster,
@@ -980,6 +983,36 @@ async function handleProcessResults(res) {
   }
   const tournament = tournaments[ti];
 
+  // ── Has this event actually been PLAYED? ──────────────────────────────────
+  // `playing` means "the app's current event", not "the event that just
+  // finished". The moment a tournament is marked complete — by this handler or
+  // by the commish in AdminView — `playing` advances to the NEXT event, which
+  // is usually still days away from teeing off. Everything below this point
+  // treats the event it is handed as finished, so without this gate the cron
+  // scores whatever happens to be next on the schedule.
+  //
+  // It did exactly that. St. Jude was completed by hand, `playing` moved to the
+  // BMW Championship, and a later ping in the same day's retry window scored
+  // the BMW three days before round 1 — pgatour.com's past-results page for an
+  // unplayed event serves the PREVIOUS edition, so `players.length` cannot tell
+  // the two apart. The event was marked complete, the Fall Finish pot was
+  // auto-awarded, and every manager got a results email.
+  //
+  // This runs BEFORE the fetch: the results job pings every 30 minutes until
+  // 10pm ET, and an event that hasn't been played costs no scrape.
+  //
+  // null = the event carries no date at all. That is "cannot tell", not "no",
+  // so it falls through to the finality check on the fetched results below.
+  const weekOver = isTournamentWeekOver(tournament, et);
+  if (weekOver === false) {
+    return res.json({
+      status: 'not_finished',
+      tournament: tournament.name,
+      message: `${tournament.name} has not finished — its week ends `
+        + `${tournamentWeekEnd(tournament)?.toDateString()}. Refusing to process.`,
+    });
+  }
+
   // Fetch results from ESPN via the existing pga-results API
   // Since we're server-side, call our own API endpoint
   const baseUrl = process.env.VERCEL_URL
@@ -996,6 +1029,38 @@ async function handleProcessResults(res) {
     }
   } catch (err) {
     return res.json({ status: 'fetch_error', message: 'Failed to fetch results: ' + err.message });
+  }
+
+  // ── Is the source saying these results are FINAL? ─────────────────────────
+  // /api/pga-results has always returned a `status` block — the tournament and
+  // round state it found in pgatour.com's page data — and its own comment says
+  // "the result-processing guard uses this to refuse processing until the event
+  // is officially complete". No such guard existed; the value was computed,
+  // logged, returned and dropped. This is it.
+  //
+  // Deliberately narrow: only a status that is PRESENT and says "not final"
+  // blocks. The HTML-table fallback reports no signal at all, and a page whose
+  // status keys move would too — refusing on silence would wedge processing
+  // for the season on an upstream markup change, which is a worse failure than
+  // the one being prevented. The date gate above is the one that always holds.
+  const finality = pgaData.status;
+  if (finality?.sawAnyStatus && !finality.isFinal) {
+    return res.json({
+      status: 'not_final',
+      tournament: tournament.name,
+      signals: finality.raw?.slice(0, 8) || [],
+      message: `${tournament.name} is not final per pgatour.com — will retry.`,
+    });
+  }
+  // Undated event: the date gate could not answer, so the source's own word is
+  // all there is. Require it to be an explicit "final" rather than assuming.
+  if (weekOver === null && !finality?.isFinal) {
+    return res.json({
+      status: 'not_final',
+      tournament: tournament.name,
+      message: `${tournament.name} has no start date and pgatour.com does not `
+        + `report it as final — refusing to process. Set its dates in Edit Schedule.`,
+    });
   }
 
   const { players, roundLeaders: rl } = pgaData;

@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { colors, fonts, SWINGS, fontSize, blue, green, white } from '../theme.js';
-import { resolveTournamentStart, getETNow } from '../utils';
+import { resolveTournamentStart, isTournamentWeekOver, getETNow } from '../utils';
 import { computeSwingAward } from '../utils/swingAward';
 import { buildEffectiveRoster } from '../utils/sharedHelpers';
 import { sfglDataApi } from '../api/firebase';
@@ -195,21 +195,16 @@ export const AdminView = ({
   // ordering field only as a last resort), walk forward to that week's
   // Thursday, and treat the event as finished once the following MONDAY begins
   // in ET.
+  //
+  // The walk itself now lives in api/_league.js as isTournamentWeekOver, so the
+  // results cron applies the same test before it scores an event — it had no
+  // date logic at all and scored the BMW Championship three days before it
+  // started. An undated event answers null ("cannot tell"), which is not
+  // ready-to-complete here.
   const tournamentsReadyToComplete = useMemo(() => {
-    const isTournamentWeekOver = (t) => {
-      const start = resolveTournamentStart(t);
-      if (!start) return false;
-      // Thursday of the tournament week (same walk as isTournamentLocked).
-      const thursday = new Date(start);
-      while (thursday.getDay() !== 4) thursday.setDate(thursday.getDate() + 1);
-      // Play ends Sunday; the event is "done" once Monday 00:00 ET arrives.
-      const monday = new Date(thursday);
-      monday.setDate(monday.getDate() + 4);
-      monday.setHours(0, 0, 0, 0);
-      return getETNow() >= monday;
-    };
+    const et = getETNow();
     return (tournaments || []).filter(t =>
-      t.playing && !t.completed && isTournamentWeekOver(t)
+      t.playing && !t.completed && isTournamentWeekOver(t, et) === true
     );
   }, [tournaments]);
 
