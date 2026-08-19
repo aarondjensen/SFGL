@@ -18,7 +18,7 @@ import {
 import { theme, colors, fonts, fontSize, gold, green, greenMuted, navy, red, steel, white, black, blueBright, yellow } from '../theme.js';
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, getETClock, txBelongsToTeam } from '../utils/sharedHelpers';
 import { waiverCutoff, fmtWaiverCutoff } from '../../api/_league.js';
-import { limitedStartsStatus, startsUsedByPlayer, maxLimitedStarts } from '../../api/_rules.js';
+import { limitedStartsStatus, startsUsedByPlayer, maxLimitedStarts, lineupTargetIndex } from '../../api/_rules.js';
 import { NameSet, NameMap } from '../../api/_playerNames.js';
 import { activatable } from '../utils/a11y';
 
@@ -580,6 +580,18 @@ export const RostersView = ({
     () => startsUsedByPlayer({ teams, tournaments, transactions }),
     [teams, tournaments, transactions]);
 
+  // The same count stopped at the event this lineup is FOR. That event's own
+  // locked lineup must not count against the player sitting in it: being
+  // locked into your twelfth start is not the same as having used twelve, and
+  // judging on the total told a manager their legal twelfth start was one too
+  // many the moment the lineup froze. See lineupTargetIndex.
+  const startsBefore = useMemo(
+    () => startsUsedByPlayer({
+      teams, tournaments, transactions,
+      beforeIndex: lineupTargetIndex(tournaments),
+    }),
+    [teams, tournaments, transactions]);
+
   // Where each limited player stands against the start cap. One number, used
   // by the badge beside the player's name AND by the gate that keeps them out
   // of the lineup — they used to be two: the badge rendered the derived count
@@ -587,9 +599,12 @@ export const RostersView = ({
   // could read 12/12 on screen and still be addable. limitedStartsStatus takes
   // the higher of the two (see api/_rules.js for why both exist).
   const limitedStatus = useCallback((player) => limitedStartsStatus(player, {
+    // Two counts, two jobs: the badge reports every start committed, the gate
+    // asks whether another one may be spent.
     derivedStarts: startsUsed.get(player?.name),
+    priorStarts: startsBefore.get(player?.name),
     settings: resolvedSettings,
-  }), [startsUsed, resolvedSettings]);
+  }), [startsUsed, startsBefore, resolvedSettings]);
 
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
@@ -1243,10 +1258,10 @@ export const RostersView = ({
                 fontFamily: fonts.sans, fontSize: fontSize.sm, color: white(0.9), lineHeight: 1.35,
               }}>
                 {outOfStartsStarters.map(p => p.name).join(', ')}
-                {outOfStartsStarters.length > 1 ? ' have ' : ' has '}
-                used {maxLimitedStarts(resolvedSettings)} starts and
-                {outOfStartsStarters.length > 1 ? ' are' : ' is'} still in
-                {isOwnTeam ? ' your' : ' this'} lineup.
+                {outOfStartsStarters.length > 1
+                  ? ` have no starts left (max ${maxLimitedStarts(resolvedSettings)}) and are`
+                  : ` has used ${limitedStatus(outOfStartsStarters[0]).used} of ${maxLimitedStarts(resolvedSettings)} starts and is`}
+                {' '}still in{isOwnTeam ? ' your' : ' this'} lineup.
                 {isOwnTeam && ' Swap them out before Thursday\u2019s lock.'}
               </div>
             </div>

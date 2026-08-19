@@ -232,7 +232,11 @@ export const AddTransactionModal = ({
         .some(p => (p.name || p) === playerInName);
       const inEntry = (teamForMatch?.roster || []).find(p => p.name === playerInName);
       const inStarts = limitedStartsStatus(inEntry, {
-        derivedStarts: startsUsedByPlayer({ teams, tournaments, transactions }).get(playerInName),
+        // Stopped at the event the mulligan is FOR: a start locked in for that
+        // same event is the one being swapped, not one already spent.
+        derivedStarts: startsUsedByPlayer({
+          teams, tournaments, transactions, beforeIndex: parseInt(tourney),
+        }).get(playerInName),
         settings,
       });
       if (inStarts.outOfStarts && !inAlreadyStarted) {

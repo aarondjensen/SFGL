@@ -33,7 +33,7 @@
 // alike.
 // ============================================================================
 
-import { SWINGS, swingForMonth, txBelongsToTeam } from './_league.js';
+import { SWINGS, swingForMonth, txBelongsToTeam, isTournamentWeekOver } from './_league.js';
 import { NameMap } from './_playerNames.js';
 
 // ── Round-leader bonuses ─────────────────────────────────────────────────────
@@ -373,6 +373,37 @@ export const startsUsedByPlayer = ({
 };
 
 /**
+ * The schedule position of the event a lineup edit is FOR — the boundary the
+ * start cap is judged at.
+ *
+ * The distinction that matters: a locked lineup for the event being PLAYED is
+ * the start the manager is spending right now, and spending a twelfth start is
+ * allowed. A locked lineup for an event already played but not yet processed
+ * is a start already spent, and the lineup being edited is the NEXT one. Both
+ * look identical in the data — `completed: false` with a lockedLineups entry —
+ * so the week-over test is what tells them apart.
+ *
+ * Counting a player's own in-progress start against them is what made a
+ * perfectly legal twelfth start read as "out of starts": the badge said 12/12
+ * the moment the lineup froze, and the warning fired on a manager who had done
+ * nothing wrong.
+ */
+export const lineupTargetIndex = (tournaments = [], now) => {
+  const list = tournaments || [];
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i];
+    if (!t || t.isAlternate) continue;
+    if (t.completed) continue;
+    // null (no resolvable dates) reads as "not over" — an event we cannot date
+    // is treated as the upcoming one rather than skipped past.
+    if (isTournamentWeekOver(t, now) === true) continue;
+    return i;
+  }
+  // Nothing upcoming: every start on the schedule has been committed.
+  return list.length;
+};
+
+/**
  * Is this name a LIMITED player? Rosters first, then results history.
  *
  * The history pass matters because a roster entry can be gone — dropped, or
@@ -449,8 +480,16 @@ export const eligibleStarters = ({
  * Where a limited player stands against the cap.
  *
  *   player        a roster entry — `limited` and the durable `starts` tally
- *   derivedStarts starts derived from completed results for the team asking,
- *                 which is the number the roster badge renders (optional)
+ *   derivedStarts every start committed, including one locked in for the event
+ *                 being played right now. This is what the badge shows.
+ *   priorStarts   starts committed BEFORE the event whose lineup is being set.
+ *                 This is what the decision is made on, and it is a different
+ *                 number: a player locked into the event now in progress has
+ *                 spent that start, but spending a twelfth start is exactly
+ *                 what a player on eleven is entitled to do. Judging them on
+ *                 the total made a legal twelfth start read as "out of starts"
+ *                 the moment their lineup froze. Defaults to derivedStarts,
+ *                 for callers with no event in view.
  *   settings      league_settings, for the commish's maxLimitedStarts
  *
  * Returns `{ limited, used, max, remaining, outOfStarts }`. `outOfStarts` is
@@ -458,16 +497,22 @@ export const eligibleStarters = ({
  * anyone who isn't limited, so the caller needs no `player.limited` test of
  * its own.
  */
-export const limitedStartsStatus = (player, { derivedStarts, settings } = {}) => {
+export const limitedStartsStatus = (player, { derivedStarts, priorStarts, settings } = {}) => {
   const max = maxLimitedStarts(settings);
   const limited = !!player?.limited;
-  const used = Math.max(Number(player?.starts) || 0, Number(derivedStarts) || 0);
+  // The durable tally counts processed events only, so it can never include the
+  // in-progress start — it is a floor under both numbers, not just the total.
+  const tally = Number(player?.starts) || 0;
+  const used = Math.max(tally, Number(derivedStarts) || 0);
+  const prior = priorStarts === undefined
+    ? used
+    : Math.max(tally, Number(priorStarts) || 0);
   return {
     limited,
     used,
     max,
     remaining: Math.max(0, max - used),
-    outOfStarts: limited && used >= max,
+    outOfStarts: limited && prior >= max,
   };
 };
 

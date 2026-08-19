@@ -13,7 +13,7 @@
 // used, what is the cap, are they done". Both the badge and the gate call it.
 import {
   limitedStartsStatus, maxLimitedStarts, startsUsedByPlayer, eligibleStarters,
-  isLimitedPlayer, DEFAULT_MAX_LIMITED_STARTS,
+  isLimitedPlayer, lineupTargetIndex, DEFAULT_MAX_LIMITED_STARTS,
 } from '../api/_rules.js';
 import { readFileSync } from 'node:fs';
 
@@ -67,6 +67,14 @@ console.log('\n── the two counts, reconciled ──');
   // showing 12/12 is now telling the truth about what the gate will do.
   check('a stale stored tally loses to the derived count',
     limitedStartsStatus(limited(9), { derivedStarts: 12 }).outOfStarts === true);
+  // With no event in view the total IS the basis — callers that know which
+  // event they are asking about pass priorStarts and get the finer answer.
+  check('priorStarts defaults to the total',
+    limitedStartsStatus(limited(0), { derivedStarts: 12 }).outOfStarts === true);
+  check('priorStarts decides when given',
+    limitedStartsStatus(limited(0), { derivedStarts: 12, priorStarts: 11 }).outOfStarts === false);
+  check('the durable tally still floors the decision',
+    limitedStartsStatus(limited(12), { derivedStarts: 12, priorStarts: 0 }).outOfStarts === true);
   // The derived count is scoped to ONE team's results, so starts a player
   // spent on a previous roster are missing from it. The durable tally carries
   // those, and a player does not get those starts back by changing hands.
@@ -196,6 +204,70 @@ console.log('\n── the Sunday-night window ──');
   });
   check('the pending twelfth start is counted', status.used === 12);
   check('and the thirteenth is refused', status.outOfStarts === true);
+}
+
+
+console.log('\n── the twelfth start is allowed ──');
+{
+  // The false alarm this exists to prevent: Fleetwood on eleven starts is put
+  // in the BMW lineup, the lineup freezes at lock, and the badge reads 12/12
+  // with an OUT OF STARTS warning over it — for a player doing exactly what
+  // eleven starts entitles them to do. The total was right; judging the
+  // decision on it was not.
+  const larry = { name: 'Limited Larry', limited: true, starts: 11 };
+  const teams = [{ id: 'w1', roster: [larry] }];
+  const played = (n) => ({
+    name: `Event ${n}`, completed: true, start_date: `2026-03-${String(n + 1).padStart(2, '0')}`,
+    results: { teams: { w1: { players: [{ name: 'Limited Larry', earnings: 1, limited: true }] } },
+               fullLineups: { w1: ['Limited Larry'] } },
+  });
+  const season = Array.from({ length: 11 }, (_, i) => played(i));
+  const bmw = { name: 'BMW Championship', start_date: '2026-08-20', dates: 'Aug 20-23',
+                lockedLineups: { w1: ['Limited Larry'] } };
+  const tournaments = [...season, bmw];
+
+  const duringBmw = new Date(2026, 7, 21);   // Friday of BMW week
+  const status = (now) => limitedStartsStatus(larry, {
+    derivedStarts: startsUsedByPlayer({ teams, tournaments }).get('Limited Larry'),
+    priorStarts: startsUsedByPlayer({
+      teams, tournaments, beforeIndex: lineupTargetIndex(tournaments, now),
+    }).get('Limited Larry'),
+  });
+
+  check('the badge counts the start they are locked into', status(duringBmw).used === 12);
+  check('but they are NOT out of starts — this IS the twelfth',
+    status(duringBmw).outOfStarts === false);
+
+  // Once that week is over the start is spent, whether or not results have
+  // been processed — this is the Sunday-night window, and it must still bite.
+  const afterBmw = new Date(2026, 7, 31);
+  check('after the week ends the same player is out of starts',
+    status(afterBmw).outOfStarts === true);
+  check('and the count has not moved — only the boundary has',
+    status(afterBmw).used === 12);
+}
+
+console.log('\n── which event a lineup edit is for ──');
+{
+  const over = { name: 'Played', start_date: '2026-03-05', dates: 'Mar 5-8', lockedLineups: { w1: ['A'] } };
+  const soon = { name: 'Upcoming', start_date: '2026-03-12', dates: 'Mar 12-15' };
+  const now = new Date(2026, 2, 10);   // Tuesday between the two
+
+  check('an event still to be played is the target',
+    lineupTargetIndex([{ name: 'Done', completed: true }, soon], now) === 1);
+  // completed:false with a locked lineup looks the same either side of the
+  // week boundary — the date is the only thing that tells them apart.
+  check('an event already played is skipped, processed or not',
+    lineupTargetIndex([over, soon], now) === 1);
+  check('the in-progress event is the target, not the next one',
+    lineupTargetIndex([over, soon], new Date(2026, 2, 13)) === 1);
+  check('alternate events are never a lineup target',
+    lineupTargetIndex([{ name: 'Alt', isAlternate: true, start_date: '2026-03-12' }, soon], now) === 1);
+  check('a schedule with nothing left counts everything',
+    lineupTargetIndex([{ name: 'Done', completed: true }], now) === 1);
+  check('an undatable event is treated as upcoming, not skipped',
+    lineupTargetIndex([{ name: 'Mystery' }], now) === 0);
+  check('an empty schedule is safe', lineupTargetIndex([], now) === 0);
 }
 
 console.log('\n── a maxed player cannot score ──');
