@@ -836,8 +836,16 @@ export const bookUrlsFor = (tournamentName) => [
   'https://sportsbook.draftkings.com/leagues/golf/pga',
 ];
 
-const DK_API = (id) =>
-  `https://sportsbook-us-il.draftkings.com/sites/US-IL-SB/api/v5/eventgroups/${id}?format=json`;
+// DraftKings partitions its API by region, and the partitions do not answer
+// the same. A probe of every candidate id against sportsbook-us-il returned
+// 403 with an identical 465-byte body each time — identical across ids means
+// the WAF, not the id. The plain sportsbook.draftkings.com host served its
+// league page 200 to the same function, so it is tried FIRST here.
+const DK_API_URLS = (id) => [
+  `https://sportsbook.draftkings.com/sites/US-SB/api/v5/eventgroups/${id}?format=json`,
+  `https://sportsbook-us-il.draftkings.com/sites/US-IL-SB/api/v5/eventgroups/${id}?format=json`,
+  `https://sportsbook-nash.draftkings.com/api/sportscontent/dkusnj/v1/leagues/${id}`,
+];
 
 /**
  * Every JSON blob a sportsbook page embeds. DraftKings is a React app, so its
@@ -943,10 +951,14 @@ async function fetchBookOdds(fieldSet, wanted, tournamentName) {
       const ids = eventGroupIds(body);
       if (!ids.length) { notes.push(`${label} no id`); continue; }
       for (const id of ids) {
-        const ar = await fetch(DK_API(id), { headers: BOOK_HEADERS });
-        if (!ar.ok) { notes.push(`eg${id} ${ar.status}`); continue; }
-        const apiHit = tryRows(`eg${id}`, bookOddsRows(await ar.json()));
-        if (apiHit) return apiHit;
+        for (const apiUrl of DK_API_URLS(id)) {
+          const ar = await fetch(apiUrl, { headers: BOOK_HEADERS });
+          if (!ar.ok) { notes.push(`eg${id} ${ar.status}`); continue; }
+          let apiJson = null;
+          try { apiJson = await ar.json(); } catch { notes.push(`eg${id} not json`); continue; }
+          const apiHit = tryRows(`eg${id}`, bookOddsRows(apiJson));
+          if (apiHit) return apiHit;
+        }
       }
     } catch (e) {
       notes.push(`${label} fetch:${e.message}`);
@@ -1109,7 +1121,11 @@ export default async function handler(req, res) {
     const ids = String(req.query.probeEg).split(',')
       .map((v) => v.trim()).filter((v) => /^\d{1,7}$/.test(v)).slice(0, 8);
     const results = [];
-    for (const id of ids) results.push({ id, url: DK_API(id), ...(await probeUrl(DK_API(id))) });
+    for (const id of ids) {
+      for (const url of DK_API_URLS(id)) {
+        results.push({ id, url, ...(await probeUrl(url)) });
+      }
+    }
     return res.status(200).json({ probeEg: ids, results });
   }
 
