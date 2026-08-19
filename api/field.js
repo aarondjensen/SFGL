@@ -232,12 +232,17 @@ function collectOddsRows(nd) {
       // it, so 'enabled' outranks 'big' and 'big' outranks 'small'.
       const rank = (obj.oddsEnabled ? 1e6 : 0) + obj.players.length;
       obj.players.forEach((p) => {
-        const odds = formatOdds(p.odds ?? p.currentOdds ?? p.americanOdds);
-        if (!odds) return;
+        // A row with no usable price is KEPT, with odds: null. It used to be
+        // dropped here, which threw away the one fact that separates the two
+        // reasons a player shows '—': the book has no row for them at all, or
+        // the book has a row and has PULLED the price (suspended market, '',
+        // 'OTB'). Those look identical downstream and want opposite responses
+        // — the first is ours to chase, the second is not. resolveOddsRows
+        // reports the second as `pulled`; neither ever reaches the odds map.
         rows.push({
           name: p.displayName?.trim() || p.playerName?.trim() || null,
           ids: [p.playerId, p.id].filter((v) => v != null).map(String),
-          odds,
+          odds: formatOdds(p.odds ?? p.currentOdds ?? p.americanOdds),
           rank,
         });
       });
@@ -270,14 +275,19 @@ function collectOddsRows(nd) {
  * The original preference order (row name first, id second) is kept among
  * candidates that do resolve — a name needs no join and cannot go stale.
  *
- * Returns the map, the number of rows nothing could identify, and the names
- * that resolved to somebody OUTSIDE the field. Both counters are diagnostics:
- * see the ?debug=1 block in the handler.
+ * Returns:
+ *   oddsMap    — name → price, keyed in the field's namespace
+ *   unresolved — rows nothing could identify (an id nobody claimed, no name)
+ *   notInField — priced rows that resolved to somebody outside the field
+ *   pulled     — field players the book LISTS but has no price for right now
+ *
+ * The last three are diagnostics; see the ?debug=1 block in the handler.
  */
 function resolveOddsRows(rows, idToName, field) {
   const oddsMap = {};
   const wroteAtRank = {};   // name key → rank of the market that set it
   const notInField = new Set();
+  const priceless = new Set();
   let unresolved = 0;
 
   for (const row of rows) {
@@ -298,9 +308,13 @@ function resolveOddsRows(rows, idToName, field) {
     // incomplete, and a price for a player we failed to parse into `players`
     // is still better than none — but report it.
     if (!name) name = row.name || byId;
-    if (!name) { unresolved++; continue; }
+    // A row with no price and no identity is not an identification failure —
+    // there is nothing it was supposed to price. Only priced rows count.
+    if (!name) { if (row.odds) unresolved++; continue; }
 
     const key = canonicalName(name) || name;
+    if (!row.odds) { priceless.add(key); continue; }
+
     if (!field?.has(key)) notInField.add(key);
     const rank = row.rank ?? 0;
     if (wroteAtRank[key] == null || rank >= wroteAtRank[key]) {
@@ -308,7 +322,12 @@ function resolveOddsRows(rows, idToName, field) {
       wroteAtRank[key] = rank;
     }
   }
-  return { oddsMap, unresolved, notInField: [...notInField] };
+
+  // Only a player left with NO price anywhere is really pulled — a player the
+  // top-10 market has suspended while the outright board still prices them is
+  // priced, and saying otherwise would be noise.
+  const pulled = [...priceless].filter((k) => !(k in oddsMap));
+  return { oddsMap, unresolved, notInField: [...notInField], pulled };
 }
 
 // ── Telling a golfer from a page label ───────────────────────────────────────
@@ -480,7 +499,8 @@ export function parseFieldPage(nd) {
 
   // Second pass, with the id map AND the field list complete — resolveOddsRows
   // needs the field to arbitrate between a row's own name and its id.
-  const { oddsMap, unresolved: oddsUnresolved, notInField: oddsNotInField } =
+  const { oddsMap, unresolved: oddsUnresolved, notInField: oddsNotInField,
+          pulled: oddsPulled } =
     resolveOddsRows(collectOddsRows(nd), idToName, fieldSet);
 
   // A name is only really rejected if NOTHING accepted it. The same golfer is
@@ -490,8 +510,9 @@ export function parseFieldPage(nd) {
   // acceptance keeps this independent of which rendering the DFS reaches last.
   const rejected = [...rejectedNames].filter((n) => !fieldSet.has(n));
 
-  return { players, pgaIds, idToName, photos, teeTimeMap, oddsMap, oddsUnresolved,
-           oddsNotInField, rejectedNames: rejected, firstTeeTimeISO: earliestTee.iso };
+  return { players, pgaIds, idToName, photos, teeTimeMap,
+           oddsMap, oddsUnresolved, oddsNotInField, oddsPulled,
+           rejectedNames: rejected, firstTeeTimeISO: earliestTee.iso };
 }
 
 // ── ESPN fallback for field + tee times ───────────────────────────────────────
@@ -588,6 +609,7 @@ export default async function handler(req, res) {
         const espnIds = {}; // filled only from the ESPN supplement below
         let oddsUnresolved = fieldOddsUnresolved;
         let oddsNotInField = parsedField.oddsNotInField || [];
+        let oddsPulled = parsedField.oddsPulled || [];
 
         // If no tee times from field page, try dedicated tee-times page
         let finalTeeTimes = joinPlayersToTeeTimes(players, teeTimeMap);
@@ -653,18 +675,24 @@ export default async function handler(req, res) {
         // with a handful of prices and suppresses the full board outright, so
         // every player outside the rail renders '—' with nothing to say why.
         //
-        // The gate is now COVERAGE. If the field page priced most of the field
-        // we keep it and skip the extra origin fetch; otherwise we fetch the
-        // odds board and merge, letting the dedicated board win on conflicts —
-        // it is the outright market, the rail is an excerpt.
+        // The gate is now COVERAGE, and the bar is EVERYBODY. A first pass at
+        // this used a half-the-field threshold, which is the same mistake in a
+        // milder form: at the BMW Championship the field page priced 48 of 50
+        // and comfortably cleared it, so the dedicated board was never asked
+        // about the two it had missed. Any field player without a price is a
+        // reason to ask.
+        //
+        // The cost of the stricter bar is one extra origin fetch on weeks
+        // where a couple of players are genuinely unpriced. /api/field is
+        // CDN-cached for five minutes and serves the whole league from one
+        // origin hit, so that is a request every five minutes at worst.
         const fieldSet = new NameSet(players);
-        const pricedShare = (map) => {
-          if (!players.length) return 0;
+        const unpriced = (map) => {
           const priced = new NameSet(Object.keys(map));
-          return players.filter(n => priced.has(n)).length / players.length;
+          return players.filter(n => !priced.has(n));
         };
         let mergedOdds = { ...oddsMap };
-        if (pricedShare(mergedOdds) < 0.5) {
+        if (players.length && unpriced(mergedOdds).length) {
           try {
             const oddsResp = await fetch(`https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/odds`, { headers: HEADERS });
             if (oddsResp.ok) {
@@ -684,12 +712,16 @@ export default async function handler(req, res) {
                   mergedOdds = { ...mergedOdds, ...resolved.oddsMap };
                   oddsUnresolved += resolved.unresolved;
                   oddsNotInField = [...new Set([...oddsNotInField, ...resolved.notInField])];
+                  oddsPulled = resolved.pulled;
                 }
               }
             }
           } catch (_) {}
         }
         const finalOdds = Object.entries(mergedOdds).map(([name, odds]) => ({ name, odds }));
+        // A player the field page listed without a price but the odds board
+        // does price is not pulled. Recheck against the merged result.
+        oddsPulled = oddsPulled.filter(n => !(n in mergedOdds));
 
         if (players.length) {
           result = {
@@ -704,6 +736,7 @@ export default async function handler(req, res) {
             odds: finalOdds,
             oddsUnresolved,
             oddsNotInField,
+            oddsPulled,
             rejectedNames,
             tournament: tournament.name,
             source: 'pgatour',
@@ -748,6 +781,13 @@ export default async function handler(req, res) {
       // owner there is a name problem on our end, and it is one Merge Players
       // or an alias row can fix.
       oddsNotInField: result.oddsNotInField || [],
+      // Field players the book LISTS but has no price for — a suspended or
+      // pulled market ('', 'OTB'), as opposed to a player the board omits
+      // entirely. Both render '—' and they are NOT the same problem: a name in
+      // here is upstream and not ours to fix, while a player in
+      // fieldPlayersWithoutOdds who is NOT in here is a row we never saw, and
+      // that is ours.
+      oddsPulled: result.oddsPulled || [],
       // Truncated — when the join fails wholesale this is the entire field,
       // and a debug endpoint that dumps 156 names is one nobody reads.
       fieldPlayersWithoutOdds: (() => {

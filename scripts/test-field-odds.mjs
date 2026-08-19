@@ -274,5 +274,60 @@ const oddsFor = (nd, name) => new NameMap(
     oddsMap['Some Withdrawal'] === '+9000');
 }
 
+// ── 11. A pulled price is told apart from a missing row ─────────────────────
+// Both render '—' and they are opposite problems: a board that omits a player
+// is ours to chase, a board that has suspended their price is not. Rows with
+// no usable price used to be dropped at collection, which threw away the only
+// fact that separates the two. They are kept now and reported as `pulled`.
+{
+  const nd = {
+    fieldSection: {
+      players: [
+        { id: '46046', displayName: 'J.J. Spaun', country: 'USA' },
+        { id: '47959', displayName: 'Tommy Fleetwood', country: 'ENG' },
+        { id: '30925', displayName: 'Shane Lowry', country: 'IRL' },
+      ],
+    },
+    oddsSection: {
+      oddsToWinId: 'mkt-1', oddsEnabled: true,
+      players: [
+        { id: '46046', odds: '' },        // listed, price pulled
+        { id: '47959', odds: '+2000' },
+        // Shane Lowry: no row at all
+      ],
+    },
+  };
+  const { oddsMap, oddsPulled, oddsUnresolved } = parseFieldPage(nd);
+  check('a listed-but-unpriced player is reported as pulled',
+    oddsPulled.length === 1 && oddsPulled[0] === 'J.J. Spaun', JSON.stringify(oddsPulled));
+  check('a player the board omits entirely is NOT reported as pulled',
+    !oddsPulled.includes('Shane Lowry'));
+  check('a pulled price still adds no entry', !('J.J. Spaun' in oddsMap));
+  check('and is not counted as an identification failure', oddsUnresolved === 0,
+    String(oddsUnresolved));
+}
+
+// ── 12. A market that suspends a price it does not own ──────────────────────
+// A player can sit in two markets. If the top-10 board suspends them while the
+// outright board still prices them, they are priced — reporting them as pulled
+// would be noise on a column that renders their odds perfectly well.
+{
+  const nd = {
+    fieldSection: { players: [{ id: '46046', displayName: 'J.J. Spaun', country: 'USA' }] },
+    outrightBoard: {
+      oddsToWinId: 'mkt-outright', oddsEnabled: true,
+      players: [{ id: '46046', odds: '+4000' }],
+    },
+    top10Rail: {
+      oddsToWinId: 'mkt-top10',
+      players: [{ id: '46046', odds: '' }],
+    },
+  };
+  const { oddsMap, oddsPulled } = parseFieldPage(nd);
+  check('a price from another market keeps the player off the pulled list',
+    oddsPulled.length === 0, JSON.stringify(oddsPulled));
+  check('and the outright price is served', oddsMap['J.J. Spaun'] === '+4000');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
