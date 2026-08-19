@@ -604,7 +604,10 @@ export const RostersView = ({
     // slot is the one they have taken but not yet frozen — so a player put in
     // the lineup on eleven reads 12/12 straight away rather than on Thursday.
     derivedStarts: startsUsed.get(player?.name),
-    priorStarts: startsBefore.get(player?.name),
+    // ?? 0 rather than undefined: a player the derived count has never seen has
+    // spent no starts it can vouch for, and letting this go undefined would
+    // hand the decision back to the durable tally.
+    priorStarts: startsBefore.get(player?.name) ?? 0,
     pendingStart: (team?.lineup || []).includes(player?.name),
     settings: resolvedSettings,
   }), [startsUsed, startsBefore, team, resolvedSettings]);

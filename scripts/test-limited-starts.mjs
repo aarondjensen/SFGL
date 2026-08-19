@@ -81,11 +81,17 @@ console.log('\n── the two counts, reconciled ──');
     limitedStartsStatus(limited(12), { derivedStarts: 12, priorStarts: 11 }).outOfStarts === false);
   check('but it still floors the total on display',
     limitedStartsStatus(limited(12), { derivedStarts: 3, priorStarts: 11 }).used === 12);
-  // The derived count is scoped to ONE team's results, so starts a player
-  // spent on a previous roster are missing from it. The durable tally carries
-  // those, and a player does not get those starts back by changing hands.
-  check('a team-scoped derived count loses to the durable tally',
-    limitedStartsStatus(limited(12), { derivedStarts: 3 }).outOfStarts === true);
+  // Precedence, strictest evidence first. The derived count is league-wide and
+  // includes lineups frozen at lock, so it already carries the starts a player
+  // spent on a previous roster — the reason the tally used to be needed here.
+  // Once it speaks the tally does not override it, because the tally cannot
+  // place a start before an event and is the source known to have been
+  // corrupted by the live-lineup crediting bug.
+  check('a derived count outranks the durable tally',
+    limitedStartsStatus(limited(12), { derivedStarts: 3 }).outOfStarts === false);
+  // With nothing derived to go on, the tally is the best evidence there is.
+  check('the tally still answers for a caller holding nothing else',
+    limitedStartsStatus(limited(12)).outOfStarts === true);
   check('used is the higher of the two',
     limitedStartsStatus(limited(4), { derivedStarts: 7 }).used === 7);
   check('remaining counts down from the cap',
@@ -131,6 +137,29 @@ console.log('\n── an inflated tally cannot manufacture the warning ──');
       ],
       tournamentIndex: 11,
     }).ineligible.length === 0);
+}
+
+
+console.log('\n── an empty derived count cannot manufacture the warning ──');
+{
+  // The failure this closes: if the derived count comes back with no entry for
+  // a player — an empty map, a name it has never seen — the decision used to
+  // fall back through `used` to the durable tally, and the out-of-starts
+  // warning appeared over a player with no evidence behind it at all. Silence
+  // from the derived count is not evidence of starts.
+  const inflated = { name: 'Limited Larry', limited: true, starts: 12 };
+  const asRostersViewCalls = (derived, prior) => limitedStartsStatus(inflated, {
+    derivedStarts: derived,          // map miss → undefined
+    priorStarts: prior ?? 0,         // the ?? 0 the view applies
+    pendingStart: true,
+  });
+
+  check('a map miss does not become an out-of-starts warning',
+    asRostersViewCalls(undefined, undefined).outOfStarts === false);
+  check('the tally still shows on the badge, where it is sound',
+    asRostersViewCalls(undefined, undefined).used === 12);
+  check('a real derived count still decides',
+    asRostersViewCalls(12, 12).outOfStarts === true);
 }
 
 console.log('\n── what counts as a start ──');

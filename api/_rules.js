@@ -525,7 +525,18 @@ export const limitedStartsStatus = (player, {
   // leaves the gate predicting exactly what scoring will do.
   const tally = Number(player?.starts) || 0;
   const used = Math.max(tally, Number(derivedStarts) || 0);
-  const prior = priorStarts === undefined ? used : Number(priorStarts) || 0;
+  // Precedence, strictest evidence first. Once a caller supplies a derived
+  // count the tally never overrides it: the tally cannot place a start before
+  // an event, and letting it back in as a fallback is what kept the warning
+  // over a player taking a legal twelfth start. `?? 0` at the call site is
+  // therefore load-bearing — a player the derived count has no entry for has
+  // no starts it can vouch for, and its silence is not evidence of starts.
+  //
+  // The tally is still the answer for a caller holding nothing else, which is
+  // the only situation where it is the best available evidence.
+  const prior = priorStarts !== undefined ? (Number(priorStarts) || 0)
+    : derivedStarts !== undefined ? (Number(derivedStarts) || 0)
+    : used;
   const outOfStarts = limited && prior >= max;
 
   // `used > prior` means the upcoming event's start is already counted — the
