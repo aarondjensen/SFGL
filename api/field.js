@@ -866,15 +866,28 @@ export function embeddedJson(html) {
  * costs a request.
  */
 export function eventGroupIds(html) {
-  const ids = new Set();
+  // A sportsbook's nav names every sport it offers, so most ids on the page
+  // belong to something else — the first probe of DraftKings' golf page
+  // returned four ids, one of which was MLB. Ranking by whether the id sits
+  // near golf words puts the plausible ones first, which matters because the
+  // caller can only afford to try a handful.
+  const score = new Map();
   for (const re of [
     /eventgroups?\/(\d{1,7})/gi,
     /"eventGroupId"\s*:\s*"?(\d{1,7})/gi,
     /"leagueId"\s*:\s*"?(\d{1,7})/gi,
   ]) {
-    for (const m of html.matchAll(re)) ids.add(m[1]);
+    for (const m of html.matchAll(re)) {
+      const at = m.index ?? 0;
+      const near = html.slice(Math.max(0, at - 300), at + 300).toLowerCase();
+      const hit = /golf|pga|championship|tournament/.test(near) ? 1 : 0;
+      score.set(m[1], Math.max(score.get(m[1]) ?? 0, hit));
+    }
   }
-  return [...ids].slice(0, 4);
+  return [...score.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => id)
+    .slice(0, 6);
 }
 
 /**
@@ -1083,6 +1096,21 @@ export default async function handler(req, res) {
   // work, since the whole point is to test one URL cheaply.
   if (isDebug && req.query.probe) {
     return res.status(200).json({ probe: String(req.query.probe), ...(await probeUrl(req.query.probe)) });
+  }
+
+  // ?debug=1&probeEg=79494,84240,... — the same probe against the book's API
+  // for each event-group id, in one call.
+  //
+  // The plain `probe` cannot do this comfortably: the API URL ends in
+  // `?format=json`, and that `&`/`?` collides with the outer query string
+  // unless it is URL-encoded by hand. Ids are digits, so this needs no
+  // encoding and no care. It answers "which of these is golf" in one read.
+  if (isDebug && req.query.probeEg) {
+    const ids = String(req.query.probeEg).split(',')
+      .map((v) => v.trim()).filter((v) => /^\d{1,7}$/.test(v)).slice(0, 8);
+    const results = [];
+    for (const id of ids) results.push({ id, url: DK_API(id), ...(await probeUrl(DK_API(id))) });
+    return res.status(200).json({ probeEg: ids, results });
   }
 
   let result = null;
