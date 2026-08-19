@@ -18,7 +18,7 @@ import {
   SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET, getTeeTimeLockMs,
   isTournamentWeekOver, tournamentWeekEnd,
 } from './_league.js';
-import { scoringStarters, lineupFor, cutRuleForfeit } from './_rules.js';
+import { scoringStarters, lineupFor, cutRuleForfeit, eligibleStarters } from './_rules.js';
 import {
   getSegmentForTournament, computeSwingAward, buildEffectiveRoster,
   getSeasonEarningsByTeam, bonusesFor,
@@ -1123,6 +1123,12 @@ async function handleProcessResults(res) {
     };
   });
 
+  // Loaded here rather than after scoring because eligibleStarters needs the
+  // mulligan history: a mulligan moves a start from one player to another, and
+  // a start moved is a start spent. Reused by the swing award below.
+  const txSnap = await db.collection('transactions').get();
+  const allTransactions = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
   const updatedTeams = teams.map(team => {
     // One lineup, read once. This recorded lineupFor (the five frozen at lock)
     // and then SCORED team.lineup (the live five) — so the result and the
@@ -1136,9 +1142,29 @@ async function handleProcessResults(res) {
     // one skipped a team that had already cleared their lineup for next week —
     // Sunday 9pm onwards — so their frozen five went unscored entirely.
     if (!scoredLineup.length) return team;
-    resultsData.fullLineups[team.id] = [...scoredLineup];
 
-    const starterResults = scoredLineup.map(playerName => {
+    // The cap's last line. A limited player with no starts left cannot score,
+    // however they came to be in the frozen five — a manager who ignored the
+    // roster warning through Thursday, a commissioner edit, a cap lowered
+    // mid-season. Judged as of THIS event, so a reprocess reproduces history
+    // rather than re-judging it. See eligibleStarters.
+    const { starters: eligibleLineup, ineligible } = eligibleStarters({
+      lineup: scoredLineup,
+      teams, tournaments: newTournaments, transactions: allTransactions,
+      tournamentIndex: ti, settings,
+    });
+    ineligible.forEach(({ name, used, max }) => {
+      console.warn(`[process-results] ${team.name}: ${name} is out of starts `
+        + `(${used}/${max}) and does not score ${tournament.name}`);
+    });
+    if (!eligibleLineup.length) return team;
+
+    // fullLineups records what SCORED, which is what scoredLineupFor and the
+    // starts count both read back. An ineligible player never started, so
+    // leaving them out here is also what stops them being charged for it.
+    resultsData.fullLineups[team.id] = [...eligibleLineup];
+
+    const starterResults = eligibleLineup.map(playerName => {
       let earnings = earningsMap[playerName];
       if (earnings === undefined) {
         const mk = Object.keys(earningsMap).find(k => matchName(k, playerName));
@@ -1161,7 +1187,7 @@ async function handleProcessResults(res) {
       const leaders = Array.isArray(roundLeaders[round]) ? roundLeaders[round] : (roundLeaders[round] ? [roundLeaders[round]] : []);
       leaders.forEach(leaderName => {
         if (!leaderName) return;
-        const actual = scoredLineup.find(pn => matchName(pn, leaderName));
+        const actual = eligibleLineup.find(pn => matchName(pn, leaderName));
         if (actual) {
           bonusEarnings[round] += bonuses[round];
           totalEarnings += bonuses[round];
@@ -1186,6 +1212,9 @@ async function handleProcessResults(res) {
     resultsData.teams[team.id] = {
       totalEarnings,
       cutRuleForfeit: forfeit || null,
+      // Why the team scored fewer than five, for anyone reading the result
+      // later. Same treatment cutRuleForfeit gets: recorded, not inferred.
+      ineligible: ineligible.length ? ineligible : null,
       bonuses: bonusEarnings,
       players: topStarters.map(s => ({
         name: s.playerName,
@@ -1207,14 +1236,14 @@ async function handleProcessResults(res) {
     });
 
     // starts and sfglEarnings go to the five that were SCORED, which is what
-    // scoredLineup holds. This read team.lineup — the live one — so in the
+    // eligibleLineup holds. This read team.lineup — the live one — so in the
     // Sunday-9pm-to-Monday window it credited the start to next week's five
     // and charged nothing to the players who actually teed off. For a limited
     // player that is the difference between spending a start and being handed
     // a free one, in both directions, and it is why the client-side twin
     // (processTournamentData) has always used its effectiveLineup here.
     const updatedRoster = team.roster.map(player => {
-      if (!scoredLineup.includes(player.name)) return player;
+      if (!eligibleLineup.includes(player.name)) return player;
       const pe = earningsByLineupName[player.name] || 0;
       return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + pe };
     });
@@ -1238,8 +1267,6 @@ async function handleProcessResults(res) {
   // Mirrors the client-side handleManualEntry path. Loads transactions so
   // getSwingPot needs the full transactions list, and we append the new
   // swing_winner tx to Firestore below.
-  const txSnap = await db.collection('transactions').get();
-  const allTransactions = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const swingSegment = getSegmentForTournament(newTournaments[ti]);
   // Shared with the commissioner's in-app award path — same eligibility gate,
   // same pot, same winner. Only the note differs, so the transaction log says

@@ -282,8 +282,8 @@ export const maxLimitedStarts = (settings = {}) => {
 };
 
 /**
- * Starts a team has COMMITTED to each player this season — the count the cap is
- * enforced against, as a NameMap of name → starts.
+ * Starts COMMITTED to each player this season, across the whole league, as a
+ * NameMap of name → starts.
  *
  * Two things count, and the second is the one that is easy to miss:
  *
@@ -294,63 +294,155 @@ export const maxLimitedStarts = (settings = {}) => {
  * Lineup editing reopens Sunday 9pm ET (isLineupEditingOpen) and results
  * auto-process Monday, so for most of a day a player's most recent start
  * exists ONLY as a locked lineup: `player.starts` has not been incremented and
- * no results are stored. A cap that counts scored starts alone lets a manager
- * spend a twelfth start on Sunday night and a thirteenth on Monday morning —
- * with nothing on screen suggesting anything is wrong, because every number in
- * the app agrees the player is on eleven.
+ * no results are stored. A cap that counts scored starts alone is one short
+ * for that whole window — long enough for a manager to spend a twelfth start
+ * on Sunday night and a thirteenth on Monday morning, with every number on
+ * screen agreeing they are on eleven.
  *
  * A locked lineup is the right thing to count: lock is the moment the start
- * stops being revocable. Before lock the manager can still take the player
- * out, and team.lineup is not counted here for exactly that reason.
+ * stops being revocable. Before it the manager can still pull the player, so
+ * team.lineup is deliberately not counted.
+ *
+ * LEAGUE-WIDE, not per team: the cap belongs to the player, not the roster
+ * they happen to sit on, so starts spent before a drop still count after the
+ * re-add. That is the same rule the durable `player.starts` tally follows.
+ *
+ * `beforeIndex` stops the count at a schedule position (exclusive), which is
+ * what makes this usable for scoring: eligibility for event N depends on
+ * starts spent in events BEFORE N, and nothing that happened later can change
+ * it. Without that, reprocessing an old event would judge it against today's
+ * totals and strip starters who were perfectly legal at the time.
  *
  * Mulligans move a start from the OUT player to the IN one. For a scored event
  * the stored results already reflect the swap, so only the OUT player needs
  * removing; for a locked one the swap is replayed onto the frozen five.
  */
-export const startsUsedFor = ({ team, tournaments = [], transactions = [] } = {}) => {
+export const startsUsedByPlayer = ({
+  teams = [], tournaments = [], transactions = [], beforeIndex,
+} = {}) => {
   const counts = new Map();
-  if (!team?.id) return new NameMap();
+  const roster = (teams || []).filter(t => t?.id);
+  if (!roster.length) return new NameMap();
 
-  // Mulligan swaps by tournament position. Filtered to THIS team: a mulligan
-  // is one team's move, and an unfiltered pass lets another team's mulligan
-  // erase a start from this team's count.
-  const swapsAt = {};
+  // Mulligan swaps, keyed by team and schedule position. Matched through
+  // txBelongsToTeam rather than tx.teamId alone, so legacy rows that carry
+  // only a team NAME still land on the right roster.
+  const swaps = {};
   (transactions || []).forEach(tx => {
     if (tx?.type !== 'mulligan' || tx.status === 'failed') return;
-    if (!txBelongsToTeam(tx, team)) return;
+    const team = roster.find(t => txBelongsToTeam(tx, t));
+    if (!team) return;
     const pos = resolveTxTournamentIndex(tx, tournaments);
     if (pos == null) return;
-    if (!swapsAt[pos]) swapsAt[pos] = [];
-    swapsAt[pos].push({ out: tx.droppedPlayer, in: tx.player });
+    const key = `${team.id}@${pos}`;
+    if (!swaps[key]) swaps[key] = [];
+    swaps[key].push({ out: tx.droppedPlayer, in: tx.player });
   });
 
+  const stopAt = Number.isFinite(beforeIndex) ? beforeIndex : null;
   (tournaments || []).forEach((t, pos) => {
-    const swaps = swapsAt[pos] || [];
-    const stored = t?.completed ? t?.results?.teams?.[team.id] : null;
+    if (stopAt !== null && pos >= stopAt) return;
+    roster.forEach(team => {
+      const swapped = swaps[`${team.id}@${pos}`] || [];
+      const stored = t?.completed ? t?.results?.teams?.[team.id] : null;
 
-    let names;
-    if (stored) {
-      // Union of the scored rows and the recorded lineup — a starter who
-      // earned nothing can be missing from the first but never the second.
-      names = new Set([
-        ...(stored.players || []).map(p => p?.name || p),
-        ...(t.results.fullLineups?.[team.id] || []),
-      ]);
-      swaps.forEach(s => names.delete(s.out));
-    } else {
-      const locked = t?.lockedLineups?.[team.id];
-      if (!Array.isArray(locked) || !locked.length) return;
-      names = new Set(locked);
-      swaps.forEach(s => { if (s.out) names.delete(s.out); if (s.in) names.add(s.in); });
-    }
+      let names;
+      if (stored) {
+        // Union of the scored rows and the recorded lineup — a starter who
+        // earned nothing can be missing from the first but never the second.
+        names = new Set([
+          ...(stored.players || []).map(p => p?.name || p),
+          ...(t.results.fullLineups?.[team.id] || []),
+        ]);
+        swapped.forEach(sw => names.delete(sw.out));
+      } else {
+        const locked = t?.lockedLineups?.[team.id];
+        if (!Array.isArray(locked) || !locked.length) return;
+        names = new Set(locked);
+        swapped.forEach(sw => { if (sw.out) names.delete(sw.out); if (sw.in) names.add(sw.in); });
+      }
 
-    names.forEach(name => {
-      if (!name) return;
-      counts.set(name, (counts.get(name) || 0) + 1);
+      names.forEach(name => {
+        if (!name) return;
+        counts.set(name, (counts.get(name) || 0) + 1);
+      });
     });
   });
 
   return new NameMap([...counts]);
+};
+
+/**
+ * Is this name a LIMITED player? Rosters first, then results history.
+ *
+ * The history pass matters because a roster entry can be gone — dropped, or
+ * simply not carried on the team being asked about — while the league rule is
+ * that limited status never lapses. Results snapshots record `limited` for
+ * everyone who ever started, which is the same durable source
+ * buildPlayerAttributeIndex leans on. Either source saying limited settles it;
+ * neither can downgrade the other.
+ */
+export const isLimitedPlayer = (name, { teams = [], tournaments = [] } = {}) => {
+  if (!name) return false;
+  for (const team of teams || []) {
+    const hit = (team?.roster || []).find(p => p?.name === name);
+    if (hit?.limited) return true;
+  }
+  for (const t of tournaments || []) {
+    const byTeam = t?.results?.teams;
+    if (!byTeam) continue;
+    for (const tr of Object.values(byTeam)) {
+      if ((tr?.players || []).some(p => p?.name === name && p?.limited)) return true;
+    }
+  }
+  return false;
+};
+
+/**
+ * The starters from a lineup that may actually SCORE an event, and the limited
+ * players barred from it for having no starts left.
+ *
+ * The last line of the cap. Everything upstream — the add-time block, the
+ * roster warning — can be walked past: a manager can leave a maxed player in
+ * the lineup through Thursday's lock, a commissioner can lower the cap
+ * mid-week or edit a lineup directly. None of that may be allowed to put a
+ * thirteenth start on the board, so scoring refuses it outright.
+ *
+ * Eligibility is judged AS OF this event, from `startsUsedByPlayer` stopped at
+ * `tournamentIndex`. The durable `player.starts` tally is deliberately NOT
+ * consulted: it is a season-to-date total, so a reprocess of event 3 would
+ * read it as twelve and throw out a lineup that was entirely legal when it was
+ * played. Reprocessing has to reproduce history, not re-judge it.
+ *
+ * A team that loses a starter here scores with the rest. Promoting the backup
+ * is NOT done: the backup exists to cover a withdrawal, and whether it also
+ * covers an ineligible starter is a league-rules question, not a scoring one.
+ */
+export const eligibleStarters = ({
+  lineup = [], teams = [], tournaments = [], transactions = [], tournamentIndex, settings,
+} = {}) => {
+  // No schedule position, no judgement. "Before this event" is the whole basis
+  // of the rule, and without it the count would sweep in the event being
+  // scored — whose own locked lineup would make every starter in it look like
+  // they had already spent the start they are here to spend. Failing open
+  // costs a backstop the other layers still cover; failing closed would throw
+  // out a legal lineup on a guess.
+  if (!Number.isFinite(tournamentIndex)) return { starters: [...(lineup || [])], ineligible: [] };
+
+  const max = maxLimitedStarts(settings);
+  const prior = startsUsedByPlayer({ teams, tournaments, transactions, beforeIndex: tournamentIndex });
+
+  const starters = [];
+  const ineligible = [];
+  (lineup || []).forEach(name => {
+    if (!name) return;
+    if (!isLimitedPlayer(name, { teams, tournaments })) { starters.push(name); return; }
+    const used = prior.get(name) || 0;
+    if (used >= max) ineligible.push({ name, used, max });
+    else starters.push(name);
+  });
+
+  return { starters, ineligible };
 };
 
 /**

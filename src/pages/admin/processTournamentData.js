@@ -7,7 +7,7 @@
 import { namesMatch } from '../../../api/_playerNames.js';
 import { BONUSES_REGULAR, BONUSES_MAJOR } from '../../constants';
 import { txBelongsToTeam } from '../../utils/sharedHelpers';
-import { scoringStarters, lineupFor, cutRuleForfeit } from '../../../api/_rules.js';
+import { scoringStarters, lineupFor, cutRuleForfeit, eligibleStarters } from '../../../api/_rules.js';
 
 // Are these two strings the same golfer? Delegates to the shared identity
 // module (api/_playerNames.js), which is what /api/field, /api/cron and the
@@ -42,7 +42,9 @@ export const matchPlayerName = namesMatch;
  *   resultsData — the structure stored on tournament.results: per-team breakdown,
  *                 earningsMap, roundLeaders, fullLineups
  */
-export const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = [], settings = {}) => {
+// `tournaments` (the whole schedule) is needed for the start cap: eligibility
+// for this event depends on starts spent in the events BEFORE it.
+export const processTournamentData = (tournament, tournamentData, teams, globalPlayerStats, _unusedNames, transactions = [], settings = {}, tournaments = []) => {
   const bonuses = tournament.isMajor ? BONUSES_MAJOR : BONUSES_REGULAR;
 
   // Build earningsMap from the tournamentData (Map | object | competitor array).
@@ -148,10 +150,30 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
       // else: IN already present (idempotent re-process) — no-op
     });
 
-    resultsData.fullLineups[team.id] = [...effectiveLineup];
+    // The cap's last line. A limited player with no starts left cannot score,
+    // however they came to be in the frozen five — a manager who ignored the
+    // roster warning through Thursday, a commissioner edit, a cap lowered
+    // mid-season. Judged as of THIS event, so a reprocess reproduces history
+    // rather than re-judging it. Mirrors api/cron.js. See eligibleStarters.
+    const { starters: eligibleLineup, ineligible } = eligibleStarters({
+      lineup: effectiveLineup,
+      teams, tournaments, transactions,
+      tournamentIndex: thisTournamentIndex,
+      settings,
+    });
+    ineligible.forEach(({ name, used, max }) => {
+      console.warn(`[processTournament] ${team.name}: ${name} is out of starts `
+        + `(${used}/${max}) and does not score ${tournament.name}`);
+    });
+    if (!eligibleLineup.length) return team;
+
+    // fullLineups records what SCORED, which is what scoredLineupFor and the
+    // starts count both read back. An ineligible player never started, so
+    // leaving them out here is also what stops them being charged for it.
+    resultsData.fullLineups[team.id] = [...eligibleLineup];
     if (team.backup) resultsData.fullBackups[team.id] = team.backup;
 
-    const starterResults = effectiveLineup.map(playerName => {
+    const starterResults = eligibleLineup.map(playerName => {
       let earnings = earningsMap[playerName];
       if (earnings === undefined) {
         const mk = Object.keys(earningsMap).find(k => matchPlayerName(k, playerName));
@@ -178,7 +200,7 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
           : (tournamentData.roundLeaders[round] ? [tournamentData.roundLeaders[round]] : []);
         leaders.forEach(leaderName => {
           if (!leaderName) return;
-          const actual = effectiveLineup.find(pn => matchPlayerName(pn, leaderName));
+          const actual = eligibleLineup.find(pn => matchPlayerName(pn, leaderName));
           if (actual) {
             bonusEarnings[round] += bonuses[round];
             totalEarnings += bonuses[round];
@@ -206,6 +228,9 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     resultsData.teams[team.id] = {
       totalEarnings,
       cutRuleForfeit: forfeit || null,
+      // Why the team scored fewer than five, for anyone reading the result
+      // later. Same treatment cutRuleForfeit gets: recorded, not inferred.
+      ineligible: ineligible.length ? ineligible : null,
       bonuses: bonusEarnings,
       players: topStarters.map(s => ({
         name: s.playerName,
@@ -232,7 +257,7 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     });
 
     const updatedRoster = team.roster.map(player => {
-      if (!effectiveLineup.includes(player.name)) return player;
+      if (!eligibleLineup.includes(player.name)) return player;
       const pe = earningsByLineupName[player.name] || 0;
       return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + pe };
     });

@@ -11,7 +11,10 @@
 //
 // limitedStartsStatus is now the single answer to "how many starts have they
 // used, what is the cap, are they done". Both the badge and the gate call it.
-import { limitedStartsStatus, maxLimitedStarts, startsUsedFor, DEFAULT_MAX_LIMITED_STARTS } from '../api/_rules.js';
+import {
+  limitedStartsStatus, maxLimitedStarts, startsUsedByPlayer, eligibleStarters,
+  isLimitedPlayer, DEFAULT_MAX_LIMITED_STARTS,
+} from '../api/_rules.js';
 import { readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
@@ -84,23 +87,19 @@ console.log('\n── what counts as a start ──');
   // results, and player.starts not yet incremented. A cap that counts scored
   // starts alone is one short for that whole window — which is exactly long
   // enough for a manager to spend a start they no longer have.
-  const team = { id: 'w1', name: 'World #1' };
+  const teams = [{ id: 'w1', name: 'World #1' }];
   const scored = (names) => ({
     name: 'Played Open', completed: true,
     results: { teams: { w1: { players: names.map(n => ({ name: n, earnings: 100 })) } },
                fullLineups: { w1: names } },
   });
   const locked = (names) => ({ name: 'Locked Open', lockedLineups: { w1: names } });
-
   const used = (tournaments, transactions = []) =>
-    startsUsedFor({ team, tournaments, transactions });
+    startsUsedByPlayer({ teams, tournaments, transactions });
 
-  check('a scored event counts',
-    used([scored(['A', 'B'])]).get('A') === 1);
-  check('a locked but unprocessed event counts too',
-    used([locked(['A'])]).get('A') === 1);
-  check('scored and locked events add up',
-    used([scored(['A']), locked(['A'])]).get('A') === 2);
+  check('a scored event counts', used([scored(['A', 'B'])]).get('A') === 1);
+  check('a locked but unprocessed event counts too', used([locked(['A'])]).get('A') === 1);
+  check('scored and locked events add up', used([scored(['A']), locked(['A'])]).get('A') === 2);
   // A processed event has BOTH stored results and a lockedLineups entry — it
   // is the same start, and counting it twice would bar a player four events
   // early.
@@ -110,21 +109,52 @@ console.log('\n── what counts as a start ──');
   // take the player out, so it is not a start yet.
   check('an unlocked live lineup is not a start',
     used([{ name: 'Next Open' }]).get('A') === undefined);
-  check('another team\'s lineup is not this team\'s start',
-    used([{ name: 'X', completed: true, results: { teams: { drc: { players: [{ name: 'A' }] } }, fullLineups: { drc: ['A'] } } }]).get('A') === undefined);
   check('a starter who earned nothing still started',
     used([{ name: 'X', completed: true, results: { teams: { w1: { players: [] } }, fullLineups: { w1: ['A'] } } }]).get('A') === 1);
-  check('no team, no counts', startsUsedFor({ tournaments: [locked(['A'])] }).get('A') === undefined);
-  check('missing input is safe', startsUsedFor().get === undefined || startsUsedFor().get('A') === undefined);
+  check('no teams, no counts', startsUsedByPlayer({ tournaments: [locked(['A'])] }).get('A') === undefined);
+  check('missing input is safe', startsUsedByPlayer().get('A') === undefined);
+}
+
+console.log('\n── the cap follows the player, not the roster ──');
+{
+  // A limited player dropped by one team and picked up by another does not get
+  // their starts back. Counting per team would hand out a fresh twelve with
+  // every transaction.
+  const teams = [{ id: 'w1' }, { id: 'drc' }];
+  const ev = (teamId, name) => ({
+    name: `${teamId} event ${name}`, completed: true,
+    results: { teams: { [teamId]: { players: [{ name, earnings: 1 }] } }, fullLineups: { [teamId]: [name] } },
+  });
+  const tournaments = [ev('w1', 'A'), ev('w1', 'A'), ev('drc', 'A')];
+  check('starts spent on a previous roster still count',
+    startsUsedByPlayer({ teams, tournaments }).get('A') === 3);
+  check('asking about one team sees only that team',
+    startsUsedByPlayer({ teams: [{ id: 'drc' }], tournaments }).get('A') === 1);
+}
+
+console.log('\n── stopping the count at an event ──');
+{
+  const teams = [{ id: 'w1' }];
+  const ev = (name) => ({
+    name, completed: true,
+    results: { teams: { w1: { players: [{ name: 'A', earnings: 1 }] } }, fullLineups: { w1: ['A'] } },
+  });
+  const tournaments = [ev('one'), ev('two'), ev('three')];
+  check('beforeIndex is exclusive',
+    startsUsedByPlayer({ teams, tournaments, beforeIndex: 2 }).get('A') === 2);
+  check('beforeIndex 0 counts nothing',
+    startsUsedByPlayer({ teams, tournaments, beforeIndex: 0 }).get('A') === undefined);
+  check('no beforeIndex counts everything',
+    startsUsedByPlayer({ teams, tournaments }).get('A') === 3);
 }
 
 console.log('\n── mulligans move the start ──');
 {
-  const team = { id: 'w1', name: 'World #1' };
+  const teams = [{ id: 'w1', name: 'World #1' }];
   const mull = (out, inP, tournament) => ({
     type: 'mulligan', teamId: 'w1', tournament, droppedPlayer: out, player: inP, status: 'completed',
   });
-  const used = (tournaments, transactions) => startsUsedFor({ team, tournaments, transactions });
+  const used = (tournaments, transactions) => startsUsedByPlayer({ teams, tournaments, transactions });
 
   const lockedEvent = [{ name: 'Locked Open', lockedLineups: { w1: ['A', 'B'] } }];
   check('the mulliganed-out player gets the start back',
@@ -150,7 +180,7 @@ console.log('\n── the Sunday-night window ──');
   // The scenario in full: eleven scored starts, a twelfth locked and played
   // but not yet processed, and a manager setting next week's lineup at 10pm
   // Sunday. Every stored number still says eleven.
-  const team = { id: 'w1' };
+  const teams = [{ id: 'w1' }];
   const tournaments = [
     ...Array.from({ length: 11 }, (_, i) => ({
       name: `Event ${i}`, completed: true,
@@ -161,11 +191,104 @@ console.log('\n── the Sunday-night window ──');
   ];
   const player = { name: 'Limited Larry', limited: true, starts: 11 };
   const status = limitedStartsStatus(player, {
-    derivedStarts: startsUsedFor({ team, tournaments }).get('Limited Larry'),
+    derivedStarts: startsUsedByPlayer({ teams, tournaments }).get('Limited Larry'),
     settings: {},
   });
   check('the pending twelfth start is counted', status.used === 12);
   check('and the thirteenth is refused', status.outOfStarts === true);
+}
+
+console.log('\n── a maxed player cannot score ──');
+{
+  // Everything upstream can be walked past: a manager leaves a maxed player in
+  // through Thursday's lock, or a commish edits the lineup. Scoring refuses.
+  const larry = { name: 'Limited Larry', limited: true, starts: 0 };
+  const steady = { name: 'Unlimited Ursula', unlimited: true };
+  const teams = [{ id: 'w1', roster: [larry, steady] }];
+  const played = (n) => ({
+    name: `Event ${n}`, completed: true,
+    results: { teams: { w1: { players: [{ name: 'Limited Larry', earnings: 1, limited: true }] } },
+               fullLineups: { w1: ['Limited Larry'] } },
+  });
+  const history = Array.from({ length: 12 }, (_, i) => played(i));
+  const schedule = [...history, { name: 'This Week' }];
+  const call = (over = {}) => eligibleStarters({
+    lineup: ['Limited Larry', 'Unlimited Ursula'],
+    teams, tournaments: schedule, tournamentIndex: 12, ...over,
+  });
+
+  check('the maxed player is dropped from the scoring five',
+    call().starters.join() === 'Unlimited Ursula');
+  check('and is reported, with the count that barred them',
+    call().ineligible.length === 1 &&
+    call().ineligible[0].name === 'Limited Larry' &&
+    call().ineligible[0].used === 12 && call().ineligible[0].max === 12);
+  check('everyone else still scores', call().starters.includes('Unlimited Ursula'));
+
+  // One start short of the cap is still a start.
+  const eleven = [...history.slice(0, 11), { name: 'This Week' }];
+  check('a player with one start left scores',
+    eligibleStarters({ lineup: ['Limited Larry'], teams, tournaments: eleven, tournamentIndex: 11 })
+      .starters.length === 1);
+
+  // An unlimited player has no cap however many events they have played.
+  check('an unlimited player is never ineligible',
+    eligibleStarters({
+      lineup: ['Unlimited Ursula'],
+      teams: [{ id: 'w1', roster: [steady] }],
+      tournaments: schedule, tournamentIndex: 12,
+    }).ineligible.length === 0);
+
+  check('a raised cap lets them score', call({ settings: { maxLimitedStarts: 15 } }).ineligible.length === 0);
+  check('a lowered cap bars them earlier',
+    eligibleStarters({ lineup: ['Limited Larry'], teams, tournaments: eleven, tournamentIndex: 11, settings: { maxLimitedStarts: 10 } })
+      .ineligible.length === 1);
+}
+
+console.log('\n── reprocessing reproduces history, it does not re-judge it ──');
+{
+  // THE trap. player.starts is a season-to-date total, so judging event 3 by
+  // it in December would throw out a lineup that was entirely legal in March.
+  // Eligibility is counted as of the event, which is why the durable tally is
+  // not consulted here.
+  const larry = { name: 'Limited Larry', limited: true, starts: 12 };
+  const teams = [{ id: 'w1', roster: [larry] }];
+  const played = (n) => ({
+    name: `Event ${n}`, completed: true,
+    results: { teams: { w1: { players: [{ name: 'Limited Larry', earnings: 1, limited: true }] } },
+               fullLineups: { w1: ['Limited Larry'] } },
+  });
+  const season = Array.from({ length: 12 }, (_, i) => played(i));
+
+  check('a legal early event survives a reprocess in December',
+    eligibleStarters({ lineup: ['Limited Larry'], teams, tournaments: season, tournamentIndex: 3 })
+      .ineligible.length === 0);
+  check('and the thirteenth event is still refused',
+    eligibleStarters({ lineup: ['Limited Larry'], teams, tournaments: [...season, { name: 'Thirteenth' }], tournamentIndex: 12 })
+      .ineligible.length === 1);
+  // Without a schedule position there is no "before", and the event being
+  // scored would count against itself. Fail open rather than strip a lineup.
+  check('no schedule position means no judgement',
+    eligibleStarters({ lineup: ['Limited Larry'], teams, tournaments: season }).ineligible.length === 0);
+  check('failing open keeps the whole lineup',
+    eligibleStarters({ lineup: ['Limited Larry'], teams, tournaments: season }).starters.length === 1);
+}
+
+console.log('\n── who counts as limited ──');
+{
+  check('a roster entry says so',
+    isLimitedPlayer('A', { teams: [{ roster: [{ name: 'A', limited: true }] }] }) === true);
+  // Limited status never lapses, so a dropped player is still limited — the
+  // results snapshots are the durable record buildPlayerAttributeIndex uses.
+  check('results history remembers a dropped player',
+    isLimitedPlayer('A', {
+      teams: [{ roster: [] }],
+      tournaments: [{ results: { teams: { w1: { players: [{ name: 'A', limited: true }] } } } }],
+    }) === true);
+  check('an ordinary player is not limited',
+    isLimitedPlayer('A', { teams: [{ roster: [{ name: 'A' }] }] }) === false);
+  check('an unknown name is not limited', isLimitedPlayer('A', {}) === false);
+  check('no name is not limited', isLimitedPlayer(null, {}) === false);
 }
 
 console.log('\n── the other doors into a starting lineup ──');
@@ -181,14 +304,23 @@ console.log('\n── the other doors into a starting lineup ──');
   // window is next week's, so the start landed on the wrong players and the
   // ones who actually teed off were never charged.
   const cron = readFileSync(new URL('../api/cron.js', import.meta.url), 'utf8');
-  check('the cron credits starts to the scored lineup',
-    /if \(!scoredLineup\.includes\(player\.name\)\) return player;/.test(cron));
+  check('the cron credits starts to the lineup that scored',
+    /if \(!eligibleLineup\.includes\(player\.name\)\) return player;/.test(cron));
+  check('the cron filters the frozen five through the cap',
+    /eligibleStarters\(\{/.test(cron));
   check('the cron no longer gates scoring on the live lineup',
     !/if \(!team\.lineup \|\| team\.lineup\.length === 0\) return team;/.test(cron));
 
+  // A team that scores four with no explanation reads as a processing bug.
+  const results = readFileSync(new URL('../src/pages/TournamentsView.jsx', import.meta.url), 'utf8');
+  check('the result says why a starter is missing',
+    /tr\.ineligible/.test(results) && /out of starts/.test(results));
+
   const client = readFileSync(new URL('../src/pages/admin/processTournamentData.js', import.meta.url), 'utf8');
   check('the client twin credits starts to the same lineup',
-    /if \(!effectiveLineup\.includes\(player\.name\)\) return player;/.test(client));
+    /if \(!eligibleLineup\.includes\(player\.name\)\) return player;/.test(client));
+  check('the client twin filters through the same cap',
+    /eligibleStarters\(\{/.test(client));
   check('the client twin gates on it too',
     !/if \(!team\.lineup \|\| team\.lineup\.length === 0\) return team;/.test(client));
 }

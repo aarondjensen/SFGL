@@ -25,7 +25,7 @@ import { sendCommishPush } from '../api/pushSend';
 import { getCurrentTournamentIndex } from '../utils/index.js';
 import { compactTeamName } from '../utils/index.js';
 import { getTransactionFee, buildEffectiveRoster, txBelongsToTeam } from '../utils/sharedHelpers';
-import { limitedStartsStatus, startsUsedFor } from '../../api/_rules.js';
+import { limitedStartsStatus, startsUsedByPlayer } from '../../api/_rules.js';
 import { recomputeTeamTournamentResult } from '../utils/mulliganReversal';
 import { colors, fonts, gold, green, red, white, fontSize } from '../theme.js';
 import { M, disabledBtn } from './admin/adminStyles';
@@ -232,7 +232,7 @@ export const AddTransactionModal = ({
         .some(p => (p.name || p) === playerInName);
       const inEntry = (teamForMatch?.roster || []).find(p => p.name === playerInName);
       const inStarts = limitedStartsStatus(inEntry, {
-        derivedStarts: startsUsedFor({ team: teamForMatch, tournaments, transactions }).get(playerInName),
+        derivedStarts: startsUsedByPlayer({ teams, tournaments, transactions }).get(playerInName),
         settings,
       });
       if (inStarts.outOfStarts && !inAlreadyStarted) {

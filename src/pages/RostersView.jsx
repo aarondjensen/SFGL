@@ -18,7 +18,7 @@ import {
 import { theme, colors, fonts, fontSize, gold, green, greenMuted, navy, red, steel, white, black, blueBright, yellow } from '../theme.js';
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, getETClock, txBelongsToTeam } from '../utils/sharedHelpers';
 import { waiverCutoff, fmtWaiverCutoff } from '../../api/_league.js';
-import { limitedStartsStatus, startsUsedFor, maxLimitedStarts } from '../../api/_rules.js';
+import { limitedStartsStatus, startsUsedByPlayer, maxLimitedStarts } from '../../api/_rules.js';
 import { NameSet, NameMap } from '../../api/_playerNames.js';
 import { activatable } from '../utils/a11y';
 
@@ -567,15 +567,18 @@ export const RostersView = ({
     );
   }, [tournamentField, dialog]);
 
-  // Starts this team has committed to each player — scored events plus lineups
-  // already frozen at lock. Deliberately NOT sfglStatsMap.starts, which counts
-  // only what has been scored: results process Monday while lineup editing
-  // reopens Sunday 9pm ET, so for most of a day a player's latest start exists
-  // only as a locked lineup and a scored-only count is one short. See
-  // startsUsedFor in api/_rules.js.
+  // Starts committed to each player — scored events plus lineups already
+  // frozen at lock. Deliberately NOT sfglStatsMap.starts, which counts only
+  // what has been scored: results process Monday while lineup editing reopens
+  // Sunday 9pm ET, so for most of a day a player's latest start exists only as
+  // a locked lineup and a scored-only count is one short.
+  //
+  // Every team, not just this one — the cap follows the player across a drop
+  // and re-add, which is also what makes this agree with the durable
+  // player.starts tally. See startsUsedByPlayer in api/_rules.js.
   const startsUsed = useMemo(
-    () => startsUsedFor({ team, tournaments, transactions }),
-    [team, tournaments, transactions]);
+    () => startsUsedByPlayer({ teams, tournaments, transactions }),
+    [teams, tournaments, transactions]);
 
   // Where each limited player stands against the start cap. One number, used
   // by the badge beside the player's name AND by the gate that keeps them out

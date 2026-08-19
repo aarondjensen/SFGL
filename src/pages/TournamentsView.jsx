@@ -850,6 +850,18 @@ export const TournamentsView = ({
                   No lineup recorded for this team
                 </div>
               )}
+              {/* A starter barred by the limited-start cap. Without this the
+                  team just shows four players and a smaller cheque, which
+                  reads as a processing bug rather than the rule it is. */}
+              {Array.isArray(tr.ineligible) && tr.ineligible.length > 0 && (
+                <div style={{ fontSize: fontSize.sm, color: colors.textMuted, padding: '0 0 6px 24px' }}>
+                  {tr.ineligible.map(p => (
+                    <div key={p.name}>
+                      ⛔ {p.name} did not score — out of starts ({p.used}/{p.max})
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
