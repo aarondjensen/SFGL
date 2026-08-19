@@ -18,7 +18,7 @@ import {
 import { theme, colors, fonts, fontSize, gold, green, greenMuted, navy, red, steel, white, black, blueBright, yellow } from '../theme.js';
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, getETClock, txBelongsToTeam } from '../utils/sharedHelpers';
 import { waiverCutoff, fmtWaiverCutoff } from '../../api/_league.js';
-import { limitedStartsStatus } from '../../api/_rules.js';
+import { limitedStartsStatus, startsUsedFor } from '../../api/_rules.js';
 import { NameSet, NameMap } from '../../api/_playerNames.js';
 import { activatable } from '../utils/a11y';
 
@@ -567,77 +567,15 @@ export const RostersView = ({
     );
   }, [tournamentField, dialog]);
 
-  // Derive SFGL cuts per player per team from completed tournament results
-  // sfglStatsMap: { playerName: { cuts, starts, earnings } }
-  // Source of truth for everything the Stats panel renders. Derived
-  // entirely from tournament.results.teams[teamId].players + fullLineups,
-  // matching the same pattern that already worked for cuts/starts.
-  //
-  // Why derive earnings instead of reading player.sfglEarnings off the
-  // roster doc: that field is maintained by handleReprocess and the
-  // add/drop modal, and can DRIFT from the underlying tournament data
-  // when name matching produces a different result on the reversal pass
-  // vs the new-processing pass. We've seen this in production — a player
-  // showing 1/1 cuts/starts (derived correctly) but $0 sfglEarnings
-  // (stored field stuck at 0 because the new-processing add didn't fire).
-  // Deriving from tournament.results is self-healing; it always matches
-  // what the Tournaments page shows.
-  //
-  // starts = appeared in lineup, cuts = appeared AND earned > $0,
-  // earnings = sum of (base earnings + round-leader bonus) across all
-  // tournaments where they started. Mulligan-out players are excluded.
-  const sfglStatsMap = useMemo(() => {
-    const map = {};
-    if (!team) return map;
-
-    // Build set of mulliganed-out players per tournament index
-    const mulliganedOut = {};
-    transactions.forEach(tx => {
-      if (tx.type === 'mulligan' && tx.status !== 'failed' && tx.droppedPlayer) {
-        // Key by the tournament's CURRENT position, resolved from its stable
-        // name, so this aligns with the `tournaments.forEach((t, tIdx) => ...)`
-        // consumer below regardless of schedule order. (Was keyed by the fragile
-        // stored tx.tournamentIndex — the same misalignment that skewed starts.)
-        const pos = resolveTxTournamentIndex(tx, tournaments);
-        if (pos == null) return;
-        if (!mulliganedOut[pos]) mulliganedOut[pos] = new Set();
-        mulliganedOut[pos].add(tx.droppedPlayer);
-      }
-    });
-
-    tournaments.forEach((t, tIdx) => {
-      if (!t.completed || !t.results?.teams?.[team.id]) return;
-      const teamResult = t.results.teams[team.id];
-      const players = teamResult.players || [];
-      const excluded = mulliganedOut[tIdx] || new Set();
-      const fullLineup = t.results.fullLineups?.[team.id] || [];
-
-      // Build earnings lookup from players array. Include bonus in totals
-      // since the Tournaments page shows earnings as (base + bonus) too.
-      const earningsLookup = {};
-      players.forEach(p => {
-        if (p?.name) earningsLookup[p.name] = (p.earnings || 0) + (p.bonus || 0);
-      });
-
-      // Union of players array names and fullLineup names — captures
-      // anyone who started even if their entry is missing from the
-      // top-5 players array (e.g. lineup of 6 with one $0 earner).
-      const allStarted = new Set([
-        ...players.map(p => p.name || p),
-        ...fullLineup,
-      ]);
-
-      allStarted.forEach(name => {
-        if (!name || excluded.has(name)) return;
-        if (!map[name]) map[name] = { cuts: 0, starts: 0, earnings: 0 };
-        map[name].starts += 1;
-        const earned = earningsLookup[name] || 0;
-        map[name].earnings += earned;
-        if (earned > 0) map[name].cuts += 1;
-      });
-    });
-    return map;
-  }, [team, tournaments, transactions]);
+  // Starts this team has committed to each player — scored events plus lineups
+  // already frozen at lock. Deliberately NOT sfglStatsMap.starts, which counts
+  // only what has been scored: results process Monday while lineup editing
+  // reopens Sunday 9pm ET, so for most of a day a player's latest start exists
+  // only as a locked lineup and a scored-only count is one short. See
+  // startsUsedFor in api/_rules.js.
+  const startsUsed = useMemo(
+    () => startsUsedFor({ team, tournaments, transactions }),
+    [team, tournaments, transactions]);
 
   // Where each limited player stands against the start cap. One number, used
   // by the badge beside the player's name AND by the gate that keeps them out
@@ -646,9 +584,9 @@ export const RostersView = ({
   // could read 12/12 on screen and still be addable. limitedStartsStatus takes
   // the higher of the two (see api/_rules.js for why both exist).
   const limitedStatus = useCallback((player) => limitedStartsStatus(player, {
-    derivedStarts: sfglStatsMap[player?.name]?.starts,
+    derivedStarts: startsUsed.get(player?.name),
     settings: resolvedSettings,
-  }), [sfglStatsMap, resolvedSettings]);
+  }), [startsUsed, resolvedSettings]);
 
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
@@ -798,6 +736,85 @@ export const RostersView = ({
       .filter(t => txBelongsToTeam(t, team) && t.type === 'waiver' && t.status === 'pending')
       .sort((a, b) => (a.priority || 999) - (b.priority || 999));
   }, [team, transactions]);
+
+  // Derive SFGL cuts per player per team from completed tournament results
+  // sfglStatsMap: { playerName: { cuts, starts, earnings } }
+  // Source of truth for everything the Stats panel renders. Derived
+  // entirely from tournament.results.teams[teamId].players + fullLineups,
+  // matching the same pattern that already worked for cuts/starts.
+  //
+  // Why derive earnings instead of reading player.sfglEarnings off the
+  // roster doc: that field is maintained by handleReprocess and the
+  // add/drop modal, and can DRIFT from the underlying tournament data
+  // when name matching produces a different result on the reversal pass
+  // vs the new-processing pass. We've seen this in production — a player
+  // showing 1/1 cuts/starts (derived correctly) but $0 sfglEarnings
+  // (stored field stuck at 0 because the new-processing add didn't fire).
+  // Deriving from tournament.results is self-healing; it always matches
+  // what the Tournaments page shows.
+  //
+  // starts = appeared in lineup, cuts = appeared AND earned > $0,
+  // earnings = sum of (base earnings + round-leader bonus) across all
+  // tournaments where they started. Mulligan-out players are excluded.
+  //
+  // NOT the number the start cap is enforced against — that is startsUsed
+  // above, which also counts a lineup frozen at lock for an event that has not
+  // been scored yet. These read the same for most of the week and differ by
+  // one between Thursday's lock and Monday's processing, which is correct for
+  // both: this reports what has been SCORED, the cap counts what has been
+  // COMMITTED.
+  const sfglStatsMap = useMemo(() => {
+    const map = {};
+    if (!team) return map;
+
+    // Build set of mulliganed-out players per tournament index
+    const mulliganedOut = {};
+    transactions.forEach(tx => {
+      if (tx.type === 'mulligan' && tx.status !== 'failed' && tx.droppedPlayer) {
+        // Key by the tournament's CURRENT position, resolved from its stable
+        // name, so this aligns with the `tournaments.forEach((t, tIdx) => ...)`
+        // consumer below regardless of schedule order. (Was keyed by the fragile
+        // stored tx.tournamentIndex — the same misalignment that skewed starts.)
+        const pos = resolveTxTournamentIndex(tx, tournaments);
+        if (pos == null) return;
+        if (!mulliganedOut[pos]) mulliganedOut[pos] = new Set();
+        mulliganedOut[pos].add(tx.droppedPlayer);
+      }
+    });
+
+    tournaments.forEach((t, tIdx) => {
+      if (!t.completed || !t.results?.teams?.[team.id]) return;
+      const teamResult = t.results.teams[team.id];
+      const players = teamResult.players || [];
+      const excluded = mulliganedOut[tIdx] || new Set();
+      const fullLineup = t.results.fullLineups?.[team.id] || [];
+
+      // Build earnings lookup from players array. Include bonus in totals
+      // since the Tournaments page shows earnings as (base + bonus) too.
+      const earningsLookup = {};
+      players.forEach(p => {
+        if (p?.name) earningsLookup[p.name] = (p.earnings || 0) + (p.bonus || 0);
+      });
+
+      // Union of players array names and fullLineup names — captures
+      // anyone who started even if their entry is missing from the
+      // top-5 players array (e.g. lineup of 6 with one $0 earner).
+      const allStarted = new Set([
+        ...players.map(p => p.name || p),
+        ...fullLineup,
+      ]);
+
+      allStarted.forEach(name => {
+        if (!name || excluded.has(name)) return;
+        if (!map[name]) map[name] = { cuts: 0, starts: 0, earnings: 0 };
+        map[name].starts += 1;
+        const earned = earningsLookup[name] || 0;
+        map[name].earnings += earned;
+        if (earned > 0) map[name].cuts += 1;
+      });
+    });
+    return map;
+  }, [team, tournaments, transactions]);
 
   // Derive mulligans used by this team from the transaction history.
   // Source of truth = transactions array (matches how every other counter in

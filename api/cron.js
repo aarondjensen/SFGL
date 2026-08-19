@@ -1124,8 +1124,6 @@ async function handleProcessResults(res) {
   });
 
   const updatedTeams = teams.map(team => {
-    if (!team.lineup || team.lineup.length === 0) return team;
-
     // One lineup, read once. This recorded lineupFor (the five frozen at lock)
     // and then SCORED team.lineup (the live five) — so the result and the
     // record of what produced it could disagree. Lineup editing reopens Sunday
@@ -1133,6 +1131,11 @@ async function handleProcessResults(res) {
     // those two differ, and is how three 2026 events came to be scored on the
     // wrong five in the first place.
     const scoredLineup = [...lineupFor(newTournaments[ti], team)];
+
+    // Gate on the lineup being SCORED, not on team.lineup. Gating on the live
+    // one skipped a team that had already cleared their lineup for next week —
+    // Sunday 9pm onwards — so their frozen five went unscored entirely.
+    if (!scoredLineup.length) return team;
     resultsData.fullLineups[team.id] = [...scoredLineup];
 
     const starterResults = scoredLineup.map(playerName => {
@@ -1203,8 +1206,15 @@ async function handleProcessResults(res) {
       earningsByLineupName[playerName] = earnings;
     });
 
+    // starts and sfglEarnings go to the five that were SCORED, which is what
+    // scoredLineup holds. This read team.lineup — the live one — so in the
+    // Sunday-9pm-to-Monday window it credited the start to next week's five
+    // and charged nothing to the players who actually teed off. For a limited
+    // player that is the difference between spending a start and being handed
+    // a free one, in both directions, and it is why the client-side twin
+    // (processTournamentData) has always used its effectiveLineup here.
     const updatedRoster = team.roster.map(player => {
-      if (!team.lineup.includes(player.name)) return player;
+      if (!scoredLineup.includes(player.name)) return player;
       const pe = earningsByLineupName[player.name] || 0;
       return { ...player, starts: (player.starts || 0) + 1, sfglEarnings: (player.sfglEarnings || 0) + pe };
     });

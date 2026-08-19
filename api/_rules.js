@@ -34,6 +34,7 @@
 // ============================================================================
 
 import { SWINGS, swingForMonth, txBelongsToTeam } from './_league.js';
+import { NameMap } from './_playerNames.js';
 
 // ── Round-leader bonuses ─────────────────────────────────────────────────────
 // Defaults; the commish can override each via league_settings (bonusR1Major
@@ -278,6 +279,78 @@ export const DEFAULT_MAX_LIMITED_STARTS = 12;
 export const maxLimitedStarts = (settings = {}) => {
   const n = Number(settings?.maxLimitedStarts);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_LIMITED_STARTS;
+};
+
+/**
+ * Starts a team has COMMITTED to each player this season — the count the cap is
+ * enforced against, as a NameMap of name → starts.
+ *
+ * Two things count, and the second is the one that is easy to miss:
+ *
+ *   scored  the player is in a completed tournament's stored results
+ *   locked  the player is in a lineup frozen at lock for an event that has not
+ *           been processed yet
+ *
+ * Lineup editing reopens Sunday 9pm ET (isLineupEditingOpen) and results
+ * auto-process Monday, so for most of a day a player's most recent start
+ * exists ONLY as a locked lineup: `player.starts` has not been incremented and
+ * no results are stored. A cap that counts scored starts alone lets a manager
+ * spend a twelfth start on Sunday night and a thirteenth on Monday morning —
+ * with nothing on screen suggesting anything is wrong, because every number in
+ * the app agrees the player is on eleven.
+ *
+ * A locked lineup is the right thing to count: lock is the moment the start
+ * stops being revocable. Before lock the manager can still take the player
+ * out, and team.lineup is not counted here for exactly that reason.
+ *
+ * Mulligans move a start from the OUT player to the IN one. For a scored event
+ * the stored results already reflect the swap, so only the OUT player needs
+ * removing; for a locked one the swap is replayed onto the frozen five.
+ */
+export const startsUsedFor = ({ team, tournaments = [], transactions = [] } = {}) => {
+  const counts = new Map();
+  if (!team?.id) return new NameMap();
+
+  // Mulligan swaps by tournament position. Filtered to THIS team: a mulligan
+  // is one team's move, and an unfiltered pass lets another team's mulligan
+  // erase a start from this team's count.
+  const swapsAt = {};
+  (transactions || []).forEach(tx => {
+    if (tx?.type !== 'mulligan' || tx.status === 'failed') return;
+    if (!txBelongsToTeam(tx, team)) return;
+    const pos = resolveTxTournamentIndex(tx, tournaments);
+    if (pos == null) return;
+    if (!swapsAt[pos]) swapsAt[pos] = [];
+    swapsAt[pos].push({ out: tx.droppedPlayer, in: tx.player });
+  });
+
+  (tournaments || []).forEach((t, pos) => {
+    const swaps = swapsAt[pos] || [];
+    const stored = t?.completed ? t?.results?.teams?.[team.id] : null;
+
+    let names;
+    if (stored) {
+      // Union of the scored rows and the recorded lineup — a starter who
+      // earned nothing can be missing from the first but never the second.
+      names = new Set([
+        ...(stored.players || []).map(p => p?.name || p),
+        ...(t.results.fullLineups?.[team.id] || []),
+      ]);
+      swaps.forEach(s => names.delete(s.out));
+    } else {
+      const locked = t?.lockedLineups?.[team.id];
+      if (!Array.isArray(locked) || !locked.length) return;
+      names = new Set(locked);
+      swaps.forEach(s => { if (s.out) names.delete(s.out); if (s.in) names.add(s.in); });
+    }
+
+    names.forEach(name => {
+      if (!name) return;
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
+  });
+
+  return new NameMap([...counts]);
 };
 
 /**

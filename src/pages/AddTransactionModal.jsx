@@ -25,6 +25,7 @@ import { sendCommishPush } from '../api/pushSend';
 import { getCurrentTournamentIndex } from '../utils/index.js';
 import { compactTeamName } from '../utils/index.js';
 import { getTransactionFee, buildEffectiveRoster, txBelongsToTeam } from '../utils/sharedHelpers';
+import { limitedStartsStatus, startsUsedFor } from '../../api/_rules.js';
 import { recomputeTeamTournamentResult } from '../utils/mulliganReversal';
 import { colors, fonts, gold, green, red, white, fontSize } from '../theme.js';
 import { M, disabledBtn } from './admin/adminStyles';
@@ -211,6 +212,32 @@ export const AddTransactionModal = ({
       if (!playerInName || !playerOutName) {
         dialog.showToast(
           'Mulligan requires both an OUT player (the one being replaced) and an IN player (the replacement).',
+          'error'
+        );
+        return;
+      }
+
+      // A mulligan IN is a start — it puts the player in the five that score.
+      // So the limited-start cap applies here exactly as it does to the lineup
+      // itself, and this modal is the only other way a name reaches a starting
+      // lineup. The OUT player hands their start back (the modal decrements it
+      // below); the IN player has to have one to spend.
+      //
+      // Exception: a mulligan already reflected in stored results. Re-adding
+      // that transaction record is bookkeeping, not a new start, and the start
+      // it describes is already counted — blocking it would strand the commish
+      // with a result they cannot document. Same test the side-effects block
+      // below uses for `alreadyApplied`.
+      const inAlreadyStarted = (targetTournament?.results?.teams?.[teamForMatch?.id]?.players || [])
+        .some(p => (p.name || p) === playerInName);
+      const inEntry = (teamForMatch?.roster || []).find(p => p.name === playerInName);
+      const inStarts = limitedStartsStatus(inEntry, {
+        derivedStarts: startsUsedFor({ team: teamForMatch, tournaments, transactions }).get(playerInName),
+        settings,
+      });
+      if (inStarts.outOfStarts && !inAlreadyStarted) {
+        dialog.showToast(
+          `${playerInName} is out of starts — ${inStarts.used} of ${inStarts.max} used. A mulligan in is a start.`,
           'error'
         );
         return;

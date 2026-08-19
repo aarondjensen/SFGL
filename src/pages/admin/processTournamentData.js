@@ -97,8 +97,6 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     : null;
 
   const newTeams = teams.map(team => {
-    if (!team.lineup || team.lineup.length === 0) return team;
-
     // ── Apply mulligans to the lineup (re-process-safe) ──────────────────
     // A mulligan swaps one lineup player (OUT) for another (IN) for a single
     // tournament. When the mulligan is created, AddTransactionModal performs
@@ -116,6 +114,11 @@ export const processTournamentData = (tournament, tournamentData, teams, globalP
     // no-op. Safe to run on every process/re-process.
     // The lineup frozen at lock when there is one — see lineupFor.
     let effectiveLineup = [...lineupFor(tournament, team)];
+    // Skip on the lineup being SCORED, not on team.lineup. Gating on the live
+    // one — which is what the check here used to read — skipped a team that
+    // had already cleared their lineup for the next event, so their frozen
+    // five went unscored. Matches the same gate in api/cron.js.
+    if (!effectiveLineup.length) return team;
     const teamMulligans = (transactions || []).filter(tx =>
       tx.type === 'mulligan' &&
       txBelongsToTeam(tx, team) &&
