@@ -13,10 +13,12 @@ import {
   getCurrentTournamentIndex,
   abbreviateName,
 } from '../utils';
-// MAX_LIMITED_STARTS and LINEUP_SIZE now come from leagueSettings prop
+// LINEUP_SIZE comes from the leagueSettings prop; the limited-start cap and
+// the rule that enforces it come from api/_rules.js.
 import { theme, colors, fonts, fontSize, gold, green, greenMuted, navy, red, steel, white, black, blueBright, yellow } from '../theme.js';
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, getETClock, txBelongsToTeam } from '../utils/sharedHelpers';
 import { waiverCutoff, fmtWaiverCutoff } from '../../api/_league.js';
+import { limitedStartsStatus } from '../../api/_rules.js';
 import { NameSet, NameMap } from '../../api/_playerNames.js';
 import { activatable } from '../utils/a11y';
 
@@ -433,7 +435,9 @@ export const RostersView = ({
   const resolvedSettings = settings || leagueSettings;
   // Destructure with fallbacks to constants for safety
   const LINEUP_SIZE       = resolvedSettings.lineupSize       ?? 5;
-  const MAX_LIMITED_STARTS = resolvedSettings.maxLimitedStarts ?? 12;
+  // The limited-start cap is NOT read here. It comes out of limitedStartsStatus
+  // (api/_rules.js) along with the count it is compared against, so the badge
+  // and the lineup gate can never be looking at different numbers.
   const isMobile            = useIsMobile();
   const [statsView,         setStatsView]         = useState('sfgl');
   const [rosterView,        setRosterView]        = useState('full'); // 'full' | 'playing'
@@ -563,6 +567,89 @@ export const RostersView = ({
     );
   }, [tournamentField, dialog]);
 
+  // Derive SFGL cuts per player per team from completed tournament results
+  // sfglStatsMap: { playerName: { cuts, starts, earnings } }
+  // Source of truth for everything the Stats panel renders. Derived
+  // entirely from tournament.results.teams[teamId].players + fullLineups,
+  // matching the same pattern that already worked for cuts/starts.
+  //
+  // Why derive earnings instead of reading player.sfglEarnings off the
+  // roster doc: that field is maintained by handleReprocess and the
+  // add/drop modal, and can DRIFT from the underlying tournament data
+  // when name matching produces a different result on the reversal pass
+  // vs the new-processing pass. We've seen this in production — a player
+  // showing 1/1 cuts/starts (derived correctly) but $0 sfglEarnings
+  // (stored field stuck at 0 because the new-processing add didn't fire).
+  // Deriving from tournament.results is self-healing; it always matches
+  // what the Tournaments page shows.
+  //
+  // starts = appeared in lineup, cuts = appeared AND earned > $0,
+  // earnings = sum of (base earnings + round-leader bonus) across all
+  // tournaments where they started. Mulligan-out players are excluded.
+  const sfglStatsMap = useMemo(() => {
+    const map = {};
+    if (!team) return map;
+
+    // Build set of mulliganed-out players per tournament index
+    const mulliganedOut = {};
+    transactions.forEach(tx => {
+      if (tx.type === 'mulligan' && tx.status !== 'failed' && tx.droppedPlayer) {
+        // Key by the tournament's CURRENT position, resolved from its stable
+        // name, so this aligns with the `tournaments.forEach((t, tIdx) => ...)`
+        // consumer below regardless of schedule order. (Was keyed by the fragile
+        // stored tx.tournamentIndex — the same misalignment that skewed starts.)
+        const pos = resolveTxTournamentIndex(tx, tournaments);
+        if (pos == null) return;
+        if (!mulliganedOut[pos]) mulliganedOut[pos] = new Set();
+        mulliganedOut[pos].add(tx.droppedPlayer);
+      }
+    });
+
+    tournaments.forEach((t, tIdx) => {
+      if (!t.completed || !t.results?.teams?.[team.id]) return;
+      const teamResult = t.results.teams[team.id];
+      const players = teamResult.players || [];
+      const excluded = mulliganedOut[tIdx] || new Set();
+      const fullLineup = t.results.fullLineups?.[team.id] || [];
+
+      // Build earnings lookup from players array. Include bonus in totals
+      // since the Tournaments page shows earnings as (base + bonus) too.
+      const earningsLookup = {};
+      players.forEach(p => {
+        if (p?.name) earningsLookup[p.name] = (p.earnings || 0) + (p.bonus || 0);
+      });
+
+      // Union of players array names and fullLineup names — captures
+      // anyone who started even if their entry is missing from the
+      // top-5 players array (e.g. lineup of 6 with one $0 earner).
+      const allStarted = new Set([
+        ...players.map(p => p.name || p),
+        ...fullLineup,
+      ]);
+
+      allStarted.forEach(name => {
+        if (!name || excluded.has(name)) return;
+        if (!map[name]) map[name] = { cuts: 0, starts: 0, earnings: 0 };
+        map[name].starts += 1;
+        const earned = earningsLookup[name] || 0;
+        map[name].earnings += earned;
+        if (earned > 0) map[name].cuts += 1;
+      });
+    });
+    return map;
+  }, [team, tournaments, transactions]);
+
+  // Where each limited player stands against the start cap. One number, used
+  // by the badge beside the player's name AND by the gate that keeps them out
+  // of the lineup — they used to be two: the badge rendered the derived count
+  // while the gate read the stored `player.starts` tally, so a maxed player
+  // could read 12/12 on screen and still be addable. limitedStartsStatus takes
+  // the higher of the two (see api/_rules.js for why both exist).
+  const limitedStatus = useCallback((player) => limitedStartsStatus(player, {
+    derivedStarts: sfglStatsMap[player?.name]?.starts,
+    settings: resolvedSettings,
+  }), [sfglStatsMap, resolvedSettings]);
+
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
     const isInLineup = (team.lineup || []).includes(player.name);
@@ -645,6 +732,23 @@ export const RostersView = ({
     // backup (implicit overflow path — backup also gets set if user
     // organically fills the 6th tap after 5 starters). Otherwise: add to
     // starters if there's room, error if not.
+
+    // A limited player who has used every start cannot be STARTED again, and
+    // the manager is told so rather than left with a tap that does nothing.
+    // Checked before the roster-full branch so the reason reported is the one
+    // that will still be true after a slot frees up — except when this tap
+    // would fill the BACKUP slot, which the cap does not govern (see the note
+    // in that branch).
+    const wouldFillBackup = activeLineupCount >= LINEUP_SIZE && allowBackup && !team.backup;
+    const starts = limitedStatus(player);
+    if (starts.outOfStarts && !wouldFillBackup) {
+      dialog.showToast(
+        `${lastName} is out of starts — ${starts.used} of ${starts.max} used`,
+        'error', { position: 'top' }
+      );
+      return;
+    }
+
     if (activeLineupCount >= LINEUP_SIZE) {
       if (allowBackup && !team.backup) {
         // Limited start limit check ONLY applies when they'd actually start.
@@ -667,12 +771,6 @@ export const RostersView = ({
       return;
     }
 
-    // Adding to starters — Limited start limit check applies here.
-    if (player.limited && player.starts >= MAX_LIMITED_STARTS) {
-      dialog.showToast('This player has reached their 12-start limit', 'error', { position: 'top' });
-      return;
-    }
-
     // Soft-warn when adding a starter who isn't in this week's field. See
     // confirmOutOfField for the field-known gate and why this is a confirm
     // rather than a hard block.
@@ -686,7 +784,7 @@ export const RostersView = ({
     // `activeTournament` was listed here but is never read in this callback —
     // it only forced needless re-creation on every tournament-object identity
     // change (and blocked the React compiler from preserving the memo).
-  }, [team, teams, updateTeams, dialog, currentRoster, LINEUP_SIZE, MAX_LIMITED_STARTS, pickingBackup, backupAllowed, confirmOutOfField]);
+  }, [team, teams, updateTeams, dialog, currentRoster, LINEUP_SIZE, limitedStatus, pickingBackup, backupAllowed, confirmOutOfField]);
 
 
   const pendingWaivers = useMemo(() => {
@@ -696,83 +794,6 @@ export const RostersView = ({
       .filter(t => txBelongsToTeam(t, team) && t.type === 'waiver' && t.status === 'pending')
       .sort((a, b) => (a.priority || 999) - (b.priority || 999));
   }, [team, transactions]);
-
-  // Derive SFGL cuts per player per team from completed tournament results
-  // sfglStatsMap: { playerName: { cuts, starts, earnings } }
-  // Source of truth for everything the Stats panel renders. Derived
-  // entirely from tournament.results.teams[teamId].players + fullLineups,
-  // matching the same pattern that already worked for cuts/starts.
-  //
-  // Why derive earnings instead of reading player.sfglEarnings off the
-  // roster doc: that field is maintained by handleReprocess and the
-  // add/drop modal, and can DRIFT from the underlying tournament data
-  // when name matching produces a different result on the reversal pass
-  // vs the new-processing pass. We've seen this in production — a player
-  // showing 1/1 cuts/starts (derived correctly) but $0 sfglEarnings
-  // (stored field stuck at 0 because the new-processing add didn't fire).
-  // Deriving from tournament.results is self-healing; it always matches
-  // what the Tournaments page shows.
-  //
-  // starts = appeared in lineup, cuts = appeared AND earned > $0,
-  // earnings = sum of (base earnings + round-leader bonus) across all
-  // tournaments where they started. Mulligan-out players are excluded.
-  const sfglStatsMap = useMemo(() => {
-    const map = {};
-    if (!team) return map;
-
-    // Build set of mulliganed-out players per tournament index
-    const mulliganedOut = {};
-    transactions.forEach(tx => {
-      if (tx.type === 'mulligan' && tx.status !== 'failed' && tx.droppedPlayer) {
-        // Key by the tournament's CURRENT position, resolved from its stable
-        // name, so this aligns with the `tournaments.forEach((t, tIdx) => ...)`
-        // consumer below regardless of schedule order. (Was keyed by the fragile
-        // stored tx.tournamentIndex — the same misalignment that skewed starts.)
-        const pos = resolveTxTournamentIndex(tx, tournaments);
-        if (pos == null) return;
-        if (!mulliganedOut[pos]) mulliganedOut[pos] = new Set();
-        mulliganedOut[pos].add(tx.droppedPlayer);
-      }
-    });
-
-    tournaments.forEach((t, tIdx) => {
-      if (!t.completed || !t.results?.teams?.[team.id]) return;
-      const teamResult = t.results.teams[team.id];
-      const players = teamResult.players || [];
-      const excluded = mulliganedOut[tIdx] || new Set();
-      const fullLineup = t.results.fullLineups?.[team.id] || [];
-
-      // Build earnings lookup from players array. Include bonus in totals
-      // since the Tournaments page shows earnings as (base + bonus) too.
-      const earningsLookup = {};
-      players.forEach(p => {
-        if (p?.name) earningsLookup[p.name] = (p.earnings || 0) + (p.bonus || 0);
-      });
-
-      // Union of players array names and fullLineup names — captures
-      // anyone who started even if their entry is missing from the
-      // top-5 players array (e.g. lineup of 6 with one $0 earner).
-      const allStarted = new Set([
-        ...players.map(p => p.name || p),
-        ...fullLineup,
-      ]);
-
-      allStarted.forEach(name => {
-        if (!name || excluded.has(name)) return;
-        if (!map[name]) map[name] = { cuts: 0, starts: 0, earnings: 0 };
-        map[name].starts += 1;
-        const earned = earningsLookup[name] || 0;
-        map[name].earnings += earned;
-        if (earned > 0) map[name].cuts += 1;
-      });
-    });
-    return map;
-  }, [team, tournaments, transactions]);
-
-  // Backwards-compat alias — older code references sfglCutsMap directly.
-  // Same object shape (cuts/starts), just doesn't expose earnings to
-  // existing callers. Anything new should reach for sfglStatsMap.
-  const sfglCutsMap = sfglStatsMap;
 
   // Derive mulligans used by this team from the transaction history.
   // Source of truth = transactions array (matches how every other counter in
@@ -1332,6 +1353,30 @@ export const RostersView = ({
               );
             })()}
           </div>
+
+          {/* Starters who have already spent every start they had.
+              A lineup carries over from week to week, so a limited player can
+              cross the cap while sitting in a lineup nobody re-entered them
+              into — the add-time block never fires, because there is no add.
+              Without this the only warning was a badge in a table two screens
+              down. */}
+          {(() => {
+            const spent = (team.lineup || [])
+              .map(name => currentRoster.find(p => p.name === name))
+              .filter(p => p && limitedStatus(p).outOfStarts);
+            if (!spent.length) return null;
+            return (
+              <div style={{
+                marginTop: 8, padding: '6px 10px', borderRadius: 4,
+                background: red(0.12), border: `1px solid ${red(0.35)}`,
+                fontFamily: fonts.sans, fontSize: fontSize.xs, color: red(0.95),
+                textAlign: 'center', lineHeight: 1.4,
+              }}>
+                ⚠ {spent.map(p => p.name).join(', ')} {spent.length > 1 ? 'have' : 'has'} no
+                {' '}starts left — {isOwnTeam ? 'swap them out before lineups lock.' : 'still in this lineup.'}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -1438,7 +1483,9 @@ export const RostersView = ({
               {sortedRoster.map(player => {
                 const isInLineup     = (team.lineup || []).includes(player.name);
                 const activeLineupCount = (team.lineup || []).filter(name => currentRoster.some(p => p.name === name)).length;
-                const canAddToLineup = activeLineupCount < LINEUP_SIZE && (!player.limited || player.starts < MAX_LIMITED_STARTS);
+                const startsStatus   = limitedStatus(player);
+                const outOfStarts    = startsStatus.outOfStarts;
+                const canAddToLineup = activeLineupCount < LINEUP_SIZE && !outOfStarts;
                 const hasLineup      = (team.lineup || []).length > 0;
                 const isEditing      = canEditLineup && lineupMode;
                 // Only dim benched players once the tournament week has actually
@@ -1479,11 +1526,18 @@ export const RostersView = ({
                                 togglePlayerInLineup(player);
                                 return;
                               }
+                              // outOfStarts taps dispatch too. The gate used to
+                              // be canAddToLineup alone, so tapping a limited
+                              // player who had used every start did nothing
+                              // at all — no lineup change and no explanation.
+                              // togglePlayerInLineup is where the "out of
+                              // starts" notification lives, so the tap has to
+                              // reach it.
                               if (!lineupMode) {
                                 setLineupMode(true);
                                 // If clicking a non-lineup player with room, add them
-                                if (!isInLineup && canAddToLineup) togglePlayerInLineup(player);
-                              } else if (isInLineup || canAddToLineup) {
+                                if (!isInLineup && (canAddToLineup || outOfStarts)) togglePlayerInLineup(player);
+                              } else if (isInLineup || canAddToLineup || outOfStarts) {
                                 togglePlayerInLineup(player);
                               }
                             }
@@ -1559,11 +1613,21 @@ export const RostersView = ({
                               <span title="In this week's field" style={{ fontSize: fontSize.sm, lineHeight: 1, flexShrink: 0, opacity: isBenched ? 0.35 : 1 }}>⛳</span>
                             )}
                             {player.limited && (
-                              <span style={{
-                                fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 600,
-                                color: isBenched ? gold(0.35) : colors.textGoldDim,
-                              }}>
-                                {sfglCutsMap[player.name]?.starts ?? 0}/{MAX_LIMITED_STARTS}
+                              // Starts used / cap. Reads limitedStatus, the same
+                              // call the lineup gate makes, so the badge can no
+                              // longer say 12/12 while the player is still
+                              // addable. Red once spent, because at that point
+                              // it is a rule and not a statistic.
+                              <span
+                                title={outOfStarts ? `Out of starts — ${startsStatus.used} of ${startsStatus.max} used` : `${startsStatus.remaining} of ${startsStatus.max} starts left`}
+                                style={{
+                                  fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: outOfStarts ? 700 : 600,
+                                  color: outOfStarts
+                                    ? (isBenched ? red(0.45) : red(0.9))
+                                    : (isBenched ? gold(0.35) : colors.textGoldDim),
+                                }}
+                              >
+                                {startsStatus.used}/{startsStatus.max}
                               </span>
                             )}
                             {player.unlimited && (
