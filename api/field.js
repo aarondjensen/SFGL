@@ -515,23 +515,54 @@ export function parseFieldPage(nd) {
            rejectedNames: rejected, firstTeeTimeISO: earliestTee.iso };
 }
 
-// ── ESPN fallback for field + tee times ───────────────────────────────────────
-async function fetchFromESPN() {
-  for (let offset = 0; offset <= 14; offset++) {
+// ── ESPN ──────────────────────────────────────────────────────────────────────
+
+const ESPN_HEADERS = { 'User-Agent': HEADERS['User-Agent'], 'Accept': 'application/json' };
+
+/**
+ * Find the next non-finished PGA event on ESPN and return its leaderboard.
+ *
+ * ONE discovery path, shared by the field/tee-time fallback and the odds
+ * gap-filler below. They used to be one function; splitting the odds work out
+ * without splitting this out first would have meant two copies of the
+ * scoreboard walk, which is the duplication this repo keeps getting bitten by.
+ *
+ * `fromOffset` exists so callers can resume the day-by-day scan where a
+ * previous call left off. fetchFromESPN needs that: an event whose leaderboard
+ * carries competitors but no usable names must not stop the search.
+ *
+ * Returns { event, ld, competitors, offset } or null when 15 days yield
+ * nothing.
+ */
+async function findESPNEvent(fromOffset = 0) {
+  for (let offset = fromOffset; offset <= 14; offset++) {
     const d = new Date(); d.setDate(d.getDate() + offset);
     const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-    const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?dates=${ds}`, { headers: { 'User-Agent': HEADERS['User-Agent'], 'Accept': 'application/json' } });
+    const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?dates=${ds}`, { headers: ESPN_HEADERS });
     if (!r.ok) continue;
     const data = await r.json();
     const pga = (data?.events || []).filter(e => e.status?.type?.state !== 'post');
     if (!pga.length) continue;
     const event = pga.find(e => e.status?.type?.state === 'pre') || pga[0];
 
-    const r2 = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${event.id}`, { headers: { 'User-Agent': HEADERS['User-Agent'], 'Accept': 'application/json' } });
+    const r2 = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${event.id}`, { headers: ESPN_HEADERS });
     if (!r2.ok) continue;
     const ld = await r2.json();
     const competitors = ld?.events?.[0]?.competitions?.[0]?.competitors || [];
     if (!competitors.length) continue;
+
+    return { event, ld, competitors, offset };
+  }
+  return null;
+}
+
+// ── ESPN fallback for field + tee times ───────────────────────────────────────
+async function fetchFromESPN() {
+  for (let from = 0; from <= 14; ) {
+    const found = await findESPNEvent(from);
+    if (!found) break;
+    from = found.offset + 1;
+    const { event, competitors } = found;
 
     const players = [];
     const teeTimes = [];
@@ -576,6 +607,133 @@ async function fetchFromESPN() {
     }
   }
   throw new Error('No field found via ESPN');
+}
+
+// ── ESPN odds: the gap-filler ────────────────────────────────────────────────
+//
+// Last resort, and only for players BOTH pgatour.com pages left unpriced. At
+// the 2026 BMW Championship the tour's own board carried 48 rows for a 50-man
+// field — the field page and the dedicated /odds page agreed on the same 48 —
+// so J.J. Spaun and Matt McCarty rendered '—' with nothing wrong on our side.
+// That is what this is for.
+//
+// Two deliberate limits:
+//
+//   • GAPS ONLY, never an overwrite. ESPN's book is not the tour's, so their
+//     prices differ by a few points on the same golfer. Filling a blank cell
+//     from a second book is worth it; silently restating a price the tour
+//     already gave us in another book's numbers is not.
+//   • NAMES ONLY, never ids. ESPN athlete ids and PGA TOUR player ids are
+//     different namespaces that both look like bare integers, and joining an
+//     ESPN id through the PGA id map is precisely the mix-up that once put
+//     another golfer's face on a player card. resolveOddsRows is handed an
+//     EMPTY id map here, so a row that cannot name itself is simply dropped.
+//
+// The harvester is shape-agnostic on purpose. ESPN serves golf prices from
+// more than one endpoint and more than one layout, so rather than hard-code a
+// path this walks the payload for objects that pair a golfer with an
+// explicitly odds-named field — the same tactic collectOddsRows uses on
+// pgatour's __NEXT_DATA__.
+
+/** An American price, and only that — not a score, a position or a yardage. */
+function espnPrice(raw) {
+  let v = raw;
+  // ESPN wraps a price as { value, displayValue } about half the time.
+  if (v && typeof v === 'object') v = v.displayValue ?? v.american ?? v.moneyLine ?? v.value;
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!/^[+-]?\d{2,6}$/.test(s)) return null;
+  const n = parseInt(s, 10);
+  // Three figures minimum. A golf outright runs from about +250 to +100000,
+  // while a round score, a position and a rank are all two digits or fewer —
+  // this is what keeps a walker this generic from reading one as the other.
+  if (isNaN(n) || Math.abs(n) < 100) return null;
+  return formatOdds(n);
+}
+
+/** Odds rows harvested from any ESPN payload, in resolveOddsRows' shape. */
+export function espnOddsRows(json) {
+  const rows = [];
+  walkAll(json, (obj) => {
+    // Only keys that SAY they are odds. A generic value scan would pick up
+    // yardages and purses, which are shaped exactly like prices.
+    const raw = obj.odds ?? obj.moneyLine ?? obj.moneyline ?? obj.americanOdds
+             ?? obj.currentOdds ?? obj.oddsToWin ?? obj.winOdds;
+    if (raw == null) return;
+    const odds = espnPrice(raw);
+    if (!odds) return;
+
+    const athlete = obj.athlete && typeof obj.athlete === 'object' ? obj.athlete : null;
+    const name = (athlete?.displayName || athlete?.fullName
+      || obj.displayName || obj.fullName || '').trim();
+    // A single token is not a name this app can match, and `name`/`shortName`
+    // on an odds object is as likely to be the book's own ('ESPN BET').
+    if (!name.includes(' ')) return;
+
+    rows.push({ name, ids: [], odds, rank: 1 });
+  });
+  return rows;
+}
+
+/**
+ * Reduce harvested ESPN rows to prices for `wanted` — the field players nobody
+ * has priced yet — keyed by the spelling `wanted` used.
+ *
+ * The two restrictions that make a cross-source fill safe live here:
+ *
+ *   • an EMPTY id map, so ESPN athlete ids can never be joined through the PGA
+ *     TOUR id map (different namespaces, both bare integers);
+ *   • the result is intersected with `wanted`, so a row for a player who is
+ *     already priced cannot overwrite the tour's number, and a row for someone
+ *     outside this week's field cannot be published at all. ESPN's "next
+ *     event" is its own judgement and can be a different tournament than the
+ *     one this endpoint is serving — a mismatch must fill nothing rather than
+ *     quietly price the field from another week.
+ */
+export function pickESPNOdds(rows, fieldSet, wanted) {
+  const { oddsMap } = resolveOddsRows(rows, new Map(), fieldSet);
+  const want = new NameSet(wanted);
+  const odds = {};
+  for (const [name, price] of Object.entries(oddsMap)) {
+    const hit = want.resolve(name);
+    if (hit) odds[hit] = price;
+  }
+  return odds;
+}
+
+/**
+ * Prices for `wanted` (field players nobody has priced yet), or an empty map.
+ * Never throws — a gap-filler that can take the endpoint down with it is worse
+ * than the gap. Returns { odds, status } where status is this function's own
+ * account of itself for ?debug=1.
+ */
+async function fetchESPNOdds(fieldSet, wanted) {
+  try {
+    const found = await findESPNEvent();
+    if (!found) return { odds: {}, status: 'no-event' };
+
+    // The leaderboard first — it is already the payload the field fallback
+    // reads, so when it carries prices this costs nothing extra.
+    let rows = espnOddsRows(found.ld);
+
+    // Otherwise the core API's odds collection for this event.
+    if (!rows.length) {
+      const id = found.event?.id;
+      const comp = found.ld?.events?.[0]?.competitions?.[0]?.id || id;
+      if (id) {
+        const r = await fetch(
+          `https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/${id}/competitions/${comp}/odds`,
+          { headers: ESPN_HEADERS });
+        if (r.ok) rows = espnOddsRows(await r.json());
+      }
+    }
+    if (!rows.length) return { odds: {}, status: 'no-rows' };
+
+    const odds = pickESPNOdds(rows, fieldSet, wanted);
+    return { odds, status: `${rows.length} rows, filled ${Object.keys(odds).length}` };
+  } catch (e) {
+    return { odds: {}, status: `error: ${e.message}` };
+  }
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -730,8 +888,24 @@ export default async function handler(req, res) {
             }
           } catch (e) { oddsPage = `error: ${e.message}`; }
         }
+
+        // Still unpriced after both pgatour.com sources? Try ESPN. Gaps only,
+        // and only when there are gaps — see fetchESPNOdds.
+        let oddsEspn = 'not-needed';
+        let oddsEspnFilled = [];
+        const stillMissing = players.length ? unpriced(mergedOdds) : [];
+        if (stillMissing.length) {
+          const espnOdds = await fetchESPNOdds(fieldSet, stillMissing);
+          oddsEspn = espnOdds.status;
+          oddsEspnFilled = Object.keys(espnOdds.odds);
+          // ESPN UNDER the tour, so a tour price always wins. fetchESPNOdds
+          // only returns names in `stillMissing`, so there is nothing to lose
+          // here — the spread order is belt and braces.
+          mergedOdds = { ...espnOdds.odds, ...mergedOdds };
+        }
+
         const finalOdds = Object.entries(mergedOdds).map(([name, odds]) => ({ name, odds }));
-        // A player the field page listed without a price but the odds board
+        // A player the field page listed without a price but another source
         // does price is not pulled. Recheck against the merged result.
         oddsPulled = oddsPulled.filter(n => !(n in mergedOdds));
 
@@ -750,6 +924,8 @@ export default async function handler(req, res) {
             oddsNotInField,
             oddsPulled,
             oddsPage,
+            oddsEspn,
+            oddsEspnFilled,
             rejectedNames,
             tournament: tournament.name,
             source: 'pgatour',
@@ -806,6 +982,11 @@ export default async function handler(req, res) {
       // this fallback's own account of itself, because it runs inside a
       // try/catch that swallows and used to leave no trace at all.
       oddsPage: result.oddsPage || null,
+      // The ESPN gap-filler's account of itself, same vocabulary as oddsPage,
+      // plus the players it actually priced. 'not-needed' means both
+      // pgatour.com sources between them priced the whole field.
+      oddsEspn: result.oddsEspn || null,
+      oddsEspnFilled: result.oddsEspnFilled || [],
       // Truncated — when the join fails wholesale this is the entire field,
       // and a debug endpoint that dumps 156 names is one nobody reads.
       fieldPlayersWithoutOdds: (() => {
