@@ -8,8 +8,12 @@
 //
 // Every pgatour.com odds payload identifies players by ID, not by name
 // (`{ oddsToWinId, players: [{ id, odds }] }`), so the id→name join is the
-// single point of failure for the whole column. The cases below are the three
-// ways it lost a player, plus the upstream case it must NOT paper over.
+// single point of failure for the whole column. The cases below are the ways
+// it has lost a player, plus the upstream case it must NOT paper over.
+//
+// Cases 1–6 are the original set. 7–10 came from the BMW Championship, where
+// J.J. Spaun sat in the field with a '—': the two halves of the join had
+// disagreed about which key names a player (`playerId` vs `id`).
 //
 //   node scripts/test-field-odds.mjs
 
@@ -157,6 +161,117 @@ const oddsFor = (nd, name) => new NameMap(
   check('a row with no name and no known id is counted', oddsUnresolved === 1, String(oddsUnresolved));
   check('the resolvable row is unaffected', oddsMap['J.J. Spaun'] === '+4000');
   check('an unresolvable row adds no entry', Object.keys(oddsMap).length === 1);
+}
+
+// ── 7. The field page states `playerId`, not `id` ────────────────────────────
+// The two halves of the join disagreed about which key names a player. The
+// odds side has always read `[p.playerId, p.id]`; the recorder side only ever
+// read `obj.id`. A golfer whose field-page object carries `playerId` and no
+// `id` therefore contributed nothing to the id map, so their odds row cited an
+// id nobody had claimed and was dropped — while `displayName` alone still put
+// them in `players`. In the field, ⛳ showing, '—' in Odds, one player at a
+// time: only the page sections that spell it `playerId` are affected.
+{
+  const nd = {
+    fieldSection: {
+      players: [
+        { playerId: '46046', displayName: 'J.J. Spaun', country: 'USA' },
+        { id: '47959', displayName: 'Tommy Fleetwood', country: 'ENG' },
+      ],
+    },
+    oddsSection: {
+      oddsToWinId: 'mkt-1', oddsEnabled: true,
+      players: [{ playerId: '46046', odds: '+4000' }, { playerId: '47959', odds: '+2000' }],
+    },
+  };
+  const { oddsMap, oddsUnresolved } = parseFieldPage(nd);
+  check("a golfer identified by 'playerId' is still priced",
+    oddsMap['J.J. Spaun'] === '+4000', JSON.stringify(oddsMap));
+  check('and nothing is left unresolved', oddsUnresolved === 0, String(oddsUnresolved));
+}
+
+// ── 8. A surname-only odds row must not defeat a good id ─────────────────────
+// Resolution preferred the row's own name unconditionally, on the reasoning
+// that a name needs no join. But the row's name comes from the BOOK, which
+// renders how it likes — and nameKey('Spaun') is a single token that meets
+// nothing, so the price landed under a junk key while the golfer it was for
+// kept their '—'. It did not even count as unresolved. The field is the
+// arbiter now: whichever candidate names somebody actually playing wins, and
+// the FIELD's spelling is the key.
+{
+  const nd = {
+    fieldSection: {
+      players: [{ id: '46046', displayName: 'J.J. Spaun', country: 'USA' }],
+    },
+    oddsSection: {
+      oddsToWinId: 'mkt-1', oddsEnabled: true,
+      players: [{ id: '46046', displayName: 'Spaun', odds: '+4000' }],
+    },
+  };
+  const { oddsMap } = parseFieldPage(nd);
+  check('a surname-only row resolves through the id map instead',
+    oddsMap['J.J. Spaun'] === '+4000', JSON.stringify(oddsMap));
+  check('and leaves no junk key behind', !('Spaun' in oddsMap), JSON.stringify(oddsMap));
+  check("the roster's spelling reads it", oddsFor(nd, 'JJ Spaun') === '+4000');
+}
+
+// ── 9. A favourites rail must not outrank the full board ─────────────────────
+// A page can carry several markets, and they overlap. Writing them
+// last-write-wins meant whichever the DFS reached last won, so a promo rail or
+// a top-10 market could overwrite an outright price. The outright board is the
+// enabled one and the one with everybody in it.
+{
+  const nd = {
+    // The small rail is traversed LAST, so under last-write-wins it would win.
+    fieldSection: {
+      players: [
+        { id: '46046', displayName: 'J.J. Spaun', country: 'USA' },
+        { id: '47959', displayName: 'Tommy Fleetwood', country: 'ENG' },
+        { id: '30925', displayName: 'Shane Lowry', country: 'IRL' },
+      ],
+    },
+    outrightBoard: {
+      oddsToWinId: 'mkt-outright', oddsEnabled: true,
+      players: [
+        { id: '46046', odds: '+4000' }, { id: '47959', odds: '+2000' },
+        { id: '30925', odds: '+6500' },
+      ],
+    },
+    top10Rail: {
+      oddsToWinId: 'mkt-top10',
+      players: [{ id: '47959', odds: '+275' }],
+    },
+  };
+  const { oddsMap } = parseFieldPage(nd);
+  check('the outright price survives a smaller overlapping market',
+    oddsMap['Tommy Fleetwood'] === '+2000', JSON.stringify(oddsMap));
+  check('and the rest of the board is intact',
+    oddsMap['J.J. Spaun'] === '+4000' && oddsMap['Shane Lowry'] === '+6500');
+}
+
+// ── 10. A row for somebody outside the field is reported ─────────────────────
+// The diagnostic half of case 8. `oddsUnresolved` only counts rows nothing
+// could identify; a row that resolves to a name no roster and no field entry
+// answers to is just as broken and used to be completely silent.
+{
+  const nd = {
+    fieldSection: { players: [{ id: '46046', displayName: 'J.J. Spaun', country: 'USA' }] },
+    oddsSection: {
+      oddsToWinId: 'mkt-1', oddsEnabled: true,
+      players: [
+        { id: '46046', odds: '+4000' },
+        { displayName: 'Some Withdrawal', odds: '+9000' },
+      ],
+    },
+  };
+  const { oddsMap, oddsNotInField } = parseFieldPage(nd);
+  check('a priced name nobody in the field answers to is reported',
+    oddsNotInField.length === 1 && oddsNotInField[0] === 'Some Withdrawal',
+    JSON.stringify(oddsNotInField));
+  check('a name the field DOES answer to is not reported',
+    !oddsNotInField.includes('J.J. Spaun'));
+  check('the price is still served — the field list can be incomplete too',
+    oddsMap['Some Withdrawal'] === '+9000');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

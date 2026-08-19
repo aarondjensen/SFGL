@@ -162,7 +162,7 @@ async function getUpcomingTournament() {
 // a time and silently: the player still appears in `players` (so the ⛳ flag
 // and the "Playing" filter work), but the Odds cell renders '—'.
 //
-// Three ways it used to lose a player, all fixed here:
+// Ways it has lost a player, all fixed here:
 //
 //   1. ORDER. The field-page odds block was resolved INSIDE the walk that
 //      builds `pgaIds`. walkAll is pre-order DFS, so any odds row reached
@@ -178,10 +178,27 @@ async function getUpcomingTournament() {
 //   3. NO FALLBACK. The odds-page path had no name fallback at all, so a
 //      player absent from `pgaIds` — no `id` on their field-page object — was
 //      unreachable even when the odds row named them outright. Both paths now
-//      try the row's own name first.
+//      consider the row's own name.
+//   4. NAMESPACE. The odds side reads `[p.playerId, p.id]`, but the recorder
+//      that FILLS the id map only ever read `obj.id`. A golfer stated with
+//      `playerId` and no `id` was therefore in `players` (their displayName
+//      needs no id) and absent from the id map, so their price was dropped.
+//      recordIdAlias now records every id namespace a row can cite.
+//   5. A DEGRADED NAME BEATING A GOOD ID. Resolution preferred the row's own
+//      name unconditionally. That name comes from the BOOK, which sometimes
+//      renders surname-only ('Spaun'), and a lone surname matches nothing —
+//      so the price landed under a junk key and the golfer kept their '—'.
+//      This week's FIELD now arbitrates: whichever candidate names somebody
+//      actually playing wins, and the key is the field's own spelling.
+//   6. A PARTIAL RAIL SUPPRESSING THE BOARD. The dedicated odds page was
+//      fetched only when the field page carried NO odds, so a favourites-only
+//      promo rail satisfied the gate and everyone outside it showed '—'. The
+//      gate is coverage now, and the two paths share one code path so they
+//      cannot drift apart again.
 //
 // A row that still resolves to nothing is counted, not swallowed: `?debug=1`
-// reports `oddsUnresolved` so the next instance of this is visible from the
+// reports `oddsUnresolved`, and `oddsNotInField` for rows that resolved to
+// somebody no roster answers to. The next instance of this is visible from the
 // endpoint instead of from a screenshot of the roster page.
 
 /** Normalize a book price to the '+700' / '-150' rendering the app serves. */
@@ -206,6 +223,14 @@ function collectOddsRows(nd) {
   const rows = [];
   walkAll(nd, (obj) => {
     if (obj.oddsToWinId && Array.isArray(obj.players) && obj.players.length) {
+      // Which market this row came from. A page can carry several — outright,
+      // top-10, matchups, and a favourites-only promo rail — each with its own
+      // oddsToWinId, and they overlap. Ranking them lets the writer below keep
+      // the best market's price for a player who appears in more than one,
+      // instead of the naive last-write-wins the DFS order happened to give.
+      // The outright board is the enabled one and the one with everybody in
+      // it, so 'enabled' outranks 'big' and 'big' outranks 'small'.
+      const rank = (obj.oddsEnabled ? 1e6 : 0) + obj.players.length;
       obj.players.forEach((p) => {
         const odds = formatOdds(p.odds ?? p.currentOdds ?? p.americanOdds);
         if (!odds) return;
@@ -213,6 +238,7 @@ function collectOddsRows(nd) {
           name: p.displayName?.trim() || p.playerName?.trim() || null,
           ids: [p.playerId, p.id].filter((v) => v != null).map(String),
           odds,
+          rank,
         });
       });
     }
@@ -221,25 +247,68 @@ function collectOddsRows(nd) {
 }
 
 /**
- * Resolve collected rows into a name→odds map. Name first (it needs no join
- * and cannot go stale), then the id map. Returns the map plus the number of
- * rows that could not be resolved at all.
+ * Resolve collected rows into a name→odds map.
+ *
+ * `field` is a NameSet of this week's field. It is not just a filter — it is
+ * the ARBITER. A row can identify its player two ways (its own name, and the
+ * id map), and the two are not equally trustworthy:
+ *
+ *   • the id map's names come from the field page, so they are already in the
+ *     same namespace as `players` — the exact spellings the client will look
+ *     odds up against;
+ *   • the row's own name comes from the BOOK, which renders names its own way
+ *     and sometimes surname-only ('Spaun'). A surname is not a name this app
+ *     can match — nameKey('Spaun') is a single token that meets nothing — so
+ *     preferring it unconditionally, as this used to, threw away a perfectly
+ *     good id and left that player with a '—'. It did not even count as
+ *     unresolved: the map just grew a junk 'Spaun' key nobody reads.
+ *
+ * So: try both, take the first that names somebody actually in the field, and
+ * key the map with the FIELD's spelling. That last part is what guarantees the
+ * odds keys and the `players` list can never end up in two namespaces.
+ *
+ * The original preference order (row name first, id second) is kept among
+ * candidates that do resolve — a name needs no join and cannot go stale.
+ *
+ * Returns the map, the number of rows nothing could identify, and the names
+ * that resolved to somebody OUTSIDE the field. Both counters are diagnostics:
+ * see the ?debug=1 block in the handler.
  */
-function resolveOddsRows(rows, idToName) {
+function resolveOddsRows(rows, idToName, field) {
   const oddsMap = {};
+  const wroteAtRank = {};   // name key → rank of the market that set it
+  const notInField = new Set();
   let unresolved = 0;
+
   for (const row of rows) {
-    let name = row.name;
-    if (!name) {
-      for (const id of row.ids) {
-        const hit = idToName.get(id);
-        if (hit) { name = hit; break; }
-      }
+    let byId = null;
+    for (const id of row.ids) {
+      const hit = idToName.get(id);
+      if (hit) { byId = hit; break; }
     }
-    if (name) oddsMap[canonicalName(name) || name] = row.odds;
-    else unresolved++;
+
+    // The field's own spelling wins when either candidate resolves to it.
+    let name = null;
+    for (const candidate of [row.name, byId]) {
+      if (!candidate) continue;
+      const inField = field?.resolve(candidate);
+      if (inField) { name = inField; break; }
+    }
+    // Nothing matched the field. Keep the row anyway — the field list can be
+    // incomplete, and a price for a player we failed to parse into `players`
+    // is still better than none — but report it.
+    if (!name) name = row.name || byId;
+    if (!name) { unresolved++; continue; }
+
+    const key = canonicalName(name) || name;
+    if (!field?.has(key)) notInField.add(key);
+    const rank = row.rank ?? 0;
+    if (wroteAtRank[key] == null || rank >= wroteAtRank[key]) {
+      oddsMap[key] = row.odds;
+      wroteAtRank[key] = rank;
+    }
   }
-  return { oddsMap, unresolved };
+  return { oddsMap, unresolved, notInField: [...notInField] };
 }
 
 // ── Telling a golfer from a page label ───────────────────────────────────────
@@ -318,6 +387,27 @@ export function parseFieldPage(nd) {
     if (!idToName.has(key)) idToName.set(key, name);
   };
 
+  // idToName ONLY — every other id namespace an odds row might cite.
+  //
+  // This is the half of the join that used to be missing. collectOddsRows
+  // reads `[p.playerId, p.id]`, but the recorder above only ever read
+  // `obj.id`, so a golfer whose field-page object states `playerId` and no
+  // `id` contributed NOTHING to the id map. Their odds row then cited an id
+  // nobody had claimed and was dropped — while their name, which comes from
+  // `displayName` and needs no id at all, still put them in `players`. That is
+  // exactly the reported shape: in the field, ⛳ flag showing, '—' in Odds,
+  // one player at a time, because only the sections that spell it `playerId`
+  // are affected.
+  //
+  // pgaIds is deliberately NOT written here. It is the map headshot URLs are
+  // built from, and mixing a second namespace into it is how this file grew a
+  // photo bug once already.
+  const recordIdAlias = (name, id) => {
+    if (!name || id == null) return;
+    const key = String(id);
+    if (!idToName.has(key)) idToName.set(key, name);
+  };
+
   walkAll(nd, obj => {
     // Player with id + name
     const name = obj.displayName?.trim()
@@ -332,14 +422,14 @@ export function parseFieldPage(nd) {
       // wrong — a phantom in idToName can only surface if an odds row cites
       // its id, and that row would then name something no roster holds. A
       // real golfer wrongly rejected here still gets priced.
-      if (obj.id != null) {
-        const key = String(obj.id);
-        if (!idToName.has(key)) idToName.set(key, canonicalName(name) || name);
-      }
+      recordIdAlias(canonicalName(name) || name, obj.id);
+      recordIdAlias(canonicalName(name) || name, obj.playerId);
     } else if (name?.includes(' ')) {
       playerNames.add(canonicalName(name) || name);
-      // Store player ID (field page uses 'id')
+      // Store player ID (field page uses 'id'; some sections use 'playerId',
+      // which only feeds the odds join — see recordIdAlias)
       if (obj.id) recordId(canonicalName(name) || name, obj.id);
+      recordIdAlias(canonicalName(name) || name, obj.playerId);
       // Capture photo URL if present directly on player object
       const photo = obj.photo || obj.headshot || obj.photoUrl || obj.imageUrl || obj.headShotUrl || obj.headshotUrl;
       if (photo && typeof photo === 'string' && photo.startsWith('http')) {
@@ -368,6 +458,7 @@ export function parseFieldPage(nd) {
             playerNames.add(canonicalName(pn) || pn);
             setTeeTime(canonicalName(pn) || pn, ttIso);
             if (p.id) recordId(canonicalName(pn) || pn, p.id);
+            recordIdAlias(canonicalName(pn) || pn, p.playerId);
           }
         });
       }
@@ -377,9 +468,6 @@ export function parseFieldPage(nd) {
     // them mid-walk meant joining against a half-built id map.
   });
 
-  // Second pass, with the id map complete.
-  const { oddsMap, unresolved: oddsUnresolved } = resolveOddsRows(collectOddsRows(nd), idToName);
-
   // Deduplicate the same golfer appearing under two renderings. The old
   // version only handled the literal "Last, First" vs "First Last" pair by
   // string-rebuilding the name; NameSet's grouping also collapses hyphen,
@@ -388,17 +476,22 @@ export function parseFieldPage(nd) {
   // set before comma-form ones below so they win as the representative.
   const ordered = [...playerNames].sort((a, b) => Number(a.includes(',')) - Number(b.includes(',')));
   const players = new NameSet(ordered).groups.map((group) => group[0]);
+  const fieldSet = new NameSet(players);
+
+  // Second pass, with the id map AND the field list complete — resolveOddsRows
+  // needs the field to arbitrate between a row's own name and its id.
+  const { oddsMap, unresolved: oddsUnresolved, notInField: oddsNotInField } =
+    resolveOddsRows(collectOddsRows(nd), idToName, fieldSet);
 
   // A name is only really rejected if NOTHING accepted it. The same golfer is
   // walked several times over — their own object, their tee-time pairing, a
   // featured-group entry — and the sparse renderings fail looksLikePlayer
   // while the rich ones pass. Subtracting at the end rather than deleting on
   // acceptance keeps this independent of which rendering the DFS reaches last.
-  const accepted = new NameSet(players);
-  const rejected = [...rejectedNames].filter((n) => !accepted.has(n));
+  const rejected = [...rejectedNames].filter((n) => !fieldSet.has(n));
 
   return { players, pgaIds, idToName, photos, teeTimeMap, oddsMap, oddsUnresolved,
-           rejectedNames: rejected, firstTeeTimeISO: earliestTee.iso };
+           oddsNotInField, rejectedNames: rejected, firstTeeTimeISO: earliestTee.iso };
 }
 
 // ── ESPN fallback for field + tee times ───────────────────────────────────────
@@ -494,6 +587,7 @@ export default async function handler(req, res) {
         let firstTeeTimeISO = parsedField.firstTeeTimeISO;
         const espnIds = {}; // filled only from the ESPN supplement below
         let oddsUnresolved = fieldOddsUnresolved;
+        let oddsNotInField = parsedField.oddsNotInField || [];
 
         // If no tee times from field page, try dedicated tee-times page
         let finalTeeTimes = joinPlayersToTeeTimes(players, teeTimeMap);
@@ -550,37 +644,52 @@ export default async function handler(req, res) {
           } catch (_) {}
         }
 
-        // Fetch odds from odds page if not already embedded in field page
-        let finalOdds = Object.entries(oddsMap).map(([name, odds]) => ({ name, odds }));
-        if (!finalOdds.length) {
+        // ── Odds: field page first, dedicated odds page to fill the gaps ────
+        //
+        // This used to consult the odds page only when the field page carried
+        // NO odds at all (`if (!finalOdds.length)`). That gate reads "we have
+        // odds" as "we have everyone's odds", and those are different things:
+        // a field page that embeds a favourites-only promo rail satisfies it
+        // with a handful of prices and suppresses the full board outright, so
+        // every player outside the rail renders '—' with nothing to say why.
+        //
+        // The gate is now COVERAGE. If the field page priced most of the field
+        // we keep it and skip the extra origin fetch; otherwise we fetch the
+        // odds board and merge, letting the dedicated board win on conflicts —
+        // it is the outright market, the rail is an excerpt.
+        const fieldSet = new NameSet(players);
+        const pricedShare = (map) => {
+          if (!players.length) return 0;
+          const priced = new NameSet(Object.keys(map));
+          return players.filter(n => priced.has(n)).length / players.length;
+        };
+        let mergedOdds = { ...oddsMap };
+        if (pricedShare(mergedOdds) < 0.5) {
           try {
             const oddsResp = await fetch(`https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/odds`, { headers: HEADERS });
             if (oddsResp.ok) {
               const oddsNd = extractNextData(await oddsResp.text());
               if (oddsNd) {
-                // Market selection stays as it was: the odds page can carry
-                // several markets (outright, top-10, matchups), each with its
-                // own oddsToWinId, and the enabled one is the outright board.
-                let oddsObj = null;
-                walkAll(oddsNd, obj => {
-                  if (obj.oddsToWinId && Array.isArray(obj.players) && obj.players.length) {
-                    if (!oddsObj || obj.oddsEnabled) oddsObj = obj;
-                  }
-                });
-                if (oddsObj) {
-                  const rows = oddsObj.players.map(p => ({
-                    name: p.displayName?.trim() || p.playerName?.trim() || null,
-                    ids: [p.playerId, p.id].filter(v => v != null).map(String),
-                    odds: formatOdds(p.odds ?? p.currentOdds ?? p.americanOdds),
-                  })).filter(r => r.odds);
-                  const resolved = resolveOddsRows(rows, idToName);
-                  oddsUnresolved = resolved.unresolved;
-                  finalOdds = Object.entries(resolved.oddsMap).map(([name, odds]) => ({ name, odds }));
+                // Same two helpers as the field page. This path used to carry
+                // its OWN market picker and its OWN row builder, and they had
+                // already drifted: the field page took every market with naive
+                // last-write-wins while this one took a single market, and only
+                // this one knew about `oddsEnabled`. One code path now, so the
+                // two cannot disagree about the same league again.
+                const resolved = resolveOddsRows(collectOddsRows(oddsNd), idToName, fieldSet);
+                if (Object.keys(resolved.oddsMap).length) {
+                  // Keys on both sides are the field's own spellings whenever
+                  // the player is in the field, so this merge lines up rather
+                  // than stacking two renderings of one golfer.
+                  mergedOdds = { ...mergedOdds, ...resolved.oddsMap };
+                  oddsUnresolved += resolved.unresolved;
+                  oddsNotInField = [...new Set([...oddsNotInField, ...resolved.notInField])];
                 }
               }
             }
           } catch (_) {}
         }
+        const finalOdds = Object.entries(mergedOdds).map(([name, odds]) => ({ name, odds }));
 
         if (players.length) {
           result = {
@@ -594,6 +703,7 @@ export default async function handler(req, res) {
             firstTeeTimeISO,
             odds: finalOdds,
             oddsUnresolved,
+            oddsNotInField,
             rejectedNames,
             tournament: tournament.name,
             source: 'pgatour',
@@ -627,6 +737,17 @@ export default async function handler(req, res) {
       // column; zero with a low oddsCount means the book simply has no price
       // for them, which is not ours to fix.
       oddsUnresolved: result.oddsUnresolved || 0,
+      // Odds rows that DID resolve to a name, but to a name nobody in this
+      // week's field answers to. This is the other half of the same failure
+      // and the half that used to be invisible: `oddsUnresolved` only counts
+      // rows nothing could identify at all, so a row the book rendered
+      // surname-only ('Spaun') sailed through as a junk map key and showed up
+      // nowhere — while the golfer it was for kept their '—'.
+      //
+      // Read it beside fieldPlayersWithoutOdds below: a name here and its
+      // owner there is a name problem on our end, and it is one Merge Players
+      // or an alias row can fix.
+      oddsNotInField: result.oddsNotInField || [],
       // Truncated — when the join fails wholesale this is the entire field,
       // and a debug endpoint that dumps 156 names is one nobody reads.
       fieldPlayersWithoutOdds: (() => {
