@@ -1,5 +1,5 @@
-// Covers the ESPN odds gap-filler in api/field.js — the last-resort source for
-// players BOTH pgatour.com pages leave unpriced.
+// Covers the secondary odds sources in api/field.js — a sportsbook and ESPN,
+// the gap-fillers for players BOTH pgatour.com pages leave unpriced.
 //
 // It exists because of the 2026 BMW Championship: the tour's field page and
 // its dedicated /odds page agreed on 48 rows for a 50-man field, so J.J. Spaun
@@ -16,9 +16,9 @@
 //     another book's numbers, and a player outside this week's field must
 //     never be published at all — ESPN's "next event" is its own judgement.
 //
-//   node scripts/test-field-odds-espn.mjs
+//   node scripts/test-field-odds-fallback.mjs
 
-import { espnOddsRows, pickESPNOdds } from '../api/field.js';
+import { bookOddsRows, pickGapOdds } from '../api/field.js';
 import { NameSet } from '../api/_playerNames.js';
 
 let pass = 0, fail = 0;
@@ -32,7 +32,7 @@ const fieldSet = new NameSet(FIELD);
 // ── Harvesting ───────────────────────────────────────────────────────────────
 console.log('\n── the harvester reads ESPN\'s shapes ──');
 {
-  const rows = espnOddsRows({
+  const rows = bookOddsRows({
     // nested athlete + object-wrapped price
     a: { athlete: { id: '9478', displayName: 'J.J. Spaun' }, odds: { displayValue: '+4000' } },
     // flat displayName + bare string price
@@ -50,7 +50,7 @@ console.log('\n── the harvester reads ESPN\'s shapes ──');
 
 console.log('\n── and refuses what is not a price ──');
 {
-  const rows = espnOddsRows({
+  const rows = bookOddsRows({
     // Numbers shaped exactly like prices, under keys that are not odds. A
     // generic value scan would take every one of these.
     yardage:  { displayName: 'A Golfer', yards: 7400 },
@@ -66,7 +66,7 @@ console.log('\n── and refuses what is not a price ──');
 
 console.log('\n── a name is a person, not a label ──');
 {
-  const rows = espnOddsRows({
+  const rows = bookOddsRows({
     book:   { name: 'ESPN BET', displayName: 'ESPN BET', odds: '+4000' },
     single: { displayName: 'Spaun', odds: '+4000' },
   });
@@ -79,7 +79,7 @@ console.log('\n── a name is a person, not a label ──');
   // than carrying a junk row. The guarantee is enforced at the OUTPUT — a name
   // that is not one of the players we came here for cannot be published, so a
   // book's own name is harmless however it is shaped.
-  const odds = pickESPNOdds(rows, fieldSet, ['J.J. Spaun', 'Matt McCarty']);
+  const odds = pickGapOdds(rows, fieldSet, ['J.J. Spaun', 'Matt McCarty']);
   check("the book's own name never reaches the response",
     !('ESPN BET' in odds) && Object.keys(odds).length === 0, JSON.stringify(odds));
 }
@@ -87,12 +87,12 @@ console.log('\n── a name is a person, not a label ──');
 // ── The two restrictions ─────────────────────────────────────────────────────
 console.log('\n── gaps only ──');
 {
-  const rows = espnOddsRows({
+  const rows = bookOddsRows({
     a: { displayName: 'J.J. Spaun', odds: '+4000' },
     b: { displayName: 'Tommy Fleetwood', odds: '+1900' },   // tour already priced him
   });
   // Only Spaun is unpriced.
-  const odds = pickESPNOdds(rows, fieldSet, ['J.J. Spaun']);
+  const odds = pickGapOdds(rows, fieldSet, ['J.J. Spaun']);
   check('the unpriced player is filled', odds['J.J. Spaun'] === '+4000', JSON.stringify(odds));
   check('a player the tour already priced is NOT restated in ESPN\'s numbers',
     !('Tommy Fleetwood' in odds), JSON.stringify(odds));
@@ -102,24 +102,140 @@ console.log('\n── this week\'s field only ──');
 {
   // ESPN's idea of the next event disagreeing with ours: a payload full of
   // golfers from a different tournament.
-  const rows = espnOddsRows({
+  const rows = bookOddsRows({
     a: { displayName: 'Rory McIlroy', odds: '+700' },
     b: { displayName: 'Scottie Scheffler', odds: '+450' },
   });
-  const odds = pickESPNOdds(rows, fieldSet, ['J.J. Spaun', 'Matt McCarty']);
+  const odds = pickGapOdds(rows, fieldSet, ['J.J. Spaun', 'Matt McCarty']);
   check('a wrong-event payload fills nothing rather than publishing it',
     Object.keys(odds).length === 0, JSON.stringify(odds));
 }
 
 console.log('\n── the roster\'s spelling still reaches it ──');
 {
-  const rows = espnOddsRows({ a: { displayName: 'JJ Spaun', odds: '+4000' } });
+  const rows = bookOddsRows({ a: { displayName: 'JJ Spaun', odds: '+4000' } });
   // The gap list is built from `players`, which spells him 'J.J. Spaun'.
-  const odds = pickESPNOdds(rows, fieldSet, ['J.J. Spaun']);
+  const odds = pickGapOdds(rows, fieldSet, ['J.J. Spaun']);
   check("ESPN's 'JJ Spaun' fills the field's 'J.J. Spaun'",
     odds['J.J. Spaun'] === '+4000', JSON.stringify(odds));
   check('and the key is the FIELD\'s spelling, not ESPN\'s',
     !('JJ Spaun' in odds), JSON.stringify(odds));
+}
+
+// ── Market selection: the part that can do real damage ───────────────────────
+// A book prices a tournament a dozen different ways and most of those markets
+// name the same golfers. A head-to-head is about -110 and a top-10 is a
+// fraction of the win number, so harvesting blind puts a number in a column
+// that says 'Odds' and means 'odds to win'. That is WORSE than the blank cell
+// this whole exercise exists to fill: a blank is honestly empty, '-115' beside
+// a golfer's name reads as real and is wrong.
+console.log('\n── only the outright market ──');
+{
+  const dk = {
+    eventGroup: {
+      offerCategories: [{
+        offerSubcategoryDescriptors: [
+          { offerSubcategory: { offers: [[{
+            label: 'Tournament Winner',
+            outcomes: [
+              { label: 'J.J. Spaun', oddsAmerican: '+4000' },
+              { label: 'Matt McCarty', oddsAmerican: '+15000' },
+              { label: 'Tommy Fleetwood', oddsAmerican: '+1900' },
+              { label: 'Shane Lowry', oddsAmerican: '+6000' },
+            ],
+          }]] } },
+          { offerSubcategory: { offers: [[{
+            label: 'Top 10 Finish',
+            outcomes: [
+              { label: 'J.J. Spaun', oddsAmerican: '+250' },
+              { label: 'Matt McCarty', oddsAmerican: '+900' },
+            ],
+          }]] } },
+          { offerSubcategory: { offers: [[{
+            label: 'Tournament Matchups',
+            outcomes: [
+              { label: 'J.J. Spaun', oddsAmerican: '-115' },
+              { label: 'Matt McCarty', oddsAmerican: '-105' },
+            ],
+          }]] } },
+        ],
+      }],
+    },
+  };
+  const rows = bookOddsRows(dk);
+  const odds = pickGapOdds(rows, fieldSet, ['J.J. Spaun', 'Matt McCarty']);
+  check('the outright price is the one that lands',
+    odds['J.J. Spaun'] === '+4000' && odds['Matt McCarty'] === '+15000', JSON.stringify(odds));
+  check('no top-10 price leaks into the Odds column',
+    !Object.values(odds).includes('+250') && !Object.values(odds).includes('+900'),
+    JSON.stringify(odds));
+  check('no matchup price leaks in either',
+    !Object.values(odds).some(v => v.startsWith('-')), JSON.stringify(odds));
+  check('a player the tour already priced is still left alone',
+    !('Tommy Fleetwood' in odds), JSON.stringify(odds));
+}
+
+console.log('\n── a book with no outright market fills nothing ──');
+{
+  // The dangerous case: the golfer we want appears ONLY in markets we must not
+  // read. There is nothing legitimate to take, so nothing may be taken.
+  const rows = bookOddsRows({
+    a: { label: 'First Round Leader', outcomes: [{ label: 'J.J. Spaun', oddsAmerican: '+2200' }] },
+    b: { label: 'Make The Cut', outcomes: [{ label: 'J.J. Spaun', oddsAmerican: '-300' }] },
+    c: { label: '3 Balls - Round 1', outcomes: [{ label: 'J.J. Spaun', oddsAmerican: '+140' }] },
+  });
+  const odds = pickGapOdds(rows, fieldSet, ['J.J. Spaun']);
+  check('nothing is harvested from non-win markets', rows.length === 0, JSON.stringify(rows));
+  check('and the cell stays blank rather than wrong',
+    Object.keys(odds).length === 0, JSON.stringify(odds));
+}
+
+console.log('\n── outcome objects are not double-harvested ──');
+{
+  // Every outcome also satisfies the flat ESPN test. If the flat branch took
+  // them too, every market the label gate just excluded would come back in at
+  // rank 1 — and for a player the outright board does not carry, nothing would
+  // outrank it.
+  const rows = bookOddsRows({
+    market: {
+      label: 'Top 10 Finish',
+      outcomes: [{ label: 'J.J. Spaun', oddsAmerican: '+250', odds: '+250' }],
+    },
+  });
+  check('an excluded market contributes no rows at all', rows.length === 0, JSON.stringify(rows));
+}
+
+console.log('\n── the fuller win market wins ──');
+{
+  const rows = bookOddsRows({
+    stale: { label: 'Outright Winner', outcomes: [{ label: 'J.J. Spaun', oddsAmerican: '+9000' }] },
+    full: {
+      label: 'Tournament Winner',
+      outcomes: [
+        { label: 'J.J. Spaun', oddsAmerican: '+4000' },
+        { label: 'Matt McCarty', oddsAmerican: '+15000' },
+        { label: 'Tommy Fleetwood', oddsAmerican: '+1900' },
+      ],
+    },
+  });
+  const odds = pickGapOdds(rows, fieldSet, ['J.J. Spaun']);
+  check('a fuller board outranks a thin one', odds['J.J. Spaun'] === '+4000', JSON.stringify(odds));
+}
+
+console.log('\n── FanDuel\'s runner shape ──');
+{
+  const rows = bookOddsRows({
+    market: {
+      marketName: 'Tournament Winner',
+      runners: [
+        { runnerName: 'J.J. Spaun', winRunnerOdds: { americanDisplayOdds: { americanOdds: 4000 } } },
+        { runnerName: 'Tommy Fleetwood', winRunnerOdds: { americanDisplayOdds: { americanOdds: 1900 } } },
+      ],
+    },
+  });
+  const odds = pickGapOdds(rows, fieldSet, ['J.J. Spaun']);
+  check('a runners/winRunnerOdds market is read too',
+    odds['J.J. Spaun'] === '+4000', JSON.stringify(odds));
 }
 
 // ── Discovery guards ─────────────────────────────────────────────────────────
@@ -146,10 +262,19 @@ console.log('\n── discovery does not fail silently or expensively ──');
     /scoreboard'\)/.test(src));
 
   // This runs on every origin miss now that any unpriced player triggers it.
-  // A 15-day scan against a dead ESPN is ~30 sequential fetches inside a
-  // function that still has pgatour.com to get through.
-  check('the odds path bounds its day scan',
-    /findESPNEvent\(0, trace, 6\)/.test(src));
+  // A 15-day scan against an ESPN that is refusing us is pure latency inside a
+  // function that still has pgatour.com and a sportsbook to get through. The
+  // bound is asserted as a property, not a literal — the number is a judgement
+  // call, an unbounded scan on this path is not.
+  const bound = src.match(/findESPNEvent\(0, trace, (\d+)\)/);
+  check('the odds path bounds its day scan', !!bound, 'no bounded call found');
+  check('and the bound is small', bound && Number(bound[1]) <= 6,
+    bound ? bound[1] : 'n/a');
+
+  // The field/tee-time fallback must NOT be bounded the same way — if
+  // pgatour.com fails, its scan is the only thing behind this endpoint.
+  check('the field fallback keeps its full range',
+    /findESPNEvent\(from\)/.test(src));
 
   // The whole path is wrapped in a swallow, so the trace is the only way a
   // failure can name its own step.
