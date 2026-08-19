@@ -397,6 +397,19 @@ console.log('\n── the book path stays off until it is pointed somewhere ─�
     /if \(!configured\.length\) \{\s*\n\s*return \{ odds: \{\}, status: 'not-configured/.test(src));
 }
 
+console.log('\n── an id search must read numbers too ──');
+{
+  // An odds row identifies its player as `id: 39324` about as often as
+  // `id: '39324'`. A search that only reads strings misses exactly the row
+  // worth finding — the one that would prove the board DID price a golfer
+  // whose cell is blank.
+  const numeric = { odds: { oddsToWinId: 'm', players: [{ id: 39324, odds: '+3500' }] } };
+  check('a numeric id is found', findInPayload(numeric, '39324').length === 1,
+    JSON.stringify(findInPayload(numeric, '39324')));
+  const stringy = { odds: { oddsToWinId: 'm', players: [{ id: '39324', odds: '+3500' }] } };
+  check('a string id is found too', findInPayload(stringy, '39324').length === 1);
+}
+
 console.log('\n── finding a golfer in a payload ──');
 {
   // "The board has 48 rows" is a count. It does not say whether the two
