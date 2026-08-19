@@ -692,20 +692,31 @@ export default async function handler(req, res) {
           return players.filter(n => !priced.has(n));
         };
         let mergedOdds = { ...oddsMap };
+        // Every branch below sets this. The whole fallback sits inside a
+        // try/catch that swallows, and a step that can silently do nothing is
+        // a step that cannot be debugged from the endpoint — which is the
+        // trap this file keeps falling into. ?debug=1 reports it.
+        let oddsPage = 'not-needed';
         if (players.length && unpriced(mergedOdds).length) {
+          oddsPage = 'no-response';
           try {
-            const oddsResp = await fetch(`https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/odds`, { headers: HEADERS });
+            const oddsUrl = `https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/odds`;
+            const oddsResp = await fetch(oddsUrl, { headers: HEADERS });
+            oddsPage = oddsResp.ok ? 'no-next-data' : `http ${oddsResp.status}`;
             if (oddsResp.ok) {
               const oddsNd = extractNextData(await oddsResp.text());
               if (oddsNd) {
+                oddsPage = 'no-rows';
                 // Same two helpers as the field page. This path used to carry
                 // its OWN market picker and its OWN row builder, and they had
                 // already drifted: the field page took every market with naive
                 // last-write-wins while this one took a single market, and only
                 // this one knew about `oddsEnabled`. One code path now, so the
                 // two cannot disagree about the same league again.
-                const resolved = resolveOddsRows(collectOddsRows(oddsNd), idToName, fieldSet);
+                const rows = collectOddsRows(oddsNd);
+                const resolved = resolveOddsRows(rows, idToName, fieldSet);
                 if (Object.keys(resolved.oddsMap).length) {
+                  const before = unpriced(mergedOdds).length;
                   // Keys on both sides are the field's own spellings whenever
                   // the player is in the field, so this merge lines up rather
                   // than stacking two renderings of one golfer.
@@ -713,10 +724,11 @@ export default async function handler(req, res) {
                   oddsUnresolved += resolved.unresolved;
                   oddsNotInField = [...new Set([...oddsNotInField, ...resolved.notInField])];
                   oddsPulled = resolved.pulled;
+                  oddsPage = `${rows.length} rows, filled ${before - unpriced(mergedOdds).length}`;
                 }
               }
             }
-          } catch (_) {}
+          } catch (e) { oddsPage = `error: ${e.message}`; }
         }
         const finalOdds = Object.entries(mergedOdds).map(([name, odds]) => ({ name, odds }));
         // A player the field page listed without a price but the odds board
@@ -737,6 +749,7 @@ export default async function handler(req, res) {
             oddsUnresolved,
             oddsNotInField,
             oddsPulled,
+            oddsPage,
             rejectedNames,
             tournament: tournament.name,
             source: 'pgatour',
@@ -788,6 +801,11 @@ export default async function handler(req, res) {
       // fieldPlayersWithoutOdds who is NOT in here is a row we never saw, and
       // that is ours.
       oddsPulled: result.oddsPulled || [],
+      // What the dedicated /odds page contributed. 'not-needed' means the
+      // field page already priced every player in `players`; anything else is
+      // this fallback's own account of itself, because it runs inside a
+      // try/catch that swallows and used to leave no trace at all.
+      oddsPage: result.oddsPage || null,
       // Truncated — when the join fails wholesale this is the entire field,
       // and a debug endpoint that dumps 156 names is one nobody reads.
       fieldPlayersWithoutOdds: (() => {
