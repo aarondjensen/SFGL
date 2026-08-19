@@ -704,7 +704,7 @@ async function fetchFromESPN() {
 // pgatour's __NEXT_DATA__.
 
 /** An American price, and only that — not a score, a position or a yardage. */
-function espnPrice(raw) {
+function bookPrice(raw) {
   let v = raw;
   // ESPN wraps a price as { value, displayValue } about half the time.
   if (v && typeof v === 'object') v = v.displayValue ?? v.american ?? v.moneyLine ?? v.value;
@@ -719,28 +719,137 @@ function espnPrice(raw) {
   return formatOdds(n);
 }
 
-/** Odds rows harvested from any ESPN payload, in resolveOddsRows' shape. */
-export function espnOddsRows(json) {
+// ── Which market is the Odds column? ─────────────────────────────────────────
+//
+// A sportsbook offers dozens of markets on one tournament, and most of them
+// name the same golfers: Top 10 Finish, First Round Leader, head-to-head
+// matchups, group betting, make-the-cut. Their prices are nothing like an
+// outright price — a matchup is around -110, a top-10 a fraction of the win
+// number — so harvesting blind would quietly put a two-man matchup price in a
+// column that says "Odds" and means "odds to win".
+//
+// That is strictly worse than the blank cell this whole exercise is trying to
+// fill: a blank is honestly empty, whereas '-115' beside a golfer's name reads
+// as a real number and is wrong. So the market label has to say winner, and
+// must not say anything else.
+const WIN_MARKET = /(tournament\s+winner|outright\s+winner|outright|to\s+win\b|winner)/i;
+const NOT_WIN_MARKET = /(top\s*\d|finish|placement|matchup|match\s*bet|head\s*to\s*head|h2h|group|round\s*\d|first\s*round|hole|cut|nationality|3\s*balls?|2\s*balls?)/i;
+
+function isWinMarket(label) {
+  const s = String(label ?? '');
+  if (!s) return false;
+  if (NOT_WIN_MARKET.test(s)) return false;
+  return WIN_MARKET.test(s);
+}
+
+/**
+ * Odds rows harvested from a secondary source, in resolveOddsRows' shape.
+ * Handles both families this endpoint reaches for:
+ *
+ *   • sportsbook — a MARKET object carrying `outcomes` / `runners`, each with
+ *     a player label and an American price. Only outright-winner markets are
+ *     taken (see isWinMarket), and `rank` is the market's size so that if two
+ *     win markets overlap, the fuller board wins.
+ *   • ESPN — a flat object naming a golfer beside an odds-named field.
+ *
+ * The two are kept apart deliberately. A book's outcome objects also satisfy
+ * the flat test, so harvesting them there as well would readmit every market
+ * the label gate just excluded, at rank 1 but with nothing else competing for
+ * a player the outright board does not carry.
+ */
+export function bookOddsRows(json) {
   const rows = [];
+  const push = (name, odds, rank) => {
+    // A single token is not a name this app can match, and a `label` on an
+    // odds object is as likely to be 'Over', 'Yes', or the book's own name.
+    if (name && name.includes(' ') && odds) rows.push({ name, ids: [], odds, rank });
+  };
+
   walkAll(json, (obj) => {
-    // Only keys that SAY they are odds. A generic value scan would pick up
-    // yardages and purses, which are shaped exactly like prices.
+    const outcomes = Array.isArray(obj.outcomes) ? obj.outcomes
+      : Array.isArray(obj.runners) ? obj.runners : null;
+
+    if (outcomes?.length) {
+      const label = obj.label || obj.name || obj.marketName || obj.marketType
+        || obj.betOfferType?.name || obj.offerSubcategory?.name || '';
+      if (!isWinMarket(label)) return;
+      for (const o of outcomes) {
+        if (!o || typeof o !== 'object') continue;
+        const name = (o.label || o.participant || o.runnerName || o.playerName
+          || o.displayName || o.fullName || '').trim();
+        const raw = o.oddsAmerican ?? o.americanOdds ?? o.odds
+          ?? o.winRunnerOdds?.americanDisplayOdds?.americanOdds
+          ?? o.price?.american;
+        push(name, bookPrice(raw), outcomes.length);
+      }
+      return;
+    }
+
+    // Flat (ESPN). Only keys that SAY they are odds — a generic value scan
+    // would pick up yardages and purses, which are shaped exactly like prices.
+    // `oddsAmerican` is deliberately absent: it is the book spelling, and it
+    // only ever occurs inside a market handled above.
     const raw = obj.odds ?? obj.moneyLine ?? obj.moneyline ?? obj.americanOdds
              ?? obj.currentOdds ?? obj.oddsToWin ?? obj.winOdds;
     if (raw == null) return;
-    const odds = espnPrice(raw);
-    if (!odds) return;
-
     const athlete = obj.athlete && typeof obj.athlete === 'object' ? obj.athlete : null;
     const name = (athlete?.displayName || athlete?.fullName
       || obj.displayName || obj.fullName || '').trim();
-    // A single token is not a name this app can match, and `name`/`shortName`
-    // on an odds object is as likely to be the book's own ('ESPN BET').
-    if (!name.includes(' ')) return;
-
-    rows.push({ name, ids: [], odds, rank: 1 });
+    push(name, bookPrice(raw), 1);
   });
   return rows;
+}
+
+// ── Sportsbook gap-filler ────────────────────────────────────────────────────
+//
+// Tried BEFORE ESPN, which has been answering non-2xx to every request from
+// this function (see the oddsEspn trace). Same two restrictions as every other
+// secondary source, enforced in pickGapOdds: names only, gaps only.
+//
+// The endpoint list is overridable by ODDS_BOOK_URLS (comma-separated). These
+// are unofficial endpoints on a geo-partitioned host — the region prefix and
+// the golf event-group id both move — and being able to repoint it from the
+// Vercel dashboard is the difference between a config change and a deploy.
+const BOOK_HEADERS = {
+  'User-Agent': HEADERS['User-Agent'],
+  'Accept': 'application/json',
+  'Referer': 'https://sportsbook.draftkings.com/',
+};
+
+const DEFAULT_BOOK_URLS = [
+  'https://sportsbook-us-il.draftkings.com/sites/US-IL-SB/api/v5/eventgroups/9?format=json',
+  'https://sportsbook.draftkings.com/sites/US-SB/api/v5/eventgroups/9?format=json',
+];
+
+/**
+ * Prices for `wanted` from a sportsbook, or an empty map. Never throws.
+ *
+ * Every candidate is tried until one yields a fill, and each one's outcome is
+ * recorded, so a failure names itself in ?debug=1 rather than looking the same
+ * as "no gaps to fill".
+ */
+async function fetchBookOdds(fieldSet, wanted) {
+  const configured = (process.env.ODDS_BOOK_URLS || '')
+    .split(',').map((u) => u.trim()).filter(Boolean);
+  const urls = configured.length ? configured : DEFAULT_BOOK_URLS;
+  const notes = [];
+
+  for (const url of urls) {
+    const host = (() => { try { return new URL(url).hostname.split('.')[0]; } catch { return 'url'; } })();
+    try {
+      const r = await fetch(url, { headers: BOOK_HEADERS });
+      if (!r.ok) { notes.push(`${host} ${r.status}`); continue; }
+      const rows = bookOddsRows(await r.json());
+      if (!rows.length) { notes.push(`${host} no win market`); continue; }
+      const odds = pickGapOdds(rows, fieldSet, wanted);
+      const filled = Object.keys(odds).length;
+      if (!filled) { notes.push(`${host} ${rows.length} rows, filled 0`); continue; }
+      return { odds, status: `${host} ${rows.length} rows, filled ${filled}` };
+    } catch (e) {
+      notes.push(`${host} fetch:${e.message}`);
+    }
+  }
+  return { odds: {}, status: notes.join('; ') || 'not tried' };
 }
 
 /**
@@ -758,7 +867,7 @@ export function espnOddsRows(json) {
  *     one this endpoint is serving — a mismatch must fill nothing rather than
  *     quietly price the field from another week.
  */
-export function pickESPNOdds(rows, fieldSet, wanted) {
+export function pickGapOdds(rows, fieldSet, wanted) {
   const { oddsMap } = resolveOddsRows(rows, new Map(), fieldSet);
   const want = new NameSet(wanted);
   const odds = {};
@@ -777,17 +886,23 @@ export function pickESPNOdds(rows, fieldSet, wanted) {
  */
 async function fetchESPNOdds(fieldSet, wanted) {
   try {
-    // Six days, not fifteen. This runs on every origin miss now that any
-    // unpriced player triggers it, and a 15-day scan against a dead ESPN is
-    // ~30 sequential fetches inside a serverless function that also has
-    // pgatour.com to get through. This week's event is at most a few days out.
+    // One day, not fifteen. This runs on every origin miss now that any
+    // unpriced player triggers it, and a long scan against an ESPN that is
+    // currently refusing us outright is pure latency inside a serverless
+    // function that still has pgatour.com and a sportsbook to get through.
+    // The bare scoreboard is the meaningful attempt — if ESPN serves this
+    // function at all it returns the current event — so the dated scan is
+    // kept only as a token retry.
+    //
+    // The field/tee-time fallback keeps its full 15-day range: if pgatour.com
+    // ever fails, that scan is the only thing standing behind this endpoint.
     const trace = espnTrace();
-    const found = await findESPNEvent(0, trace, 6);
+    const found = await findESPNEvent(0, trace, 1);
     if (!found) return { odds: {}, status: `no-event (${espnTraceSummary(trace)})` };
 
     // The leaderboard first — it is already the payload the field fallback
     // reads, so when it carries prices this costs nothing extra.
-    let rows = espnOddsRows(found.ld);
+    let rows = bookOddsRows(found.ld);
 
     // Otherwise the core API's odds collection for this event.
     if (!rows.length) {
@@ -797,12 +912,12 @@ async function fetchESPNOdds(fieldSet, wanted) {
         const r = await fetch(
           `https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/${id}/competitions/${comp}/odds`,
           { headers: ESPN_HEADERS });
-        if (r.ok) rows = espnOddsRows(await r.json());
+        if (r.ok) rows = bookOddsRows(await r.json());
       }
     }
     if (!rows.length) return { odds: {}, status: 'no-rows' };
 
-    const odds = pickESPNOdds(rows, fieldSet, wanted);
+    const odds = pickGapOdds(rows, fieldSet, wanted);
     return { odds, status: `${rows.length} rows, filled ${Object.keys(odds).length}` };
   } catch (e) {
     return { odds: {}, status: `error: ${e.message}` };
@@ -962,18 +1077,30 @@ export default async function handler(req, res) {
           } catch (e) { oddsPage = `error: ${e.message}`; }
         }
 
-        // Still unpriced after both pgatour.com sources? Try ESPN. Gaps only,
-        // and only when there are gaps — see fetchESPNOdds.
+        // Still unpriced after both pgatour.com sources? Try the secondary
+        // sources, book first — ESPN has been answering non-2xx to every
+        // request from here, and the book is the source that might work.
+        //
+        // Both sit UNDER the tour: they only ever see the names the tour left
+        // blank, and the spread order below keeps a tour price whatever
+        // happens. Neither runs at all when there are no gaps.
+        let oddsBook = 'not-needed';
+        let oddsBookFilled = [];
         let oddsEspn = 'not-needed';
         let oddsEspnFilled = [];
-        const stillMissing = players.length ? unpriced(mergedOdds) : [];
+
+        let stillMissing = players.length ? unpriced(mergedOdds) : [];
+        if (stillMissing.length) {
+          const book = await fetchBookOdds(fieldSet, stillMissing);
+          oddsBook = book.status;
+          oddsBookFilled = Object.keys(book.odds);
+          mergedOdds = { ...book.odds, ...mergedOdds };
+          stillMissing = unpriced(mergedOdds);
+        }
         if (stillMissing.length) {
           const espnOdds = await fetchESPNOdds(fieldSet, stillMissing);
           oddsEspn = espnOdds.status;
           oddsEspnFilled = Object.keys(espnOdds.odds);
-          // ESPN UNDER the tour, so a tour price always wins. fetchESPNOdds
-          // only returns names in `stillMissing`, so there is nothing to lose
-          // here — the spread order is belt and braces.
           mergedOdds = { ...espnOdds.odds, ...mergedOdds };
         }
 
@@ -997,6 +1124,8 @@ export default async function handler(req, res) {
             oddsNotInField,
             oddsPulled,
             oddsPage,
+            oddsBook,
+            oddsBookFilled,
             oddsEspn,
             oddsEspnFilled,
             rejectedNames,
@@ -1058,6 +1187,12 @@ export default async function handler(req, res) {
       // The ESPN gap-filler's account of itself, same vocabulary as oddsPage,
       // plus the players it actually priced. 'not-needed' means both
       // pgatour.com sources between them priced the whole field.
+      // The sportsbook gap-filler's account of itself, per candidate URL, plus
+      // the players it priced. Tried before ESPN. Repoint it without a deploy
+      // by setting ODDS_BOOK_URLS — these are unofficial, geo-partitioned
+      // endpoints and both the region prefix and the golf event-group id move.
+      oddsBook: result.oddsBook || null,
+      oddsBookFilled: result.oddsBookFilled || [],
       oddsEspn: result.oddsEspn || null,
       oddsEspnFilled: result.oddsEspnFilled || [],
       // Truncated — when the join fails wholesale this is the entire field,
