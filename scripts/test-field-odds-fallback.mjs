@@ -271,8 +271,20 @@ console.log('\n── ids are read off the page ──');
   check('duplicates across sources collapse',
     ids.length === new Set(ids).size, JSON.stringify(ids));
   check('the list is capped — every id costs a request', eventGroupIds(
-    Array.from({ length: 20 }, (_, i) => `eventgroups/${1000 + i}`).join(' ')).length <= 4);
+    Array.from({ length: 40 }, (_, i) => `eventgroups/${1000 + i}`).join(' ')).length <= 6);
   check('a page naming no ids yields none', eventGroupIds('<html>nothing</html>').length === 0);
+
+  // A sportsbook's nav names every sport it offers, so most ids on a golf page
+  // belong to something else — the first real probe returned four, one of them
+  // MLB. The caller can only afford to try a handful, so the plausible ones
+  // have to come first.
+  const nav = `
+    <a href="/leagues/baseball/mlb">MLB</a><span data-eg="84240"></span>
+    <a href="/leagues/basketball/nba">NBA</a><span data-eg="42648"></span>
+    <div>Golf — BMW Championship</div><a href="/sites/US-SB/api/v5/eventgroups/79494">Golf</a>
+  `.replace(/data-eg="(\d+)"/g, '"eventGroupId":$1');
+  check('an id sitting near golf words ranks first',
+    eventGroupIds(nav)[0] === '79494', JSON.stringify(eventGroupIds(nav)));
 }
 
 console.log('\n── a page that embeds its own board needs no id at all ──');
