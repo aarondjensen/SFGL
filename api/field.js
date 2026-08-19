@@ -704,7 +704,7 @@ async function fetchFromESPN() {
 // pgatour's __NEXT_DATA__.
 
 /** An American price, and only that — not a score, a position or a yardage. */
-function espnPrice(raw) {
+function bookPrice(raw) {
   let v = raw;
   // ESPN wraps a price as { value, displayValue } about half the time.
   if (v && typeof v === 'object') v = v.displayValue ?? v.american ?? v.moneyLine ?? v.value;
@@ -719,28 +719,227 @@ function espnPrice(raw) {
   return formatOdds(n);
 }
 
-/** Odds rows harvested from any ESPN payload, in resolveOddsRows' shape. */
-export function espnOddsRows(json) {
+// ── Which market is the Odds column? ─────────────────────────────────────────
+//
+// A sportsbook offers dozens of markets on one tournament, and most of them
+// name the same golfers: Top 10 Finish, First Round Leader, head-to-head
+// matchups, group betting, make-the-cut. Their prices are nothing like an
+// outright price — a matchup is around -110, a top-10 a fraction of the win
+// number — so harvesting blind would quietly put a two-man matchup price in a
+// column that says "Odds" and means "odds to win".
+//
+// That is strictly worse than the blank cell this whole exercise is trying to
+// fill: a blank is honestly empty, whereas '-115' beside a golfer's name reads
+// as a real number and is wrong. So the market label has to say winner, and
+// must not say anything else.
+const WIN_MARKET = /(tournament\s+winner|outright\s+winner|outright|to\s+win\b|winner)/i;
+const NOT_WIN_MARKET = /(top\s*\d|finish|placement|matchup|match\s*bet|head\s*to\s*head|h2h|group|round\s*\d|first\s*round|hole|cut|nationality|3\s*balls?|2\s*balls?)/i;
+
+function isWinMarket(label) {
+  const s = String(label ?? '');
+  if (!s) return false;
+  if (NOT_WIN_MARKET.test(s)) return false;
+  return WIN_MARKET.test(s);
+}
+
+/**
+ * Odds rows harvested from a secondary source, in resolveOddsRows' shape.
+ * Handles both families this endpoint reaches for:
+ *
+ *   • sportsbook — a MARKET object carrying `outcomes` / `runners`, each with
+ *     a player label and an American price. Only outright-winner markets are
+ *     taken (see isWinMarket), and `rank` is the market's size so that if two
+ *     win markets overlap, the fuller board wins.
+ *   • ESPN — a flat object naming a golfer beside an odds-named field.
+ *
+ * The two are kept apart deliberately. A book's outcome objects also satisfy
+ * the flat test, so harvesting them there as well would readmit every market
+ * the label gate just excluded, at rank 1 but with nothing else competing for
+ * a player the outright board does not carry.
+ */
+export function bookOddsRows(json) {
   const rows = [];
+  const push = (name, odds, rank) => {
+    // A single token is not a name this app can match, and a `label` on an
+    // odds object is as likely to be 'Over', 'Yes', or the book's own name.
+    if (name && name.includes(' ') && odds) rows.push({ name, ids: [], odds, rank });
+  };
+
   walkAll(json, (obj) => {
-    // Only keys that SAY they are odds. A generic value scan would pick up
-    // yardages and purses, which are shaped exactly like prices.
+    const outcomes = Array.isArray(obj.outcomes) ? obj.outcomes
+      : Array.isArray(obj.runners) ? obj.runners : null;
+
+    if (outcomes?.length) {
+      const label = obj.label || obj.name || obj.marketName || obj.marketType
+        || obj.betOfferType?.name || obj.offerSubcategory?.name || '';
+      if (!isWinMarket(label)) return;
+      for (const o of outcomes) {
+        if (!o || typeof o !== 'object') continue;
+        const name = (o.label || o.participant || o.runnerName || o.playerName
+          || o.displayName || o.fullName || '').trim();
+        const raw = o.oddsAmerican ?? o.americanOdds ?? o.odds
+          ?? o.winRunnerOdds?.americanDisplayOdds?.americanOdds
+          ?? o.price?.american;
+        push(name, bookPrice(raw), outcomes.length);
+      }
+      return;
+    }
+
+    // Flat (ESPN). Only keys that SAY they are odds — a generic value scan
+    // would pick up yardages and purses, which are shaped exactly like prices.
+    // `oddsAmerican` is deliberately absent: it is the book spelling, and it
+    // only ever occurs inside a market handled above.
     const raw = obj.odds ?? obj.moneyLine ?? obj.moneyline ?? obj.americanOdds
              ?? obj.currentOdds ?? obj.oddsToWin ?? obj.winOdds;
     if (raw == null) return;
-    const odds = espnPrice(raw);
-    if (!odds) return;
-
     const athlete = obj.athlete && typeof obj.athlete === 'object' ? obj.athlete : null;
     const name = (athlete?.displayName || athlete?.fullName
       || obj.displayName || obj.fullName || '').trim();
-    // A single token is not a name this app can match, and `name`/`shortName`
-    // on an odds object is as likely to be the book's own ('ESPN BET').
-    if (!name.includes(' ')) return;
-
-    rows.push({ name, ids: [], odds, rank: 1 });
+    push(name, bookPrice(raw), 1);
   });
   return rows;
+}
+
+// ── Sportsbook gap-filler ────────────────────────────────────────────────────
+//
+// Tried BEFORE ESPN, which has been answering non-2xx to every request from
+// this function (see the oddsEspn trace). Same two restrictions as every other
+// secondary source, enforced in pickGapOdds: names only, gaps only.
+//
+// The endpoint list is overridable by ODDS_BOOK_URLS (comma-separated). These
+// are unofficial endpoints on a geo-partitioned host — the region prefix and
+// the golf event-group id both move — and being able to repoint it from the
+// Vercel dashboard is the difference between a config change and a deploy.
+const BOOK_HEADERS = {
+  'User-Agent': HEADERS['User-Agent'],
+  'Accept': 'application/json',
+  'Referer': 'https://sportsbook.draftkings.com/',
+};
+
+// The human-facing league page comes FIRST, deliberately.
+//
+// The alternative was to hardcode a golf event-group id, and that id is not
+// documented anywhere — a guess at it fails exactly the way a wrong URL fails,
+// silently and indistinguishably from "the book had nothing". The page URL, by
+// contrast, is a fact: it is what you get by clicking golf on the site.
+//
+// So the page is treated as the entry point and mined for the id, which is the
+// same move this file already makes against pgatour.com — fetch the HTML,
+// pull the embedded state, work from that. If the page happens to embed the
+// board itself, no id is needed at all.
+// The tournament slug is derived, not hardcoded — DraftKings spells its golf
+// league pages the same way pgatour.com spells its tournament pages
+// ('BMW Championship' → 'bmw-championship'), so nameToSlug already produces
+// it. A literal would have worked for exactly one week.
+export const bookUrlsFor = (tournamentName) => [
+  ...(tournamentName ? [`https://sportsbook.draftkings.com/leagues/golf/${nameToSlug(tournamentName)}`] : []),
+  'https://sportsbook.draftkings.com/leagues/golf/pga',
+];
+
+const DK_API = (id) =>
+  `https://sportsbook-us-il.draftkings.com/sites/US-IL-SB/api/v5/eventgroups/${id}?format=json`;
+
+/**
+ * Every JSON blob a sportsbook page embeds. DraftKings is a React app, so its
+ * state arrives as one of a few well-known shapes rather than in the markup.
+ */
+export function embeddedJson(html) {
+  const blobs = [];
+  const next = extractNextData(html);
+  if (next) blobs.push(next);
+  for (const re of [
+    /window\.__INITIAL_STATE__\s*=\s*({[\s\S]*?});?\s*<\/script>/,
+    /window\.__PRELOADED_STATE__\s*=\s*({[\s\S]*?});?\s*<\/script>/,
+  ]) {
+    const m = html.match(re);
+    if (m) { try { blobs.push(JSON.parse(m[1])); } catch { /* not JSON after all */ } }
+  }
+  for (const m of html.matchAll(/<script[^>]+type="application\/json"[^>]*>([\s\S]*?)<\/script>/g)) {
+    try { blobs.push(JSON.parse(m[1])); } catch { /* ditto */ }
+  }
+  return blobs;
+}
+
+/**
+ * Event-group ids named anywhere in a page — a URL it links to, a data
+ * attribute, a fragment of embedded state. Deduped, capped, because each one
+ * costs a request.
+ */
+export function eventGroupIds(html) {
+  const ids = new Set();
+  for (const re of [
+    /eventgroups?\/(\d{1,7})/gi,
+    /"eventGroupId"\s*:\s*"?(\d{1,7})/gi,
+    /"leagueId"\s*:\s*"?(\d{1,7})/gi,
+  ]) {
+    for (const m of html.matchAll(re)) ids.add(m[1]);
+  }
+  return [...ids].slice(0, 4);
+}
+
+/**
+ * Prices for `wanted` from a sportsbook, or an empty map. Never throws.
+ *
+ * Every candidate is tried until one yields a fill, and each one's outcome is
+ * recorded, so a failure names itself in ?debug=1 rather than looking the same
+ * as "no gaps to fill".
+ */
+async function fetchBookOdds(fieldSet, wanted, tournamentName) {
+  const configured = (process.env.ODDS_BOOK_URLS || '')
+    .split(',').map((u) => u.trim()).filter(Boolean);
+  const urls = configured.length ? configured : bookUrlsFor(tournamentName);
+  const notes = [];
+
+  // Each candidate reduces to rows; the first that actually fills a gap wins.
+  const tryRows = (label, rows) => {
+    if (!rows.length) { notes.push(`${label} no win market`); return null; }
+    const odds = pickGapOdds(rows, fieldSet, wanted);
+    const filled = Object.keys(odds).length;
+    if (!filled) { notes.push(`${label} ${rows.length} rows, filled 0`); return null; }
+    return { odds, status: `${label} ${rows.length} rows, filled ${filled}` };
+  };
+
+  for (const url of urls) {
+    const label = (() => {
+      try { const u = new URL(url); return u.pathname.split('/').filter(Boolean).pop() || u.hostname; }
+      catch { return 'url'; }
+    })();
+    try {
+      const r = await fetch(url, { headers: BOOK_HEADERS });
+      if (!r.ok) { notes.push(`${label} ${r.status}`); continue; }
+      const body = await r.text();
+
+      // A JSON endpoint answers directly.
+      if (body.trimStart().startsWith('{')) {
+        let json = null;
+        try { json = JSON.parse(body); } catch { /* fall through to the HTML path */ }
+        if (json) {
+          const hit = tryRows(label, bookOddsRows(json));
+          if (hit) return hit;
+          continue;
+        }
+      }
+
+      // A page: the board may be embedded outright…
+      const embedded = embeddedJson(body).flatMap((b) => bookOddsRows(b));
+      const hit = tryRows(`${label} page`, embedded);
+      if (hit) return hit;
+
+      // …and failing that, the page names the ids the API wants. This is the
+      // step that removes the guess: the id comes from the site, not from us.
+      const ids = eventGroupIds(body);
+      if (!ids.length) { notes.push(`${label} no id`); continue; }
+      for (const id of ids) {
+        const ar = await fetch(DK_API(id), { headers: BOOK_HEADERS });
+        if (!ar.ok) { notes.push(`eg${id} ${ar.status}`); continue; }
+        const apiHit = tryRows(`eg${id}`, bookOddsRows(await ar.json()));
+        if (apiHit) return apiHit;
+      }
+    } catch (e) {
+      notes.push(`${label} fetch:${e.message}`);
+    }
+  }
+  return { odds: {}, status: notes.join('; ') || 'not tried' };
 }
 
 /**
@@ -758,7 +957,7 @@ export function espnOddsRows(json) {
  *     one this endpoint is serving — a mismatch must fill nothing rather than
  *     quietly price the field from another week.
  */
-export function pickESPNOdds(rows, fieldSet, wanted) {
+export function pickGapOdds(rows, fieldSet, wanted) {
   const { oddsMap } = resolveOddsRows(rows, new Map(), fieldSet);
   const want = new NameSet(wanted);
   const odds = {};
@@ -777,17 +976,23 @@ export function pickESPNOdds(rows, fieldSet, wanted) {
  */
 async function fetchESPNOdds(fieldSet, wanted) {
   try {
-    // Six days, not fifteen. This runs on every origin miss now that any
-    // unpriced player triggers it, and a 15-day scan against a dead ESPN is
-    // ~30 sequential fetches inside a serverless function that also has
-    // pgatour.com to get through. This week's event is at most a few days out.
+    // One day, not fifteen. This runs on every origin miss now that any
+    // unpriced player triggers it, and a long scan against an ESPN that is
+    // currently refusing us outright is pure latency inside a serverless
+    // function that still has pgatour.com and a sportsbook to get through.
+    // The bare scoreboard is the meaningful attempt — if ESPN serves this
+    // function at all it returns the current event — so the dated scan is
+    // kept only as a token retry.
+    //
+    // The field/tee-time fallback keeps its full 15-day range: if pgatour.com
+    // ever fails, that scan is the only thing standing behind this endpoint.
     const trace = espnTrace();
-    const found = await findESPNEvent(0, trace, 6);
+    const found = await findESPNEvent(0, trace, 1);
     if (!found) return { odds: {}, status: `no-event (${espnTraceSummary(trace)})` };
 
     // The leaderboard first — it is already the payload the field fallback
     // reads, so when it carries prices this costs nothing extra.
-    let rows = espnOddsRows(found.ld);
+    let rows = bookOddsRows(found.ld);
 
     // Otherwise the core API's odds collection for this event.
     if (!rows.length) {
@@ -797,15 +1002,70 @@ async function fetchESPNOdds(fieldSet, wanted) {
         const r = await fetch(
           `https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/${id}/competitions/${comp}/odds`,
           { headers: ESPN_HEADERS });
-        if (r.ok) rows = espnOddsRows(await r.json());
+        if (r.ok) rows = bookOddsRows(await r.json());
       }
     }
     if (!rows.length) return { odds: {}, status: 'no-rows' };
 
-    const odds = pickESPNOdds(rows, fieldSet, wanted);
+    const odds = pickGapOdds(rows, fieldSet, wanted);
     return { odds, status: `${rows.length} rows, filled ${Object.keys(odds).length}` };
   } catch (e) {
     return { odds: {}, status: `error: ${e.message}` };
+  }
+}
+
+// ── Probe: one URL, reported on ─────────────────────────────────────────────
+//
+// Every secondary odds source in this file was written blind. pgatour.com,
+// ESPN and DraftKings are all unreachable from the environment this code is
+// authored in, so "does this endpoint exist and does it carry a win market"
+// could only ever be answered by deploying a guess and reading ?debug=1 — one
+// round trip per guess, with a CDN cache in the middle.
+//
+// GET /api/field?debug=1&probe=<url> answers it directly: the deployed
+// function fetches the URL and reports what it got. Not the body — the SHAPE,
+// which is the only part that decides whether a source is usable.
+//
+// This is deliberately not a proxy:
+//   • debug only, https only, and the host must be one of three we already
+//     talk to. An endpoint that fetches arbitrary URLs on request is an SSRF
+//     hole, and this one is public and unauthenticated.
+//   • it returns counts, ids and at most five harvested rows. Never the
+//     response body.
+const PROBE_HOSTS = ['draftkings.com', 'espn.com', 'pgatour.com'];
+
+export async function probeUrl(raw) {
+  let url;
+  try { url = new URL(String(raw)); } catch { return { error: 'not a URL' }; }
+  if (url.protocol !== 'https:') return { error: 'https only' };
+  const host = url.hostname.toLowerCase();
+  const allowed = PROBE_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+  if (!allowed) return { error: 'host not allowed', allowedHosts: PROBE_HOSTS };
+
+  try {
+    const r = await fetch(url.toString(), { headers: BOOK_HEADERS });
+    const body = await r.text();
+    let json = null;
+    try { json = JSON.parse(body); } catch { /* an HTML page, then */ }
+    const blobs = json ? [json] : embeddedJson(body);
+    const rows = blobs.flatMap((b) => bookOddsRows(b));
+    return {
+      status: r.status,
+      contentType: r.headers.get('content-type'),
+      bytes: body.length,
+      isJson: !!json,
+      // For an HTML page: how much embedded state there was to work with, and
+      // which event-group ids it named. 0 blobs and 0 ids means the page is
+      // rendered entirely client-side and there is nothing here to mine.
+      embeddedBlobs: json ? 1 : blobs.length,
+      eventGroupIds: json ? [] : eventGroupIds(body),
+      // The answer to the only question that matters: is there an outright
+      // winner market in here, and does it name golfers?
+      oddsRows: rows.length,
+      sampleRows: rows.slice(0, 5),
+    };
+  } catch (e) {
+    return { error: `fetch: ${e.message}` };
   }
 }
 
@@ -818,6 +1078,12 @@ export default async function handler(req, res) {
   const isDebug = req.query.debug === '1';
   const year = new Date().getFullYear().toString();
   const errors = [];
+
+  // ?debug=1&probe=<url> — see probeUrl. Answered before any of the normal
+  // work, since the whole point is to test one URL cheaply.
+  if (isDebug && req.query.probe) {
+    return res.status(200).json({ probe: String(req.query.probe), ...(await probeUrl(req.query.probe)) });
+  }
 
   let result = null;
 
@@ -962,18 +1228,30 @@ export default async function handler(req, res) {
           } catch (e) { oddsPage = `error: ${e.message}`; }
         }
 
-        // Still unpriced after both pgatour.com sources? Try ESPN. Gaps only,
-        // and only when there are gaps — see fetchESPNOdds.
+        // Still unpriced after both pgatour.com sources? Try the secondary
+        // sources, book first — ESPN has been answering non-2xx to every
+        // request from here, and the book is the source that might work.
+        //
+        // Both sit UNDER the tour: they only ever see the names the tour left
+        // blank, and the spread order below keeps a tour price whatever
+        // happens. Neither runs at all when there are no gaps.
+        let oddsBook = 'not-needed';
+        let oddsBookFilled = [];
         let oddsEspn = 'not-needed';
         let oddsEspnFilled = [];
-        const stillMissing = players.length ? unpriced(mergedOdds) : [];
+
+        let stillMissing = players.length ? unpriced(mergedOdds) : [];
+        if (stillMissing.length) {
+          const book = await fetchBookOdds(fieldSet, stillMissing, tournament.name);
+          oddsBook = book.status;
+          oddsBookFilled = Object.keys(book.odds);
+          mergedOdds = { ...book.odds, ...mergedOdds };
+          stillMissing = unpriced(mergedOdds);
+        }
         if (stillMissing.length) {
           const espnOdds = await fetchESPNOdds(fieldSet, stillMissing);
           oddsEspn = espnOdds.status;
           oddsEspnFilled = Object.keys(espnOdds.odds);
-          // ESPN UNDER the tour, so a tour price always wins. fetchESPNOdds
-          // only returns names in `stillMissing`, so there is nothing to lose
-          // here — the spread order is belt and braces.
           mergedOdds = { ...espnOdds.odds, ...mergedOdds };
         }
 
@@ -997,6 +1275,8 @@ export default async function handler(req, res) {
             oddsNotInField,
             oddsPulled,
             oddsPage,
+            oddsBook,
+            oddsBookFilled,
             oddsEspn,
             oddsEspnFilled,
             rejectedNames,
@@ -1058,6 +1338,12 @@ export default async function handler(req, res) {
       // The ESPN gap-filler's account of itself, same vocabulary as oddsPage,
       // plus the players it actually priced. 'not-needed' means both
       // pgatour.com sources between them priced the whole field.
+      // The sportsbook gap-filler's account of itself, per candidate URL, plus
+      // the players it priced. Tried before ESPN. Repoint it without a deploy
+      // by setting ODDS_BOOK_URLS — these are unofficial, geo-partitioned
+      // endpoints and both the region prefix and the golf event-group id move.
+      oddsBook: result.oddsBook || null,
+      oddsBookFilled: result.oddsBookFilled || [],
       oddsEspn: result.oddsEspn || null,
       oddsEspnFilled: result.oddsEspnFilled || [],
       // Truncated — when the join fails wholesale this is the entire field,
