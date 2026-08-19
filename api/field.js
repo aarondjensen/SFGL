@@ -831,13 +831,29 @@ const BOOK_HEADERS = {
 // league pages the same way pgatour.com spells its tournament pages
 // ('BMW Championship' → 'bmw-championship'), so nameToSlug already produces
 // it. A literal would have worked for exactly one week.
-export const bookUrlsFor = (tournamentName) => [
-  ...(tournamentName ? [`https://sportsbook.draftkings.com/leagues/golf/${nameToSlug(tournamentName)}`] : []),
-  'https://sportsbook.draftkings.com/leagues/golf/pga',
-];
+export const bookUrlsFor = (tournamentName, configured = []) => {
+  const slug = tournamentName ? nameToSlug(tournamentName) : '';
+  // A configured URL may carry {slug}. Without it, whoever sets
+  // ODDS_BOOK_URLS to a league page pins this to one tournament for ever —
+  // which is the trap the derived default exists to avoid, so the override
+  // must not reintroduce it.
+  if (configured.length) return configured.map((u) => u.split('{slug}').join(slug));
+  return [
+    ...(slug ? [`https://sportsbook.draftkings.com/leagues/golf/${slug}`] : []),
+    'https://sportsbook.draftkings.com/leagues/golf/pga',
+  ];
+};
 
-const DK_API = (id) =>
-  `https://sportsbook-us-il.draftkings.com/sites/US-IL-SB/api/v5/eventgroups/${id}?format=json`;
+// DraftKings partitions its API by region, and the partitions do not answer
+// the same. A probe of every candidate id against sportsbook-us-il returned
+// 403 with an identical 465-byte body each time — identical across ids means
+// the WAF, not the id. The plain sportsbook.draftkings.com host served its
+// league page 200 to the same function, so it is tried FIRST here.
+const DK_API_URLS = (id) => [
+  `https://sportsbook.draftkings.com/sites/US-SB/api/v5/eventgroups/${id}?format=json`,
+  `https://sportsbook-us-il.draftkings.com/sites/US-IL-SB/api/v5/eventgroups/${id}?format=json`,
+  `https://sportsbook-nash.draftkings.com/api/sportscontent/dkusnj/v1/leagues/${id}`,
+];
 
 /**
  * Every JSON blob a sportsbook page embeds. DraftKings is a React app, so its
@@ -866,15 +882,28 @@ export function embeddedJson(html) {
  * costs a request.
  */
 export function eventGroupIds(html) {
-  const ids = new Set();
+  // A sportsbook's nav names every sport it offers, so most ids on the page
+  // belong to something else — the first probe of DraftKings' golf page
+  // returned four ids, one of which was MLB. Ranking by whether the id sits
+  // near golf words puts the plausible ones first, which matters because the
+  // caller can only afford to try a handful.
+  const score = new Map();
   for (const re of [
     /eventgroups?\/(\d{1,7})/gi,
     /"eventGroupId"\s*:\s*"?(\d{1,7})/gi,
     /"leagueId"\s*:\s*"?(\d{1,7})/gi,
   ]) {
-    for (const m of html.matchAll(re)) ids.add(m[1]);
+    for (const m of html.matchAll(re)) {
+      const at = m.index ?? 0;
+      const near = html.slice(Math.max(0, at - 300), at + 300).toLowerCase();
+      const hit = /golf|pga|championship|tournament/.test(near) ? 1 : 0;
+      score.set(m[1], Math.max(score.get(m[1]) ?? 0, hit));
+    }
   }
-  return [...ids].slice(0, 4);
+  return [...score.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => id)
+    .slice(0, 6);
 }
 
 /**
@@ -887,7 +916,28 @@ export function eventGroupIds(html) {
 async function fetchBookOdds(fieldSet, wanted, tournamentName) {
   const configured = (process.env.ODDS_BOOK_URLS || '')
     .split(',').map((u) => u.trim()).filter(Boolean);
-  const urls = configured.length ? configured : bookUrlsFor(tournamentName);
+
+  // OFF unless configured, and that is a measured decision rather than a
+  // default.
+  //
+  // DraftKings was probed to exhaustion: the league page serves 200 but
+  // embeds no market, and all three API partitions —
+  // sportsbook.draftkings.com, sportsbook-us-il, and the newer
+  // sportsbook-nash/sportscontent — return 403 with a ~450-byte WAF page. It
+  // is not the event-group id and not the region; the API is closed to this
+  // function.
+  //
+  // Left on by default, this path costs a 1.7 MB page download plus up to a
+  // dozen refused API calls on EVERY origin miss, to fill nothing. /api/field
+  // is the most expensive request this app makes and the one the whole league
+  // waits on. So the code stays — ready the moment a working URL exists — but
+  // it does not run until ODDS_BOOK_URLS names one. A configured URL may use
+  // {slug} for this week's tournament — see bookUrlsFor.
+  if (!configured.length) {
+    return { odds: {}, status: 'not-configured (set ODDS_BOOK_URLS)' };
+  }
+
+  const urls = bookUrlsFor(tournamentName, configured);
   const notes = [];
 
   // Each candidate reduces to rows; the first that actually fills a gap wins.
@@ -930,10 +980,14 @@ async function fetchBookOdds(fieldSet, wanted, tournamentName) {
       const ids = eventGroupIds(body);
       if (!ids.length) { notes.push(`${label} no id`); continue; }
       for (const id of ids) {
-        const ar = await fetch(DK_API(id), { headers: BOOK_HEADERS });
-        if (!ar.ok) { notes.push(`eg${id} ${ar.status}`); continue; }
-        const apiHit = tryRows(`eg${id}`, bookOddsRows(await ar.json()));
-        if (apiHit) return apiHit;
+        for (const apiUrl of DK_API_URLS(id)) {
+          const ar = await fetch(apiUrl, { headers: BOOK_HEADERS });
+          if (!ar.ok) { notes.push(`eg${id} ${ar.status}`); continue; }
+          let apiJson = null;
+          try { apiJson = await ar.json(); } catch { notes.push(`eg${id} not json`); continue; }
+          const apiHit = tryRows(`eg${id}`, bookOddsRows(apiJson));
+          if (apiHit) return apiHit;
+        }
       }
     } catch (e) {
       notes.push(`${label} fetch:${e.message}`);
@@ -1034,7 +1088,38 @@ async function fetchESPNOdds(fieldSet, wanted) {
 //     response body.
 const PROBE_HOSTS = ['draftkings.com', 'espn.com', 'pgatour.com'];
 
-export async function probeUrl(raw) {
+/**
+ * Every object in a payload that mentions `needle`, reduced to its scalar
+ * fields.
+ *
+ * This exists to answer one question that inference kept getting wrong: is a
+ * given golfer in this payload AT ALL, and if so in what shape? "The board has
+ * 48 rows" is a count; it does not say whether the two missing players are
+ * absent, or present in a shape the parser walks straight past. Those are
+ * different bugs and only one of them is ours.
+ *
+ * Scalars only, and hard-capped: this is a diagnostic, not a way to siphon a
+ * third party's page through a public endpoint.
+ */
+export function findInPayload(json, needle, limit = 8) {
+  const hits = [];
+  const n = String(needle).toLowerCase();
+  if (!n) return hits;
+  walkAll(json, (obj) => {
+    if (hits.length >= limit || Array.isArray(obj)) return;
+    const mentions = Object.values(obj).some(
+      (v) => typeof v === 'string' && v.toLowerCase().includes(n));
+    if (!mentions) return;
+    const scalars = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === null || typeof v !== 'object') scalars[k] = String(v).slice(0, 120);
+    }
+    hits.push(scalars);
+  });
+  return hits;
+}
+
+export async function probeUrl(raw, find = '') {
   let url;
   try { url = new URL(String(raw)); } catch { return { error: 'not a URL' }; }
   if (url.protocol !== 'https:') return { error: 'https only' };
@@ -1049,6 +1134,11 @@ export async function probeUrl(raw) {
     try { json = JSON.parse(body); } catch { /* an HTML page, then */ }
     const blobs = json ? [json] : embeddedJson(body);
     const rows = blobs.flatMap((b) => bookOddsRows(b));
+    // collectOddsRows is the pgatour.com harvester — the one that actually
+    // feeds the Odds column. Reporting only the book/ESPN harvester's count
+    // made a probe of pgatour.com read as "no odds here" when the rows were
+    // simply in the other shape.
+    const pgaRows = blobs.flatMap((b) => collectOddsRows(b));
     return {
       status: r.status,
       contentType: r.headers.get('content-type'),
@@ -1063,6 +1153,12 @@ export async function probeUrl(raw) {
       // winner market in here, and does it name golfers?
       oddsRows: rows.length,
       sampleRows: rows.slice(0, 5),
+      // The pgatour.com shape: id-keyed rows, priced and unpriced.
+      pgaOddsRows: pgaRows.length,
+      pgaOddsPriced: pgaRows.filter((row) => row.odds).length,
+      samplePgaRows: pgaRows.slice(0, 3),
+      // ?find=<text> — every object mentioning it, scalars only.
+      ...(find ? { find, found: blobs.flatMap((b) => findInPayload(b, find)).slice(0, 8) } : {}),
     };
   } catch (e) {
     return { error: `fetch: ${e.message}` };
@@ -1082,7 +1178,29 @@ export default async function handler(req, res) {
   // ?debug=1&probe=<url> — see probeUrl. Answered before any of the normal
   // work, since the whole point is to test one URL cheaply.
   if (isDebug && req.query.probe) {
-    return res.status(200).json({ probe: String(req.query.probe), ...(await probeUrl(req.query.probe)) });
+    return res.status(200).json({
+      probe: String(req.query.probe),
+      ...(await probeUrl(req.query.probe, req.query.find ? String(req.query.find) : '')),
+    });
+  }
+
+  // ?debug=1&probeEg=79494,84240,... — the same probe against the book's API
+  // for each event-group id, in one call.
+  //
+  // The plain `probe` cannot do this comfortably: the API URL ends in
+  // `?format=json`, and that `&`/`?` collides with the outer query string
+  // unless it is URL-encoded by hand. Ids are digits, so this needs no
+  // encoding and no care. It answers "which of these is golf" in one read.
+  if (isDebug && req.query.probeEg) {
+    const ids = String(req.query.probeEg).split(',')
+      .map((v) => v.trim()).filter((v) => /^\d{1,7}$/.test(v)).slice(0, 8);
+    const results = [];
+    for (const id of ids) {
+      for (const url of DK_API_URLS(id)) {
+        results.push({ id, url, ...(await probeUrl(url)) });
+      }
+    }
+    return res.status(200).json({ probeEg: ids, results });
   }
 
   let result = null;

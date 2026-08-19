@@ -18,7 +18,7 @@
 //
 //   node scripts/test-field-odds-fallback.mjs
 
-import { bookOddsRows, pickGapOdds, bookUrlsFor, embeddedJson, eventGroupIds, probeUrl } from '../api/field.js';
+import { bookOddsRows, pickGapOdds, bookUrlsFor, embeddedJson, eventGroupIds, probeUrl, findInPayload } from '../api/field.js';
 import { NameSet } from '../api/_playerNames.js';
 
 let pass = 0, fail = 0;
@@ -257,6 +257,19 @@ console.log('\n── the league page is derived, not hardcoded ──');
     bookUrlsFor('AT&T Pebble Beach Pro-Am')[0]);
   check('no tournament name yields no tournament URL',
     bookUrlsFor(null).length === 1);
+
+  // The override has to be week-proof too. Someone setting ODDS_BOOK_URLS to
+  // a league page would otherwise pin the app to one tournament for ever —
+  // the exact trap the derived default exists to avoid.
+  const withSlug = bookUrlsFor('BMW Championship',
+    ['https://example.com/golf/{slug}?format=json']);
+  check('a configured URL can carry {slug}',
+    withSlug[0] === 'https://example.com/golf/bmw-championship?format=json', withSlug[0]);
+  check('a configured URL without {slug} is passed through untouched',
+    bookUrlsFor('BMW Championship', ['https://example.com/fixed'])[0]
+      === 'https://example.com/fixed');
+  check('configured URLs replace the defaults rather than adding to them',
+    bookUrlsFor('BMW Championship', ['https://example.com/fixed']).length === 1);
 }
 
 console.log('\n── ids are read off the page ──');
@@ -271,8 +284,20 @@ console.log('\n── ids are read off the page ──');
   check('duplicates across sources collapse',
     ids.length === new Set(ids).size, JSON.stringify(ids));
   check('the list is capped — every id costs a request', eventGroupIds(
-    Array.from({ length: 20 }, (_, i) => `eventgroups/${1000 + i}`).join(' ')).length <= 4);
+    Array.from({ length: 40 }, (_, i) => `eventgroups/${1000 + i}`).join(' ')).length <= 6);
   check('a page naming no ids yields none', eventGroupIds('<html>nothing</html>').length === 0);
+
+  // A sportsbook's nav names every sport it offers, so most ids on a golf page
+  // belong to something else — the first real probe returned four, one of them
+  // MLB. The caller can only afford to try a handful, so the plausible ones
+  // have to come first.
+  const nav = `
+    <a href="/leagues/baseball/mlb">MLB</a><span data-eg="84240"></span>
+    <a href="/leagues/basketball/nba">NBA</a><span data-eg="42648"></span>
+    <div>Golf — BMW Championship</div><a href="/sites/US-SB/api/v5/eventgroups/79494">Golf</a>
+  `.replace(/data-eg="(\d+)"/g, '"eventGroupId":$1');
+  check('an id sitting near golf words ranks first',
+    eventGroupIds(nav)[0] === '79494', JSON.stringify(eventGroupIds(nav)));
 }
 
 console.log('\n── a page that embeds its own board needs no id at all ──');
@@ -337,6 +362,52 @@ console.log('\n── discovery does not fail silently or expensively ──');
   // failure can name its own step.
   check('a failed discovery reports which step failed',
     /no-event \(\$\{espnTraceSummary\(trace\)\}\)/.test(src));
+}
+
+console.log('\n── the book path stays off until it is pointed somewhere ──');
+{
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../api/field.js', import.meta.url), 'utf8');
+  // DraftKings was probed to exhaustion: page 200 but no embedded market, and
+  // all three API partitions 403 with a ~450-byte WAF page. Left on by
+  // default this path downloads 1.7 MB and makes a dozen refused calls on
+  // every origin miss of the most expensive request this app makes — to fill
+  // nothing. bookUrlsFor is kept and tested; it just is not the default.
+  check('an unconfigured book path does no fetching at all',
+    /if \(!configured\.length\) \{\s*\n\s*return \{ odds: \{\}, status: 'not-configured/.test(src));
+}
+
+console.log('\n── finding a golfer in a payload ──');
+{
+  // "The board has 48 rows" is a count. It does not say whether the two
+  // missing players are ABSENT or PRESENT IN A SHAPE THE PARSER WALKS PAST,
+  // and those are different bugs — only one of them ours. Inference could not
+  // tell them apart; this can.
+  const nd = {
+    field: { players: [{ id: '46046', displayName: 'J.J. Spaun', country: 'USA' }] },
+    odds: { oddsToWinId: 'm1', players: [{ id: '46046' }, { id: '47959', odds: '+2000' }] },
+  };
+  const found = findInPayload(nd, 'Spaun');
+  check('a golfer in the payload is found', found.length === 1, JSON.stringify(found));
+  check('and their row is reported with the id that identifies them',
+    found[0].id === '46046' && found[0].displayName === 'J.J. Spaun', JSON.stringify(found));
+  check('a golfer genuinely absent is reported absent',
+    findInPayload(nd, 'McIlroy').length === 0);
+  check('the search is case-insensitive', findInPayload(nd, 'spaun').length === 1);
+
+  // Scalars only, hard-capped — a diagnostic, not a way to siphon a third
+  // party's page through a public unauthenticated endpoint.
+  const nested = { a: { displayName: 'J.J. Spaun', huge: { blob: 'x'.repeat(5000) } } };
+  const hit = findInPayload(nested, 'Spaun')[0];
+  check('nested objects are not dragged into the excerpt', !('huge' in hit), JSON.stringify(hit));
+  check('long scalars are truncated',
+    Object.values(findInPayload({ a: { displayName: 'J.J. Spaun ' + 'y'.repeat(500) } }, 'Spaun')[0])
+      .every(v => v.length <= 120));
+  const many = Object.fromEntries(
+    Array.from({ length: 40 }, (_, i) => [`k${i}`, { displayName: 'J.J. Spaun' }]));
+  check('the number of matches is capped', findInPayload(many, 'Spaun').length <= 8);
+  check('an empty needle matches nothing rather than everything',
+    findInPayload(nd, '').length === 0);
 }
 
 // ── The probe is public and unauthenticated ─────────────────────────────────
