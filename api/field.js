@@ -1014,6 +1014,61 @@ async function fetchESPNOdds(fieldSet, wanted) {
   }
 }
 
+// ── Probe: one URL, reported on ─────────────────────────────────────────────
+//
+// Every secondary odds source in this file was written blind. pgatour.com,
+// ESPN and DraftKings are all unreachable from the environment this code is
+// authored in, so "does this endpoint exist and does it carry a win market"
+// could only ever be answered by deploying a guess and reading ?debug=1 — one
+// round trip per guess, with a CDN cache in the middle.
+//
+// GET /api/field?debug=1&probe=<url> answers it directly: the deployed
+// function fetches the URL and reports what it got. Not the body — the SHAPE,
+// which is the only part that decides whether a source is usable.
+//
+// This is deliberately not a proxy:
+//   • debug only, https only, and the host must be one of three we already
+//     talk to. An endpoint that fetches arbitrary URLs on request is an SSRF
+//     hole, and this one is public and unauthenticated.
+//   • it returns counts, ids and at most five harvested rows. Never the
+//     response body.
+const PROBE_HOSTS = ['draftkings.com', 'espn.com', 'pgatour.com'];
+
+export async function probeUrl(raw) {
+  let url;
+  try { url = new URL(String(raw)); } catch { return { error: 'not a URL' }; }
+  if (url.protocol !== 'https:') return { error: 'https only' };
+  const host = url.hostname.toLowerCase();
+  const allowed = PROBE_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+  if (!allowed) return { error: 'host not allowed', allowedHosts: PROBE_HOSTS };
+
+  try {
+    const r = await fetch(url.toString(), { headers: BOOK_HEADERS });
+    const body = await r.text();
+    let json = null;
+    try { json = JSON.parse(body); } catch { /* an HTML page, then */ }
+    const blobs = json ? [json] : embeddedJson(body);
+    const rows = blobs.flatMap((b) => bookOddsRows(b));
+    return {
+      status: r.status,
+      contentType: r.headers.get('content-type'),
+      bytes: body.length,
+      isJson: !!json,
+      // For an HTML page: how much embedded state there was to work with, and
+      // which event-group ids it named. 0 blobs and 0 ids means the page is
+      // rendered entirely client-side and there is nothing here to mine.
+      embeddedBlobs: json ? 1 : blobs.length,
+      eventGroupIds: json ? [] : eventGroupIds(body),
+      // The answer to the only question that matters: is there an outright
+      // winner market in here, and does it name golfers?
+      oddsRows: rows.length,
+      sampleRows: rows.slice(0, 5),
+    };
+  } catch (e) {
+    return { error: `fetch: ${e.message}` };
+  }
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1023,6 +1078,12 @@ export default async function handler(req, res) {
   const isDebug = req.query.debug === '1';
   const year = new Date().getFullYear().toString();
   const errors = [];
+
+  // ?debug=1&probe=<url> — see probeUrl. Answered before any of the normal
+  // work, since the whole point is to test one URL cheaply.
+  if (isDebug && req.query.probe) {
+    return res.status(200).json({ probe: String(req.query.probe), ...(await probeUrl(req.query.probe)) });
+  }
 
   let result = null;
 

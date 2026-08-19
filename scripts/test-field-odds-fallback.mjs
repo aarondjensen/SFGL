@@ -18,7 +18,7 @@
 //
 //   node scripts/test-field-odds-fallback.mjs
 
-import { bookOddsRows, pickGapOdds, bookUrlsFor, embeddedJson, eventGroupIds } from '../api/field.js';
+import { bookOddsRows, pickGapOdds, bookUrlsFor, embeddedJson, eventGroupIds, probeUrl } from '../api/field.js';
 import { NameSet } from '../api/_playerNames.js';
 
 let pass = 0, fail = 0;
@@ -337,6 +337,37 @@ console.log('\n── discovery does not fail silently or expensively ──');
   // failure can name its own step.
   check('a failed discovery reports which step failed',
     /no-event \(\$\{espnTraceSummary\(trace\)\}\)/.test(src));
+}
+
+// ── The probe is public and unauthenticated ─────────────────────────────────
+// /api/field?debug=1&probe=<url> makes the deployed function fetch a URL and
+// report on it, which is how a source written blind gets verified without a
+// deploy per guess. It is also, if left open, an SSRF hole on an endpoint with
+// no auth in front of it. Every rejection below happens BEFORE any fetch.
+console.log('\n── the probe refuses everything it should ──');
+{
+  const rejected = async (input, why) => {
+    const r = await probeUrl(input);
+    check(why, !!r.error, JSON.stringify(r));
+  };
+  await rejected('not a url at all', 'a non-URL is refused');
+  await rejected('http://sportsbook.draftkings.com/x', 'plain http is refused');
+  await rejected('https://evil.example.com/x', 'an unlisted host is refused');
+  // The classic allowlist bypass: a host that merely CONTAINS an allowed one.
+  await rejected('https://draftkings.com.evil.example.com/x',
+    'a lookalike host is refused');
+  await rejected('file:///etc/passwd', 'a non-http scheme is refused');
+  await rejected('https://169.254.169.254/latest/meta-data/',
+    'the cloud metadata address is refused');
+
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../api/field.js', import.meta.url), 'utf8');
+  check('the probe is gated on debug mode',
+    /isDebug && req\.query\.probe/.test(src));
+  // It reports shape, never content — otherwise it is a proxy.
+  check('the probe never returns the response body',
+    !/body,\s*$/m.test(src.slice(src.indexOf('async function probeUrl'),
+                                 src.indexOf('// ── Handler'))));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
