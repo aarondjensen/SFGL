@@ -390,7 +390,23 @@ export const startsUsedByPlayer = ({
  */
 export const lineupTargetIndex = (tournaments = [], now) => {
   const list = tournaments || [];
-  for (let i = 0; i < list.length; i++) {
+
+  // Anchor the search AFTER the last completed event.
+  //
+  // Scanning from zero made a single stray event — one cancelled, abandoned,
+  // or never marked complete — the answer, because it is not completed and,
+  // if it carries no usable date, not week-over either. The boundary then
+  // landed at the front of the season, `beforeIndex: 0` excluded every
+  // tournament, and the derived count came back EMPTY for everybody. Nothing
+  // announced that: the count simply fell back to the durable starts tally,
+  // and a player whose tally was inflated was told they were out of starts.
+  //
+  // A completed event is the one unambiguous "the season got at least this
+  // far" marker in the data, so the target can never precede the last one.
+  let start = 0;
+  for (let i = 0; i < list.length; i++) if (list[i]?.completed) start = i + 1;
+
+  for (let i = start; i < list.length; i++) {
     const t = list[i];
     if (!t || t.isAlternate) continue;
     if (t.completed) continue;
@@ -524,7 +540,12 @@ export const limitedStartsStatus = (player, {
   // This is the same reason eligibleStarters refuses to look at it, and it
   // leaves the gate predicting exactly what scoring will do.
   const tally = Number(player?.starts) || 0;
-  const used = Math.max(tally, Number(derivedStarts) || 0);
+  // Derived first here too, not `Math.max` with the tally. The tally is the
+  // source the live-lineup crediting bug corrupted, so maxing with it left the
+  // badge reading 12/12 for a player on eleven — disagreeing with the gate
+  // beside it, which is the split this whole rule exists to close. It answers
+  // only for a caller who supplied nothing derived at all.
+  const used = derivedStarts !== undefined ? (Number(derivedStarts) || 0) : tally;
   // Precedence, strictest evidence first. Once a caller supplies a derived
   // count the tally never overrides it: the tally cannot place a start before
   // an event, and letting it back in as a fallback is what kept the warning

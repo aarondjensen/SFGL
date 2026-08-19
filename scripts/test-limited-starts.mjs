@@ -79,8 +79,14 @@ console.log('\n── the two counts, reconciled ──');
   // already read twelve, counting the very start they were about to take.
   check('the durable tally cannot decide a point-in-time question',
     limitedStartsStatus(limited(12), { derivedStarts: 12, priorStarts: 11 }).outOfStarts === false);
-  check('but it still floors the total on display',
-    limitedStartsStatus(limited(12), { derivedStarts: 3, priorStarts: 11 }).used === 12);
+  // Nor does it floor the display. Maxing the badge with the tally left it
+  // reading 12/12 beside a gate that would happily add the player — the badge
+  // and the gate disagreeing is the exact split this rule exists to close, and
+  // the tally is the side known to be corrupt.
+  check('the derived count owns the display too',
+    limitedStartsStatus(limited(12), { derivedStarts: 3, priorStarts: 11 }).used === 3);
+  check('the tally still shows for a caller holding nothing else',
+    limitedStartsStatus(limited(12)).used === 12);
   // Precedence, strictest evidence first. The derived count is league-wide and
   // includes lineups frozen at lock, so it already carries the starts a player
   // spent on a previous roster — the reason the tally used to be needed here.
@@ -92,7 +98,7 @@ console.log('\n── the two counts, reconciled ──');
   // With nothing derived to go on, the tally is the best evidence there is.
   check('the tally still answers for a caller holding nothing else',
     limitedStartsStatus(limited(12)).outOfStarts === true);
-  check('used is the higher of the two',
+  check('the derived count is the total',
     limitedStartsStatus(limited(4), { derivedStarts: 7 }).used === 7);
   check('remaining counts down from the cap',
     limitedStartsStatus(limited(4), { derivedStarts: 7 }).remaining === 5);
@@ -156,7 +162,7 @@ console.log('\n── an empty derived count cannot manufacture the warning ─�
 
   check('a map miss does not become an out-of-starts warning',
     asRostersViewCalls(undefined, undefined).outOfStarts === false);
-  check('the tally still shows on the badge, where it is sound',
+  check('the tally answers only because nothing derived was supplied',
     asRostersViewCalls(undefined, undefined).used === 12);
   check('a real derived count still decides',
     asRostersViewCalls(12, 12).outOfStarts === true);
@@ -319,6 +325,49 @@ console.log('\n── the twelfth start is allowed ──');
     status(afterBmw).outOfStarts === true);
   check('and the count has not moved — only the boundary has',
     status(afterBmw).used === 12);
+}
+
+
+console.log('\n── one stray event must not zero the whole count ──');
+{
+  // THE production failure. A single event that is not marked completed — one
+  // cancelled, abandoned, or never processed — sat at the front of the
+  // schedule. lineupTargetIndex scanned from zero, found it, and returned 0.
+  // beforeIndex 0 excludes every tournament, so the derived count came back
+  // EMPTY for every player, silently, and the decision fell through to the
+  // durable starts tally. A player whose tally was inflated by the
+  // live-lineup crediting bug was then told they were out of starts — with
+  // eleven starts actually taken.
+  const scored = (n) => ({
+    name: `Event ${n}`, completed: true,
+    results: { teams: { w1: { players: [{ name: 'Limited Larry', earnings: 1, limited: true }] } },
+               fullLineups: { w1: ['Limited Larry'] } },
+  });
+  const stray = { name: 'Cancelled Open' };                      // no completed, no date
+  const bmw = { name: 'BMW', lockedLineups: { w1: ['Limited Larry'] } };
+  const schedule = [stray, ...Array.from({ length: 11 }, (_, i) => scored(i)), bmw];
+
+  const target = lineupTargetIndex(schedule);
+  check('the target lands after the last completed event, not on the stray one',
+    target === 12);
+  const before = startsUsedByPlayer({ teams: [{ id: 'w1' }], tournaments: schedule, beforeIndex: target });
+  check('so the count is not empty', before.size > 0);
+  check('and reads the eleven starts actually taken', before.get('Limited Larry') === 11);
+
+  // End to end, with the inflated tally that made the old failure visible.
+  const inflated = { name: 'Limited Larry', limited: true, starts: 12 };
+  const total = startsUsedByPlayer({ teams: [{ id: 'w1' }], tournaments: schedule });
+  const st = limitedStartsStatus(inflated, {
+    derivedStarts: total.get('Limited Larry'),
+    priorStarts: before.get('Limited Larry') ?? 0,
+  });
+  check('the player is not out of starts', st.outOfStarts === false);
+  check('and the badge shows the twelfth they are locked into', st.projected === 12);
+
+  // A stray event AFTER the last completed one is still a legitimate target —
+  // the anchor must not skip past an event simply because it lacks a date.
+  check('a stray event after the last completed one is still the target',
+    lineupTargetIndex([scored(0), { name: 'Undated Upcoming' }]) === 1);
 }
 
 console.log('\n── which event a lineup edit is for ──');
