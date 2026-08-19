@@ -270,6 +270,44 @@ console.log('\n── which event a lineup edit is for ──');
   check('an empty schedule is safe', lineupTargetIndex([], now) === 0);
 }
 
+
+console.log('\n── the badge flags the last start as it is taken ──');
+{
+  // Red is the manager's cue that nothing is left AFTER this one — worth
+  // seeing while they can still change their mind, not on Thursday when the
+  // lineup freezes. Being on your last start is not a refusal.
+  const larry = { name: 'Limited Larry', limited: true, starts: 0 };
+  const st = (o) => limitedStartsStatus(larry, o);
+
+  check('slotting an eleven-start player reads 12/12 straight away',
+    st({ derivedStarts: 11, priorStarts: 11, pendingStart: true }).projected === 12);
+  check('and flags it as their last, not as a refusal',
+    st({ derivedStarts: 11, priorStarts: 11, pendingStart: true }).lastStart === true &&
+    st({ derivedStarts: 11, priorStarts: 11, pendingStart: true }).outOfStarts === false);
+  check('nothing is left after it', st({ derivedStarts: 11, priorStarts: 11, pendingStart: true }).remaining === 0);
+  // Once the lineup freezes the start is in the total, and counting the slot
+  // again would show 13/12.
+  check('a frozen lineup is not counted twice',
+    st({ derivedStarts: 12, priorStarts: 11, pendingStart: true }).projected === 12);
+  // A lineup carried over from a played week still holds a maxed player. They
+  // are not projected into a start they cannot take — the warning covers them.
+  check('a player with none left is not projected past the cap',
+    st({ derivedStarts: 12, priorStarts: 12, pendingStart: true }).projected === 12);
+  check('and is still refused',
+    st({ derivedStarts: 12, priorStarts: 12, pendingStart: true }).outOfStarts === true);
+  check('lastStart and outOfStarts are never both true',
+    st({ derivedStarts: 12, priorStarts: 12, pendingStart: true }).lastStart === false);
+
+  check('a player with starts to spare stays as they were',
+    st({ derivedStarts: 5, priorStarts: 5, pendingStart: true }).projected === 6 &&
+    st({ derivedStarts: 5, priorStarts: 5, pendingStart: true }).lastStart === false);
+  check('a benched player is not projected at all',
+    st({ derivedStarts: 11, priorStarts: 11 }).projected === 11);
+  check('an unlimited player never has a last start',
+    limitedStartsStatus({ name: 'U', unlimited: true, starts: 40 },
+      { derivedStarts: 40, priorStarts: 40, pendingStart: true }).lastStart === false);
+}
+
 console.log('\n── a maxed player cannot score ──');
 {
   // Everything upstream can be walked past: a manager leaves a maxed player in
@@ -417,6 +455,12 @@ console.log('\n── the view reads the rule, not its own copy ──');
   // A banner over the lineup is the only thing standing in that gap.
   check('a starter over the cap is called out on the roster page',
     /outOfStartsStarters/.test(view) && /Out of starts/.test(view));
+  // The badge shows the slot the manager has taken, and goes red on the last
+  // start rather than waiting until the player is barred.
+  check('the badge shows the projected count',
+    /startsStatus\.projected/.test(view));
+  check('the badge reddens when nothing is left after this start',
+    /startsStatus\.remaining === 0/.test(view));
   // Removal is offered, not performed: an automatic one would be a Firestore
   // write triggered by rendering a page.
   check('the fix is offered as a tap, not done on render',

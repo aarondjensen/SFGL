@@ -490,14 +490,26 @@ export const eligibleStarters = ({
  *                 the total made a legal twelfth start read as "out of starts"
  *                 the moment their lineup froze. Defaults to derivedStarts,
  *                 for callers with no event in view.
+ *   pendingStart  the manager has this player in the lineup for the upcoming
+ *                 event but it has not frozen yet, so no count contains it.
+ *                 Counted into `projected` only, and only when it is not
+ *                 already in `used` and there is a start left to spend.
  *   settings      league_settings, for the commish's maxLimitedStarts
  *
- * Returns `{ limited, used, max, remaining, outOfStarts }`. `outOfStarts` is
- * the only thing a caller should gate a starting lineup on: it is false for
- * anyone who isn't limited, so the caller needs no `player.limited` test of
- * its own.
+ * Returns `{ limited, used, projected, max, remaining, outOfStarts, lastStart }`.
+ *
+ *   used        starts actually committed — scored, frozen at lock, or in the
+ *               durable tally. What a manager owes the league.
+ *   projected   used plus the one they are slotted for. What the badge shows,
+ *               so putting a player on eleven into the lineup reads 12/12
+ *               immediately instead of waiting for Thursday to say so.
+ *   outOfStarts the gate. Nobody may be put into a starting lineup on this.
+ *   lastStart   they are spending their final start right now — legal, worth
+ *               flagging, and NOT a refusal.
  */
-export const limitedStartsStatus = (player, { derivedStarts, priorStarts, settings } = {}) => {
+export const limitedStartsStatus = (player, {
+  derivedStarts, priorStarts, pendingStart, settings,
+} = {}) => {
   const max = maxLimitedStarts(settings);
   const limited = !!player?.limited;
   // The durable tally counts processed events only, so it can never include the
@@ -507,12 +519,23 @@ export const limitedStartsStatus = (player, { derivedStarts, priorStarts, settin
   const prior = priorStarts === undefined
     ? used
     : Math.max(tally, Number(priorStarts) || 0);
+  const outOfStarts = limited && prior >= max;
+
+  // `used > prior` means the upcoming event's start is already counted — the
+  // lineup froze — and adding the pending one again would show 13/12. And a
+  // player with nothing left is not projected into a start they cannot take;
+  // their number stops climbing and the out-of-starts warning takes over.
+  const pending = !!pendingStart && used === prior && !outOfStarts ? 1 : 0;
+  const projected = used + pending;
+
   return {
     limited,
     used,
+    projected,
     max,
-    remaining: Math.max(0, max - used),
-    outOfStarts: limited && prior >= max,
+    remaining: Math.max(0, max - projected),
+    outOfStarts,
+    lastStart: limited && !outOfStarts && projected >= max,
   };
 };
 

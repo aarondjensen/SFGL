@@ -599,12 +599,15 @@ export const RostersView = ({
   // could read 12/12 on screen and still be addable. limitedStartsStatus takes
   // the higher of the two (see api/_rules.js for why both exist).
   const limitedStatus = useCallback((player) => limitedStartsStatus(player, {
-    // Two counts, two jobs: the badge reports every start committed, the gate
-    // asks whether another one may be spent.
+    // Three inputs, three jobs: the total is what they owe the league, the
+    // prior count decides whether another start may be spent, and the lineup
+    // slot is the one they have taken but not yet frozen — so a player put in
+    // the lineup on eleven reads 12/12 straight away rather than on Thursday.
     derivedStarts: startsUsed.get(player?.name),
     priorStarts: startsBefore.get(player?.name),
+    pendingStart: (team?.lineup || []).includes(player?.name),
     settings: resolvedSettings,
-  }), [startsUsed, startsBefore, resolvedSettings]);
+  }), [startsUsed, startsBefore, team, resolvedSettings]);
 
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;
@@ -1711,15 +1714,26 @@ export const RostersView = ({
                               // addable. Red once spent, because at that point
                               // it is a rule and not a statistic.
                               <span
-                                title={outOfStarts ? `Out of starts — ${startsStatus.used} of ${startsStatus.max} used` : `${startsStatus.remaining} of ${startsStatus.max} starts left`}
+                                title={
+                                  outOfStarts
+                                    ? `Out of starts — ${startsStatus.used} of ${startsStatus.max} used`
+                                    : startsStatus.lastStart
+                                      ? `Last start — this one takes them to ${startsStatus.max} of ${startsStatus.max}`
+                                      : `${startsStatus.remaining} of ${startsStatus.max} starts left`
+                                }
                                 style={{
-                                  fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: outOfStarts ? 700 : 600,
-                                  color: outOfStarts
+                                  fontFamily: fonts.sans, fontSize: fontSize.xs,
+                                  // Red the moment nothing is left after this one, not
+                                  // only once they are barred: a manager slotting a
+                                  // player's final start wants to see that while they
+                                  // can still change their mind.
+                                  fontWeight: startsStatus.remaining === 0 ? 700 : 600,
+                                  color: startsStatus.remaining === 0
                                     ? (isBenched ? red(0.45) : red(0.9))
                                     : (isBenched ? gold(0.35) : colors.textGoldDim),
                                 }}
                               >
-                                {startsStatus.used}/{startsStatus.max}
+                                {startsStatus.projected}/{startsStatus.max}
                               </span>
                             )}
                             {player.unlimited && (
