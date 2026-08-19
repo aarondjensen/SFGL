@@ -1107,8 +1107,12 @@ export function findInPayload(json, needle, limit = 8) {
   if (!n) return hits;
   walkAll(json, (obj) => {
     if (hits.length >= limit || Array.isArray(obj)) return;
+    // Numbers count. An odds row identifies its player as `id: 39324` about as
+    // often as `id: '39324'`, and a search that only reads strings misses
+    // exactly the row worth finding.
     const mentions = Object.values(obj).some(
-      (v) => typeof v === 'string' && v.toLowerCase().includes(n));
+      (v) => (typeof v === 'string' || typeof v === 'number')
+        && String(v).toLowerCase().includes(n));
     if (!mentions) return;
     const scalars = {};
     for (const [k, v] of Object.entries(obj)) {
@@ -1213,18 +1217,49 @@ export default async function handler(req, res) {
     const fieldResp = await fetch(fieldUrl, { headers: HEADERS });
 
     if (fieldResp.ok) {
-      const fieldNd = extractNextData(await fieldResp.text());
+      const fieldHtml = await fieldResp.text();
+      const fieldNd = extractNextData(fieldHtml);
       if (fieldNd) {
         const parsedField = parseFieldPage(fieldNd);
-        const { players, pgaIds, idToName, photos, teeTimeMap, oddsMap,
+        const { players, pgaIds, idToName, photos, teeTimeMap, oddsMap: ndOddsMap,
                 oddsUnresolved: fieldOddsUnresolved, rejectedNames } = parsedField;
+
+        // __NEXT_DATA__ is not the whole page.
+        //
+        // parseFieldPage sees ONE blob, because that is all it is handed. A
+        // probe of the odds page found TWO embedded JSON blobs carrying 96
+        // odds rows between them, where reading __NEXT_DATA__ alone found 48 —
+        // so half of pgatour.com's own odds data was being discarded before
+        // anything looked at it. A player priced only in the second blob was
+        // unreachable no matter how good the join got, and no diagnostic could
+        // see it either, because every count downstream was computed from the
+        // half we had already thrown away.
+        //
+        // Odds rows from every blob, then. collectOddsRows over all of them is
+        // a superset of what parseFieldPage saw, so this can only add.
+        // Every id any odds row cited, across every blob and every page.
+        //
+        // This is the fact that separates the last two explanations for a
+        // blank cell, and nothing so far could see it: if an unpriced player's
+        // PGA id IS in here, the board priced them and our resolution dropped
+        // them — ours. If it is not, the board genuinely has no row for them.
+        // Every count reported until now ('48 rows', 'oddsUnresolved: 0') was
+        // consistent with both.
+        const oddsRowIds = new Set();
+        const oddsFrom = (html, ids, field) => {
+          const rows = embeddedJson(html).flatMap((b) => collectOddsRows(b));
+          for (const row of rows) for (const id of row.ids) oddsRowIds.add(id);
+          return resolveOddsRows(rows, ids, field);
+        };
+        const allField = oddsFrom(fieldHtml, idToName, new NameSet(players));
+        const oddsMap = { ...ndOddsMap, ...allField.oddsMap };
         // Reassignable, unlike the rest: the tee-times-page fallback below may
         // supply this when the field page did not carry a tee sheet.
         let firstTeeTimeISO = parsedField.firstTeeTimeISO;
         const espnIds = {}; // filled only from the ESPN supplement below
-        let oddsUnresolved = fieldOddsUnresolved;
-        let oddsNotInField = parsedField.oddsNotInField || [];
-        let oddsPulled = parsedField.oddsPulled || [];
+        let oddsUnresolved = Math.max(fieldOddsUnresolved, allField.unresolved);
+        let oddsNotInField = [...new Set([...(parsedField.oddsNotInField || []), ...allField.notInField])];
+        let oddsPulled = allField.pulled.length ? allField.pulled : (parsedField.oddsPulled || []);
 
         // If no tee times from field page, try dedicated tee-times page
         let finalTeeTimes = joinPlayersToTeeTimes(players, teeTimeMap);
@@ -1317,10 +1352,14 @@ export default async function handler(req, res) {
           try {
             const oddsUrl = `https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/odds`;
             const oddsResp = await fetch(oddsUrl, { headers: HEADERS });
-            oddsPage = oddsResp.ok ? 'no-next-data' : `http ${oddsResp.status}`;
+            oddsPage = oddsResp.ok ? 'no-embedded-json' : `http ${oddsResp.status}`;
             if (oddsResp.ok) {
-              const oddsNd = extractNextData(await oddsResp.text());
-              if (oddsNd) {
+              const oddsHtml = await oddsResp.text();
+              // Every embedded blob, not just __NEXT_DATA__ — see the field
+              // page above. This is the page the miscount was found on: 96
+              // rows across two blobs, 48 of them visible to the old reader.
+              const blobs = embeddedJson(oddsHtml);
+              if (blobs.length) {
                 oddsPage = 'no-rows';
                 // Same two helpers as the field page. This path used to carry
                 // its OWN market picker and its OWN row builder, and they had
@@ -1328,7 +1367,8 @@ export default async function handler(req, res) {
                 // last-write-wins while this one took a single market, and only
                 // this one knew about `oddsEnabled`. One code path now, so the
                 // two cannot disagree about the same league again.
-                const rows = collectOddsRows(oddsNd);
+                const rows = blobs.flatMap((b) => collectOddsRows(b));
+                for (const row of rows) for (const id of row.ids) oddsRowIds.add(id);
                 const resolved = resolveOddsRows(rows, idToName, fieldSet);
                 if (Object.keys(resolved.oddsMap).length) {
                   const before = unpriced(mergedOdds).length;
@@ -1392,6 +1432,7 @@ export default async function handler(req, res) {
             oddsUnresolved,
             oddsNotInField,
             oddsPulled,
+            oddsRowIds: [...oddsRowIds],
             oddsPage,
             oddsBook,
             oddsBookFilled,
@@ -1475,6 +1516,26 @@ export default async function handler(req, res) {
       // section labels and banner text here. A REAL GOLFER in this list is a
       // bug in looksLikePlayer — they will be missing their ⛳ flag on every
       // roster that holds them.
+      // For each field player still showing '—': the PGA id we hold for them,
+      // and whether ANY odds row cited that id. This is the whole question,
+      // answered without a probe.
+      //
+      //   idInOddsRows true  → the board priced them and we dropped it. OURS.
+      //   idInOddsRows false → no row for that id. Either the board omits
+      //                        them, or it identifies them by an id we never
+      //                        recorded — `pgaId` says which we hold.
+      unpricedDetail: (() => {
+        const priced = new NameSet((result.odds || []).map((o) => o.name));
+        const ids = new Set(result.oddsRowIds || []);
+        return (result.players || [])
+          .filter((n) => !priced.has(n))
+          .slice(0, 10)
+          .map((n) => {
+            const pgaId = (result.pgaIds || {})[n] || null;
+            return { name: n, pgaId, idInOddsRows: pgaId ? ids.has(pgaId) : false };
+          });
+      })(),
+      oddsRowIdCount: (result.oddsRowIds || []).length,
       rejectedNames: result.rejectedNames || [],
       pgaIdCount: Object.keys(result.pgaIds || {}).length,
       espnIdCount: Object.keys(result.espnIds || {}).length,

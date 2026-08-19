@@ -364,6 +364,26 @@ console.log('\n── discovery does not fail silently or expensively ──');
     /no-event \(\$\{espnTraceSummary\(trace\)\}\)/.test(src));
 }
 
+console.log('\n── the whole page is read, not just __NEXT_DATA__ ──');
+{
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../api/field.js', import.meta.url), 'utf8');
+
+  // A probe of pgatour.com's odds page found TWO embedded JSON blobs carrying
+  // 96 odds rows between them, where reading __NEXT_DATA__ alone found 48. So
+  // half of the tour's own odds data was discarded before anything looked at
+  // it — and no diagnostic could see it, because every count downstream was
+  // computed from the half already thrown away. A player priced only in the
+  // second blob was unreachable no matter how good the join got.
+  check('the field page harvests odds from every embedded blob',
+    /embeddedJson\(html\)\.flatMap\(\(b\) => collectOddsRows\(b\)\)/.test(src));
+  check('the odds page does too',
+    /const blobs = embeddedJson\(oddsHtml\)/.test(src)
+    && /blobs\.flatMap\(\(b\) => collectOddsRows\(b\)\)/.test(src));
+  check('neither page still parses odds from __NEXT_DATA__ alone',
+    !/collectOddsRows\(oddsNd\)/.test(src));
+}
+
 console.log('\n── the book path stays off until it is pointed somewhere ──');
 {
   const { readFileSync } = await import('node:fs');
@@ -375,6 +395,19 @@ console.log('\n── the book path stays off until it is pointed somewhere ─�
   // nothing. bookUrlsFor is kept and tested; it just is not the default.
   check('an unconfigured book path does no fetching at all',
     /if \(!configured\.length\) \{\s*\n\s*return \{ odds: \{\}, status: 'not-configured/.test(src));
+}
+
+console.log('\n── an id search must read numbers too ──');
+{
+  // An odds row identifies its player as `id: 39324` about as often as
+  // `id: '39324'`. A search that only reads strings misses exactly the row
+  // worth finding — the one that would prove the board DID price a golfer
+  // whose cell is blank.
+  const numeric = { odds: { oddsToWinId: 'm', players: [{ id: 39324, odds: '+3500' }] } };
+  check('a numeric id is found', findInPayload(numeric, '39324').length === 1,
+    JSON.stringify(findInPayload(numeric, '39324')));
+  const stringy = { odds: { oddsToWinId: 'm', players: [{ id: '39324', odds: '+3500' }] } };
+  check('a string id is found too', findInPayload(stringy, '39324').length === 1);
 }
 
 console.log('\n── finding a golfer in a payload ──');
