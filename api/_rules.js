@@ -512,13 +512,20 @@ export const limitedStartsStatus = (player, {
 } = {}) => {
   const max = maxLimitedStarts(settings);
   const limited = !!player?.limited;
-  // The durable tally counts processed events only, so it can never include the
-  // in-progress start — it is a floor under both numbers, not just the total.
+  // The durable tally is a season-to-date total with no chronology attached:
+  // it cannot say which of its starts fall before a given event, so it can
+  // floor a TOTAL and never a point-in-time decision. Flooring `prior` with it
+  // put the out-of-starts warning back over a player taking a legal twelfth
+  // start — the tally already read twelve, from an event the derived count
+  // correctly places at or after the one being set. (It can also simply be
+  // wrong: it was maintained for years by a cron that credited starts to the
+  // live lineup rather than the one that played.)
+  //
+  // This is the same reason eligibleStarters refuses to look at it, and it
+  // leaves the gate predicting exactly what scoring will do.
   const tally = Number(player?.starts) || 0;
   const used = Math.max(tally, Number(derivedStarts) || 0);
-  const prior = priorStarts === undefined
-    ? used
-    : Math.max(tally, Number(priorStarts) || 0);
+  const prior = priorStarts === undefined ? used : Number(priorStarts) || 0;
   const outOfStarts = limited && prior >= max;
 
   // `used > prior` means the upcoming event's start is already counted — the

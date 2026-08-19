@@ -73,8 +73,14 @@ console.log('\n── the two counts, reconciled ──');
     limitedStartsStatus(limited(0), { derivedStarts: 12 }).outOfStarts === true);
   check('priorStarts decides when given',
     limitedStartsStatus(limited(0), { derivedStarts: 12, priorStarts: 11 }).outOfStarts === false);
-  check('the durable tally still floors the decision',
-    limitedStartsStatus(limited(12), { derivedStarts: 12, priorStarts: 0 }).outOfStarts === true);
+  // The tally is a season total with no chronology: it cannot say which of its
+  // starts fall before a given event. Flooring the DECISION with it is what put
+  // the warning back over a player taking a legal twelfth start — their tally
+  // already read twelve, counting the very start they were about to take.
+  check('the durable tally cannot decide a point-in-time question',
+    limitedStartsStatus(limited(12), { derivedStarts: 12, priorStarts: 11 }).outOfStarts === false);
+  check('but it still floors the total on display',
+    limitedStartsStatus(limited(12), { derivedStarts: 3, priorStarts: 11 }).used === 12);
   // The derived count is scoped to ONE team's results, so starts a player
   // spent on a previous roster are missing from it. The durable tally carries
   // those, and a player does not get those starts back by changing hands.
@@ -86,6 +92,45 @@ console.log('\n── the two counts, reconciled ──');
     limitedStartsStatus(limited(4), { derivedStarts: 7 }).remaining === 5);
   check('remaining floors at zero rather than going negative',
     limitedStartsStatus(limited(20)).remaining === 0);
+}
+
+
+console.log('\n── an inflated tally cannot manufacture the warning ──');
+{
+  // The production case. player.starts was maintained for years by a cron that
+  // credited starts to the LIVE lineup rather than the one that played, so a
+  // tally can read twelve for a player who has taken eleven. The derived count
+  // is rebuilt from results and locked lineups every render and does not
+  // inherit that; the decision follows it.
+  const inflated = { name: 'Limited Larry', limited: true, starts: 12 };
+  const slotted = (o) => limitedStartsStatus(inflated, { pendingStart: true, ...o });
+
+  check('eleven played, slotted for the twelfth: no warning',
+    slotted({ derivedStarts: 11, priorStarts: 11 }).outOfStarts === false);
+  check('and it is flagged as their last start',
+    slotted({ derivedStarts: 11, priorStarts: 11 }).lastStart === true);
+  check('the badge still shows 12/12',
+    slotted({ derivedStarts: 11, priorStarts: 11 }).projected === 12);
+  check('once the lineup freezes, still no warning',
+    slotted({ derivedStarts: 12, priorStarts: 11 }).outOfStarts === false);
+  check('and once that week is over, the warning returns',
+    slotted({ derivedStarts: 12, priorStarts: 12 }).outOfStarts === true);
+  // The gate and the scoring backstop now read the same source, so the roster
+  // page predicts what processing will do rather than guessing at it.
+  check('scoring agrees — it never consulted the tally',
+    eligibleStarters({
+      lineup: ['Limited Larry'],
+      teams: [{ id: 'w1', roster: [inflated] }],
+      tournaments: [
+        ...Array.from({ length: 11 }, (_, i) => ({
+          name: `E${i}`, completed: true,
+          results: { teams: { w1: { players: [{ name: 'Limited Larry', earnings: 1, limited: true }] } },
+                     fullLineups: { w1: ['Limited Larry'] } },
+        })),
+        { name: 'This Week' },
+      ],
+      tournamentIndex: 11,
+    }).ineligible.length === 0);
 }
 
 console.log('\n── what counts as a start ──');
