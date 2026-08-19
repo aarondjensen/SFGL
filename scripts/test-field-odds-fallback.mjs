@@ -18,7 +18,7 @@
 //
 //   node scripts/test-field-odds-fallback.mjs
 
-import { bookOddsRows, pickGapOdds } from '../api/field.js';
+import { bookOddsRows, pickGapOdds, bookUrlsFor, embeddedJson, eventGroupIds } from '../api/field.js';
 import { NameSet } from '../api/_playerNames.js';
 
 let pass = 0, fail = 0;
@@ -236,6 +236,63 @@ console.log('\n── FanDuel\'s runner shape ──');
   const odds = pickGapOdds(rows, fieldSet, ['J.J. Spaun']);
   check('a runners/winRunnerOdds market is read too',
     odds['J.J. Spaun'] === '+4000', JSON.stringify(odds));
+}
+
+// ── Finding the book's board without guessing at an id ───────────────────────
+// The golf event-group id is not documented anywhere, and a guess at it fails
+// exactly the way a wrong URL fails: silently, and indistinguishably from "the
+// book had nothing". So the league PAGE is the entry point — a fact, not a
+// guess — and the id is mined out of it.
+console.log('\n── the league page is derived, not hardcoded ──');
+{
+  const urls = bookUrlsFor('BMW Championship');
+  check('the tournament slug comes from nameToSlug',
+    urls[0] === 'https://sportsbook.draftkings.com/leagues/golf/bmw-championship', urls[0]);
+  check('there is a league-wide fallback for a slug that does not resolve',
+    urls.some(u => u.endsWith('/golf/pga')), JSON.stringify(urls));
+  // The symbol-dropping rule nameToSlug exists for: 'AT&T' must not become
+  // 'at-t'. A literal slug would have been wrong the first week it mattered.
+  check('a tournament with punctuation still slugs correctly',
+    bookUrlsFor('AT&T Pebble Beach Pro-Am')[0].endsWith('/att-pebble-beach-pro-am'),
+    bookUrlsFor('AT&T Pebble Beach Pro-Am')[0]);
+  check('no tournament name yields no tournament URL',
+    bookUrlsFor(null).length === 1);
+}
+
+console.log('\n── ids are read off the page ──');
+{
+  const html = `<html><body>
+    <a href="/sites/US-SB/api/v5/eventgroups/9?format=json">Golf</a>
+    <script>var x = {"eventGroupId":92483,"leagueId":"9"};</script>
+  </body></html>`;
+  const ids = eventGroupIds(html);
+  check('an id in a linked API URL is found', ids.includes('9'), JSON.stringify(ids));
+  check('an id in embedded state is found too', ids.includes('92483'), JSON.stringify(ids));
+  check('duplicates across sources collapse',
+    ids.length === new Set(ids).size, JSON.stringify(ids));
+  check('the list is capped — every id costs a request', eventGroupIds(
+    Array.from({ length: 20 }, (_, i) => `eventgroups/${1000 + i}`).join(' ')).length <= 4);
+  check('a page naming no ids yields none', eventGroupIds('<html>nothing</html>').length === 0);
+}
+
+console.log('\n── a page that embeds its own board needs no id at all ──');
+{
+  const html = `<html><script type="application/json">${JSON.stringify({
+    market: {
+      label: 'Tournament Winner',
+      outcomes: [
+        { label: 'J.J. Spaun', oddsAmerican: '+4000' },
+        { label: 'Matt McCarty', oddsAmerican: '+15000' },
+        { label: 'Tommy Fleetwood', oddsAmerican: '+1900' },
+      ],
+    },
+  })}</script></html>`;
+  const rows = embeddedJson(html).flatMap(b => bookOddsRows(b));
+  const odds = pickGapOdds(rows, fieldSet, ['J.J. Spaun', 'Matt McCarty']);
+  check('the board is read straight out of the page',
+    odds['J.J. Spaun'] === '+4000' && odds['Matt McCarty'] === '+15000', JSON.stringify(odds));
+  check('a page with no JSON blobs yields nothing rather than throwing',
+    embeddedJson('<html><script>not json at all</script></html>').length === 0);
 }
 
 // ── Discovery guards ─────────────────────────────────────────────────────────

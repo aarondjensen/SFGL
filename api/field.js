@@ -816,10 +816,66 @@ const BOOK_HEADERS = {
   'Referer': 'https://sportsbook.draftkings.com/',
 };
 
-const DEFAULT_BOOK_URLS = [
-  'https://sportsbook-us-il.draftkings.com/sites/US-IL-SB/api/v5/eventgroups/9?format=json',
-  'https://sportsbook.draftkings.com/sites/US-SB/api/v5/eventgroups/9?format=json',
+// The human-facing league page comes FIRST, deliberately.
+//
+// The alternative was to hardcode a golf event-group id, and that id is not
+// documented anywhere — a guess at it fails exactly the way a wrong URL fails,
+// silently and indistinguishably from "the book had nothing". The page URL, by
+// contrast, is a fact: it is what you get by clicking golf on the site.
+//
+// So the page is treated as the entry point and mined for the id, which is the
+// same move this file already makes against pgatour.com — fetch the HTML,
+// pull the embedded state, work from that. If the page happens to embed the
+// board itself, no id is needed at all.
+// The tournament slug is derived, not hardcoded — DraftKings spells its golf
+// league pages the same way pgatour.com spells its tournament pages
+// ('BMW Championship' → 'bmw-championship'), so nameToSlug already produces
+// it. A literal would have worked for exactly one week.
+export const bookUrlsFor = (tournamentName) => [
+  ...(tournamentName ? [`https://sportsbook.draftkings.com/leagues/golf/${nameToSlug(tournamentName)}`] : []),
+  'https://sportsbook.draftkings.com/leagues/golf/pga',
 ];
+
+const DK_API = (id) =>
+  `https://sportsbook-us-il.draftkings.com/sites/US-IL-SB/api/v5/eventgroups/${id}?format=json`;
+
+/**
+ * Every JSON blob a sportsbook page embeds. DraftKings is a React app, so its
+ * state arrives as one of a few well-known shapes rather than in the markup.
+ */
+export function embeddedJson(html) {
+  const blobs = [];
+  const next = extractNextData(html);
+  if (next) blobs.push(next);
+  for (const re of [
+    /window\.__INITIAL_STATE__\s*=\s*({[\s\S]*?});?\s*<\/script>/,
+    /window\.__PRELOADED_STATE__\s*=\s*({[\s\S]*?});?\s*<\/script>/,
+  ]) {
+    const m = html.match(re);
+    if (m) { try { blobs.push(JSON.parse(m[1])); } catch { /* not JSON after all */ } }
+  }
+  for (const m of html.matchAll(/<script[^>]+type="application\/json"[^>]*>([\s\S]*?)<\/script>/g)) {
+    try { blobs.push(JSON.parse(m[1])); } catch { /* ditto */ }
+  }
+  return blobs;
+}
+
+/**
+ * Event-group ids named anywhere in a page — a URL it links to, a data
+ * attribute, a fragment of embedded state. Deduped, capped, because each one
+ * costs a request.
+ */
+export function eventGroupIds(html) {
+  const ids = new Set();
+  for (const re of [
+    /eventgroups?\/(\d{1,7})/gi,
+    /"eventGroupId"\s*:\s*"?(\d{1,7})/gi,
+    /"leagueId"\s*:\s*"?(\d{1,7})/gi,
+  ]) {
+    for (const m of html.matchAll(re)) ids.add(m[1]);
+  }
+  return [...ids].slice(0, 4);
+}
 
 /**
  * Prices for `wanted` from a sportsbook, or an empty map. Never throws.
@@ -828,25 +884,59 @@ const DEFAULT_BOOK_URLS = [
  * recorded, so a failure names itself in ?debug=1 rather than looking the same
  * as "no gaps to fill".
  */
-async function fetchBookOdds(fieldSet, wanted) {
+async function fetchBookOdds(fieldSet, wanted, tournamentName) {
   const configured = (process.env.ODDS_BOOK_URLS || '')
     .split(',').map((u) => u.trim()).filter(Boolean);
-  const urls = configured.length ? configured : DEFAULT_BOOK_URLS;
+  const urls = configured.length ? configured : bookUrlsFor(tournamentName);
   const notes = [];
 
+  // Each candidate reduces to rows; the first that actually fills a gap wins.
+  const tryRows = (label, rows) => {
+    if (!rows.length) { notes.push(`${label} no win market`); return null; }
+    const odds = pickGapOdds(rows, fieldSet, wanted);
+    const filled = Object.keys(odds).length;
+    if (!filled) { notes.push(`${label} ${rows.length} rows, filled 0`); return null; }
+    return { odds, status: `${label} ${rows.length} rows, filled ${filled}` };
+  };
+
   for (const url of urls) {
-    const host = (() => { try { return new URL(url).hostname.split('.')[0]; } catch { return 'url'; } })();
+    const label = (() => {
+      try { const u = new URL(url); return u.pathname.split('/').filter(Boolean).pop() || u.hostname; }
+      catch { return 'url'; }
+    })();
     try {
       const r = await fetch(url, { headers: BOOK_HEADERS });
-      if (!r.ok) { notes.push(`${host} ${r.status}`); continue; }
-      const rows = bookOddsRows(await r.json());
-      if (!rows.length) { notes.push(`${host} no win market`); continue; }
-      const odds = pickGapOdds(rows, fieldSet, wanted);
-      const filled = Object.keys(odds).length;
-      if (!filled) { notes.push(`${host} ${rows.length} rows, filled 0`); continue; }
-      return { odds, status: `${host} ${rows.length} rows, filled ${filled}` };
+      if (!r.ok) { notes.push(`${label} ${r.status}`); continue; }
+      const body = await r.text();
+
+      // A JSON endpoint answers directly.
+      if (body.trimStart().startsWith('{')) {
+        let json = null;
+        try { json = JSON.parse(body); } catch { /* fall through to the HTML path */ }
+        if (json) {
+          const hit = tryRows(label, bookOddsRows(json));
+          if (hit) return hit;
+          continue;
+        }
+      }
+
+      // A page: the board may be embedded outright…
+      const embedded = embeddedJson(body).flatMap((b) => bookOddsRows(b));
+      const hit = tryRows(`${label} page`, embedded);
+      if (hit) return hit;
+
+      // …and failing that, the page names the ids the API wants. This is the
+      // step that removes the guess: the id comes from the site, not from us.
+      const ids = eventGroupIds(body);
+      if (!ids.length) { notes.push(`${label} no id`); continue; }
+      for (const id of ids) {
+        const ar = await fetch(DK_API(id), { headers: BOOK_HEADERS });
+        if (!ar.ok) { notes.push(`eg${id} ${ar.status}`); continue; }
+        const apiHit = tryRows(`eg${id}`, bookOddsRows(await ar.json()));
+        if (apiHit) return apiHit;
+      }
     } catch (e) {
-      notes.push(`${host} fetch:${e.message}`);
+      notes.push(`${label} fetch:${e.message}`);
     }
   }
   return { odds: {}, status: notes.join('; ') || 'not tried' };
@@ -1091,7 +1181,7 @@ export default async function handler(req, res) {
 
         let stillMissing = players.length ? unpriced(mergedOdds) : [];
         if (stillMissing.length) {
-          const book = await fetchBookOdds(fieldSet, stillMissing);
+          const book = await fetchBookOdds(fieldSet, stillMissing, tournament.name);
           oddsBook = book.status;
           oddsBookFilled = Object.keys(book.odds);
           mergedOdds = { ...book.odds, ...mergedOdds };
