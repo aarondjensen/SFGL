@@ -558,8 +558,13 @@ async function findESPNEvent(fromOffset = 0, trace = espnTrace(), maxOffset = 14
     const offset = fromOffset === 0 ? Math.max(0, i - 1) : fromOffset + i;
 
     trace.sbTried++;
-    const r = await fetch(urls[i], { headers: ESPN_HEADERS });
-    if (!r.ok) continue;
+    let r;
+    // Per-request, so one refusal or one DNS blip does not end the scan. This
+    // used to throw straight out through every caller's swallow, which turned
+    // a transient network error into "ESPN has no event".
+    try { r = await fetch(urls[i], { headers: ESPN_HEADERS }); }
+    catch (e) { trace.sbCodes.add(`fetch:${e.message}`); continue; }
+    if (!r.ok) { trace.sbCodes.add(String(r.status)); continue; }
     trace.sbOk++;
     const data = await r.json();
     const pga = (data?.events || []).filter(e => e.status?.type?.state !== 'post');
@@ -578,8 +583,10 @@ async function findESPNEvent(fromOffset = 0, trace = espnTrace(), maxOffset = 14
     ];
     for (const lbUrl of lbUrls) {
       trace.lbTried++;
-      const r2 = await fetch(lbUrl, { headers: ESPN_HEADERS });
-      if (!r2.ok) continue;
+      let r2;
+      try { r2 = await fetch(lbUrl, { headers: ESPN_HEADERS }); }
+      catch (e) { trace.lbCodes.add(`fetch:${e.message}`); continue; }
+      if (!r2.ok) { trace.lbCodes.add(String(r2.status)); continue; }
       trace.lbOk++;
       const ld = await r2.json();
       const competitors = ld?.events?.[0]?.competitions?.[0]?.competitors
@@ -595,15 +602,25 @@ async function findESPNEvent(fromOffset = 0, trace = espnTrace(), maxOffset = 14
 
 /** Counters findESPNEvent fills in, so a failure can name its own step. */
 function espnTrace() {
-  return { sbTried: 0, sbOk: 0, evFound: 0, lbTried: 0, lbOk: 0, competitors: 0 };
+  return { sbTried: 0, sbOk: 0, evFound: 0, lbTried: 0, lbOk: 0, competitors: 0,
+           sbCodes: new Set(), lbCodes: new Set() };
 }
 
-/** The one-line version of a trace, for ?debug=1. */
+/**
+ * The one-line version of a trace, for ?debug=1.
+ *
+ * The status codes are the part that matters. "0/8 ok" says the scan failed;
+ * it does not say whether ESPN refused us (403 — a datacenter block, which no
+ * amount of URL-fixing solves) or whether we asked for the wrong thing (404).
+ * Those want opposite responses, and telling them apart from outside is the
+ * whole point of this string.
+ */
 function espnTraceSummary(t) {
+  const codes = (set) => (set.size ? ` (${[...set].slice(0, 3).join(', ')})` : '');
   if (!t.sbTried) return 'not tried';
-  if (!t.sbOk) return `scoreboard 0/${t.sbTried} ok`;
+  if (!t.sbOk) return `scoreboard 0/${t.sbTried} ok${codes(t.sbCodes)}`;
   if (!t.evFound) return `scoreboard ${t.sbOk}/${t.sbTried} ok, no live events`;
-  if (!t.lbOk) return `${t.evFound} events, leaderboard 0/${t.lbTried} ok`;
+  if (!t.lbOk) return `${t.evFound} events, leaderboard 0/${t.lbTried} ok${codes(t.lbCodes)}`;
   return `${t.evFound} events, leaderboard ok, ${t.competitors} competitors`;
 }
 
