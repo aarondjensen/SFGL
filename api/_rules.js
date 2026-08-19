@@ -264,6 +264,13 @@ export const cutRuleForfeit = ({ starters, earningsMap, settings } = {}) => {
  * spent on a previous roster — so the rule now reads BOTH and takes the higher.
  * Every caller goes through here, so the number that blocks a lineup is the
  * same number the manager was shown.
+ *
+ * Blocking the ADD is the whole enforcement, and deliberately so: processing
+ * an event increments `starts` and clears `team.lineup` in the same write (see
+ * the returns in api/cron.js and src/pages/admin/processTournamentData.js), so
+ * a player cannot cross the cap while sitting in a lineup — every lineup is
+ * re-entered from empty, through the block, after each event. There is nothing
+ * left for a lock-time or scoring-time check to catch.
  */
 export const DEFAULT_MAX_LIMITED_STARTS = 12;
 

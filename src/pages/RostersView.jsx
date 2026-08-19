@@ -735,6 +735,10 @@ export const RostersView = ({
 
     // A limited player who has used every start cannot be STARTED again, and
     // the manager is told so rather than left with a tap that does nothing.
+    // This tap is the only place the cap needs defending: processing clears
+    // team.lineup as it increments starts, so every lineup is built from empty
+    // through here (see limitedStartsStatus in api/_rules.js).
+    //
     // Checked before the roster-full branch so the reason reported is the one
     // that will still be true after a slot frees up — except when this tap
     // would fill the BACKUP slot, which the cap does not govern (see the note
@@ -1353,30 +1357,6 @@ export const RostersView = ({
               );
             })()}
           </div>
-
-          {/* Starters who have already spent every start they had.
-              A lineup carries over from week to week, so a limited player can
-              cross the cap while sitting in a lineup nobody re-entered them
-              into — the add-time block never fires, because there is no add.
-              Without this the only warning was a badge in a table two screens
-              down. */}
-          {(() => {
-            const spent = (team.lineup || [])
-              .map(name => currentRoster.find(p => p.name === name))
-              .filter(p => p && limitedStatus(p).outOfStarts);
-            if (!spent.length) return null;
-            return (
-              <div style={{
-                marginTop: 8, padding: '6px 10px', borderRadius: 4,
-                background: red(0.12), border: `1px solid ${red(0.35)}`,
-                fontFamily: fonts.sans, fontSize: fontSize.xs, color: red(0.95),
-                textAlign: 'center', lineHeight: 1.4,
-              }}>
-                ⚠ {spent.map(p => p.name).join(', ')} {spent.length > 1 ? 'have' : 'has'} no
-                {' '}starts left — {isOwnTeam ? 'swap them out before lineups lock.' : 'still in this lineup.'}
-              </div>
-            );
-          })()}
         </div>
       </div>
 
