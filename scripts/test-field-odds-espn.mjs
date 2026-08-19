@@ -122,5 +122,40 @@ console.log('\n── the roster\'s spelling still reaches it ──');
     !('JJ Spaun' in odds), JSON.stringify(odds));
 }
 
+// ── Discovery guards ─────────────────────────────────────────────────────────
+// ESPN discovery fails SILENTLY everywhere it is used — the tee-time
+// supplement and the odds gap-filler both just quietly do nothing — so these
+// are source guards rather than behavioural tests. `oddsEspn: "no-event"` at
+// the BMW Championship was the first time this path had ever said anything.
+console.log('\n── discovery does not fail silently or expensively ──');
+{
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../api/field.js', import.meta.url), 'utf8');
+
+  // Every other golf endpoint ESPN serves is tour-scoped. The un-scoped form
+  // is kept as a second attempt so this cannot regress a URL that works, but
+  // the tour-scoped one has to be tried first.
+  const scoped = src.indexOf('sports/golf/pga/leaderboard?event=');
+  const legacy = src.indexOf('sports/golf/leaderboard?event=');
+  check('the tour-scoped leaderboard URL exists', scoped !== -1);
+  check('and is tried before the un-scoped one', scoped !== -1 && scoped < legacy);
+
+  // A golf event spans four days, so a single-day `dates=` is a guess about
+  // which day ESPN files it under. The bare endpoint just returns what is on.
+  check('the bare scoreboard is tried before the dated scan',
+    /scoreboard'\)/.test(src));
+
+  // This runs on every origin miss now that any unpriced player triggers it.
+  // A 15-day scan against a dead ESPN is ~30 sequential fetches inside a
+  // function that still has pgatour.com to get through.
+  check('the odds path bounds its day scan',
+    /findESPNEvent\(0, trace, 6\)/.test(src));
+
+  // The whole path is wrapped in a swallow, so the trace is the only way a
+  // failure can name its own step.
+  check('a failed discovery reports which step failed',
+    /no-event \(\$\{espnTraceSummary\(trace\)\}\)/.test(src));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -531,29 +531,80 @@ const ESPN_HEADERS = { 'User-Agent': HEADERS['User-Agent'], 'Accept': 'applicati
  * previous call left off. fetchFromESPN needs that: an event whose leaderboard
  * carries competitors but no usable names must not stop the search.
  *
- * Returns { event, ld, competitors, offset } or null when 15 days yield
- * nothing.
+ * `trace` is filled in as it goes, so a caller can say WHICH step failed
+ * rather than only that nothing came back. ESPN failing here is silent
+ * everywhere else — the tee-time supplement and the odds gap-filler both just
+ * quietly do nothing — and `espnIdCount: 0` in ?debug=1 turned out to be the
+ * only sign that this path had stopped working at all.
+ *
+ * Returns { event, ld, competitors, offset } or null.
  */
-async function findESPNEvent(fromOffset = 0) {
-  for (let offset = fromOffset; offset <= 14; offset++) {
+async function findESPNEvent(fromOffset = 0, trace = espnTrace(), maxOffset = 14) {
+  // Try the plain scoreboard first — no `dates` at all. Golf events span four
+  // days, so a single-day `dates=YYYYMMDD` is a guess about which day ESPN
+  // files the event under, and the bare endpoint simply returns what is on now.
+  // The dated scan below stays as the fallback it always was.
+  const urls = [];
+  if (fromOffset === 0) urls.push('https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard');
+  for (let offset = fromOffset; offset <= maxOffset; offset++) {
     const d = new Date(); d.setDate(d.getDate() + offset);
     const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-    const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?dates=${ds}`, { headers: ESPN_HEADERS });
+    urls.push(`https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?dates=${ds}`);
+  }
+
+  for (let i = 0; i < urls.length; i++) {
+    // offset is what the caller resumes from; the bare URL is not a day, so it
+    // reports as the day the caller asked for.
+    const offset = fromOffset === 0 ? Math.max(0, i - 1) : fromOffset + i;
+
+    trace.sbTried++;
+    const r = await fetch(urls[i], { headers: ESPN_HEADERS });
     if (!r.ok) continue;
+    trace.sbOk++;
     const data = await r.json();
     const pga = (data?.events || []).filter(e => e.status?.type?.state !== 'post');
     if (!pga.length) continue;
+    trace.evFound++;
     const event = pga.find(e => e.status?.type?.state === 'pre') || pga[0];
 
-    const r2 = await fetch(`https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${event.id}`, { headers: ESPN_HEADERS });
-    if (!r2.ok) continue;
-    const ld = await r2.json();
-    const competitors = ld?.events?.[0]?.competitions?.[0]?.competitors || [];
-    if (!competitors.length) continue;
-
-    return { event, ld, competitors, offset };
+    // Both spellings of the leaderboard URL. Every other golf endpoint ESPN
+    // serves is tour-scoped (`golf/pga/...`); this one was not, and an
+    // untour-scoped URL is the kind of thing that 404s without anyone noticing
+    // because the whole path is wrapped in a swallow. Tour-scoped is tried
+    // first and the original second, so this cannot regress a form that works.
+    const lbUrls = [
+      `https://site.api.espn.com/apis/site/v2/sports/golf/pga/leaderboard?event=${event.id}`,
+      `https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?event=${event.id}`,
+    ];
+    for (const lbUrl of lbUrls) {
+      trace.lbTried++;
+      const r2 = await fetch(lbUrl, { headers: ESPN_HEADERS });
+      if (!r2.ok) continue;
+      trace.lbOk++;
+      const ld = await r2.json();
+      const competitors = ld?.events?.[0]?.competitions?.[0]?.competitors
+        || ld?.competitions?.[0]?.competitors
+        || [];
+      trace.competitors = Math.max(trace.competitors, competitors.length);
+      if (!competitors.length) continue;
+      return { event, ld, competitors, offset };
+    }
   }
   return null;
+}
+
+/** Counters findESPNEvent fills in, so a failure can name its own step. */
+function espnTrace() {
+  return { sbTried: 0, sbOk: 0, evFound: 0, lbTried: 0, lbOk: 0, competitors: 0 };
+}
+
+/** The one-line version of a trace, for ?debug=1. */
+function espnTraceSummary(t) {
+  if (!t.sbTried) return 'not tried';
+  if (!t.sbOk) return `scoreboard 0/${t.sbTried} ok`;
+  if (!t.evFound) return `scoreboard ${t.sbOk}/${t.sbTried} ok, no live events`;
+  if (!t.lbOk) return `${t.evFound} events, leaderboard 0/${t.lbTried} ok`;
+  return `${t.evFound} events, leaderboard ok, ${t.competitors} competitors`;
 }
 
 // ── ESPN fallback for field + tee times ───────────────────────────────────────
@@ -709,8 +760,13 @@ export function pickESPNOdds(rows, fieldSet, wanted) {
  */
 async function fetchESPNOdds(fieldSet, wanted) {
   try {
-    const found = await findESPNEvent();
-    if (!found) return { odds: {}, status: 'no-event' };
+    // Six days, not fifteen. This runs on every origin miss now that any
+    // unpriced player triggers it, and a 15-day scan against a dead ESPN is
+    // ~30 sequential fetches inside a serverless function that also has
+    // pgatour.com to get through. This week's event is at most a few days out.
+    const trace = espnTrace();
+    const found = await findESPNEvent(0, trace, 6);
+    if (!found) return { odds: {}, status: `no-event (${espnTraceSummary(trace)})` };
 
     // The leaderboard first — it is already the payload the field fallback
     // reads, so when it carries prices this costs nothing extra.
