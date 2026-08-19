@@ -1088,7 +1088,38 @@ async function fetchESPNOdds(fieldSet, wanted) {
 //     response body.
 const PROBE_HOSTS = ['draftkings.com', 'espn.com', 'pgatour.com'];
 
-export async function probeUrl(raw) {
+/**
+ * Every object in a payload that mentions `needle`, reduced to its scalar
+ * fields.
+ *
+ * This exists to answer one question that inference kept getting wrong: is a
+ * given golfer in this payload AT ALL, and if so in what shape? "The board has
+ * 48 rows" is a count; it does not say whether the two missing players are
+ * absent, or present in a shape the parser walks straight past. Those are
+ * different bugs and only one of them is ours.
+ *
+ * Scalars only, and hard-capped: this is a diagnostic, not a way to siphon a
+ * third party's page through a public endpoint.
+ */
+export function findInPayload(json, needle, limit = 8) {
+  const hits = [];
+  const n = String(needle).toLowerCase();
+  if (!n) return hits;
+  walkAll(json, (obj) => {
+    if (hits.length >= limit || Array.isArray(obj)) return;
+    const mentions = Object.values(obj).some(
+      (v) => typeof v === 'string' && v.toLowerCase().includes(n));
+    if (!mentions) return;
+    const scalars = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === null || typeof v !== 'object') scalars[k] = String(v).slice(0, 120);
+    }
+    hits.push(scalars);
+  });
+  return hits;
+}
+
+export async function probeUrl(raw, find = '') {
   let url;
   try { url = new URL(String(raw)); } catch { return { error: 'not a URL' }; }
   if (url.protocol !== 'https:') return { error: 'https only' };
@@ -1103,6 +1134,11 @@ export async function probeUrl(raw) {
     try { json = JSON.parse(body); } catch { /* an HTML page, then */ }
     const blobs = json ? [json] : embeddedJson(body);
     const rows = blobs.flatMap((b) => bookOddsRows(b));
+    // collectOddsRows is the pgatour.com harvester — the one that actually
+    // feeds the Odds column. Reporting only the book/ESPN harvester's count
+    // made a probe of pgatour.com read as "no odds here" when the rows were
+    // simply in the other shape.
+    const pgaRows = blobs.flatMap((b) => collectOddsRows(b));
     return {
       status: r.status,
       contentType: r.headers.get('content-type'),
@@ -1117,6 +1153,12 @@ export async function probeUrl(raw) {
       // winner market in here, and does it name golfers?
       oddsRows: rows.length,
       sampleRows: rows.slice(0, 5),
+      // The pgatour.com shape: id-keyed rows, priced and unpriced.
+      pgaOddsRows: pgaRows.length,
+      pgaOddsPriced: pgaRows.filter((row) => row.odds).length,
+      samplePgaRows: pgaRows.slice(0, 3),
+      // ?find=<text> — every object mentioning it, scalars only.
+      ...(find ? { find, found: blobs.flatMap((b) => findInPayload(b, find)).slice(0, 8) } : {}),
     };
   } catch (e) {
     return { error: `fetch: ${e.message}` };
@@ -1136,7 +1178,10 @@ export default async function handler(req, res) {
   // ?debug=1&probe=<url> — see probeUrl. Answered before any of the normal
   // work, since the whole point is to test one URL cheaply.
   if (isDebug && req.query.probe) {
-    return res.status(200).json({ probe: String(req.query.probe), ...(await probeUrl(req.query.probe)) });
+    return res.status(200).json({
+      probe: String(req.query.probe),
+      ...(await probeUrl(req.query.probe, req.query.find ? String(req.query.find) : '')),
+    });
   }
 
   // ?debug=1&probeEg=79494,84240,... — the same probe against the book's API

@@ -18,7 +18,7 @@
 //
 //   node scripts/test-field-odds-fallback.mjs
 
-import { bookOddsRows, pickGapOdds, bookUrlsFor, embeddedJson, eventGroupIds, probeUrl } from '../api/field.js';
+import { bookOddsRows, pickGapOdds, bookUrlsFor, embeddedJson, eventGroupIds, probeUrl, findInPayload } from '../api/field.js';
 import { NameSet } from '../api/_playerNames.js';
 
 let pass = 0, fail = 0;
@@ -375,6 +375,39 @@ console.log('\n── the book path stays off until it is pointed somewhere ─�
   // nothing. bookUrlsFor is kept and tested; it just is not the default.
   check('an unconfigured book path does no fetching at all',
     /if \(!configured\.length\) \{\s*\n\s*return \{ odds: \{\}, status: 'not-configured/.test(src));
+}
+
+console.log('\n── finding a golfer in a payload ──');
+{
+  // "The board has 48 rows" is a count. It does not say whether the two
+  // missing players are ABSENT or PRESENT IN A SHAPE THE PARSER WALKS PAST,
+  // and those are different bugs — only one of them ours. Inference could not
+  // tell them apart; this can.
+  const nd = {
+    field: { players: [{ id: '46046', displayName: 'J.J. Spaun', country: 'USA' }] },
+    odds: { oddsToWinId: 'm1', players: [{ id: '46046' }, { id: '47959', odds: '+2000' }] },
+  };
+  const found = findInPayload(nd, 'Spaun');
+  check('a golfer in the payload is found', found.length === 1, JSON.stringify(found));
+  check('and their row is reported with the id that identifies them',
+    found[0].id === '46046' && found[0].displayName === 'J.J. Spaun', JSON.stringify(found));
+  check('a golfer genuinely absent is reported absent',
+    findInPayload(nd, 'McIlroy').length === 0);
+  check('the search is case-insensitive', findInPayload(nd, 'spaun').length === 1);
+
+  // Scalars only, hard-capped — a diagnostic, not a way to siphon a third
+  // party's page through a public unauthenticated endpoint.
+  const nested = { a: { displayName: 'J.J. Spaun', huge: { blob: 'x'.repeat(5000) } } };
+  const hit = findInPayload(nested, 'Spaun')[0];
+  check('nested objects are not dragged into the excerpt', !('huge' in hit), JSON.stringify(hit));
+  check('long scalars are truncated',
+    Object.values(findInPayload({ a: { displayName: 'J.J. Spaun ' + 'y'.repeat(500) } }, 'Spaun')[0])
+      .every(v => v.length <= 120));
+  const many = Object.fromEntries(
+    Array.from({ length: 40 }, (_, i) => [`k${i}`, { displayName: 'J.J. Spaun' }]));
+  check('the number of matches is capped', findInPayload(many, 'Spaun').length <= 8);
+  check('an empty needle matches nothing rather than everything',
+    findInPayload(nd, '').length === 0);
 }
 
 // ── The probe is public and unauthenticated ─────────────────────────────────
