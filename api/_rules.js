@@ -250,6 +250,55 @@ export const cutRuleForfeit = ({ starters, earningsMap, settings } = {}) => {
   };
 };
 
+// ── Limited players: the start limit ─────────────────────────────────────────
+/**
+ * A LIMITED player may be started a fixed number of times per season — twelve
+ * by default, whatever the commish sets `maxLimitedStarts` to otherwise.
+ * UNLIMITED players (and plain rostered players) have no cap.
+ *
+ * The limit was previously enforced against `player.starts` alone while the
+ * roster badge beside the player's name displayed a DIFFERENT number, derived
+ * from tournament results. The two disagree in both directions — a stored
+ * tally that never got its increment leaves a maxed player addable while the
+ * badge reads 12/12; a derived count scoped to one team misses starts a player
+ * spent on a previous roster — so the rule now reads BOTH and takes the higher.
+ * Every caller goes through here, so the number that blocks a lineup is the
+ * same number the manager was shown.
+ */
+export const DEFAULT_MAX_LIMITED_STARTS = 12;
+
+/** The configured cap, falling back to the league default. */
+export const maxLimitedStarts = (settings = {}) => {
+  const n = Number(settings?.maxLimitedStarts);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_LIMITED_STARTS;
+};
+
+/**
+ * Where a limited player stands against the cap.
+ *
+ *   player        a roster entry — `limited` and the durable `starts` tally
+ *   derivedStarts starts derived from completed results for the team asking,
+ *                 which is the number the roster badge renders (optional)
+ *   settings      league_settings, for the commish's maxLimitedStarts
+ *
+ * Returns `{ limited, used, max, remaining, outOfStarts }`. `outOfStarts` is
+ * the only thing a caller should gate a starting lineup on: it is false for
+ * anyone who isn't limited, so the caller needs no `player.limited` test of
+ * its own.
+ */
+export const limitedStartsStatus = (player, { derivedStarts, settings } = {}) => {
+  const max = maxLimitedStarts(settings);
+  const limited = !!player?.limited;
+  const used = Math.max(Number(player?.starts) || 0, Number(derivedStarts) || 0);
+  return {
+    limited,
+    used,
+    max,
+    remaining: Math.max(0, max - used),
+    outOfStarts: limited && used >= max,
+  };
+};
+
 // ── Segment resolution ───────────────────────────────────────────────────────
 
 /**

@@ -18,7 +18,10 @@ export const STORAGE_KEYS = {
 // ============================================================================
 export const ROSTER_LIMIT = 13;
 export const LINEUP_SIZE = 5;
-export const MAX_LIMITED_STARTS = 12;
+// MAX_LIMITED_STARTS used to be declared here. It now lives in api/_rules.js
+// as DEFAULT_MAX_LIMITED_STARTS, next to limitedStartsStatus — the rule that
+// reads it — so the cap and the rule enforcing it cannot drift apart. Nothing
+// imported the copy here; the commish's override is settings.maxLimitedStarts.
 export const DRAFT_ROUNDS = 13;
 
 export const BONUSES_REGULAR = { round1: 20000, round2: 40000, round3: 60000 };
