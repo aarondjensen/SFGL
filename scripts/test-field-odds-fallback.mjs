@@ -364,6 +364,26 @@ console.log('\n── discovery does not fail silently or expensively ──');
     /no-event \(\$\{espnTraceSummary\(trace\)\}\)/.test(src));
 }
 
+console.log('\n── the whole page is read, not just __NEXT_DATA__ ──');
+{
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../api/field.js', import.meta.url), 'utf8');
+
+  // A probe of pgatour.com's odds page found TWO embedded JSON blobs carrying
+  // 96 odds rows between them, where reading __NEXT_DATA__ alone found 48. So
+  // half of the tour's own odds data was discarded before anything looked at
+  // it — and no diagnostic could see it, because every count downstream was
+  // computed from the half already thrown away. A player priced only in the
+  // second blob was unreachable no matter how good the join got.
+  check('the field page harvests odds from every embedded blob',
+    /embeddedJson\(html\)\.flatMap\(\(b\) => collectOddsRows\(b\)\)/.test(src));
+  check('the odds page does too',
+    /const blobs = embeddedJson\(oddsHtml\)/.test(src)
+    && /blobs\.flatMap\(\(b\) => collectOddsRows\(b\)\)/.test(src));
+  check('neither page still parses odds from __NEXT_DATA__ alone',
+    !/collectOddsRows\(oddsNd\)/.test(src));
+}
+
 console.log('\n── the book path stays off until it is pointed somewhere ──');
 {
   const { readFileSync } = await import('node:fs');
