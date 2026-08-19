@@ -1213,18 +1213,37 @@ export default async function handler(req, res) {
     const fieldResp = await fetch(fieldUrl, { headers: HEADERS });
 
     if (fieldResp.ok) {
-      const fieldNd = extractNextData(await fieldResp.text());
+      const fieldHtml = await fieldResp.text();
+      const fieldNd = extractNextData(fieldHtml);
       if (fieldNd) {
         const parsedField = parseFieldPage(fieldNd);
-        const { players, pgaIds, idToName, photos, teeTimeMap, oddsMap,
+        const { players, pgaIds, idToName, photos, teeTimeMap, oddsMap: ndOddsMap,
                 oddsUnresolved: fieldOddsUnresolved, rejectedNames } = parsedField;
+
+        // __NEXT_DATA__ is not the whole page.
+        //
+        // parseFieldPage sees ONE blob, because that is all it is handed. A
+        // probe of the odds page found TWO embedded JSON blobs carrying 96
+        // odds rows between them, where reading __NEXT_DATA__ alone found 48 —
+        // so half of pgatour.com's own odds data was being discarded before
+        // anything looked at it. A player priced only in the second blob was
+        // unreachable no matter how good the join got, and no diagnostic could
+        // see it either, because every count downstream was computed from the
+        // half we had already thrown away.
+        //
+        // Odds rows from every blob, then. collectOddsRows over all of them is
+        // a superset of what parseFieldPage saw, so this can only add.
+        const oddsFrom = (html, ids, field) =>
+          resolveOddsRows(embeddedJson(html).flatMap((b) => collectOddsRows(b)), ids, field);
+        const allField = oddsFrom(fieldHtml, idToName, new NameSet(players));
+        const oddsMap = { ...ndOddsMap, ...allField.oddsMap };
         // Reassignable, unlike the rest: the tee-times-page fallback below may
         // supply this when the field page did not carry a tee sheet.
         let firstTeeTimeISO = parsedField.firstTeeTimeISO;
         const espnIds = {}; // filled only from the ESPN supplement below
-        let oddsUnresolved = fieldOddsUnresolved;
-        let oddsNotInField = parsedField.oddsNotInField || [];
-        let oddsPulled = parsedField.oddsPulled || [];
+        let oddsUnresolved = Math.max(fieldOddsUnresolved, allField.unresolved);
+        let oddsNotInField = [...new Set([...(parsedField.oddsNotInField || []), ...allField.notInField])];
+        let oddsPulled = allField.pulled.length ? allField.pulled : (parsedField.oddsPulled || []);
 
         // If no tee times from field page, try dedicated tee-times page
         let finalTeeTimes = joinPlayersToTeeTimes(players, teeTimeMap);
@@ -1317,10 +1336,14 @@ export default async function handler(req, res) {
           try {
             const oddsUrl = `https://www.pgatour.com/tournaments/${year}/${slug}/${tournament.tournamentId}/odds`;
             const oddsResp = await fetch(oddsUrl, { headers: HEADERS });
-            oddsPage = oddsResp.ok ? 'no-next-data' : `http ${oddsResp.status}`;
+            oddsPage = oddsResp.ok ? 'no-embedded-json' : `http ${oddsResp.status}`;
             if (oddsResp.ok) {
-              const oddsNd = extractNextData(await oddsResp.text());
-              if (oddsNd) {
+              const oddsHtml = await oddsResp.text();
+              // Every embedded blob, not just __NEXT_DATA__ — see the field
+              // page above. This is the page the miscount was found on: 96
+              // rows across two blobs, 48 of them visible to the old reader.
+              const blobs = embeddedJson(oddsHtml);
+              if (blobs.length) {
                 oddsPage = 'no-rows';
                 // Same two helpers as the field page. This path used to carry
                 // its OWN market picker and its OWN row builder, and they had
@@ -1328,7 +1351,7 @@ export default async function handler(req, res) {
                 // last-write-wins while this one took a single market, and only
                 // this one knew about `oddsEnabled`. One code path now, so the
                 // two cannot disagree about the same league again.
-                const rows = collectOddsRows(oddsNd);
+                const rows = blobs.flatMap((b) => collectOddsRows(b));
                 const resolved = resolveOddsRows(rows, idToName, fieldSet);
                 if (Object.keys(resolved.oddsMap).length) {
                   const before = unpriced(mergedOdds).length;
