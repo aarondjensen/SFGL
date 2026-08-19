@@ -257,6 +257,19 @@ console.log('\n── the league page is derived, not hardcoded ──');
     bookUrlsFor('AT&T Pebble Beach Pro-Am')[0]);
   check('no tournament name yields no tournament URL',
     bookUrlsFor(null).length === 1);
+
+  // The override has to be week-proof too. Someone setting ODDS_BOOK_URLS to
+  // a league page would otherwise pin the app to one tournament for ever —
+  // the exact trap the derived default exists to avoid.
+  const withSlug = bookUrlsFor('BMW Championship',
+    ['https://example.com/golf/{slug}?format=json']);
+  check('a configured URL can carry {slug}',
+    withSlug[0] === 'https://example.com/golf/bmw-championship?format=json', withSlug[0]);
+  check('a configured URL without {slug} is passed through untouched',
+    bookUrlsFor('BMW Championship', ['https://example.com/fixed'])[0]
+      === 'https://example.com/fixed');
+  check('configured URLs replace the defaults rather than adding to them',
+    bookUrlsFor('BMW Championship', ['https://example.com/fixed']).length === 1);
 }
 
 console.log('\n── ids are read off the page ──');
@@ -349,6 +362,19 @@ console.log('\n── discovery does not fail silently or expensively ──');
   // failure can name its own step.
   check('a failed discovery reports which step failed',
     /no-event \(\$\{espnTraceSummary\(trace\)\}\)/.test(src));
+}
+
+console.log('\n── the book path stays off until it is pointed somewhere ──');
+{
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../api/field.js', import.meta.url), 'utf8');
+  // DraftKings was probed to exhaustion: page 200 but no embedded market, and
+  // all three API partitions 403 with a ~450-byte WAF page. Left on by
+  // default this path downloads 1.7 MB and makes a dozen refused calls on
+  // every origin miss of the most expensive request this app makes — to fill
+  // nothing. bookUrlsFor is kept and tested; it just is not the default.
+  check('an unconfigured book path does no fetching at all',
+    /if \(!configured\.length\) \{\s*\n\s*return \{ odds: \{\}, status: 'not-configured/.test(src));
 }
 
 // ── The probe is public and unauthenticated ─────────────────────────────────

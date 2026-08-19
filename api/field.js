@@ -831,10 +831,18 @@ const BOOK_HEADERS = {
 // league pages the same way pgatour.com spells its tournament pages
 // ('BMW Championship' → 'bmw-championship'), so nameToSlug already produces
 // it. A literal would have worked for exactly one week.
-export const bookUrlsFor = (tournamentName) => [
-  ...(tournamentName ? [`https://sportsbook.draftkings.com/leagues/golf/${nameToSlug(tournamentName)}`] : []),
-  'https://sportsbook.draftkings.com/leagues/golf/pga',
-];
+export const bookUrlsFor = (tournamentName, configured = []) => {
+  const slug = tournamentName ? nameToSlug(tournamentName) : '';
+  // A configured URL may carry {slug}. Without it, whoever sets
+  // ODDS_BOOK_URLS to a league page pins this to one tournament for ever —
+  // which is the trap the derived default exists to avoid, so the override
+  // must not reintroduce it.
+  if (configured.length) return configured.map((u) => u.split('{slug}').join(slug));
+  return [
+    ...(slug ? [`https://sportsbook.draftkings.com/leagues/golf/${slug}`] : []),
+    'https://sportsbook.draftkings.com/leagues/golf/pga',
+  ];
+};
 
 // DraftKings partitions its API by region, and the partitions do not answer
 // the same. A probe of every candidate id against sportsbook-us-il returned
@@ -908,7 +916,28 @@ export function eventGroupIds(html) {
 async function fetchBookOdds(fieldSet, wanted, tournamentName) {
   const configured = (process.env.ODDS_BOOK_URLS || '')
     .split(',').map((u) => u.trim()).filter(Boolean);
-  const urls = configured.length ? configured : bookUrlsFor(tournamentName);
+
+  // OFF unless configured, and that is a measured decision rather than a
+  // default.
+  //
+  // DraftKings was probed to exhaustion: the league page serves 200 but
+  // embeds no market, and all three API partitions —
+  // sportsbook.draftkings.com, sportsbook-us-il, and the newer
+  // sportsbook-nash/sportscontent — return 403 with a ~450-byte WAF page. It
+  // is not the event-group id and not the region; the API is closed to this
+  // function.
+  //
+  // Left on by default, this path costs a 1.7 MB page download plus up to a
+  // dozen refused API calls on EVERY origin miss, to fill nothing. /api/field
+  // is the most expensive request this app makes and the one the whole league
+  // waits on. So the code stays — ready the moment a working URL exists — but
+  // it does not run until ODDS_BOOK_URLS names one. A configured URL may use
+  // {slug} for this week's tournament — see bookUrlsFor.
+  if (!configured.length) {
+    return { odds: {}, status: 'not-configured (set ODDS_BOOK_URLS)' };
+  }
+
+  const urls = bookUrlsFor(tournamentName, configured);
   const notes = [];
 
   // Each candidate reduces to rows; the first that actually fills a gap wins.
