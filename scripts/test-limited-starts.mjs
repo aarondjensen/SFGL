@@ -207,6 +207,20 @@ console.log('\n── the view reads the rule, not its own copy ──');
   // The refusal has to reach the manager. It lives in the toast; a silently
   // swallowed tap is what shipped before.
   check('the block tells the manager why', /out of starts —/.test(view));
+
+  // The add-time block cannot catch a lineup that was already legal when it
+  // was set and went over the cap while sitting there — Sunday 9pm to Monday.
+  // A banner over the lineup is the only thing standing in that gap.
+  check('a starter over the cap is called out on the roster page',
+    /outOfStartsStarters/.test(view) && /Out of starts/.test(view));
+  // Removal is offered, not performed: an automatic one would be a Firestore
+  // write triggered by rendering a page.
+  check('the fix is offered as a tap, not done on render',
+    !/useEffect[^)]*outOfStartsStarters/.test(view));
+  // Each togglePlayerInLineup call recomputes from the same `teams` closure,
+  // so a loop of them in one tick keeps only the last removal.
+  check('removing several starters is one write, not a loop of toggles',
+    !/outOfStartsStarters\.forEach\(p => togglePlayerInLineup/.test(view));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

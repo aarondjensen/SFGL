@@ -18,7 +18,7 @@ import {
 import { theme, colors, fonts, fontSize, gold, green, greenMuted, navy, red, steel, white, black, blueBright, yellow } from '../theme.js';
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, getETClock, txBelongsToTeam } from '../utils/sharedHelpers';
 import { waiverCutoff, fmtWaiverCutoff } from '../../api/_league.js';
-import { limitedStartsStatus, startsUsedFor } from '../../api/_rules.js';
+import { limitedStartsStatus, startsUsedFor, maxLimitedStarts } from '../../api/_rules.js';
 import { NameSet, NameMap } from '../../api/_playerNames.js';
 import { activatable } from '../utils/a11y';
 
@@ -1081,6 +1081,20 @@ export const RostersView = ({
   const lineupOpen    = windowStatus.lineupOpen;
   const canEditLineup = isCommissioner || (isOwnTeam && lineupOpen);
 
+  // Starters with no starts left. The add-time block cannot catch these,
+  // because nobody is adding: a lineup counts against the cap the moment it
+  // freezes at lock, and it then SITS there — from Sunday 9pm ET, when lineup
+  // editing reopens, until Monday's processing clears it, last week's five are
+  // still in team.lineup and one of them may have just spent their last start.
+  // A commish who lowers maxLimitedStarts mid-week lands here too.
+  //
+  // Only players still on the roster are listed. A name left in the lineup by
+  // a drop is a different problem with a different fix, and nothing here could
+  // tell whether it belongs to a limited player anyway.
+  const outOfStartsStarters = (team.lineup || [])
+    .map(name => currentRoster.find(p => p.name === name))
+    .filter(p => p && limitedStatus(p).outOfStarts);
+
   const toggleSort = (col) => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortCol(col); setSortDir('asc'); }
@@ -1202,6 +1216,69 @@ export const RostersView = ({
           })()}
           </div>
           </div>
+
+        {/* ── Out-of-starts warning ──
+            Deliberately inside the sticky card rather than above it: a warning
+            that scrolls away is a warning the manager can miss, and this one
+            has a deadline on it (Thursday's lock). Sits directly over the
+            lineup it is about. */}
+        {outOfStartsStarters.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+            margin: '0 0 10px', padding: '8px 10px', borderRadius: 4,
+            background: red(0.16), border: `1px solid ${red(0.55)}`,
+          }}>
+            <span style={{ fontSize: fontSize.md, lineHeight: 1, flexShrink: 0 }}>⚠</span>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <div style={{
+                fontFamily: fonts.sans, fontSize: fontSize.xs, fontWeight: 800,
+                letterSpacing: '0.6px', textTransform: 'uppercase', color: red(0.95),
+              }}>
+                Out of starts
+              </div>
+              <div style={{
+                fontFamily: fonts.sans, fontSize: fontSize.sm, color: white(0.9), lineHeight: 1.35,
+              }}>
+                {outOfStartsStarters.map(p => p.name).join(', ')}
+                {outOfStartsStarters.length > 1 ? ' have ' : ' has '}
+                used {maxLimitedStarts(resolvedSettings)} starts and
+                {outOfStartsStarters.length > 1 ? ' are' : ' is'} still in
+                {isOwnTeam ? ' your' : ' this'} lineup.
+                {isOwnTeam && ' Swap them out before Thursday\u2019s lock.'}
+              </div>
+            </div>
+            {/* Removing is offered, never done automatically. An auto-remove
+                would be a Firestore write triggered by RENDERING a page — it
+                would fire for whoever opened the roster first, including a
+                commish looking at someone else's team, and would race
+                updateTeams. The manager decides; this just makes it one tap. */}
+            {canEditLineup && isOwnTeam && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // One write, not a loop of togglePlayerInLineup calls: each
+                  // of those recomputes from the same `teams` closure, so in a
+                  // single tick every removal but the last is discarded.
+                  const gone = new Set(outOfStartsStarters.map(p => p.name));
+                  updateTeams(teams.map(t =>
+                    t.id !== team.id ? t : { ...t, lineup: (t.lineup || []).filter(n => !gone.has(n)) }
+                  ));
+                  dialog.showToast(
+                    `${outOfStartsStarters.map(p => p.name.split(' ').pop()).join(', ')} removed from lineup`,
+                    'info', { position: 'top' }
+                  );
+                }}
+                style={{
+                  flexShrink: 0, padding: '6px 12px', borderRadius: 4, cursor: 'pointer',
+                  fontFamily: fonts.sans, fontSize: fontSize.sm, fontWeight: 700,
+                  background: red(0.22), border: `1px solid ${red(0.7)}`, color: white(0.95),
+                }}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Lineup slots — always show 5: filled headshots + silhouette placeholders.
             When the backup spot is enabled for this event, render a 6th "Backup"
