@@ -576,15 +576,15 @@ export const RostersView = ({
   // Every team, not just this one — the cap follows the player across a drop
   // and re-add, which is also what makes this agree with the durable
   // player.starts tally. See startsUsedByPlayer in api/_rules.js.
-  const startsUsed = useMemo(
-    () => startsUsedByPlayer({ teams, tournaments, transactions }),
-    [teams, tournaments, transactions]);
-
-  // The same count stopped at the event this lineup is FOR. That event's own
-  // locked lineup must not count against the player sitting in it: being
-  // locked into your twelfth start is not the same as having used twelve, and
-  // judging on the total told a manager their legal twelfth start was one too
-  // many the moment the lineup froze. See lineupTargetIndex.
+  // Starts SPENT — events already played, stopped at the event this lineup is
+  // for. That event's own start belongs to nobody yet: being slotted for your
+  // twelfth is not the same as having used twelve, and counting it told a
+  // manager their legal twelfth start was one too many. The badge adds it back
+  // from the manager's own lineup below. See lineupTargetIndex.
+  //
+  // There used to be a second, unbounded count feeding the badge. It folded in
+  // the lineup frozen at lock, so a player the manager had taken back OUT of
+  // the lineup still read 12/12 — the snapshot remembered them. One count now.
   const startsBefore = useMemo(
     () => startsUsedByPlayer({
       teams, tournaments, transactions,
@@ -599,18 +599,16 @@ export const RostersView = ({
   // could read 12/12 on screen and still be addable. limitedStartsStatus takes
   // the higher of the two (see api/_rules.js for why both exist).
   const limitedStatus = useCallback((player) => limitedStartsStatus(player, {
-    // Three inputs, three jobs: the total is what they owe the league, the
-    // prior count decides whether another start may be spent, and the lineup
-    // slot is the one they have taken but not yet frozen — so a player put in
-    // the lineup on eleven reads 12/12 straight away rather than on Thursday.
-    derivedStarts: startsUsed.get(player?.name),
-    // ?? 0 rather than undefined: a player the derived count has never seen has
-    // spent no starts it can vouch for, and letting this go undefined would
-    // hand the decision back to the durable tally.
+    // ?? 0 rather than undefined: a player this count has never seen has spent
+    // no starts it can vouch for, and letting it go undefined would hand the
+    // answer back to the durable tally — the one source known to be wrong.
     priorStarts: startsBefore.get(player?.name) ?? 0,
+    // The manager's CURRENT lineup, never the frozen snapshot: this is the
+    // start they are about to take, and taking them out of the lineup has to
+    // take the number back down with it.
     pendingStart: (team?.lineup || []).includes(player?.name),
     settings: resolvedSettings,
-  }), [startsUsed, startsBefore, team, resolvedSettings]);
+  }), [startsBefore, team, resolvedSettings]);
 
   const togglePlayerInLineup = useCallback(async (player) => {
     if (!team) return;

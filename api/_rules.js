@@ -496,8 +496,9 @@ export const eligibleStarters = ({
  * Where a limited player stands against the cap.
  *
  *   player        a roster entry — `limited` and the durable `starts` tally
- *   derivedStarts every start committed, including one locked in for the event
- *                 being played right now. This is what the badge shows.
+ *   derivedStarts starts already spent — the same number as priorStarts for
+ *                 every caller that has an event in view. It exists for
+ *                 callers that do not.
  *   priorStarts   starts committed BEFORE the event whose lineup is being set.
  *                 This is what the decision is made on, and it is a different
  *                 number: a player locked into the event now in progress has
@@ -506,19 +507,27 @@ export const eligibleStarters = ({
  *                 the total made a legal twelfth start read as "out of starts"
  *                 the moment their lineup froze. Defaults to derivedStarts,
  *                 for callers with no event in view.
- *   pendingStart  the manager has this player in the lineup for the upcoming
- *                 event but it has not frozen yet, so no count contains it.
- *                 Counted into `projected` only, and only when it is not
- *                 already in `used` and there is a start left to spend.
+ *   pendingStart  the manager has this player in the lineup for the event in
+ *                 view. That start has not been taken yet — the event has not
+ *                 been played — so it is counted into `projected` only, and
+ *                 only when there is a start left to spend.
+ *
+ *                 Read from the manager's CURRENT lineup, never from the
+ *                 frozen snapshot. Counting the snapshot left a player who had
+ *                 been taken back out of the lineup still reading 12/12: the
+ *                 badge answered "what did the lineup say at lock" when the
+ *                 manager was asking "how many has this player used".
  *   settings      league_settings, for the commish's maxLimitedStarts
  *
  * Returns `{ limited, used, projected, max, remaining, outOfStarts, lastStart }`.
  *
- *   used        starts actually committed — scored, frozen at lock, or in the
- *               durable tally. What a manager owes the league.
- *   projected   used plus the one they are slotted for. What the badge shows,
- *               so putting a player on eleven into the lineup reads 12/12
- *               immediately instead of waiting for Thursday to say so.
+ *   used        starts SPENT — events already played, whether or not results
+ *               have been processed. Not the event now in view: a player is
+ *               not charged for a start until the event is behind them.
+ *   projected   used plus the one they are slotted for right now. What the
+ *               badge shows, so putting a player on eleven into the lineup
+ *               reads 12/12 immediately and taking them back out reads 11/12
+ *               again.
  *   outOfStarts the gate. Nobody may be put into a starting lineup on this.
  *   lastStart   they are spending their final start right now — legal, worth
  *               flagging, and NOT a refusal.
@@ -540,12 +549,11 @@ export const limitedStartsStatus = (player, {
   // This is the same reason eligibleStarters refuses to look at it, and it
   // leaves the gate predicting exactly what scoring will do.
   const tally = Number(player?.starts) || 0;
-  // Derived first here too, not `Math.max` with the tally. The tally is the
-  // source the live-lineup crediting bug corrupted, so maxing with it left the
-  // badge reading 12/12 for a player on eleven — disagreeing with the gate
-  // beside it, which is the split this whole rule exists to close. It answers
-  // only for a caller who supplied nothing derived at all.
-  const used = derivedStarts !== undefined ? (Number(derivedStarts) || 0) : tally;
+  // Derived first, not `Math.max` with the tally. The tally is the source the
+  // live-lineup crediting bug corrupted, so maxing with it left the badge
+  // reading 12/12 for a player on eleven — disagreeing with the gate beside
+  // it, which is the split this whole rule exists to close. It answers only
+  // for a caller who supplied nothing derived at all.
   // Precedence, strictest evidence first. Once a caller supplies a derived
   // count the tally never overrides it: the tally cannot place a start before
   // an event, and letting it back in as a fallback is what kept the warning
@@ -557,14 +565,22 @@ export const limitedStartsStatus = (player, {
   // the only situation where it is the best available evidence.
   const prior = priorStarts !== undefined ? (Number(priorStarts) || 0)
     : derivedStarts !== undefined ? (Number(derivedStarts) || 0)
-    : used;
-  const outOfStarts = limited && prior >= max;
+    : tally;
+  // One count, one boundary. `used` IS the starts-before number: the event in
+  // view has not been played, so nobody has spent its start yet, and the badge
+  // adds it back only for a player the manager currently has in the lineup.
+  //
+  // These were two separate counts, with `used` also folding in the lineup
+  // frozen at lock. That made the badge disagree with itself: a player pulled
+  // OUT of the lineup still read 12/12, because the frozen snapshot still had
+  // them, while the gate — correctly — said they had eleven and could be
+  // added back.
+  const used = prior;
 
-  // `used > prior` means the upcoming event's start is already counted — the
-  // lineup froze — and adding the pending one again would show 13/12. And a
-  // player with nothing left is not projected into a start they cannot take;
-  // their number stops climbing and the out-of-starts warning takes over.
-  const pending = !!pendingStart && used === prior && !outOfStarts ? 1 : 0;
+  // A player with nothing left is not projected into a start they cannot take;
+  // their number stops at the cap and the out-of-starts warning takes over.
+  const outOfStarts = limited && prior >= max;
+  const pending = !!pendingStart && !outOfStarts ? 1 : 0;
   const projected = used + pending;
 
   return {

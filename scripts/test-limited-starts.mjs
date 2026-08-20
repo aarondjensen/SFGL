@@ -84,8 +84,8 @@ console.log('\n── the two counts, reconciled ──');
   // and the gate disagreeing is the exact split this rule exists to close, and
   // the tally is the side known to be corrupt.
   check('the derived count owns the display too',
-    limitedStartsStatus(limited(12), { derivedStarts: 3, priorStarts: 11 }).used === 3);
-  check('the tally still shows for a caller holding nothing else',
+    limitedStartsStatus(limited(12), { derivedStarts: 3, priorStarts: 11 }).used === 11);
+  check('the tally still answers for a caller holding nothing else',
     limitedStartsStatus(limited(12)).used === 12);
   // Precedence, strictest evidence first. The derived count is league-wide and
   // includes lineups frozen at lock, so it already carries the starts a player
@@ -162,8 +162,8 @@ console.log('\n── an empty derived count cannot manufacture the warning ─�
 
   check('a map miss does not become an out-of-starts warning',
     asRostersViewCalls(undefined, undefined).outOfStarts === false);
-  check('the tally answers only because nothing derived was supplied',
-    asRostersViewCalls(undefined, undefined).used === 12);
+  check('a map miss reads as no starts this count can vouch for',
+    asRostersViewCalls(undefined, undefined).used === 0);
   check('a real derived count still decides',
     asRostersViewCalls(12, 12).outOfStarts === true);
 }
@@ -314,8 +314,11 @@ console.log('\n── the twelfth start is allowed ──');
     }).get('Limited Larry'),
   });
 
-  check('the badge counts the start they are locked into', status(duringBmw).used === 12);
-  check('but they are NOT out of starts — this IS the twelfth',
+  // `used` is starts SPENT: eleven played, with the twelfth still ahead of
+  // them. The badge adds the twelfth back from the manager's own lineup, not
+  // from the frozen snapshot — see the projection tests below.
+  check('the start they are slotted for is not yet spent', status(duringBmw).used === 11);
+  check('and they are NOT out of starts — this IS the twelfth',
     status(duringBmw).outOfStarts === false);
 
   // Once that week is over the start is spent, whether or not results have
@@ -323,7 +326,7 @@ console.log('\n── the twelfth start is allowed ──');
   const afterBmw = new Date(2026, 7, 31);
   check('after the week ends the same player is out of starts',
     status(afterBmw).outOfStarts === true);
-  check('and the count has not moved — only the boundary has',
+  check('and the start counts once the event is behind them',
     status(afterBmw).used === 12);
 }
 
@@ -362,7 +365,8 @@ console.log('\n── one stray event must not zero the whole count ──');
     priorStarts: before.get('Limited Larry') ?? 0,
   });
   check('the player is not out of starts', st.outOfStarts === false);
-  check('and the badge shows the twelfth they are locked into', st.projected === 12);
+  check('and the badge shows eleven spent, with the twelfth still to come',
+    st.projected === 11 && st.used === 11);
 
   // A stray event AFTER the last completed one is still a legitimate target —
   // the anchor must not skip past an event simply because it lacks a date.
@@ -429,6 +433,28 @@ console.log('\n── the badge flags the last start as it is taken ──');
   check('an unlimited player never has a last start',
     limitedStartsStatus({ name: 'U', unlimited: true, starts: 40 },
       { derivedStarts: 40, priorStarts: 40, pendingStart: true }).lastStart === false);
+}
+
+
+console.log('\n── the badge follows the manager, not the snapshot ──');
+{
+  // The reported bug: Fleetwood and Hovland, on eleven starts, were taken OUT
+  // of the lineup and still read 12/12 in red. The badge was counting the
+  // lineup frozen at lock, which still held them — answering "what did the
+  // lineup say on Thursday" when the manager was asking "how many has this
+  // player used". Removing a player has to take the number back down.
+  const larry = { name: 'Limited Larry', limited: true, starts: 12 };
+  const badge = (inLineup) => limitedStartsStatus(larry, { priorStarts: 11, pendingStart: inLineup });
+
+  check('benched on eleven starts reads 11/12', badge(false).projected === 11);
+  check('and is not flagged', badge(false).lastStart === false && badge(false).outOfStarts === false);
+  check('slotting them reads 12/12', badge(true).projected === 12);
+  check('flagged as their last, not refused',
+    badge(true).lastStart === true && badge(true).outOfStarts === false);
+  check('taking them back out returns to 11/12', badge(false).projected === 11);
+  // The number the manager sees and the number the gate uses are one number.
+  check('the gate agrees in both states',
+    badge(true).outOfStarts === false && badge(false).outOfStarts === false);
 }
 
 console.log('\n── a maxed player cannot score ──');
@@ -582,6 +608,12 @@ console.log('\n── the view reads the rule, not its own copy ──');
   // start rather than waiting until the player is barred.
   check('the badge shows the projected count',
     /startsStatus\.projected/.test(view));
+  // One count, from one boundary. A second unbounded count feeding the badge
+  // is what let it disagree with the gate beside it.
+  check('the view keeps a single starts count',
+    (view.match(/startsUsedByPlayer\(/g) || []).length === 1);
+  check('the pending slot comes from the manager\'s lineup',
+    /pendingStart: \(team\?\.lineup \|\| \[\]\)\.includes/.test(view));
   check('the badge reddens when nothing is left after this start',
     /startsStatus\.remaining === 0/.test(view));
   // Removal is offered, not performed: an automatic one would be a Firestore

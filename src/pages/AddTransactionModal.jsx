@@ -239,7 +239,6 @@ export const AddTransactionModal = ({
         priorStarts: startsUsedByPlayer({
           teams, tournaments, transactions, beforeIndex: parseInt(tourney),
         }).get(playerInName) ?? 0,
-        derivedStarts: startsUsedByPlayer({ teams, tournaments, transactions }).get(playerInName),
         settings,
       });
       if (inStarts.outOfStarts && !inAlreadyStarted) {
