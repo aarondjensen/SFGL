@@ -12,8 +12,8 @@
 // limitedStartsStatus is now the single answer to "how many starts have they
 // used, what is the cap, are they done". Both the badge and the gate call it.
 import {
-  limitedStartsStatus, maxLimitedStarts, startsUsedByPlayer, eligibleStarters,
-  isLimitedPlayer, lineupTargetIndex, DEFAULT_MAX_LIMITED_STARTS,
+  limitedStartsStatus, maxLimitedStarts, startsUsedByPlayer, startsLedger,
+  eligibleStarters, isLimitedPlayer, lineupTargetIndex, DEFAULT_MAX_LIMITED_STARTS,
 } from '../api/_rules.js';
 import { readFileSync } from 'node:fs';
 
@@ -436,6 +436,39 @@ console.log('\n── the badge flags the last start as it is taken ──');
 }
 
 
+
+console.log('\n── the breakdown explains the number it came from ──');
+{
+  // "Why does it say twelve" has to be answered by the same walk that produced
+  // the twelve. A second implementation would agree most of the time, which is
+  // the worst possible property for an explanation.
+  const teams = [{ id: 'w1' }];
+  const scored = (n) => ({
+    name: `Event ${n}`, completed: true,
+    results: { teams: { w1: { players: [{ name: 'Limited Larry', earnings: 1 }] } },
+               fullLineups: { w1: ['Limited Larry'] } },
+  });
+  const tournaments = [scored(0), scored(1), { name: 'BMW', lockedLineups: { w1: ['Limited Larry'] } }];
+  const opts = { teams, tournaments };
+
+  const ledger = startsLedger('Limited Larry', opts);
+  check('one entry per start', ledger.length === 3);
+  check('and the count agrees with the list',
+    ledger.length === startsUsedByPlayer(opts).get('Limited Larry'));
+  check('in schedule order', ledger.map(e => e.index).join() === '0,1,2');
+  check('naming the event', ledger[0].tournament === 'Event 0');
+  // The locked source is the one a manager cannot see anywhere else — a start
+  // spent by a lineup that froze, on an event with no results yet.
+  check('and where the start came from',
+    ledger[0].source === 'scored' && ledger[2].source === 'locked');
+  check('the boundary applies to the list too',
+    startsLedger('Limited Larry', { ...opts, beforeIndex: 2 }).length === 2);
+  check('an unknown player has no ledger', startsLedger('Nobody', opts).length === 0);
+  check('no name is safe', startsLedger(null, opts).length === 0);
+  check('a name variant resolves to the same player',
+    startsLedger('Limited Larry', opts).length === 3);
+}
+
 console.log('\n── the badge follows the manager, not the snapshot ──');
 {
   // The reported bug: Fleetwood and Hovland, on eleven starts, were taken OUT
@@ -614,6 +647,10 @@ console.log('\n── the view reads the rule, not its own copy ──');
     (view.match(/startsUsedByPlayer\(/g) || []).length === 1);
   check('the pending slot comes from the manager\'s lineup',
     /pendingStart: \(team\?\.lineup \|\| \[\]\)\.includes/.test(view));
+  // A manager on a phone cannot run an audit script, so the breakdown has to
+  // be in the app: tapping the badge shows which events spent the starts.
+  check('the badge opens a breakdown',
+    /setStartsDetail\(player\)/.test(view) && /startsLedger\(/.test(view));
   check('the badge reddens when nothing is left after this start',
     /startsStatus\.remaining === 0/.test(view));
   // Removal is offered, not performed: an automatic one would be a Firestore

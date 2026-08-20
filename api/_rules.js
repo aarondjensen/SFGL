@@ -34,7 +34,7 @@
 // ============================================================================
 
 import { SWINGS, swingForMonth, txBelongsToTeam, isTournamentWeekOver } from './_league.js';
-import { NameMap } from './_playerNames.js';
+import { NameMap, NameSet } from './_playerNames.js';
 
 // ── Round-leader bonuses ─────────────────────────────────────────────────────
 // Defaults; the commish can override each via league_settings (bonusR1Major
@@ -317,12 +317,39 @@ export const maxLimitedStarts = (settings = {}) => {
  * the stored results already reflect the swap, so only the OUT player needs
  * removing; for a locked one the swap is replayed onto the frozen five.
  */
-export const startsUsedByPlayer = ({
-  teams = [], tournaments = [], transactions = [], beforeIndex,
-} = {}) => {
+export const startsUsedByPlayer = (opts = {}) => {
   const counts = new Map();
+  walkStarts(opts, ({ name }) => counts.set(name, (counts.get(name) || 0) + 1));
+  return new NameMap([...counts]);
+};
+
+/**
+ * The same walk, for ONE player, keeping every start rather than counting it:
+ * `[{ index, tournament, teamId, source }]` in schedule order, where source is
+ * 'scored' (stored results) or 'locked' (a lineup frozen at lock for an event
+ * not yet processed).
+ *
+ * This is the answer to "why does it say twelve", and it has to come from the
+ * same walk that produced the twelve — a second implementation that agreed
+ * with the first only most of the time would be worse than no answer at all.
+ */
+export const startsLedger = (name, opts = {}) => {
+  const target = new NameSet([name].filter(Boolean));
+  if (!target.size) return [];
+  const out = [];
+  walkStarts(opts, (entry) => { if (target.has(entry.name)) out.push(entry); });
+  return out.sort((a, b) => a.index - b.index);
+};
+
+/**
+ * One walk over the schedule, calling back once per start committed.
+ *
+ * Everything that answers a question about starts goes through here, so a
+ * count and the list explaining it can never disagree.
+ */
+function walkStarts({ teams = [], tournaments = [], transactions = [], beforeIndex } = {}, emit) {
   const roster = (teams || []).filter(t => t?.id);
-  if (!roster.length) return new NameMap();
+  if (!roster.length) return;
 
   // Mulligan swaps, keyed by team and schedule position. Matched through
   // txBelongsToTeam rather than tx.teamId alone, so legacy rows that carry
@@ -347,6 +374,7 @@ export const startsUsedByPlayer = ({
       const stored = t?.completed ? t?.results?.teams?.[team.id] : null;
 
       let names;
+      let source;
       if (stored) {
         // Union of the scored rows and the recorded lineup — a starter who
         // earned nothing can be missing from the first but never the second.
@@ -355,22 +383,22 @@ export const startsUsedByPlayer = ({
           ...(t.results.fullLineups?.[team.id] || []),
         ]);
         swapped.forEach(sw => names.delete(sw.out));
+        source = 'scored';
       } else {
         const locked = t?.lockedLineups?.[team.id];
         if (!Array.isArray(locked) || !locked.length) return;
         names = new Set(locked);
         swapped.forEach(sw => { if (sw.out) names.delete(sw.out); if (sw.in) names.add(sw.in); });
+        source = 'locked';
       }
 
       names.forEach(name => {
         if (!name) return;
-        counts.set(name, (counts.get(name) || 0) + 1);
+        emit({ name, index: pos, tournament: t?.name || `event ${pos}`, teamId: team.id, source });
       });
     });
   });
-
-  return new NameMap([...counts]);
-};
+}
 
 /**
  * The schedule position of the event a lineup edit is FOR — the boundary the

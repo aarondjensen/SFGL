@@ -33,8 +33,7 @@
 // ============================================================================
 
 import { adminDb } from './_adminCreds.mjs';
-import { startsUsedByPlayer, maxLimitedStarts, lineupTargetIndex } from '../api/_rules.js';
-import { NameSet } from '../api/_playerNames.js';
+import { startsUsedByPlayer, startsLedger, maxLimitedStarts, lineupTargetIndex } from '../api/_rules.js';
 
 const args = process.argv.slice(2);
 const APPLY = args.includes('--apply');
@@ -113,18 +112,12 @@ async function main() {
       + `badge ${badge.padEnd(6)} ${state}${flag}`);
 
     if (SHOW_EVENTS) {
-      // Recount one player, one event at a time, so the source of every start
-      // is visible. Same rules as startsUsedByPlayer, spelled out.
-      tournaments.slice(0, target).forEach((t, i) => {
-        const tr = t.completed ? t.results?.teams?.[r.team.id] : null;
-        const names = tr
-          ? new NameSet([...(tr.players || []).map(x => x?.name || x),
-                         ...(t.results.fullLineups?.[r.team.id] || [])])
-          : new NameSet(t.lockedLineups?.[r.team.id] || []);
-        if (names.has(r.player.name)) {
-          console.log(`      [${String(i).padStart(2)}] ${tr ? 'scored' : 'locked'}  ${t.name}`);
-        }
-      });
+      // From the same walk that produced the count — see startsLedger. A second
+      // implementation here would agree with the number most of the time, which
+      // is the worst possible property for something whose whole job is to
+      // explain that number.
+      startsLedger(r.player.name, { teams, tournaments, transactions, beforeIndex: target })
+        .forEach(e => console.log(`      [${String(e.index).padStart(2)}] ${e.source.padEnd(6)}  ${e.tournament}`));
     }
   }
 

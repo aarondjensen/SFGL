@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useDialog } from './DialogContext';
 import { AddDropPlayerModal } from './AddDropPlayerModal';
+import { BottomSheet } from '../components/BottomSheet';
 import { TeamName } from '../components/TeamName';
 
 import { useRoster, useWindowStatus } from '../hooks';
@@ -18,7 +19,7 @@ import {
 import { theme, colors, fonts, fontSize, gold, green, greenMuted, navy, red, steel, white, black, blueBright, yellow } from '../theme.js';
 import { isBackupSpotEnabled, resolveTxTournamentIndex, resolveTxTournament, getETClock, txBelongsToTeam } from '../utils/sharedHelpers';
 import { waiverCutoff, fmtWaiverCutoff } from '../../api/_league.js';
-import { limitedStartsStatus, startsUsedByPlayer, maxLimitedStarts, lineupTargetIndex } from '../../api/_rules.js';
+import { limitedStartsStatus, startsUsedByPlayer, startsLedger, maxLimitedStarts, lineupTargetIndex } from '../../api/_rules.js';
 import { NameSet, NameMap } from '../../api/_playerNames.js';
 import { activatable } from '../utils/a11y';
 
@@ -445,6 +446,10 @@ export const RostersView = ({
   const [sortCol,           setSortCol]           = useState(null);  // null | 'teeTime' | 'odds' | 'owgr' | 'cuts' | 'earnings'
   const [sortDir,           setSortDir]           = useState('asc');
   const [showAddDropModal,  setShowAddDropModal]  = useState(false);
+  // Which limited player's starts are being explained, if any. Tapping the
+  // X/12 badge opens it — "why does it say twelve" is a question a manager
+  // can only otherwise answer by counting the season by hand.
+  const [startsDetail,      setStartsDetail]      = useState(null);
   const [lineupMode,        setLineupMode]        = useState(false);
   // pickingBackup: explicit "next tap fills the backup slot" mode. Set when
   // the user taps the empty backup placeholder; cleared after a player is
@@ -1714,7 +1719,8 @@ export const RostersView = ({
                               // longer say 12/12 while the player is still
                               // addable. Red once spent, because at that point
                               // it is a rule and not a statistic.
-                              <span
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setStartsDetail(player); }}
                                 title={
                                   outOfStarts
                                     ? `Out of starts — ${startsStatus.used} of ${startsStatus.max} used`
@@ -1722,7 +1728,9 @@ export const RostersView = ({
                                       ? `Last start — this one takes them to ${startsStatus.max} of ${startsStatus.max}`
                                       : `${startsStatus.remaining} of ${startsStatus.max} starts left`
                                 }
+                                aria-label={`${player.name} starts used — tap for the breakdown`}
                                 style={{
+                                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                                   fontFamily: fonts.sans, fontSize: fontSize.xs,
                                   // Red the moment nothing is left after this one, not
                                   // only once they are barred: a manager slotting a
@@ -1732,10 +1740,13 @@ export const RostersView = ({
                                   color: startsStatus.remaining === 0
                                     ? (isBenched ? red(0.45) : red(0.9))
                                     : (isBenched ? gold(0.35) : colors.textGoldDim),
+                                  textDecoration: 'underline',
+                                  textDecorationStyle: 'dotted',
+                                  textUnderlineOffset: 2,
                                 }}
                               >
                                 {startsStatus.projected}/{startsStatus.max}
-                              </span>
+                              </button>
                             )}
                             {player.unlimited && (
                               <span style={{
@@ -1917,6 +1928,81 @@ export const RostersView = ({
           </table>
         </>
       </div>
+
+      {/* ── Starts breakdown ──
+          "Why does it say twelve?" answered from the same walk that produced
+          the twelve (startsLedger shares startsUsedByPlayer's implementation,
+          so the list and the number cannot disagree). Every event that spent a
+          start, and whether it came from stored results or a lineup frozen at
+          lock — the latter being the one a manager cannot see anywhere else. */}
+      {startsDetail && (() => {
+        const st = limitedStatus(startsDetail);
+        const ledger = startsLedger(startsDetail.name, {
+          teams, tournaments, transactions,
+          beforeIndex: lineupTargetIndex(tournaments),
+        });
+        const inLineup = (team.lineup || []).includes(startsDetail.name);
+        const upcoming = tournaments[lineupTargetIndex(tournaments)];
+        const row = { display: 'flex', justifyContent: 'space-between', gap: 10, padding: '5px 0' };
+        return (
+          <BottomSheet
+            isOpen
+            onClose={() => setStartsDetail(null)}
+            title={startsDetail.name}
+            subtitle={`${st.used} of ${st.max} starts used`}
+            accent={st.remaining === 0 ? red(0.9) : gold(0.9)}
+          >
+            <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textPrimary }}>
+              {ledger.length === 0 && (
+                <div style={{ color: colors.textMuted, padding: '6px 0' }}>
+                  No starts recorded yet this season.
+                </div>
+              )}
+              {ledger.map((e, i) => (
+                <div key={`${e.index}-${e.tournament}`} style={{ ...row, borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                  <span style={{ color: colors.textMuted, width: 22 }}>{i + 1}.</span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {e.tournament}
+                  </span>
+                  <span style={{ color: e.source === 'locked' ? gold(0.9) : colors.textMuted, fontSize: fontSize.xs }}>
+                    {e.source === 'locked' ? 'lineup locked' : 'played'}
+                  </span>
+                </div>
+              ))}
+              {inLineup && !st.outOfStarts && (
+                <div style={{ ...row, borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                  <span style={{ color: colors.textMuted, width: 22 }}>{ledger.length + 1}.</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>{upcoming?.name || 'this week'}</span>
+                  <span style={{ color: greenMuted(0.9), fontSize: fontSize.xs }}>in your lineup</span>
+                </div>
+              )}
+              <div style={{ ...row, marginTop: 8, fontWeight: 700 }}>
+                <span>{inLineup && !st.outOfStarts ? 'Used after this week' : 'Used'}</span>
+                <span style={{ color: st.remaining === 0 ? red(0.9) : colors.textPrimary }}>
+                  {st.projected} of {st.max}
+                </span>
+              </div>
+              {st.outOfStarts && (
+                <div style={{ color: red(0.9), fontSize: fontSize.xs, paddingTop: 4 }}>
+                  Out of starts — cannot be put in a starting lineup.
+                </div>
+              )}
+              {isCommissioner && (
+                // The stored roster tally, which nothing above reads. It was
+                // written for years by a cron that credited each start to the
+                // live lineup rather than the one that played, so where it
+                // disagrees with the count above, the count above is right.
+                <div style={{ marginTop: 12, paddingTop: 8, borderTop: `1px solid ${colors.borderSubtle}`,
+                              fontSize: fontSize.xs, color: colors.textMuted }}>
+                  <div>Stored roster tally: {startsDetail.starts ?? 0}
+                    {(startsDetail.starts ?? 0) !== st.used && ' — disagrees with the count above'}</div>
+                  <div>Counting starts before: {upcoming?.name || 'end of schedule'}</div>
+                </div>
+              )}
+            </div>
+          </BottomSheet>
+        );
+      })()}
 
       {/* ── Modals ── */}
       <AddDropPlayerModal
