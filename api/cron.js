@@ -1136,7 +1136,16 @@ async function handleProcessResults(res) {
     // 9pm ET and this runs Monday 9am ET, which is exactly the window where
     // those two differ, and is how three 2026 events came to be scored on the
     // wrong five in the first place.
-    const scoredLineup = [...lineupFor(newTournaments[ti], team)];
+    //
+    // `tournament`, not `newTournaments[ti]`. newTournaments is a `const`
+    // declared AFTER this loop runs, so reading it here is a temporal-dead-zone
+    // ReferenceError that kills the whole handler on the first team. It was
+    // survivable only while an `if (!team.lineup.length) return team` guard sat
+    // above it and every team happened to have an empty lineup; once that guard
+    // moved below this line the crash became unconditional, and the season's
+    // last event went unprocessed. The two objects differ only in
+    // completed/playing/results, none of which lineupFor reads.
+    const scoredLineup = [...lineupFor(tournament, team)];
 
     // Gate on the lineup being SCORED, not on team.lineup. Gating on the live
     // one skipped a team that had already cleared their lineup for next week —
@@ -1150,7 +1159,11 @@ async function handleProcessResults(res) {
     // rather than re-judging it. See eligibleStarters.
     const { starters: eligibleLineup, ineligible } = eligibleStarters({
       lineup: scoredLineup,
-      teams, tournaments: newTournaments, transactions: allTransactions,
+      // The PRE-write array, matching the client twin. eligibleStarters counts
+      // starts spent `beforeIndex: ti`, so marking event ti complete first
+      // would be both meaningless and — since resultsData fills in as this loop
+      // runs — dependent on team order.
+      teams, tournaments, transactions: allTransactions,
       tournamentIndex: ti, settings,
     });
     ineligible.forEach(({ name, used, max }) => {
