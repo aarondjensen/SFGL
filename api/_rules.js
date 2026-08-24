@@ -251,6 +251,74 @@ export const cutRuleForfeit = ({ starters, earningsMap, settings } = {}) => {
   };
 };
 
+// ── Finishing position ───────────────────────────────────────────────────────
+/**
+ * Labels for a finish that is not a number.
+ *
+ * MC is the league's own reading of a $0 cheque, not a new claim: cutRuleForfeit
+ * counts a cut MADE as `earnings > 0`, and the global `cutsMade` stat is
+ * incremented on the same test. DNP is different in kind — the golfer is not in
+ * the field at all, so there is no finish to report.
+ */
+export const FINISH_MISSED_CUT = 'MC';
+export const FINISH_DID_NOT_PLAY = '—';
+
+/**
+ * Where each cheque in a field finished.
+ *
+ * A result stores no finishing position — only `earningsMap`, name → money.
+ * cutRuleForfeit already derives the WINNER from it on the grounds that "the
+ * champion is always the top earner", and the same fact carries the whole
+ * table: a tour purse pays strictly less for each lower position and splits
+ * ties equally, so two golfers hold the same position if and only if they hold
+ * the same cheque. Ranking the distinct amounts is therefore a reading of the
+ * money, not an estimate from it.
+ *
+ * Returns `(earnings, inField) => label`:
+ *
+ *   '1' / '4'    an outright finish
+ *   'T4'         shared with at least one other cheque
+ *   MC           in the field, paid nothing
+ *   DNP          not in the field — `inField` false, or a name the map does
+ *                not carry. Distinct from MC on purpose: a starter who never
+ *                teed off did not miss a cut.
+ *
+ * Positions skip after a tie the way golf does — two on the same cheque at 2nd
+ * puts the next player 4th, not 3rd. A no-cut field simply produces no MC.
+ *
+ * The one case this reads wrong is a $0 golfer who was in the field and did not
+ * miss the cut: a withdrawal, a disqualification, or an amateur playing for
+ * nothing. Money cannot tell those from a missed cut, and neither can anything
+ * else a result stores — the same limit the cut rule has always carried.
+ */
+export const finishPositions = (earningsMap = {}) => {
+  const paid = Object.values(earningsMap || {})
+    .map(v => Number(v) || 0)
+    .filter(v => v > 0);
+
+  const sharing = new Map();
+  paid.forEach(v => sharing.set(v, (sharing.get(v) || 0) + 1));
+
+  const positionOf = new Map();
+  let ahead = 0;
+  [...sharing.keys()].sort((a, b) => b - a).forEach(amount => {
+    positionOf.set(amount, ahead + 1);
+    ahead += sharing.get(amount);
+  });
+
+  return (earnings, inField = true) => {
+    const v = Number(earnings) || 0;
+    if (!inField) return FINISH_DID_NOT_PLAY;
+    if (v <= 0) return FINISH_MISSED_CUT;
+    const place = positionOf.get(v);
+    // A cheque the field does not contain cannot be placed against it. Reached
+    // when a caller hands over earnings from a different event, or a hand
+    // correction that never went back into the map.
+    if (!place) return FINISH_DID_NOT_PLAY;
+    return (sharing.get(v) > 1 ? 'T' : '') + place;
+  };
+};
+
 // ── Limited players: the start limit ─────────────────────────────────────────
 /**
  * A LIMITED player may be started a fixed number of times per season — twelve

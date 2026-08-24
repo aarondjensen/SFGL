@@ -18,7 +18,7 @@ import {
   SEASON, getETNow, abbreviateName, waiverCutoff, getTournamentLockHourET, getTeeTimeLockMs,
   isTournamentWeekOver, tournamentWeekEnd,
 } from './_league.js';
-import { scoringStarters, lineupFor, cutRuleForfeit, eligibleStarters } from './_rules.js';
+import { scoringStarters, lineupFor, cutRuleForfeit, eligibleStarters, finishPositions } from './_rules.js';
 import {
   getSegmentForTournament, computeSwingAward, buildEffectiveRoster,
   getSeasonEarningsByTeam, bonusesFor,
@@ -323,7 +323,23 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
       const rounds = Array.isArray(p.roundsLed) ? p.roundsLed : [];
       const roundBadges = rounds.length ? rounds.map(rl => `<span style="display:inline-block;padding:1px 5px;margin-left:4px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;font-family:${FONT_STACK};vertical-align:middle;letter-spacing:0.5px;">R${esc(rl.round || rl)}</span>`).join('') : '';
 
-      return `<tr><td style="font-family:${FONT_STACK};font-size:11px;color:${nameColor};padding:2px 0;font-weight:400;">${esc(p.name)}${roundBadges}</td><td style="font-family:${FONT_STACK};font-size:11px;color:${totalEarnings > 0 ? '#50b478' : 'rgba(255,255,255,0.35)'};padding:2px 0;text-align:right;font-weight:500;">$${totalEarnings.toLocaleString()}</td></tr>`;
+      // Finish position, in its own fixed-width column to the left of the name
+      // so "1", "T14" and "MC" stack in a straight edge down the card. Callers
+      // that predate the field (an older stored result, a hand-built payload)
+      // pass nothing, and the column then renders empty rather than guessing —
+      // it is not derivable here, since a team's five say nothing about where
+      // they placed in a field of 70.
+      //
+      // The winner takes the same gold the leading team's rank does. Everything
+      // else stays muted: this column orients, it does not compete with the
+      // name or the money.
+      const place = p.position ? String(p.position) : '';
+      const placeColor = place === '1' ? '#f5c518'
+        : /^T?\d+$/.test(place) ? 'rgba(255,255,255,0.5)'
+        : 'rgba(255,255,255,0.28)';
+      const placeCell = `<td width="30" style="font-family:${FONT_STACK};font-size:10px;color:${placeColor};padding:2px 8px 2px 0;text-align:right;font-weight:${place === '1' ? '700' : '600'};letter-spacing:0.3px;white-space:nowrap;vertical-align:middle;">${esc(place)}</td>`;
+
+      return `<tr>${placeCell}<td style="font-family:${FONT_STACK};font-size:11px;color:${nameColor};padding:2px 0;font-weight:400;">${esc(p.name)}${roundBadges}</td><td style="font-family:${FONT_STACK};font-size:11px;color:${totalEarnings > 0 ? '#50b478' : 'rgba(255,255,255,0.35)'};padding:2px 0;text-align:right;font-weight:500;">$${totalEarnings.toLocaleString()}</td></tr>`;
     }).join('');
 
     return `<div style="padding:12px 14px;background:${bg};border-radius:3px;margin-bottom:6px;${leftBorder}"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td width="22" style="font-family:${FONT_STACK};font-size:14px;font-weight:700;color:${rankColor};vertical-align:middle;">${i + 1}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:${isMe ? '700' : '600'};color:${teamColor};vertical-align:middle;">${esc(tr.team)}</td><td style="font-family:${FONT_STACK};font-size:14px;font-weight:600;color:#50b478;text-align:right;vertical-align:middle;">$${(tr.totalEarnings || 0).toLocaleString()}</td></tr></table>${playerRows ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);">${playerRows}</table>` : ''}</div>`;
@@ -334,7 +350,12 @@ function buildTournamentResultsEmail(tournamentName, teamResults, recipientTeam,
   // / TournamentsView so the visual language is consistent across the app
   // and the email. Only renders if at least one team has player breakdowns.
   const hasPlayerData = sorted.some(tr => Array.isArray(tr.players) && tr.players.length > 0);
-  const legend = hasPlayerData ? `<div style="margin:14px 0 0;padding:10px 12px;background:rgba(255,255,255,0.02);border-radius:3px;font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:0.4px;font-weight:400;text-align:center;"><span style="color:rgba(245,197,24,0.95);font-weight:600;">●</span> Limited &nbsp;&nbsp;<span style="color:rgba(100,180,255,0.95);font-weight:600;">●</span> Unlimited &nbsp;&nbsp;<span style="display:inline-block;padding:1px 5px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;letter-spacing:0.5px;">R#</span> Round Leader</div>` : '';
+  // The position column's two non-numeric labels need naming; the numbers do
+  // not. Only mentioned when some player row actually carries a position, so
+  // an older payload without the field doesn't advertise a column it lacks.
+  const hasPlaceData = sorted.some(tr => (Array.isArray(tr.players) ? tr.players : []).some(p => p.position));
+  const placeLegend = hasPlaceData ? ` &nbsp;&nbsp;<span style="font-weight:600;">MC</span> Missed Cut &nbsp;&nbsp;<span style="font-weight:600;">—</span> Did Not Play` : '';
+  const legend = hasPlayerData ? `<div style="margin:14px 0 0;padding:10px 12px;background:rgba(255,255,255,0.02);border-radius:3px;font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:0.4px;font-weight:400;text-align:center;"><span style="color:rgba(245,197,24,0.95);font-weight:600;">●</span> Limited &nbsp;&nbsp;<span style="color:rgba(100,180,255,0.95);font-weight:600;">●</span> Unlimited &nbsp;&nbsp;<span style="display:inline-block;padding:1px 5px;background:rgba(220,110,30,0.35);color:rgba(255,165,80,0.95);border-radius:2px;font-size:9px;font-weight:600;letter-spacing:0.5px;">R#</span> Round Leader${placeLegend}</div>` : '';
 
   return wrap(`<h2 style="font-family:${FONT_STACK};font-size:20px;font-weight:600;color:#ffffff;margin:0 0 4px;letter-spacing:0.5px;">🏆 ${esc(tournamentName)}</h2><p style="font-family:${FONT_STACK};font-size:10px;color:rgba(255,255,255,0.5);margin:0 0 18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:400;">Tournament Results</p>${standingsCard}${swingBanner}${tournamentHeader}${rows}${legend}`);
 }
@@ -1069,6 +1090,11 @@ async function handleProcessResults(res) {
   const earningsMap = {};
   players.forEach(p => { if (p.name && p.earnings >= 0) earningsMap[p.name] = p.earnings; });
 
+  // Where each cheque finished. Built once against the WHOLE field — a
+  // starter's position is his place among everyone who played, not among his
+  // own team's five. See finishPositions.
+  const placeOf = finishPositions(earningsMap);
+
   // Filter round leaders to only those in SFGL lineups
   // Two things this must not do, both of which it used to.
   //
@@ -1181,9 +1207,15 @@ async function handleProcessResults(res) {
       let earnings = earningsMap[playerName];
       if (earnings === undefined) {
         const mk = Object.keys(earningsMap).find(k => matchName(k, playerName));
-        earnings = mk !== undefined ? earningsMap[mk] : 0;
+        earnings = mk !== undefined ? earningsMap[mk] : undefined;
       }
-      return { playerName, earnings: earnings || 0 };
+      // Being IN THE FIELD is a separate fact from what the golfer earned, and
+      // only this lookup can still tell them apart. The feed lists everyone who
+      // teed off, missed cut included, at $0 — so a name the map carries at
+      // zero missed the cut, while a name it does not carry never started.
+      // Collapsing both to 0 below loses that, and the two read differently on
+      // a results email.
+      return { playerName, earnings: earnings || 0, inField: earnings !== undefined };
     });
 
     // Scores the STARTING LINEUP, not the best five — see scoringStarters.
@@ -1232,6 +1264,10 @@ async function handleProcessResults(res) {
       players: topStarters.map(s => ({
         name: s.playerName,
         earnings: s.earnings,
+        // Stored, not derived at render time, so a resend or a later reader
+        // reports the finish this event was scored against rather than
+        // recomputing it from whatever the map holds by then.
+        position: placeOf(s.earnings, s.inField),
         limited: team.roster.find(p => p.name === s.playerName)?.limited || false,
         unlimited: team.roster.find(p => p.name === s.playerName)?.unlimited || false,
         bonus: playersWithBonuses[s.playerName]?.total || 0,
@@ -1352,6 +1388,7 @@ async function handleProcessResults(res) {
         return {
           name: p.name,
           earnings: p.earnings || 0,
+          position: p.position || null,
           bonus: p.bonus || 0,
           limited: rosterEntry?.limited ?? !!p.limited,
           unlimited: rosterEntry?.unlimited ?? !!p.unlimited,
