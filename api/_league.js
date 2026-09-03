@@ -35,6 +35,18 @@
 // still being finished. Bump it deliberately, when the league is ready.
 export const SEASON = 2026;
 
+// The season the league drafts INTO while SEASON is still the one being
+// closed out. The rollover runs in that gap on purpose: keepers are tagged and
+// the draft is held while the closing season's results, swing awards and fee
+// reconciliation are still being finished, and every one of those is keyed to
+// SEASON. Deriving the new year here rather than bumping SEASON early keeps
+// tournament_results document ids, the results-fetch URL and the page title
+// pointed at the season that still owns them.
+//
+// Bumping SEASON is therefore the LAST step of a rollover, not the first — see
+// the checklist in SeasonRolloverPanel, which says so on screen.
+export const NEXT_SEASON = SEASON + 1;
+
 // ── Swings ───────────────────────────────────────────────────────────────────
 // SFGL splits the year into four swings of three months each. This array is the
 // canonical list and its ORDER is chronological — StandingsView relies on that

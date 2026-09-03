@@ -24,8 +24,8 @@
 //   tournaments        → /tournaments/{name}
 //   transactions       → /transactions/{txId|autoId}
 //   league_settings    → /league_settings/{key}
-//   draft_state        → /draft_state/default
-//   draft_picks        → /draft_picks/{autoId}
+//   draft_state        → /draft_state/{season}
+//   draft_picks        → /draft_picks/{season}-{overall}
 //   sfgl_data          → /sfgl_data/{key}
 // ============================================================================
 

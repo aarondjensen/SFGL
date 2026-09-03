@@ -53,6 +53,12 @@ const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView')
 // its installations dependency on the critical path of a first paint that never
 // touches either. Both render null when closed, so they are mounted only while
 // open — nothing is deferred that was previously visible.
+// The offseason bar is lazy for the same reason the two modals it opens are:
+// keepers and the draft are live for a few weeks a year, and the first-load
+// budget guard asserts the SET of chunks on the critical path, not just its
+// size. Rendered inside a Suspense with a null fallback — there is nothing to
+// show while it loads, and nine months out of twelve it renders nothing at all.
+const LazyOffseasonBar      = React.lazy(() => import('./components/OffseasonBar').then(m => ({ default: m.OffseasonBar })));
 const LazyAccountModal      = React.lazy(() => import('./components/AccountModal').then(m => ({ default: m.AccountModal })));
 const LazyUserSettingsModal = React.lazy(() => import('./components/UserSettingsModal').then(m => ({ default: m.UserSettingsModal })));
 
@@ -278,7 +284,7 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
     allPlayers, rankingsLastUpdated, headshots, loading, isSyncing,
     loadErrors, // Wave 7: surfaces Firebase failures to the UI
     setTournaments, setAllPlayers,
-    updateTeams, updateTournaments, updateTransactions, updateSettings,
+    updateTeams, updateTeam, updateTournaments, updateTransactions, updateSettings,
     updateGlobalStats, updateHeadshots, updateRankings,
     refetch, // Wave 7: lets PullToRefresh do a real refetch instead of window.location.reload()
   } = league;
@@ -880,6 +886,23 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
 
       {/* ── Main content ── */}
       <main className="sfgl-main-content" style={{ maxWidth: 1100, margin: "0 auto", paddingTop: 16, paddingLeft: 16, paddingRight: 16 }}>
+
+        {/* Keepers and the draft, on every tab. A manager who opens the app on
+            Standings in November still has to find out that the draft has
+            started, so this cannot live inside one tab's view. */}
+        {!isGuest && (
+          <Suspense fallback={null}>
+            <LazyOffseasonBar
+              teams={resolvedTeams}
+              transactions={safeTransactions}
+              tournaments={safeTournaments}
+              allPlayers={allPlayers}
+              loggedInTeamId={loggedInTeamId}
+              isCommissioner={isCommissioner}
+              updateTeam={updateTeam}
+            />
+          </Suspense>
+        )}
 
         <ErrorBoundary key={activeTab} tabName={activeTab}>
           {activeTab === 'standings' && (

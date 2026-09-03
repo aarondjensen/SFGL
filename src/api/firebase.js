@@ -19,8 +19,8 @@
  *   tournaments        → /tournaments/{name}
  *   transactions       → /transactions/{txId|autoId}
  *   league_settings    → /league_settings/{key}
- *   draft_state        → /draft_state/default
- *   draft_picks        → /draft_picks/{autoId}
+ *   draft_state        → /draft_state/{season}
+ *   draft_picks        → /draft_picks/{season}-{overall}
  *   sfgl_data          → /sfgl_data/{key}
  *
  * DEPRECATED: /liv_roster/ — LIV status now lives on /players/{name}.is_liv.
@@ -1344,13 +1344,111 @@ export const settingsApi = {
 };
 
 // ============================================================================
-// DRAFT APIs — REMOVED
+// DRAFT API
 // ============================================================================
-// draftStateApi and draftPicksApi existed solely to serve src/pages/DraftModal.jsx,
-// which was deleted as dead code (it had no importers — App.jsx's comment
-// claiming it was a transitive dependency of AdminView was stale). The
-// /draft_state and /draft_picks Firestore collections are left untouched; if
-// the draft UI is rebuilt for a future season, restore these from git history.
+// Restored for the season rollover. draftStateApi/draftPicksApi existed once,
+// were deleted as dead code when the old draft UI went, and the two
+// collections were deliberately left in place for exactly this.
+//
+//   draft_state/{season}      one document per draft — status, the round
+//                             counts, the reverse-standings order, the trades
+//   draft_picks/{season}-{n}  one document per SLOT, keyed by season and
+//                             overall pick number
+//
+// The pick document id is DERIVED rather than auto-generated, and that is the
+// whole concurrency story: two people submitting the same pick at the same
+// moment write the same document instead of putting two selections on one
+// slot. An auto-id would leave a duplicate on the board that only a human
+// reading it would ever catch.
+//
+// The board itself is NOT stored. resolveDraftOrder (api/_draft.js) derives it
+// from the state document on every read, so the order the commissioner sees,
+// the order the draft screen enforces and the order the rollover applies are
+// one computation rather than three copies of a snapshot that can drift.
+const _pickId = (season, overall) => `${season}-${String(overall).padStart(3, '0')}`;
+
+export const draftApi = {
+  async get(season) {
+    const snap = await getDoc(doc(db, 'draft_state', String(season)));
+    return snap.exists() ? { _id: snap.id, ...snap.data() } : null;
+  },
+
+  // set+merge: the rollover panel patches one field at a time (the status, the
+  // round counts, the order, one new trade) and should not have to resend the
+  // rest of the document to do it.
+  async set(season, patch) {
+    await setDoc(
+      doc(db, 'draft_state', String(season)),
+      _withoutUndefined({ season: Number(season), ...patch }),
+      { merge: true },
+    );
+    return patch;
+  },
+
+  subscribe(season, callback) {
+    return onSnapshot(
+      doc(db, 'draft_state', String(season)),
+      (snap) => {
+        try { callback(snap.exists() ? { _id: snap.id, ...snap.data() } : null); }
+        catch (e) { console.error('[subscribe:draft_state] handler error:', e); }
+      },
+      (err) => console.error('[subscribe:draft_state] firestore error:', err),
+    );
+  },
+
+  // where('season') and a JS sort, never orderBy('overall'). A Firestore
+  // orderBy silently EXCLUDES documents missing the ordered field — the trap
+  // that once made the whole tournaments collection read as empty — and a pick
+  // written by an older client is exactly the document that would go missing.
+  async getPicks(season) {
+    const snap = await getDocs(
+      query(collection(db, 'draft_picks'), where('season', '==', Number(season))),
+    );
+    return snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(_byOverall);
+  },
+
+  subscribePicks(season, callback) {
+    return onSnapshot(
+      query(collection(db, 'draft_picks'), where('season', '==', Number(season))),
+      (snap) => {
+        try { callback(snap.docs.map(d => ({ _id: d.id, ...d.data() })).sort(_byOverall)); }
+        catch (e) { console.error('[subscribe:draft_picks] handler error:', e); }
+      },
+      (err) => console.error('[subscribe:draft_picks] firestore error:', err),
+    );
+  },
+
+  /** Record a selection. Replaces the slot rather than adding beside it. */
+  async makePick(season, pick) {
+    const id = _pickId(season, pick.overall);
+    await setDoc(doc(db, 'draft_picks', id), _withoutUndefined({
+      ...pick,
+      season: Number(season),
+      overall: Number(pick.overall),
+      madeAt: new Date().toISOString(),
+    }));
+    return id;
+  },
+
+  /** Undo a selection — the slot goes back on the clock. See currentPick. */
+  async undoPick(season, overall) {
+    await deleteDoc(doc(db, 'draft_picks', _pickId(season, overall)));
+  },
+
+  /** Wipe a draft's picks. Commissioner-only; used when a board is rebuilt. */
+  async clearPicks(season) {
+    const picks = await this.getPicks(season);
+    const BATCH_SIZE = 499;
+    for (let i = 0; i < picks.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      picks.slice(i, i + BATCH_SIZE).forEach(p => batch.delete(doc(db, 'draft_picks', p._id)));
+      await batch.commit();
+    }
+    return picks.length;
+  },
+};
+
+const _byOverall = (a, b) => (Number(a.overall) || 0) - (Number(b.overall) || 0);
 
 // ============================================================================
 // TOURNAMENT RESULTS API — FROZEN ARCHIVE, READ ONLY

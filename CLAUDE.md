@@ -53,6 +53,7 @@ cron disagreed about the same league. Do not add a new one.
 - `api/_league.js` — season, swings, the ET clock, waiver cutoff, transaction→team matching
 - `api/_rules.js` — bonuses, segments, fees, the pot, roster replay, the swing award
 - `api/_playerNames.js` — name identity (`nameKey`, `NameSet`, `NameMap`, `namesMatch`)
+- `api/_draft.js` — keepers, the snake draft order, pick trades, the rollover
 - `api/_constants.js` — shared server constants
 
 ## Hard constraints
@@ -70,6 +71,14 @@ midnight, i.e. the previous day west of Greenwich. Anchor at noon UTC, or use
 the shared resolvers.
 
 **All league time is ET.** `getETNow` / `getETClock` from `api/_league.js`.
+
+**`SEASON` moves last, not first.** Rolling into a new season runs against
+`NEXT_SEASON` (`api/_league.js`) while `SEASON` still names the year being
+closed out — keepers are tagged and the draft is held while results, swing
+awards and fees are still being finished, and all of those key on `SEASON`.
+It is also a build-time constant (`vite.config.ts` substitutes it into
+`index.html`). Bump it only once nothing is left to process, as the last step
+of the checklist in the Season Rollover panel.
 
 **Firebase is initialized in exactly one place.** `src/api/_init.js` exports
 `app`, `db`, `auth` and `firebaseConfig`, and it is what configures App Check.

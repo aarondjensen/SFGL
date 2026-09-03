@@ -183,6 +183,30 @@ export const hydratePlayer = (name, attrIndex = {}, headshot = '') => {
   };
 };
 
+/**
+ * A team's CURRENT roster as fully-hydrated player entries.
+ *
+ * buildEffectiveRoster with `asArray` hands back a bare `{ name }` for anyone
+ * added by transaction, because the roster ARRAY on the team document is only
+ * updated at a save and the replay is derived. A bare entry has no `limited`,
+ * no stars and no tallies — which is fine for "who is on this roster" and
+ * quietly wrong for anything that asks what KIND of player they are. Keeper
+ * eligibility is exactly that question, and a limited player who happened to
+ * arrive by free agency would have read as an unlimited nobody.
+ *
+ * Extracted from the useRoster hook, which did this inline and is now the one
+ * caller that also memoises it. Both go through here so a component that needs
+ * a roster outside of React (the rollover, the keeper sheet's commissioner
+ * view) cannot end up with a differently-hydrated one.
+ */
+export const hydratedRoster = (team, transactions, { tournaments = [], attrIndex, upToTournamentIndex } = {}) => {
+  if (!team) return [];
+  const names = buildEffectiveRoster(team, transactions, { tournaments, upToTournamentIndex });
+  const idx = attrIndex || buildPlayerAttributeIndex([team], tournaments);
+  const byName = new Map((team.roster || []).map(p => [p.name, p]));
+  return [...names].map(name => byName.get(name) || hydratePlayer(name, idx));
+};
+
 // Returns a Map<playerName, teamName> showing which team currently owns each
 // rostered player across the entire league. Used by AddDropPlayerModal to
 // label players as "Unavailable / on Team X" without re-running the same

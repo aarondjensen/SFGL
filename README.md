@@ -27,6 +27,7 @@ which is why the shared logic lives there:
 | `api/_league.js` | `SEASON`, the swing definitions, the ET wall clock, waiver-cutoff maths, transaction→team matching |
 | `api/_rules.js` | bonuses, segment resolution, fees, the swing pot, effective-roster replay, the swing award |
 | `api/_playerNames.js` | name identity — `nameKey`, `NameSet`, `NameMap`, `namesMatch` |
+| `api/_draft.js` | keeper eligibility and stars, the reverse-standings snake, pick trades, the season rollover |
 | `api/_constants.js` | shared server constants |
 
 Files prefixed with `_` are not routable by Vercel, so they are modules rather
@@ -128,6 +129,26 @@ android/, ios/         Capacitor native projects
 firestore.rules        the security model — READ THE HEADER BEFORE DEPLOYING
 ```
 
+### The offseason
+
+Between seasons the app grows two screens, both driven by `draft_state/{season}`
+and `draft_picks/{season}-{overall}`:
+
+- **Keeper tagging** — each manager tags one limited and one unlimited keeper
+  on their own team document (`team.keepers`). A limited player may be kept
+  three seasons, which is what the star badges count; an unlimited player
+  tagged into the limited slot is promoted and collects a retroactive star for
+  his unlimited season, so he arrives on two.
+- **The draft** — reverse final standings, snaking every round, with the first
+  two rounds producing limited players. Picks are tradeable, so a slot's owner
+  and the team it originally belonged to are two different fields.
+
+The board is never stored. `resolveDraftOrder` rebuilds the snake and re-applies
+the trades from the state document on every read, so the commissioner's panel,
+the draft screen and the rollover are one computation rather than three copies.
+Commissioner tooling lives in Commish → Season Rollover, which is an ordered
+checklist ending in the roster rewrite.
+
 ### Data flow
 
 `useLeague` is the single owner of league state. Nothing else reads Firestore
@@ -204,6 +225,12 @@ which tries the parsed date first and only falls back to the ordering field.
 Never `orderBy('start_date')` in a query either — Firestore silently drops
 documents missing the ordered field, which once made the whole collection read
 as empty.
+
+**The rollover runs against `NEXT_SEASON`, not `SEASON`.** Keepers are tagged
+and the draft is held in the gap before `SEASON` moves — the closing season's
+results, swing awards and fee reconciliation are all still keyed to it, and it
+is a build-time constant that `vite.config.ts` substitutes into `index.html`.
+Bumping it is the last step of the Season Rollover checklist, not the first.
 
 **Time is Eastern.** Waiver windows, lineup locks and free-agency windows are
 all ET. Use `getETNow` / `getETClock` from `api/_league.js`; never

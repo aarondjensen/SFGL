@@ -5,6 +5,9 @@ import { computeSwingAward } from '../utils/swingAward';
 import { buildEffectiveRoster } from '../utils/sharedHelpers';
 import { sfglDataApi } from '../api/firebase';
 import { NameSet } from '../../api/_playerNames.js';
+import { NEXT_SEASON } from '../../api/_league.js';
+import { DRAFT_STATUS, KEEPER_SLOTS, pickLabel } from '../../api/_draft.js';
+import { useDraft } from '../hooks/useDraft';
 
 // Panel imports — each becomes a drillable section in the new architecture.
 import { DataSyncPanel } from './admin/DataSyncPanel';
@@ -14,6 +17,7 @@ import { MergePlayersPanel } from './admin/MergePlayersPanel';
 import { NameAuditPanel } from './admin/NameAuditPanel';
 import { ScheduleImportPanel } from './admin/ScheduleImportPanel';
 import { SeasonSettingsPanel } from './admin/SeasonSettingsPanel';
+import { SeasonRolloverPanel } from './admin/SeasonRolloverPanel';
 import { TournamentResultsPanel } from './admin/TournamentResultsPanel';
 import { WaiverProcessingPanel } from './admin/WaiverProcessingPanel';
 
@@ -323,6 +327,29 @@ export const AdminView = ({
     return () => { cancelled = true; };
   }, []);
 
+  // 10. The offseason. Only ever populated between seasons — useDraft returns
+  //     nothing at all until a rollover has been started, so nine months of the
+  //     year this contributes no alert and an idle tile.
+  const draft = useDraft(NEXT_SEASON);
+
+  const teamsMissingKeepers = useMemo(
+    () => (teams || []).filter(t => KEEPER_SLOTS.some(slot => !t?.keepers?.[slot])).length,
+    [teams]
+  );
+
+  const rolloverDesc =
+    draft.status === DRAFT_STATUS.COMPLETE  ? `${NEXT_SEASON} rosters are live`
+    : draft.status === DRAFT_STATUS.DRAFTING ? (draft.onTheClock
+        ? `${pickLabel(draft.onTheClock)} on the clock`
+        : 'Every pick is in')
+    : draft.status === DRAFT_STATUS.KEEPERS  ? `${teamsMissingKeepers} team${teamsMissingKeepers === 1 ? '' : 's'} still tagging`
+    : `Keepers, the draft, and rolling into ${NEXT_SEASON}`;
+
+  const rolloverBadge =
+    draft.status === DRAFT_STATUS.KEEPERS && teamsMissingKeepers > 0
+      ? { count: teamsMissingKeepers, level: 'info' }
+      : null;
+
   // Build the flat alerts list, priority-ordered top→bottom.
   const alerts = [];
   if (pendingWaivers.length > 0) {
@@ -330,6 +357,27 @@ export const AdminView = ({
       level: 'action',
       text: `${pendingWaivers.length} pending waiver${pendingWaivers.length === 1 ? '' : 's'} to process`,
       jump: 'waivers',
+    });
+  }
+  if (draft.status === DRAFT_STATUS.DRAFTING && draft.onTheClock) {
+    alerts.push({
+      level: 'action',
+      text: `${NEXT_SEASON} draft — ${pickLabel(draft.onTheClock)} is on the clock`,
+      jump: 'rollover',
+    });
+  }
+  if (draft.status === DRAFT_STATUS.DRAFTING && !draft.onTheClock) {
+    alerts.push({
+      level: 'action',
+      text: `${NEXT_SEASON} draft is complete — apply the rollover`,
+      jump: 'rollover',
+    });
+  }
+  if (draft.status === DRAFT_STATUS.KEEPERS && teamsMissingKeepers > 0) {
+    alerts.push({
+      level: 'info',
+      text: `${teamsMissingKeepers} team${teamsMissingKeepers === 1 ? '' : 's'} ${teamsMissingKeepers === 1 ? 'has' : 'have'} keeper slots left untagged`,
+      jump: 'rollover',
     });
   }
   // Swing winners auto-award the moment the final event of a swing is
@@ -481,6 +529,11 @@ export const AdminView = ({
           id: 'import', icon: '📥', label: 'Import Schedule',
           desc: 'Bulk import next season from PGA Tour',
         },
+        {
+          id: 'rollover', icon: '🔁', label: 'Season Rollover',
+          desc: rolloverDesc,
+          badge: rolloverBadge,
+        },
       ],
     },
   ];
@@ -590,6 +643,21 @@ export const AdminView = ({
             <ScheduleImportPanel
               tournaments={tournaments}
               setTournaments={setTournaments}
+            />
+          </>
+        );
+      case 'rollover':
+        return (
+          <>
+            <BackBar label="Season Rollover" onBack={back} />
+            <SeasonRolloverPanel
+              teams={teams}
+              tournaments={tournaments}
+              transactions={transactions}
+              allPlayers={allPlayers}
+              settings={settings}
+              updateTeams={updateTeams}
+              setTransactions={setTransactions}
             />
           </>
         );

@@ -21,7 +21,7 @@ import {
   playerRegistryApi,
 } from '../api/firebase';
 import { isTournamentLocked, isLineupEditingOpen, isFreeAgentWindowOpen, isWaiverWindowOpen, setTeamRegistry } from '../utils';
-import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, buildEffectiveRoster, hydratePlayer } from '../utils/sharedHelpers';
+import { buildPlayerAttributeIndex, setPlayerRegistry, getPlayerRegistry, hydratedRoster } from '../utils/sharedHelpers';
 import { mergeHeadshotEntry } from '../utils/headshotUtils';
 import { deepEqual, changedFields as diffFields } from '../utils/deepEqual';
 
@@ -694,21 +694,17 @@ export const useRoster = (team, transactions, activeTournamentIndex, tournaments
   return useMemo(() => {
     if (!team) return [];
 
-    // Membership + ordering come from the canonical helper, so this hook can't
-    // drift from AddDropPlayerModal / AdminView / WaiverProcessingPanel again.
-    const names = buildEffectiveRoster(team, transactions, {
+    // Membership, ordering AND hydration come from the canonical helper, so
+    // this hook can't drift from AddDropPlayerModal / AdminView /
+    // WaiverProcessingPanel — or from the offseason screens, which need the
+    // same roster outside of React and would otherwise have hydrated it their
+    // own way. Hydration matters as much as membership here: a bare `{ name }`
+    // for a player added by transaction has no `limited` and no stars, which
+    // is the data-loss bug hydratePlayer exists to prevent.
+    return hydratedRoster(team, transactions, {
       tournaments: tournaments || [],
       upToTournamentIndex: activeTournamentIndex >= 0 ? activeTournamentIndex : undefined,
     });
-
-    // Hydrate from the durable attribute index rather than minting a zeroed
-    // UNLIMITED player for anyone added by transaction. That default was the
-    // same data-loss bug hydratePlayer exists to prevent: a LIMITED player
-    // picked back up mid-season came back unlimited with their stars, years of
-    // service, and SFGL tallies wiped.
-    const attrIndex = buildPlayerAttributeIndex(team ? [team] : [], tournaments || []);
-    const byName = new Map((team.roster || []).map(p => [p.name, p]));
-    return [...names].map(name => byName.get(name) || hydratePlayer(name, attrIndex));
   }, [team, transactions, activeTournamentIndex, tournaments]);
 };
 

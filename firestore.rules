@@ -174,11 +174,19 @@ service cloud.firestore {
     // fields are still sent; affectedKeys() reports only keys whose VALUE
     // changed, so that is fine. A write that DROPS a field the document had
     // shows up as an affected key and is denied, which is what we want.
+    //
+    // `keepers` is here because tagging a keeper is a manager decision, made
+    // from the offseason bar on their own team (KeeperTagModal). It holds two
+    // player names and nothing else; the ELIGIBILITY rules that decide whether
+    // those names are legal keepers live in api/_draft.js and are re-checked by
+    // the commissioner's rollover before any of it reaches a roster, so a
+    // manager writing a name here can at worst give themselves an error
+    // message on rollover day.
     function managerEditableTeamFields() {
       return ['name', 'abbr', 'roster', 'lineup', 'backup', 'notificationPrefs',
               'email', 'displayName', 'allowance', 'registryOverrides',
               'earnings', 'segmentEarnings', 'segmentFees', 'transactionFees',
-              'mulligans'];
+              'mulligans', 'keepers'];
     }
 
     match /teams/{teamId} {
@@ -279,6 +287,48 @@ service cloud.firestore {
     // writes. Results live on the tournament document, so this covers them.
     match /tournaments/{doc}     { allow read: if signedIn(); allow write: if isCommish(); }
     match /league_settings/{doc} { allow read: if signedIn(); allow write: if isCommish(); }
+
+    // ── The draft ───────────────────────────────────────────────────────────
+    // draft_state/{season} is league configuration — the round counts, the
+    // reverse-standings order, the pick trades, the status. Commissioner-owned,
+    // same as the schedule and the league rules above.
+    match /draft_state/{season} {
+      allow read: if signedIn();
+      allow write: if isCommish();
+    }
+
+    // draft_picks/{season}-{overall} is one selection per slot.
+    //
+    // A manager may CREATE the pick for a slot their team owns while the draft
+    // is running, which is what lets managers draft for themselves rather than
+    // dictating every selection to the commissioner. They may not update or
+    // delete one: a made pick is a fact about the board, and undoing it is a
+    // commissioner action.
+    //
+    // Create-only is also what makes setDoc() safe here — draftApi.makePick
+    // writes a DERIVED document id, so a second submission for the same slot
+    // is an update, and an update is denied for everyone but the commissioner.
+    // Two managers racing the same pick cannot both land it.
+    //
+    // Whose TURN it is is not checked here. It would need the derived board —
+    // the snake order with trades applied — which is a computation, not a
+    // stored field, and rules cannot run it. The draft screen enforces the
+    // clock and the commissioner can undo; what these rules guarantee is the
+    // part that matters for tamper-proofing, which is that nobody writes a
+    // pick into someone else's slot.
+    function draftIsRunning(season) {
+      return exists(/databases/$(database)/documents/draft_state/$(season))
+        && get(/databases/$(database)/documents/draft_state/$(season)).data.get('status', '') == 'drafting';
+    }
+
+    match /draft_picks/{pickId} {
+      allow read: if signedIn();
+      allow create: if isCommish()
+                    || (isMember()
+                        && ownsTeam(request.resource.data.get('teamId', null))
+                        && draftIsRunning(string(request.resource.data.get('season', 0))));
+      allow update, delete: if isCommish();
+    }
 
     // ── Push tokens ─────────────────────────────────────────────────────────
     // Doc ID is the FCM token itself. A device registers and unregisters its
