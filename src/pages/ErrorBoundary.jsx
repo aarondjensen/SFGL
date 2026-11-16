@@ -8,6 +8,10 @@
 //      commish via Brevo. Failure to report is silent — don't let logging
 //      errors take down the fallback UI.
 //
+// The default fallback is a full card, sized for a boundary that owns a whole
+// tab. A caller wrapping something smaller — a banner above the tab content —
+// passes `fallback` instead; see the prop's note on render().
+//
 // Rate limiting: each browser session reports at most MAX_REPORTS errors
 // (default 5). Beyond that, errors are caught and shown but not emailed.
 // Prevents a render-loop error from spamming the commish's inbox.
@@ -267,6 +271,23 @@ export class ErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
+      // An explicit `fallback` wins over the card below. It is either a node or
+      // a function of `{ error, retry }` — the function form exists so a
+      // compact fallback can still offer the retry, which is the only way back
+      // short of reloading the page.
+      //
+      // Tested with `in` rather than a truthiness check: `fallback={null}` is a
+      // caller deliberately asking for nothing, and is not the same as not
+      // passing one. (Nothing in the app wants that today — a banner that
+      // silently vanishes tells a manager neither what broke nor that anything
+      // did — but the distinction belongs to the caller, not to this file.)
+      if ('fallback' in this.props) {
+        const { fallback } = this.props;
+        return typeof fallback === 'function'
+          ? fallback({ error: this.state.error, retry: this.handleRetry })
+          : fallback;
+      }
+
       const tabLabel = this.props.tabName ? ` in ${this.props.tabName}` : '';
       return (
         <div style={{

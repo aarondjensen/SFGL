@@ -63,7 +63,7 @@ const LazyAccountModal      = React.lazy(() => import('./components/AccountModal
 const LazyUserSettingsModal = React.lazy(() => import('./components/UserSettingsModal').then(m => ({ default: m.UserSettingsModal })));
 
 import { useLeague }       from './hooks';
-import { colors, fonts, fontSize, amber, gold, white, black, brass } from './theme.js';
+import { theme, colors, fonts, fontSize, amber, gold, white, black, brass } from './theme.js';
 import { STORAGE_KEYS, INITIAL_TEAMS } from './constants';
 import { SEASON } from '../api/_league.js';
 import { tournamentsApi, playersApi } from './api/firebase';
@@ -889,19 +889,53 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
 
         {/* Keepers and the draft, on every tab. A manager who opens the app on
             Standings in November still has to find out that the draft has
-            started, so this cannot live inside one tab's view. */}
+            started, so this cannot live inside one tab's view.
+
+            Its OWN boundary, outside the tab one below. Two reasons, and the
+            first is the one that matters: rendered bare, a crash in here had no
+            boundary at all — it unmounted the whole tree to a blank page, and
+            because React render errors never reach window.onerror it sent no
+            report either. That is the opposite of what the newest code in the
+            app should do. Second, a boundary of its own means a broken draft
+            sheet degrades to the line below instead of taking the tab's
+            content down with it.
+
+            The boundary sits OUTSIDE the Suspense so it also catches a failed
+            lazy load — which after a deploy is the stale-chunk case, and
+            componentDidCatch silently reloads for that rather than reporting
+            it. No `key`: there is nothing to reset it on, and Try Again is the
+            way back. */}
         {!isGuest && (
-          <Suspense fallback={null}>
-            <LazyOffseasonBar
-              teams={resolvedTeams}
-              transactions={safeTransactions}
-              tournaments={safeTournaments}
-              allPlayers={allPlayers}
-              loggedInTeamId={loggedInTeamId}
-              isCommissioner={isCommissioner}
-              updateTeam={updateTeam}
-            />
-          </Suspense>
+          <ErrorBoundary
+            tabName="offseason"
+            fallback={({ retry }) => (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 14px', marginBottom: 12, borderRadius: 6,
+                background: colors.dangerBg,
+                border: `1px solid ${colors.dangerBorder}`,
+              }}>
+                <span style={{ flex: 1, fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textSecondary }}>
+                  The keeper and draft panel failed to load. The rest of the app is fine.
+                </span>
+                <button onClick={retry} style={{ ...theme.btnSecondary, padding: '5px 12px', flexShrink: 0 }}>
+                  Try again
+                </button>
+              </div>
+            )}
+          >
+            <Suspense fallback={null}>
+              <LazyOffseasonBar
+                teams={resolvedTeams}
+                transactions={safeTransactions}
+                tournaments={safeTournaments}
+                allPlayers={allPlayers}
+                loggedInTeamId={loggedInTeamId}
+                isCommissioner={isCommissioner}
+                updateTeam={updateTeam}
+              />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
         <ErrorBoundary key={activeTab} tabName={activeTab}>
