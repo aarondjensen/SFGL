@@ -109,11 +109,21 @@ test('a promoted player has exactly one keeper season left after this one', () =
   assert.equal(D.keeperStatus(nextYear).limited.eligible, false);
 });
 
-test('keeping resets the start count and advances years of service', () => {
+test('gold → gold: the ordinary keep adds a star AND a year of service', () => {
+  // The transition most of the league makes every year, and the one a summary
+  // of the rules is likeliest to skip over because it is the unsurprising one.
   const kept = D.keptPlayerAttrs(limited('Kept', 1, { yearsOfService: 4, starts: 12 }), 'limited');
-  assert.equal(kept.starts, 0, 'the limited-start cap is per season');
+  assert.equal(kept.stars, 2, 'a kept limited player earns a star for the season');
   assert.equal(kept.yearsOfService, 5);
-  assert.equal(kept.stars, 2);
+  assert.equal(kept.limited, true);
+  assert.equal(kept.unlimited, false);
+  assert.equal(kept.starts, 0, 'the limited-start cap is per season');
+
+  // All the way up, then the ceiling.
+  const two = D.keptPlayerAttrs(limited('Up', 1), 'limited');
+  const three = D.keptPlayerAttrs(two, 'limited');
+  assert.deepEqual([two.stars, three.stars], [2, 3]);
+  assert.equal(D.keeperStatus(three).limited.eligible, false);
 });
 
 test('the unlimited slot turns a plain player blue, with no visible star', () => {

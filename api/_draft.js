@@ -30,6 +30,39 @@
 //     a limited player and gets his first star.
 //   • Picks are tradeable, so a pick's owner and the team whose slot it is are
 //     two different things.
+//
+// ── The tiers, and every move between them ──────────────────────────────────
+//
+// There are THREE tiers, not two, and the middle one is a designation rather
+// than a description. Gold is limited: start-capped, starred, on a keeper
+// clock. BLUE is the unlimited keeper — one per team per year, a one-year
+// option that must be exercised. White is everybody else, uncapped and
+// uncommitted. All three render distinctly (blue is checked first, then gold,
+// then the fall-through to white).
+//
+//   from → to        allowed  how, and what it costs
+//   ───────────────────────────────────────────────────────────────────────
+//   white → blue     yes      the unlimited keeper slot. 0 stars, but the
+//                             season IS his first year of service — the star
+//                             for it appears retroactively on promotion
+//   white → gold     yes      tagged limited, or drafted in a limited round.
+//                             1 star: no unlimited season to credit, so three
+//                             keeper seasons ahead rather than two
+//   blue  → gold     yes      tagged limited, or drafted in a limited round.
+//                             2 stars — one retroactive for the blue year
+//   gold  → gold     yes      kept again: +1 star AND +1 year of service, to
+//                             a ceiling of three. This is the ordinary keep,
+//                             and the one most of the league does every year
+//   blue  → white    yes      not tagged: the designation is spent, he goes
+//                             back into the draft and may be taken again
+//   blue  → blue     NO       one year only. Tag him limited or lose him
+//   gold  → blue     NO       no path anywhere. A correction will not do it
+//                             either — see starCorrectionOverrides
+//   gold  → white    NO       once limited, always limited. Enforced on every
+//                             drop and re-add by buildPlayerAttributeIndex,
+//                             and by draftedPlayerAttrs on a late-round pick
+//
+// Every row has a test in scripts/test-draft.mjs, the refusals included.
 // ============================================================================
 
 import { getSeasonEarningsByTeam } from './_rules.js';
