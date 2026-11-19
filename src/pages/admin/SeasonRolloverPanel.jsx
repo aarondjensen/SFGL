@@ -6,14 +6,17 @@
 // are irreversible in ways that matter:
 //
 //   1  Archive          snapshot the closing season before anything is reset
-//   2  Draft order      final standings, reversed; the commissioner can settle
+//   2  Years of service verify the star counts eligibility is judged on, against
+//                       the league's sheet — nothing in the app has ever
+//                       written them
+//   3  Draft order      final standings, reversed; the commissioner can settle
 //                       a tie by hand
-//   3  Keepers          open tagging, watch it come in
-//   4  Draft            run the board
-//   5  Apply            keepers + picks become the new rosters, and the
+//   4  Keepers          open tagging, watch it come in
+//   5  Draft            run the board
+//   6  Apply            keepers + picks become the new rosters, and the
 //                       closing season's transactions are cleared
 //
-// Step 5 is the one to be careful about, and the reason step 1 gates it. It
+// Step 6 is the one to be careful about, and the reason step 1 gates it. It
 // rewrites every roster in the league AND deletes every transaction — which it
 // has to, because buildEffectiveRoster replays processed transactions on top of
 // `team.roster`, so leaving last season's add/drops in place would replay them
@@ -46,6 +49,7 @@ import {
 import { DEFAULT_MULLIGANS } from '../../constants';
 import { draftApi, sfglDataApi } from '../../api/firebase';
 import { useDraft } from '../../hooks/useDraft';
+import { KeeperYearsStep } from './KeeperYearsStep';
 import { hydratedRoster, buildPlayerAttributeIndex, getPlayerRegistry } from '../../utils/sharedHelpers';
 
 // Both sheets are imported dynamically HERE as well as from OffseasonBar. That
@@ -166,7 +170,7 @@ export const SeasonRolloverPanel = ({
     dialog.showToast(`✓ ${SEASON} archived`, 'success');
   });
 
-  // ── 2 · Order ─────────────────────────────────────────────────────────────
+  // ── 3 · Order ─────────────────────────────────────────────────────────────
   const move = (index, delta) => {
     const next = [...effOrder];
     const target = index + delta;
@@ -188,13 +192,13 @@ export const SeasonRolloverPanel = ({
     dialog.showToast('✓ Draft order saved', 'success');
   });
 
-  // ── 3 / 4 · Status transitions ────────────────────────────────────────────
+  // ── 4 / 5 · Status transitions ────────────────────────────────────────────
   const setStatus = (next, label) => run('status', async () => {
     await draftApi.set(NEXT_SEASON, { status: next, [`${next}At`]: new Date().toISOString() });
     dialog.showToast(`✓ ${label}`, 'success');
   });
 
-  // ── 5 · Apply ─────────────────────────────────────────────────────────────
+  // ── 6 · Apply ─────────────────────────────────────────────────────────────
   //
   // Built in full BEFORE anything is written. rolloverRoster throws on an
   // illegal keeper (a name that is not on the roster, one player tagged in
@@ -280,7 +284,7 @@ export const SeasonRolloverPanel = ({
         <StepHeader n={1} title="Archive the season" done={archived} />
         <div style={M.descText}>
           Writes teams, the schedule with its results, every transaction and the final
-          standings to <code>sfgl_data/{archiveKey(SEASON)}</code>. Step 5 will not run
+          standings to <code>sfgl_data/{archiveKey(SEASON)}</code>. Step 6 will not run
           without it.
         </div>
         <button
@@ -293,9 +297,19 @@ export const SeasonRolloverPanel = ({
         </button>
       </div>
 
-      {/* ── 2 · Draft order ── */}
+      {/* ── 2 · Years of service ── */}
       <div style={M.group}>
-        <StepHeader n={2} title="Draft order" done={!!draft.state?.orderTeamIds?.length} />
+        <StepHeader
+          n={2}
+          title="Years of service"
+          done={status === DRAFT_STATUS.DRAFTING || status === DRAFT_STATUS.COMPLETE}
+        />
+        <KeeperYearsStep teams={teams} rosters={rosters} updateTeams={updateTeams} />
+      </div>
+
+      {/* ── 3 · Draft order ── */}
+      <div style={M.group}>
+        <StepHeader n={3} title="Draft order" done={!!draft.state?.orderTeamIds?.length} />
         <div style={M.descText}>
           Reverse final standings — last place picks first — and it snakes every round.
           Ties break on team id, so settle a real one with the arrows.
@@ -383,9 +397,9 @@ export const SeasonRolloverPanel = ({
         )}
       </div>
 
-      {/* ── 3 · Keepers ── */}
+      {/* ── 4 · Keepers ── */}
       <div style={M.group}>
-        <StepHeader n={3} title="Keeper tagging" done={status === DRAFT_STATUS.DRAFTING || status === DRAFT_STATUS.COMPLETE} />
+        <StepHeader n={4} title="Keeper tagging" done={status === DRAFT_STATUS.DRAFTING || status === DRAFT_STATUS.COMPLETE} />
         <div style={M.descText}>
           One limited keeper and one unlimited keeper per manager. A limited player on
           three stars cannot be kept; an unlimited player promoted into the limited slot
@@ -439,9 +453,9 @@ export const SeasonRolloverPanel = ({
         </button>
       </div>
 
-      {/* ── 4 · Draft ── */}
+      {/* ── 5 · Draft ── */}
       <div style={M.group}>
-        <StepHeader n={4} title="Run the draft" done={status === DRAFT_STATUS.COMPLETE || (board.length > 0 && picksMade >= board.length)} />
+        <StepHeader n={5} title="Run the draft" done={status === DRAFT_STATUS.COMPLETE || (board.length > 0 && picksMade >= board.length)} />
         <div style={M.descText}>
           {board.length === 0
             ? 'Save an order first — there is no board to run.'
@@ -471,9 +485,9 @@ export const SeasonRolloverPanel = ({
         </div>
       </div>
 
-      {/* ── 5 · Apply ── */}
+      {/* ── 6 · Apply ── */}
       <div style={M.group}>
-        <StepHeader n={5} title="Apply the rollover" done={status === DRAFT_STATUS.COMPLETE} />
+        <StepHeader n={6} title="Apply the rollover" done={status === DRAFT_STATUS.COMPLETE} />
         <div style={M.descText}>
           Replaces every roster with its keepers and picks, clears lineups, money and
           mulligans, resets the limited-start counts, and deletes the {SEASON} transactions

@@ -522,6 +522,41 @@ export const rolloverTeam = ({ team, roster = [], mulligans = null } = {}) => {
 };
 
 /**
+ * Force-set overrides for a star / tier CORRECTION, and nothing else.
+ *
+ * Deliberately not rolloverRegistryOverrides, which also zeroes `starts`
+ * because a rollover begins a new season. A correction made BEFORE the
+ * rollover must leave the start counts alone: the season being closed out
+ * still owns them, the limited-start audit still reads them, and zeroing them
+ * here would make the archive disagree with what was actually played.
+ *
+ * The force-set is the whole point. buildPlayerAttributeIndex merges `stars`
+ * with Math.max, so LOWERING a count through an ordinary save is a silent
+ * no-op — the roster entry changes, the next save reads the old higher value
+ * back out of the registry, and the number returns. Overrides are the
+ * documented way to make a monotonic tally go down, and a star correction is
+ * the second operation in the app that needs it.
+ *
+ * Takes corrected roster entries and emits only their tier fields. `limited`
+ * is never written false: once limited, always limited is a league rule the
+ * whole codebase enforces, and this is not the place to add the one path
+ * through it.
+ */
+export const starCorrectionOverrides = (players = []) => {
+  const overrides = {};
+  (players || []).forEach(p => {
+    if (!p?.name) return;
+    const limited = !!p.limited;
+    overrides[p.name] = {
+      limited,
+      unlimited: !limited,
+      stars: limited ? Math.max(1, Number(p.stars) || 1) : 0,
+    };
+  });
+  return overrides;
+};
+
+/**
  * Force-set registry values for a rolled-over roster.
  *
  * updateTeams merges the registry with Math.max, so a start count reset to
