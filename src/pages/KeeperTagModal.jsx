@@ -91,8 +91,11 @@ const PlayerRow = ({ player, slot, selected, onSelect }) => {
               // The promotion cost, stated before the tag is saved rather than
               // discovered a season later when he runs out of keeper years.
               ? slotStatus.promotion
-                ? player.unlimited
-                  ? `Promoted to limited → ${slotStatus.starsIfKept} of ${status.maxStars} stars (one retroactive for his unlimited season)`
+                ? status.unlimitedYearExpiring
+                  // Blue is a one-year option and this is the year it has to
+                  // be exercised. Saying only what he would BECOME buries the
+                  // part that costs a manager a player.
+                  ? `His unlimited year is up — keep him → ${slotStatus.starsIfKept} of ${status.maxStars} stars (one retroactive), or he returns to the draft`
                   : `Promoted straight to limited → ${slotStatus.starsIfKept} of ${status.maxStars} stars (no unlimited season to credit)`
                 : `→ ${slotStatus.starsIfKept} of ${status.maxStars} stars`
               : player.unlimited
@@ -145,6 +148,16 @@ export const KeeperTagModal = ({
     });
     return out;
   }, [roster, picks]);
+
+  // Blue players this manager has not tagged anywhere. Their year is spent, so
+  // leaving the sheet like this is a decision to let them go — worth saying out
+  // loud, since nothing else in the app will mention it until they turn up in
+  // the draft pool.
+  const expiringUnkept = useMemo(() => (roster || [])
+    .filter(p => p?.name && keeperStatus(p).unlimitedYearExpiring)
+    .filter(p => p.name !== picks.limited && p.name !== picks.unlimited)
+    .map(p => p.name),
+  [roster, picks]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -221,6 +234,19 @@ export const KeeperTagModal = ({
             ))}
           </div>
         ))}
+
+        {expiringUnkept.length > 0 && (
+          <div style={{
+            padding: '9px 12px', borderRadius: 4, marginBottom: 10,
+            background: colors.dangerBg, border: `1px solid ${colors.dangerBorder}`,
+            fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textSecondary,
+          }}>
+            <strong style={{ color: colors.danger }}>{expiringUnkept.join(', ')}</strong>
+            {expiringUnkept.length === 1
+              ? ' spent last season as your unlimited keeper. Blue is a one-year designation: tag him limited here, or he goes back into the draft.'
+              : ' spent last season as unlimited keepers. Blue is a one-year designation: tag them limited here, or they go back into the draft.'}
+          </div>
+        )}
 
         {tagged < KEEPER_SLOTS.length && (
           // A warning, not a block. A manager may genuinely have nobody worth

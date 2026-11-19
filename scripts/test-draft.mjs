@@ -116,8 +116,10 @@ test('keeping resets the start count and advances years of service', () => {
   assert.equal(kept.stars, 2);
 });
 
-test('keeping an unlimited player in the unlimited slot leaves him unlimited', () => {
-  const kept = D.keptPlayerAttrs(unlimited('Blue'), 'unlimited');
+test('the unlimited slot turns a plain player blue, with no visible star', () => {
+  // His service has started even though nothing shows it; the star for this
+  // season appears retroactively the year he is named the keeper.
+  const kept = D.keptPlayerAttrs(plain('White'), 'unlimited');
   assert.equal(kept.limited, false);
   assert.equal(kept.unlimited, true);
   assert.equal(kept.stars, 0);
@@ -125,7 +127,7 @@ test('keeping an unlimited player in the unlimited slot leaves him unlimited', (
 
 test('career tallies survive the rollover; the season counter does not', () => {
   const kept = D.keptPlayerAttrs(
-    unlimited('Blue', { sfglEarnings: 1_250_000, cutsMade: 14, eventsPlayed: 19, starts: 7 }),
+    plain('White', { sfglEarnings: 1_250_000, cutsMade: 14, eventsPlayed: 19, starts: 7 }),
     'unlimited',
   );
   assert.equal(kept.sfglEarnings, 1_250_000);
@@ -200,6 +202,52 @@ test('a re-drafted player past the cap is simply un-keepable, not un-draftable',
   const p = D.draftedPlayerAttrs('Yellow', { round: 4, limitedRounds: 2, prior: limited('Yellow', 3) });
   assert.equal(p.stars, 4);
   assert.equal(D.keeperStatus(p).limited.eligible, false);
+});
+
+test('blue is a ONE-YEAR designation — it cannot be spent twice', () => {
+  // Without this a manager parks a player at zero stars indefinitely and
+  // starts his keeper clock whenever it suits them: three seasons of control
+  // for the price of one slot a year.
+  assert.equal(D.canBeMadeUnlimited(plain('White')), true);
+  assert.equal(D.canBeMadeUnlimited(unlimited('Blue')), false);
+  assert.equal(D.canBeMadeUnlimited(limited('Gold', 1)), false);
+
+  const status = D.keeperStatus(unlimited('Blue'));
+  assert.equal(status.unlimited.eligible, false);
+  assert.match(status.unlimited.reason, /back into the draft/);
+  assert.throws(() => D.keptPlayerAttrs(unlimited('Blue'), 'unlimited'), /cannot be kept/);
+});
+
+test('a blue player whose year is up is flagged as expiring', () => {
+  // The keeper sheet warns on this, and gets the answer from here rather than
+  // re-deriving "is he blue" beside the eligibility that depends on it.
+  assert.equal(D.keeperStatus(unlimited('Blue')).unlimitedYearExpiring, true);
+  assert.equal(D.keeperStatus(plain('White')).unlimitedYearExpiring, false);
+  assert.equal(D.keeperStatus(limited('Gold', 1)).unlimitedYearExpiring, false);
+});
+
+test('his way out is the limited slot, which stays open to him', () => {
+  // "Tagged as limited or back in the draft" — so the one door must not be
+  // closed by the rule that shuts the other.
+  const blue = unlimited('Blue');
+  assert.equal(D.keeperStatus(blue).limited.eligible, true);
+  assert.equal(D.keptPlayerAttrs(blue, 'limited').stars, 2);
+});
+
+test('a white player may be tagged limited directly, starting on one', () => {
+  // He skips blue, so there is no unlimited season to credit him for — and
+  // three keeper seasons ahead of him rather than two.
+  const white = plain('Prospect', { yearsOfService: 2 });
+  assert.equal(D.keeperStatus(white).limited.eligible, true);
+  const kept = D.keptPlayerAttrs(white, 'limited');
+  assert.equal(kept.limited, true);
+  assert.equal(kept.stars, 1);
+});
+
+test('the three tiers are named by keeperStatus', () => {
+  assert.equal(D.keeperStatus(limited('Gold', 2)).tier, 'limited');
+  assert.equal(D.keeperStatus(unlimited('Blue')).tier, 'unlimited');
+  assert.equal(D.keeperStatus(plain('White')).tier, 'plain');
 });
 
 test('the white → blue → gold pipeline spends exactly three seasons', () => {
@@ -348,20 +396,20 @@ const TEAM = {
   id: 'a', name: 'Alpha',
   lineup: ['Old Guy'], backup: 'Bench Guy',
   earnings: 500, segmentEarnings: 100, segmentFees: 8, transactionFees: 8,
-  roster: [limited('Yellow One', 1), unlimited('Blue One'), limited('Maxed', 3)],
+  roster: [limited('Yellow One', 1), plain('White One'), limited('Maxed', 3)],
 };
 
 test('the new roster is the two keepers followed by the picks, in board order', () => {
   const roster = D.rolloverRoster({
     team: TEAM,
-    keepers: { limited: 'Yellow One', unlimited: 'Blue One' },
+    keepers: { limited: 'Yellow One', unlimited: 'White One' },
     picks: [
       { overall: 5, round: 2, player: 'Second Pick' },
       { overall: 1, round: 1, player: 'First Pick' },
     ],
     limitedRounds: 2,
   });
-  assert.deepEqual(roster.map(p => p.name), ['Yellow One', 'Blue One', 'First Pick', 'Second Pick']);
+  assert.deepEqual(roster.map(p => p.name), ['Yellow One', 'White One', 'First Pick', 'Second Pick']);
   assert.deepEqual(roster.map(p => p.limited), [true, false, true, true]);
   assert.deepEqual(roster.map(p => p.stars), [2, 0, 1, 1]);
 });
@@ -370,15 +418,15 @@ test('a keeper is matched by player identity, not by string equality', () => {
   // The tag stores the name the manager saw; the roster entry may be spelled
   // by whichever source last wrote it. `===` on a golfer name is the bug this
   // codebase keeps re-fixing.
-  const team = { id: 'b', name: 'Bravo', roster: [unlimited('Nicolas Echavarria')] };
+  const team = { id: 'b', name: 'Bravo', roster: [plain('Nicolas Echavarria')] };
   const roster = D.rolloverRoster({ team, keepers: { unlimited: 'Nico Echavarria' } });
   assert.deepEqual(roster.map(p => p.name), ['Nicolas Echavarria']);
 });
 
 test('one player cannot be tagged in both slots', () => {
-  const team = { id: 'c', name: 'Charlie', roster: [unlimited('Blue One')] };
+  const team = { id: 'c', name: 'Charlie', roster: [plain('White One')] };
   assert.throws(
-    () => D.rolloverRoster({ team, keepers: { limited: 'Blue One', unlimited: 'Blue One' } }),
+    () => D.rolloverRoster({ team, keepers: { limited: 'White One', unlimited: 'White One' } }),
     /both keeper slots/,
   );
 });
@@ -391,8 +439,8 @@ test('a keeper who is not on the roster is refused, not silently dropped', () =>
 });
 
 test('an untagged slot simply produces a shorter roster', () => {
-  const roster = D.rolloverRoster({ team: TEAM, keepers: { unlimited: 'Blue One' }, picks: [] });
-  assert.deepEqual(roster.map(p => p.name), ['Blue One']);
+  const roster = D.rolloverRoster({ team: TEAM, keepers: { unlimited: 'White One' }, picks: [] });
+  assert.deepEqual(roster.map(p => p.name), ['White One']);
 });
 
 test('prior attributes are resolved by identity, so a promotion is not lost', () => {

@@ -83,15 +83,34 @@ export const effectiveStars = (player) => {
 };
 
 /**
- * Is this roster entry unlimited for keeper purposes?
+ * Does this player start without a cap?
  *
- * `!limited` rather than `unlimited === true`. A roster entry carrying neither
- * flag has no start cap, which is what unlimited MEANS to every rule in the
- * app (limitedStartsStatus caps `limited` players and nobody else), and rows
- * written before the tier flags existed are that shape. Treating them as a
- * third tier would leave them keepable in neither slot for no stated reason.
+ * `!limited` rather than `unlimited === true`, deliberately: limitedStartsStatus
+ * caps `limited` players and nobody else, so to every START rule in the app
+ * "not gold" IS "uncapped", and that covers blue and plain white alike. Rows
+ * written before the tier flags existed are the same shape.
+ *
+ * This answers a question about STARTS. It is not the keeper question — see
+ * canBeMadeUnlimited, which is narrower, because the blue designation is a
+ * thing you spend rather than a description of a start cap.
  */
 export const isUnlimitedTier = (player) => !!player && !player.limited;
+
+/**
+ * May this player be made the team's UNLIMITED keeper?
+ *
+ * Only a plain white player. Blue is a ONE-YEAR designation: when the year is
+ * up he is either tagged into the limited slot — collecting the retroactive
+ * star for it — or he goes back into the draft. He cannot be parked in blue a
+ * second time.
+ *
+ * That rule is what gives the designation its cost. Without it a manager could
+ * hold a player at zero stars indefinitely and start his keeper clock whenever
+ * it suited them, which is three seasons of control for the price of one slot
+ * a year. With it, blue is a one-year option that must be exercised.
+ */
+export const canBeMadeUnlimited = (player) =>
+  !!player && !player.limited && !player.unlimited;
 
 /**
  * Has this player served a season as a designated UNLIMITED keeper?
@@ -118,7 +137,7 @@ const servedAsUnlimited = (player) => !!player && !player.limited && !!player.un
  * Where a player stands as a keeper candidate.
  *
  * Returns:
- *   tier               'limited' | 'unlimited'
+ *   tier               'limited' (gold) | 'unlimited' (blue) | 'plain' (white)
  *   stars              the badge count (effectiveStars)
  *   maxStars           the league's keeper ceiling
  *   limited            { eligible, starsIfKept, promotion, reason }
@@ -148,9 +167,13 @@ export const keeperStatus = (player, { maxStars = KEEPER_MAX_STARS } = {}) => {
   const limitedEligible = limited ? stars < maxStars : true;
 
   return {
-    tier: limited ? 'limited' : 'unlimited',
+    tier: limited ? 'limited' : player?.unlimited ? 'unlimited' : 'plain',
     stars,
     maxStars,
+    // His blue year is spent: this is the last offseason he can be kept at
+    // all. Surfaced here rather than recomputed in the view, so the warning
+    // and the eligibility it is warning about come from one place.
+    unlimitedYearExpiring: !limited && !!player?.unlimited,
     limited: {
       eligible: limitedEligible,
       starsIfKept,
@@ -160,10 +183,16 @@ export const keeperStatus = (player, { maxStars = KEEPER_MAX_STARS } = {}) => {
         : `${stars} star${stars === 1 ? '' : 's'} — a limited player may be kept ${maxStars} seasons`,
     },
     unlimited: {
-      eligible: isUnlimitedTier(player),
-      reason: isUnlimitedTier(player)
+      eligible: canBeMadeUnlimited(player),
+      // Two different refusals, because they call for two different things
+      // from the manager. A gold player was never a candidate; a blue player
+      // is one whose year is UP, and the useful thing to tell his manager is
+      // what the alternative now is.
+      reason: canBeMadeUnlimited(player)
         ? null
-        : 'already limited — a limited player cannot fill the unlimited slot',
+        : limited
+          ? 'already limited — a limited player cannot fill the unlimited slot'
+          : 'his unlimited year is up — tag him limited now, or he goes back into the draft',
     },
   };
 };
