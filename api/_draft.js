@@ -596,6 +596,14 @@ export const rolloverTeam = ({ team, roster = [], mulligans = null } = {}) => {
  * is never written false: once limited, always limited is a league rule the
  * whole codebase enforces, and this is not the place to add the one path
  * through it.
+ *
+ * Nor does a correction ever MINT a blue designation. It used to derive
+ * `unlimited: !limited`, which is the same mistake draftedPlayerAttrs made —
+ * it treats blue as "whatever is not gold" when blue is a one-year option a
+ * manager spends through the unlimited keeper slot and nowhere else. White
+ * can become blue; yellow cannot, and neither can a correction. So the flag is
+ * carried over untouched, except that becoming gold clears it, because the two
+ * tiers are exclusive.
  */
 export const starCorrectionOverrides = (players = []) => {
   const overrides = {};
@@ -604,7 +612,7 @@ export const starCorrectionOverrides = (players = []) => {
     const limited = !!p.limited;
     overrides[p.name] = {
       limited,
-      unlimited: !limited,
+      unlimited: limited ? false : !!p.unlimited,
       stars: limited ? Math.max(1, Number(p.stars) || 1) : 0,
     };
   });

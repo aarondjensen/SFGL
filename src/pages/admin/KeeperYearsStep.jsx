@@ -185,7 +185,11 @@ export const KeeperYearsStep = ({ teams = [], rosters = {}, updateTeams }) => {
           changes.set(row.name, {
             ...row.entry,
             limited,
-            unlimited: !limited,
+            // Carried over, not derived from !limited. Blue is granted by the
+            // unlimited keeper slot and by nothing else — a data correction
+            // must not hand a player a designation his manager never spent.
+            // Becoming gold clears it, the two tiers being exclusive.
+            unlimited: limited ? false : !!row.entry.unlimited,
             stars: limited ? stars : 0,
           });
         });

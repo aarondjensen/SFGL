@@ -218,6 +218,48 @@ test('blue is a ONE-YEAR designation — it cannot be spent twice', () => {
   assert.throws(() => D.keptPlayerAttrs(unlimited('Blue'), 'unlimited'), /cannot be kept/);
 });
 
+test('yellow can never become blue, by any path', () => {
+  // White → blue is the keeper slot. Yellow → blue is nothing: a limited
+  // player is capped, starred and on a keeper clock, and handing him an
+  // uncapped blue designation would erase all three.
+  const gold = limited('Gold', 2);
+
+  // the keeper slot
+  assert.equal(D.canBeMadeUnlimited(gold), false);
+  assert.equal(D.keeperStatus(gold).unlimited.eligible, false);
+  assert.throws(() => D.keptPlayerAttrs(gold, 'unlimited'), /cannot be kept/);
+
+  // the draft, in a round that produces unlimited-start players
+  const redrafted = D.draftedPlayerAttrs('Gold', { round: 7, limitedRounds: 2, prior: gold });
+  assert.equal(redrafted.limited, true);
+  assert.equal(redrafted.unlimited, false);
+
+  // a star correction
+  assert.equal(D.starCorrectionOverrides([gold]).Gold.unlimited, false);
+
+  // and the rollover
+  assert.equal(D.rolloverRegistryOverrides([[D.keptPlayerAttrs(gold, 'limited')]]).Gold.unlimited, false);
+});
+
+test('a correction never mints a blue designation either', () => {
+  // It used to derive `unlimited: !limited`, which hands a white player a
+  // designation his manager never spent — the same mistake draftedPlayerAttrs
+  // made. Blue comes from the unlimited keeper slot and nowhere else.
+  assert.equal(D.starCorrectionOverrides([plain('White')]).White.unlimited, false);
+  // Already blue stays blue: a correction is about stars, not about taking a
+  // designation away.
+  assert.equal(D.starCorrectionOverrides([unlimited('Blue')]).Blue.unlimited, true);
+  // Becoming gold clears it — the two tiers are exclusive.
+  const promoted = { name: 'Blue', limited: true, unlimited: true, stars: 2 };
+  assert.equal(D.starCorrectionOverrides([promoted]).Blue.unlimited, false);
+  assert.equal(D.starCorrectionOverrides([promoted]).Blue.limited, true);
+});
+
+test('the years-of-service step carries the flag rather than deriving it', () => {
+  const step = readFileSync('src/pages/admin/KeeperYearsStep.jsx', 'utf8');
+  assert.equal(/unlimited: !limited/.test(step), false, 'that derivation mints blue out of nothing');
+});
+
 test('a blue player whose year is up is flagged as expiring', () => {
   // The keeper sheet warns on this, and gets the answer from here rather than
   // re-deriving "is he blue" beside the eligibility that depends on it.
