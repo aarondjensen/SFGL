@@ -93,12 +93,24 @@ export const effectiveStars = (player) => {
  */
 export const isUnlimitedTier = (player) => !!player && !player.limited;
 
-/** Has this player served an SFGL season as an unlimited player? */
-const servedAsUnlimited = (player) => {
-  if (!player || player.limited) return false;
-  if (player.unlimited) return true;
-  return (Number(player.yearsOfService) || 0) >= 1;
-};
+/**
+ * Has this player served a season as a designated UNLIMITED keeper?
+ *
+ * The league runs three tiers, not two: gold (limited, start-capped, starred),
+ * BLUE (unlimited — a scarce, deliberate designation, one per team per year),
+ * and plain white (everybody else). All three render distinctly, blue checked
+ * first (see the colour cascade in api/cron.js and TournamentsView).
+ *
+ * The keeper clock starts at BLUE, not at being on a roster: "the first year
+ * of service is the year he's kept as unlimited". So this asks whether the
+ * player carries the designation, and nothing else.
+ *
+ * It used to fall back to `yearsOfService >= 1`, which made every white player
+ * who had been around a season read as having served — and handed him the
+ * retroactive star that belongs only to a blue keeper. A white player taken in
+ * a limited round is starting his service, so he starts on one.
+ */
+const servedAsUnlimited = (player) => !!player && !player.limited && !!player.unlimited;
 
 // ── Keeper eligibility ───────────────────────────────────────────────────────
 
@@ -121,11 +133,17 @@ export const keeperStatus = (player, { maxStars = KEEPER_MAX_STARS } = {}) => {
   const stars = effectiveStars(player);
   const promotion = !limited;
 
-  // A promoted player starts his limited career on two: the retroactive star
-  // for the season just finished, plus the one he earns for the season ahead.
+  // A promoted BLUE keeper starts his limited career on two: the retroactive
+  // star for the season he served as unlimited, plus the one he earns for the
+  // season ahead. A white player has served nothing yet, so he starts on one.
+  //
+  // This condition has to be the same one draftedPlayerAttrs uses, or being
+  // named a keeper and being taken in a limited round would value the same
+  // player differently — and the keeper sheet would promise a star count the
+  // rollover then declined to write.
   const starsIfKept = limited
     ? stars + 1
-    : RETROACTIVE_UNLIMITED_STAR + 1;
+    : servedAsUnlimited(player) ? RETROACTIVE_UNLIMITED_STAR + 1 : 1;
 
   const limitedEligible = limited ? stars < maxStars : true;
 
@@ -259,10 +277,18 @@ export const draftedPlayerAttrs = (name, {
     else stars = servedAsUnlimited(prior) ? RETROACTIVE_UNLIMITED_STAR + 1 : 1;
   }
 
+  // Drafted outside a limited round means PLAIN, not blue. Blue is a keeper
+  // designation a manager spends — one per team per year — and a draft that
+  // handed it to all nine late-round picks would wipe out the tier the rule
+  // depends on: "one non-limited player can be made unlimited" says nothing at
+  // all if every non-limited player already is one.
+  //
+  // A player who arrives blue is one who was KEPT blue (keptPlayerAttrs with
+  // the unlimited slot), never one who was drafted.
   return {
     name,
     limited,
-    unlimited: !limited,
+    unlimited: false,
     stars,
     yearsOfService: (Number(prior?.yearsOfService) || 0) + 1,
     ...SEASON_RESET_FIELDS,

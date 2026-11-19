@@ -35,8 +35,13 @@ const { NameSet } = await import('../api/_playerNames.js');
 const limited = (name, stars, extra = {}) => ({
   name, limited: true, unlimited: false, stars, yearsOfService: stars, starts: 9, ...extra,
 });
+// Blue: the designated unlimited keeper. One per team per year.
 const unlimited = (name, extra = {}) => ({
   name, limited: false, unlimited: true, stars: 0, yearsOfService: 1, starts: 4, ...extra,
+});
+// Plain white: on the roster, carrying no keeper designation at all.
+const plain = (name, extra = {}) => ({
+  name, limited: false, unlimited: false, stars: 0, yearsOfService: 1, starts: 4, ...extra,
 });
 
 // ── Stars ────────────────────────────────────────────────────────────────────
@@ -55,11 +60,14 @@ test('an unlimited player has no stars however the field is set', () => {
   assert.equal(D.effectiveStars({ limited: false, stars: 3 }), 0);
 });
 
-test('a roster entry with neither flag counts as unlimited', () => {
-  // Rows written before the tier flags existed. limitedStartsStatus caps
-  // `limited` players and nobody else, so "not limited" IS "no start cap".
-  assert.equal(D.isUnlimitedTier({ name: 'Legacy Row' }), true);
-  assert.equal(D.keeperStatus({ name: 'Legacy Row' }).unlimited.eligible, true);
+test('a plain roster entry may be MADE unlimited, but is not already', () => {
+  // Three tiers: gold (limited), blue (the unlimited designation) and plain
+  // white. The unlimited keeper slot is what turns white into blue, so a white
+  // player is eligible for it — and is emphatically not already blue, which is
+  // the distinction the whole rule rests on.
+  assert.equal(D.isUnlimitedTier(plain('White')), true);
+  assert.equal(D.keeperStatus(plain('White')).unlimited.eligible, true);
+  assert.equal(D.keptPlayerAttrs(plain('White'), 'unlimited').unlimited, true);
 });
 
 // ── Keeper eligibility ───────────────────────────────────────────────────────
@@ -149,11 +157,36 @@ test('a limited round promotes a former unlimited player onto two stars', () => 
   assert.equal(p.stars, 2);
 });
 
-test('a later round drafts an unlimited player', () => {
+test('a later round drafts a PLAIN player, never a blue one', () => {
+  // Blue is a designation a manager spends, one per team per year. A draft
+  // that handed it to all nine late-round picks would empty the rule — "one
+  // non-limited player can be made unlimited" says nothing if everyone is.
   const p = D.draftedPlayerAttrs('Rookie', { round: 3, limitedRounds: 2, prior: null });
   assert.equal(p.limited, false);
-  assert.equal(p.unlimited, true);
+  assert.equal(p.unlimited, false, 'a drafted player must not arrive blue');
   assert.equal(p.stars, 0);
+});
+
+test('only a BLUE keeper is owed the retroactive star', () => {
+  // The clock starts at the designation: "the first year of service is the
+  // year he's kept as unlimited". A white player taken in a limited round is
+  // starting his service, so he starts on one however long he has been around.
+  const fromBlue  = D.draftedPlayerAttrs('Blue',  { round: 1, prior: unlimited('Blue') });
+  const fromWhite = D.draftedPlayerAttrs('White', { round: 1, prior: plain('White', { yearsOfService: 4 }) });
+  assert.equal(fromBlue.stars, 2);
+  assert.equal(fromWhite.stars, 1, 'years on a roster are not years of keeper service');
+});
+
+test('being named a keeper and being drafted value the same player alike', () => {
+  // Two code paths, one rule. If they disagree the keeper sheet promises a
+  // star count the rollover then declines to write.
+  [unlimited('Blue'), plain('White', { yearsOfService: 3 })].forEach(player => {
+    assert.equal(
+      D.keeperStatus(player).limited.starsIfKept,
+      D.draftedPlayerAttrs(player.name, { round: 1, prior: player }).stars,
+      `${player.name} is valued differently by keeping and by drafting`,
+    );
+  });
 });
 
 test('a limited player re-drafted late does NOT come back unlimited', () => {
@@ -167,6 +200,24 @@ test('a re-drafted player past the cap is simply un-keepable, not un-draftable',
   const p = D.draftedPlayerAttrs('Yellow', { round: 4, limitedRounds: 2, prior: limited('Yellow', 3) });
   assert.equal(p.stars, 4);
   assert.equal(D.keeperStatus(p).limited.eligible, false);
+});
+
+test('the white → blue → gold pipeline spends exactly three seasons', () => {
+  // The league's own statement of it: a year as unlimited is year one, the
+  // first year as a keeper is year two, and the third is the last.
+  const yearOne   = D.keptPlayerAttrs(plain('Prospect'), 'unlimited');
+  assert.deepEqual(
+    { limited: yearOne.limited, unlimited: yearOne.unlimited, stars: yearOne.stars },
+    { limited: false, unlimited: true, stars: 0 },
+  );
+
+  const yearTwo = D.keptPlayerAttrs(yearOne, 'limited');
+  assert.equal(yearTwo.limited, true);
+  assert.equal(yearTwo.stars, 2, 'his unlimited season is year one');
+
+  const yearThree = D.keptPlayerAttrs(yearTwo, 'limited');
+  assert.equal(yearThree.stars, 3);
+  assert.equal(D.keeperStatus(yearThree).limited.eligible, false, 'three is the end of it');
 });
 
 // ── Order ────────────────────────────────────────────────────────────────────

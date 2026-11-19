@@ -32,8 +32,12 @@ import { KEEPER_SLOTS, keeperStatus, effectiveStars } from '../../api/_draft.js'
 
 const SLOT_LABEL = { limited: 'Limited keeper', unlimited: 'Unlimited keeper' };
 const SLOT_HINT = {
-  limited:   'Yellow. Capped starts, and a star for every season kept.',
-  unlimited: 'Blue. No start cap, no stars.',
+  limited:   'Gold. Capped starts, and a star for every season of service.',
+  // Phrased as something you DO to a player rather than a shelf you put one
+  // on: the slot promotes a plain roster player to blue, and that season is
+  // the first of his keeper service even though it earns no visible star.
+  // The star for it appears retroactively the year he is named the keeper.
+  unlimited: 'Blue. Promote one non-limited player — no start cap, and the season counts as his first year of service.',
 };
 const slotColor = (slot) => (slot === 'limited' ? colors.textGold : steel(0.9));
 
@@ -87,9 +91,13 @@ const PlayerRow = ({ player, slot, selected, onSelect }) => {
               // The promotion cost, stated before the tag is saved rather than
               // discovered a season later when he runs out of keeper years.
               ? slotStatus.promotion
-                ? `Promoted to limited → ${slotStatus.starsIfKept} stars (one retroactive for his unlimited season)`
+                ? player.unlimited
+                  ? `Promoted to limited → ${slotStatus.starsIfKept} of ${status.maxStars} stars (one retroactive for his unlimited season)`
+                  : `Promoted straight to limited → ${slotStatus.starsIfKept} of ${status.maxStars} stars (no unlimited season to credit)`
                 : `→ ${slotStatus.starsIfKept} of ${status.maxStars} stars`
-              : `Year ${(Number(player.yearsOfService) || 0) + 1} · no start cap`}
+              : player.unlimited
+                ? 'Already unlimited — another season before his service is credited'
+                : 'Becomes unlimited · his first year of service'}
         </div>
       </div>
       <div style={{
