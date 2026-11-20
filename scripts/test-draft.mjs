@@ -73,10 +73,10 @@ test('a plain roster entry may be MADE unlimited, but is not already', () => {
 // ── Keeper eligibility ───────────────────────────────────────────────────────
 console.log('\nkeepers — three seasons, and the promotion');
 
-test('three stars closes the limited slot', () => {
+test('three years of service closes the yellow slot', () => {
   const s = D.keeperStatus(limited('Maxed', 3));
   assert.equal(s.limited.eligible, false);
-  assert.match(s.limited.reason, /3 stars/);
+  assert.match(s.limited.reason, /3 years of service/);
   assert.equal(D.canKeep(limited('Maxed', 3), 'limited'), false);
 });
 
@@ -109,12 +109,17 @@ test('a promoted player has exactly one keeper season left after this one', () =
   assert.equal(D.keeperStatus(nextYear).limited.eligible, false);
 });
 
-test('gold → gold: the ordinary keep adds a star AND a year of service', () => {
+test('yellow → yellow: the ordinary keep adds a star AND a year of service', () => {
   // The transition most of the league makes every year, and the one a summary
   // of the rules is likeliest to skip over because it is the unsurprising one.
+  //
+  // The stored `yearsOfService: 4` is deliberately a lie in this fixture and
+  // is deliberately ignored: that field counts seasons on a roster, was never
+  // maintained by anything, and is absent from the sheet-derived seed. The
+  // STARS are the years of service, so one star in means two years out.
   const kept = D.keptPlayerAttrs(limited('Kept', 1, { yearsOfService: 4, starts: 12 }), 'limited');
-  assert.equal(kept.stars, 2, 'a kept limited player earns a star for the season');
-  assert.equal(kept.yearsOfService, 5);
+  assert.equal(kept.stars, 2, 'a kept yellow player earns a star for the season');
+  assert.equal(kept.yearsOfService, 2, 'written to the same number as stars, so they cannot drift');
   assert.equal(kept.limited, true);
   assert.equal(kept.unlimited, false);
   assert.equal(kept.starts, 0, 'the limited-start cap is per season');
@@ -161,12 +166,17 @@ test('a limited round makes a golfer new to the league a one-star limited', () =
   assert.equal(p.yearsOfService, 1);
 });
 
-test('a limited round promotes a former unlimited player onto two stars', () => {
-  // Same rule as keeping him into the limited slot. Kept or re-drafted is not
-  // a distinction the promotion rule draws.
-  const p = D.draftedPlayerAttrs('Blue', { round: 2, limitedRounds: 2, prior: unlimited('Blue') });
-  assert.equal(p.limited, true);
-  assert.equal(p.stars, 2);
+test('a yellow round gives ONE star to everybody, whatever they were', () => {
+  // The round decides, and nothing a player was before reaches into it,
+  // because the rollover stripped him on the way into the pool. A 3-star
+  // yellow nobody kept is worth exactly what a debutant is worth here.
+  [null, plain('W'), unlimited('B'), limited('Y', 3)].forEach(prior => {
+    const p = D.draftedPlayerAttrs('Pick', { round: 1, limitedRounds: 2, prior });
+    assert.equal(p.limited, true);
+    assert.equal(p.unlimited, false);
+    assert.equal(p.stars, 1);
+    assert.equal(p.yearsOfService, 1);
+  });
 });
 
 test('a later round drafts a PLAIN player, never a blue one', () => {
@@ -179,39 +189,35 @@ test('a later round drafts a PLAIN player, never a blue one', () => {
   assert.equal(p.stars, 0);
 });
 
-test('only a BLUE keeper is owed the retroactive star', () => {
-  // The clock starts at the designation: "the first year of service is the
-  // year he's kept as unlimited". A white player taken in a limited round is
-  // starting his service, so he starts on one however long he has been around.
-  const fromBlue  = D.draftedPlayerAttrs('Blue',  { round: 1, prior: unlimited('Blue') });
-  const fromWhite = D.draftedPlayerAttrs('White', { round: 1, prior: plain('White', { yearsOfService: 4 }) });
-  assert.equal(fromBlue.stars, 2);
-  assert.equal(fromWhite.stars, 1, 'years on a roster are not years of keeper service');
+test('KEEPING credits years of service; DRAFTING does not', () => {
+  // The two paths differ on purpose, and this is the line between them. Your
+  // own blue keeper tagged yellow carries his blue year with him and arrives
+  // on two. The same player released and taken in round one by somebody else
+  // arrives on one, because he came out of the pool with nothing.
+  const blue = unlimited('Blue');
+  assert.equal(D.keeperStatus(blue).limited.starsIfKept, 2, 'his blue year counts when YOU keep him');
+  assert.equal(D.draftedPlayerAttrs('Blue', { round: 1, prior: blue }).stars, 1, 'it does not survive the pool');
 });
 
-test('being named a keeper and being drafted value the same player alike', () => {
-  // Two code paths, one rule. If they disagree the keeper sheet promises a
-  // star count the rollover then declines to write.
-  [unlimited('Blue'), plain('White', { yearsOfService: 3 })].forEach(player => {
-    assert.equal(
-      D.keeperStatus(player).limited.starsIfKept,
-      D.draftedPlayerAttrs(player.name, { round: 1, prior: player }).stars,
-      `${player.name} is valued differently by keeping and by drafting`,
-    );
-  });
-});
-
-test('a limited player re-drafted late does NOT come back unlimited', () => {
-  const p = D.draftedPlayerAttrs('Yellow', { round: 7, limitedRounds: 2, prior: limited('Yellow', 2) });
-  assert.equal(p.limited, true, 'once limited, always limited');
+test('a released yellow taken in a WHITE round comes back white', () => {
+  // "once limited, always limited" governs dropping and re-adding inside a
+  // season, where it stops a manager shedding a start cap. It must not reach
+  // across the draft: if it did, a 3-star player nobody kept could be taken in
+  // round seven and give that team a FOURTH yellow, which the roster shape —
+  // three yellow, one blue, nine white — does not allow.
+  const p = D.draftedPlayerAttrs('Yellow', { round: 7, limitedRounds: 2, prior: limited('Yellow', 3) });
+  assert.equal(p.limited, false);
   assert.equal(p.unlimited, false);
-  assert.equal(p.stars, 3, 'another season of limited service is another star');
+  assert.equal(p.stars, 0);
+  assert.equal(p.yearsOfService, 0);
 });
 
-test('a re-drafted player past the cap is simply un-keepable, not un-draftable', () => {
-  const p = D.draftedPlayerAttrs('Yellow', { round: 4, limitedRounds: 2, prior: limited('Yellow', 3) });
-  assert.equal(p.stars, 4);
-  assert.equal(D.keeperStatus(p).limited.eligible, false);
+test('a released 3-year yellow is keepable again once re-drafted yellow', () => {
+  // He re-enters the pool with nothing, so round one starts his clock over at
+  // one — and he has two keeper seasons ahead of him again.
+  const p = D.draftedPlayerAttrs('Rory', { round: 1, limitedRounds: 2, prior: limited('Rory', 3) });
+  assert.equal(p.stars, 1);
+  assert.equal(D.keeperStatus(p).limited.eligible, true);
 });
 
 test('blue is a ONE-YEAR designation — it cannot be spent twice', () => {
@@ -239,10 +245,9 @@ test('yellow can never become blue, by any path', () => {
   assert.equal(D.keeperStatus(gold).unlimited.eligible, false);
   assert.throws(() => D.keptPlayerAttrs(gold, 'unlimited'), /cannot be kept/);
 
-  // the draft, in a round that produces unlimited-start players
+  // the draft, in a round that produces uncapped players
   const redrafted = D.draftedPlayerAttrs('Gold', { round: 7, limitedRounds: 2, prior: gold });
-  assert.equal(redrafted.limited, true);
-  assert.equal(redrafted.unlimited, false);
+  assert.equal(redrafted.unlimited, false, 'a white round produces white, never blue');
 
   // a star correction
   assert.equal(D.starCorrectionOverrides([gold]).Gold.unlimited, false);
@@ -318,6 +323,81 @@ test('the white → blue → gold pipeline spends exactly three seasons', () => 
   const yearThree = D.keptPlayerAttrs(yearTwo, 'limited');
   assert.equal(yearThree.stars, 3);
   assert.equal(D.keeperStatus(yearThree).limited.eligible, false, 'three is the end of it');
+});
+
+test('years of service reads off colour, not off the stale field', () => {
+  // The quantity every keeper rule is about. Derived from colour because the
+  // `yearsOfService` FIELD counts seasons on a roster, was never maintained,
+  // and is absent from the sheet-derived seed — colour is what the league
+  // actually keeps.
+  assert.equal(D.yearsOfServiceOf(plain('W', { yearsOfService: 6 })), 0, 'white is uncommitted');
+  assert.equal(D.yearsOfServiceOf(unlimited('B', { yearsOfService: 6 })), 1, 'the blue year counts');
+  assert.equal(D.yearsOfServiceOf(limited('Y', 2, { yearsOfService: 6 })), 2, 'the stars ARE the years');
+  assert.equal(D.yearsOfServiceOf(limited('Legacy', 0)), 1, 'a limited row stored at 0 still shows one');
+  assert.equal(D.yearsOfServiceOf(null), 0);
+});
+
+test('the yellow slot takes any colour under the ceiling', () => {
+  // "Anyone can be a yellow keeper, unless they already have three years of
+  // service." One test for all three tiers — this used to ask about colour
+  // first and apply a different sum to each answer.
+  assert.equal(D.keeperStatus(plain('W')).limited.eligible, true);
+  assert.equal(D.keeperStatus(unlimited('B')).limited.eligible, true);
+  assert.equal(D.keeperStatus(limited('Y', 2)).limited.eligible, true);
+  assert.equal(D.keeperStatus(limited('Y', 3)).limited.eligible, false);
+
+  // And the cost is always one more year, drawn as one more star.
+  assert.equal(D.keptPlayerAttrs(plain('W'), 'limited').stars, 1);
+  assert.equal(D.keptPlayerAttrs(unlimited('B'), 'limited').stars, 2);
+  assert.equal(D.keptPlayerAttrs(limited('Y', 2), 'limited').stars, 3);
+});
+
+test('stars and years of service are written to one number', () => {
+  // Two renderings of one quantity — the badge on the headshot and the
+  // "(Yr N)" line under the name — so a keep must not move one without the
+  // other.
+  [plain('W'), unlimited('B'), limited('Y', 1), limited('Y', 2)].forEach(p => {
+    const kept = D.keptPlayerAttrs(p, 'limited');
+    assert.equal(kept.stars, kept.yearsOfService, `${p.name} drifted`);
+  });
+});
+
+// ── Release ──────────────────────────────────────────────────────────────────
+console.log('\nrelease — everyone not kept re-enters the pool with nothing');
+
+test('a released player is stripped of colour, stars and years', () => {
+  const o = D.releasedRegistryOverrides(['Rory McIlroy', 'Blue Guy']);
+  ['Rory McIlroy', 'Blue Guy'].forEach(name => {
+    assert.deepEqual(o[name], {
+      limited: false, unlimited: false, stars: 0, yearsOfService: 0, starts: 0,
+    });
+  });
+});
+
+test('the wipe leaves career tallies alone', () => {
+  // registryUpkeep merges per key, so naming only the tier fields is what
+  // keeps SFGL earnings, cuts and events played — they belong to the golfer,
+  // not to a roster spot.
+  const o = D.releasedRegistryOverrides(['Rory McIlroy']);
+  ['sfglEarnings', 'cutsMade', 'eventsPlayed', 'pgaTourEarnings'].forEach(k => {
+    assert.equal(k in o['Rory McIlroy'], false, `${k} must survive a release`);
+  });
+});
+
+test('without the wipe, the registry hands a released yellow his tier back', () => {
+  // Reproduces buildPlayerAttributeIndex: it NEVER downgrades `limited`, which
+  // is what stops a mid-season drop-and-re-add shedding a start cap. So
+  // leaving a released player off the new rosters is not enough — the first
+  // free-agent add of the new season would restore him start-capped and
+  // starred. The draft is safe either way, which is what makes the gap easy to
+  // miss: it opens on a waiver claim instead.
+  const registry = { Rory: { limited: true, stars: 3 } };
+  const naive = { limited: !!(registry.Rory.limited || false) };
+  assert.equal(naive.limited, true, 'the merge is what resurrects him');
+
+  const wiped = { ...registry.Rory, ...D.releasedRegistryOverrides(['Rory']).Rory };
+  assert.equal(wiped.limited, false);
+  assert.equal(wiped.stars, 0);
 });
 
 // ── Order ────────────────────────────────────────────────────────────────────
@@ -495,28 +575,25 @@ test('an untagged slot simply produces a shorter roster', () => {
   assert.deepEqual(roster.map(p => p.name), ['White One']);
 });
 
-test('prior attributes are resolved by identity, so a promotion is not lost', () => {
-  // The pool comes from OWGR and the registry is keyed by the roster spelling.
-  // A bare registry[name] reads 'Nico Echavarria' as new to the league, which
-  // costs him the retroactive star and — for a limited player — would reset him
-  // to unlimited.
-  const priorOf = D.registryLookup({ 'Nicolas Echavarria': unlimited('Nicolas Echavarria') });
+test('career tallies follow a player through a spelling, tier data does not', () => {
+  // The pool comes from OWGR and the registry is keyed by the roster spelling,
+  // so a bare registry[name] reads 'Nico Echavarria' as new to the league.
+  // What that costs is now only his CAREER figures — SFGL earnings, cuts,
+  // events — which belong to the golfer rather than to a roster spot. His
+  // colour and stars are not read at all: the draft assigns those by round.
+  const priorOf = D.registryLookup({
+    'Nicolas Echavarria': limited('Nicolas Echavarria', 3, { sfglEarnings: 900_000, cutsMade: 12 }),
+  });
   assert.equal(priorOf('Nico Echavarria')?.name, 'Nicolas Echavarria');
   assert.equal(priorOf('Somebody Else'), null);
 
   const drafted = D.draftedPlayerAttrs('Nico Echavarria', {
-    round: 1, limitedRounds: 2, prior: priorOf('Nico Echavarria'),
-  });
-  assert.equal(drafted.stars, 2, 'the retroactive star was lost to a spelling');
-});
-
-test('a re-drafted limited player keeps his tier through a name variant', () => {
-  const priorOf = D.registryLookup({ 'Nicolas Echavarria': limited('Nicolas Echavarria', 2) });
-  const drafted = D.draftedPlayerAttrs('Nico Echavarria', {
     round: 6, limitedRounds: 2, prior: priorOf('Nico Echavarria'),
   });
-  assert.equal(drafted.limited, true, 'once limited, always limited');
-  assert.equal(drafted.stars, 3);
+  assert.equal(drafted.sfglEarnings, 900_000, 'career earnings were lost to a spelling');
+  assert.equal(drafted.cutsMade, 12);
+  assert.equal(drafted.limited, false, 'a white round produces white whatever he used to be');
+  assert.equal(drafted.stars, 0);
 });
 
 test('the team document is cleared of everything the season accumulated', () => {
@@ -628,13 +705,13 @@ test('every team carries three limited players — one kept, two drafted', () =>
 });
 
 test('no seeded count exceeds the keeper cap', () => {
-  const over = seedMod.KEEPER_SEED_2026.filter(r => r.stars > D.KEEPER_MAX_STARS);
+  const over = seedMod.KEEPER_SEED_2026.filter(r => r.stars > D.KEEPER_MAX_YEARS);
   assert.deepEqual(over, []);
 });
 
 test('the players at the cap are the ones who cannot be kept', () => {
   const capped = seedMod.KEEPER_SEED_2026
-    .filter(r => r.stars >= D.KEEPER_MAX_STARS)
+    .filter(r => r.stars >= D.KEEPER_MAX_YEARS)
     .map(r => r.player)
     .sort();
   assert.deepEqual(capped, ['Hideki Matsuyama', 'Rory McIlroy', 'Scottie Scheffler', 'Tommy Fleetwood']);
@@ -668,8 +745,8 @@ test('api/_draft.js stays importable from a serverless function', () => {
 
 test('the keeper ceiling is named once', () => {
   const literals = (draftSrc.match(/maxStars\s*=\s*3|>=\s*3\b/g) || []);
-  assert.deepEqual(literals, [], 'the cap must come from KEEPER_MAX_STARS');
-  assert.equal(D.KEEPER_MAX_STARS, 3);
+  assert.deepEqual(literals, [], 'the cap must come from KEEPER_MAX_YEARS');
+  assert.equal(D.KEEPER_MAX_YEARS, 3);
 });
 
 test('the UI asks _draft.js for eligibility rather than re-deriving it', () => {
@@ -706,6 +783,31 @@ test('the seed file is generated, and says so', () => {
   const seed = readFileSync('src/pages/admin/keeperSeed2026.js', 'utf8');
   assert.match(seed, /GENERATED — do not edit by hand/);
   assert.match(seed, /derive-keeper-seed-2026\.mjs/);
+});
+
+test('the rollover wipes everyone it does not keep', () => {
+  const panel = readFileSync('src/pages/admin/SeasonRolloverPanel.jsx', 'utf8');
+  assert.match(panel, /releasedRegistryOverrides/);
+  // Resolved by identity, not by string equality: a kept player spelled one
+  // way on the roster and another in the registry must not read as released.
+  assert.match(panel, /new NameSet\(builtRosters\.flat\(\)/);
+  // And the kept/drafted overrides must come SECOND, so a name in both lists
+  // ends up with the roster's value rather than the cleared one.
+  const wipe = panel.indexOf('releasedRegistryOverrides(released)');
+  const keep = panel.indexOf('rolloverRegistryOverrides(builtRosters)');
+  assert.ok(wipe !== -1 && keep !== -1);
+  assert.ok(wipe < keep, 'the kept players must override the wipe, not the other way round');
+});
+
+test('the draft reads no prior colour, stars or years', () => {
+  // The one guard that keeps "the round decides" true. draftedPlayerAttrs may
+  // consult `prior` for career tallies and for nothing else.
+  const src = readFileSync('api/_draft.js', 'utf8');
+  const body = src.slice(src.indexOf('export const draftedPlayerAttrs'));
+  const fn = body.slice(0, body.indexOf('\n};'));
+  ['prior?.limited', 'prior?.unlimited', 'prior?.stars', 'prior?.yearsOfService', 'effectiveStars(prior)']
+    .forEach(bad => assert.equal(fn.includes(bad), false, `the draft must not read ${bad}`));
+  assert.match(fn, /carriedTallies\(prior\)/);
 });
 
 test('picks are read with a where clause and sorted in JS, never ordered by', () => {

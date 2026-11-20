@@ -5,17 +5,17 @@
 // The rules this screen makes visible (all of them live in api/_draft.js; none
 // are re-implemented here):
 //
-//   • a limited player may be kept for three seasons, and the star badges
-//     beside his name ARE those seasons, so three stars means the slot is
-//     closed to him;
-//   • an unlimited player may be kept in the unlimited slot as he is, or
-//     PROMOTED into the limited slot — in which case he collects a retroactive
-//     star for the season he spent unlimited on top of the one he earns for
-//     the season ahead, and arrives on two.
+//   • the YELLOW slot takes anyone — yellow, blue or white — who has fewer
+//     than three years of service, and gives him one more. The star badges are
+//     those years, so three closes the slot;
+//   • the BLUE slot takes a white player only, and cannot be renewed: a blue
+//     player is tagged yellow next year or released;
+//   • a blue player's year counts even though it shows no star, which is why
+//     tagging him yellow lands him on two rather than one.
 //
-// The second is the rule managers get wrong, so it is spelled out on the row
-// rather than left to be discovered on rollover day: a promoted player's row
-// says what he will cost him in keeper seasons before the tag is saved.
+// The last is the rule managers get wrong, so each row says what keeping that
+// player costs in years before the tag is saved rather than leaving it to be
+// discovered a season later.
 //
 // Tags are stored on the team document (`team.keepers`) rather than in the
 // draft state, for two reasons: a manager can write their own team document
@@ -30,14 +30,16 @@ import { theme, colors, fonts, fontSize, steel, white, green } from '../theme.js
 import { activatable } from '../utils/a11y';
 import { KEEPER_SLOTS, keeperStatus, effectiveStars } from '../../api/_draft.js';
 
-const SLOT_LABEL = { limited: 'Limited keeper', unlimited: 'Unlimited keeper' };
+const SLOT_LABEL = { limited: 'Yellow keeper', unlimited: 'Blue keeper' };
 const SLOT_HINT = {
-  limited:   'Gold. Capped starts, and a star for every season of service.',
+  // Anyone, whatever colour he is now, as long as he is under the ceiling —
+  // so the hint leads with years of service rather than with colour, which is
+  // what the slot used to key on.
+  limited:   'Capped starts, one star per year of service. Anyone under three years is eligible.',
   // Phrased as something you DO to a player rather than a shelf you put one
-  // on: the slot promotes a plain roster player to blue, and that season is
-  // the first of his keeper service even though it earns no visible star.
-  // The star for it appears retroactively the year he is named the keeper.
-  unlimited: 'Blue. Promote one non-limited player — no start cap, and the season counts as his first year of service.',
+  // on: the slot tags a white player blue, and that season counts as his first
+  // year of service even though it shows no star.
+  unlimited: 'White players only. No start cap, no star — but the season counts as his first year of service.',
 };
 const slotColor = (slot) => (slot === 'limited' ? colors.textGold : steel(0.9));
 
@@ -78,7 +80,7 @@ const PlayerRow = ({ player, slot, selected, onSelect }) => {
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {player.name}
-          {player.limited && stars > 0 && (
+          {stars > 0 && (
             <span style={{ marginLeft: 6, fontSize: fontSize.badge, letterSpacing: 1 }}>
               {'⭐'.repeat(stars)}
             </span>
@@ -88,19 +90,15 @@ const PlayerRow = ({ player, slot, selected, onSelect }) => {
           {!eligible
             ? slotStatus.reason
             : slot === 'limited'
-              // The promotion cost, stated before the tag is saved rather than
-              // discovered a season later when he runs out of keeper years.
-              ? slotStatus.promotion
-                ? status.unlimitedYearExpiring
-                  // Blue is a one-year option and this is the year it has to
-                  // be exercised. Saying only what he would BECOME buries the
-                  // part that costs a manager a player.
-                  ? `His unlimited year is up — keep him → ${slotStatus.starsIfKept} of ${status.maxStars} stars (one retroactive), or he returns to the draft`
-                  : `Promoted straight to limited → ${slotStatus.starsIfKept} of ${status.maxStars} stars (no unlimited season to credit)`
-                : `→ ${slotStatus.starsIfKept} of ${status.maxStars} stars`
-              : player.unlimited
-                ? 'Already unlimited — another season before his service is credited'
-                : 'Becomes unlimited · his first year of service'}
+              // What keeping him costs in years, stated before the tag is
+              // saved rather than discovered a season later when he runs out.
+              ? status.unlimitedYearExpiring
+                // Blue is a one-year option and this is the year it has to be
+                // exercised. Saying only what he would BECOME buries the part
+                // that costs a manager a player.
+                ? `His blue year is up — keep him → year ${slotStatus.starsIfKept} of ${status.maxYears}, or he returns to the draft with nothing`
+                : `Year ${status.years} → ${slotStatus.starsIfKept} of ${status.maxYears}`
+              : 'Tagged blue · counts as his first year of service'}
         </div>
       </div>
       <div style={{
@@ -192,8 +190,8 @@ export const KeeperTagModal = ({
           {season} Keepers
         </div>
         <div style={{ fontFamily: fonts.sans, fontSize: fontSize.sm, color: colors.textMuted, marginBottom: 14 }}>
-          {team.name} · one limited, one unlimited. Everyone you do not tag goes back
-          into the pool for the draft.
+          {team.name} · one yellow, one blue. Everyone you do not tag goes back into the
+          draft pool with nothing — no colour, no stars, no years of service.
         </div>
 
         {KEEPER_SLOTS.map(slot => (
@@ -243,8 +241,8 @@ export const KeeperTagModal = ({
           }}>
             <strong style={{ color: colors.danger }}>{expiringUnkept.join(', ')}</strong>
             {expiringUnkept.length === 1
-              ? ' spent last season as your unlimited keeper. Blue is a one-year designation: tag him limited here, or he goes back into the draft.'
-              : ' spent last season as unlimited keepers. Blue is a one-year designation: tag them limited here, or they go back into the draft.'}
+              ? ' spent last season as your blue keeper. Blue cannot be renewed: tag him yellow here, or he goes back into the draft stripped of his year of service.'
+              : ' spent last season as blue keepers. Blue cannot be renewed: tag them yellow here, or they go back into the draft stripped of their years of service.'}
           </div>
         )}
 

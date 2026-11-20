@@ -40,7 +40,7 @@ import { useDialog } from '../DialogContext';
 import { M, disabledBtn } from './adminStyles';
 import { colors, fonts, fontSize, green, steel, white } from '../../theme.js';
 import { NameSet } from '../../../api/_playerNames.js';
-import { effectiveStars, starCorrectionOverrides, KEEPER_MAX_STARS } from '../../../api/_draft.js';
+import { effectiveStars, starCorrectionOverrides, KEEPER_MAX_YEARS } from '../../../api/_draft.js';
 import { KEEPER_SEED_2026, KEEPER_SEED_SEASON, keeperSeedForTeam } from './keeperSeed2026';
 
 // A row's state, named so the badge and the save path cannot disagree about
@@ -227,7 +227,7 @@ export const KeeperYearsStep = ({ teams = [], rosters = {}, updateTeams }) => {
   return (
     <div>
       <div style={M.descText}>
-        The stars ARE the keeper years: {KEEPER_MAX_STARS} closes the limited slot. Nothing in the
+        The stars ARE the keeper years: {KEEPER_MAX_YEARS} closes the yellow slot. Nothing in the
         app has ever written this number — it is only ever carried forward — so it is
         checked against the {KEEPER_SEED_SEASON} sheet here before tagging opens.
         A count that is wrong by one silently gives or takes a keeper season.
@@ -257,7 +257,7 @@ export const KeeperYearsStep = ({ teams = [], rosters = {}, updateTeams }) => {
           ) : rows.map(row => {
             const value = valueFor(teamId, row);
             const changed = row.entry && value !== (row.appStars ?? 0);
-            const atCap = value >= KEEPER_MAX_STARS;
+            const atCap = value >= KEEPER_MAX_YEARS;
             const label = STATUS_LABEL[row.status];
             return (
               <div

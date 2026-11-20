@@ -40,11 +40,12 @@ import { useDialog } from '../DialogContext';
 import { M, S, disabledBtn } from './adminStyles';
 import { colors, fonts, fontSize, green, steel, white } from '../../theme.js';
 import { SEASON, NEXT_SEASON } from '../../../api/_league.js';
+import { NameSet } from '../../../api/_playerNames.js';
 import {
   DRAFT_STATUS, KEEPER_SLOTS, DEFAULT_LIMITED_ROUNDS,
   seasonStandings, draftOrderTeamIds, defaultDraftRounds,
   resolveDraftOrder, currentPick, pickLabel,
-  rolloverRoster, rolloverTeam, rolloverRegistryOverrides,
+  rolloverRoster, rolloverTeam, rolloverRegistryOverrides, releasedRegistryOverrides,
 } from '../../../api/_draft.js';
 import { DEFAULT_MULLIGANS } from '../../constants';
 import { draftApi, sfglDataApi } from '../../api/firebase';
@@ -235,11 +236,26 @@ export const SeasonRolloverPanel = ({
     );
     if (!ok) return;
 
+    // Everyone the rollover did NOT keep or draft goes back into the pool with
+    // nothing. Leaving them off the new rosters is not enough: the durable
+    // registry outlives rosters by design, and it never downgrades `limited`,
+    // so a released yellow would be handed his colour and stars straight back
+    // by the first free-agent add of the new season. The draft is safe either
+    // way — the round decides a drafted player's colour — which is what makes
+    // this easy to miss until a waiver claim turns up start-capped.
+    const keptNow = new NameSet(builtRosters.flat().map(p => p?.name).filter(Boolean));
+    const released = Object.keys(attrIndex).filter(name => name && !keptNow.has(name));
+
     // Rosters first. registryOverrides force-sets the start counts back to
     // zero — the durable registry merges tallies with Math.max, so without it
     // every limited player would arrive in the new season already carrying
     // last season's starts against a cap that is supposed to have reset.
-    await updateTeams(nextTeams, rolloverRegistryOverrides(builtRosters));
+    await updateTeams(nextTeams, {
+      ...releasedRegistryOverrides(released),
+      // Kept and drafted players last: a name in both lists must end up with
+      // the roster's value, not the cleared one.
+      ...rolloverRegistryOverrides(builtRosters),
+    });
 
     // Then the transactions, and only explicitly: sync() is upsert-only and
     // never infers a deletion from a row's absence, so the rows have to be
@@ -491,7 +507,9 @@ export const SeasonRolloverPanel = ({
         <div style={M.descText}>
           Replaces every roster with its keepers and picks, clears lineups, money and
           mulligans, resets the limited-start counts, and deletes the {SEASON} transactions
-          so they cannot replay onto the new rosters.
+          so they cannot replay onto the new rosters. Everyone not kept or drafted is
+          stripped of colour, stars and years of service — they go back into the pool
+          with nothing.
         </div>
         {!archived && (
           <div style={{

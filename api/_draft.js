@@ -16,51 +16,72 @@
 //
 // ── The rules, as the league states them ────────────────────────────────────
 //
-//   • A LIMITED (yellow) player may be kept for at most three seasons. The
-//     star badges beside his name ARE those seasons, so three stars in the
-//     closing season means he cannot be kept into the next draft.
-//   • An UNLIMITED (blue) player promoted to limited receives a RETROACTIVE
-//     star for his year as unlimited — so he arrives in his first limited
-//     season already on two, and has one keeper season left rather than three.
-//   • Each manager keeps ONE limited player and ONE unlimited player.
-//     Everyone else goes back into the pool.
+//   • Each manager tags TWO keepers: one yellow and one blue.
+//   • ANYONE can be the yellow keeper, whatever colour he is now, unless he
+//     already has three years of service.
+//   • The blue keeper can only be an existing WHITE player, tagged blue at
+//     declaration. Blue is a one-year designation and cannot be renewed.
+//   • Everyone not kept goes back into the draft with NOTHING — no colour, no
+//     stars, no years of service. The pool is uniform.
 //   • The draft order is REVERSE final standings (last place picks first) and
 //     SNAKES every round.
-//   • The first two rounds are limited rounds: whoever is taken there becomes
-//     a limited player and gets his first star.
+//   • The first two rounds are the yellow rounds; everything after them is
+//     white. The ROUND decides the colour, and nothing a player was before
+//     carries into it.
 //   • Picks are tradeable, so a pick's owner and the team whose slot it is are
 //     two different things.
 //
+// ── Years of service is the only quantity here ──────────────────────────────
+//
+// There is one number, and the stars ARE it. A yellow player's star count is
+// his years of service, three is the ceiling, and every rule above is a
+// statement about that number:
+//
+//   white   0 years — uncommitted
+//   blue    1 year  — the designation year counts, though it shows no star
+//   yellow  1-3     — one star per year of service
+//
+// This is why a blue keeper tagged yellow arrives on TWO stars, and why that
+// needed no special case in the end: his blue season was year one, so one more
+// makes two. It was modelled here for a while as a "retroactive star" granted
+// on promotion, which produced the same answer by a longer route and needed a
+// separate rule to say which players had earned it. Years of service answers
+// it directly, and keeper eligibility is then the same test for everybody:
+// fewer than three.
+//
 // ── The tiers, and every move between them ──────────────────────────────────
 //
-// There are THREE tiers, not two, and the middle one is a designation rather
-// than a description. Gold is limited: start-capped, starred, on a keeper
-// clock. BLUE is the unlimited keeper — one per team per year, a one-year
-// option that must be exercised. White is everybody else, uncapped and
-// uncommitted. All three render distinctly (blue is checked first, then gold,
-// then the fall-through to white).
+// Three tiers, and the middle one is a designation rather than a description.
+// Yellow is limited: start-capped, starred, on a keeper clock. BLUE is the
+// unlimited keeper — one per team per year, a one-year option. White is
+// everybody else, uncapped and uncommitted. All three render distinctly (blue
+// is checked first, then yellow, then the fall-through to white).
 //
-//   from → to        allowed  how, and what it costs
+//   from → to         allowed  how, and what it costs
 //   ───────────────────────────────────────────────────────────────────────
-//   white → blue     yes      the unlimited keeper slot. 0 stars, but the
-//                             season IS his first year of service — the star
-//                             for it appears retroactively on promotion
-//   white → gold     yes      tagged limited, or drafted in a limited round.
-//                             1 star: no unlimited season to credit, so three
-//                             keeper seasons ahead rather than two
-//   blue  → gold     yes      tagged limited, or drafted in a limited round.
-//                             2 stars — one retroactive for the blue year
-//   gold  → gold     yes      kept again: +1 star AND +1 year of service, to
-//                             a ceiling of three. This is the ordinary keep,
-//                             and the one most of the league does every year
-//   blue  → white    yes      not tagged: the designation is spent, he goes
-//                             back into the draft and may be taken again
-//   blue  → blue     NO       one year only. Tag him limited or lose him
-//   gold  → blue     NO       no path anywhere. A correction will not do it
-//                             either — see starCorrectionOverrides
-//   gold  → white    NO       once limited, always limited. Enforced on every
-//                             drop and re-add by buildPlayerAttributeIndex,
-//                             and by draftedPlayerAttrs on a late-round pick
+//   any → yellow      yes      the yellow keeper slot, if he has fewer than
+//                              three years of service. +1 year, +1 star:
+//                              white → 1, blue → 2, yellow → his next
+//   white → blue      yes      the blue keeper slot. No star, but the season
+//                              is year one of his service
+//   released → pool   yes      not kept: he re-enters the draft STRIPPED —
+//                              no colour, no stars, no years. The pool is
+//                              uniform, so what he used to be cannot follow
+//                              him onto his next roster
+//   drafted → yellow  yes      rounds 1-2. One star, one year, always
+//   drafted → white   yes      rounds 3+. Nothing, always
+//   blue → blue       NO       one year only. Tag him yellow or release him
+//   yellow → blue     NO       no path anywhere, a correction included — see
+//                              starCorrectionOverrides
+//   blue → white      NO       not a move a manager makes. An unkept blue is
+//                              RELEASED and wiped, not demoted in place
+//   4 years of svc    NO       three is the ceiling for the keeper slot
+//
+// The old "once limited, always limited" rule still holds WITHIN a season —
+// buildPlayerAttributeIndex and hydratePlayer refuse to downgrade a yellow, so
+// dropping and re-adding him mid-season cannot shed his start cap. It does not
+// reach across the draft: the rollover strips everyone it does not keep, and
+// the round decides what a drafted player is.
 //
 // Every row has a test in scripts/test-draft.mjs, the refusals included.
 // ============================================================================
@@ -70,22 +91,19 @@ import { NameSet, NameMap } from './_playerNames.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-/** A limited player may be KEPT for three seasons; the fourth is not offered. */
-export const KEEPER_MAX_STARS = 3;
+/**
+ * Three years of service is the ceiling for the keeper slot; the fourth is
+ * not offered. Named for years rather than for stars because years is the
+ * quantity the rule is about — the stars are how a yellow player's years are
+ * drawn.
+ */
+export const KEEPER_MAX_YEARS = 3;
 
 /** One limited keeper, one unlimited keeper. Order matters for display only. */
 export const KEEPER_SLOTS = ['limited', 'unlimited'];
 
 /** Rounds at the top of the draft that produce LIMITED players. */
 export const DEFAULT_LIMITED_ROUNDS = 2;
-
-/**
- * The star an unlimited player is awarded, retroactively, for the season he
- * spent unlimited when he is promoted to limited. Named rather than spelled as
- * a bare 1 at the two places that grant it (keeping into the limited slot, and
- * being drafted into a limited round), because those two must never drift.
- */
-export const RETROACTIVE_UNLIMITED_STAR = 1;
 
 /** Draft lifecycle. `setup` → `keepers` → `drafting` → `complete`. */
 export const DRAFT_STATUS = {
@@ -146,23 +164,28 @@ export const canBeMadeUnlimited = (player) =>
   !!player && !player.limited && !player.unlimited;
 
 /**
- * Has this player served a season as a designated UNLIMITED keeper?
+ * A player's YEARS OF SERVICE — the one number the keeper rule is about.
  *
- * The league runs three tiers, not two: gold (limited, start-capped, starred),
- * BLUE (unlimited — a scarce, deliberate designation, one per team per year),
- * and plain white (everybody else). All three render distinctly, blue checked
- * first (see the colour cascade in api/cron.js and TournamentsView).
+ * Derived from his colour rather than read off the `yearsOfService` field,
+ * deliberately. That field counts seasons on a roster, which is a different
+ * thing: it is incremented for white players too, it was never maintained by
+ * anything (see the note on `stars`), and the 2026 seed lifted from the sheet
+ * carries star counts with no years beside them. Colour is the authority the
+ * league actually keeps, so colour is what this reads.
  *
- * The keeper clock starts at BLUE, not at being on a roster: "the first year
- * of service is the year he's kept as unlimited". So this asks whether the
- * player carries the designation, and nothing else.
+ *   yellow  his star count — one star per year served
+ *   blue    1 — the designation year counts, though it shows no star
+ *   white   0 — uncommitted
  *
- * It used to fall back to `yearsOfService >= 1`, which made every white player
- * who had been around a season read as having served — and handed him the
- * retroactive star that belongs only to a blue keeper. A white player taken in
- * a limited round is starting his service, so he starts on one.
+ * The blue year counting is the whole of the "retroactive star": tag a blue
+ * keeper yellow and `years + 1` is two, with no special case to maintain.
  */
-const servedAsUnlimited = (player) => !!player && !player.limited && !!player.unlimited;
+export const yearsOfServiceOf = (player) => {
+  if (!player) return 0;
+  if (player.limited) return effectiveStars(player);
+  if (player.unlimited) return 1;
+  return 0;
+};
 
 // ── Keeper eligibility ───────────────────────────────────────────────────────
 
@@ -170,9 +193,10 @@ const servedAsUnlimited = (player) => !!player && !player.limited && !!player.un
  * Where a player stands as a keeper candidate.
  *
  * Returns:
- *   tier               'limited' (gold) | 'unlimited' (blue) | 'plain' (white)
- *   stars              the badge count (effectiveStars)
- *   maxStars           the league's keeper ceiling
+ *   tier               'limited' (yellow) | 'unlimited' (blue) | 'plain' (white)
+ *   years              years of service — the number the rule is about
+ *   stars              the badge count; for a yellow player, the same number
+ *   maxYears           the league's keeper ceiling
  *   limited            { eligible, starsIfKept, promotion, reason }
  *   unlimited          { eligible, reason }
  *
@@ -180,52 +204,50 @@ const servedAsUnlimited = (player) => !!player && !player.limited && !!player.un
  * for a manager rather than for a log — it is what the keeper sheet shows
  * under a greyed-out player.
  */
-export const keeperStatus = (player, { maxStars = KEEPER_MAX_STARS } = {}) => {
+export const keeperStatus = (player, { maxYears = KEEPER_MAX_YEARS } = {}) => {
   const limited = !!player?.limited;
-  const stars = effectiveStars(player);
+  const years = yearsOfServiceOf(player);
   const promotion = !limited;
 
-  // A promoted BLUE keeper starts his limited career on two: the retroactive
-  // star for the season he served as unlimited, plus the one he earns for the
-  // season ahead. A white player has served nothing yet, so he starts on one.
-  //
-  // This condition has to be the same one draftedPlayerAttrs uses, or being
-  // named a keeper and being taken in a limited round would value the same
-  // player differently — and the keeper sheet would promise a star count the
-  // rollover then declined to write.
-  const starsIfKept = limited
-    ? stars + 1
-    : servedAsUnlimited(player) ? RETROACTIVE_UNLIMITED_STAR + 1 : 1;
-
-  const limitedEligible = limited ? stars < maxStars : true;
+  // ANYONE may be the yellow keeper — whatever colour he is now — unless he
+  // already has the maximum years of service. One test for all three tiers,
+  // which is what collapsed when years of service became the only quantity:
+  // this used to ask about colour first and then apply a different star sum to
+  // each answer.
+  const limitedEligible = years < maxYears;
 
   return {
     tier: limited ? 'limited' : player?.unlimited ? 'unlimited' : 'plain',
-    stars,
-    maxStars,
+    years,
+    // Kept under its old name as well: the badge, the keeper sheet and the
+    // seed all talk in stars, and for a yellow player the two are the same
+    // number by construction.
+    stars: effectiveStars(player),
+    maxYears,
     // His blue year is spent: this is the last offseason he can be kept at
-    // all. Surfaced here rather than recomputed in the view, so the warning
-    // and the eligibility it is warning about come from one place.
+    // all, because blue cannot be renewed. Surfaced here rather than
+    // recomputed in the view, so the warning and the eligibility it is warning
+    // about come from one place.
     unlimitedYearExpiring: !limited && !!player?.unlimited,
     limited: {
       eligible: limitedEligible,
-      starsIfKept,
+      starsIfKept: years + 1,
       promotion,
       reason: limitedEligible
         ? null
-        : `${stars} star${stars === 1 ? '' : 's'} — a limited player may be kept ${maxStars} seasons`,
+        : `${years} years of service — ${maxYears} is the maximum`,
     },
     unlimited: {
       eligible: canBeMadeUnlimited(player),
       // Two different refusals, because they call for two different things
-      // from the manager. A gold player was never a candidate; a blue player
+      // from the manager. A yellow player was never a candidate; a blue player
       // is one whose year is UP, and the useful thing to tell his manager is
       // what the alternative now is.
       reason: canBeMadeUnlimited(player)
         ? null
         : limited
-          ? 'already limited — a limited player cannot fill the unlimited slot'
-          : 'his unlimited year is up — tag him limited now, or he goes back into the draft',
+          ? 'already yellow — only a white player can be tagged blue'
+          : 'his blue year is up — tag him yellow now, or he goes back into the draft',
     },
   };
 };
@@ -270,36 +292,41 @@ const carriedTallies = (prior) => ({
  * commissioner or manager action with a UI that already knows the answer, so
  * reaching this with a bad slot is a bug, not a user mistake.
  */
-export const keptPlayerAttrs = (player, slot, { maxStars = KEEPER_MAX_STARS } = {}) => {
+export const keptPlayerAttrs = (player, slot, { maxYears = KEEPER_MAX_YEARS } = {}) => {
   if (!player?.name) throw new Error('keptPlayerAttrs: no player');
-  const status = keeperStatus(player, { maxStars });
+  const status = keeperStatus(player, { maxYears });
   if (slot === 'limited' && !status.limited.eligible) {
-    throw new Error(`${player.name} cannot be kept as a limited keeper: ${status.limited.reason}`);
+    throw new Error(`${player.name} cannot be kept as a yellow keeper: ${status.limited.reason}`);
   }
   if (slot === 'unlimited' && !status.unlimited.eligible) {
-    throw new Error(`${player.name} cannot be kept as an unlimited keeper: ${status.unlimited.reason}`);
+    throw new Error(`${player.name} cannot be kept as a blue keeper: ${status.unlimited.reason}`);
   }
 
-  const yearsOfService = (Number(player.yearsOfService) || 0) + 1;
-
   if (slot === 'limited') {
+    // One more year of service, drawn as one more star. stars and
+    // yearsOfService are written to the SAME number here so they cannot drift:
+    // they are two renderings of one quantity, and the app shows both (the
+    // badge on the headshot, the "(Yr N)" line beneath the name).
+    const years = status.years + 1;
     return {
       name: player.name,
       limited: true,
       unlimited: false,
-      stars: status.limited.starsIfKept,
-      yearsOfService,
+      stars: years,
+      yearsOfService: years,
       ...SEASON_RESET_FIELDS,
       ...carriedTallies(player),
     };
   }
 
+  // Blue: no star to show, but the season counts. That is what makes him
+  // arrive on two if he is tagged yellow next year.
   return {
     name: player.name,
     limited: false,
     unlimited: true,
     stars: 0,
-    yearsOfService,
+    yearsOfService: 1,
     ...SEASON_RESET_FIELDS,
     ...carriedTallies(player),
   };
@@ -308,51 +335,41 @@ export const keptPlayerAttrs = (player, slot, { maxStars = KEEPER_MAX_STARS } = 
 /**
  * The roster entry a DRAFTED player carries into the new season.
  *
- * `prior` is whatever the durable player registry knows about him — undefined
- * for a golfer new to the league.
+ * The ROUND decides the colour, and nothing the player was before reaches
+ * into it. Rounds one and two are the yellow rounds — one star, one year, for
+ * everybody taken there. Every round after is white, at nothing.
  *
- * Two rules meet here:
+ * `prior` is consulted ONLY for career tallies (SFGL earnings, cuts, events),
+ * which belong to the golfer rather than to a roster spot. His colour, his
+ * stars and his years of service are not read, because the rollover has
+ * already stripped them: everyone not kept re-enters the pool with nothing, so
+ * the pool is uniform and a player's history with his last team cannot follow
+ * him onto his next one.
  *
- *   1. A limited round makes its pick limited. A player with no SFGL history
- *      gets his first star; one who spent a season unlimited is being PROMOTED
- *      and gets the retroactive star as well, exactly as he would if his
- *      manager had kept him into the limited slot. Which of the two happened —
- *      kept or re-drafted — is not a distinction the promotion rule draws.
+ * This used to carry two rules forward from the old model, and both were
+ * wrong once the pool was uniform:
  *
- *   2. Once limited, always limited. A limited player who went back into the
- *      pool and is taken in a LATER round does not come back unlimited; that
- *      is the same league rule buildPlayerAttributeIndex enforces on every
- *      drop and re-add, and it costs him another star because it is another
- *      season of limited service.
+ *   • "once limited, always limited" made an unkept yellow come back yellow
+ *     however late he was taken — so a 3-star player nobody kept could be
+ *     drafted in round seven and give that team a FOURTH yellow, which the
+ *     roster shape (three yellow, one blue, nine white) does not allow. That
+ *     rule governs dropping and re-adding WITHIN a season, where it stops a
+ *     manager shedding a start cap, and it has no business at the draft.
+ *   • a "retroactive star" for a formerly-blue player, which double-counted
+ *     once his blue year became a year of service in its own right.
  */
 export const draftedPlayerAttrs = (name, {
   round, limitedRounds = DEFAULT_LIMITED_ROUNDS, prior = null,
 } = {}) => {
   if (!name) throw new Error('draftedPlayerAttrs: no player name');
-  const limitedRound = Number(round) <= Number(limitedRounds);
-  const wasLimited = !!prior?.limited;
-  const limited = limitedRound || wasLimited;
+  const yellowRound = Number(round) <= Number(limitedRounds);
 
-  let stars = 0;
-  if (limited) {
-    if (wasLimited) stars = effectiveStars(prior) + 1;
-    else stars = servedAsUnlimited(prior) ? RETROACTIVE_UNLIMITED_STAR + 1 : 1;
-  }
-
-  // Drafted outside a limited round means PLAIN, not blue. Blue is a keeper
-  // designation a manager spends — one per team per year — and a draft that
-  // handed it to all nine late-round picks would wipe out the tier the rule
-  // depends on: "one non-limited player can be made unlimited" says nothing at
-  // all if every non-limited player already is one.
-  //
-  // A player who arrives blue is one who was KEPT blue (keptPlayerAttrs with
-  // the unlimited slot), never one who was drafted.
   return {
     name,
-    limited,
+    limited: yellowRound,
     unlimited: false,
-    stars,
-    yearsOfService: (Number(prior?.yearsOfService) || 0) + 1,
+    stars: yellowRound ? 1 : 0,
+    yearsOfService: yellowRound ? 1 : 0,
     ...SEASON_RESET_FIELDS,
     ...carriedTallies(prior),
   };
@@ -647,6 +664,41 @@ export const starCorrectionOverrides = (players = []) => {
       limited,
       unlimited: limited ? false : !!p.unlimited,
       stars: limited ? Math.max(1, Number(p.stars) || 1) : 0,
+    };
+  });
+  return overrides;
+};
+
+/**
+ * Force-clear the tier of every player going back into the pool.
+ *
+ * "Everyone not kept goes back into the draft with no colour, stars or years
+ * of service" is not something the rollover gets for free by leaving them off
+ * the new rosters. The durable registry outlives rosters on purpose — it is
+ * what stops a drop-and-re-add shedding a start cap mid-season — and
+ * buildPlayerAttributeIndex NEVER downgrades `limited`. So a released yellow
+ * keeps his colour and his stars in the registry, and the first free-agent add
+ * of the new season hands them straight back through hydratePlayer: he arrives
+ * start-capped, starred, and on a keeper clock nobody granted him.
+ *
+ * The draft itself is safe without this — draftedPlayerAttrs reads no prior
+ * tier, the round decides — which is exactly what makes the gap easy to miss.
+ * It opens on the first waiver claim instead.
+ *
+ * Career tallies are left alone. These overrides name only the tier fields,
+ * and registryUpkeep merges per key, so SFGL earnings, cuts and events played
+ * survive — they belong to the golfer, not to a roster spot.
+ */
+export const releasedRegistryOverrides = (names = []) => {
+  const overrides = {};
+  (names || []).forEach(name => {
+    if (!name) return;
+    overrides[name] = {
+      limited: false,
+      unlimited: false,
+      stars: 0,
+      yearsOfService: 0,
+      starts: 0,
     };
   });
   return overrides;
