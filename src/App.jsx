@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
-import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, User, AlertTriangle, Eye, X } from 'lucide-react';
+import { Trophy, Users, DollarSign, Calendar, Settings, MoreHorizontal, Bell, Shield, User, AlertTriangle, Eye, X, Archive } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
 // ── Wave 6/7: ?reset=1 cache flush ────────────────────────────────────────
@@ -46,6 +46,7 @@ import { TournamentsView }  from './pages/TournamentsView';
 // lines of JS from the initial bundle.
 const LazyAdminView        = React.lazy(() => import('./pages/AdminView').then(m => ({ default: m.AdminView })));
 const LazyTransactionsView = React.lazy(() => import('./pages/TransactionsView').then(m => ({ default: m.TransactionsView })));
+const LazySeasonArchiveView = React.lazy(() => import('./pages/SeasonArchiveView').then(m => ({ default: m.SeasonArchiveView })));
 
 // Account and Notifications are opened from the More menu and are closed on
 // every load until someone opens them. UserSettingsModal is also the app's only
@@ -117,7 +118,13 @@ const TABS = [
 // them to state (so `#foo` or `#anythingrandom` doesn't crash the app or
 // leave it in a no-tab-rendered limbo). Defined at module level so the
 // Set isn't recreated on every render.
-const VALID_TAB_IDS = new Set(TABS.map(t => t.id));
+// Tabs reachable from the More menu rather than from the bottom nav. They are
+// valid hash routes all the same — a deep link to #archive, or a reload while
+// it is open, must land back on it instead of silently falling through to
+// Standings — they just do not get a nav slot.
+const EXTRA_TAB_IDS = ['archive'];
+
+const VALID_TAB_IDS = new Set([...TABS.map(t => t.id), ...EXTRA_TAB_IDS]);
 
 // Shared style for rows in the bottom "More" (...) popup menu.
 const MORE_MENU_ITEM_STYLE = {
@@ -986,6 +993,11 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
               transactions={safeTransactions}
             />
           )}
+          {activeTab === 'archive' && (
+            <Suspense fallback={<LazyFallback />}>
+              <LazySeasonArchiveView />
+            </Suspense>
+          )}
           {activeTab === 'admin' && isCommissioner && (
             <Suspense fallback={<LazyFallback />}>
               <LazyAdminView
@@ -1260,6 +1272,18 @@ const FantasyGolfLeague = ({ authUser, isCommissionerClaim, isGuest = false }) =
               <span>Notifications</span>
             </button>
             )}
+
+            {/* Season archive — finished seasons, read-only. Open to guests as
+                well as managers: it is history, it writes nothing, and looking
+                around is the whole point of a guest login. */}
+            <button
+              role="menuitem"
+              onClick={() => { setShowMoreMenu(false); setActiveTab('archive'); }}
+              style={{ ...MORE_MENU_ITEM_STYLE, color: activeTab === 'archive' ? '#f5c518' : MORE_MENU_ITEM_STYLE.color }}
+            >
+              <Archive style={{ width: 18, height: 18, opacity: 0.85 }} />
+              <span>Season archive</span>
+            </button>
 
             {/* Admin — the commish panel, and the only way into commish mode.
                 Opening the tab turns the gold edit mode on (the effect near

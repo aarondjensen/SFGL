@@ -48,7 +48,7 @@ import {
   rolloverRoster, rolloverTeam, rolloverRegistryOverrides, releasedRegistryOverrides,
 } from '../../../api/_draft.js';
 import { DEFAULT_MULLIGANS } from '../../constants';
-import { draftApi, sfglDataApi } from '../../api/firebase';
+import { draftApi, seasonArchiveApi } from '../../api/firebase';
 import { useDraft } from '../../hooks/useDraft';
 import { KeeperYearsStep } from './KeeperYearsStep';
 import { hydratedRoster, buildPlayerAttributeIndex, getPlayerRegistry } from '../../utils/sharedHelpers';
@@ -60,8 +60,6 @@ import { hydratedRoster, buildPlayerAttributeIndex, getPlayerRegistry } from '..
 // themselves as exactly that warning.
 const LazyKeeperTagModal = React.lazy(() => import('../KeeperTagModal').then(m => ({ default: m.KeeperTagModal })));
 const LazyDraftModal     = React.lazy(() => import('../DraftModal').then(m => ({ default: m.DraftModal })));
-
-const archiveKey = (season) => `season-${season}-archive`;
 
 const StepHeader = ({ n, title, done }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -153,22 +151,24 @@ export const SeasonRolloverPanel = ({
 
   // ── 1 · Archive ───────────────────────────────────────────────────────────
   const handleArchive = () => run('archive', async () => {
-    const payload = {
-      season: SEASON,
-      archivedAt: new Date().toISOString(),
+    // seasonArchiveApi splits this across documents and writes the manifest
+    // last, so a part-way failure leaves nothing the archive view will offer
+    // to open. Teams are archived with the rosters they ACTUALLY finished on —
+    // the replayed effective rosters, not the stored arrays, which drift from
+    // each other as soon as a transaction lands.
+    const { archivedAt } = await seasonArchiveApi.save(SEASON, {
       standings,
-      teams,
+      teams: teams.map(t => ({ ...t, roster: rosters[t.id || t.name] || t.roster || [] })),
       tournaments,
       transactions,
-    };
-    await sfglDataApi.set(archiveKey(SEASON), payload);
+    });
     await draftApi.set(NEXT_SEASON, {
       priorSeason: SEASON,
-      archivedAt: payload.archivedAt,
+      archivedAt,
       status: draft.state?.status || DRAFT_STATUS.SETUP,
     });
     setArchivedHere(true);
-    dialog.showToast(`✓ ${SEASON} archived`, 'success');
+    dialog.showToast(`✓ ${SEASON} archived and readable in Season Archive`, 'success');
   });
 
   // ── 3 · Order ─────────────────────────────────────────────────────────────
@@ -299,9 +299,11 @@ export const SeasonRolloverPanel = ({
       <div style={M.group}>
         <StepHeader n={1} title="Archive the season" done={archived} />
         <div style={M.descText}>
-          Writes teams, the schedule with its results, every transaction and the final
-          standings to <code>sfgl_data/{archiveKey(SEASON)}</code>. Step 6 will not run
-          without it.
+          Writes the final standings, the rosters teams finished on, the schedule with
+          its results and every transaction. Managers can read it afterwards under
+          More → Season Archive, which is the only way back to {SEASON} once step 6 has
+          deleted the transactions and the schedule import has replaced the events.
+          Step 6 will not run without it.
         </div>
         <button
           onClick={handleArchive}

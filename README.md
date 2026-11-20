@@ -149,6 +149,17 @@ the draft screen and the rollover are one computation rather than three copies.
 Commissioner tooling lives in Commish → Season Rollover, which is an ordered
 checklist ending in the roster rewrite.
 
+**The rollover destroys the season it closes, so it archives it first.** It has
+to: transactions are deleted (`buildEffectiveRoster` would otherwise replay last
+season's add/drops onto the new rosters), the schedule import deletes every
+tournament doc not in the new set along with its results, and rosters are
+replaced in place. `seasonArchiveApi` copies the standings, rosters, schedule
+and transactions into `sfgl_data`, split across one document per collection
+because a season outgrows the 1 MiB document cap sooner than it looks. **More →
+Season Archive** is the only thing that reads it back, and it is the only route
+to a finished season — archived standings render through the real
+`StandingsView`, so they look exactly as they did live.
+
 ### Data flow
 
 `useLeague` is the single owner of league state. Nothing else reads Firestore

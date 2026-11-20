@@ -1516,6 +1516,124 @@ export const globalPlayerStatsApi = {
 };
 
 // ============================================================================
+// SEASON ARCHIVE API
+// ============================================================================
+// A finished season, kept readable after the rollover has overwritten the live
+// collections.
+//
+// It has to be a copy rather than a filter, because the rollover genuinely
+// destroys the originals and cannot do otherwise:
+//
+//   • transactions are DELETED — buildEffectiveRoster replays processed rows on
+//     top of team.roster, so leaving last season's add/drops in place would
+//     replay them over the new rosters;
+//   • tournaments are deleted by the schedule import (tournamentsApi.setAll
+//     removes every remote doc not in the new set), results and all;
+//   • rosters are replaced in place.
+//
+// ── Why it is split across documents ────────────────────────────────────────
+// A Firestore document caps at 1 MiB. A season carries thirty-odd events with
+// per-player results for five teams, every transaction, and the final rosters;
+// for scale, the 2026 sheet snapshot in scripts/fixtures is 744 KB of
+// comparable detail. One document would be in the low hundreds of KB today and
+// a little larger every season, which is the shape of problem that works until
+// the year it doesn't — and the year it doesn't, the archive write fails and
+// the rollover is blocked.
+//
+// So each collection gets its own key, and the manifest records what was
+// written. Standings live ON the manifest: they are small, and they are what
+// the archive view opens with, so reading them should not mean fetching
+// thirty tournaments first.
+const ARCHIVE_PREFIX = 'season-archive';
+const ARCHIVE_INDEX  = 'season-archive-index';
+const ARCHIVE_PARTS  = ['teams', 'tournaments', 'transactions'];
+
+// Refuse a part that is too close to the document limit rather than letting
+// Firestore reject it with its own message. If this ever fires, the fix is to
+// chunk that part across several documents — deliberately not built in advance,
+// because an untested chunker is worse than a clear error.
+const ARCHIVE_PART_LIMIT = 900_000;
+
+const archiveKey = (season, part) =>
+  part ? `${ARCHIVE_PREFIX}-${season}-${part}` : `${ARCHIVE_PREFIX}-${season}`;
+
+export const seasonArchiveApi = {
+  /** Seasons with an archive, newest first. */
+  async listSeasons() {
+    const list = await sfglDataApi.get(ARCHIVE_INDEX);
+    return Array.isArray(list) ? [...list].sort((a, b) => b - a) : [];
+  },
+
+  /** The manifest alone — season, when it was taken, and the final standings. */
+  async getManifest(season) {
+    return sfglDataApi.get(archiveKey(season));
+  },
+
+  /**
+   * The whole season. Parts are fetched in parallel and each defaults to an
+   * empty array, so a manifest written before a part existed still opens
+   * instead of throwing.
+   */
+  async get(season) {
+    const manifest = await this.getManifest(season);
+    if (!manifest) return null;
+    const parts = await Promise.all(
+      ARCHIVE_PARTS.map(part => sfglDataApi.get(archiveKey(season, part)).catch(() => null)),
+    );
+    const out = { ...manifest };
+    ARCHIVE_PARTS.forEach((part, i) => { out[part] = parts[i] || []; });
+    return out;
+  },
+
+  /**
+   * Write a season's archive. Commissioner-only by firestore.rules.
+   *
+   * Parts are written BEFORE the manifest, so a failure part-way through
+   * leaves no manifest and therefore nothing the archive view will offer to
+   * open. A half-written archive that looked complete would be worse than none.
+   */
+  async save(season, { standings = [], teams = [], tournaments = [], transactions = [] } = {}) {
+    const payload = { teams, tournaments, transactions };
+
+    const oversized = ARCHIVE_PARTS
+      .map(part => ({ part, bytes: JSON.stringify(payload[part] ?? []).length }))
+      .filter(p => p.bytes > ARCHIVE_PART_LIMIT);
+    if (oversized.length) {
+      const detail = oversized.map(p => `${p.part} is ${Math.round(p.bytes / 1000)} kB`).join(', ');
+      throw new Error(
+        `Archive part too large for one Firestore document (${detail}; the limit is 1 MB). ` +
+        'It needs chunking across several documents — see seasonArchiveApi.',
+      );
+    }
+
+    for (const part of ARCHIVE_PARTS) {
+      await sfglDataApi.set(archiveKey(season, part), payload[part] ?? []);
+    }
+
+    const archivedAt = new Date().toISOString();
+    await sfglDataApi.set(archiveKey(season), {
+      season: Number(season),
+      archivedAt,
+      standings,
+      parts: ARCHIVE_PARTS,
+      counts: {
+        teams: teams.length,
+        tournaments: tournaments.length,
+        transactions: transactions.length,
+      },
+    });
+
+    // The index last, for the same reason the manifest comes after the parts:
+    // a season is only listed once it is wholly there.
+    const seasons = await this.listSeasons();
+    if (!seasons.includes(Number(season))) {
+      await sfglDataApi.set(ARCHIVE_INDEX, [...seasons, Number(season)]);
+    }
+    return { archivedAt };
+  },
+};
+
+// ============================================================================
 // PLAYER REGISTRY API
 // ============================================================================
 // Durable single source of truth for per-player SFGL attributes (limited,
