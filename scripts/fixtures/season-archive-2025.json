@@ -1,0 +1,7082 @@
+{
+ "season": 2025,
+ "source": "Google Sheet \"SFGL 2025\" via the Drive text export",
+ "standings": [
+  {
+   "teamId": "drc",
+   "name": "Detroit Rock City",
+   "earnings": 56805234,
+   "position": 1
+  },
+  {
+   "teamId": "hh",
+   "name": "SS Express",
+   "earnings": 49128114,
+   "position": 2
+  },
+  {
+   "teamId": "w1",
+   "name": "World #1",
+   "earnings": 37125986,
+   "position": 3
+  },
+  {
+   "teamId": "db",
+   "name": "Dirty Bird(ies)",
+   "earnings": 28781042,
+   "position": 4
+  },
+  {
+   "teamId": "pops",
+   "name": "POPS, LLC",
+   "earnings": 28587473,
+   "position": 5
+  }
+ ],
+ "teams": [
+  {
+   "id": "drc",
+   "name": "Detroit Rock City",
+   "roster": [
+    {
+     "name": "Rory McIlroy",
+     "limited": true,
+     "unlimited": false,
+     "stars": 2,
+     "yearsOfService": 2,
+     "startsAllowed": 12,
+     "starts": 12,
+     "sfglEarnings": 16370482
+    },
+    {
+     "name": "Viktor Hovland",
+     "limited": true,
+     "unlimited": false,
+     "stars": 1,
+     "yearsOfService": 1,
+     "startsAllowed": 12,
+     "starts": 12,
+     "sfglEarnings": 4461648
+    },
+    {
+     "name": "Matt Fitzpatrick",
+     "limited": true,
+     "unlimited": false,
+     "stars": 1,
+     "yearsOfService": 1,
+     "startsAllowed": 11,
+     "starts": 11,
+     "sfglEarnings": 2628016
+    },
+    {
+     "name": "Nick Dunlap",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 7,
+     "sfglEarnings": 482210
+    },
+    {
+     "name": "Russell Henley",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 14,
+     "sfglEarnings": 8986425
+    },
+    {
+     "name": "Max Greyserman",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 13,
+     "sfglEarnings": 1806482
+    },
+    {
+     "name": "Matt McCarty",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 9,
+     "sfglEarnings": 849613
+    },
+    {
+     "name": "Sepp Straka",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 20,
+     "sfglEarnings": 10466803
+    },
+    {
+     "name": "Gary Woodland",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 7,
+     "sfglEarnings": 537501
+    },
+    {
+     "name": "Harris English",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 14,
+     "sfglEarnings": 5430927
+    },
+    {
+     "name": "Min Woo Lee",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 5,
+     "sfglEarnings": 2233300
+    },
+    {
+     "name": "Stephan Jaeger",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 6,
+     "sfglEarnings": 539673
+    },
+    {
+     "name": "Alex Smalley",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 9,
+     "sfglEarnings": 205506
+    }
+   ],
+   "earnings": 56805234,
+   "startsBudget": 35
+  },
+  {
+   "id": "hh",
+   "name": "SS Express",
+   "roster": [
+    {
+     "name": "Scottie Scheffler",
+     "limited": true,
+     "unlimited": false,
+     "stars": 2,
+     "yearsOfService": 2,
+     "startsAllowed": 12,
+     "starts": 12,
+     "sfglEarnings": 15536483
+    },
+    {
+     "name": "Justin Thomas",
+     "limited": true,
+     "unlimited": false,
+     "stars": 1,
+     "yearsOfService": 1,
+     "startsAllowed": 12,
+     "starts": 12,
+     "sfglEarnings": 7322788
+    },
+    {
+     "name": "Tom Kim",
+     "limited": true,
+     "unlimited": false,
+     "stars": 1,
+     "yearsOfService": 1,
+     "startsAllowed": 8,
+     "starts": 8,
+     "sfglEarnings": 731119
+    },
+    {
+     "name": "Akshay Bhatia",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 17,
+     "sfglEarnings": 1820632
+    },
+    {
+     "name": "Shane Lowry",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 16,
+     "sfglEarnings": 4329417
+    },
+    {
+     "name": "Maverick McNealy",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 12,
+     "sfglEarnings": 3233479
+    },
+    {
+     "name": "Nick Taylor",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 8,
+     "sfglEarnings": 2284699
+    },
+    {
+     "name": "Brian Harman",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 12,
+     "sfglEarnings": 3824839
+    },
+    {
+     "name": "Jason Day",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 8,
+     "sfglEarnings": 1695205
+    },
+    {
+     "name": "Nico Echavarria",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 13,
+     "sfglEarnings": 1855729
+    },
+    {
+     "name": "Ben Griffin",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 16,
+     "sfglEarnings": 5380774
+    },
+    {
+     "name": "Daniel Berger",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 12,
+     "sfglEarnings": 1889999
+    },
+    {
+     "name": "Jake Knapp",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 9,
+     "sfglEarnings": 1165728
+    }
+   ],
+   "earnings": 49128114,
+   "startsBudget": 32
+  },
+  {
+   "id": "db",
+   "name": "Dirty Bird(ies)",
+   "roster": [
+    {
+     "name": "Ludvig Åberg",
+     "limited": true,
+     "unlimited": false,
+     "stars": 3,
+     "yearsOfService": 3,
+     "startsAllowed": 12,
+     "starts": 12,
+     "sfglEarnings": 7099663
+    },
+    {
+     "name": "Sam Burns",
+     "limited": true,
+     "unlimited": false,
+     "stars": 1,
+     "yearsOfService": 1,
+     "startsAllowed": 12,
+     "starts": 12,
+     "sfglEarnings": 3130492
+    },
+    {
+     "name": "Sahith Theegala",
+     "limited": true,
+     "unlimited": false,
+     "stars": 1,
+     "yearsOfService": 1,
+     "startsAllowed": 7,
+     "starts": 7,
+     "sfglEarnings": 321988
+    },
+    {
+     "name": "Wyndham Clark",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 15,
+     "sfglEarnings": 2115655
+    },
+    {
+     "name": "Justin Rose",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 7,
+     "sfglEarnings": 717600
+    },
+    {
+     "name": "Taylor Pendrith",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 13,
+     "sfglEarnings": 2154515
+    },
+    {
+     "name": "Davis Thompson",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 7,
+     "sfglEarnings": 324988
+    },
+    {
+     "name": "Jackson Koivun (a)",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 0,
+     "sfglEarnings": 0
+    },
+    {
+     "name": "Tom Hoge",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 11,
+     "sfglEarnings": 793154
+    },
+    {
+     "name": "Luke Clanton",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 5,
+     "sfglEarnings": 144366
+    },
+    {
+     "name": "Keegan Bradley",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 15,
+     "sfglEarnings": 6158240
+    },
+    {
+     "name": "Max Homa",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 5,
+     "sfglEarnings": 198193
+    },
+    {
+     "name": "Cameron Young",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 13,
+     "sfglEarnings": 3862141
+    }
+   ],
+   "earnings": 28781042,
+   "startsBudget": 31
+  },
+  {
+   "id": "w1",
+   "name": "World #1",
+   "roster": [
+    {
+     "name": "Tommy Fleetwood",
+     "limited": true,
+     "unlimited": false,
+     "stars": 2,
+     "yearsOfService": 2,
+     "startsAllowed": 12,
+     "starts": 12,
+     "sfglEarnings": 6486374
+    },
+    {
+     "name": "Collin Morikawa",
+     "limited": true,
+     "unlimited": false,
+     "stars": 1,
+     "yearsOfService": 1,
+     "startsAllowed": 12,
+     "starts": 12,
+     "sfglEarnings": 6869961
+    },
+    {
+     "name": "Jordan Spieth",
+     "limited": true,
+     "unlimited": false,
+     "stars": 1,
+     "yearsOfService": 1,
+     "startsAllowed": 11,
+     "starts": 11,
+     "sfglEarnings": 2200243
+    },
+    {
+     "name": "Sam Stevens",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 1,
+     "sfglEarnings": 0
+    },
+    {
+     "name": "Sungjae Im",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 21,
+     "sfglEarnings": 4168287
+    },
+    {
+     "name": "Robert MacIntyre",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 15,
+     "sfglEarnings": 6892919
+    },
+    {
+     "name": "Aaron Rai",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 8,
+     "sfglEarnings": 1005665
+    },
+    {
+     "name": "Denny McCarthy",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 7,
+     "sfglEarnings": 709997
+    },
+    {
+     "name": "J.J. Spaun",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 5,
+     "sfglEarnings": 2511040
+    },
+    {
+     "name": "Rickie Fowler",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 2,
+     "sfglEarnings": 695591
+    },
+    {
+     "name": "Ryan Gerard",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 5,
+     "sfglEarnings": 54810
+    },
+    {
+     "name": "Kurt Kitayama",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 7,
+     "sfglEarnings": 352023
+    },
+    {
+     "name": "Andrew Novak",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 1,
+     "sfglEarnings": 203775
+    }
+   ],
+   "earnings": 37125986,
+   "startsBudget": 35
+  },
+  {
+   "id": "pops",
+   "name": "POPS, LLC",
+   "roster": [
+    {
+     "name": "Patrick Cantlay",
+     "limited": true,
+     "unlimited": false,
+     "stars": 2,
+     "yearsOfService": 2,
+     "startsAllowed": 12,
+     "starts": 12,
+     "sfglEarnings": 3259690
+    },
+    {
+     "name": "Xander Schauffele",
+     "limited": true,
+     "unlimited": false,
+     "stars": 1,
+     "yearsOfService": 1,
+     "startsAllowed": 12,
+     "starts": 12,
+     "sfglEarnings": 2938050
+    },
+    {
+     "name": "Tony Finau",
+     "limited": true,
+     "unlimited": false,
+     "stars": 1,
+     "yearsOfService": 1,
+     "startsAllowed": 10,
+     "starts": 10,
+     "sfglEarnings": 1323752
+    },
+    {
+     "name": "Hideki Matsuyama",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 21,
+     "sfglEarnings": 6308643
+    },
+    {
+     "name": "Chris Gotterup",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 2,
+     "sfglEarnings": 267300
+    },
+    {
+     "name": "Si Woo Kim",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 18,
+     "sfglEarnings": 2118653
+    },
+    {
+     "name": "Chris Kirk",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 10,
+     "sfglEarnings": 1930223
+    },
+    {
+     "name": "Corey Conners",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 17,
+     "sfglEarnings": 4721769
+    },
+    {
+     "name": "Aldrich Potgieter",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 3,
+     "sfglEarnings": 0
+    },
+    {
+     "name": "Mackenzie Hughes",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 11,
+     "sfglEarnings": 1384374
+    },
+    {
+     "name": "Thomas Detry",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 13,
+     "sfglEarnings": 2374849
+    },
+    {
+     "name": "Keith Mitchell",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 1,
+     "sfglEarnings": 33580
+    },
+    {
+     "name": "Harry Hall",
+     "limited": false,
+     "unlimited": false,
+     "stars": 0,
+     "yearsOfService": 0,
+     "starts": 5,
+     "sfglEarnings": 363846
+    }
+   ],
+   "earnings": 28587473,
+   "startsBudget": 34
+  }
+ ],
+ "tournaments": [
+  {
+   "name": "The Sentry",
+   "dates": "Jan 2-5",
+   "location": "Kapalua, HI",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 729500,
+      "players": [
+       {
+        "name": "Nick Dunlap",
+        "earnings": 50000,
+        "bonus": 0,
+        "finish": "55"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 137500,
+        "bonus": 0,
+        "finish": "T30"
+       },
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 196000,
+        "bonus": 0,
+        "finish": "T24"
+       },
+       {
+        "name": "Billy Horschel",
+        "earnings": 54000,
+        "bonus": 0,
+        "finish": "51"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 292000,
+        "bonus": 0,
+        "finish": "T15"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 997833,
+      "players": [
+       {
+        "name": "Justin Thomas",
+        "earnings": 163333,
+        "bonus": 0,
+        "finish": "T26"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 118000,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Maverick McNealy",
+        "earnings": 550000,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 48500,
+        "bonus": 0,
+        "finish": "58"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 118000,
+        "bonus": 0,
+        "finish": "T32"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 1847250,
+      "players": [
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 744167,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Sahith Theegala",
+        "earnings": 97750,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Wyndham Clark",
+        "earnings": 292000,
+        "bonus": 0,
+        "finish": "T15"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 163333,
+        "bonus": 0,
+        "finish": "T26"
+       },
+       {
+        "name": "Cameron Young",
+        "earnings": 550000,
+        "bonus": 0,
+        "finish": "T8"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 4222000,
+      "players": [
+       {
+        "name": "Collin Morikawa",
+        "earnings": 2160000,
+        "bonus": 0,
+        "finish": "2"
+       },
+       {
+        "name": "Byeong Hun An",
+        "earnings": 118000,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 1360000,
+        "bonus": 0,
+        "finish": "3"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 292000,
+        "bonus": 0,
+        "finish": "T15"
+       },
+       {
+        "name": "Adam Scott",
+        "earnings": 292000,
+        "bonus": 0,
+        "finish": "T15"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 4373833,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 292000,
+        "bonus": 0,
+        "finish": "T15"
+       },
+       {
+        "name": "Xander Schauffele",
+        "earnings": 137500,
+        "bonus": 0,
+        "finish": "T30"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 3600000,
+        "bonus": 100000,
+        "finish": "000"
+       },
+       {
+        "name": "Max Homa",
+        "earnings": 163333,
+        "bonus": 0,
+        "finish": "T26"
+       },
+       {
+        "name": "J.T. Poston",
+        "earnings": 81000,
+        "bonus": 0,
+        "finish": "T40"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Sony Open in Hawaii",
+   "dates": "Jan 9-12",
+   "location": "Honolulu, HI",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 466570,
+      "players": [
+       {
+        "name": "Nick Dunlap",
+        "earnings": 195025,
+        "bonus": 0,
+        "finish": "T10"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 195025,
+        "bonus": 0,
+        "finish": "T10"
+       },
+       {
+        "name": "Billy Horschel",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 52138,
+        "bonus": 0,
+        "finish": "T30"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 24382,
+        "bonus": 0,
+        "finish": "T45"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 1077152,
+      "players": [
+       {
+        "name": "Maverick McNealy",
+        "earnings": 24382,
+        "bonus": 0,
+        "finish": "T45"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 24382,
+        "bonus": 0,
+        "finish": "T45"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 80088,
+        "bonus": 0,
+        "finish": "T21"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 948300,
+        "bonus": 0,
+        "finish": "2"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 704920,
+      "players": [
+       {
+        "name": "Davis Thompson",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Austin Eckroat",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Tom Hoge",
+        "earnings": 24382,
+        "bonus": 20000,
+        "finish": "T45"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 283838,
+        "bonus": 0,
+        "finish": "T6"
+       },
+       {
+        "name": "Eric Cole",
+        "earnings": 356700,
+        "bonus": 20000,
+        "finish": "5"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 1816037,
+      "players": [
+       {
+        "name": "Byeong Hun An",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 20387,
+        "bonus": 0,
+        "finish": "T53"
+       },
+       {
+        "name": "Denny McCarthy",
+        "earnings": 132675,
+        "bonus": 60000,
+        "finish": "000"
+       },
+       {
+        "name": "Nick Taylor",
+        "earnings": 1566000,
+        "bonus": 0,
+        "finish": "1"
+       },
+       {
+        "name": "Kurt Kitayama",
+        "earnings": 36975,
+        "bonus": 0,
+        "finish": "T37"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 153062,
+      "players": [
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 132675,
+        "bonus": 0,
+        "finish": "T16"
+       },
+       {
+        "name": "Chris Kirk",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "J.T. Poston",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 20387,
+        "bonus": 0,
+        "finish": "T53"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "The American Express",
+   "dates": "Jan 16-19",
+   "location": "La Quinta, CA",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 2063899,
+      "players": [
+       {
+        "name": "Nick Dunlap",
+        "earnings": 42093,
+        "bonus": 0,
+        "finish": "T34"
+       },
+       {
+        "name": "Max Greyserman",
+        "earnings": 267300,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Billy Horschel",
+        "earnings": 83270,
+        "bonus": 0,
+        "finish": "T21"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 1584000,
+        "bonus": 60000,
+        "finish": "1"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 27236,
+        "bonus": 0,
+        "finish": "T43"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 602470,
+      "players": [
+       {
+        "name": "Michael Thorbjornsen",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Jason Day",
+        "earnings": 519200,
+        "bonus": 0,
+        "finish": "T3"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 83270,
+        "bonus": 0,
+        "finish": "T21"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 305712,
+      "players": [
+       {
+        "name": "Sam Burns",
+        "earnings": 57640,
+        "bonus": 0,
+        "finish": "T29"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 169400,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Davis Thompson",
+        "earnings": 21032,
+        "bonus": 0,
+        "finish": "T51"
+       },
+       {
+        "name": "Tom Hoge",
+        "earnings": 57640,
+        "bonus": 0,
+        "finish": "T29"
+       },
+       {
+        "name": "Christiaan Bezuidenhout",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 189112,
+      "players": [
+       {
+        "name": "Sungjae Im",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Nick Taylor",
+        "earnings": 169400,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Kurt Kitayama",
+        "earnings": 19712,
+        "bonus": 0,
+        "finish": "T58"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 633602,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 339900,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 21032,
+        "bonus": 0,
+        "finish": "T51"
+       },
+       {
+        "name": "J.T. Poston",
+        "earnings": 169400,
+        "bonus": 20000,
+        "finish": "T12"
+       },
+       {
+        "name": "Adam Hadwin",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Harry Hall",
+        "earnings": 83270,
+        "bonus": 0,
+        "finish": "T21"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Farmers Insurance Open",
+   "dates": "Jan 22-25",
+   "location": "La Jolla, CA",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 2083122,
+      "players": [
+       {
+        "name": "Max Greyserman",
+        "earnings": 25482,
+        "bonus": 0,
+        "finish": "T48"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 302250,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 1674000,
+        "bonus": 60000,
+        "finish": "1"
+       },
+       {
+        "name": "Stephan Jaeger",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Frankie Capan III",
+        "earnings": 21390,
+        "bonus": 0,
+        "finish": "T56"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 74726,
+      "players": [
+       {
+        "name": "Shane Lowry",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Maverick McNealy",
+        "earnings": 22646,
+        "bonus": 0,
+        "finish": "T52"
+       },
+       {
+        "name": "Jason Day",
+        "earnings": 52080,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 269039,
+      "players": [
+       {
+        "name": "Sahith Theegala",
+        "earnings": 22646,
+        "bonus": 0,
+        "finish": "T52"
+       },
+       {
+        "name": "Eric Cole",
+        "earnings": 19716,
+        "bonus": 0,
+        "finish": "T68"
+       },
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 33945,
+        "bonus": 60000,
+        "finish": "000"
+       },
+       {
+        "name": "Matt McCarty",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 132732,
+        "bonus": 0,
+        "finish": "T15"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 0,
+      "players": [
+       {
+        "name": "Sungjae Im",
+        "earnings": 418500,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Aaron Rai",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Matthieu Pavon",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Kurt Kitayama",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Niklas Norgaard",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 184812,
+      "players": [
+       {
+        "name": "Tony Finau",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 52080,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Max Homa",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 132732,
+        "bonus": 0,
+        "finish": "T15"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "AT&T Pebble Beach Pro-Am",
+   "dates": "Jan 30-Feb 2",
+   "location": "Pebble Beach, CA",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 5568273,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 3600000,
+        "bonus": 0,
+        "finish": "1"
+       },
+       {
+        "name": "Viktor Hovland",
+        "earnings": 158273,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 640000,
+        "bonus": 100000,
+        "finish": "000"
+       },
+       {
+        "name": "Billy Horschel",
+        "earnings": 535000,
+        "bonus": 0,
+        "finish": "T9"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 535000,
+        "bonus": 0,
+        "finish": "T9"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 1658475,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 535000,
+        "bonus": 0,
+        "finish": "T9"
+       },
+       {
+        "name": "Justin Thomas",
+        "earnings": 48600,
+        "bonus": 0,
+        "finish": "T48"
+       },
+       {
+        "name": "Tom Kim",
+        "earnings": 640000,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Maverick McNealy",
+        "earnings": 66375,
+        "bonus": 0,
+        "finish": "T40"
+       },
+       {
+        "name": "Jason Day",
+        "earnings": 368500,
+        "bonus": 0,
+        "finish": "T13"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 423975,
+      "players": [
+       {
+        "name": "Wyndham Clark",
+        "earnings": 33375,
+        "bonus": 0,
+        "finish": "T73"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 48600,
+        "bonus": 0,
+        "finish": "T48"
+       },
+       {
+        "name": "Cameron Young",
+        "earnings": 34000,
+        "bonus": 0,
+        "finish": "72"
+       },
+       {
+        "name": "Tom Hoge",
+        "earnings": 272000,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 36000,
+        "bonus": 0,
+        "finish": "T65"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 845819,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 158273,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Collin Morikawa",
+        "earnings": 272000,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Byeong Hun An",
+        "earnings": 158273,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 99000,
+        "bonus": 0,
+        "finish": "T33"
+       },
+       {
+        "name": "Adam Scott",
+        "earnings": 158273,
+        "bonus": 0,
+        "finish": "T22"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 273200,
+      "players": [
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 48600,
+        "bonus": 0,
+        "finish": "T48"
+       },
+       {
+        "name": "Chris Kirk",
+        "earnings": 37750,
+        "bonus": 0,
+        "finish": "T62"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 48600,
+        "bonus": 0,
+        "finish": "T48"
+       },
+       {
+        "name": "Nick Taylor",
+        "earnings": 99000,
+        "bonus": 0,
+        "finish": "T33"
+       },
+       {
+        "name": "Harry Hall",
+        "earnings": 39250,
+        "bonus": 0,
+        "finish": "T58"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "WM Phoenix Open",
+   "dates": "Feb 6-9",
+   "location": "Scottsdale, AZ",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 406778,
+      "players": [
+       {
+        "name": "Nick Dunlap",
+        "earnings": 20792,
+        "bonus": 0,
+        "finish": "T57"
+       },
+       {
+        "name": "Max Greyserman",
+        "earnings": 22586,
+        "bonus": 0,
+        "finish": "T49"
+       },
+       {
+        "name": "Billy Horschel",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 167900,
+        "bonus": 0,
+        "finish": "15"
+       },
+       {
+        "name": "Min Woo Lee",
+        "earnings": 195500,
+        "bonus": 0,
+        "finish": "T12"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 1010899,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 69197,
+        "bonus": 0,
+        "finish": "T25"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 53705,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 69197,
+        "bonus": 0,
+        "finish": "T25"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 818800,
+        "bonus": 0,
+        "finish": "T2"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 238878,
+      "players": [
+       {
+        "name": "Sam Burns",
+        "earnings": 22586,
+        "bonus": 0,
+        "finish": "T49"
+       },
+       {
+        "name": "Sahith Theegala",
+        "earnings": 20792,
+        "bonus": 0,
+        "finish": "T57"
+       },
+       {
+        "name": "Cameron Young",
+        "earnings": 195500,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Tom Hoge",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Matt McCarty",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 567686,
+      "players": [
+       {
+        "name": "Byeong Hun An",
+        "earnings": 18308,
+        "bonus": 0,
+        "finish": "73"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 20792,
+        "bonus": 0,
+        "finish": "T57"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 310500,
+        "bonus": 0,
+        "finish": "T6"
+       },
+       {
+        "name": "Rasmus Højgaard",
+        "earnings": 195500,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Kurt Kitayama",
+        "earnings": 22586,
+        "bonus": 0,
+        "finish": "T49"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 2012706,
+      "players": [
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 69197,
+        "bonus": 0,
+        "finish": "T25"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 1656000,
+        "bonus": 100000,
+        "finish": "000"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 100280,
+        "bonus": 0,
+        "finish": "T21"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 18032,
+        "bonus": 0,
+        "finish": "T74"
+       },
+       {
+        "name": "Nick Taylor",
+        "earnings": 69197,
+        "bonus": 0,
+        "finish": "T25"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "The Genesis Invitational",
+   "dates": "Feb 13-16",
+   "location": "Pacific Palisades, CA",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 517571,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 270714,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Viktor Hovland",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 82000,
+        "bonus": 0,
+        "finish": "T39"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 164857,
+        "bonus": 0,
+        "finish": "T24"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 2446834,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 1200000,
+        "bonus": 0,
+        "finish": "T3"
+       },
+       {
+        "name": "Justin Thomas",
+        "earnings": 556667,
+        "bonus": 0,
+        "finish": "T9"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 556667,
+        "bonus": 0,
+        "finish": "T9"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 82000,
+        "bonus": 0,
+        "finish": "T39"
+       },
+       {
+        "name": "Jason Day",
+        "earnings": 51500,
+        "bonus": 0,
+        "finish": "T50"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 4399857,
+      "players": [
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 4000000,
+        "bonus": 0,
+        "finish": "1"
+       },
+       {
+        "name": "Wyndham Clark",
+        "earnings": 126000,
+        "bonus": 0,
+        "finish": "T31"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 164857,
+        "bonus": 0,
+        "finish": "T24"
+       },
+       {
+        "name": "Cameron Young",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 109000,
+        "bonus": 0,
+        "finish": "T34"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 1103714,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 736500,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Collin Morikawa",
+        "earnings": 270714,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Adam Scott",
+        "earnings": 96500,
+        "bonus": 0,
+        "finish": "T37"
+       },
+       {
+        "name": "Rasmus Højgaard",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 2071107,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 736500,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Tony Finau",
+        "earnings": 736500,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 384250,
+        "bonus": 0,
+        "finish": "T13"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 164857,
+        "bonus": 0,
+        "finish": "T24"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 49000,
+        "bonus": 0,
+        "finish": "53"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Mexico Open at VidantaWorld",
+   "dates": "Feb 20-23",
+   "location": "Vallarta, MEX",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 261555,
+      "players": [
+       {
+        "name": "Stephan Jaeger",
+        "earnings": 245000,
+        "bonus": 0,
+        "finish": "T6"
+       },
+       {
+        "name": "Frankie Capan III",
+        "earnings": 16555,
+        "bonus": 0,
+        "finish": "T55"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 579100,
+      "players": [
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 204750,
+        "bonus": 0,
+        "finish": "9"
+       },
+       {
+        "name": "Michael Thorbjornsen",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 315000,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Jake Knapp",
+        "earnings": 59350,
+        "bonus": 0,
+        "finish": "T25"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 74890,
+      "players": [
+       {
+        "name": "Matt McCarty",
+        "earnings": 15540,
+        "bonus": 0,
+        "finish": "T63"
+       },
+       {
+        "name": "Patrick Rodgers",
+        "earnings": 59350,
+        "bonus": 0,
+        "finish": "T25"
+       },
+       {
+        "name": "Carson Young",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 385318,
+      "players": [
+       {
+        "name": "Aaron Rai",
+        "earnings": 315000,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Kurt Kitayama",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Rasmus Højgaard",
+        "earnings": 35159,
+        "bonus": 0,
+        "finish": "T34"
+       },
+       {
+        "name": "Niklas Norgaard",
+        "earnings": 35159,
+        "bonus": 0,
+        "finish": "T34"
+       },
+       {
+        "name": "Sam Stevens",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 0,
+      "players": [
+       {
+        "name": "Harry Hall",
+        "earnings": 35159,
+        "bonus": 20000,
+        "finish": "T34"
+       },
+       {
+        "name": "Nick Hardy",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Cognizant Classic in The Palm Beaches",
+   "dates": "Feb 27-Mar 2",
+   "location": "Palm Beach Gardens, FL",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 753743,
+      "players": [
+       {
+        "name": "Russell Henley",
+        "earnings": 310500,
+        "bonus": 0,
+        "finish": "T6"
+       },
+       {
+        "name": "Max Greyserman",
+        "earnings": 184986,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Billy Horschel",
+        "earnings": 73271,
+        "bonus": 0,
+        "finish": "T25"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 184986,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 724894,
+      "players": [
+       {
+        "name": "Shane Lowry",
+        "earnings": 184986,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 52637,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 414000,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 73271,
+        "bonus": 0,
+        "finish": "T25"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 0,
+      "players": [
+       {
+        "name": "Cameron Young",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Davis Thompson",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Austin Eckroat",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Tom Hoge",
+        "earnings": 19596,
+        "bonus": 0,
+        "finish": "67"
+       },
+       {
+        "name": "Carson Young",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 97076,
+      "players": [
+       {
+        "name": "Sungjae Im",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Denny McCarthy",
+        "earnings": 23805,
+        "bonus": 0,
+        "finish": "T48"
+       },
+       {
+        "name": "Kurt Kitayama",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Byeong Hun An",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Niklas Norgaard",
+        "earnings": 73271,
+        "bonus": 0,
+        "finish": "T25"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 54832,
+      "players": [
+       {
+        "name": "Nick Hardy",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Keith Mitchell",
+        "earnings": 33580,
+        "bonus": 0,
+        "finish": "T42"
+       },
+       {
+        "name": "Harry Hall",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Chris Kirk",
+        "earnings": 21252,
+        "bonus": 0,
+        "finish": "T56"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Arnold Palmer Invitational presented by Mastercard",
+   "dates": "Mar 6-9",
+   "location": "Orlando, FL",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 5327111,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 349000,
+        "bonus": 0,
+        "finish": "T15"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 4000000,
+        "bonus": 0,
+        "finish": "1"
+       },
+       {
+        "name": "Max Greyserman",
+        "earnings": 178111,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 800000,
+        "bonus": 0,
+        "finish": "T5"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 1350000,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 451250,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Justin Thomas",
+        "earnings": 96750,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 700000,
+        "bonus": 40000,
+        "finish": "7"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 62000,
+        "bonus": 0,
+        "finish": "T45"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 554333,
+      "players": [
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 178111,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Sahith Theegala",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Wyndham Clark",
+        "earnings": 178111,
+        "bonus": 20000,
+        "finish": "T22"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 178111,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Max Homa",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 3528583,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 451250,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Collin Morikawa",
+        "earnings": 2200000,
+        "bonus": 60000,
+        "finish": "2"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 269333,
+        "bonus": 0,
+        "finish": "T19"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 451250,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Adam Scott",
+        "earnings": 96750,
+        "bonus": 0,
+        "finish": "T36"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 1878861,
+      "players": [
+       {
+        "name": "Xander Schauffele",
+        "earnings": 78000,
+        "bonus": 0,
+        "finish": "T40"
+       },
+       {
+        "name": "Tony Finau",
+        "earnings": 96750,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 178111,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 1400000,
+        "bonus": 0,
+        "finish": "3"
+       },
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 126000,
+        "bonus": 0,
+        "finish": "T31"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "The Players Championship",
+   "dates": "Mar 13-16",
+   "location": "Ponte Vedra Beach, FL",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 5082500,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 4500000,
+        "bonus": 0,
+        "finish": "1"
+       },
+       {
+        "name": "Viktor Hovland",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 163750,
+        "bonus": 0,
+        "finish": "T30"
+       },
+       {
+        "name": "Max Greyserman",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 418750,
+        "bonus": 0,
+        "finish": "T14"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 857000,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 240250,
+        "bonus": 0,
+        "finish": "T20"
+       },
+       {
+        "name": "Justin Thomas",
+        "earnings": 136250,
+        "bonus": 0,
+        "finish": "T33"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 240250,
+        "bonus": 0,
+        "finish": "T20"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 240250,
+        "bonus": 0,
+        "finish": "T20"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 404000,
+      "players": [
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sam Burns",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Wyndham Clark",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 163750,
+        "bonus": 0,
+        "finish": "T30"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 240250,
+        "bonus": 0,
+        "finish": "T20"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 1186250,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 418750,
+        "bonus": 0,
+        "finish": "T14"
+       },
+       {
+        "name": "Collin Morikawa",
+        "earnings": 656250,
+        "bonus": 0,
+        "finish": "T10"
+       },
+       {
+        "name": "Jordan Spieth",
+        "earnings": 56750,
+        "bonus": 0,
+        "finish": "59"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 54500,
+        "bonus": 0,
+        "finish": "T61"
+       },
+       {
+        "name": "Michael Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 894000,
+      "players": [
+       {
+        "name": "Xander Schauffele",
+        "earnings": 50250,
+        "bonus": 0,
+        "finish": "72"
+       },
+       {
+        "name": "Tony Finau",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 843750,
+        "bonus": 0,
+        "finish": "T6"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Valspar Championshipf",
+   "dates": "Mar 20-23",
+   "location": "Palm Harbor, FL",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 2108496,
+      "players": [
+       {
+        "name": "Viktor Hovland",
+        "earnings": 1566000,
+        "bonus": 60000,
+        "finish": "1"
+       },
+       {
+        "name": "Billy Horschel",
+        "earnings": 366125,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 55843,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Stephan Jaeger",
+        "earnings": 40528,
+        "bonus": 20000,
+        "finish": "T36"
+       },
+       {
+        "name": "Alex Smalley",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 474628,
+      "players": [
+       {
+        "name": "Tom Kim",
+        "earnings": 40528,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 245775,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 128325,
+        "bonus": 60000,
+        "finish": "T16"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Jake Knapp",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 79544,
+      "players": [
+       {
+        "name": "Sam Burns",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 23701,
+        "bonus": 0,
+        "finish": "T47"
+       },
+       {
+        "name": "Cameron Young",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Christiaan Bezuidenhout",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "J.T. Poston",
+        "earnings": 55843,
+        "bonus": 0,
+        "finish": "T28"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 285117,
+      "players": [
+       {
+        "name": "Byeong Hun An",
+        "earnings": 128325,
+        "bonus": 0,
+        "finish": "T16"
+       },
+       {
+        "name": "Adam Scott",
+        "earnings": 19749,
+        "bonus": 0,
+        "finish": "T57"
+       },
+       {
+        "name": "Rasmus Højgaard",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Michael Kim",
+        "earnings": 55843,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Joe Highsmith",
+        "earnings": 81200,
+        "bonus": 0,
+        "finish": "T22"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 791628,
+      "players": [
+       {
+        "name": "Xander Schauffele",
+        "earnings": 178350,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 245775,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 40528,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 81200,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Lucas Glover",
+        "earnings": 245775,
+        "bonus": 0,
+        "finish": "T8"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Texas Children's Houston Open",
+   "dates": "Mar 27-30",
+   "location": "Houston, TX",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 2090361,
+      "players": [
+       {
+        "name": "Max Greyserman",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 108986,
+        "bonus": 0,
+        "finish": "T18"
+       },
+       {
+        "name": "Min Woo Lee",
+        "earnings": 1710000,
+        "bonus": 60000,
+        "finish": "1"
+       },
+       {
+        "name": "Stephan Jaeger",
+        "earnings": 211375,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Alex Smalley",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 348658,
+      "players": [
+       {
+        "name": "Maverick McNealy",
+        "earnings": 51911,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Jason Day",
+        "earnings": 67925,
+        "bonus": 0,
+        "finish": "T27"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 51911,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 108986,
+        "bonus": 0,
+        "finish": "T18"
+       },
+       {
+        "name": "Jake Knapp",
+        "earnings": 67925,
+        "bonus": 0,
+        "finish": "T27"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 428070,
+      "players": [
+       {
+        "name": "Wyndham Clark",
+        "earnings": 337844,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Davis Thompson",
+        "earnings": 67925,
+        "bonus": 0,
+        "finish": "T27"
+       },
+       {
+        "name": "Patrick Rodgers",
+        "earnings": 22301,
+        "bonus": 0,
+        "finish": "T52"
+       },
+       {
+        "name": "J.J. Spaun",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Jacob Bridgeman",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 125197,
+      "players": [
+       {
+        "name": "Sungjae Im",
+        "earnings": 21375,
+        "bonus": 0,
+        "finish": "60"
+       },
+       {
+        "name": "Aaron Rai",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Michael Kim",
+        "earnings": 51911,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Rasmus Højgaard",
+        "earnings": 51911,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Joe Highsmith",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 336379,
+      "players": [
+       {
+        "name": "Tony Finau",
+        "earnings": 51911,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 258875,
+        "bonus": 0,
+        "finish": "10"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 25593,
+        "bonus": 0,
+        "finish": "T47"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Valero Texas Open",
+   "dates": "Apr 3-6",
+   "location": "San Antonio, TX",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 0,
+      "players": [
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Alex Smalley",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Gary Woodland",
+        "earnings": 37525,
+        "bonus": 0,
+        "finish": "T40"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 1909750,
+      "players": [
+       {
+        "name": "Tom Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 1710000,
+        "bonus": 100000,
+        "finish": "000"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 37525,
+        "bonus": 0,
+        "finish": "T40"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 62225,
+        "bonus": 0,
+        "finish": "T30"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 538099,
+      "players": [
+       {
+        "name": "Cameron Young",
+        "earnings": 113050,
+        "bonus": 0,
+        "finish": "T18"
+       },
+       {
+        "name": "Tom Hoge",
+        "earnings": 304000,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 26809,
+        "bonus": 0,
+        "finish": "T47"
+       },
+       {
+        "name": "Patrick Rodgers",
+        "earnings": 22040,
+        "bonus": 0,
+        "finish": "T56"
+       },
+       {
+        "name": "J.T. Poston",
+        "earnings": 72200,
+        "bonus": 0,
+        "finish": "T26"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 599925,
+      "players": [
+       {
+        "name": "Jordan Spieth",
+        "earnings": 182875,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Denny McCarthy",
+        "earnings": 113050,
+        "bonus": 0,
+        "finish": "T18"
+       },
+       {
+        "name": "Bud Cauley",
+        "earnings": 304000,
+        "bonus": 0,
+        "finish": "T5"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 135090,
+      "players": [
+       {
+        "name": "Tony Finau",
+        "earnings": 22040,
+        "bonus": 0,
+        "finish": "T56"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Chris Kirk",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 113050,
+        "bonus": 0,
+        "finish": "T18"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Masters Tournament",
+   "dates": "Apr 10-13",
+   "location": "Augusta, GA",
+   "completed": true,
+   "playing": false,
+   "isMajor": true,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 4584600,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 4200000,
+        "bonus": 120000,
+        "finish": "1"
+       },
+       {
+        "name": "Viktor Hovland",
+        "earnings": 210000,
+        "bonus": 0,
+        "finish": "T21"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Min Woo Lee",
+        "earnings": 54600,
+        "bonus": 0,
+        "finish": "49"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 1873726,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 1008000,
+        "bonus": 0,
+        "finish": "4"
+       },
+       {
+        "name": "Justin Thomas",
+        "earnings": 101063,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 75600,
+        "bonus": 0,
+        "finish": "T42"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 101063,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Jason Day",
+        "earnings": 588000,
+        "bonus": 0,
+        "finish": "T8"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 968660,
+      "players": [
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 703500,
+        "bonus": 0,
+        "finish": "7"
+       },
+       {
+        "name": "Sam Burns",
+        "earnings": 61180,
+        "bonus": 0,
+        "finish": "T46"
+       },
+       {
+        "name": "Sahith Theegala",
+        "earnings": 142800,
+        "bonus": 0,
+        "finish": "T29"
+       },
+       {
+        "name": "Wyndham Clark",
+        "earnings": 61180,
+        "bonus": 0,
+        "finish": "T46"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 1680000,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 210000,
+        "bonus": 0,
+        "finish": "T21"
+       },
+       {
+        "name": "Collin Morikawa",
+        "earnings": 336000,
+        "bonus": 0,
+        "finish": "T14"
+       },
+       {
+        "name": "Jordan Spieth",
+        "earnings": 336000,
+        "bonus": 0,
+        "finish": "T14"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 798000,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 1487063,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 101063,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Xander Schauffele",
+        "earnings": 588000,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 210000,
+        "bonus": 0,
+        "finish": "T21"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 588000,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "RBC Heritage",
+   "dates": "Apr 17-20",
+   "location": "Hilton Head Island, SC",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 1210200,
+      "players": [
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 86250,
+        "bonus": 0,
+        "finish": "T38"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 580000,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Max Greyserman",
+        "earnings": 140200,
+        "bonus": 0,
+        "finish": "T27"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 364000,
+        "bonus": 0,
+        "finish": "T13"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 39750,
+        "bonus": 0,
+        "finish": "T66"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 4958199,
+      "players": [
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 64143,
+        "bonus": 0,
+        "finish": "T42"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 226056,
+        "bonus": 0,
+        "finish": "T18"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 960000,
+        "bonus": 0,
+        "finish": "T3"
+       },
+       {
+        "name": "Jason Day",
+        "earnings": 48000,
+        "bonus": 0,
+        "finish": "T49"
+       },
+       {
+        "name": "Justin Thomas",
+        "earnings": 3600000,
+        "bonus": 60000,
+        "finish": "000"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 671143,
+      "players": [
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 44500,
+        "bonus": 0,
+        "finish": "T54"
+       },
+       {
+        "name": "Sahith Theegala",
+        "earnings": 38000,
+        "bonus": 0,
+        "finish": "69"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 44500,
+        "bonus": 0,
+        "finish": "T54"
+       },
+       {
+        "name": "Patrick Rodgers",
+        "earnings": 64143,
+        "bonus": 0,
+        "finish": "T42"
+       },
+       {
+        "name": "J.T. Poston",
+        "earnings": 480000,
+        "bonus": 0,
+        "finish": "T11"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 857949,
+      "players": [
+       {
+        "name": "Jordan Spieth",
+        "earnings": 226056,
+        "bonus": 0,
+        "finish": "T18"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 480000,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 39750,
+        "bonus": 0,
+        "finish": "T66"
+       },
+       {
+        "name": "Denny McCarthy",
+        "earnings": 48000,
+        "bonus": 0,
+        "finish": "T49"
+       },
+       {
+        "name": "Justin Rose",
+        "earnings": 64143,
+        "bonus": 0,
+        "finish": "T42"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 2238056,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 364000,
+        "bonus": 0,
+        "finish": "T13"
+       },
+       {
+        "name": "Xander Schauffele",
+        "earnings": 226056,
+        "bonus": 0,
+        "finish": "T18"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 580000,
+        "bonus": 60000,
+        "finish": "T8"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 48000,
+        "bonus": 0,
+        "finish": "T49"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 960000,
+        "bonus": 0,
+        "finish": "T3"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "THE CJ CUP Byron Nelson",
+   "dates": "May 1-4",
+   "location": "McKinney, TX",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 45540,
+      "players": [
+       {
+        "name": "Stephan Jaeger",
+        "earnings": 22770,
+        "bonus": 0,
+        "finish": "T56"
+       },
+       {
+        "name": "Nicolai Højgaard",
+        "earnings": 22770,
+        "bonus": 0,
+        "finish": "T56"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 2074343,
+      "players": [
+       {
+        "name": "Tom Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Michael Thorbjornsen",
+        "earnings": 52800,
+        "bonus": 0,
+        "finish": "T33"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 79448,
+        "bonus": 0,
+        "finish": "T25"
+       },
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 1782000,
+        "bonus": 120000,
+        "finish": "000"
+       },
+       {
+        "name": "Jake Knapp",
+        "earnings": 40095,
+        "bonus": 0,
+        "finish": "T39"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 442691,
+      "players": [
+       {
+        "name": "Sam Burns",
+        "earnings": 305972,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Patrick Rodgers",
+        "earnings": 136719,
+        "bonus": 0,
+        "finish": "T15"
+       },
+       {
+        "name": "Jacob Bridgeman",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Ryan Gerard",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 587499,
+      "players": [
+       {
+        "name": "Jordan Spieth",
+        "earnings": 485100,
+        "bonus": 0,
+        "finish": "4"
+       },
+       {
+        "name": "Byeong Hun An",
+        "earnings": 21978,
+        "bonus": 0,
+        "finish": "T60"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 52800,
+        "bonus": 0,
+        "finish": "T33"
+       },
+       {
+        "name": "Rasmus Højgaard",
+        "earnings": 27621,
+        "bonus": 0,
+        "finish": "48"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 0,
+      "players": [
+       {
+        "name": "Si Woo Kim",
+        "earnings": 136719,
+        "bonus": 0,
+        "finish": "T15"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Truist Championship",
+   "dates": "May 8-11",
+   "location": "Montgomery, PA",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 4447063,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 602500,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Viktor Hovland",
+        "earnings": 44750,
+        "bonus": 0,
+        "finish": "T54"
+       },
+       {
+        "name": "Max Greyserman",
+        "earnings": 44750,
+        "bonus": 0,
+        "finish": "T54"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 3600000,
+        "bonus": 60000,
+        "finish": "1"
+       },
+       {
+        "name": "Gary Woodland",
+        "earnings": 95063,
+        "bonus": 0,
+        "finish": "T34"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 4127200,
+      "players": [
+       {
+        "name": "Justin Thomas",
+        "earnings": 1760000,
+        "bonus": 0,
+        "finish": "T2"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 53600,
+        "bonus": 0,
+        "finish": "T46"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 1760000,
+        "bonus": 60000,
+        "finish": "T2"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 53600,
+        "bonus": 0,
+        "finish": "T46"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 440000,
+        "bonus": 0,
+        "finish": "T11"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 293125,
+      "players": [
+       {
+        "name": "Wyndham Clark",
+        "earnings": 41250,
+        "bonus": 0,
+        "finish": "T63"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 44750,
+        "bonus": 0,
+        "finish": "T54"
+       },
+       {
+        "name": "Tom Hoge",
+        "earnings": 41250,
+        "bonus": 0,
+        "finish": "T63"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 125375,
+        "bonus": 0,
+        "finish": "T30"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 40500,
+        "bonus": 0,
+        "finish": "65"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 1359373,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 826667,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Collin Morikawa",
+        "earnings": 270500,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Jordan Spieth",
+        "earnings": 95063,
+        "bonus": 0,
+        "finish": "T34"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 167143,
+        "bonus": 0,
+        "finish": "T23"
+       },
+       {
+        "name": "Justin Rose",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 2327167,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 826667,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Xander Schauffele",
+        "earnings": 440000,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Tony Finau",
+        "earnings": 350000,
+        "bonus": 0,
+        "finish": "T15"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 270500,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 440000,
+        "bonus": 0,
+        "finish": "T11"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "PGA Championship",
+   "dates": "May 15-18",
+   "location": "Charlotte, NC",
+   "completed": true,
+   "playing": false,
+   "isMajor": true,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 1583677,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 49190,
+        "bonus": 0,
+        "finish": "T47"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Viktor Hovland",
+        "earnings": 115820,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 1418667,
+        "bonus": 0,
+        "finish": "T2"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 3629193,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 3420000,
+        "bonus": 120000,
+        "finish": "1"
+       },
+       {
+        "name": "Justin Thomas",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 89193,
+        "bonus": 0,
+        "finish": "T33"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 688897,
+      "players": [
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sam Burns",
+        "earnings": 193442,
+        "bonus": 0,
+        "finish": "T19"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 454781,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Wyndham Clark",
+        "earnings": 40674,
+        "bonus": 0,
+        "finish": "T50"
+       },
+       {
+        "name": "Will Zalatoris",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 101351,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 60677,
+        "bonus": 0,
+        "finish": "T41"
+       },
+       {
+        "name": "Collin Morikawa",
+        "earnings": 40674,
+        "bonus": 0,
+        "finish": "T50"
+       },
+       {
+        "name": "Jordan Spieth",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Justin Rose",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 764043,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Xander Schauffele",
+        "earnings": 115820,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 454781,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 193442,
+        "bonus": 0,
+        "finish": "T19"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Charles Schwab Challenge",
+   "dates": "May 22-25",
+   "location": "Fort Worth, TX",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 314704,
+      "players": [
+       {
+        "name": "Max Greyserman",
+        "earnings": 88667,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Matt McCarty",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Gary Woodland",
+        "earnings": 203775,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 22262,
+        "bonus": 0,
+        "finish": "T53"
+       },
+       {
+        "name": "Alex Smalley",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 109662,
+      "players": [
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 88667,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Maverick McNealy",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Michael Thorbjornsen",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 20995,
+        "bonus": 0,
+        "finish": "T59"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 122122,
+      "players": [
+       {
+        "name": "Davis Thompson",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Tom Hoge",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Patrick Rodgers",
+        "earnings": 60978,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "J.T. Poston",
+        "earnings": 42334,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Ryan Gerard",
+        "earnings": 18810,
+        "bonus": 0,
+        "finish": "T73"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 1299125,
+      "players": [
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 299725,
+        "bonus": 0,
+        "finish": "T6"
+       },
+       {
+        "name": "Aaron Rai",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Michael Kim",
+        "earnings": 140125,
+        "bonus": 0,
+        "finish": "T16"
+       },
+       {
+        "name": "Andrew Novak",
+        "earnings": 203775,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Bud Cauley",
+        "earnings": 655500,
+        "bonus": 0,
+        "finish": "3"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 191979,
+      "players": [
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 42334,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Lucas Glover",
+        "earnings": 88667,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 60978,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Chris Kirk",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "the Memorial Tournament presented by Workday",
+   "dates": "May 29-Jun 1",
+   "location": "Dublin, OH",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 621810,
+      "players": [
+       {
+        "name": "Nick Dunlap",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Matt McCarty",
+        "earnings": 441000,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Gary Woodland",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Alex Smalley",
+        "earnings": 180810,
+        "bonus": 0,
+        "finish": "T13"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 425973,
+      "players": [
+       {
+        "name": "Shane Lowry",
+        "earnings": 180810,
+        "bonus": 0,
+        "finish": "T13"
+       },
+       {
+        "name": "Nick Taylor",
+        "earnings": 180810,
+        "bonus": 0,
+        "finish": "T13"
+       },
+       {
+        "name": "Jake Knapp",
+        "earnings": 64353,
+        "bonus": 0,
+        "finish": "T27"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 1154407,
+      "players": [
+       {
+        "name": "Sam Burns",
+        "earnings": 1068200,
+        "bonus": 0,
+        "finish": "2"
+       },
+       {
+        "name": "Wyndham Clark",
+        "earnings": 21854,
+        "bonus": 0,
+        "finish": "T59"
+       },
+       {
+        "name": "Patrick Rodgers",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 64353,
+        "bonus": 0,
+        "finish": "T27"
+       },
+       {
+        "name": "Luke Clanton",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 409220,
+      "players": [
+       {
+        "name": "Byeong Hun An",
+        "earnings": 330750,
+        "bonus": 0,
+        "finish": "T6"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 44660,
+        "bonus": 0,
+        "finish": "T36"
+       },
+       {
+        "name": "Rasmus Højgaard",
+        "earnings": 33810,
+        "bonus": 0,
+        "finish": "T43"
+       },
+       {
+        "name": "Johnny Keefer",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 253983,
+      "players": [
+       {
+        "name": "Corey Conners",
+        "earnings": 64353,
+        "bonus": 0,
+        "finish": "T27"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 64353,
+        "bonus": 0,
+        "finish": "T27"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 125277,
+        "bonus": 0,
+        "finish": "T18"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "RBC Canadian Open",
+   "dates": "Jun 5-8",
+   "location": "Caledon, ON",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 2888857,
+      "players": [
+       {
+        "name": "Viktor Hovland",
+        "earnings": 159000,
+        "bonus": 0,
+        "finish": "T25"
+       },
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 114857,
+        "bonus": 0,
+        "finish": "T31"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 800000,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 1400000,
+        "bonus": 0,
+        "finish": "3"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 415000,
+        "bonus": 0,
+        "finish": "T12"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 7647000,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 4000000,
+        "bonus": 60000,
+        "finish": "1"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 319000,
+        "bonus": 0,
+        "finish": "T16"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 208000,
+        "bonus": 0,
+        "finish": "T23"
+       },
+       {
+        "name": "Maverick McNealy",
+        "earnings": 800000,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 2200000,
+        "bonus": 60000,
+        "finish": "000"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 1752200,
+      "players": [
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 319000,
+        "bonus": 0,
+        "finish": "T16"
+       },
+       {
+        "name": "Sam Burns",
+        "earnings": 415000,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Sahith Theegala",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 603200,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 415000,
+        "bonus": 0,
+        "finish": "T12"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 1538867,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 319000,
+        "bonus": 0,
+        "finish": "T16"
+       },
+       {
+        "name": "Collin Morikawa",
+        "earnings": 250667,
+        "bonus": 0,
+        "finish": "T20"
+       },
+       {
+        "name": "Jordan Spieth",
+        "earnings": 603200,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 319000,
+        "bonus": 0,
+        "finish": "T16"
+       },
+       {
+        "name": "Denny McCarthy",
+        "earnings": 47000,
+        "bonus": 0,
+        "finish": "55"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 941857,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 415000,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Xander Schauffele",
+        "earnings": 159000,
+        "bonus": 0,
+        "finish": "T25"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 94000,
+        "bonus": 0,
+        "finish": "38"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 114857,
+        "bonus": 0,
+        "finish": "T31"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 159000,
+        "bonus": 0,
+        "finish": "T25"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "U.S. Open",
+   "dates": "Jun 12-16",
+   "location": "Oakmont, PA",
+   "completed": true,
+   "playing": false,
+   "isMajor": true,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 1840847,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 243070,
+        "bonus": 0,
+        "finish": "T19"
+       },
+       {
+        "name": "Viktor Hovland",
+        "earnings": 1462525,
+        "bonus": 0,
+        "finish": "3"
+       },
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 90608,
+        "bonus": 0,
+        "finish": "T38"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 44644,
+        "bonus": 0,
+        "finish": "T59"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 1158887,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 615786,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 486031,
+        "bonus": 0,
+        "finish": "T10"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 57070,
+        "bonus": 0,
+        "finish": "T46"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 1020149,
+      "players": [
+       {
+        "name": "Sam Burns",
+        "earnings": 615786,
+        "bonus": 200000,
+        "finish": "000"
+       },
+       {
+        "name": "Wyndham Clark",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 113755,
+        "bonus": 0,
+        "finish": "T33"
+       },
+       {
+        "name": "Justin Rose",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 90608,
+        "bonus": 0,
+        "finish": "T38"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 2690502,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Collin Morikawa",
+        "earnings": 161489,
+        "bonus": 0,
+        "finish": "T23"
+       },
+       {
+        "name": "Jordan Spieth",
+        "earnings": 161489,
+        "bonus": 0,
+        "finish": "T23"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 45524,
+        "bonus": 0,
+        "finish": "T57"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 2322000,
+        "bonus": 0,
+        "finish": "2"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 495769,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Xander Schauffele",
+        "earnings": 349741,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 73014,
+        "bonus": 0,
+        "finish": "T42"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 73014,
+        "bonus": 0,
+        "finish": "T42"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Travelers Championship",
+   "dates": "Jun 19-22",
+   "location": "Cromwell, CT",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 3389286,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 695000,
+        "bonus": 0,
+        "finish": "T6"
+       },
+       {
+        "name": "Viktor Hovland",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 54286,
+        "bonus": 0,
+        "finish": "T45"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 880000,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 1760000,
+        "bonus": 0,
+        "finish": "T2"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 2360500,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 695000,
+        "bonus": 60000,
+        "finish": "000"
+       },
+       {
+        "name": "Justin Thomas",
+        "earnings": 540000,
+        "bonus": 40000,
+        "finish": "T9"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 45500,
+        "bonus": 0,
+        "finish": "T54"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 620000,
+        "bonus": 0,
+        "finish": "8"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 360000,
+        "bonus": 0,
+        "finish": "T14"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 3934911,
+      "players": [
+       {
+        "name": "Cameron Young",
+        "earnings": 46500,
+        "bonus": 0,
+        "finish": "T52"
+       },
+       {
+        "name": "Tom Hoge",
+        "earnings": 54286,
+        "bonus": 0,
+        "finish": "T45"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 3600000,
+        "bonus": 0,
+        "finish": "1"
+       },
+       {
+        "name": "Luke Clanton",
+        "earnings": 108750,
+        "bonus": 0,
+        "finish": "T34"
+       },
+       {
+        "name": "Alex Noren",
+        "earnings": 125375,
+        "bonus": 0,
+        "finish": "T30"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 2437126,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 1760000,
+        "bonus": 100000,
+        "finish": "000"
+       },
+       {
+        "name": "Collin Morikawa",
+        "earnings": 72000,
+        "bonus": 0,
+        "finish": "T42"
+       },
+       {
+        "name": "Jordan Spieth",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 252563,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Aaron Rai",
+        "earnings": 252563,
+        "bonus": 0,
+        "finish": "T17"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 747125,
+      "players": [
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 125375,
+        "bonus": 0,
+        "finish": "T30"
+       },
+       {
+        "name": "Lucas Glover",
+        "earnings": 540000,
+        "bonus": 0,
+        "finish": "T9"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 40500,
+        "bonus": 0,
+        "finish": "65"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 41250,
+        "bonus": 0,
+        "finish": "T63"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Rocket Mortgage Classic",
+   "dates": "Jun 26-29",
+   "location": "Detroit, MI",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 1405984,
+      "players": [
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 261600,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Max Greyserman",
+        "earnings": 854400,
+        "bonus": 0,
+        "finish": "T2"
+       },
+       {
+        "name": "Min Woo Lee",
+        "earnings": 172000,
+        "bonus": 0,
+        "finish": "T13"
+       },
+       {
+        "name": "Alex Smalley",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Matt McCarty",
+        "earnings": 117984,
+        "bonus": 0,
+        "finish": "T19"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 1010080,
+      "players": [
+       {
+        "name": "Tom Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 70080,
+        "bonus": 0,
+        "finish": "T26"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 336000,
+        "bonus": 0,
+        "finish": "T6"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 172000,
+        "bonus": 0,
+        "finish": "T13"
+       },
+       {
+        "name": "Jake Knapp",
+        "earnings": 432000,
+        "bonus": 0,
+        "finish": "T4"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 111022,
+      "players": [
+       {
+        "name": "Wyndham Clark",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Cameron Young",
+        "earnings": 27091,
+        "bonus": 0,
+        "finish": "T46"
+       },
+       {
+        "name": "Davis Thompson",
+        "earnings": 47931,
+        "bonus": 0,
+        "finish": "T34"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 36000,
+        "bonus": 0,
+        "finish": "T41"
+       },
+       {
+        "name": "Alex Noren",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 127104,
+      "players": [
+       {
+        "name": "Byeong Hun An",
+        "earnings": 21024,
+        "bonus": 0,
+        "finish": "T60"
+       },
+       {
+        "name": "Rasmus Højgaard",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Michael Kim",
+        "earnings": 70080,
+        "bonus": 0,
+        "finish": "T26"
+       },
+       {
+        "name": "Ryan Gerard",
+        "earnings": 36000,
+        "bonus": 0,
+        "finish": "T41"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 1141952,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 58560,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 172000,
+        "bonus": 0,
+        "finish": "T13"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 16992,
+        "bonus": 0,
+        "finish": "84"
+       },
+       {
+        "name": "Chris Kirk",
+        "earnings": 854400,
+        "bonus": 40000,
+        "finish": "T2"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "John Deere Classic",
+   "dates": "Jul 3-6",
+   "location": "Silvis, IL",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 0,
+      "players": [
+       {
+        "name": "Nick Dunlap",
+        "earnings": 174300,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Alex Smalley",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Stephan Jaeger",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       },
+       {
+        "name": "Matt McCarty",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 0,
+      "players": [
+       {
+        "name": "Jason Day",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Jake Knapp",
+        "earnings": 91980,
+        "bonus": 0,
+        "finish": "T21"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 0,
+      "players": [
+       {
+        "name": "Davis Thompson",
+        "earnings": 128100,
+        "bonus": 60000,
+        "finish": "T18"
+       },
+       {
+        "name": "J.T. Poston",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Luke Clanton",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 311220,
+      "players": [
+       {
+        "name": "Sungjae Im",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Denny McCarthy",
+        "earnings": 174300,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Ryan Gerard",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Bud Cauley",
+        "earnings": 44940,
+        "bonus": 0,
+        "finish": "T33"
+       },
+       {
+        "name": "Michael Thorbjornsen",
+        "earnings": 91980,
+        "bonus": 0,
+        "finish": "T21"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 470946,
+      "players": [
+       {
+        "name": "Lucas Glover",
+        "earnings": 278250,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 174300,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Chris Kirk",
+        "earnings": 18396,
+        "bonus": 0,
+        "finish": "64"
+       },
+       {
+        "name": "Aldrich Potgieter",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Genesis Scottish Open",
+   "dates": "Jul 10-13",
+   "location": "North Berwick, SCO",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 1666820,
+      "players": [
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 407250,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Rory McIlroy",
+        "earnings": 788175,
+        "bonus": 60000,
+        "finish": "T2"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 287550,
+        "bonus": 20000,
+        "finish": "7"
+       },
+       {
+        "name": "Gary Woodland",
+        "earnings": 23220,
+        "bonus": 0,
+        "finish": "T60"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 80625,
+        "bonus": 0,
+        "finish": "T22"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 297549,
+      "players": [
+       {
+        "name": "Justin Thomas",
+        "earnings": 80625,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Maverick McNealy",
+        "earnings": 80625,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Nick Taylor",
+        "earnings": 80625,
+        "bonus": 0,
+        "finish": "T22"
+       },
+       {
+        "name": "Brian Harman",
+        "earnings": 29754,
+        "bonus": 0,
+        "finish": "T50"
+       },
+       {
+        "name": "Daniel Berger",
+        "earnings": 25920,
+        "bonus": 0,
+        "finish": "T55"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 709050,
+      "players": [
+       {
+        "name": "Tom Hoge",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 153450,
+        "bonus": 0,
+        "finish": "T13"
+       },
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 233400,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Alex Noren",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Justin Rose",
+        "earnings": 322200,
+        "bonus": 0,
+        "finish": "6"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 175170,
+      "players": [
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 19800,
+        "bonus": 0,
+        "finish": "T65"
+       },
+       {
+        "name": "Aaron Rai",
+        "earnings": 34860,
+        "bonus": 0,
+        "finish": "T47"
+       },
+       {
+        "name": "J.J. Spaun",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Rasmus Højgaard",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Adam Scott",
+        "earnings": 120510,
+        "bonus": 0,
+        "finish": "T17"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 106620,
+      "players": [
+       {
+        "name": "Corey Conners",
+        "earnings": 34860,
+        "bonus": 0,
+        "finish": "T47"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 18810,
+        "bonus": 0,
+        "finish": "T71"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 52950,
+        "bonus": 0,
+        "finish": "T34"
+       },
+       {
+        "name": "Aldrich Potgieter",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "The Open Championship",
+   "dates": "Jul 17-20",
+   "location": "Portrush, NIR",
+   "completed": true,
+   "playing": false,
+   "isMajor": true,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 1611780,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 451833,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Viktor Hovland",
+        "earnings": 40280,
+        "bonus": 0,
+        "finish": "T63"
+       },
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 730667,
+        "bonus": 40000,
+        "finish": "T4"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 44350,
+        "bonus": 0,
+        "finish": "T52"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 304650,
+        "bonus": 0,
+        "finish": "T10"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 206380,
+      "players": [
+       {
+        "name": "Tom Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 68340,
+        "bonus": 0,
+        "finish": "T40"
+       },
+       {
+        "name": "Maverick McNealy",
+        "earnings": 138040,
+        "bonus": 0,
+        "finish": "T23"
+       },
+       {
+        "name": "Nick Taylor",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 1105150,
+      "players": [
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 138040,
+        "bonus": 0,
+        "finish": "T23"
+       },
+       {
+        "name": "Sam Burns",
+        "earnings": 51186,
+        "bonus": 0,
+        "finish": "T45"
+       },
+       {
+        "name": "Wyndham Clark",
+        "earnings": 730667,
+        "bonus": 0,
+        "finish": "T4"
+       },
+       {
+        "name": "Justin Rose",
+        "earnings": 185257,
+        "bonus": 0,
+        "finish": "T16"
+       },
+       {
+        "name": "Cameron Young",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 861647,
+      "players": [
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 185257,
+        "bonus": 0,
+        "finish": "T16"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 451833,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Aaron Rai",
+        "earnings": 86517,
+        "bonus": 0,
+        "finish": "T34"
+       },
+       {
+        "name": "J.J. Spaun",
+        "earnings": 138040,
+        "bonus": 0,
+        "finish": "T23"
+       },
+       {
+        "name": "Adam Scott",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 941740,
+      "players": [
+       {
+        "name": "Patrick Cantlay",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Xander Schauffele",
+        "earnings": 451833,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 185257,
+        "bonus": 0,
+        "finish": "T16"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 304650,
+        "bonus": 0,
+        "finish": "T10"
+       },
+       {
+        "name": "Aldrich Potgieter",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "3M Open",
+   "dates": "Jul 24-27",
+   "location": "Blaine, MN",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 137676,
+      "players": [
+       {
+        "name": "Nick Dunlap",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Max Greyserman",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Matt McCarty",
+        "earnings": 17472,
+        "bonus": 0,
+        "finish": "T68"
+       },
+       {
+        "name": "Gary Woodland",
+        "earnings": 95508,
+        "bonus": 0,
+        "finish": "T20"
+       },
+       {
+        "name": "Alex Smalley",
+        "earnings": 24696,
+        "bonus": 0,
+        "finish": "T44"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 529636,
+      "players": [
+       {
+        "name": "Tom Kim",
+        "earnings": 50591,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 69020,
+        "bonus": 0,
+        "finish": "T25"
+       },
+       {
+        "name": "Maverick McNealy",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Jake Knapp",
+        "earnings": 410025,
+        "bonus": 0,
+        "finish": "T3"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 257628,
+      "players": [
+       {
+        "name": "Wyndham Clark",
+        "earnings": 186900,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 17472,
+        "bonus": 0,
+        "finish": "T68"
+       },
+       {
+        "name": "Tom Hoge",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Luke Clanton",
+        "earnings": 18396,
+        "bonus": 0,
+        "finish": "T61"
+       },
+       {
+        "name": "Max Homa",
+        "earnings": 34860,
+        "bonus": 0,
+        "finish": "T39"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 70709,
+      "players": [
+       {
+        "name": "Byeong Hun An",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Michael Thorbjornsen",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Adam Scott",
+        "earnings": 20118,
+        "bonus": 0,
+        "finish": "T53"
+       },
+       {
+        "name": "Rickie Fowler",
+        "earnings": 50591,
+        "bonus": 0,
+        "finish": "T28"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 381318,
+      "players": [
+       {
+        "name": "Tony Finau",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Chris Gotterup",
+        "earnings": 220500,
+        "bonus": 0,
+        "finish": "T10"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Mackenzie Hughes",
+        "earnings": 20118,
+        "bonus": 0,
+        "finish": "T53"
+       },
+       {
+        "name": "Chris Kirk",
+        "earnings": 140700,
+        "bonus": 0,
+        "finish": "T14"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "Wyndham Championship",
+   "dates": "Jul 31-Aug 3",
+   "location": "Greensboro, NC",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 597644,
+      "players": [
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 257617,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Max Greyserman",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Matt McCarty",
+        "earnings": 257617,
+        "bonus": 0,
+        "finish": "T8"
+       },
+       {
+        "name": "Gary Woodland",
+        "earnings": 82410,
+        "bonus": 0,
+        "finish": "T23"
+       },
+       {
+        "name": "Alex Smalley",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 311600,
+      "players": [
+       {
+        "name": "Tom Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       },
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "WD"
+       },
+       {
+        "name": "Nico Echavarria",
+        "earnings": 112750,
+        "bonus": 0,
+        "finish": "T19"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 198850,
+        "bonus": 0,
+        "finish": "T11"
+       },
+       {
+        "name": "Jake Knapp",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 2077020,
+      "players": [
+       {
+        "name": "Cameron Young",
+        "earnings": 1476000,
+        "bonus": 100000,
+        "finish": "000"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Max Homa",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Luke Clanton",
+        "earnings": 17220,
+        "bonus": 0,
+        "finish": "T67"
+       },
+       {
+        "name": "Alex Noren",
+        "earnings": 483800,
+        "bonus": 0,
+        "finish": "T3"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 456706,
+      "players": [
+       {
+        "name": "Jordan Spieth",
+        "earnings": 53710,
+        "bonus": 0,
+        "finish": "T31"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 23951,
+        "bonus": 0,
+        "finish": "T44"
+       },
+       {
+        "name": "Aaron Rai",
+        "earnings": 316725,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Ryan Gerard",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Sungjae Im",
+        "earnings": 62320,
+        "bonus": 0,
+        "finish": "T27"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 453426,
+      "players": [
+       {
+        "name": "Tony Finau",
+        "earnings": 23951,
+        "bonus": 0,
+        "finish": "T44"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 112750,
+        "bonus": 0,
+        "finish": "T19"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       },
+       {
+        "name": "Chris Kirk",
+        "earnings": 316725,
+        "bonus": 0,
+        "finish": "T5"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 0,
+        "bonus": 0,
+        "finish": "CUT"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "FedEx St. Jude Championship",
+   "dates": "Aug 7-10",
+   "location": "Memphis, TN",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 768267,
+      "players": [
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 111167,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 281000,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Sepp Straka",
+        "earnings": 281000,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 53900,
+        "bonus": 0,
+        "finish": "T48"
+       },
+       {
+        "name": "Min Woo Lee",
+        "earnings": 41200,
+        "bonus": 0,
+        "finish": "T68"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 1984600,
+      "players": [
+       {
+        "name": "Scottie Scheffler",
+        "earnings": 1160000,
+        "bonus": 0,
+        "finish": "T3"
+       },
+       {
+        "name": "Justin Thomas",
+        "earnings": 139500,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 44600,
+        "bonus": 0,
+        "finish": "T59"
+       },
+       {
+        "name": "Maverick McNealy",
+        "earnings": 139500,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 501000,
+        "bonus": 0,
+        "finish": "T9"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 1189300,
+      "players": [
+       {
+        "name": "Sam Burns",
+        "earnings": 139500,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Wyndham Clark",
+        "earnings": 45800,
+        "bonus": 0,
+        "finish": "T56"
+       },
+       {
+        "name": "Cameron Young",
+        "earnings": 800000,
+        "bonus": 0,
+        "finish": "5"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 139500,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 64500,
+        "bonus": 0,
+        "finish": "T44"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 3680167,
+      "players": [
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 84500,
+        "bonus": 0,
+        "finish": "T38"
+       },
+       {
+        "name": "Tommy Fleetwood",
+        "earnings": 1160000,
+        "bonus": 100000,
+        "finish": "000"
+       },
+       {
+        "name": "J.J. Spaun",
+        "earnings": 2160000,
+        "bonus": 0,
+        "finish": "2"
+       },
+       {
+        "name": "Denny McCarthy",
+        "earnings": 111167,
+        "bonus": 0,
+        "finish": "T32"
+       },
+       {
+        "name": "Lucas Glover",
+        "earnings": 64500,
+        "bonus": 0,
+        "finish": "T44"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 1057567,
+      "players": [
+       {
+        "name": "Tony Finau",
+        "earnings": 42600,
+        "bonus": 0,
+        "finish": "T64"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 281000,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Chris Gotterup",
+        "earnings": 46800,
+        "bonus": 0,
+        "finish": "T54"
+       },
+       {
+        "name": "Chris Kirk",
+        "earnings": 501000,
+        "bonus": 0,
+        "finish": "T9"
+       },
+       {
+        "name": "Harry Hall",
+        "earnings": 186167,
+        "bonus": 0,
+        "finish": "T22"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "BMW Championship",
+   "dates": "Aug 14-17",
+   "location": "Owings Mills, MD",
+   "completed": true,
+   "playing": false,
+   "isMajor": false,
+   "results": {
+    "teams": {
+     "drc": {
+      "totalEarnings": 2231000,
+      "players": [
+       {
+        "name": "Rory McIlroy",
+        "earnings": 441000,
+        "bonus": 0,
+        "finish": "T12"
+       },
+       {
+        "name": "Viktor Hovland",
+        "earnings": 645000,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Matt Fitzpatrick",
+        "earnings": 332000,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Russell Henley",
+        "earnings": 372000,
+        "bonus": 0,
+        "finish": "T15"
+       },
+       {
+        "name": "Harris English",
+        "earnings": 441000,
+        "bonus": 0,
+        "finish": "T12"
+       }
+      ]
+     },
+     "hh": {
+      "totalEarnings": 2311167,
+      "players": [
+       {
+        "name": "Akshay Bhatia",
+        "earnings": 177500,
+        "bonus": 0,
+        "finish": "T26"
+       },
+       {
+        "name": "Shane Lowry",
+        "earnings": 213000,
+        "bonus": 0,
+        "finish": "T23"
+       },
+       {
+        "name": "Maverick McNealy",
+        "earnings": 1360000,
+        "bonus": 0,
+        "finish": "3"
+       },
+       {
+        "name": "Nick Taylor",
+        "earnings": 119667,
+        "bonus": 0,
+        "finish": "T33"
+       },
+       {
+        "name": "Ben Griffin",
+        "earnings": 441000,
+        "bonus": 0,
+        "finish": "T12"
+       }
+      ]
+     },
+     "db": {
+      "totalEarnings": 2015000,
+      "players": [
+       {
+        "name": "Ludvig Åberg",
+        "earnings": 645000,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Cameron Young",
+        "earnings": 520000,
+        "bonus": 0,
+        "finish": "11"
+       },
+       {
+        "name": "Keegan Bradley",
+        "earnings": 332000,
+        "bonus": 0,
+        "finish": "T17"
+       },
+       {
+        "name": "Taylor Pendrith",
+        "earnings": 372000,
+        "bonus": 0,
+        "finish": "T15"
+       },
+       {
+        "name": "Justin Rose",
+        "earnings": 146000,
+        "bonus": 0,
+        "finish": "T30"
+       }
+      ]
+     },
+     "w1": {
+      "totalEarnings": 3530417,
+      "players": [
+       {
+        "name": "Collin Morikawa",
+        "earnings": 119667,
+        "bonus": 0,
+        "finish": "T33"
+       },
+       {
+        "name": "Robert MacIntyre",
+        "earnings": 2160000,
+        "bonus": 120000,
+        "finish": "000"
+       },
+       {
+        "name": "J.J. Spaun",
+        "earnings": 213000,
+        "bonus": 0,
+        "finish": "T23"
+       },
+       {
+        "name": "Rickie Fowler",
+        "earnings": 645000,
+        "bonus": 0,
+        "finish": "T7"
+       },
+       {
+        "name": "Kurt Kitayama",
+        "earnings": 272750,
+        "bonus": 0,
+        "finish": "T19"
+       }
+      ]
+     },
+     "pops": {
+      "totalEarnings": 793750,
+      "players": [
+       {
+        "name": "Xander Schauffele",
+        "earnings": 163500,
+        "bonus": 0,
+        "finish": "T28"
+       },
+       {
+        "name": "Hideki Matsuyama",
+        "earnings": 177500,
+        "bonus": 0,
+        "finish": "T26"
+       },
+       {
+        "name": "Si Woo Kim",
+        "earnings": 272750,
+        "bonus": 0,
+        "finish": "T19"
+       },
+       {
+        "name": "Corey Conners",
+        "earnings": 104000,
+        "bonus": 0,
+        "finish": "39"
+       },
+       {
+        "name": "Thomas Detry",
+        "earnings": 76000,
+        "bonus": 0,
+        "finish": "46"
+       }
+      ]
+     }
+    }
+   }
+  }
+ ],
+ "transactions": [
+  {
+   "txId": "2025-drc-1",
+   "teamId": "drc",
+   "team": "Detroit Rock City",
+   "type": "free agent",
+   "player": "Stephan Jaeger",
+   "droppedPlayer": "Nicolai Hojgaard",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-drc-2",
+   "teamId": "drc",
+   "team": "Detroit Rock City",
+   "type": "free agent",
+   "player": "Alex Smalley",
+   "droppedPlayer": "Frankie Capan III",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-drc-3",
+   "teamId": "drc",
+   "team": "Detroit Rock City",
+   "type": "waiver",
+   "player": "Gary Woodland",
+   "droppedPlayer": "Taylor Pendrith",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-drc-4",
+   "teamId": "drc",
+   "team": "Detroit Rock City",
+   "type": "free agent",
+   "player": "Matt McCarty",
+   "droppedPlayer": "Alex Smalley",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-drc-5",
+   "teamId": "drc",
+   "team": "Detroit Rock City",
+   "type": "free agent",
+   "player": "Nicolai Højgaard",
+   "droppedPlayer": "Matt McCarty",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-drc-6",
+   "teamId": "drc",
+   "team": "Detroit Rock City",
+   "type": "free agent",
+   "player": "Matt McCarty",
+   "droppedPlayer": "Billy Horschel",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-drc-7",
+   "teamId": "drc",
+   "team": "Detroit Rock City",
+   "type": "free agent",
+   "player": "Alex Smalley",
+   "droppedPlayer": "N Hojgaard",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-drc-8",
+   "teamId": "drc",
+   "team": "Detroit Rock City",
+   "type": "free agent",
+   "player": "Frankie Capan III",
+   "droppedPlayer": "Alex Noren",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-hh-9",
+   "teamId": "hh",
+   "team": "SS Express",
+   "type": "waiver",
+   "player": "Nick Taylor",
+   "droppedPlayer": "Michael Thorbjornsen",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-10",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "waiver",
+   "player": "Patrick Rodgers",
+   "droppedPlayer": "Eric Cole",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-11",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "waiver",
+   "player": "Max Homa",
+   "droppedPlayer": "Matt McCarty",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-12",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "free agent",
+   "player": "J.T. Poston",
+   "droppedPlayer": "Carson Young",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-13",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "free agent",
+   "player": "Christiaan Bezuidenhout",
+   "droppedPlayer": "Austin Eckroat",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-14",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "free agent",
+   "player": "JJ Spaun",
+   "droppedPlayer": "Christiaan Bezuidenhout",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-15",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "free agent",
+   "player": "Taylor Pendrith",
+   "droppedPlayer": "J.J. Spaun",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-16",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "waiver",
+   "player": "Luke Clanton",
+   "droppedPlayer": "Jacob Bridgeman",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-17",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "free agent",
+   "player": "Alex Noren",
+   "droppedPlayer": "Ryan Gerard",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-18",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "waiver",
+   "player": "Justin Rose",
+   "droppedPlayer": "Will Zalatoris",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-19",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "waiver",
+   "player": "Cameron Young",
+   "droppedPlayer": "Patrick Rodgers",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-20",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "waiver",
+   "player": "Max Homa",
+   "droppedPlayer": "J.T. Poston",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-21",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "free agent",
+   "player": "Jackson Koivun (a)",
+   "droppedPlayer": "Alex Noren",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-22",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "free agent",
+   "player": "Carson Young",
+   "droppedPlayer": "Cristiaan Bezuidenhout",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-23",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "free agent",
+   "player": "Jacob Bridgeman",
+   "droppedPlayer": "Max Homa",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-db-24",
+   "teamId": "db",
+   "team": "Dirty Bird(ies)",
+   "type": "free agent",
+   "player": "Ryan Gerard",
+   "droppedPlayer": "Cameron Young",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-25",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Luke Clanton (a)",
+   "droppedPlayer": "Stephan Jaeger",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-26",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Niklas Norgaard",
+   "droppedPlayer": "Nick Taylor",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-27",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Rasmus Hojgaard",
+   "droppedPlayer": "Mathieu Pavon",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-28",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Sam Stevens",
+   "droppedPlayer": "Luke Clanton",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-29",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Luke Clanton (a)",
+   "droppedPlayer": "Sam Stevens",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-30",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Michael Kim",
+   "droppedPlayer": "Nicklaus Norgaard",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-31",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Karl Vilips",
+   "droppedPlayer": "Kurt Kitayama",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-32",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Joe Highsmith",
+   "droppedPlayer": "Karl Vilips",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-33",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Bud Cauley",
+   "droppedPlayer": "Joe Highsmith",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-34",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Max Homa",
+   "droppedPlayer": "Luke Clanton",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-35",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Andrew Novak",
+   "droppedPlayer": "Max Homa",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-36",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Johnny Keefer",
+   "droppedPlayer": "Justin Rose",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-37",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "J.J. Spaun",
+   "droppedPlayer": "Keefer",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-38",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Ryan Gerard",
+   "droppedPlayer": "Andrew Novak",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-39",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "waiver",
+   "player": "Michael Thorbjornsen",
+   "droppedPlayer": "Michael Kim",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-40",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Adam Scott",
+   "droppedPlayer": "Bud Cauley",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-41",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Ryan Fox",
+   "droppedPlayer": "Ryan Gerard",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-42",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Rickie Fowler",
+   "droppedPlayer": "R Hojgaard",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-43",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Ryan Gerard",
+   "droppedPlayer": "Michael Thorbjornsen",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-44",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Sam Stevens",
+   "droppedPlayer": "Byeong Hun An",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-45",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Kurt Kitayama",
+   "droppedPlayer": "Lucas Glover",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-46",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Justin Rose",
+   "droppedPlayer": "Adam Scott",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-47",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Lucas Glover",
+   "droppedPlayer": "Ryan Fox",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-w1-48",
+   "teamId": "w1",
+   "team": "World #1",
+   "type": "free agent",
+   "player": "Andrew Novak",
+   "droppedPlayer": "Adam Scott",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-pops-49",
+   "teamId": "pops",
+   "team": "POPS, LLC",
+   "type": "waiver",
+   "player": "Harry Hall",
+   "droppedPlayer": "Patton Kizzire",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-pops-50",
+   "teamId": "pops",
+   "team": "POPS, LLC",
+   "type": "free agent",
+   "player": "Nick Taylor",
+   "droppedPlayer": "Adam Hadwin",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-pops-51",
+   "teamId": "pops",
+   "team": "POPS, LLC",
+   "type": "free agent",
+   "player": "Nick Hardy",
+   "droppedPlayer": "Max Homa",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-pops-52",
+   "teamId": "pops",
+   "team": "POPS, LLC",
+   "type": "free agent",
+   "player": "Lee Hodges",
+   "droppedPlayer": "J.T. Poston",
+   "fee": 1,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-pops-53",
+   "teamId": "pops",
+   "team": "POPS, LLC",
+   "type": "waiver",
+   "player": "Lucas Glover",
+   "droppedPlayer": "Nick Hardy",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-pops-54",
+   "teamId": "pops",
+   "team": "POPS, LLC",
+   "type": "waiver",
+   "player": "Aldrich Potgieter",
+   "droppedPlayer": "Lee Hodges",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-pops-55",
+   "teamId": "pops",
+   "team": "POPS, LLC",
+   "type": "waiver",
+   "player": "Chris Gotterup",
+   "droppedPlayer": "Lucas Glover",
+   "fee": 2,
+   "status": "processed"
+  },
+  {
+   "txId": "2025-pops-56",
+   "teamId": "pops",
+   "team": "POPS, LLC",
+   "type": "free agent",
+   "player": "Keith Mitchell",
+   "droppedPlayer": "Nick Taylor",
+   "fee": 1,
+   "status": "processed"
+  }
+ ],
+ "discrepancies": {
+  "zeroTotalBlocks": [
+   {
+    "event": "Farmers Insurance Open",
+    "team": "World #1",
+    "publishedTotal": 0,
+    "startersSum": 418500,
+    "short": 418500
+   },
+   {
+    "event": "Mexico Open at VidantaWorld",
+    "team": "POPS, LLC",
+    "publishedTotal": 0,
+    "startersSum": 55159,
+    "short": 55159
+   },
+   {
+    "event": "Cognizant Classic in The Palm Beaches",
+    "team": "Dirty Bird(ies)",
+    "publishedTotal": 0,
+    "startersSum": 19596,
+    "short": 19596
+   },
+   {
+    "event": "Valero Texas Open",
+    "team": "Detroit Rock City",
+    "publishedTotal": 0,
+    "startersSum": 37525,
+    "short": 37525
+   },
+   {
+    "event": "THE CJ CUP Byron Nelson",
+    "team": "POPS, LLC",
+    "publishedTotal": 0,
+    "startersSum": 136719,
+    "short": 136719
+   },
+   {
+    "event": "John Deere Classic",
+    "team": "Detroit Rock City",
+    "publishedTotal": 0,
+    "startersSum": 174300,
+    "short": 174300
+   },
+   {
+    "event": "John Deere Classic",
+    "team": "SS Express",
+    "publishedTotal": 0,
+    "startersSum": 91980,
+    "short": 91980
+   },
+   {
+    "event": "John Deere Classic",
+    "team": "Dirty Bird(ies)",
+    "publishedTotal": 0,
+    "startersSum": 188100,
+    "short": 188100
+   }
+  ],
+  "feeTotals": [
+   {
+    "team": "Detroit Rock City",
+    "feeCellsSum": 9,
+    "publishedTotal": 7
+   },
+   {
+    "team": "World #1",
+    "feeCellsSum": 25,
+    "publishedTotal": 23
+   }
+  ]
+ }
+}

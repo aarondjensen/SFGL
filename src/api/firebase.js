@@ -647,6 +647,7 @@ export const playersApi = {
 // LEGACY API WRAPPERS  (identical surface to supabase.js)
 // ============================================================================
 import { resolveAlias, NameSet } from '../../api/_playerNames.js';
+import { ARCHIVE_INDEX, ARCHIVE_PARTS, ARCHIVE_PART_LIMIT, archiveKey } from '../../api/_archive.js';
 
 
 const PLAYER_CACHE_KEY = 'sfgl-player-cache';
@@ -1544,18 +1545,9 @@ export const globalPlayerStatsApi = {
 // written. Standings live ON the manifest: they are small, and they are what
 // the archive view opens with, so reading them should not mean fetching
 // thirty tournaments first.
-const ARCHIVE_PREFIX = 'season-archive';
-const ARCHIVE_INDEX  = 'season-archive-index';
-const ARCHIVE_PARTS  = ['teams', 'tournaments', 'transactions'];
-
-// Refuse a part that is too close to the document limit rather than letting
-// Firestore reject it with its own message. If this ever fires, the fix is to
-// chunk that part across several documents — deliberately not built in advance,
-// because an untested chunker is worse than a clear error.
-const ARCHIVE_PART_LIMIT = 900_000;
-
-const archiveKey = (season, part) =>
-  part ? `${ARCHIVE_PREFIX}-${season}-${part}` : `${ARCHIVE_PREFIX}-${season}`;
+// The layout — keys, parts, the size ceiling — lives in api/_archive.js,
+// because scripts/import-season-archive.mjs writes the same documents through
+// firebase-admin and cannot import this file. One definition, three readers.
 
 export const seasonArchiveApi = {
   /** Seasons with an archive, newest first. */
